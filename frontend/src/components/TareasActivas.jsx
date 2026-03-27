@@ -9,55 +9,49 @@ const tasks = [
 ];
 
 const statusConfig = {
-  running: { color: "text-[#00F0FF]", dot: "bg-[#00F0FF] animate-pulse", label: "Ejecutando" },
-  completed: { color: "text-[#39FF14]", dot: "bg-[#39FF14]", label: "Completado" },
-  pending: { color: "text-[#FFE600]", dot: "bg-[#FFE600]/60", label: "Pendiente" },
+  running: { color: "#58A6FF", dot: "bg-[#58A6FF] animate-pulse", label: "Ejecutando" },
+  completed: { color: "#3FB950", dot: "bg-[#3FB950]", label: "Completado" },
+  pending: { color: "#484F58", dot: "bg-[#484F58]", label: "Pendiente" },
 };
 
 export default function TareasActivas() {
   return (
-    <div
-      data-testid="tareas-activas"
-      className="bg-[#111827]/60 border border-white/8 rounded-xl overflow-hidden"
-    >
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/8">
+    <div data-testid="tareas-activas" className="bg-[#161B26] border border-[#21262D] rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#21262D]">
         <div className="flex items-center gap-2.5">
-          <Loader2 className="w-4 h-4 text-[#00F0FF] animate-spin" strokeWidth={1.5} />
-          <h3 className="font-mono text-sm font-semibold text-white">Tareas Activas</h3>
+          <Loader2 className="w-3.5 h-3.5 text-[#58A6FF] animate-spin" strokeWidth={1.5} />
+          <h3 className="font-mono text-sm font-semibold text-[#F0F6FC]">Tareas Activas de Agentes</h3>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#00F0FF] animate-pulse" />
-          <span className="text-[10px] text-slate-400">{tasks.filter(t => t.status === "running").length} en ejecución</span>
-        </div>
+        <span className="text-[10px] text-[#484F58]">
+          {tasks.filter(t => t.status === "running").length} en ejecución
+        </span>
       </div>
 
-      <div className="divide-y divide-white/5">
+      <div className="divide-y divide-[#21262D]">
         {tasks.map((task, i) => {
           const cfg = statusConfig[task.status];
           return (
             <div
               key={task.id}
               data-testid={`task-item-${task.id}`}
-              className="fade-in-up flex items-center gap-4 px-5 py-3 hover:bg-white/3 transition-colors"
-              style={{ animationDelay: `${i * 60}ms` }}
+              className="fade-in-up flex items-center gap-4 px-5 py-3 hover:bg-[#1C2333] transition-colors"
+              style={{ animationDelay: `${i * 50}ms` }}
             >
-              <div className="flex-shrink-0">
-                <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/8 flex items-center justify-center">
-                  <Bot className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
-                </div>
+              <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-[#21262D] border border-[#30363D] flex items-center justify-center">
+                <Bot className="w-3.5 h-3.5 text-[#484F58]" strokeWidth={1.5} />
               </div>
 
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-white truncate">{task.task}</p>
+                <p className="text-xs font-medium text-[#F0F6FC] truncate">{task.task}</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] text-slate-500">{task.agent}</span>
-                  <span className="text-[10px] text-slate-600">·</span>
-                  <span className="text-[10px] text-slate-500">{task.module}</span>
+                  <span className="text-[10px] text-[#484F58]">{task.agent}</span>
+                  <span className="text-[10px] text-[#30363D]">·</span>
+                  <span className="text-[10px] text-[#484F58]">{task.module}</span>
                 </div>
                 {task.status === "running" && (
-                  <div className="mt-1.5 h-0.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className="mt-1.5 h-[2px] bg-[#21262D] rounded-full overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#00F0FF]/60 to-[#00F0FF]"
+                      className="h-full rounded-full bg-[#388BFD]"
                       style={{ width: `${task.progress}%` }}
                     />
                   </div>
@@ -66,7 +60,7 @@ export default function TareasActivas() {
 
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                <span className={`text-[10px] font-medium ${cfg.color}`}>{cfg.label}</span>
+                <span className="text-[10px] font-medium" style={{ color: cfg.color }}>{cfg.label}</span>
               </div>
             </div>
           );

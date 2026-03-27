@@ -1,19 +1,43 @@
 import { useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useParams } from "react-router-dom";
 import { Toaster } from "sonner";
 import "@/App.css";
-import Sidebar from "./components/Sidebar";
-import Dashboard from "./pages/Dashboard";
-import Proyectos from "./pages/Proyectos";
+import WorkspaceSidebar from "./components/WorkspaceSidebar";
+import ProjectHub from "./pages/ProjectHub";
+import ProjectDashboard from "./pages/ProjectDashboard";
+import Tareas from "./pages/Tareas";
+import CentroIA from "./pages/CentroIA";
 import Scaffolding from "./pages/Scaffolding";
 import Roadmap from "./pages/Roadmap";
-import CentroIA from "./pages/CentroIA";
 import Conexiones from "./pages/Conexiones";
 import Ajustes from "./pages/Ajustes";
+import { mockProjects } from "./data/projects";
+
+function WorkspaceLayout() {
+  const { projectId } = useParams();
+  const [collapsed, setCollapsed] = useState(false);
+  const project = mockProjects.find((p) => p.id === projectId);
+
+  if (!project) return <Navigate to="/hub" replace />;
+
+  return (
+    <div className="flex h-screen bg-[#0D1117] overflow-hidden">
+      <WorkspaceSidebar
+        project={project}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
+      />
+      <main
+        className="flex-1 overflow-y-auto"
+        style={{ scrollbarWidth: "thin", scrollbarColor: "#21262D transparent" }}
+      >
+        <Outlet context={{ project }} />
+      </main>
+    </div>
+  );
+}
 
 function App() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
   return (
     <div className="App">
       <BrowserRouter>
@@ -22,31 +46,27 @@ function App() {
           position="bottom-right"
           richColors
           toastOptions={{
-            style: { background: '#111827', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' },
+            style: { background: "#161B26", border: "1px solid rgba(48,54,61,0.9)", color: "#F0F6FC" },
           }}
         />
-        <div className="flex h-screen bg-[#0B0F19] overflow-hidden">
-          <Sidebar
-            collapsed={sidebarCollapsed}
-            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          />
-          <main
-            data-testid="main-content"
-            className="flex-1 overflow-y-auto"
-            style={{ scrollbarWidth: "thin", scrollbarColor: "#1e2a3a transparent" }}
-          >
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/proyectos" element={<Proyectos />} />
-              <Route path="/scaffolding" element={<Scaffolding />} />
-              <Route path="/roadmap" element={<Roadmap />} />
-              <Route path="/centro-ia" element={<CentroIA />} />
-              <Route path="/conexiones" element={<Conexiones />} />
-              <Route path="/ajustes" element={<Ajustes />} />
-            </Routes>
-          </main>
-        </div>
+        <Routes>
+          <Route path="/" element={<Navigate to="/hub" replace />} />
+          <Route path="/hub" element={<ProjectHub />} />
+          <Route path="/project/:projectId" element={<WorkspaceLayout />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<ProjectDashboard />} />
+            <Route path="tareas" element={<Tareas />} />
+            <Route path="agentes" element={<CentroIA />} />
+            <Route path="scaffolding" element={<Scaffolding />} />
+            <Route path="roadmap" element={<Roadmap />} />
+            <Route path="ajustes" element={<Ajustes />} />
+          </Route>
+          <Route path="/conexiones" element={
+            <div className="flex h-screen bg-[#0D1117] overflow-hidden">
+              <main className="flex-1 overflow-y-auto"><Conexiones /></main>
+            </div>
+          } />
+        </Routes>
       </BrowserRouter>
     </div>
   );
