@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ListTodo, Bot, Layers, MapPin, ChevronLeft,
   ChevronRight, Settings, History, ArrowLeft, Code2, GraduationCap,
-  FlaskConical, User, Building2
+  FlaskConical, User, Building2, Plug2
 } from "lucide-react";
 import { projectTypes } from "../data/projects";
 
@@ -15,6 +15,10 @@ const allNavItems = {
   scaffolding: { icon: Layers, label: "Scaffolding" },
   roadmap: { icon: MapPin, label: "Roadmap" },
   historial: { icon: History, label: "Historial" },
+};
+
+const configNavItems = {
+  conexiones: { icon: Plug2, label: "Conexiones MCP" },
   ajustes: { icon: Settings, label: "Ajustes" },
 };
 
@@ -23,7 +27,7 @@ export default function WorkspaceSidebar({ project, collapsed, onToggle }) {
   const tipo = projectTypes[project.tipo];
   const TypeIcon = typeIconMap[tipo?.icon] || Code2;
 
-  const visibleNavKeys = [...(tipo?.navItems || []), "ajustes"];
+  const visibleNavKeys = tipo?.navItems || [];
 
   return (
     <aside
@@ -77,6 +81,11 @@ export default function WorkspaceSidebar({ project, collapsed, onToggle }) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+        {!collapsed && (
+          <p className="px-2.5 pt-1 pb-1.5 text-[9px] uppercase tracking-[0.15em] text-[#484F58] font-semibold">
+            Proyecto
+          </p>
+        )}
         {visibleNavKeys.map((key) => {
           const item = allNavItems[key];
           if (!item) return null;
@@ -100,6 +109,32 @@ export default function WorkspaceSidebar({ project, collapsed, onToggle }) {
             </NavLink>
           );
         })}
+
+        {/* Config section */}
+        <div className={`${collapsed ? "my-2" : "my-2"} border-t border-[#21262D]`} />
+        {!collapsed && (
+          <p className="px-2.5 pt-0.5 pb-1.5 text-[9px] uppercase tracking-[0.15em] text-[#484F58] font-semibold">
+            Configuración
+          </p>
+        )}
+        {Object.entries(configNavItems).map(([key, { icon: Icon, label }]) => (
+          <NavLink
+            key={key}
+            to={`/project/${project.id}/${key}`}
+            data-testid={`ws-nav-${key}`}
+            title={collapsed ? label : undefined}
+            className={({ isActive }) =>
+              `flex items-center ${collapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 rounded-md text-xs font-medium transition-all ${
+                isActive
+                  ? "bg-[#21262D] text-[#F0F6FC]"
+                  : "text-[#8B949E] hover:text-[#F0F6FC] hover:bg-[#161B26]"
+              }`
+            }
+          >
+            <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />
+            {!collapsed && <span>{label}</span>}
+          </NavLink>
+        ))}
       </nav>
 
       {/* Sections quick view */}

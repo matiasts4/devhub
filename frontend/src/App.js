@@ -59,13 +59,9 @@ function App() {
             <Route path="agentes" element={<CentroIA />} />
             <Route path="scaffolding" element={<Scaffolding />} />
             <Route path="roadmap" element={<Roadmap />} />
+            <Route path="conexiones" element={<Conexiones />} />
             <Route path="ajustes" element={<Ajustes />} />
           </Route>
-          <Route path="/conexiones" element={
-            <div className="flex h-screen bg-[#0D1117] overflow-hidden">
-              <main className="flex-1 overflow-y-auto"><Conexiones /></main>
-            </div>
-          } />
         </Routes>
       </BrowserRouter>
     </div>
