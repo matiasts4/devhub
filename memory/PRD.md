@@ -35,7 +35,7 @@ Dashboard principal para una aplicación de escritorio llamada "DevNexus AI". En
 ## Datos Mock
 Todos los datos son estáticos (mock). No se realizan llamadas reales a backend.
 
-## Implementado (Fase 1 — 2026-02)
+## Implementado (Fase 2 — 2026-02 Rediseño)
 - [x] Sidebar colapsable con navegación React Router
 - [x] 7 páginas completas y funcionales
 - [x] Dashboard con 6 widgets
