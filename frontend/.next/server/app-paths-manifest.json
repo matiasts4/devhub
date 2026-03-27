@@ -1,9 +1,10 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
   "/login/page": "app/login/page.js",
   "/auth/verify-2fa/page": "app/auth/verify-2fa/page.js",
   "/hub/page": "app/hub/page.js",
-  "/auth/setup-2fa/page": "app/auth/setup-2fa/page.js",
+  "/page": "app/page.js",
   "/project/[projectId]/dashboard/page": "app/project/[projectId]/dashboard/page.js",
   "/project/[projectId]/tareas/page": "app/project/[projectId]/tareas/page.js",
-  "/project/[projectId]/conexiones/page": "app/project/[projectId]/conexiones/page.js"
+  "/project/[projectId]/agentes/page": "app/project/[projectId]/agentes/page.js"
 }
