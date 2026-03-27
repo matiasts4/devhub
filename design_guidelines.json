@@ -1,0 +1,116 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 7: Electric & Neon (Developer/Futuristic Dashboard)",
+  "colors": {
+    "background": {
+      "main": "bg-[#0B0F19]",
+      "card": "bg-[#111827]",
+      "sidebar": "bg-[#070A10]",
+      "glass": "bg-[#0B0F19]/60 backdrop-blur-xl"
+    },
+    "text": {
+      "primary": "text-white",
+      "secondary": "text-slate-400",
+      "muted": "text-slate-500",
+      "inverse": "text-[#0B0F19]"
+    },
+    "accents": {
+      "neon_green": "text-[#39FF14] bg-[#39FF14]/10 border-[#39FF14]/20",
+      "neon_blue": "text-[#00F0FF] bg-[#00F0FF]/10 border-[#00F0FF]/20",
+      "neon_pink": "text-[#FF007F] bg-[#FF007F]/10 border-[#FF007F]/20",
+      "neon_yellow": "text-[#FFE600] bg-[#FFE600]/10 border-[#FFE600]/20"
+    },
+    "borders": {
+      "default": "border-white/10",
+      "hover": "border-white/20",
+      "active": "border-[#00F0FF]/50"
+    }
+  },
+  "typography": {
+    "headings": {
+      "family": "font-mono",
+      "h1": "text-4xl sm:text-5xl font-bold tracking-tighter",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-medium tracking-tight",
+      "h4": "text-lg sm:text-xl font-medium"
+    },
+    "body": {
+      "family": "font-sans",
+      "base": "text-base leading-relaxed",
+      "sm": "text-sm leading-normal",
+      "xs": "text-xs tracking-[0.05em] uppercase"
+    }
+  },
+  "layout": {
+    "spacing_scale": "p-4, p-6, p-8, p-12",
+    "grid_system": {
+      "dashboard_mode": "Control Room Grid (Dense, strict hierarchy)",
+      "metrics_row": "grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4",
+      "main_split": "grid-cols-1 lg:grid-cols-3 gap-6"
+    },
+    "structure": {
+      "sidebar": "Fixed left, w-64, collapsible, border-r border-white/10",
+      "main_content": "ml-0 lg:ml-64 min-h-screen pt-4 px-6 pb-8"
+    }
+  },
+  "components": {
+    "cards": {
+      "style": "bg-[#111827]/50 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden",
+      "hover": "hover:bg-[#111827]/80 hover:border-white/20 hover:shadow-[0_0_15px_rgba(0,240,255,0.05)] transition-all duration-300"
+    },
+    "metric_cards": {
+      "security": "Border left or icon in neon_green (#39FF14)",
+      "ui_ux": "Border left or icon in neon_blue (#00F0FF)",
+      "backend": "Border left or icon in neon_pink (#FF007F)",
+      "tech_debt": "Border left or icon in neon_yellow (#FFE600)"
+    },
+    "buttons": {
+      "primary": "bg-[#00F0FF] text-[#0B0F19] font-medium px-4 py-2 rounded-md hover:bg-[#00F0FF]/80 hover:shadow-[0_0_10px_rgba(0,240,255,0.4)] transition-all",
+      "secondary": "bg-white/5 text-white border border-white/10 px-4 py-2 rounded-md hover:bg-white/10 transition-all",
+      "danger_outline": "bg-transparent text-[#FF007F] border border-[#FF007F]/30 hover:bg-[#FF007F]/10 rounded-md"
+    },
+    "agent_chat": {
+      "container": "Flex column, h-full, border border-white/10 rounded-xl bg-[#070A10]",
+      "messages": "User: bg-white/5 text-white. Agent: bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/20"
+    },
+    "icons": {
+      "library": "lucide-react",
+      "style": "stroke-[1.5px]"
+    }
+  },
+  "motion": {
+    "hover": "transition-all duration-200 ease-out",
+    "entrance": "Staggered fade-up for grid items",
+    "micro_interactions": "Active states slightly scale down (scale-95) on click"
+  },
+  "accessibility": {
+    "contrast": "Ensure text against #0B0F19 meets 4.5:1. Use text-slate-400 for secondary, text-white for primary.",
+    "focus": "focus:outline-none focus:ring-2 focus:ring-[#00F0FF]/50 focus:border-transparent",
+    "testing": "Add data-testid to all interactive elements"
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.pexels.com/photos/6687532/pexels-photo-6687532.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Abstract colorful iridescent sphere (AI Agent Avatar)",
+        "category": "ai_avatar"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1638983752157-052aa1f15bf1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzN8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBkZXZlbG9wZXIlMjBwb3J0cmFpdCUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3NDYyNDQ3OHww&ixlib=rb-4.1.0&q=85",
+        "description": "User Avatar Placeholder",
+        "category": "user_avatar"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Install and use 'lucide-react' for all icons.",
+    "Use a monospace font like JetBrains Mono for all headings, numbers, and stats to give an IDE vibe. ONLY use Inter for body paragraphs and small UI labels to maintain the developer aesthetic.",
+    "Ensure the dashboard background is strictly #0B0F19 (deep dark) with sidebar slightly darker (#070A10).",
+    "Implement the 4 Metric Cards precisely: Security (Green), UI/UX (Blue), Backend (Pink), Tech Debt (Yellow). Use these colors sparingly as text highlights, icons, or subtle borders. DO NOT flood cards with these colors.",
+    "Build a real React Router navigation in the sidebar (Dashboard, Proyectos, Scaffolding, Roadmap, Centro IA, Conexiones MCP, Ajustes).",
+    "Implement the AI chat section, active tasks list, and commit history as separate bento-grid widgets on the dashboard.",
+    "Never use generic Shadcn components without customizing them to fit the dark/neon futuristic theme. Add subtle borders (border-white/5) and remove heavy shadows.",
+    "Include a prominent 'AI Suggestion Banner' with Accept/Reject buttons at the top of the dashboard content area.",
+    "Add 'data-testid' to all buttons, links, and actionable widgets to ensure testability."
+  ]
+}
