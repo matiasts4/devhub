@@ -1,3 +1,4 @@
+'use client';
 import { Terminal, Eye, Rocket, Sparkles, AlertCircle } from "lucide-react";
 
 const interactions = [

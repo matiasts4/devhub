@@ -1,3 +1,4 @@
+'use client';
 import { useState } from "react";
 import { Sparkles, X, Check, Package, ShieldCheck, Zap } from "lucide-react";
 import { toast } from "sonner";

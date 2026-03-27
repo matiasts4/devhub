@@ -1,3 +1,4 @@
+'use client';
 import { useState } from "react";
 import { Layers, Check, Cpu, Globe, Server, Shield, Zap } from "lucide-react";
 import { toast } from "sonner";

@@ -1,5 +1,7 @@
+'use client';
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useParams } from "next/navigation";
+import { mockProjects } from "../data/projects";
 import { ListTodo, Plus, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,8 +22,11 @@ const prioridadConfig = {
 const teamColors = { "Dev Admin": "#58A6FF", "NEXUS-7": "#3FB950", "NEXUS-3": "#F778BA", "NEXUS-9": "#D2A8FF" };
 
 export default function Tareas() {
-  const { project } = useOutletContext();
-  const [tasks, setTasks] = useState(project.tareasKanban || []);
+  const params = useParams();
+  const project = mockProjects.find((p) => p.id === params.projectId);
+  const [tasks, setTasks] = useState(project?.tareasKanban || []);
+
+  if (!project) return null;
 
   const moveTask = (taskId, targetColumn) => {
     setTasks((prev) =>

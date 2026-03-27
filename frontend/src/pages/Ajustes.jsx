@@ -1,3 +1,4 @@
+'use client';
 import { useState } from "react";
 import { Settings, Save, ChevronRight, Monitor, Bot, Shield, Bell } from "lucide-react";
 import { toast } from "sonner";

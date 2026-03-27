@@ -1,3 +1,4 @@
+'use client';
 import { useState } from "react";
 import {
   Plug2, RefreshCw, CheckCircle2, XCircle, AlertCircle,

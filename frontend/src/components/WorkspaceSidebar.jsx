@@ -1,4 +1,6 @@
-import { NavLink, useNavigate } from "react-router-dom";
+'use client';
+import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   LayoutDashboard, ListTodo, Bot, Layers, MapPin, ChevronLeft,
   ChevronRight, Settings, History, ArrowLeft, Code2, GraduationCap,
@@ -23,11 +25,21 @@ const configNavItems = {
 };
 
 export default function WorkspaceSidebar({ project, collapsed, onToggle }) {
-  const navigate = useNavigate();
+  const router = useRouter();
+  const pathname = usePathname();
   const tipo = projectTypes[project.tipo];
   const TypeIcon = typeIconMap[tipo?.icon] || Code2;
 
   const visibleNavKeys = tipo?.navItems || [];
+
+  const isActive = (key) => pathname?.includes(`/${key}`);
+
+  const navLinkClass = (key) =>
+    `flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'} px-2.5 py-2 rounded-md text-xs font-medium transition-all ${
+      isActive(key)
+        ? 'bg-[#21262D] text-[#F0F6FC]'
+        : 'text-[#8B949E] hover:text-[#F0F6FC] hover:bg-[#161B26]'
+    }`;
 
   return (
     <aside
@@ -41,7 +53,7 @@ export default function WorkspaceSidebar({ project, collapsed, onToggle }) {
       <div className={`flex items-center ${collapsed ? "justify-center" : "gap-2"} px-3 py-3 border-b border-[#21262D] h-12`}>
         <button
           data-testid="back-to-hub"
-          onClick={() => navigate("/hub")}
+          onClick={() => router.push('/hub')}
           className="flex items-center gap-2 text-[#8B949E] hover:text-[#F0F6FC] transition-colors text-xs"
           title={collapsed ? "Volver a proyectos" : undefined}
         >
@@ -91,22 +103,16 @@ export default function WorkspaceSidebar({ project, collapsed, onToggle }) {
           if (!item) return null;
           const { icon: Icon, label } = item;
           return (
-            <NavLink
+            <Link
               key={key}
-              to={`/project/${project.id}/${key}`}
+              href={`/project/${project.id}/${key}`}
               data-testid={`ws-nav-${key}`}
               title={collapsed ? label : undefined}
-              className={({ isActive }) =>
-                `flex items-center ${collapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 rounded-md text-xs font-medium transition-all ${
-                  isActive
-                    ? "bg-[#21262D] text-[#F0F6FC]"
-                    : "text-[#8B949E] hover:text-[#F0F6FC] hover:bg-[#161B26]"
-                }`
-              }
+              className={navLinkClass(key)}
             >
               <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />
               {!collapsed && <span>{label}</span>}
-            </NavLink>
+            </Link>
           );
         })}
 
@@ -118,22 +124,16 @@ export default function WorkspaceSidebar({ project, collapsed, onToggle }) {
           </p>
         )}
         {Object.entries(configNavItems).map(([key, { icon: Icon, label }]) => (
-          <NavLink
+          <Link
             key={key}
-            to={`/project/${project.id}/${key}`}
+            href={`/project/${project.id}/${key}`}
             data-testid={`ws-nav-${key}`}
             title={collapsed ? label : undefined}
-            className={({ isActive }) =>
-              `flex items-center ${collapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 rounded-md text-xs font-medium transition-all ${
-                isActive
-                  ? "bg-[#21262D] text-[#F0F6FC]"
-                  : "text-[#8B949E] hover:text-[#F0F6FC] hover:bg-[#161B26]"
-              }`
-            }
+            className={navLinkClass(key)}
           >
             <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />
             {!collapsed && <span>{label}</span>}
-          </NavLink>
+          </Link>
         ))}
       </nav>
 

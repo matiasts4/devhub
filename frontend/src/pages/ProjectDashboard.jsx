@@ -1,4 +1,5 @@
-import { useOutletContext } from "react-router-dom";
+'use client';
+import { useParams } from "next/navigation";
 import { useState } from "react";
 import { Plus, Users, CheckCircle2, ListTodo, Clock, Database } from "lucide-react";
 import { toast } from "sonner";
@@ -6,10 +7,14 @@ import BannerIA from "../components/BannerIA";
 import ChatAgente from "../components/ChatAgente";
 import HistorialCommits from "../components/HistorialCommits";
 import TareasActivas from "../components/TareasActivas";
+import { mockProjects } from "../data/projects";
 
 export default function ProjectDashboard() {
-  const { project } = useOutletContext();
+  const params = useParams();
+  const project = mockProjects.find((p) => p.id === params.projectId);
   const [connected] = useState(true);
+
+  if (!project) return null;
 
   const completionPct = Math.round((project.tareas.completadas / project.tareas.total) * 100);
 

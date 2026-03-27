@@ -1,3 +1,4 @@
+'use client';
 import { useState } from "react";
 import { Bot, Cpu, ShieldCheck, Search, FileText, Play, Pause, Settings, Zap } from "lucide-react";
 import { toast } from "sonner";

@@ -1,3 +1,4 @@
+'use client';
 export default function MetricCard({
   id, title, value, subtitle, icon, accentColor, progressValue, badge, trend, index,
 }) {

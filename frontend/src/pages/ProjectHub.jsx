@@ -1,10 +1,12 @@
+'use client';
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useRouter } from "next/navigation";
 import {
   Plus, Search, Code2, GraduationCap, FlaskConical, User, Building2,
-  Clock, ChevronRight, Cpu, CheckCircle2, Loader2, PauseCircle
+  Clock, ChevronRight, Cpu, CheckCircle2, Loader2, PauseCircle, LogOut, Shield
 } from "lucide-react";
 import { mockProjects, projectTypes } from "../data/projects";
+import { useAuth } from "../context/AuthContext";
 
 const typeIconMap = { Code2, GraduationCap, FlaskConical, User, Building2 };
 
@@ -17,9 +19,15 @@ const estadoConfig = {
 const teamColors = ["#58A6FF", "#3FB950", "#F778BA", "#D2A8FF", "#E3B341"];
 
 export default function ProjectHub() {
-  const navigate = useNavigate();
+  const router = useRouter();
+  const { user, logout } = useAuth();
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("todos");
+
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  };
 
   const filtered = mockProjects.filter((p) => {
     const matchSearch = p.nombre.toLowerCase().includes(search.toLowerCase());
@@ -56,6 +64,21 @@ export default function ProjectHub() {
             <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
             Nuevo Proyecto
           </button>
+          {/* User + 2FA badge */}
+          <div className="flex items-center gap-2 pl-2 border-l border-[#21262D]">
+            <div className="flex items-center gap-1.5">
+              <Shield className="w-3 h-3 text-[#3FB950]" strokeWidth={1.5} />
+              <span className="text-[10px] text-[#484F58] max-w-[120px] truncate">{user?.email}</span>
+            </div>
+            <button
+              data-testid="logout-btn"
+              onClick={handleLogout}
+              className="p-1.5 rounded-md text-[#484F58] hover:text-[#F778BA] hover:bg-[#F778BA]/8 transition-all"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -63,7 +86,7 @@ export default function ProjectHub() {
         {/* Header */}
         <div className="mb-8 fade-in-up">
           <h1 className="font-mono text-3xl font-bold text-[#F0F6FC] mb-1">
-            Bienvenido de vuelta, Dev Admin
+            Bienvenido de vuelta, {user?.email?.split('@')[0] || 'Dev Admin'}
           </h1>
           <p className="text-[#8B949E] text-sm">
             Selecciona un proyecto para entrar al workspace — o crea uno nuevo.
@@ -117,7 +140,7 @@ export default function ProjectHub() {
               <div
                 key={project.id}
                 data-testid={`project-card-${project.id}`}
-                onClick={() => navigate(`/project/${project.id}/dashboard`)}
+                onClick={() => router.push(`/project/${project.id}/dashboard`)}
                 className="fade-in-up project-card-hover bg-[#161B26] border border-[#21262D] rounded-xl p-5 cursor-pointer group"
                 style={{ animationDelay: `${i * 60}ms` }}
               >

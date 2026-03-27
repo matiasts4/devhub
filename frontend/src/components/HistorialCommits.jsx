@@ -1,3 +1,4 @@
+'use client';
 import { GitCommit, GitBranch, CheckCircle2, Clock } from "lucide-react";
 
 const commits = [

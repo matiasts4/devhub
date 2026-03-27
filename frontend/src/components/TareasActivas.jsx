@@ -1,3 +1,4 @@
+'use client';
 import { Bot, CheckCircle2, Clock, Loader2 } from "lucide-react";
 
 const tasks = [

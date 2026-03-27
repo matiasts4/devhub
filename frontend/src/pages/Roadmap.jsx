@@ -1,3 +1,4 @@
+'use client';
 import { MapPin, CheckCircle2, Circle, Clock, Zap } from "lucide-react";
 import { toast } from "sonner";
 
