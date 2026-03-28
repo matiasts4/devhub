@@ -81,25 +81,32 @@ export default function Dashboard() {
   }, [project?.id]);
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] dot-grid">
-      <div className="sticky top-0 z-10 bg-[#0B0F19]/90 backdrop-blur-md border-b border-white/8 px-6 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-surface-app dot-grid">
+      <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-md border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-semibold leading-none mb-0.5">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-semibold leading-none mb-0.5">
               Proyecto Activo
             </p>
-            <h1 className="font-mono text-lg font-bold text-white leading-none">
+            <h1 className="font-mono text-base font-bold text-text-primary leading-none">
               {project?.name || "E-commerce V2"}
             </h1>
           </div>
-          <div className="h-6 border-l border-white/10" />
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium border ${connected ? "bg-[#39FF14]/8 border-[#39FF14]/20 text-[#39FF14]" : "bg-red-500/8 border-red-500/20 text-red-400"}`}>
+          <div className="h-5 border-l border-borders-subtle" />
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium border ${
+            connected
+              ? "bg-success/8 border-success/20 text-success"
+              : "bg-red-500/8 border-red-500/20 text-red-400"
+          }`}>
             <Database className="w-3 h-3" strokeWidth={1.5} />
-            <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-[#39FF14] animate-pulse" : "bg-red-400"}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-success animate-pulse" : "bg-red-400"}`} />
             <span>{connected ? "DevHub DB Conectada" : "Sin conexión"}</span>
           </div>
         </div>
-        <button onClick={() => toast.success("Nueva tarea creada por IA")} className="flex items-center gap-2 bg-[#00F0FF] text-[#0B0F19] font-semibold px-4 py-2 rounded-lg text-xs hover:bg-[#00F0FF]/85 hover:shadow-[0_0_16px_rgba(0,240,255,0.4)] transition-all active:scale-95">
+        <button
+          onClick={() => toast.success("Nueva tarea creada por IA")}
+          className="flex items-center gap-2 bg-accent-primary hover:bg-[#79C0FF] text-[#0d1117] font-semibold px-4 py-2 rounded-lg text-xs transition-all active:scale-95"
+        >
           <Plus className="w-4 h-4" strokeWidth={2.5} /> Nueva Tarea IA
         </button>
       </div>

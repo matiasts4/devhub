@@ -1,21 +1,29 @@
 [package]
-name = "devhub"
+name = "app"
 version = "0.1.0"
-description = "DevHub – Gestor Personal de Proyectos con IA"
-authors = ["DevHub"]
+description = "DevHub — Autonomous Dev Workspace"
+authors = ["DevHub Contributors"]
+license = "MIT"
+repository = "https://github.com/devhub/devhub"
 edition = "2021"
+rust-version = "1.77.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "devhub_lib"
+name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.5.6" }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.10.3" }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2.3.5"
+tauri-plugin-notification = "2"
+sysinfo = "0.36.1"
+dirs = "6.0.0"

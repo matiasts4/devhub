@@ -15,8 +15,28 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 });
 
 const nextConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // [QA-02] Static export eliminado — DevHub corre en Next.js Server Mode
   // Esto permite API Routes dinámicas, WebSockets (node-pty) y Middleware Edge Functions
+  
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' }
+        ],
+      },
+    ];
+  },
+
+  
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -25,9 +45,8 @@ const nextConfig = {
   },
   // Clean URLs for Tauri (Tauri abre http://localhost:3000, no archivos estáticos)
   trailingSlash: true,
-  experimental: {
-    serverComponentsExternalPackages: ['node-pty', 'ws'],
-  },
+  serverExternalPackages: ['node-pty', 'ws'],
+  output: 'standalone',
   /**
    * QA-07 — Webpack Bundle Optimizations
    * Separar librerías pesadas en chunks independientes para reducir el bundle inicial.

@@ -27,6 +27,47 @@ export default function CentroIA() {
   const [stats, setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const [query, setQuery] = useState("");
+  const [answer, setAnswer] = useState(null);
+  const [sources, setSources] = useState([]);
+  const [querying, setQuerying] = useState(false);
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('memory_query_history');
+    if (saved) setHistory(JSON.parse(saved));
+  }, []);
+
+  const handleQuery = async (e) => {
+    e.preventDefault();
+    if (!query.trim() || !project?.id) return;
+    
+    setQuerying(true);
+    setAnswer(null);
+    setSources([]);
+    
+    try {
+      const res = await fetch('/api/centro-ia/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, project_id: project.id })
+      });
+      const data = await res.json();
+      setAnswer(data.answer);
+      setSources(data.sources || []);
+      
+      const newHistory = [query, ...history.filter(q => q !== query)].slice(0, 20);
+      setHistory(newHistory);
+      localStorage.setItem('memory_query_history', JSON.stringify(newHistory));
+    } catch (err) {
+      console.error(err);
+      setAnswer("Error al consultar el Memory Graph.");
+    } finally {
+      setQuerying(false);
+    }
+  };
+
+
   const fetchStats = useCallback(async () => {
     if (!project?.id) return;
     setLoading(true);
@@ -67,6 +108,90 @@ export default function CentroIA() {
       <div className="px-6 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto w-full">
         {/* Left Column */}
         <div className="space-y-6">
+          
+          {/* Memory Graph Query */}
+          <div className="bg-surface-card border border-[#8957e5]/30 rounded-xl overflow-hidden relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#8957e5] to-[#d2a8ff]" />
+            <div className="p-5">
+              <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#d2a8ff]" />
+                Consulta al Memory Graph
+              </h3>
+              <p className="text-xs text-text-muted mb-4">
+                Pregunta al agente sobre decisiones técnicas, errores pasados y arquitectura del proyecto.
+              </p>
+              
+              <form onSubmit={handleQuery} className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Ej. ¿Qué base de datos decidimos usar y por qué?"
+                    className="flex-1 bg-surface-elevated border border-borders-subtle rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-[#8957e5] transition-colors"
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={querying || !query.trim()}
+                    className="bg-[#8957e5] hover:bg-[#9a6bea] disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors"
+                  >
+                    {querying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
+                    Consultar
+                  </button>
+                </div>
+                
+                {history.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <span className="text-[10px] text-text-muted mt-0.5">Recientes:</span>
+                    {history.slice(0, 3).map((h, i) => (
+                      <button key={i} type="button" onClick={() => setQuery(h)} className="text-[10px] bg-surface-app px-2 py-0.5 rounded-full border border-borders-subtle text-text-secondary hover:text-white transition-colors">
+                        {h.length > 30 ? h.substring(0, 30) + '...' : h}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </form>
+
+              {/* Answer Box */}
+              {querying && (
+                <div className="mt-5 p-4 rounded-lg bg-surface-elevated border border-borders-subtle flex flex-col items-center justify-center gap-3">
+                  <div className="w-8 h-8 rounded-full border-t-2 border-l-2 border-[#8957e5] animate-spin" />
+                  <p className="text-xs text-text-muted animate-pulse">Analizando memorias y memoria del swarm...</p>
+                </div>
+              )}
+              
+              {answer && !querying && (
+                <div className="mt-5 space-y-4 fade-in-up">
+                  <div className="p-4 rounded-lg bg-[#21262D]/60 border border-borders-subtle">
+                    <p className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">{answer}</p>
+                  </div>
+                  
+                  {sources && sources.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-mono text-text-muted mb-2 mb-2 flex items-center gap-1.5">
+                        <FolderOpen className="w-3 h-3" />
+                        Fuentes Citadas:
+                      </p>
+                      <div className="space-y-1.5">
+                        {sources.map((s, i) => (
+                          <div key={i} className="flex items-start gap-2 bg-surface-elevated p-2 rounded border border-borders-strong text-[10px]">
+                            <div className="mt-0.5 text-accent-primary">
+                              <MapPin className="w-3 h-3" />
+                            </div>
+                            <div>
+                              <span className="font-semibold text-text-secondary">[{s.tipo}] {s.key}</span>
+                              <p className="text-text-muted mt-0.5 line-clamp-2">{s.value}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* MCP Status Banner */}
           <div className="bg-surface-card border border-[#3FB950]/25 rounded-xl p-5 flex gap-4" style={{ borderLeft: "3px solid #3FB950" }}>
             <div className="w-10 h-10 rounded-xl bg-[#3FB950]/10 border border-[#3FB950]/20 flex items-center justify-center flex-shrink-0">

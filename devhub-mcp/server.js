@@ -327,12 +327,14 @@ server.tool(
     priority:     z.enum(["low", "medium", "high", "critical"]).optional().default("medium"),
     due_date:     z.string().optional().describe("Fecha ISO YYYY-MM-DD"),
     milestone_id: z.string().uuid().optional().describe("UUID del hito al que pertenece la tarea"),
+    assigned_to:  z.string().uuid().nullable().optional().describe("UUID del usuario o agente asignado"),
   },
   async ({ project_id, user_id, title, description, status, priority, due_date, milestone_id }) => {
     const { data, error } = await supabase.from("tasks").insert({
       project_id, user_id, title,
       description:  description  || null,
       milestone_id: milestone_id || null,
+    assigned_to:  z.string().uuid().nullable().optional().describe("UUID del usuario o agente asignado"),
       status, priority,
       due_date: due_date || null,
     }).select().single();
@@ -352,6 +354,7 @@ server.tool(
     priority:     z.enum(["low", "medium", "high", "critical"]).optional(),
     due_date:     z.string().nullable().optional(),
     milestone_id: z.string().uuid().nullable().optional().describe("UUID del hito (null para desvincular)"),
+    assigned_to:  z.string().uuid().nullable().optional().describe("UUID del usuario o agente asignado"),
   },
   async ({ task_id, status, ...rest }) => {
     const updates = { ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) };
@@ -366,6 +369,21 @@ server.tool(
 );
 
 server.tool(
+server.tool(
+  "add_task_comment",
+  "Añade un comentario a una tarea (útil para que los agentes dejen notas técnicas o log de QA).",
+  {
+    task_id: z.string().uuid(),
+    content: z.string(),
+    author_type: z.enum(["human", "agent"]).default("agent")
+  },
+  async ({ task_id, content, author_type }) => {
+    const { data, error } = await supabase.from("task_comments").insert({ task_id, content, author_type }).select().single();
+    if (error) return err(error.message);
+    return ok({ created: true, comment: data });
+  }
+);
+
   "delete_task",
   "Elimina una tarea de DevHub. ¡Acción irreversible!",
   { task_id: z.string().uuid() },
@@ -540,6 +558,7 @@ server.tool(
   "Actualiza el estado o los campos de un hito del roadmap.",
   {
     milestone_id: z.string().uuid(),
+    assigned_to:  z.string().uuid().nullable().optional().describe("UUID del usuario o agente asignado"),
     title:        z.string().optional(),
     description:  z.string().optional(),
     status:       z.enum(["planned", "in_progress", "completed", "at_risk"]).optional(),

@@ -6,7 +6,8 @@ import {
   Plus, Search, Code2,
   Clock, ChevronRight, Loader2, X,
   Brain, Upload, FileText, Trash2, Zap,
-  MonitorSmartphone, GraduationCap, FlaskConical, Shield, BarChart3, Palette
+  MonitorSmartphone, GraduationCap, FlaskConical, Shield, BarChart3, Palette, Cpu,
+  LogOut
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -87,6 +88,10 @@ export default function ProjectHub() {
       .from("projects")
       .select("*, tasks(count)")
       .order("created_at", { ascending: false });
+    if (error) {
+      console.error("fetchProjects ERROR:", error);
+      toast.error("Error al cargar proyectos: " + error.message);
+    }
     if (!error && data) setProjects(data);
     setLoading(false);
   }

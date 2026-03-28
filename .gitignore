@@ -57,6 +57,9 @@ yarn.lock
 # === MCP ===
 devhub-mcp/node_modules/
 
+# === Sidecar backend ===
+sidecar-backend/node_modules/
+
 # === Tauri ===
 src-tauri/target/
 src-tauri/gen/schemas/

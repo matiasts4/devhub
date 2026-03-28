@@ -1,20 +1,32 @@
 export const dynamic = 'force-static';
 
 import { createClient } from '@/lib/supabase/server';
-
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
-/**
- * GET /api/tasks?project_id=xxx
- * Returns all tasks for a project (for MCP agents to read).
- */
+const TaskSchema = z.object({
+  project_id: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(5000).optional(),
+  status: z.enum(['pending', 'in_progress', 'completed', 'blocked']).optional(),
+  priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  due_date: z.string().optional().nullable(),
+});
+
+const UpdateTaskSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(5000).optional(),
+  status: z.enum(['pending', 'in_progress', 'completed', 'blocked']).optional(),
+  priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  due_date: z.string().optional().nullable(),
+});
+
 export async function GET(request) {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json(
-      {
-        error: 'API route not available in static export build.',
-      },
-      { status: 501 },
+      { error: 'API route not available in static export build.' },
+      { status: 501 }
     );
   }
 
@@ -33,21 +45,17 @@ export async function GET(request) {
   return NextResponse.json({ tasks: data });
 }
 
-/**
- * POST /api/tasks
- * Creates a new task (usable by MCP agents).
- */
 export async function POST(request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
-  const { project_id, title, description, status, priority, due_date } = body;
-
-  if (!project_id || !title) {
-    return NextResponse.json({ error: 'project_id and title are required' }, { status: 400 });
+  const parsed = TaskSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const { project_id, title, description, status, priority, due_date } = parsed.data;
 
   const { data, error } = await supabase.from('tasks').insert({
     project_id, title,
@@ -62,18 +70,17 @@ export async function POST(request) {
   return NextResponse.json({ task: data }, { status: 201 });
 }
 
-/**
- * PATCH /api/tasks
- * Updates a task status/fields (usable by MCP agents).
- * Body: { id, ...fields }
- */
 export async function PATCH(request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, ...updates } = await request.json();
-  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+  const body = await request.json();
+  const parsed = UpdateTaskSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const { id, ...updates } = parsed.data;
 
   if (updates.status === 'completed' && !updates.completed_at) {
     updates.completed_at = new Date().toISOString();

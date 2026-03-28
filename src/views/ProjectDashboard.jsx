@@ -36,6 +36,32 @@ export default function ProjectDashboard() {
   const compPct    = total > 0 ? Math.round((completed / total) * 100) : 0;
   const accentColor = project?.color || "#58A6FF";
 
+  // Predicción basada en velocity pseudo-real (Asumimos inicio con creation del primer task o proyecto, si no existe usamos 7 dias)
+  const calculatePrediction = () => {
+    if (total === 0 || completed === 0) return null;
+    const firstTask = tasks.map(t => new Date(t.created_at)).sort((a,b) => a-b)[0] || new Date();
+    const mockStart = new Date(project?.created_at || firstTask);
+    const diffTime = Math.abs(new Date() - mockStart);
+    const daysElapsed = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    const velocityPerDay = completed / daysElapsed;
+    if (velocityPerDay === 0) return null;
+    
+    const remainingTasks = total - completed;
+    const daysToComplete = remainingTasks / velocityPerDay;
+    
+    const addDays = (d) => new Date(new Date().setDate(new Date().getDate() + d));
+    
+    return {
+      optimistic: addDays(daysToComplete * 0.7),
+      realistic: addDays(daysToComplete),
+      pessimistic: addDays(daysToComplete * 1.5),
+      confidence: daysElapsed > 10 ? 'Alta' : daysElapsed > 3 ? 'Media' : 'Baja',
+      speed: velocityPerDay.toFixed(1)
+    };
+  };
+
+  const prediction = calculatePrediction();
+
   const upcomingTasks = tasks
     .filter(t => t.status !== "completed" && t.due_date)
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
@@ -109,8 +135,8 @@ export default function ProjectDashboard() {
           })}
         </div>
 
-        {/* Progress + Next milestone */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Progress + Next milestone + Delivery Prediction */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Overall progress */}
           <div className="bg-surface-card border border-borders-subtle rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
@@ -152,6 +178,38 @@ export default function ProjectDashboard() {
               <p className="text-xs text-text-muted">No hay hitos. <button onClick={() => navigate(`/project/${project?.id}/roadmap`)} className="text-blue-400 hover:underline">Crear uno →</button></p>
             ) : (
               <p className="text-xs text-success">🎉 ¡Todos los hitos completados!</p>
+            )}
+          </div>
+
+          {/* Delivery Prediction AI Card */}
+          <div className="bg-surface-card border border-[#8957e5]/30 rounded-xl p-5 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#8957e5] to-[#d2a8ff]" />
+            <p className="text-xs font-semibold text-[#d2a8ff] mb-3 flex items-center gap-2">
+              ✨ Fecha Estimada de Entrega (IA)
+            </p>
+            
+            {prediction ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-text-muted">Optimista</span>
+                  <span className="text-success font-mono">{prediction.optimistic.toLocaleDateString("es-ES")}</span>
+                </div>
+                <div className="flex items-center justify-between font-bold text-sm bg-surface-elevated px-2 py-1.5 rounded">
+                  <span className="text-text-primary">Realista</span>
+                  <span className="text-accent-primary font-mono">{prediction.realistic.toLocaleDateString("es-ES")}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-text-muted">Pesimista</span>
+                  <span className="text-danger font-mono">{prediction.pessimistic.toLocaleDateString("es-ES")}</span>
+                </div>
+                
+                <div className="pt-2 mt-2 border-t border-borders-subtle flex justify-between text-[10px]">
+                  <span className="text-text-muted">Velocidad: {prediction.speed} tareas/d</span>
+                  <span className="text-[#8957e5]">Confianza: {prediction.confidence}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted">No hay suficientes datos de tareas completadas para calcular una predicción precisa.</p>
             )}
           </div>
         </div>

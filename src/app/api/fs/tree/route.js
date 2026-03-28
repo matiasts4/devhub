@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { NextResponse } from 'next/server';
 
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 async function buildFileTree(dirPath, rootPath = dirPath) {
   const result = [];
