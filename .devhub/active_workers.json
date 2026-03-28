@@ -1,0 +1,20 @@
+[
+  {
+    "pid": 182189,
+    "command": "echo \"Spawning Agent for Task: [DOC-09 | Tarea 2.1] SwarmControl Reactivo y Live Tracking...\" && gemini \"Instrucciones: 📋 *TAREA:* [DOC-09 | Tarea 2.1] SwarmControl Reactivo y Live Tracking\n*PRIORIDAD:* Alta\n*ESTADO:* Completada\n*FECHA LÍMITE:* 2026-04-10\n\n*DESCRIPCIÓN:*\nEstilizar UI con stats correctas, y renderizado real de Procesos PTY (Live Tracker) consumiendo /api/agent/status.\n\n🤖 *DIRECTIVA BASE:* Lee el id referenciado a [DOC-XX], búscalo en la carpeta `/docs` para conocer las normativas, crea tu rama aislada de Git (si es código) y procede a resolverlo. Asegúrate de nunca hacer push a main.\"",
+    "task_id": "82ca83e9-330c-45f6-915f-3062c0ef0a07",
+    "agent_name": "Worker-Gemini",
+    "description": "[DOC-09 | Tarea 2.1] SwarmControl Reactivo y Live Tracking",
+    "status": "completed",
+    "spawned_at": "2026-03-28T17:34:32.219Z"
+  },
+  {
+    "pid": 182387,
+    "command": "echo \"Analizando proyecto...\" && gemini \"Actúa como Analista de Producto. Proyecto: devhub. Revisa la documentación en `/docs` usando el MCP y sugiere 3 nuevas funcionalidades (features) creando Tareas en el Kanban usando la herramienta correspondiente. Asegúrate de usar Prioridad Media/Baja.\"",
+    "task_id": null,
+    "agent_name": "Analyst-Intel",
+    "description": "Análisis heurístico y sugerencia de Features para devhub",
+    "status": "completed",
+    "spawned_at": "2026-03-28T17:34:49.268Z"
+  }
+]

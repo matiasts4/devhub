@@ -1,0 +1,404 @@
+'use client';
+import { useState, useEffect, useCallback } from "react";
+import { useOutletContext } from "react-router-dom";
+import { ListTodo, Plus, X, ChevronDown, Loader2, Flag, Calendar, Trash2, Copy, Check } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
+import { DatePicker } from "@/components/ui/date-picker";
+
+const COLUMNS = [
+  { id: "pending",     label: "Pendiente",   color: "#484F58", bg: "#484F5810" },
+  { id: "in_progress", label: "En Progreso", color: "#58A6FF", bg: "#58A6FF10" },
+  { id: "blocked",     label: "Bloqueada",   color: "#F778BA", bg: "#F778BA10" },
+  { id: "completed",   label: "Completada",  color: "#3FB950", bg: "#3FB95010" },
+];
+
+const PRIORITY = {
+  critical: { label: "Crítica",  color: "#F778BA" },
+  high:     { label: "Alta",     color: "#FFA657" },
+  medium:   { label: "Media",    color: "#E3B341" },
+  low:      { label: "Baja",     color: "#8B949E" },
+};
+
+function TaskModal({ projectId, userId, initialStatus, onClose, onCreated }) {
+  const supabase = createClient();
+  const [form, setForm] = useState({
+    title: "", description: "", priority: "medium",
+    status: initialStatus || "pending", due_date: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    const { error } = await supabase.from("tasks").insert({
+      ...form,
+      project_id: projectId,
+      user_id: userId,
+      due_date: form.due_date || null,
+    });
+    setSaving(false);
+    if (error) { toast.error("Error al crear tarea"); return; }
+    toast.success("Tarea creada");
+    onCreated();
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-surface-card border border-borders-strong rounded-2xl p-6 w-full max-w-md shadow-2xl fade-in-up">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-mono font-bold text-text-primary text-sm">Nueva Tarea</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Título *</label>
+            <input
+              required
+              value={form.title}
+              onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+              placeholder="¿Qué hay que hacer?"
+              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500/50 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Descripción</label>
+            <textarea
+              rows={2}
+              value={form.description}
+              onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+              placeholder="Detalles opcionales..."
+              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500/50 transition-colors resize-none"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Prioridad</label>
+              <select
+                value={form.priority}
+                onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}
+                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+              >
+                {Object.entries(PRIORITY).map(([k, v]) => (
+                  <option key={k} value={k} className="bg-surface-card">{v.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Estado inicial</label>
+              <select
+                value={form.status}
+                onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
+                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+              >
+                {COLUMNS.map(c => (
+                  <option key={c.id} value={c.id} className="bg-surface-card">{c.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Fecha límite</label>
+            <DatePicker
+              value={form.due_date}
+              onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))}
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2 rounded-lg border border-borders-strong text-text-muted text-sm hover:text-white transition-all">
+              Cancelar
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 hover:from-blue-400 hover:to-indigo-500 transition-all">
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Crear Tarea
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TaskDetailModal({ task, onClose }) {
+  if (!task) return null;
+  const prio = PRIORITY[task.priority] || PRIORITY.medium;
+  const col = COLUMNS.find(c => c.id === task.status) || COLUMNS[0];
+  const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== "completed";
+
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e) => {
+    e.stopPropagation();
+    const textToCopy = `📋 *TAREA:* ${task.title}\n*PRIORIDAD:* ${prio.label}\n*ESTADO:* ${col.label}${task.due_date ? `\n*FECHA LÍMITE:* ${task.due_date}` : ''}\n\n*DESCRIPCIÓN:*\n${task.description || "Sin descripción proporcionada."}\n\n🤖 *DIRECTIVA BASE:* Lee el id referenciado a [DOC-XX], búscalo en la carpeta \`/docs\` para conocer las normativas, crea tu rama aislada de Git (si es código) y procede a resolverlo. Asegúrate de nunca hacer push a main.`;
+    navigator.clipboard.writeText(textToCopy);
+    toast.success("Copiado al portapapeles", { description: "Listo para entregar a un Agente IA" });
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div 
+        className="bg-surface-card border border-borders-strong rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl fade-in-up"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-5">
+          <div className="pr-6">
+            <h2 className="font-mono font-bold text-text-primary text-lg leading-tight">{task.title}</h2>
+            <div className="flex flex-wrap items-center gap-3 mt-3">
+              <span className="text-[10px] font-semibold flex items-center gap-1.5 px-2 py-1 rounded bg-surface-app border border-borders-subtle" style={{ color: col.color }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
+                {col.label}
+              </span>
+              <span className="text-[10px] font-semibold flex items-center gap-1.5 px-2 py-1 rounded bg-surface-app border border-borders-subtle" style={{ color: prio.color }}>
+                <Flag className="w-3 h-3" />
+                {prio.label}
+              </span>
+              {task.due_date && (
+                <span className={`text-[10px] font-medium flex items-center gap-1.5 px-2 py-1 rounded bg-surface-app border border-borders-subtle ${isOverdue ? "text-danger" : "text-text-muted"}`}>
+                  <Calendar className="w-3 h-3" />
+                  {new Date(task.due_date).toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" })}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleCopy} 
+              title="Copiar instrucciones adaptadas para LLMs"
+              className="text-text-muted hover:text-white transition-colors flex-shrink-0 bg-surface-app p-1.5 rounded-lg border border-borders-subtle hover:border-borders-strong flex items-center justify-center"
+            >
+              {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+            </button>
+            <button onClick={onClose} className="text-text-muted hover:text-white transition-colors flex-shrink-0 bg-surface-app p-1.5 rounded-lg border border-borders-subtle hover:border-borders-strong flex items-center justify-center">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h3 className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wider">Descripción</h3>
+          <div className="bg-surface-app border border-borders-subtle rounded-xl p-4 min-h-[100px]">
+            {task.description ? (
+              <p className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed">{task.description}</p>
+            ) : (
+              <p className="text-sm text-text-muted italic">Sin descripción proporcionada.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-8 pt-4 border-t border-borders-subtle flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-borders-strong text-text-muted text-sm font-medium hover:text-white hover:bg-surface-app transition-all">
+            Cerrar Inspector
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Tareas() {
+  const { project } = useOutletContext() || {};
+  const supabase = createClient();
+
+  const [tasks, setTasks]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [userId, setUserId]       = useState(null);
+  const [modal, setModal]         = useState(null); // null | column_id
+  const [detailTask, setDetailTask] = useState(null); // Tarea bajo inspección
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => setUserId(user?.id));
+  }, []);
+
+  const fetchTasks = useCallback(async () => {
+    if (!project?.id) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: false });
+    setTasks(data || []);
+    setLoading(false);
+  }, [project?.id]);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  async function moveTask(taskId, newStatus) {
+    const completed_at = newStatus === "completed" ? new Date().toISOString() : null;
+    await supabase.from("tasks").update({ status: newStatus, completed_at }).eq("id", taskId);
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus, completed_at } : t));
+    const col = COLUMNS.find(c => c.id === newStatus);
+    toast.success("Tarea movida", { description: `→ ${col?.label}` });
+  }
+
+  async function deleteTask(taskId) {
+    await supabase.from("tasks").delete().eq("id", taskId);
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+    toast.success("Tarea eliminada");
+  }
+
+  const total = tasks.length;
+  const done = tasks.filter(t => t.status === "completed").length;
+
+  return (
+    <div className="min-h-screen bg-surface-app">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-sm border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <ListTodo className="w-4 h-4 text-accent-primary" strokeWidth={1.5} />
+          <h1 className="font-mono text-base font-bold text-text-primary">Tareas</h1>
+          <span className="text-[10px] text-text-muted bg-surface-elevated px-2 py-0.5 rounded-full border border-borders-strong">
+            {done}/{total} completadas
+          </span>
+        </div>
+        <button
+          onClick={() => setModal("pending")}
+          className="flex items-center gap-2 bg-success text-white font-medium px-3 py-1.5 rounded-lg text-xs hover:bg-success transition-colors active:scale-95"
+        >
+          <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+          Añadir Tarea
+        </button>
+      </div>
+
+      <div className="p-6">
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+            {[1, 2, 3, 4].map(col => (
+              <div key={col} className="bg-surface-card rounded-xl p-4 border border-borders-subtle min-h-[400px]">
+                <div className="flex justify-between mb-4">
+                  <div className="h-5 w-24 bg-surface-elevated rounded animate-pulse" />
+                  <div className="h-5 w-8 bg-surface-elevated rounded-full animate-pulse" />
+                </div>
+                <div className="space-y-3">
+                  {[1, 2, 3].map(item => (
+                    <div key={item} className="h-24 w-full bg-surface-app border border-borders-subtle rounded-lg animate-pulse" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+            {COLUMNS.map(col => {
+              const colTasks = tasks.filter(t => t.status === col.id);
+              return (
+                <div key={col.id} className="bg-surface-card border border-borders-subtle rounded-xl overflow-hidden">
+                  {/* Column header */}
+                  <div
+                    className="flex items-center justify-between px-4 py-3 border-b border-borders-subtle"
+                    style={{ borderTop: `2px solid ${col.color}` }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full" style={{ background: col.color }} />
+                      <span className="text-xs font-semibold" style={{ color: col.color }}>{col.label}</span>
+                    </div>
+                    <span className="font-mono text-xs text-text-muted bg-surface-elevated w-5 h-5 rounded flex items-center justify-center">
+                      {colTasks.length}
+                    </span>
+                  </div>
+
+                  {/* Tasks */}
+                  <div className="p-2.5 space-y-2 min-h-[120px]">
+                    {colTasks.map((task, i) => {
+                      const prio = PRIORITY[task.priority] || PRIORITY.medium;
+                      const nextCols = COLUMNS.filter(c => c.id !== col.id);
+                      const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== "completed";
+                      return (
+                        <div
+                          key={task.id}
+                          onClick={() => setDetailTask(task)}
+                          className="fade-in-up bg-surface-app border border-borders-subtle rounded-lg p-3 hover:border-borders-strong hover:shadow-[0_0_15px_rgba(88,166,255,0.1)] transition-all cursor-pointer group relative"
+                          style={{ animationDelay: `${i * 30}ms` }}
+                        >
+                          <p className="text-xs text-text-primary font-medium leading-snug mb-2 pr-5">{task.title}</p>
+                          {task.description && (
+                            <p className="text-[10px] text-text-muted leading-snug mb-2 line-clamp-2">{task.description}</p>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-semibold flex items-center gap-1" style={{ color: prio.color }}>
+                                <Flag className="w-2.5 h-2.5" />
+                                {prio.label}
+                              </span>
+                              {task.due_date && (
+                                <span className={`text-[9px] flex items-center gap-1 ${isOverdue ? "text-danger" : "text-text-muted"}`}>
+                                  <Calendar className="w-2.5 h-2.5" />
+                                  {new Date(task.due_date).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
+                                </span>
+                              )}
+                            </div>
+                            {/* Move dropdown */}
+                            <div className="relative group/move" onClick={(e) => e.stopPropagation()}>
+                              <button className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-white transition-all p-1 bg-surface-elevated rounded border border-borders-subtle">
+                                <ChevronDown className="w-3.5 h-3.5" strokeWidth={2} />
+                              </button>
+                              <div className="absolute right-0 top-5 bg-surface-card border border-borders-subtle rounded-lg py-1 hidden group-hover/move:block z-10 min-w-[130px] shadow-xl">
+                                {nextCols.map(nc => (
+                                  <button
+                                    key={nc.id}
+                                    onClick={() => moveTask(task.id, nc.id)}
+                                    className="w-full text-left px-3 py-1.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors flex items-center gap-2"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: nc.color }} />
+                                    {nc.label}
+                                  </button>
+                                ))}
+                                <div className="border-t border-borders-subtle mt-1 pt-1">
+                                  <button
+                                    onClick={() => deleteTask(task.id)}
+                                    className="w-full text-left px-3 py-1.5 text-[10px] text-danger hover:bg-[#F778BA]/10 transition-colors flex items-center gap-2"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Add to column */}
+                    <button
+                      onClick={() => setModal(col.id)}
+                      className="w-full py-2 text-[10px] text-text-muted hover:text-text-muted hover:bg-surface-elevated rounded-lg transition-all flex items-center justify-center gap-1 border border-dashed border-borders-subtle hover:border-borders-strong"
+                    >
+                      <Plus className="w-3 h-3" strokeWidth={1.5} />
+                      Añadir
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {modal && (
+        <TaskModal
+          projectId={project?.id}
+          userId={userId}
+          initialStatus={modal}
+          onClose={() => setModal(null)}
+          onCreated={fetchTasks}
+        />
+      )}
+      
+      {/* Inspector Modal */}
+      {detailTask && (
+        <TaskDetailModal 
+          task={detailTask} 
+          onClose={() => setDetailTask(null)} 
+        />
+      )}
+    </div>
+  );
+}

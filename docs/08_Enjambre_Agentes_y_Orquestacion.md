@@ -55,3 +55,7 @@ Evitar que dos IAs corrompan un mismo archivo a la vez requiere control transacc
 
 > **Hito Técnico para el Servidor MCP:** 
 > La próxima expansión arquitectónica del `devhub-mcp` debe exponer las herramientas nativas: `git_create_branch`, `git_commit_and_push`, `git_get_diff_to_main`, y `git_merge`. De esta manera, el LLM opera bajo comandos seguros en lugar de terminales sueltas que podrían desencadenar scripts peligrosos.
+
+
+### Changelog
+- 2026-03-28: [DOC-08 | Tarea 3.2] Se agregó el componente `DiffViewer.jsx` para la UI del Agente QA, exponiendo el visor de Diffs (delta) y los botones de 'Aprobar a Main' y 'Rechazar al Worker'.

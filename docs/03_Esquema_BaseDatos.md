@@ -1,0 +1,149 @@
+---
+Fecha de Modificación: 28 de marzo de 2026
+Changelog:
+  - 2026-03-27 v1: Documento creado con el esquema inicial de Supabase.
+  - 2026-03-28 v2: Añadida columna `milestone_id` en `tasks`, campos `planning_prompt` y `planning_status` en `projects`, nueva tabla `project_files`. Actualizada sección de Tablas Futuras.
+---
+
+# 03 Esquema de Base de Datos
+
+**Proyecto Supabase**: `devhub` | **ID**: `kpgeyukrsydjujqouape` | **Región**: `sa-east-1`
+
+---
+
+## Tablas
+
+### `profiles`
+Extiende `auth.users` con datos del perfil del usuario.
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | UUID (PK, FK→auth.users) | ID del usuario |
+| `full_name` | TEXT | Nombre completo |
+| `avatar_url` | TEXT | URL del avatar |
+| `updated_at` | TIMESTAMPTZ | Última actualización |
+
+> Se auto-crea via trigger `on_auth_user_created` al registrarse.
+
+---
+
+### `projects`
+Proyectos del usuario.
+
+| Columna | Tipo | Default | Descripción |
+|---------|------|---------|-------------|
+| `id` | UUID (PK) | uuid_generate_v4() | ID único |
+| `user_id` | UUID (FK→auth.users) | — | Dueño |
+| `name` | TEXT | — | Nombre del proyecto |
+| `description` | TEXT | — | Descripción breve |
+| `color` | TEXT | `#6366f1` | Color de acento UI |
+| `status` | TEXT | `active` | `active`, `paused`, `completed`, `archived` |
+| `progress` | INT | `0` | Porcentaje 0–100 |
+| `planning_prompt` | TEXT | NULL | ⭐ Prompt de contexto para la Planning IA |
+| `planning_status` | TEXT | `none` | ⭐ `none`, `pending`, `completed` — estado del plan IA |
+| `created_at` | TIMESTAMPTZ | NOW() | Fecha creación |
+| `updated_at` | TIMESTAMPTZ | NOW() | Última modificación |
+
+> **`planning_status`** controla el flujo de onboarding IA: `none` = proyecto sin planning, `pending` = planning solicitado pero no ejecutado, `completed` = plan exhaustivo generado.
+
+---
+
+### `tasks`
+Tareas vinculadas a un proyecto (Kanban + Historial).
+
+| Columna | Tipo | Default | Descripción |
+|---------|------|---------|-------------|
+| `id` | UUID (PK) | uuid_generate_v4() | ID único |
+| `project_id` | UUID (FK→projects) | — | Proyecto padre |
+| `user_id` | UUID (FK→auth.users) | — | Dueño |
+| `milestone_id` | UUID (FK→milestones, ON DELETE SET NULL) | NULL | ⭐ Hito al que pertenece |
+| `title` | TEXT | — | Título de la tarea |
+| `description` | TEXT | — | Descripción opcional |
+| `status` | TEXT | `pending` | `pending`, `in_progress`, `completed`, `blocked` |
+| `priority` | TEXT | `medium` | `low`, `medium`, `high`, `critical` |
+| `due_date` | DATE | — | Fecha límite |
+| `completed_at` | TIMESTAMPTZ | — | Cuando se completó |
+| `created_at` | TIMESTAMPTZ | NOW() | Creación |
+| `updated_at` | TIMESTAMPTZ | NOW() | Modificación |
+
+> **`milestone_id`** permite calcular el progreso de un hito matemáticamente: `tareas completadas / tareas totales del hito`. Las tareas sin milestone son "huérfanas".
+
+---
+
+### `milestones`
+Hitos del roadmap de un proyecto.
+
+| Columna | Tipo | Default | Descripción |
+|---------|------|---------|-------------|
+| `id` | UUID (PK) | uuid_generate_v4() | ID único |
+| `project_id` | UUID (FK→projects) | — | Proyecto padre |
+| `user_id` | UUID (FK→auth.users) | — | Dueño |
+| `title` | TEXT | — | Título del hito |
+| `description` | TEXT | — | Descripción |
+| `status` | TEXT | `planned` | `planned`, `in_progress`, `completed`, `at_risk` |
+| `due_date` | DATE | — | Fecha objetivo |
+| `created_at` | TIMESTAMPTZ | NOW() | Creación |
+| `updated_at` | TIMESTAMPTZ | NOW() | Modificación |
+
+---
+
+### `project_files` ⭐ NUEVA
+Archivos de contexto subidos por el usuario para la Planning IA.
+
+| Columna | Tipo | Default | Descripción |
+|---------|------|---------|-------------|
+| `id` | UUID (PK) | gen_random_uuid() | ID único |
+| `project_id` | UUID (FK→projects, ON DELETE CASCADE) | — | Proyecto padre |
+| `user_id` | UUID (FK→auth.users, ON DELETE CASCADE) | — | Dueño |
+| `file_name` | TEXT | — | Nombre original del archivo |
+| `content` | TEXT | — | Contenido textual completo |
+| `file_type` | TEXT | `text` | Extensión sin punto (md, json, txt, py...) |
+| `size_chars` | INT (GENERATED) | — | `length(content)` calculado automáticamente |
+| `created_at` | TIMESTAMPTZ | NOW() | Creación |
+
+> **RLS habilitado**: solo el `user_id` dueño puede leer/escribir sus archivos. Index en `project_id` para queries rápidas.
+>
+> Tipos soportados vía UI: `.txt` `.md` `.json` `.yaml` `.yml` `.csv` `.js` `.ts` `.py` `.jsx` `.tsx` — máx **2MB** por archivo.
+
+---
+
+### `ai_interactions`
+Historial de conversaciones con agentes IA (referenciado en CentroIA.jsx).
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `id` | UUID (PK) | ID único |
+| `project_id` | UUID (FK→projects) | Proyecto contexto |
+| `user_id` | UUID (FK→auth.users) | Dueño |
+| `created_at` | TIMESTAMPTZ | Creación |
+
+---
+
+## Seguridad (RLS)
+
+Todas las tablas tienen **Row Level Security activado**. La política en cada tabla garantiza que los usuarios **solo puedan leer y escribir sus propios registros** (`auth.uid() = user_id`).
+
+---
+
+## Relaciones Clave
+
+```
+auth.users
+    ↓
+  profiles (1:1)
+    ↓
+  projects (1:N)
+    ├── milestones (1:N)
+    ├── tasks (1:N) ──── milestone_id → milestones (N:1, nullable)
+    ├── project_files (1:N)  ⭐ nueva
+    └── ai_interactions (1:N)
+```
+
+---
+
+## Tablas Futuras
+
+| Tabla | Propósito |
+|-------|-----------|
+| `mcp_connections` | Configuraciones de MCPs por usuario/proyecto |
+| `scaffolding_templates` | Plantillas de scaffolding guardadas |

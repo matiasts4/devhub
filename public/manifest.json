@@ -1,0 +1,21 @@
+{
+  "name": "DevHub - Gestión Personal",
+  "short_name": "DevHub",
+  "description": "Tu espacio central para proyectos, tareas y cronología personal con IA integrada",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#0d0d0d",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
