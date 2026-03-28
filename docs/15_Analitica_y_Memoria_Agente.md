@@ -2,7 +2,7 @@
 Fecha de Modificación: 28 de marzo de 2026
 Changelog:
   - 2026-03-28 v1: Creación del documento. Cubre las 6 tareas del Milestone "Fase 7 — Analítica Avanzada y Gestión de Memoria del Agente".
-Milestone: "Fase 7 — Analítica Avanzada y Gestión de Memoria del Agente"
+Milestone: 'Fase 7 — Analítica Avanzada y Gestión de Memoria del Agente'
 Due Date: 2026-05-28
 ---
 
@@ -18,7 +18,7 @@ Un agente que no recuerda sus errores los repite. Un equipo que no mide su veloc
 
 ---
 
-### [MEMO-01] Sistema de Memoria Persistente del Agente en Supabase
+### [MEMO-01] ✅ Completado
 
 **Prioridad:** `critical`
 **Due:** 2026-05-18
@@ -28,6 +28,7 @@ Un agente que no recuerda sus errores los repite. Un equipo que no mide su veloc
 Actualmente cuando un agente termina una sesión, todo su conocimiento sobre el proyecto se pierde. La próxima sesión empieza desde cero, repitiendo investigaciones y a veces cometiendo los mismos errores.
 
 **Migración SQL:**
+
 ```sql
 CREATE TABLE agent_memory (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -55,34 +56,45 @@ CREATE POLICY "Miembros del proyecto pueden ver y crear memorias"
 
 ```javascript
 // Guardar una memoria
-server.tool("save_memory", {
-  project_id: z.string().uuid(),
-  key: z.string(),
-  value: z.string(),
-  tipo: z.enum(['fact', 'decision', 'error', 'context']),
-  agent_id: z.string().optional()
-}, async (params) => { /* UPSERT en agent_memory */ });
+server.tool(
+  'save_memory',
+  {
+    project_id: z.string().uuid(),
+    key: z.string(),
+    value: z.string(),
+    tipo: z.enum(['fact', 'decision', 'error', 'context']),
+    agent_id: z.string().optional(),
+  },
+  async (params) => {
+    /* UPSERT en agent_memory */
+  }
+);
 
 // Recuperar memorias por búsqueda full-text
-server.tool("recall_memory", {
-  project_id: z.string().uuid(),
-  query: z.string(),   // texto libre de búsqueda
-  tipo: z.enum(['fact', 'decision', 'error', 'context', 'all']).optional(),
-  limit: z.number().default(10)
-}, async ({ project_id, query, tipo, limit }) => {
-  // Búsqueda full-text con ts_rank
-  const results = await supabase.rpc('search_memory', { project_id, query, tipo, limit });
-  return results;
-});
+server.tool(
+  'recall_memory',
+  {
+    project_id: z.string().uuid(),
+    query: z.string(), // texto libre de búsqueda
+    tipo: z.enum(['fact', 'decision', 'error', 'context', 'all']).optional(),
+    limit: z.number().default(10),
+  },
+  async ({ project_id, query, tipo, limit }) => {
+    // Búsqueda full-text con ts_rank
+    const results = await supabase.rpc('search_memory', { project_id, query, tipo, limit });
+    return results;
+  }
+);
 ```
 
 **Protocolo para los Workers:** Al comenzar una tarea, el Worker DEBE llamar `recall_memory({ query: task_title })` para recuperar conocimiento previo relevante. Al terminar, DEBE llamar `save_memory()` con al menos:
+
 - Las decisiones técnicas tomadas al implementar la tarea.
 - Cualquier error encontrado y cómo fue resuelto.
 
 ---
 
-### [MEMO-02] Búsqueda Semántica de Memoria con pgvector (RAG)
+### [MEMO-02] ✅ Completado
 
 **Prioridad:** `high`
 **Due:** 2026-05-20
@@ -92,6 +104,7 @@ server.tool("recall_memory", {
 La búsqueda full-text de `[MEMO-01]` encuentra coincidencias exactas de palabras. Pero si el agente busca "error con la autenticación" y la memoria guardada dice "problema al configurar Supabase Auth", no habrá coincidencia. La búsqueda semántica con embeddings resuelve esto.
 
 **Habilitar pgvector en Supabase:**
+
 ```sql
 -- En el panel de Supabase: Extensions → Habilitar "vector"
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -105,12 +118,13 @@ CREATE INDEX agent_memory_embedding_idx ON agent_memory
 ```
 
 **Pipeline de embedding (al hacer save_memory):**
+
 ```javascript
 async function embedAndSave(memoryText) {
   // 1. Generar embedding con OpenAI text-embedding-3-small (o alternativa local)
   const response = await openai.embeddings.create({
     model: 'text-embedding-3-small',
-    input: memoryText
+    input: memoryText,
   });
   const embedding = response.data[0].embedding;
 
@@ -120,6 +134,7 @@ async function embedAndSave(memoryText) {
 ```
 
 **Función de búsqueda semántica (Supabase RPC):**
+
 ```sql
 CREATE OR REPLACE FUNCTION search_memory_semantic(
   project_id UUID,
@@ -140,21 +155,31 @@ $$;
 ```
 
 **Nueva tool MCP:**
+
 ```javascript
-server.tool("recall_memory_semantic", {
-  project_id: z.string().uuid(),
-  query: z.string(),
-  match_threshold: z.number().default(0.7),
-  limit: z.number().default(10)
-}, async ({ project_id, query, match_threshold, limit }) => {
-  const embedding = await generateEmbedding(query);
-  return await supabase.rpc('search_memory_semantic', { project_id, query_embedding: embedding, match_threshold, match_count: limit });
-});
+server.tool(
+  'recall_memory_semantic',
+  {
+    project_id: z.string().uuid(),
+    query: z.string(),
+    match_threshold: z.number().default(0.7),
+    limit: z.number().default(10),
+  },
+  async ({ project_id, query, match_threshold, limit }) => {
+    const embedding = await generateEmbedding(query);
+    return await supabase.rpc('search_memory_semantic', {
+      project_id,
+      query_embedding: embedding,
+      match_threshold,
+      match_count: limit,
+    });
+  }
+);
 ```
 
 ---
 
-### [MEMO-03] Event Log de Tareas para métricas de velocity del equipo
+### [MEMO-03] ✅ Completado
 
 **Prioridad:** `high`
 **Due:** 2026-05-18
@@ -164,6 +189,7 @@ server.tool("recall_memory_semantic", {
 Para calcular métricas reales de performance (velocity, lead time, cycle time), necesitamos un registro de todos los eventos que le ocurren a una tarea a lo largo de su vida.
 
 **Migración SQL:**
+
 ```sql
 CREATE TABLE task_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -206,6 +232,7 @@ FOR EACH ROW EXECUTE FUNCTION log_task_status_change();
 **Endpoint de métricas:** `GET /api/analytics/velocity?project_id=uuid&period=30d`
 
 Respuesta:
+
 ```json
 {
   "tasks_per_day": 3.2,
@@ -219,7 +246,7 @@ Respuesta:
 
 ---
 
-### [MEMO-04] Predicción de fecha de entrega basada en velocity histórico
+### [MEMO-04] ✅ Completado
 
 **Prioridad:** `medium`
 **Due:** 2026-05-22
@@ -229,16 +256,17 @@ Respuesta:
 Con el velocity calculado en `[MEMO-03]`, podemos predecir cuándo terminará el proyecto.
 
 **Algoritmo de predicción:**
+
 ```javascript
 function predictDelivery({ completedTasks, totalTasks, velocityPerDay }) {
   const remainingTasks = totalTasks - completedTasks;
   const daysToComplete = remainingTasks / velocityPerDay;
 
   return {
-    optimistic: addDays(today, daysToComplete * 0.7),    // 30% más rápido
+    optimistic: addDays(today, daysToComplete * 0.7), // 30% más rápido
     realistic: addDays(today, daysToComplete),
-    pessimistic: addDays(today, daysToComplete * 1.5),    // 50% más lento
-    confidence: velocity_sample_size > 10 ? 'alta' : velocity_sample_size > 5 ? 'media' : 'baja'
+    pessimistic: addDays(today, daysToComplete * 1.5), // 50% más lento
+    confidence: velocity_sample_size > 10 ? 'alta' : velocity_sample_size > 5 ? 'media' : 'baja',
   };
 }
 ```
@@ -250,13 +278,15 @@ function predictDelivery({ completedTasks, totalTasks, velocityPerDay }) {
   <h3>📅 Fecha Estimada de Entrega</h3>
   <div className="prediction-range">
     <span className="optimistic">Optimista: {format(prediction.optimistic, 'dd/MM/yyyy')}</span>
-    <span className="realistic highlight">Realista: {format(prediction.realistic, 'dd/MM/yyyy')}</span>
+    <span className="realistic highlight">
+      Realista: {format(prediction.realistic, 'dd/MM/yyyy')}
+    </span>
     <span className="pessimistic">Pesimista: {format(prediction.pessimistic, 'dd/MM/yyyy')}</span>
   </div>
-  <span className="confidence">Confianza: {prediction.confidence} ({velocity_sample_size} días de datos)</span>
-  <StatusBadge
-    text={isAheadOfSchedule ? '✅ Ahead of schedule' : '⚠️ Behind schedule'}
-  />
+  <span className="confidence">
+    Confianza: {prediction.confidence} ({velocity_sample_size} días de datos)
+  </span>
+  <StatusBadge text={isAheadOfSchedule ? '✅ Ahead of schedule' : '⚠️ Behind schedule'} />
 </PredictionCard>
 ```
 
@@ -264,7 +294,7 @@ function predictDelivery({ completedTasks, totalTasks, velocityPerDay }) {
 
 ---
 
-### [MEMO-05] Panel de Historial del Swarm y Reporte de Sprint exportable
+### [MEMO-05] ✅ Completado
 
 **Prioridad:** `medium`
 **Due:** 2026-05-24
@@ -276,11 +306,13 @@ Transformar `src/pages/Historial.jsx` de una vista básica a un panel completo d
 **Secciones del panel:**
 
 **1. Línea de tiempo de ejecuciones:**
+
 - Vista estilo Activity Feed: lista cronológica de eventos del Swarm.
 - Cada evento muestra: agente, tarea, timestamp, resultado (✅ QA aprobado / ❌ QA rechazado / ⏱️ Timeout).
 - Filtros: por agente, por milestone, por resultado, por rango de fechas.
 
 **2. Estadísticas del sprint:**
+
 ```
 ┌─────────────────────────────────────────┐
 │  Sprint actual (últimos 14 días)        │
@@ -295,10 +327,12 @@ Transformar `src/pages/Historial.jsx` de una vista básica a un panel completo d
 ```
 
 **3. Exportar reporte:**
+
 - Botón "📥 Exportar CSV" → descarga tabla de eventos del período seleccionado.
 - Botón "📄 Exportar PDF" → genera un resumen visual del sprint usando `jsPDF` o `react-pdf`.
 
 **Estructura del CSV:**
+
 ```
 fecha,tarea,milestone,agente,duracion_horas,resultado_qa,intentos
 2026-05-10,Implementar auth,Fase 5,worker-claude-1,8.2,approved,1
@@ -307,7 +341,7 @@ fecha,tarea,milestone,agente,duracion_horas,resultado_qa,intentos
 
 ---
 
-### [MEMO-06] Centro IA con acceso al Memory Graph del proyecto
+### [MEMO-06] ✅ Completado
 
 **Prioridad:** `medium`
 **Due:** 2026-05-26
@@ -324,6 +358,7 @@ El `CentroIA.jsx` actual tiene un botón "Zap" para solicitar sugerencias al age
    - Ejemplo: "¿Cuál es el estado actual del sistema de autenticación?"
 
 2. **Backend — endpoint `/api/centro-ia/query`:**
+
    ```javascript
    // Flujo:
    // 1. Generar embedding de la pregunta del usuario
@@ -334,10 +369,11 @@ El `CentroIA.jsx` actual tiene un botón "Zap" para solicitar sugerencias al age
    ```
 
 3. **Respuesta con fuentes citadas:**
+
    ```
    Respuesta: Se decidió usar Supabase como DB primaria con RLS activado.
    La tabla tasks tiene milestone_id como FK nullable hacia milestones.
-   
+
    Fuentes:
    - docs/03_Esquema_BaseDatos.md (decisión de Nov 2025)
    - Memoria del agente worker-claude-1: "task_dependencies usa UUID pairs"
