@@ -1,0 +1,13 @@
+#!/bin/sh
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+  echo "==========================================================="
+  echo "🚨 ERROR: Estás intentando comitear directamente en '$branch'."
+  echo "     Por protocolos de Enjambre (DOC-08), los commits "
+  echo "     deben hacerse en ramas aisladas (ej. task/[id-tarea])."
+  echo "==========================================================="
+  exit 1
+fi
+exit 0
