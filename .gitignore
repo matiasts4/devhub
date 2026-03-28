@@ -61,7 +61,18 @@ devhub-mcp/node_modules/
 src-tauri/target/
 src-tauri/gen/schemas/
 
-# QA-01 Fix & Patch files
+# QA-01 Anti-Deuda: bloquear archivos de parche en raíz del proyecto
 /fix_*.js
 /patch_*.js
 /update_*.js
+/combined_tools*.js
+/*.bak
+/*.bak.*
+
+# QA tests / reportes de Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
+# Bundle analyzer output
+/.next/analyze/

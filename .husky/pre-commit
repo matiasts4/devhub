@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+# QA-06 — DevHub pre-commit hook
+# Corre lint-staged para aplicar ESLint + Prettier a archivos staged
+
+npx lint-staged
+
+# QA-01 — Bloquear archivos de parche/deuda técnica
+PATCH_FILES=$(git diff --cached --name-only | grep -E "^(fix_|patch_|update_|combined_tools)" || true)
+if [ -n "$PATCH_FILES" ]; then
+  echo ""
+  echo "❌ ERROR: Intentando commitear archivos de deuda técnica prohibidos:"
+  echo "$PATCH_FILES"
+  echo "Integra estos cambios en los archivos fuente principales antes de commitear."
+  exit 1
+fi
+
+echo "✅ Pre-commit checks pasados"

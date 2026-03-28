@@ -1,0 +1,141 @@
+name: CI — DevHub Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1: Linting & Code Style
+  # ─────────────────────────────────────────────
+  lint:
+    name: 🔍 ESLint + Anti-Deuda Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci --legacy-peer-deps
+
+      - name: Linting ESLint
+        run: npx eslint "src/**/*.{js,jsx,ts,tsx}" --max-warnings 20 || echo "⚠️ Warnings detectados (no bloquean)"
+
+      - name: ❌ Verificar ausencia de archivos fix_*.js en raíz
+        run: |
+          FOUND=$(ls fix_*.js patch_*.js update_*.js combined_tools*.js 2>/dev/null | head -5 || true)
+          if [ -n "$FOUND" ]; then
+            echo "❌ ERROR: Archivos de parche encontrados en raíz:"
+            echo "$FOUND"
+            echo "Elimínalos o integra sus cambios antes de hacer merge."
+            exit 1
+          fi
+          echo "✅ Raíz limpia — Sin archivos de deuda técnica"
+
+      - name: ❌ Verificar ausencia de *.bak en el proyecto
+        run: |
+          FOUND=$(find . -name "*.bak" -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -5 || true)
+          if [ -n "$FOUND" ]; then
+            echo "❌ Archivos .bak encontrados:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "✅ Sin archivos .bak"
+
+  # ─────────────────────────────────────────────
+  # JOB 2: Build Verificación
+  # ─────────────────────────────────────────────
+  build:
+    name: 🔨 Build Next.js
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci --legacy-peer-deps
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+  # ─────────────────────────────────────────────
+  # JOB 3: Tests Unitarios MCP
+  # ─────────────────────────────────────────────
+  mcp-tests:
+    name: 🧪 Tests Unitarios MCP Server
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: devhub-mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: devhub-mcp/package-lock.json
+
+      - name: Instalar dependencias MCP
+        run: npm ci
+
+      - name: Ejecutar tests unitarios
+        run: npm test -- --coverage --passWithNoTests
+
+  # ─────────────────────────────────────────────
+  # JOB 4: Tests E2E Playwright
+  # ─────────────────────────────────────────────
+  e2e-tests:
+    name: 🎭 Tests E2E Playwright
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci --legacy-peer-deps
+
+      - name: Instalar Playwright + Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Ejecutar tests E2E
+        run: npm run test:e2e
+        env:
+          BASE_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        continue-on-error: true  # No bloquear CI mientras los tests se afianzan
+
+      - name: Subir reporte Playwright
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

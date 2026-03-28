@@ -1,6 +1,7 @@
 ---
-Fecha de Modificación: 27 de marzo de 2026
+Fecha de Modificación: 28 de marzo de 2026
 Changelog:
+  - 2026-03-28 v3: [QA-02] Documentada decisión: eliminación de `output: 'export'`. DevHub adopta Next.js Server Mode. Sección 4 añadida.
   - 2026-03-27 v2: Integración de los planes de Arquitectura IDE (Gestor + Terminal).
   - 2026-03-27 v1: Creación del documento unificado.
 ---
@@ -111,3 +112,35 @@ export async function GET(request: Request) {
   }
 }
 ```
+
+---
+
+## ⚙️ 4. Decisión de Compilación — [QA-02] Eliminación de `output: 'export'`
+
+> **Estado:** ✅ Resuelto en Fase 6 (2026-03-28)
+
+### Contexto del Problema
+
+La directiva `output: 'export'` en `next.config.js` compilaba DevHub como un sitio estático puro. Esto causaba crasheo inmediato (`Error 500`) en todas las API Routes que requieren un servidor Node activo: `/api/terminal/session`, `/api/agent/execute`, `/api/agent/branches`.
+
+### Decisión Tomada: **Opción B — Next.js Server Mode**
+
+Se eliminó `output: 'export'` del `next.config.js`. DevHub funciona ahora en **modo servidor completo de Next.js**, lo que permite API Routes dinámicas, WebSockets nativos y Middleware Edge Functions.
+
+```javascript
+// next.config.js — Estado actual
+const nextConfig = {
+  // output: 'export'  ← ELIMINADA (era el conflicto raíz)
+  images: { unoptimized: true },
+  trailingSlash: true,
+  experimental: {
+    serverComponentsExternalPackages: ['node-pty', 'ws'],
+  },
+};
+```
+
+### Impacto en Distribución
+
+- **Deploy Web:** Compatible con Vercel, Railway, VPS con `next start`.
+- **Desktop (Tauri):** Requiere proceso `next start` como sidecar.
+- **PWA:** Configurada con `next-pwa` para instalación desde navegador.
