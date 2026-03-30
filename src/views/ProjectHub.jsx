@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
   Plus, Search, Code2,
   Clock, ChevronRight, Loader2, X,
   Brain, Upload, FileText, Trash2, Zap,
   MonitorSmartphone, GraduationCap, FlaskConical, Shield, BarChart3, Palette, Cpu,
-  LogOut
+  LogOut, FolderOpen
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -41,7 +42,7 @@ export default function ProjectHub() {
   const [search, setSearch]   = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [showNewModal, setShowNewModal] = useState(false);
-  const [newProject, setNewProject] = useState({ name: "", description: "", color: "#6366f1" });
+  const [newProject, setNewProject] = useState({ name: "", description: "", color: "#6366f1", local_path: "" });
   const [creating, setCreating] = useState(false);
   const [planningPrompt, setPlanningPrompt] = useState("");
   const [enablePlanning, setEnablePlanning] = useState(true);
@@ -80,6 +81,21 @@ export default function ProjectHub() {
 
   useEffect(() => {
     fetchProjects();
+
+    const channel = supabase.channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        (payload) => {
+          // Recargar proyectos automáticamente si un agente u otra fuente crea/modifica uno
+          fetchProjects();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   async function fetchProjects() {
@@ -101,18 +117,31 @@ export default function ProjectHub() {
     window.location.href = "/login";
   }
 
+  async function handleSelectFolder() {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Seleccionar Carpeta del Proyecto"
+      });
+      if (selected) {
+        setNewProject(p => ({ ...p, local_path: selected }));
+      }
+    } catch (err) {
+      console.warn("No se pudo abrir el selector, ¿estás en web?", err);
+    }
+  }
+
   async function createProject(e) {
     e.preventDefault();
     setCreating(true);
     const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase.from("projects").insert({
+      user_id: user.id,
       name: newProject.name,
       description: newProject.description,
       color: newProject.color,
-      user_id: user.id,
-      planning_prompt: enablePlanning ? planningPrompt : null,
-      planning_status: enablePlanning ? "pending" : "none",
-      project_type: projectType,
+      local_path: newProject.local_path,
     }).select().single();
 
     if (error) {
@@ -134,7 +163,7 @@ export default function ProjectHub() {
     setCreating(false);
     if (data) {
       setShowNewModal(false);
-      setNewProject({ name: "", description: "", color: "#6366f1" });
+      setNewProject({ name: "", description: "", color: "#6366f1", local_path: "" });
       setPlanningPrompt("");
       setPendingFiles([]);
       setEnablePlanning(true);
@@ -360,6 +389,28 @@ export default function ProjectHub() {
                   placeholder="Mi proyecto increíble"
                   className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
                 />
+              </div>
+
+              {/* Ruta Local */}
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">Directorio / Ruta Local</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newProject.local_path}
+                    onChange={(e) => setNewProject(p => ({ ...p, local_path: e.target.value }))}
+                    placeholder="/home/usuario/proyectos/mi-proyecto"
+                    className="flex-1 bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSelectFolder}
+                    className="flex items-center justify-center p-2.5 bg-surface-elevated border border-borders-strong rounded-lg text-text-muted hover:text-white hover:bg-surface-active hover:border-text-muted transition-colors tooltip-trigger"
+                    title="Explorar carpetas"
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Descripción corta */}

@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const withPWA = require('next-pwa')({
   dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
+  disable: true, // Desactivado para evitar conflictos con entorno Tauri
   register: true,
   skipWaiting: true,
 });
@@ -15,6 +15,10 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 });
 
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_SUPABASE_URL: "https://kpgeyukrsydjujqouape.supabase.co",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwZ2V5dWtyc3lkanVqcW91YXBlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjYzOTIsImV4cCI6MjA5MDIwMjM5Mn0.ytocfR5lKCgiEvdTy8-8oVr-e8lomxrG7O_JZHv7Upw",
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -52,42 +56,7 @@ const nextConfig = {
    * Separar librerías pesadas en chunks independientes para reducir el bundle inicial.
    * Monaco Editor (~2MB), xterm.js (~500KB) y react-flow se cargan on-demand.
    */
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.optimization.splitChunks = {
-        ...config.optimization.splitChunks,
-        cacheGroups: {
-          // Monaco Editor chunk independiente
-          monaco: {
-            test: /[\\/]node_modules[\\/](@monaco-editor|monaco-editor)[\\/]/,
-            name: 'monaco-editor',
-            chunks: 'async',
-            priority: 30,
-          },
-          // xterm chunk independiente
-          xterm: {
-            test: /[\\/]node_modules[\\/](xterm|xterm-addon)[\\/]/,
-            name: 'xterm',
-            chunks: 'async',
-            priority: 25,
-          },
-          // Recharts / react-flow chunk
-          charts: {
-            test: /[\\/]node_modules[\\/](recharts|d3|react-flow)[\\/]/,
-            name: 'charts-lib',
-            chunks: 'async',
-            priority: 20,
-          },
-          // Radix UI en un chunk compartido
-          radix: {
-            test: /[\\/]node_modules[\\/]@radix-ui[\\/]/,
-            name: 'radix-ui',
-            chunks: 'all',
-            priority: 15,
-          },
-        },
-      };
-    }
+  webpack: (config) => {
     return config;
   },
 };

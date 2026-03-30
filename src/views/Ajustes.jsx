@@ -175,6 +175,7 @@ export default function Ajustes() {
   const [description, setDesc]    = useState(project?.description || "");
   const [color, setColor]         = useState(project?.color || "#6366f1");
   const [status, setProjectStatus]= useState(project?.status || "active");
+  const [localPath, setLocalPath] = useState(project?.local_path || "");
   const [savingProject, setSaving]= useState(false);
 
   // Profile settings
@@ -235,7 +236,7 @@ export default function Ajustes() {
 
   async function saveProject() {
     setSaving(true);
-    const { error } = await supabase.from("projects").update({ name, description, color, status }).eq("id", project?.id);
+    const { error } = await supabase.from("projects").update({ name, description, color, status, local_path: localPath }).eq("id", project?.id);
     setSaving(false);
     if (error) { toast.error("Error al guardar"); return; }
     toast.success("Proyecto actualizado");
@@ -295,6 +296,16 @@ export default function Ajustes() {
               <input
                 value={name}
                 onChange={e => setName(e.target.value)}
+                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
+                style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Ruta Local (Directorio Base)</label>
+              <input
+                value={localPath}
+                onChange={e => setLocalPath(e.target.value)}
+                placeholder="/home/usuario/proyectos/mi-app"
                 className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
                 style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
               />

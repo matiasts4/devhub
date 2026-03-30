@@ -35,6 +35,7 @@
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.100.1",
+    "@tauri-apps/plugin-dialog": "~2.6",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
     "axios": "^1.8.4",
@@ -74,7 +75,7 @@
   "scripts": {
     "start": "next dev",
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/ && rm -rf .next/standalone/src-tauri .next/standalone/node_modules/@img/sharp*-linuxmusl* && mkdir -p src-tauri/resources && cd .next/standalone && zip -q -r ../../src-tauri/resources/standalone.zip .",
     "tauri:dev": "npx tauri dev",
     "tauri:build": "npx tauri build",
     "test": "next test",

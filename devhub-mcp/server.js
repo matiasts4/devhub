@@ -369,7 +369,6 @@ server.tool(
 );
 
 server.tool(
-server.tool(
   "add_task_comment",
   "Añade un comentario a una tarea (útil para que los agentes dejen notas técnicas o log de QA).",
   {
@@ -384,6 +383,7 @@ server.tool(
   }
 );
 
+server.tool(
   "delete_task",
   "Elimina una tarea de DevHub. ¡Acción irreversible!",
   { task_id: z.string().uuid() },

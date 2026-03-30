@@ -63,6 +63,9 @@ sidecar-backend/node_modules/
 # === Tauri ===
 src-tauri/target/
 src-tauri/gen/schemas/
+# Binarios compilados y recursos grandes (exceden 100MB de GitHub)
+src-tauri/binaries/
+src-tauri/resources/standalone.zip
 
 # QA-01 Anti-Deuda: bloquear archivos de parche en raíz del proyecto
 /fix_*.js

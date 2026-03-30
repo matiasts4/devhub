@@ -105,6 +105,7 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup({
             let sidecar_pid = sidecar_pid.clone();
             move |app| {

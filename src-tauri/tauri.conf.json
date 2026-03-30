@@ -37,6 +37,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": [
+      "../sidecar-backend",
+      "resources/standalone.zip"
+    ],
     "externalBin": [
       "binaries/devhub-server"
     ],
