@@ -2,6 +2,10 @@
  * DevHub Telegram Bot — Entry Point
  *
  * Long-polling Telegram bot that lets you control DevHub from your phone.
+ * Features:
+ *   - Project/task management commands
+ *   - Agent lifecycle control (pause, resume, launch)
+ *   - Direct chat with OpenCode agents (plain text messages)
  *
  * Usage:
  *   cp .env.example .env   # configure TELEGRAM_BOT_TOKEN and ALLOWED_USER_IDS
@@ -15,19 +19,29 @@ const TelegramBot = require('node-telegram-bot-api');
 const { isAllowed } = require('./services/auth');
 const logger = require('./utils/logger');
 const formatter = require('./services/formatter');
+const conversation = require('./services/conversation');
+const chatHandler = require('./commands/chat');
 
 // ── Command handlers ────────────────────────────────────────────────────────
 const commands = {
+  // Query commands
   estado: require('./commands/estado'),
   tareas: require('./commands/tareas'),
   progreso: require('./commands/progreso'),
   agentes: require('./commands/agentes'),
+  help: require('./commands/help'),
+
+  // Action commands
   pausar: require('./commands/pausar'),
   reanudar: require('./commands/reanudar'),
   continuar: require('./commands/continuar'),
   spawn: require('./commands/spawn'),
   sesiones: require('./commands/sesiones'),
-  help: require('./commands/help'),
+
+  // Chat management commands
+  agente: require('./commands/agente'),
+  reset: require('./commands/reset'),
+  historial: require('./commands/historial'),
 };
 
 // ── Validation ──────────────────────────────────────────────────────────────
@@ -42,7 +56,17 @@ if (!BOT_TOKEN) {
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
 logger.info('✅ DevHub Telegram Bot iniciado');
-logger.info(`   Polling activo — esperando comandos...`);
+logger.info('   Polling activo — esperando comandos...');
+logger.info('   Modo chat: mensajes de texto → OpenCode agents');
+
+// ── Periodic cleanup ────────────────────────────────────────────────────────
+setInterval(() => {
+  conversation.cleanupOldConversations();
+  const count = conversation.getConversationCount();
+  if (count > 0) {
+    logger.info(`Conversaciones activas: ${count}`);
+  }
+}, 600_000); // Every 10 minutes
 
 // ── /start command ──────────────────────────────────────────────────────────
 bot.onText(/^\/start/, (msg) => {
@@ -54,7 +78,9 @@ bot.onText(/^\/start/, (msg) => {
   const name = msg.from.first_name || 'Usuario';
   bot.sendMessage(
     chatId,
-    `👋 ¡Hola *${name}*! Soy el bot de DevHub.\n\nUsá /help para ver los comandos disponibles.`,
+    `👋 ¡Hola *${name}*! Soy el bot de DevHub.\n\n` +
+      `🔹 Usá /help para ver los comandos de gestión\n` +
+      `💬 O simplemente escribime cualquier cosa para chatear con OpenCode`,
     { parse_mode: 'Markdown' }
   );
   logger.info(`Nuevo usuario: ${name} (${chatId})`);
@@ -62,15 +88,22 @@ bot.onText(/^\/start/, (msg) => {
 
 // ── Command routing ─────────────────────────────────────────────────────────
 const commandMap = [
+  // Query
   { pattern: /^\/estado(.*)/, handler: commands.estado },
   { pattern: /^\/tareas(.*)/, handler: commands.tareas },
   { pattern: /^\/progreso(.*)/, handler: commands.progreso },
   { pattern: /^\/agentes(.*)/, handler: commands.agentes },
+  // Action
   { pattern: /^\/pausar(.*)/, handler: commands.pausar },
   { pattern: /^\/reanudar(.*)/, handler: commands.reanudar },
   { pattern: /^\/continuar(.*)/, handler: commands.continuar },
   { pattern: /^\/spawn(.*)/, handler: commands.spawn },
   { pattern: /^\/sesiones(.*)/, handler: commands.sesiones },
+  // Chat management
+  { pattern: /^\/agente(.*)/, handler: commands.agente },
+  { pattern: /^\/reset(.*)/, handler: commands.reset },
+  { pattern: /^\/historial(.*)/, handler: commands.historial },
+  // Help
   { pattern: /^\/help(.*)/, handler: commands.help },
 ];
 
@@ -97,25 +130,34 @@ commandMap.forEach(({ pattern, handler }) => {
   });
 });
 
-// ── Unknown command handler ─────────────────────────────────────────────────
+// ── Plain text message handler → OpenCode chat ──────────────────────────────
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || '';
 
-  // Skip if it's a known command (already handled above)
+  // Skip commands (handled above)
   if (text.startsWith('/')) {
-    const isKnown = commandMap.some(({ pattern }) => pattern.test(text));
-    if (!isKnown && isAllowed(chatId)) {
-      bot.sendMessage(
-        chatId,
-        `❓ Comando no reconocido. Usá /help para ver los comandos disponibles.`,
-        { parse_mode: 'Markdown' }
-      );
-    }
     return;
   }
 
-  // Non-command messages — ignore silently
+  // Skip non-text messages (photos, stickers, etc.)
+  if (!text.trim()) {
+    return;
+  }
+
+  // Auth guard
+  if (!isAllowed(chatId)) {
+    bot.sendMessage(chatId, '⛔ Acceso no autorizado.');
+    return;
+  }
+
+  // Route to chat handler
+  chatHandler(bot, msg).catch((err) => {
+    logger.error(`Error en chat: ${err.message}`);
+    bot.sendMessage(chatId, formatter.formatError(err.message), {
+      parse_mode: 'Markdown',
+    });
+  });
 });
 
 // ── Graceful shutdown ───────────────────────────────────────────────────────

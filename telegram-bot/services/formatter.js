@@ -180,6 +180,9 @@ function formatHelp() {
   const lines = [
     '*🤖 DevHub Bot — Ayuda*',
     '',
+    '*💬 Chat con OpenCode:*',
+    'Escribime cualquier cosa y hablo con el agente configurado',
+    '',
     '*Consultas:*',
     '/estado — Dashboard de todos los proyectos',
     '/tareas \\[proyecto\\] — Tareas pendientes',
@@ -193,11 +196,16 @@ function formatHelp() {
     '/spawn \\[tarea\\] \\[perfil\\] — Lanzar con tarea custom',
     '/sesiones — Sesiones activas de OpenCode',
     '',
+    '*Gestión de chat:*',
+    '/agente \\[nombre\\] — Ver/cambiar agente actual',
+    '/reset — Limpiar historial de conversación',
+    '/historial — Ver últimos mensajes',
+    '',
     '*Ejemplos:*',
-    '`/estado`',
+    '`¿Cuál es el estado del proyecto devhub\\?`',
     '`/tareas veloce`',
+    '`/agente sdd-orchestrator`',
     '`/continuar veloce`',
-    '`/spawn Fix login bug`',
   ];
   return lines.join('\n');
 }
