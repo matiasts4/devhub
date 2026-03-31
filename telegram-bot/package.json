@@ -1,0 +1,23 @@
+{
+  "name": "devhub-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for DevHub — interact with your DevHub projects and tasks from Telegram",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node --watch bot.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "devhub",
+    "project-management"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-telegram-bot-api": "latest",
+    "better-sqlite3": "latest",
+    "dotenv": "latest"
+  }
+}
