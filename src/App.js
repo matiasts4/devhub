@@ -9,7 +9,6 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
 import ProjectHub from './views/ProjectHub';
@@ -25,21 +24,26 @@ import Ajustes from './views/Ajustes';
 import PlanningMode from './views/PlanningMode';
 import SwarmControl from './views/SwarmControl';
 import Cerebro from './views/Cerebro';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/db/localSupabase';
 import { Loader2 } from 'lucide-react';
 import { applyThemeToDocument, getStoredTheme } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
+import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 
 function WorkspaceLayout() {
   const { projectId } = useParams();
   const location = useLocation();
   const isTerminalRoute = location.pathname.includes('/terminales');
 
-  const [collapsed, setCollapsed] = useState(false);
-  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (!projectId) return false;
+    return Boolean(getUIPrefs(projectId).sidebarCollapsed);
+  });
+  const [uiPrefsReady, setUiPrefsReady] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const pollRef = useRef(null);
 
   const loadProject = useCallback(async () => {
     const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
@@ -51,32 +55,41 @@ function WorkspaceLayout() {
     loadProject();
   }, [loadProject]);
 
-  // Refresco en tiempo real cuando el agente IA actualiza planning_status o progress
   useEffect(() => {
     if (!projectId) return;
-    const channel = supabase
-      .channel(`project-${projectId}-layout`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'projects',
-          filter: `id=eq.${projectId}`,
-        },
-        (payload) => {
-          setProject(payload.new);
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+
+    const prefs = getUIPrefs(projectId);
+    setUiPrefsReady(false);
+    setCollapsed(Boolean(prefs.sidebarCollapsed));
+    setUiPrefsReady(true);
   }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || !uiPrefsReady) return;
+    saveUIPref(projectId, 'sidebarCollapsed', collapsed);
+  }, [projectId, collapsed, uiPrefsReady]);
+
+  // Polling for project updates (replaces Supabase realtime in local mode)
+  useEffect(() => {
+    if (!projectId) return;
+
+    const refreshProject = async () => {
+      const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
+      if (data) setProject(data);
+    };
+
+    // Poll every 10 seconds
+    pollRef.current = setInterval(refreshProject, 10000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [projectId, supabase]);
 
   // Auto-calcula progress cuando el agente IA crea/completa tareas
   useEffect(() => {
     if (!projectId) return;
+
     const recalcProgress = async () => {
       const { data: tasks } = await supabase
         .from('tasks')
@@ -84,27 +97,26 @@ function WorkspaceLayout() {
         .eq('project_id', projectId);
       if (!tasks || tasks.length === 0) return;
       const total = tasks.length;
-      const done = tasks.filter((t) => t.status === 'completed').length;
+      const done = tasks.filter((t) =>
+        ['completed', 'done'].includes((t.status || '').toLowerCase())
+      ).length;
       const newProgress = Math.round((done / total) * 100);
+
+      // Update sidebar/UI immediately, even if persistence fails.
+      setProject((prev) => (prev ? { ...prev, progress: newProgress } : prev));
+
       await supabase.from('projects').update({ progress: newProgress }).eq('id', projectId);
     };
-    const taskChannel = supabase
-      .channel(`tasks-${projectId}-progress`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tasks',
-          filter: `project_id=eq.${projectId}`,
-        },
-        recalcProgress
-      )
-      .subscribe();
+
+    recalcProgress();
+
+    // Poll task changes every 15 seconds
+    const taskPoll = setInterval(recalcProgress, 15000);
+
     return () => {
-      supabase.removeChannel(taskChannel);
+      clearInterval(taskPoll);
     };
-  }, [projectId]);
+  }, [projectId, supabase]);
 
   if (loading) {
     return (
@@ -125,7 +137,7 @@ function WorkspaceLayout() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
-        {/* Main Routed Content - Hidden physically when in Terminales route to preserve memory of other views if needed, though usually Outlet swapping unmounts what's inside. We hide it to show terminal. */}
+        {/* Main Routed Content */}
         <main
           className="h-full w-full overflow-y-auto"
           style={{
@@ -154,6 +166,29 @@ function WorkspaceLayout() {
 function App() {
   useEffect(() => {
     applyThemeToDocument(getStoredTheme());
+  }, []);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (typeof window === 'undefined') return;
+
+    const clearStalePwaState = async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+        }
+
+        if ('caches' in window) {
+          const keys = await window.caches.keys();
+          await Promise.all(keys.map((key) => window.caches.delete(key)));
+        }
+      } catch (error) {
+        console.warn('No se pudo limpiar el estado PWA en desarrollo:', error);
+      }
+    };
+
+    clearStalePwaState();
   }, []);
 
   return (

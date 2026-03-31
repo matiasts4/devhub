@@ -1,7 +1,6 @@
 export const dynamic = 'force-static';
 
-import { createClient } from '@/lib/supabase/server';
-
+import { getDb } from '@/lib/db/localDb';
 import { NextResponse } from 'next/server';
 
 /**
@@ -12,22 +11,32 @@ import { NextResponse } from 'next/server';
  * Body: { project_id, message, history: [{role, content}] }
  */
 export async function POST(request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+  // No auth needed for local mode
   const { project_id, message, history = [] } = await request.json();
   if (!message) return NextResponse.json({ error: 'message is required' }, { status: 400 });
+
+  const db = getDb();
 
   // Fetch project context for the system prompt
   let projectContext = '';
   if (project_id) {
-    const { data: proj } = await supabase.from('projects').select('name, description, status').eq('id', project_id).single();
-    const { data: tasks } = await supabase.from('tasks').select('title, status, priority').eq('project_id', project_id);
-    const { data: milestones } = await supabase.from('milestones').select('title, status, due_date').eq('project_id', project_id);
+    const proj = db.tables.projects.single({
+      where: [['id', '=', project_id]],
+      select: 'name, description, status',
+    });
+    const tasks = db.tables.tasks.select({
+      where: [['project_id', '=', project_id]],
+      select: 'title, status, priority',
+    });
+    const milestones = db.tables.milestones.select({
+      where: [['project_id', '=', project_id]],
+      select: 'title, status, due_date',
+    });
 
-    const taskSummary = tasks?.map(t => `- ${t.title} (${t.status}, ${t.priority})`).join('\n') || 'Sin tareas.';
-    const msSummary = milestones?.map(m => `- ${m.title} (${m.status})`).join('\n') || 'Sin hitos.';
+    const taskSummary =
+      tasks?.map((t) => `- ${t.title} (${t.status}, ${t.priority})`).join('\n') || 'Sin tareas.';
+    const msSummary =
+      milestones?.map((m) => `- ${m.title} (${m.status})`).join('\n') || 'Sin hitos.';
 
     projectContext = `
 Proyecto activo: "${proj?.name}"
@@ -50,14 +59,13 @@ Si el usuario pide crear, completar o modificar tareas o hitos, explica exactame
 
   // Build message array for the API
   const messages = [
-    ...history.map(h => ({ role: h.role, content: h.content })),
+    ...history.map((h) => ({ role: h.role, content: h.content })),
     { role: 'user', content: message },
   ];
 
   // Save user message
-  await supabase.from('ai_interactions').insert({
+  db.tables.ai_interactions.insert({
     project_id: project_id || null,
-    user_id: user.id,
     role: 'user',
     content: message,
     model: 'gemini',
@@ -69,7 +77,7 @@ Si el usuario pide crear, completar o modificar tareas o hitos, explica exactame
 
   if (apiKey) {
     try {
-      const geminiMessages = messages.map(m => ({
+      const geminiMessages = messages.map((m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }],
       }));
@@ -87,7 +95,8 @@ Si el usuario pide crear, completar o modificar tareas o hitos, explica exactame
         }
       );
       const data = await response.json();
-      assistantContent = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No pude generar una respuesta.';
+      assistantContent =
+        data.candidates?.[0]?.content?.parts?.[0]?.text || 'No pude generar una respuesta.';
     } catch (err) {
       assistantContent = `Error al conectar con la IA: ${err.message}`;
     }
@@ -97,9 +106,8 @@ Si el usuario pide crear, completar o modificar tareas o hitos, explica exactame
   }
 
   // Save assistant response
-  await supabase.from('ai_interactions').insert({
+  db.tables.ai_interactions.insert({
     project_id: project_id || null,
-    user_id: user.id,
     role: 'assistant',
     content: assistantContent,
     model: 'gemini',

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Mail, Loader2, Trash2, userPlus } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/db/localSupabase';
 import { toast } from 'sonner';
 
 export default function EquipoSettings({ projectId }) {

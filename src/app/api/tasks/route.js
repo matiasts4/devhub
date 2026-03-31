@@ -1,6 +1,6 @@
 export const dynamic = 'force-static';
 
-import { createClient } from '@/lib/supabase/server';
+import { getDb } from '@/lib/db/localDb';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -30,26 +30,22 @@ export async function GET(request) {
     );
   }
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   const { searchParams } = new URL(request.url);
   const project_id = searchParams.get('project_id');
 
-  let query = supabase.from('tasks').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-  if (project_id) query = query.eq('project_id', project_id);
+  const db = getDb();
+  const where = [];
+  if (project_id) where.push(['project_id', '=', project_id]);
 
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ tasks: data });
+  const tasks = db.tables.tasks.select({
+    where,
+    orderBy: [['created_at', 'DESC']],
+  });
+
+  return NextResponse.json({ tasks });
 }
 
 export async function POST(request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   const body = await request.json();
   const parsed = TaskSchema.safeParse(body);
   if (!parsed.success) {
@@ -57,24 +53,22 @@ export async function POST(request) {
   }
   const { project_id, title, description, status, priority, due_date } = parsed.data;
 
-  const { data, error } = await supabase.from('tasks').insert({
-    project_id, title,
+  const db = getDb();
+  const task = db.tables.tasks.insert({
+    id: `task-${Date.now()}`,
+    project_id,
+    title,
     description: description || null,
     status: status || 'pending',
     priority: priority || 'medium',
     due_date: due_date || null,
-    user_id: user.id,
-  }).select().single();
+    user_id: 'local-user',
+  });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ task: data }, { status: 201 });
+  return NextResponse.json({ task }, { status: 201 });
 }
 
 export async function PATCH(request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   const body = await request.json();
   const parsed = UpdateTaskSchema.safeParse(body);
   if (!parsed.success) {
@@ -86,9 +80,8 @@ export async function PATCH(request) {
     updates.completed_at = new Date().toISOString();
   }
 
-  const { data, error } = await supabase
-    .from('tasks').update(updates).eq('id', id).eq('user_id', user.id).select().single();
+  const db = getDb();
+  const task = db.tables.tasks.update(updates, [['id', '=', id]]);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ task: data });
+  return NextResponse.json({ task });
 }

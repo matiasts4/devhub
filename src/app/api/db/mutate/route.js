@@ -1,0 +1,52 @@
+import { NextResponse } from 'next/server';
+import localDb from '@/lib/db/localDb';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(request) {
+  try {
+    const body = await request.json();
+    const { table, action, data, where } = body;
+
+    if (!table || !action) {
+      return NextResponse.json({ error: 'Missing table or action' }, { status: 400 });
+    }
+
+    const tableOps = localDb.tables[table];
+    if (!tableOps) {
+      return NextResponse.json({ error: `Table ${table} not found` }, { status: 404 });
+    }
+
+    // Build where conditions for update/delete
+    const whereConditions = where
+      ? where.map((w) => [w.col, w.op === 'eq' ? '=' : '!=', w.val])
+      : [];
+
+    let result;
+    if (action === 'insert') {
+      result = await tableOps.insert(data);
+    } else if (action === 'update') {
+      result = await tableOps.update(data, whereConditions);
+    } else if (action === 'upsert') {
+      if (tableOps.upsert) {
+        result = await tableOps.upsert(data);
+      } else {
+        // Fallback: try insert, if conflict then update
+        try {
+          result = await tableOps.insert(data);
+        } catch {
+          result = await tableOps.update(data, whereConditions);
+        }
+      }
+    } else if (action === 'delete') {
+      result = await tableOps.delete(whereConditions);
+    } else {
+      return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+    }
+
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error('DB mutate error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

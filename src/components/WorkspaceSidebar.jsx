@@ -1,4 +1,5 @@
 'use client';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -20,6 +21,7 @@ import {
   Network,
 } from 'lucide-react';
 import NotificationCenter from './NotificationCenter';
+import { createClient } from '@/lib/db/localSupabase';
 
 const allNavItems = {
   dashboard: { icon: LayoutDashboard, label: 'Dashboard' },
@@ -63,7 +65,46 @@ export default function WorkspaceSidebar({
   const location = useLocation();
   const pathname = location.pathname;
 
+  const [activeAgentsCount, setActiveAgentsCount] = useState(0);
+
+  useEffect(() => {
+    if (!project?.id) return;
+    const supabase = createClient();
+
+    const fetchAgents = async () => {
+      const { data } = await supabase
+        .from('agent_registry')
+        .select('agent_id')
+        .eq('project_id', project.id)
+        .in('status', ['working', 'running', 'active', 'thinking', 'asking_questions']);
+      setActiveAgentsCount(data?.length || 0);
+    };
+
+    fetchAgents();
+
+    const channel = supabase
+      .channel('sidebar_agents')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'agent_registry',
+          filter: `project_id=eq.${project.id}`,
+        },
+        () => fetchAgents()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [project?.id]);
+
   const accentColor = project?.color || '#58A6FF';
+  const progressValue = Number.isFinite(Number(project?.progress))
+    ? Math.max(0, Math.min(100, Number(project.progress)))
+    : 0;
 
   // Dynamic features logic:
   // If a project has specific features defined, only show those (dashboard is always visible).
@@ -184,6 +225,12 @@ export default function WorkspaceSidebar({
                 {key === 'planning' && project?.planning_status === 'pending' && (
                   <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#D2A8FF] animate-pulse" />
                 )}
+                {(key === 'agentes' || key === 'swarm') && activeAgentsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-success" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+                  </span>
+                )}
               </div>
               {!collapsed && <span>{label}</span>}
             </Link>
@@ -243,10 +290,10 @@ export default function WorkspaceSidebar({
               className="text-[9px] uppercase tracking-wider font-semibold"
               style={{ color: 'var(--text-muted)' }}
             >
-              Progreso
+              Progreso (tareas)
             </span>
             <span className="text-[9px] font-mono" style={{ color: accentColor }}>
-              {project.progress}%
+              {progressValue}%
             </span>
           </div>
           <div
@@ -255,7 +302,7 @@ export default function WorkspaceSidebar({
           >
             <div
               className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${project.progress}%`, background: accentColor }}
+              style={{ width: `${progressValue}%`, background: accentColor }}
             />
           </div>
         </div>

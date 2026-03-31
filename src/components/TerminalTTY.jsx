@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 
-export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
+export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar, initialCommand }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -12,9 +12,48 @@ export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [connectionState, setConnectionState] = useState('idle');
+  const hasSentInitialCommand = useRef(false);
+  const rafRef = useRef(null);
+  const timeoutRef = useRef(null);
 
-  const sendResize = useCallback(() => {
-    if (!fitRef.current || !termRef.current || !wsRef.current) return;
+  const clearTimers = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const waitForVisibleDimensions = useCallback(async () => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const container = containerRef.current;
+      if (!container) return false;
+
+      const rect = container.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && document.visibilityState !== 'hidden') {
+        return true;
+      }
+
+      await new Promise((resolve) => {
+        rafRef.current = requestAnimationFrame(() => {
+          timeoutRef.current = setTimeout(resolve, 40);
+        });
+      });
+    }
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    return Boolean(rect && rect.width > 0 && rect.height > 0);
+  }, []);
+
+  const fitAndResize = useCallback(() => {
+    if (!fitRef.current || !termRef.current || !wsRef.current || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
     fitRef.current.fit();
 
     if (wsRef.current.readyState === WebSocket.OPEN) {
@@ -28,26 +67,47 @@ export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
     }
   }, []);
 
+  const sendResize = useCallback(() => {
+    if (!termRef.current || !fitRef.current) return;
+    fitAndResize();
+    clearTimers();
+    rafRef.current = requestAnimationFrame(() => fitAndResize());
+    timeoutRef.current = setTimeout(() => fitAndResize(), 120);
+  }, [fitAndResize, clearTimers]);
+
   const connect = useCallback(async () => {
     setConnectionState('connecting');
+    hasSentInitialCommand.current = false;
 
     try {
-      const cwdParam = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
-      const sessionResponse = await fetch(`/api/terminal/session${cwdParam}`, { cache: 'no-store' });
+      wsRef.current?.close();
+      const cwdParam = cwd ? `cwd=${encodeURIComponent(cwd)}` : '';
+      const idParam = id ? `id=${encodeURIComponent(id)}` : '';
+      const queryParams = [cwdParam, idParam].filter(Boolean).join('&');
+      const queryStr = queryParams ? `?${queryParams}` : '';
+
+      const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
+        cache: 'no-store',
+      });
       if (!sessionResponse.ok) {
         throw new Error('No se pudo crear la sesión de terminal.');
       }
 
       const { port, wsPath } = await sessionResponse.json();
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsUrl = `${wsProtocol}://127.0.0.1:${port}${wsPath}${cwdParam}`;
+      const wsUrl = `${wsProtocol}://127.0.0.1:${port}${wsPath}${queryStr}`;
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
       socket.onopen = () => {
         setConnectionState('connected');
         sendResize();
-        if (autoFocus !== false) termRef.current?.focus();
+        // Only send initial command once per component lifecycle to avoid rerunning on fast reconnects
+        if (initialCommand && !hasSentInitialCommand.current) {
+          socket.send(JSON.stringify({ type: 'input', data: initialCommand + '\r' }));
+          hasSentInitialCommand.current = true;
+        }
+        // Initial focus handled by the other useEffect
       };
 
       socket.onmessage = (event) => {
@@ -78,9 +138,10 @@ export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
       console.error(error);
       setConnectionState('error');
     }
-  }, [sendResize, cwd, autoFocus]);
+  }, [sendResize, cwd, initialCommand]);
 
   const reconnect = useCallback(() => {
+    hasSentInitialCommand.current = false;
     termRef.current?.clear();
     wsRef.current?.close();
     connect();
@@ -96,6 +157,9 @@ export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
       ]);
 
       if (!mounted || !containerRef.current) return;
+
+      const ready = await waitForVisibleDimensions();
+      if (!mounted || !containerRef.current || !ready) return;
 
       const style = getComputedStyle(document.body);
       const terminal = new Terminal({
@@ -148,17 +212,23 @@ export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
 
       setIsInitializing(false);
       connect();
+
+      sendResize();
     }
 
     initializeTerminal();
 
     return () => {
       mounted = false;
+      clearTimers();
       resizeObserverRef.current?.disconnect();
       wsRef.current?.close();
       termRef.current?.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+      wsRef.current = null;
     };
-  }, [connect, sendResize]);
+  }, [connect, sendResize, fitAndResize, clearTimers, waitForVisibleDimensions]);
 
   // Handle focus when tab becomes active
   useEffect(() => {
@@ -167,15 +237,48 @@ export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
     }
   }, [autoFocus]);
 
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        sendResize();
+      }
+    };
+
+    const handleWindowResize = () => sendResize();
+
+    window.addEventListener('resize', handleWindowResize);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [sendResize]);
+
   const isConnected = connectionState === 'connected';
-  const statusLabel = isConnected ? 'Conectado' : connectionState === 'connecting' ? 'Conectando...' : 'Desconectado';
+  const statusLabel = isConnected
+    ? 'Conectado'
+    : connectionState === 'connecting'
+      ? 'Conectando...'
+      : 'Desconectado';
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[#111111] relative">
       {!hideTitleBar && (
         <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle">
           <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none">
-            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1={12} y1={19} x2={20} y2={19} /></svg>
+            <svg
+              className="w-4 h-4 text-gray-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="4 17 10 11 4 5" />
+              <line x1={12} y1={19} x2={20} y2={19} />
+            </svg>
             <span className="text-gray-400">Terminal Integrada</span>
           </div>
 
@@ -185,16 +288,29 @@ export default function TerminalTTY({ onClose, cwd, autoFocus, hideTitleBar }) {
             ) : (
               <WifiOff className="w-3 h-3 text-[#ff7b72]" strokeWidth={2} />
             )}
-            <span className={`text-[10px] font-sans tracking-wide uppercase font-semibold ${isConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}>{statusLabel}</span>
+            <span
+              className={`text-[10px] font-sans tracking-wide uppercase font-semibold ${isConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}
+            >
+              {statusLabel}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={reconnect} className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group">
+            <button
+              onClick={reconnect}
+              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group"
+            >
               <RotateCcw className="w-3 h-3 text-gray-400 group-hover:text-white" strokeWidth={2} />
             </button>
             {onClose && (
-              <button onClick={onClose} className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group">
-                <X className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#ff7b72]" strokeWidth={2} />
+              <button
+                onClick={onClose}
+                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group"
+              >
+                <X
+                  className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#ff7b72]"
+                  strokeWidth={2}
+                />
               </button>
             )}
           </div>

@@ -1,24 +1,32 @@
-# Agent Teams Lite - Skill Registry
+# Skill Registry
 
-This registry tracks the explicit conventions and triggers used by Antigravity SDD phases and skills.
+Generated: 2026-03-31
+Project: veloce
 
-## Project Standards (Compact Rules)
+## Project conventions detected
+- Frontend app uses Next.js 15 App Router with React 19 in `src/app`.
+- Stack is JavaScript/JSX-first, with TypeScript used for config/tests (`playwright.config.ts`, MCP tests).
+- Styling/tooling: Tailwind CSS, PostCSS, ESLint flat config, Prettier, Husky + lint-staged.
+- Desktop packaging: Tauri 2 in `src-tauri/`.
+- Adjacent services: `devhub-mcp/` (Node ESM + Jest) and `sidecar-backend/` (Express + ws + node-pty).
+- No project-root `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `GEMINI.md`, or `copilot-instructions.md` found.
 
-### Core Stack
-- **Web**: Next.js App Router, React, Tailwind CSS.
-- **Backend**: Node.js (Express in `sidecar-backend`, MCP in `devhub-mcp`).
-- **Desktop**: Tauri (Rust in `src-tauri`).
-- **Database**: Supabase (PostgreSQL).
+## Testing capabilities
+- Root web app test command: `npm run test` → `next test`
+- E2E: `npm run test:e2e` → `playwright test`
+- Coverage: `devhub-mcp` has `npm run test:coverage` → Jest coverage
+- Lint: `npm run lint` / `npm run lint:fix` → ESLint
+- Format: `npm run format` → Prettier
 
-### Conventions
-- Use `npm run lint` and `npm run format`.
-- E2E testing with Playwright (`npm run test:e2e`). Unit testing with Jest (`devhub-mcp`).
-- All persistent memories and architectural decisions MUST go through Engram (`mcp_engram_mem_save`).
+## Available skills
+| Name | Trigger | Path | Notes |
+|------|---------|------|------|
+| branch-pr | pull request / prepare changes for review | `~/.config/opencode/skills/branch-pr/SKILL.md` | PR workflow, issue linkage, conventional commits |
+| issue-creation | GitHub issue / bug report / feature request | `~/.config/opencode/skills/issue-creation/SKILL.md` | Issue-first workflow with approval gate |
+| judgment-day | adversarial review / dual review | `~/.config/opencode/skills/judgment-day/SKILL.md` | Parallel blind review protocol |
+| go-testing | Go tests / Bubbletea / teatest | `~/.config/opencode/skills/go-testing/SKILL.md` | Table-driven tests, TUI testing patterns |
+| skill-creator | create a new skill | `~/.config/opencode/skills/skill-creator/SKILL.md` | Skill authoring guidance |
 
-## User Skills
-
-| Skill | Description | Triggers |
-|-------|-------------|----------|
-| `judgment-day` | Parallel adversarial review protocol | "judgment day", "review adversarial" |
-| `issue-creation` | Issue creation workflow | "create issue", "report bug" |
-| `branch-pr` | PR creation workflow | "create pr", "open pr" |
+## Excluded from registry
+- `sdd-*` skills and `_shared` helpers were skipped per registry rules.
+- `skill-registry` itself is not included to avoid self-reference.

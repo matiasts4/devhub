@@ -1,13 +1,16 @@
 import net from 'net';
 import os from 'os';
+import { spawnSync } from 'child_process';
 
 // Use global require via eval to bypass Webpack's statically analyzed requires
-// This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly 
+// This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly
 // instead of getting stubbed or mangled by Next.js's dev compiler.
 const pty = eval('require')('node-pty');
 const { WebSocketServer } = eval('require')('ws');
 
 const GLOBAL_TTY_KEY = '__DEVHUB_TTY_SERVER__';
+const GLOBAL_TTY_SESSIONS_KEY = '__DEVHUB_TTY_SESSIONS__';
+let tmuxAvailabilityCache;
 
 function resolveShell() {
   if (process.env.SHELL) return process.env.SHELL;
@@ -16,6 +19,36 @@ function resolveShell() {
 
 function resolveHomeDirectory() {
   return process.env.HOME || process.cwd();
+}
+
+function escapeShellArg(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function normalizeTmuxSessionName(terminalId) {
+  const cleaned = String(terminalId || 'terminal')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 64);
+  return `devhub-${cleaned || 'terminal'}`;
+}
+
+function hasTmux() {
+  if (typeof tmuxAvailabilityCache === 'boolean') return tmuxAvailabilityCache;
+  if (os.platform() === 'win32') {
+    tmuxAvailabilityCache = false;
+    return tmuxAvailabilityCache;
+  }
+
+  try {
+    const result = spawnSync('tmux', ['-V'], { stdio: 'ignore' });
+    tmuxAvailabilityCache = result.status === 0;
+  } catch {
+    tmuxAvailabilityCache = false;
+  }
+
+  return tmuxAvailabilityCache;
 }
 
 function pickFreePort(startPort) {
@@ -54,10 +87,42 @@ function parseClientMessage(rawMessage) {
   }
 }
 
+function detectSessionModeFromInput(session, input) {
+  if (!input || typeof input !== 'string') return;
+
+  // Fast path for the launcher case, where the whole command comes in one chunk.
+  if (/\bopencode\b/i.test(input)) {
+    session.mode = 'tui';
+    session.historyEnabled = false;
+    session.history = '';
+    return;
+  }
+
+  session.pendingInput = `${session.pendingInput || ''}${input}`;
+
+  // Parse line-based shell commands to detect transitions into TUI mode.
+  const lines = session.pendingInput.split(/\r\n|\n|\r/);
+  session.pendingInput = lines.pop() || '';
+
+  for (const line of lines) {
+    if (/^\s*opencode\b/i.test(line.trim())) {
+      session.mode = 'tui';
+      session.historyEnabled = false;
+      session.history = '';
+      return;
+    }
+  }
+}
+
 export async function ensureTTYServer() {
   if (globalThis[GLOBAL_TTY_KEY]) {
     return globalThis[GLOBAL_TTY_KEY];
   }
+
+  // A map to keep PTY instances alive across WebSocket reconnects
+  // Key: terminalId, Value: { pty, sockets: Set, history, mode, historyEnabled }
+  const terminalSessions = new Map();
+  globalThis[GLOBAL_TTY_SESSIONS_KEY] = terminalSessions;
 
   const basePort = Number(process.env.DEVHUB_TTY_PORT || 4077);
   const wsPath = '/terminal';
@@ -66,51 +131,121 @@ export async function ensureTTYServer() {
 
   wss.on('connection', (socket, request) => {
     let cwd = resolveHomeDirectory();
+    let terminalId = `term-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+
     try {
       if (request?.url) {
-        // e.g. /terminal?cwd=/home/matias
         const dummyUrl = new URL(request.url, 'http://localhost');
         const requestedCwd = dummyUrl.searchParams.get('cwd');
+        const reqTermId = dummyUrl.searchParams.get('id');
         if (requestedCwd) cwd = requestedCwd;
+        if (reqTermId) terminalId = reqTermId;
       }
-    } catch (e) { console.error('Error parsing WS URL:', e); }
+    } catch (e) {
+      console.error('Error parsing WS URL:', e);
+    }
 
-    const shell = resolveShell();
+    let session = terminalSessions.get(terminalId);
 
-    const env = Object.assign({}, process.env, {
-      DEVHUB_PROJECT_DIR: cwd,
-      DEVHUB_MCP_CMD: 'node /home/matias/devhub/devhub-mcp/server.js',
-      // Optional: Add alias logic if shell allows or hint the user
-      GEMINI_MCP_HINT: 'Use DEVHUB_MCP_CMD to connect Gemini CLI to your local server.'
-    });
+    if (!session) {
+      const shell = resolveShell();
+      const tmuxEnabled = hasTmux();
+      const tmuxSession = normalizeTmuxSessionName(terminalId);
 
-    const terminal = pty.spawn(shell, [], {
-      name: 'xterm-256color',
-      cols: 120,
-      rows: 32,
-      cwd,
-      env,
-    });
+      const env = Object.assign({}, process.env, {
+        DEVHUB_PROJECT_DIR: cwd,
+        DEVHUB_MCP_CMD: 'node /home/matias/devhub/devhub-mcp/server.js',
+        GEMINI_MCP_HINT: 'Use DEVHUB_MCP_CMD to connect Gemini CLI to your local server.',
+        DEVHUB_TMUX_SESSION: tmuxSession,
+      });
 
-    terminal.onData((chunk) => {
-      if (socket.readyState === socket.OPEN) {
-        socket.send(JSON.stringify({ type: 'output', data: chunk }));
+      let spawnArgs = [];
+      if (tmuxEnabled && os.platform() !== 'win32') {
+        const attachCommand = `tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
+        spawnArgs = ['-lc', attachCommand];
       }
-    });
 
-    terminal.onExit(({ exitCode, signal }) => {
-      if (socket.readyState === socket.OPEN) {
-        socket.send(JSON.stringify({ type: 'exit', exitCode, signal }));
-        socket.close();
+      const terminal = pty.spawn(shell, spawnArgs, {
+        name: 'xterm-256color',
+        cols: 120,
+        rows: 32,
+        cwd,
+        env,
+      });
+
+      session = {
+        pty: terminal,
+        sockets: new Set([socket]),
+        history: '',
+        mode: 'shell',
+        historyEnabled: true,
+        pendingInput: '',
+        createdAt: Date.now(),
+        lastActivityAt: Date.now(),
+      };
+
+      terminalSessions.set(terminalId, session);
+
+      if (!tmuxEnabled && os.platform() !== 'win32') {
+        terminal.write(
+          '\r\n\x1b[33m[DevHub]\x1b[0m tmux no está instalado. Para una recuperación más robusta de sesiones por panel, instalá tmux.\r\n\r\n'
+        );
       }
-    });
+
+      terminal.onData((chunk) => {
+        session.lastActivityAt = Date.now();
+        if (session.historyEnabled) {
+          session.history += chunk;
+          if (session.history.length > 100000) {
+            session.history = session.history.slice(-100000);
+          }
+        }
+
+        for (const s of session.sockets) {
+          if (s.readyState === s.OPEN) {
+            s.send(JSON.stringify({ type: 'output', data: chunk }));
+          }
+        }
+      });
+
+      terminal.onExit(({ exitCode, signal }) => {
+        for (const s of session.sockets) {
+          if (s.readyState === s.OPEN) {
+            s.send(JSON.stringify({ type: 'exit', exitCode, signal }));
+            s.close();
+          }
+        }
+        terminalSessions.delete(terminalId);
+      });
+    } else {
+      // Attach to existing session
+      session.sockets.add(socket);
+      session.lastActivityAt = Date.now();
+      if (session.historyEnabled && session.history && socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify({ type: 'output', data: session.history }));
+      }
+
+      // For full-screen TUI apps (OpenCode/Vim/Nano style), replaying stale history
+      // tends to corrupt rendering on a fresh xterm canvas after reload.
+      if (session.mode === 'tui') {
+        setTimeout(() => {
+          try {
+            session.pty.write('\x0c'); // Ctrl+L redraw
+          } catch {
+            // Ignore redraw errors on stale PTY handles.
+          }
+        }, 30);
+      }
+    }
 
     socket.on('message', (rawMessage) => {
       const message = parseClientMessage(rawMessage);
       if (!message?.type) return;
 
       if (message.type === 'input' && typeof message.data === 'string') {
-        terminal.write(message.data);
+        detectSessionModeFromInput(session, message.data);
+        session.lastActivityAt = Date.now();
+        session.pty.write(message.data);
       }
 
       if (
@@ -120,12 +255,16 @@ export async function ensureTTYServer() {
         message.cols > 0 &&
         message.rows > 0
       ) {
-        terminal.resize(message.cols, message.rows);
+        session.pty.resize(message.cols, message.rows);
       }
     });
 
     socket.on('close', () => {
-      terminal.kill();
+      if (session) {
+        session.sockets.delete(socket);
+        session.lastActivityAt = Date.now();
+        // Do NOT kill the pty process here. Let it run in background.
+      }
     });
 
     socket.send(JSON.stringify({ type: 'ready' }));
@@ -134,4 +273,23 @@ export async function ensureTTYServer() {
   const serverState = { port, wsPath };
   globalThis[GLOBAL_TTY_KEY] = serverState;
   return serverState;
+}
+
+export function getTTYSessionsSnapshot() {
+  const sessions = globalThis[GLOBAL_TTY_SESSIONS_KEY];
+  if (!sessions || typeof sessions.values !== 'function') return [];
+
+  const snapshot = [];
+  for (const [terminalId, session] of sessions.entries()) {
+    snapshot.push({
+      terminalId,
+      mode: session.mode || 'shell',
+      socketCount: session.sockets?.size || 0,
+      createdAt: session.createdAt || null,
+      lastActivityAt: session.lastActivityAt || null,
+      alive: true,
+    });
+  }
+
+  return snapshot;
 }

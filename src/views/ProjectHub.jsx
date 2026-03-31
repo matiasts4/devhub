@@ -1,120 +1,132 @@
 'use client';
 
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
-  Plus, Search, Code2,
-  Clock, ChevronRight, Loader2, X,
-  Brain, Upload, FileText, Trash2, Zap,
-  MonitorSmartphone, GraduationCap, FlaskConical, Shield, BarChart3, Palette, Cpu,
-  LogOut, FolderOpen
-} from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
+  Plus,
+  Search,
+  Code2,
+  Clock,
+  ChevronRight,
+  Loader2,
+  X,
+  Brain,
+  Upload,
+  FileText,
+  Trash2,
+  Zap,
+  MonitorSmartphone,
+  GraduationCap,
+  FlaskConical,
+  Shield,
+  BarChart3,
+  Palette,
+  Cpu,
+  FolderOpen,
+} from 'lucide-react';
+import { createClient } from '@/lib/db/localSupabase';
+import { toast } from 'sonner';
 
 const PROJECT_TYPES_MODAL = [
-  { key: "software",   label: "Software",      Icon: MonitorSmartphone, color: "#58A6FF" },
-  { key: "university", label: "Universidad",   Icon: GraduationCap,     color: "#D2A8FF" },
-  { key: "research",   label: "Investigación", Icon: FlaskConical,       color: "#3FB950" },
-  { key: "security",   label: "Seguridad",     Icon: Shield,             color: "#E3B341" },
-  { key: "business",   label: "Negocio",       Icon: BarChart3,          color: "#F78166" },
-  { key: "creative",   label: "Creativo",      Icon: Palette,            color: "#FF79C6" },
+  { key: 'software', label: 'Software', Icon: MonitorSmartphone, color: '#58A6FF' },
+  { key: 'university', label: 'Universidad', Icon: GraduationCap, color: '#D2A8FF' },
+  { key: 'research', label: 'Investigación', Icon: FlaskConical, color: '#3FB950' },
+  { key: 'security', label: 'Seguridad', Icon: Shield, color: '#E3B341' },
+  { key: 'business', label: 'Negocio', Icon: BarChart3, color: '#F78166' },
+  { key: 'creative', label: 'Creativo', Icon: Palette, color: '#FF79C6' },
 ];
 
 const STATUS_CONFIG = {
-  active:    { label: "Activo",     color: "#3FB950", dot: "bg-[#3FB950]", animate: true },
-  paused:    { label: "Pausado",    color: "#E3B341", dot: "bg-[#E3B341]", animate: false },
-  completed: { label: "Completado", color: "#8B949E", dot: "bg-[#8B949E]", animate: false },
-  archived:  { label: "Archivado",  color: "#484F58", dot: "bg-[#484F58]", animate: false },
+  active: { label: 'Activo', color: '#3FB950', dot: 'bg-[#3FB950]', animate: true },
+  paused: { label: 'Pausado', color: '#E3B341', dot: 'bg-[#E3B341]', animate: false },
+  completed: { label: 'Completado', color: '#8B949E', dot: 'bg-[#8B949E]', animate: false },
+  archived: { label: 'Archivado', color: '#484F58', dot: 'bg-[#484F58]', animate: false },
 };
 
-const ACCENT_COLORS = ["#58A6FF", "#3FB950", "#F778BA", "#D2A8FF", "#E3B341", "#FF7B72"];
+const ACCENT_COLORS = ['#58A6FF', '#3FB950', '#F778BA', '#D2A8FF', '#E3B341', '#FF7B72'];
 
 export default function ProjectHub() {
   const navigate = useNavigate();
   const supabase = createClient();
 
-  const [user, setUser]       = useState(null);
-  const [profile, setProfile] = useState(null);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [showNewModal, setShowNewModal] = useState(false);
-  const [newProject, setNewProject] = useState({ name: "", description: "", color: "#6366f1", local_path: "" });
+  const [newProject, setNewProject] = useState({
+    name: '',
+    description: '',
+    color: '#6366f1',
+    local_path: '',
+  });
   const [creating, setCreating] = useState(false);
-  const [planningPrompt, setPlanningPrompt] = useState("");
+  const [planningPrompt, setPlanningPrompt] = useState('');
   const [enablePlanning, setEnablePlanning] = useState(true);
-  const [projectType, setProjectType] = useState("software");
+  const [projectType, setProjectType] = useState('software');
   const [pendingFiles, setPendingFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const dropRef = useRef(null);
-  const ACCEPTED_TYPES = [".txt", ".md", ".json", ".yaml", ".yml", ".csv", ".js", ".ts", ".py", ".jsx", ".tsx"];
+  const ACCEPTED_TYPES = [
+    '.txt',
+    '.md',
+    '.json',
+    '.yaml',
+    '.yml',
+    '.csv',
+    '.js',
+    '.ts',
+    '.py',
+    '.jsx',
+    '.tsx',
+  ];
 
   function processFileList(fileList) {
     Array.from(fileList).forEach((file) => {
-      const ext = "." + file.name.split(".").pop().toLowerCase();
-      if (!ACCEPTED_TYPES.includes(ext)) { toast.error(`Tipo no soportado: ${file.name}`); return; }
-      if (file.size > 2 * 1024 * 1024) { toast.error(`Demasiado grande: ${file.name}`); return; }
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (!ACCEPTED_TYPES.includes(ext)) {
+        toast.error(`Tipo no soportado: ${file.name}`);
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error(`Demasiado grande: ${file.name}`);
+        return;
+      }
       const reader = new FileReader();
-      reader.onload = (ev) => setPendingFiles((prev) => [
-        ...prev, { file_name: file.name, content: ev.target.result, file_type: ext.replace(".", ""), size: file.size }
-      ]);
+      reader.onload = (ev) =>
+        setPendingFiles((prev) => [
+          ...prev,
+          {
+            file_name: file.name,
+            content: ev.target.result,
+            file_type: ext.replace('.', ''),
+            size: file.size,
+          },
+        ]);
       reader.readAsText(file);
     });
   }
 
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      setUser(user);
-      if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .single();
-        setProfile(data);
-      }
-    });
-  }, []);
+  // Local-first: no auth needed
+  const localUser = { id: 'local-user', email: 'local@devhub.local' };
 
   useEffect(() => {
     fetchProjects();
-
-    const channel = supabase.channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'projects' },
-        (payload) => {
-          // Recargar proyectos automáticamente si un agente u otra fuente crea/modifica uno
-          fetchProjects();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, []);
 
   async function fetchProjects() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("projects")
-      .select("*, tasks(count)")
-      .order("created_at", { ascending: false });
+      .from('projects')
+      .select('*, tasks(count)')
+      .order('created_at', { ascending: false });
     if (error) {
-      console.error("fetchProjects ERROR:", error);
-      toast.error("Error al cargar proyectos: " + error.message);
+      console.error('fetchProjects ERROR:', error);
+      toast.error('Error al cargar proyectos: ' + error.message);
     }
     if (!error && data) setProjects(data);
     setLoading(false);
-  }
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    window.location.href = "/login";
   }
 
   async function handleSelectFolder() {
@@ -122,31 +134,34 @@ export default function ProjectHub() {
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: "Seleccionar Carpeta del Proyecto"
+        title: 'Seleccionar Carpeta del Proyecto',
       });
       if (selected) {
-        setNewProject(p => ({ ...p, local_path: selected }));
+        setNewProject((p) => ({ ...p, local_path: selected }));
       }
     } catch (err) {
-      console.warn("No se pudo abrir el selector, ¿estás en web?", err);
+      console.warn('No se pudo abrir el selector, ¿estás en web?', err);
     }
   }
 
   async function createProject(e) {
     e.preventDefault();
     setCreating(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from("projects").insert({
-      user_id: user.id,
-      name: newProject.name,
-      description: newProject.description,
-      color: newProject.color,
-      local_path: newProject.local_path,
-    }).select().single();
+    const { data, error } = await supabase
+      .from('projects')
+      .insert({
+        user_id: localUser.id,
+        name: newProject.name,
+        description: newProject.description,
+        color: newProject.color,
+        local_path: newProject.local_path,
+      })
+      .select()
+      .single();
 
     if (error) {
-      console.error("Error creating project:", error);
-      toast.error("Error al crear proyecto: " + error.message);
+      console.error('Error creating project:', error);
+      toast.error('Error al crear proyecto: ' + error.message);
       setCreating(false);
       return;
     }
@@ -154,35 +169,47 @@ export default function ProjectHub() {
     // Subir archivos de contexto si hay
     if (enablePlanning && pendingFiles.length > 0 && data) {
       await fetch(`/api/projects/${data.id}/files`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ files: pendingFiles, user_id: user.id }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: pendingFiles, user_id: localUser.id }),
       });
     }
 
     setCreating(false);
     if (data) {
       setShowNewModal(false);
-      setNewProject({ name: "", description: "", color: "#6366f1", local_path: "" });
-      setPlanningPrompt("");
+      setNewProject({ name: '', description: '', color: '#6366f1', local_path: '' });
+      setPlanningPrompt('');
       setPendingFiles([]);
       setEnablePlanning(true);
-      setProjectType("software");
+      setProjectType('software');
       navigate(enablePlanning ? `/project/${data.id}/planning` : `/project/${data.id}/dashboard`);
     }
   }
 
   const filtered = projects.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === "all" || p.status === filterStatus;
+    const matchStatus = filterStatus === 'all' || p.status === filterStatus;
     return matchSearch && matchStatus;
   });
 
   const stats = [
-    { label: "Proyectos activos", value: projects.filter(p => p.status === "active").length, color: "#3FB950" },
-    { label: "Total tareas",      value: projects.reduce((a, p) => a + (p.tasks?.[0]?.count || 0), 0), color: "#58A6FF" },
-    { label: "Total proyectos",   value: projects.length, color: "#D2A8FF" },
-    { label: "Completados",       value: projects.filter(p => p.status === "completed").length, color: "#E3B341" },
+    {
+      label: 'Proyectos activos',
+      value: projects.filter((p) => p.status === 'active').length,
+      color: '#3FB950',
+    },
+    {
+      label: 'Total tareas',
+      value: projects.reduce((a, p) => a + (p.tasks?.[0]?.count || 0), 0),
+      color: '#58A6FF',
+    },
+    { label: 'Total proyectos', value: projects.length, color: '#D2A8FF' },
+    {
+      label: 'Completados',
+      value: projects.filter((p) => p.status === 'completed').length,
+      color: '#E3B341',
+    },
   ];
 
   return (
@@ -193,11 +220,16 @@ export default function ProjectHub() {
           <div className="w-8 h-8 rounded-lg bg-[#58A6FF]/15 border border-[#58A6FF]/25 flex items-center justify-center">
             <Cpu className="w-4 h-4 text-accent-primary" strokeWidth={1.5} />
           </div>
-          <span className="font-mono font-bold text-text-primary text-sm tracking-wide">DevHub</span>
+          <span className="font-mono font-bold text-text-primary text-sm tracking-wide">
+            DevHub
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" strokeWidth={1.5} />
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted"
+              strokeWidth={1.5}
+            />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -212,19 +244,6 @@ export default function ProjectHub() {
             <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
             Nuevo Proyecto
           </button>
-          <div className="flex items-center gap-2 pl-2 border-l border-borders-subtle">
-            <div className="flex items-center gap-1.5">
-              <Shield className="w-3 h-3 text-success" strokeWidth={1.5} />
-              <span className="text-[10px] text-text-muted max-w-[120px] truncate">{user?.email}</span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-[#F778BA]/8 transition-all"
-              title="Cerrar sesión"
-            >
-              <LogOut className="w-3.5 h-3.5" strokeWidth={1.5} />
-            </button>
-          </div>
         </div>
       </div>
 
@@ -232,7 +251,7 @@ export default function ProjectHub() {
         {/* Header */}
         <div className="mb-8 fade-in-up">
           <h1 className="font-mono text-3xl font-bold text-text-primary mb-1">
-            Bienvenido, {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "..."}
+            Bienvenido a DevHub
           </h1>
           <p className="text-text-muted text-sm">
             Selecciona un proyecto para entrar al workspace — o crea uno nuevo.
@@ -257,14 +276,17 @@ export default function ProjectHub() {
 
         {/* Status filters */}
         <div className="flex items-center gap-2 mb-6 flex-wrap">
-          {[{ key: "all", label: "Todos" }, ...Object.entries(STATUS_CONFIG).map(([k, v]) => ({ key: k, label: v.label }))].map(({ key, label }) => (
+          {[
+            { key: 'all', label: 'Todos' },
+            ...Object.entries(STATUS_CONFIG).map(([k, v]) => ({ key: k, label: v.label })),
+          ].map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setFilterStatus(key)}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 filterStatus === key
-                  ? "bg-surface-elevated text-text-primary border border-[#388BFD]/50"
-                  : "text-text-muted hover:text-text-primary hover:bg-surface-elevated border border-transparent"
+                  ? 'bg-surface-elevated text-text-primary border border-[#388BFD]/50'
+                  : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated border border-transparent'
               }`}
             >
               {label}
@@ -293,28 +315,46 @@ export default function ProjectHub() {
                     <div className="flex items-center gap-3">
                       <div
                         className="w-9 h-9 rounded-lg flex items-center justify-center"
-                        style={{ background: `${accentColor}18`, border: `1px solid ${accentColor}28` }}
+                        style={{
+                          background: `${accentColor}18`,
+                          border: `1px solid ${accentColor}28`,
+                        }}
                       >
-                        <Code2 className="w-4 h-4" strokeWidth={1.5} style={{ color: accentColor }} />
+                        <Code2
+                          className="w-4 h-4"
+                          strokeWidth={1.5}
+                          style={{ color: accentColor }}
+                        />
                       </div>
                       <div>
-                        <h3 className="font-mono font-semibold text-text-primary text-sm leading-tight">{project.name}</h3>
-                        <span className="text-[10px] font-medium" style={{ color: accentColor }}>Proyecto</span>
+                        <h3 className="font-mono font-semibold text-text-primary text-sm leading-tight">
+                          {project.name}
+                        </h3>
+                        <span className="text-[10px] font-medium" style={{ color: accentColor }}>
+                          Proyecto
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                      {project.planning_status === "pending" && (
+                      {project.planning_status === 'pending' && (
                         <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#D2A8FF]/10 border border-[#D2A8FF]/20 text-[#D2A8FF] flex items-center gap-1">
-                          <Brain className="w-2.5 h-2.5" />Plan pendiente
+                          <Brain className="w-2.5 h-2.5" />
+                          Plan pendiente
                         </span>
                       )}
-                      <span className={`w-1.5 h-1.5 rounded-full ${estado.dot} ${estado.animate ? "animate-pulse" : ""}`} />
-                      <span className="text-[10px]" style={{ color: estado.color }}>{estado.label}</span>
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${estado.dot} ${estado.animate ? 'animate-pulse' : ''}`}
+                      />
+                      <span className="text-[10px]" style={{ color: estado.color }}>
+                        {estado.label}
+                      </span>
                     </div>
                   </div>
 
                   {project.description && (
-                    <p className="text-xs text-text-muted leading-relaxed mb-4 line-clamp-2">{project.description}</p>
+                    <p className="text-xs text-text-muted leading-relaxed mb-4 line-clamp-2">
+                      {project.description}
+                    </p>
                   )}
 
                   {/* Progress bar */}
@@ -326,7 +366,9 @@ export default function ProjectHub() {
                       />
                     </div>
                     <div className="flex justify-between mt-1">
-                      <span className="text-[10px] text-text-muted">{project.tasks?.[0]?.count || 0} tareas</span>
+                      <span className="text-[10px] text-text-muted">
+                        {project.tasks?.[0]?.count || 0} tareas
+                      </span>
                       <span className="text-[10px] text-text-muted">{project.progress || 0}%</span>
                     </div>
                   </div>
@@ -334,7 +376,10 @@ export default function ProjectHub() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1 text-[10px] text-text-muted">
                       <Clock className="w-3 h-3" strokeWidth={1.5} />
-                      {new Date(project.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
+                      {new Date(project.created_at).toLocaleDateString('es-ES', {
+                        day: '2-digit',
+                        month: 'short',
+                      })}
                     </div>
                     <div className="flex items-center gap-1 text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
                       <span>Abrir</span>
@@ -352,10 +397,15 @@ export default function ProjectHub() {
               style={{ animationDelay: `${filtered.length * 60}ms` }}
             >
               <div className="w-10 h-10 rounded-full bg-surface-elevated flex items-center justify-center group-hover:bg-[#388BFD]/15 transition-colors">
-                <Plus className="w-5 h-5 text-text-muted group-hover:text-accent-primary transition-colors" strokeWidth={1.5} />
+                <Plus
+                  className="w-5 h-5 text-text-muted group-hover:text-accent-primary transition-colors"
+                  strokeWidth={1.5}
+                />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-text-muted group-hover:text-text-primary transition-colors">Nuevo Proyecto</p>
+                <p className="text-sm font-medium text-text-muted group-hover:text-text-primary transition-colors">
+                  Nuevo Proyecto
+                </p>
                 <p className="text-[11px] text-text-muted">Software, Universidad, Personal...</p>
               </div>
             </div>
@@ -373,7 +423,13 @@ export default function ProjectHub() {
                 </div>
                 <h2 className="font-mono font-bold text-text-primary">Nuevo Proyecto</h2>
               </div>
-              <button onClick={() => { setShowNewModal(false); setPendingFiles([]); }} className="text-text-muted hover:text-white transition-colors">
+              <button
+                onClick={() => {
+                  setShowNewModal(false);
+                  setPendingFiles([]);
+                }}
+                className="text-text-muted hover:text-white transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -381,11 +437,14 @@ export default function ProjectHub() {
             <form onSubmit={createProject} className="space-y-4">
               {/* Nombre */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">Nombre del proyecto *</label>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                  Nombre del proyecto *
+                </label>
                 <input
-                  type="text" required
+                  type="text"
+                  required
                   value={newProject.name}
-                  onChange={(e) => setNewProject(p => ({ ...p, name: e.target.value }))}
+                  onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Mi proyecto increíble"
                   className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
                 />
@@ -393,12 +452,14 @@ export default function ProjectHub() {
 
               {/* Ruta Local */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">Directorio / Ruta Local</label>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                  Directorio / Ruta Local
+                </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={newProject.local_path}
-                    onChange={(e) => setNewProject(p => ({ ...p, local_path: e.target.value }))}
+                    onChange={(e) => setNewProject((p) => ({ ...p, local_path: e.target.value }))}
                     placeholder="/home/usuario/proyectos/mi-proyecto"
                     className="flex-1 bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
                   />
@@ -415,11 +476,13 @@ export default function ProjectHub() {
 
               {/* Descripción corta */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">Descripción breve</label>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                  Descripción breve
+                </label>
                 <input
                   type="text"
                   value={newProject.description}
-                  onChange={(e) => setNewProject(p => ({ ...p, description: e.target.value }))}
+                  onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                   placeholder="¿Qué hace este proyecto en una frase?"
                   className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
                 />
@@ -427,13 +490,21 @@ export default function ProjectHub() {
 
               {/* Color */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">Color de acento</label>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                  Color de acento
+                </label>
                 <div className="flex items-center gap-3">
                   {ACCENT_COLORS.map((c) => (
-                    <button key={c} type="button"
-                      onClick={() => setNewProject(p => ({ ...p, color: c }))}
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setNewProject((p) => ({ ...p, color: c }))}
                       className="w-7 h-7 rounded-full transition-all hover:scale-110"
-                      style={{ background: c, outline: newProject.color === c ? `2px solid ${c}` : 'none', outlineOffset: '2px' }}
+                      style={{
+                        background: c,
+                        outline: newProject.color === c ? `2px solid ${c}` : 'none',
+                        outlineOffset: '2px',
+                      }}
                     />
                   ))}
                 </div>
@@ -444,18 +515,22 @@ export default function ProjectHub() {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
                     <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />
-                    <span className="text-sm font-semibold text-text-primary">Planning IA automático</span>
+                    <span className="text-sm font-semibold text-text-primary">
+                      Planning IA automático
+                    </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setEnablePlanning(!enablePlanning)}
                     className={`relative w-10 h-5 rounded-full transition-all duration-200 ${
-                      enablePlanning ? "bg-[#D2A8FF]" : "bg-surface-elevated"
+                      enablePlanning ? 'bg-[#D2A8FF]' : 'bg-surface-elevated'
                     }`}
                   >
-                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                      enablePlanning ? "translate-x-5" : "translate-x-0.5"
-                    }`} />
+                    <span
+                      className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                        enablePlanning ? 'translate-x-5' : 'translate-x-0.5'
+                      }`}
+                    />
                   </button>
                 </div>
 
@@ -468,16 +543,28 @@ export default function ProjectHub() {
                         {PROJECT_TYPES_MODAL.map(({ key, label, Icon, color }) => {
                           const sel = projectType === key;
                           return (
-                            <button key={key} type="button"
+                            <button
+                              key={key}
+                              type="button"
                               onClick={() => setProjectType(key)}
                               className="flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all"
-                              style={sel
-                                ? { background: `${color}15`, borderColor: `${color}45` }
-                                : { borderColor: "var(--border-subtle)" }}>
-                              <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5}
-                                style={{ color: sel ? color : "var(--text-muted)" }} />
-                              <span className="text-[11px] font-medium truncate"
-                                style={{ color: sel ? color : "var(--text-muted)" }}>{label}</span>
+                              style={
+                                sel
+                                  ? { background: `${color}15`, borderColor: `${color}45` }
+                                  : { borderColor: 'var(--border-subtle)' }
+                              }
+                            >
+                              <Icon
+                                className="w-3.5 h-3.5 flex-shrink-0"
+                                strokeWidth={1.5}
+                                style={{ color: sel ? color : 'var(--text-muted)' }}
+                              />
+                              <span
+                                className="text-[11px] font-medium truncate"
+                                style={{ color: sel ? color : 'var(--text-muted)' }}
+                              >
+                                {label}
+                              </span>
                             </button>
                           );
                         })}
@@ -495,32 +582,63 @@ export default function ProjectHub() {
                     {/* Mini dropzone */}
                     <div
                       ref={dropRef}
-                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragging(true);
+                      }}
                       onDragLeave={() => setIsDragging(false)}
-                      onDrop={(e) => { e.preventDefault(); setIsDragging(false); processFileList(e.dataTransfer.files); }}
-                      onClick={() => document.getElementById("modal-file-input").click()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        processFileList(e.dataTransfer.files);
+                      }}
+                      onClick={() => document.getElementById('modal-file-input').click()}
                       className={`border border-dashed rounded-lg px-4 py-3 flex items-center gap-3 cursor-pointer transition-all ${
-                        isDragging ? "border-[#58A6FF] bg-[#58A6FF]/5" : "border-borders-strong hover:border-[#D2A8FF]/30 hover:bg-surface-elevated"
+                        isDragging
+                          ? 'border-[#58A6FF] bg-[#58A6FF]/5'
+                          : 'border-borders-strong hover:border-[#D2A8FF]/30 hover:bg-surface-elevated'
                       }`}
                     >
-                      <input id="modal-file-input" type="file" multiple accept=".txt,.md,.json,.yaml,.yml,.js,.ts,.py,.jsx,.tsx,.csv" className="hidden"
-                        onChange={(e) => processFileList(e.target.files)} />
+                      <input
+                        id="modal-file-input"
+                        type="file"
+                        multiple
+                        accept=".txt,.md,.json,.yaml,.yml,.js,.ts,.py,.jsx,.tsx,.csv"
+                        className="hidden"
+                        onChange={(e) => processFileList(e.target.files)}
+                      />
                       <Upload className="w-4 h-4 text-text-muted flex-shrink-0" strokeWidth={1.5} />
                       <div>
-                        <p className="text-xs text-text-muted">Arrastra archivos de contexto (specs, READMEs, wireframes...)</p>
-                        <p className="text-[10px] text-[#484F58]">Opcional · .txt .md .json .py .js .ts — máx 2MB</p>
+                        <p className="text-xs text-text-muted">
+                          Arrastra archivos de contexto (specs, READMEs, wireframes...)
+                        </p>
+                        <p className="text-[10px] text-[#484F58]">
+                          Opcional · .txt .md .json .py .js .ts — máx 2MB
+                        </p>
                       </div>
                     </div>
 
                     {pendingFiles.length > 0 && (
                       <div className="space-y-1.5">
                         {pendingFiles.map((f, i) => (
-                          <div key={i} className="flex items-center gap-2 bg-surface-elevated rounded-lg px-3 py-1.5">
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 bg-surface-elevated rounded-lg px-3 py-1.5"
+                          >
                             <FileText className="w-3 h-3 text-[#58A6FF] flex-shrink-0" />
-                            <span className="text-[10px] font-mono text-text-primary flex-1 truncate">{f.file_name}</span>
-                            <span className="text-[10px] text-text-muted">{(f.size / 1024).toFixed(1)}KB</span>
-                            <button type="button" onClick={() => setPendingFiles(p => p.filter((_, j) => j !== i))}
-                              className="text-text-muted hover:text-danger transition-colors"><Trash2 className="w-3 h-3" /></button>
+                            <span className="text-[10px] font-mono text-text-primary flex-1 truncate">
+                              {f.file_name}
+                            </span>
+                            <span className="text-[10px] text-text-muted">
+                              {(f.size / 1024).toFixed(1)}KB
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                              className="text-text-muted hover:text-danger transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -535,15 +653,31 @@ export default function ProjectHub() {
               </div>
 
               <div className="flex gap-3 pt-1">
-                <button type="button"
-                  onClick={() => { setShowNewModal(false); setPendingFiles([]); }}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewModal(false);
+                    setPendingFiles([]);
+                  }}
                   className="flex-1 py-2.5 rounded-lg border border-borders-strong text-text-muted text-sm hover:text-white hover:bg-surface-elevated transition-all"
-                >Cancelar</button>
-                <button type="submit" disabled={creating}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
                   className="flex-1 py-2.5 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold hover:from-blue-400 hover:to-indigo-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  {creating ? "Creando..." : enablePlanning ? "Crear e ir a Planning" : "Crear Proyecto"}
+                  {creating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  {creating
+                    ? 'Creando...'
+                    : enablePlanning
+                      ? 'Crear e ir a Planning'
+                      : 'Crear Proyecto'}
                 </button>
               </div>
             </form>
@@ -553,4 +687,3 @@ export default function ProjectHub() {
     </div>
   );
 }
-

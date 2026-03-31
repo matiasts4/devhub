@@ -7,22 +7,39 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--surface-app);
   color: var(--text-primary);
-  transition: background-color 180ms ease, color 180ms ease;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
 code {
   font-family: 'JetBrains Mono', source-code-pro, Menlo, Monaco, Consolas, monospace;
 }
 
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
 
 @layer base {
   :root,
@@ -182,18 +199,191 @@ code {
     --danger: #cf222e;
     --success: #1a7f37;
   }
+
+  [data-theme='catppuccin'] {
+    --background: 240 21% 15%;
+    --foreground: 240 13% 89%;
+    --card: 240 21% 17%;
+    --card-foreground: 240 13% 89%;
+    --popover: 240 21% 13%;
+    --popover-foreground: 240 13% 89%;
+    --primary: 267 84% 81%;
+    --primary-foreground: 240 21% 15%;
+    --secondary: 240 21% 20%;
+    --secondary-foreground: 240 13% 89%;
+    --muted: 240 21% 20%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 21% 20%;
+    --accent-foreground: 240 13% 89%;
+    --destructive: 0 74% 70%;
+    --destructive-foreground: 240 21% 15%;
+    --border: 240 11% 26%;
+    --input: 240 11% 26%;
+    --ring: 267 84% 81%;
+
+    --surface-app: #1e1e2e;
+    --surface-card: #252537;
+    --surface-elevated: #313244;
+    --surface-muted: #181825;
+    --surface-hover: #3a3a50;
+    --text-primary: #cdd6f4;
+    --text-secondary: #bac2de;
+    --text-muted: #a6adc8;
+    --border-subtle: #45475a;
+    --border-strong: #585b70;
+    --accent-primary: #cba6f7;
+    --accent-secondary: #b4befe;
+    --shadow-soft: 0 10px 30px rgba(14, 14, 24, 0.35);
+    --shadow-lifted: 0 20px 52px rgba(14, 14, 24, 0.5);
+    --danger: #f38ba8;
+    --success: #a6e3a1;
+  }
+
+  [data-theme='tokyo-night'] {
+    --background: 229 30% 12%;
+    --foreground: 220 20% 90%;
+    --card: 230 28% 14%;
+    --card-foreground: 220 20% 90%;
+    --popover: 230 28% 10%;
+    --popover-foreground: 220 20% 90%;
+    --primary: 217 72% 72%;
+    --primary-foreground: 229 30% 12%;
+    --secondary: 230 28% 18%;
+    --secondary-foreground: 220 20% 90%;
+    --muted: 230 28% 18%;
+    --muted-foreground: 220 10% 60%;
+    --accent: 230 28% 18%;
+    --accent-foreground: 220 20% 90%;
+    --destructive: 4 70% 65%;
+    --destructive-foreground: 229 30% 12%;
+    --border: 230 15% 24%;
+    --input: 230 15% 24%;
+    --ring: 217 72% 72%;
+
+    --surface-app: #1a1b26;
+    --surface-card: #1f2335;
+    --surface-elevated: #292e42;
+    --surface-muted: #16171f;
+    --surface-hover: #2f3549;
+    --text-primary: #c0caf5;
+    --text-secondary: #a9b1d6;
+    --text-muted: #565f89;
+    --border-subtle: #3b4261;
+    --border-strong: #4a5077;
+    --accent-primary: #7aa2f7;
+    --accent-secondary: #bb9af7;
+    --shadow-soft: 0 10px 30px rgba(10, 11, 18, 0.38);
+    --shadow-lifted: 0 20px 52px rgba(10, 11, 18, 0.55);
+    --danger: #f7768e;
+    --success: #9ece6a;
+  }
+
+  [data-theme='monokai'] {
+    --background: 72 14% 14%;
+    --foreground: 72 15% 87%;
+    --card: 72 14% 16%;
+    --card-foreground: 72 15% 87%;
+    --popover: 72 14% 12%;
+    --popover-foreground: 72 15% 87%;
+    --primary: 82 65% 62%;
+    --primary-foreground: 72 14% 14%;
+    --secondary: 72 14% 20%;
+    --secondary-foreground: 72 15% 87%;
+    --muted: 72 14% 20%;
+    --muted-foreground: 72 5% 55%;
+    --accent: 72 14% 20%;
+    --accent-foreground: 72 15% 87%;
+    --destructive: 6 75% 55%;
+    --destructive-foreground: 72 14% 14%;
+    --border: 72 10% 26%;
+    --input: 72 10% 26%;
+    --ring: 82 65% 62%;
+
+    --surface-app: #272822;
+    --surface-card: #2d2e27;
+    --surface-elevated: #3e3d32;
+    --surface-muted: #1e1f1c;
+    --surface-hover: #4a493e;
+    --text-primary: #f8f8f2;
+    --text-secondary: #e8e8e3;
+    --text-muted: #75715e;
+    --border-subtle: #49483e;
+    --border-strong: #64645e;
+    --accent-primary: #a6e22e;
+    --accent-secondary: #66d9ef;
+    --shadow-soft: 0 10px 30px rgba(12, 12, 10, 0.35);
+    --shadow-lifted: 0 20px 52px rgba(12, 12, 10, 0.5);
+    --danger: #f92672;
+    --success: #a6e22e;
+  }
+
+  [data-theme='synthwave'] {
+    --background: 284 35% 8%;
+    --foreground: 320 30% 90%;
+    --card: 284 30% 10%;
+    --card-foreground: 320 30% 90%;
+    --popover: 284 30% 7%;
+    --popover-foreground: 320 30% 90%;
+    --primary: 330 100% 63%;
+    --primary-foreground: 284 35% 8%;
+    --secondary: 284 30% 14%;
+    --secondary-foreground: 320 30% 90%;
+    --muted: 284 30% 14%;
+    --muted-foreground: 284 10% 55%;
+    --accent: 284 30% 14%;
+    --accent-foreground: 320 30% 90%;
+    --destructive: 10 90% 55%;
+    --destructive-foreground: 284 35% 8%;
+    --border: 284 20% 20%;
+    --input: 284 20% 20%;
+    --ring: 330 100% 63%;
+
+    --surface-app: #141222;
+    --surface-card: #1b1a2e;
+    --surface-elevated: #26233a;
+    --surface-muted: #100e1b;
+    --surface-hover: #302c4a;
+    --text-primary: #f0e6ff;
+    --text-secondary: #e0d4f5;
+    --text-muted: #848bbd;
+    --border-subtle: #3a3662;
+    --border-strong: #4f4a7a;
+    --accent-primary: #fe4450;
+    --accent-secondary: #f97e72;
+    --shadow-soft: 0 10px 30px rgba(8, 6, 16, 0.45);
+    --shadow-lifted: 0 20px 52px rgba(8, 6, 16, 0.6);
+    --danger: #ff6b6b;
+    --success: #72f1b8;
+  }
 }
 
 @layer base {
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
-  [data-debug-wrapper="true"] { display: contents !important; }
-  [data-debug-wrapper="true"] > * { margin: inherit; padding: inherit; gap: inherit; border: inherit; }
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  [data-debug-wrapper='true'] {
+    display: contents !important;
+  }
+  [data-debug-wrapper='true'] > * {
+    margin: inherit;
+    padding: inherit;
+    gap: inherit;
+    border: inherit;
+  }
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .fade-in-up {
   animation: fadeInUp 0.35s ease-out forwards;
@@ -201,8 +391,14 @@ code {
 }
 
 @keyframes slideInRight {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 .slide-in-right {
   animation: slideInRight 0.4s ease-out forwards;
@@ -210,26 +406,60 @@ code {
 }
 
 @keyframes typing-dot {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-4px); opacity: 1; }
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }
-.typing-dot { animation: typing-dot 1.2s ease-in-out infinite; }
-.typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+.typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 .project-card-hover {
-  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
 }
 .project-card-hover:hover {
-  background-color: #1C2333;
+  background-color: #1c2333;
   transform: translateY(-1px);
 }
 
 .dot-grid {
-  background-image: radial-gradient(circle, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
 .devhub-xterm-container .xterm-screen canvas {
   image-rendering: auto;
+}
+
+/* Fix for TUI Apps (like OpenCode, Vim, Nano) in xterm.js */
+.devhub-xterm-container .xterm {
+  height: 100% !important;
+  padding: 0 !important;
+}
+
+.devhub-xterm-container .xterm-viewport {
+  overflow-y: hidden !important;
+  background-color: transparent !important;
+}
+
+.devhub-xterm-container {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
 }

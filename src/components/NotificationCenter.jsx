@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bell, Clock3, RefreshCw, Wifi, WifiOff } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/db/localSupabase";
 
 const DEADLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STALE_MCP_SYNC_MS = 30 * 60 * 1000;

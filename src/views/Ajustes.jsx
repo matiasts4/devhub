@@ -1,102 +1,219 @@
 'use client';
-import { useState, useEffect, useCallback } from "react";
-import { useOutletContext, useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useOutletContext, useNavigate } from 'react-router-dom';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
-  Settings, Save, User, Palette, Trash2, Monitor,
-  Loader2, AlertTriangle, Check, Sparkles, ArrowLeft, ArrowRight, Rocket
-} from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
-import {
-  getStoredTheme,
-  setTheme,
-  THEMES,
-  THEME_OPTIONS,
-} from "@/lib/theme/themes";
+  Settings,
+  Save,
+  User,
+  Palette,
+  Trash2,
+  Monitor,
+  Loader2,
+  AlertTriangle,
+  Check,
+  Sparkles,
+  ArrowLeft,
+  ArrowRight,
+  Rocket,
+  FolderOpen,
+  LayoutGrid,
+  Shield,
+  Bell,
+  Zap,
+  Moon,
+  Sun,
+  Hash,
+} from 'lucide-react';
+import { createClient } from '@/lib/db/localSupabase';
+import { toast } from 'sonner';
+import { getStoredTheme, setTheme, THEMES, THEME_OPTIONS } from '@/lib/theme/themes';
 
-const ACCENT_COLORS = ["#58A6FF", "#3FB950", "#F778BA", "#D2A8FF", "#E3B341", "#FF7B72", "#6366f1", "#f97316"];
-const ONBOARDING_STORAGE_KEY = "devhub:onboarding:settings-v1";
+const ACCENT_COLORS = [
+  '#58A6FF',
+  '#3FB950',
+  '#F778BA',
+  '#D2A8FF',
+  '#E3B341',
+  '#FF7B72',
+  '#6366f1',
+  '#f97316',
+];
+const ONBOARDING_STORAGE_KEY = 'devhub:onboarding:settings-v1';
 
 const ONBOARDING_STEPS = [
   {
-    title: "Bienvenido al sistema visual",
-    description: "Configura el look and feel completo de DevHub para esta máquina.",
+    title: 'Bienvenido al sistema visual',
+    description: 'Configura el look and feel completo de DevHub para esta máquina.',
   },
+  { title: 'Elige un tema base', description: 'Puedes cambiar entre 8 temas cuando quieras.' },
   {
-    title: "Elige un tema base",
-    description: "Puedes cambiar entre Deep Sea, Nord, Dracula y Light cuando quieras.",
-  },
-  {
-    title: "Termina y guarda",
-    description: "Tu selección queda persistida en localStorage para futuros inicios.",
+    title: 'Termina y guarda',
+    description: 'Tu selección queda persistida en localStorage para futuros inicios.',
   },
 ];
+
+const THEME_PREVIEW_BY_ID = {
+  [THEMES.DEEP_SEA]: {
+    panel: '#0F1521',
+    body: '#0B1019',
+    line: '#1A2740',
+    highlight: '#58A6FF',
+    dots: ['#f87171', '#fbbf24', '#22c55e'],
+  },
+  [THEMES.NORD]: {
+    panel: '#3B4252',
+    body: '#2E3440',
+    line: '#4C566A',
+    highlight: '#88C0D0',
+    dots: ['#d08770', '#ebcb8b', '#a3be8c'],
+  },
+  [THEMES.DRACULA]: {
+    panel: '#2A2C44',
+    body: '#191A2A',
+    line: '#44475A',
+    highlight: '#BD93F9',
+    dots: ['#ff5555', '#f1fa8c', '#50fa7b'],
+  },
+  [THEMES.LIGHT]: {
+    panel: '#F8FAFC',
+    body: '#FFFFFF',
+    line: '#D0D7DE',
+    highlight: '#0969DA',
+    dots: ['#ef4444', '#f59e0b', '#16a34a'],
+  },
+  [THEMES.CATPPUCCIN]: {
+    panel: '#1e1e2e',
+    body: '#181825',
+    line: '#45475a',
+    highlight: '#cba6f7',
+    dots: ['#f38ba8', '#f9e2af', '#a6e3a1'],
+  },
+  [THEMES.TOKYO_NIGHT]: {
+    panel: '#1f2335',
+    body: '#1a1b26',
+    line: '#3b4261',
+    highlight: '#7aa2f7',
+    dots: ['#f7768e', '#e0af68', '#9ece6a'],
+  },
+  [THEMES.MONOKAI]: {
+    panel: '#2d2e27',
+    body: '#272822',
+    line: '#49483e',
+    highlight: '#a6e22e',
+    dots: ['#f92672', '#e6db74', '#66d9ef'],
+  },
+  [THEMES.SYNTHWAVE]: {
+    panel: '#1b1a2e',
+    body: '#141222',
+    line: '#3a3662',
+    highlight: '#fe4450',
+    dots: ['#ff6b6b', '#feca57', '#72f1b8'],
+  },
+};
+
+/* ── Small reusable components ─────────────────────────────────────────── */
 
 function Toggle({ checked, onChange }) {
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="relative w-12 h-6 flex items-center rounded-full transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#58A6FF]"
+      className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none"
       style={{
-        background: checked ? "var(--success)" : "color-mix(in srgb, var(--surface-muted) 80%, black)",
-        border: "1px solid var(--border-strong)",
-        boxShadow: "inset 0 1px 4px rgba(0,0,0,0.2)"
+        background: checked
+          ? 'var(--success)'
+          : 'color-mix(in srgb, var(--surface-muted) 80%, black)',
+        border: '1px solid var(--border-strong)',
       }}
     >
       <span
-        className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 ease-in-out ${checked ? "translate-x-[26px]" : "translate-x-[2px]"}`}
-        style={{ boxShadow: "0 2px 4px rgba(0,0,0,0.3)" }}
+        className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${checked ? 'translate-x-[22px]' : 'translate-x-[2px]'}`}
+        style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
       />
     </button>
   );
 }
 
-function Section({ icon: Icon, title, color, children }) {
-  return (
-    <div
-      className="rounded-xl overflow-hidden"
-      style={{
-        background: "var(--surface-card)",
-        border: "1px solid var(--border-subtle)",
-        boxShadow: "var(--shadow-soft)",
-      }}
-    >
-      <div className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-        <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} style={{ color }} />
-        <h3 className="font-mono text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{title}</h3>
-      </div>
-      <div style={{ borderColor: "var(--border-subtle)" }} className="divide-y">{children}</div>
-    </div>
-  );
-}
-
-function Row({ label, children }) {
-  return (
-    <div className="flex items-center justify-between px-5 py-3.5 gap-4">
-      <label className="text-sm flex-shrink-0" style={{ color: "var(--text-muted)" }}>{label}</label>
-      <div className="flex-shrink-0">{children}</div>
-    </div>
-  );
-}
-
 function ThemeOptionCard({ option, active, onClick }) {
+  const preview = THEME_PREVIEW_BY_ID[option.id] || THEME_PREVIEW_BY_ID[THEMES.DEEP_SEA];
+
   return (
     <button
       type="button"
       onClick={() => onClick(option.id)}
-      className="w-full rounded-lg p-3 text-left transition-all"
+      className={`w-full rounded-xl border p-2.5 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : 'hover:border-borders-strong'}`}
       style={{
-        border: active ? `1px solid ${option.accent}` : "1px solid var(--border-subtle)",
-        background: active ? "var(--surface-elevated)" : "var(--surface-muted)",
-        boxShadow: active ? "var(--shadow-soft)" : "none",
+        borderColor: active
+          ? 'color-mix(in srgb, var(--accent-primary) 45%, transparent)'
+          : 'var(--border-subtle)',
+        background: active
+          ? 'color-mix(in srgb, var(--surface-elevated) 92%, transparent)'
+          : 'var(--surface-card)',
+        boxShadow: active ? 'var(--shadow-soft)' : 'none',
       }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{option.label}</p>
-          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{option.description}</p>
+      <div
+        className="relative overflow-hidden rounded-lg border h-28"
+        style={{
+          background: preview.body,
+          borderColor: active
+            ? 'color-mix(in srgb, var(--accent-primary) 35%, transparent)'
+            : preview.line,
+        }}
+      >
+        <div
+          className="h-7 border-b px-2.5 flex items-center justify-between"
+          style={{ background: preview.panel, borderColor: preview.line }}
+        >
+          <div className="flex items-center gap-1.5">
+            {preview.dots.map((dot, i) => (
+              <span
+                key={`${option.id}-${i}`}
+                className="h-2 w-2 rounded-full"
+                style={{ background: dot }}
+              />
+            ))}
+          </div>
+          <span className="h-3.5 w-7 rounded" style={{ background: preview.highlight }} />
         </div>
-        <span className="w-3 h-3 rounded-full" style={{ background: option.accent }} />
+        <div className="p-2 h-[calc(100%-1.75rem)] grid grid-cols-[28%_1fr] gap-1.5">
+          <div
+            className="rounded"
+            style={{ background: preview.panel, border: `1px solid ${preview.line}` }}
+          />
+          <div className="flex flex-col gap-1.5">
+            <div
+              className="h-3 rounded"
+              style={{ width: '50%', background: `${preview.highlight}30` }}
+            />
+            <div
+              className="flex-1 rounded"
+              style={{ background: preview.panel, border: `1px solid ${preview.line}` }}
+            />
+          </div>
+        </div>
+        {active && (
+          <span
+            className="absolute right-1.5 top-1.5 h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-[10px] font-medium"
+            style={{ background: 'var(--accent-primary)', color: 'white' }}
+          >
+            <Check className="w-3 h-3" />
+          </span>
+        )}
+      </div>
+      <div className="pt-2.5 px-0.5 pb-0.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {option.label}
+          </p>
+          <span
+            className="w-2.5 h-2.5 rounded-full shrink-0"
+            style={{ background: option.accent }}
+          />
+        </div>
+        <p className="text-[11px] mt-0.5 leading-snug" style={{ color: 'var(--text-muted)' }}>
+          {option.description}
+        </p>
       </div>
     </button>
   );
@@ -104,60 +221,73 @@ function ThemeOptionCard({ option, active, onClick }) {
 
 function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
   if (!open) return null;
-
   const stepData = ONBOARDING_STEPS[step];
   const isLast = step === ONBOARDING_STEPS.length - 1;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.45)" }}>
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center px-4"
+      style={{ background: 'rgba(0,0,0,0.45)' }}
+    >
       <div
         className="w-full max-w-lg rounded-2xl p-6"
-        style={{ background: "var(--surface-card)", border: "1px solid var(--border-subtle)", boxShadow: "var(--shadow-lifted)" }}
+        style={{
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-lifted)',
+        }}
       >
         <div className="flex items-center justify-between gap-3 mb-5">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4" style={{ color: "var(--accent-primary)" }} />
-            <p className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>Onboarding Wizard</p>
+            <Sparkles className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+            <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              Onboarding Wizard
+            </p>
           </div>
-          <button onClick={onSkip} className="text-xs" style={{ color: "var(--text-muted)" }}>Saltar</button>
+          <button onClick={onSkip} className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Saltar
+          </button>
         </div>
-
-        <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>{stepData.title}</h3>
-        <p className="text-sm mt-2" style={{ color: "var(--text-secondary)" }}>{stepData.description}</p>
-
+        <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {stepData.title}
+        </h3>
+        <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>
+          {stepData.description}
+        </p>
         <div className="flex items-center gap-1.5 mt-6">
-          {ONBOARDING_STEPS.map((_, index) => (
+          {ONBOARDING_STEPS.map((_, i) => (
             <span
-              key={index}
+              key={i}
               className="h-1.5 rounded-full transition-all"
               style={{
-                width: index === step ? 22 : 10,
-                background: index === step ? "var(--accent-primary)" : "var(--border-subtle)",
+                width: i === step ? 22 : 10,
+                background: i === step ? 'var(--accent-primary)' : 'var(--border-subtle)',
               }}
             />
           ))}
         </div>
-
         <div className="mt-6 flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={onPrev}
             disabled={step === 0}
             className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg disabled:opacity-50"
-            style={{ border: "1px solid var(--border-subtle)", color: "var(--text-secondary)", background: "var(--surface-muted)" }}
+            style={{
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              background: 'var(--surface-muted)',
+            }}
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Atrás
+            <ArrowLeft className="w-3.5 h-3.5" /> Atrás
           </button>
-
           <button
             type="button"
             onClick={isLast ? onClose : onNext}
             className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg"
-            style={{ background: "var(--accent-primary)", color: "white" }}
+            style={{ background: 'var(--accent-primary)', color: 'white' }}
           >
             {isLast ? <Rocket className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
-            {isLast ? "Terminar" : "Siguiente"}
+            {isLast ? 'Terminar' : 'Siguiente'}
           </button>
         </div>
       </div>
@@ -165,54 +295,91 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
   );
 }
 
+/* ── Tab system for settings sections ──────────────────────────────────── */
+
+const TABS = [
+  { key: 'project', label: 'Proyecto', icon: LayoutGrid },
+  { key: 'theme', label: 'Apariencia', icon: Palette },
+  { key: 'profile', label: 'Perfil', icon: User },
+  { key: 'prefs', label: 'Preferencias', icon: Settings },
+  { key: 'danger', label: 'Peligro', icon: AlertTriangle },
+];
+
+/* ── Main component ────────────────────────────────────────────────────── */
+
 export default function Ajustes() {
   const { project } = useOutletContext() || {};
   const supabase = createClient();
   const navigate = useNavigate();
 
   // Project settings
-  const [name, setName]           = useState(project?.name || "");
-  const [description, setDesc]    = useState(project?.description || "");
-  const [color, setColor]         = useState(project?.color || "#6366f1");
-  const [status, setProjectStatus]= useState(project?.status || "active");
-  const [localPath, setLocalPath] = useState(project?.local_path || "");
-  const [savingProject, setSaving]= useState(false);
+  const [name, setName] = useState(project?.name || '');
+  const [description, setDesc] = useState(project?.description || '');
+  const [color, setColor] = useState(project?.color || '#6366f1');
+  const [status, setProjectStatus] = useState(project?.status || 'active');
+  const [localPath, setLocalPath] = useState(project?.local_path || '');
+  const [savingProject, setSaving] = useState(false);
 
   // Profile settings
-  const [profile, setProfile]     = useState(null);
-  const [fullName, setFullName]   = useState("");
+  const [profile, setProfile] = useState(null);
+  const [fullName, setFullName] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // App settings (local state only for now)
-  const [appConfig, setAppConfig] = useState({ autosave: true, notifications: true, confirmActions: true });
+  // App settings
+  const [appConfig, setAppConfig] = useState({
+    autosave: true,
+    notifications: true,
+    confirmActions: true,
+  });
 
-  // Theme + onboarding
+  // Theme
   const [activeTheme, setActiveTheme] = useState(THEMES.DEEP_SEA);
+  const [themeFilter, setThemeFilter] = useState('all'); // all | dark | light
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState('project');
+
+  // Wizard
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
 
-  // Delete confirm
+  // Delete
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleting, setDeleting]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleSelectFolder = async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: 'Seleccionar Directorio Base',
+      });
+      if (selected) setLocalPath(String(selected));
+    } catch {
+      toast.error('No se pudo abrir el selector de carpetas en este entorno');
+    }
+  };
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
-      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-      setProfile(data);
-      setFullName(data?.full_name || user.email?.split("@")[0] || "");
-    });
+    // Local-first: load profile directly
+    supabase
+      .from('profiles')
+      .select('*')
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setProfile(data);
+          setFullName(data?.full_name || 'Usuario Local');
+        }
+      });
   }, []);
 
   useEffect(() => {
     const storedTheme = getStoredTheme();
     setActiveTheme(storedTheme);
     setTheme(storedTheme);
-
-    const onboardingDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === "true";
-    if (!onboardingDone) {
-      setWizardOpen(true);
-    }
+    const onboardingDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
+    if (!onboardingDone) setWizardOpen(true);
   }, []);
 
   const handleThemeChange = useCallback((themeId) => {
@@ -222,127 +389,139 @@ export default function Ajustes() {
   }, []);
 
   const finishOnboarding = useCallback(() => {
-    window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
+    window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
     setWizardOpen(false);
     setWizardStep(0);
-    toast.success("Onboarding completado");
+    toast.success('Onboarding completado');
   }, []);
 
   const skipOnboarding = useCallback(() => {
-    window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
+    window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
     setWizardOpen(false);
     setWizardStep(0);
   }, []);
 
   async function saveProject() {
     setSaving(true);
-    const { error } = await supabase.from("projects").update({ name, description, color, status, local_path: localPath }).eq("id", project?.id);
+    const { error } = await supabase
+      .from('projects')
+      .update({ name, description, color, status, local_path: localPath })
+      .eq('id', project?.id);
     setSaving(false);
-    if (error) { toast.error("Error al guardar"); return; }
-    toast.success("Proyecto actualizado");
+    if (error) {
+      toast.error('Error al guardar');
+      return;
+    }
+    toast.success('Proyecto actualizado');
   }
 
   async function saveProfile() {
     setSavingProfile(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("profiles").upsert({ id: user.id, full_name: fullName });
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({ id: 'local-user', full_name: fullName });
     setSavingProfile(false);
-    if (error) { toast.error("Error al guardar perfil"); return; }
-    toast.success("Perfil actualizado");
+    if (error) {
+      toast.error('Error al guardar perfil');
+      return;
+    }
+    toast.success('Perfil actualizado');
   }
 
   async function deleteProject() {
     setDeleting(true);
-    await supabase.from("tasks").delete().eq("project_id", project?.id);
-    await supabase.from("milestones").delete().eq("project_id", project?.id);
-    const { error } = await supabase.from("projects").delete().eq("id", project?.id);
+    await supabase.from('tasks').delete().eq('project_id', project?.id);
+    await supabase.from('milestones').delete().eq('project_id', project?.id);
+    const { error } = await supabase.from('projects').delete().eq('id', project?.id);
     setDeleting(false);
-    if (error) { toast.error("Error al eliminar"); return; }
-    toast.success("Proyecto eliminado");
-    navigate("/hub");
+    if (error) {
+      toast.error('Error al eliminar');
+      return;
+    }
+    toast.success('Proyecto eliminado');
+    navigate('/hub');
   }
 
-  return (
-    <div className="min-h-screen" style={{ background: "var(--surface-app)", color: "var(--text-primary)" }}>
-      {/* Header */}
+  const filteredThemes = useMemo(() => {
+    if (themeFilter === 'all') return THEME_OPTIONS;
+    if (themeFilter === 'dark') return THEME_OPTIONS.filter((t) => t.id !== THEMES.LIGHT);
+    return THEME_OPTIONS.filter((t) => t.id === THEMES.LIGHT);
+  }, [themeFilter]);
+
+  const activeThemeData = THEME_OPTIONS.find((t) => t.id === activeTheme);
+
+  /* ── Tab content renderers ─────────────────────────────────────────── */
+
+  const renderProjectTab = () => (
+    <div className="space-y-6">
+      {/* Project identity card */}
       <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
-        style={{ background: "color-mix(in srgb, var(--surface-app) 90%, transparent)", borderColor: "var(--border-subtle)" }}
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-soft)',
+        }}
       >
-        <div className="flex items-center gap-3">
-          <Settings className="w-4 h-4" strokeWidth={1.5} style={{ color: "var(--accent-primary)" }} />
-          <h1 className="font-mono text-base font-bold" style={{ color: "var(--text-primary)" }}>Ajustes</h1>
-        </div>
-        <div>
-          <button
-            type="button"
-            onClick={() => setWizardOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
-            style={{ background: "var(--surface-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+        <div
+          className="flex items-center gap-3 px-6 py-4"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: `${color}18`, border: `1px solid ${color}30` }}
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            Reabrir onboarding
-          </button>
+            <LayoutGrid className="w-4 h-4" style={{ color }} />
+          </div>
+          <div>
+            <h3
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Identidad del Proyecto
+            </h3>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Nombre, descripción, ruta y color de acento
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="px-6 py-5 w-full grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-8 items-start">
-
-        {/* Project settings */}
-        <Section icon={Palette} title="Proyecto" color="var(--accent-primary)">
-          <div className="px-5 py-4 space-y-3">
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Nombre del proyecto</label>
+              <label
+                className="block text-xs mb-1.5 font-medium"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Nombre del proyecto
+              </label>
               <input
                 value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+                style={{
+                  background: 'var(--surface-muted)',
+                  border: '1px solid var(--border-strong)',
+                  color: 'var(--text-primary)',
+                }}
               />
             </div>
             <div>
-              <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Ruta Local (Directorio Base)</label>
-              <input
-                value={localPath}
-                onChange={e => setLocalPath(e.target.value)}
-                placeholder="/home/usuario/proyectos/mi-app"
-                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Descripción</label>
-              <textarea
-                rows={2}
-                value={description}
-                onChange={e => setDesc(e.target.value)}
-                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors resize-none"
-                style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-2" style={{ color: "var(--text-muted)" }}>Color de acento</label>
-              <div className="flex items-center gap-2">
-                {ACCENT_COLORS.map(c => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setColor(c)}
-                    className="w-7 h-7 rounded-full transition-all hover:scale-110 flex items-center justify-center"
-                    style={{ background: c, outline: color === c ? `2px solid ${c}` : "none", outlineOffset: "2px" }}
-                  >
-                    {color === c && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-text-muted mb-1.5">Estado</label>
+              <label
+                className="block text-xs mb-1.5 font-medium"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Estado
+              </label>
               <select
                 value={status}
-                onChange={e => setProjectStatus(e.target.value)}
-                className="text-sm rounded-lg px-3 py-2 focus:outline-none appearance-none"
-                style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
+                onChange={(e) => setProjectStatus(e.target.value)}
+                className="w-full text-sm rounded-lg px-3 py-2.5 focus:outline-none appearance-none"
+                style={{
+                  background: 'var(--surface-muted)',
+                  border: '1px solid var(--border-strong)',
+                  color: 'var(--text-primary)',
+                }}
               >
                 <option value="active">Activo</option>
                 <option value="paused">Pausado</option>
@@ -350,120 +529,584 @@ export default function Ajustes() {
                 <option value="archived">Archivado</option>
               </select>
             </div>
-            <button
-              onClick={saveProject}
-              disabled={savingProject}
-              className="flex items-center gap-2 text-white font-medium px-4 py-2 rounded-lg text-xs transition-colors disabled:opacity-50"
-              style={{ background: "var(--success)" }}
-            >
-              {savingProject ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              Guardar cambios
-            </button>
           </div>
-        </Section>
 
-        <Section icon={Palette} title="Sistema de Temas" color="var(--accent-primary)">
-          <div className="px-5 py-4 space-y-3">
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Selecciona el tema global de la app. El fondo, bordes y sombras se actualizan al instante.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {THEME_OPTIONS.map((option) => (
-                <ThemeOptionCard
-                  key={option.id}
-                  option={option}
-                  active={activeTheme === option.id}
-                  onClick={handleThemeChange}
-                />
+          <div>
+            <label
+              className="block text-xs mb-1.5 font-medium"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Descripción
+            </label>
+            <textarea
+              rows={2}
+              value={description}
+              onChange={(e) => setDesc(e.target.value)}
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none"
+              style={{
+                background: 'var(--surface-muted)',
+                border: '1px solid var(--border-strong)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+
+          <div>
+            <label
+              className="block text-xs mb-1.5 font-medium"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Ruta Local (Directorio Base)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                value={localPath}
+                onChange={(e) => setLocalPath(e.target.value)}
+                placeholder="/home/usuario/proyectos/mi-app"
+                className="flex-1 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+                style={{
+                  background: 'var(--surface-muted)',
+                  border: '1px solid var(--border-strong)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSelectFolder}
+                className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0"
+                style={{
+                  background: 'var(--surface-elevated)',
+                  border: '1px solid var(--border-strong)',
+                  color: 'var(--text-secondary)',
+                }}
+                title="Explorar carpetas"
+              >
+                <FolderOpen className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label
+              className="block text-xs mb-2 font-medium"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Color de acento
+            </label>
+            <div className="flex items-center gap-2.5">
+              {ACCENT_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className="w-8 h-8 rounded-full transition-all hover:scale-110 flex items-center justify-center"
+                  style={{
+                    background: c,
+                    outline: color === c ? `2px solid ${c}` : 'none',
+                    outlineOffset: '2px',
+                    boxShadow: color === c ? `0 0 8px ${c}60` : 'none',
+                  }}
+                >
+                  {color === c && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                </button>
               ))}
             </div>
           </div>
-        </Section>
 
-        {/* Profile settings */}
-        <Section icon={User} title="Perfil de Usuario" color="#D2A8FF">
-          <div className="px-5 py-4 space-y-3">
-            <div>
-              <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Nombre completo</label>
-              <input
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="Tu nombre"
-                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
-              />
-            </div>
+          <div className="pt-2">
             <button
-              onClick={saveProfile}
-              disabled={savingProfile}
-              className="flex items-center gap-2 font-medium px-4 py-2 rounded-lg text-xs transition-all disabled:opacity-50"
-              style={{ background: "var(--surface-elevated)", border: "1px solid var(--border-strong)", color: "var(--text-secondary)" }}
+              onClick={saveProject}
+              disabled={savingProject}
+              className="flex items-center gap-2 text-white font-medium px-5 py-2.5 rounded-lg text-xs transition-all disabled:opacity-50 hover:brightness-110"
+              style={{ background: 'var(--success)' }}
             >
-              {savingProfile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              Guardar perfil
+              {savingProject ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              Guardar cambios
             </button>
           </div>
-        </Section>
+        </div>
+      </div>
+    </div>
+  );
 
-        {/* App config */}
-        <Section icon={Monitor} title="Preferencias" color="#E3B341">
-          <Row label="Guardar automáticamente">
-            <Toggle checked={appConfig.autosave} onChange={v => setAppConfig(p => ({ ...p, autosave: v }))} />
-          </Row>
-          <Row label="Notificaciones">
-            <Toggle checked={appConfig.notifications} onChange={v => setAppConfig(p => ({ ...p, notifications: v }))} />
-          </Row>
-          <Row label="Confirmar acciones destructivas">
-            <Toggle checked={appConfig.confirmActions} onChange={v => setAppConfig(p => ({ ...p, confirmActions: v }))} />
-          </Row>
-        </Section>
+  const renderThemeTab = () => (
+    <div className="space-y-6">
+      {/* Active theme banner */}
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)' }}
+      >
+        <div
+          className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{
+                background: `${activeThemeData?.accent}18`,
+                border: `1px solid ${activeThemeData?.accent}30`,
+              }}
+            >
+              <Palette className="w-4 h-4" style={{ color: activeThemeData?.accent }} />
+            </div>
+            <div>
+              <h3
+                className="font-mono text-sm font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Apariencia
+              </h3>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                Tema activo:{' '}
+                <span className="font-medium" style={{ color: activeThemeData?.accent }}>
+                  {activeThemeData?.label}
+                </span>
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWizardOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
+            style={{
+              background: 'var(--surface-elevated)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Onboarding
+          </button>
+        </div>
 
-        {/* Danger zone */}
-        <Section icon={AlertTriangle} title="Zona de Peligro" color="#F778BA">
-          <div className="px-5 py-4">
-            {!deleteConfirm ? (
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Eliminar proyecto</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Esta acción eliminará el proyecto, todas sus tareas e hitos de forma permanente.</p>
-                </div>
-                <button
-                  onClick={() => setDeleteConfirm(true)}
-                  className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg transition-all ml-4 flex-shrink-0"
-                  style={{ background: "color-mix(in srgb, var(--danger) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)", color: "var(--danger)" }}
+        {/* Filter pills */}
+        <div
+          className="px-6 py-3 flex items-center gap-2"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
+          {[
+            { key: 'all', label: 'Todos', icon: LayoutGrid },
+            { key: 'dark', label: 'Oscuros', icon: Moon },
+            { key: 'light', label: 'Claro', icon: Sun },
+          ].map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setThemeFilter(key)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                themeFilter === key
+                  ? 'bg-surface-elevated text-text-primary border-[#388BFD]/30'
+                  : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated border-transparent'
+              }`}
+            >
+              <Icon className="w-3 h-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Theme grid */}
+        <div className="p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {filteredThemes.map((option) => (
+              <ThemeOptionCard
+                key={option.id}
+                option={option}
+                active={activeTheme === option.id}
+                onClick={handleThemeChange}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderProfileTab = () => (
+    <div className="space-y-6">
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-soft)',
+        }}
+      >
+        <div
+          className="flex items-center gap-3 px-6 py-4"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: '#D2A8FF18', border: '1px solid #D2A8FF30' }}
+          >
+            <User className="w-4 h-4" style={{ color: '#D2A8FF' }} />
+          </div>
+          <div>
+            <h3
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Perfil de Usuario
+            </h3>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Tu nombre visible en el sistema
+            </p>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {profile && (
+            <div
+              className="flex items-center gap-3 p-3 rounded-lg"
+              style={{ background: 'var(--surface-muted)' }}
+            >
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center font-mono text-sm font-bold"
+                style={{ background: 'var(--accent-primary)', color: 'white' }}
+              >
+                {(fullName || profile.email || '?')[0].toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p
+                  className="text-sm font-medium truncate"
+                  style={{ color: 'var(--text-primary)' }}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Eliminar
+                  {fullName || 'Sin nombre'}
+                </p>
+                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                  {profile.email}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label
+              className="block text-xs mb-1.5 font-medium"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Nombre completo
+            </label>
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Tu nombre"
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+              style={{
+                background: 'var(--surface-muted)',
+                border: '1px solid var(--border-strong)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+
+          <button
+            onClick={saveProfile}
+            disabled={savingProfile}
+            className="flex items-center gap-2 font-medium px-5 py-2.5 rounded-lg text-xs transition-all disabled:opacity-50"
+            style={{
+              background: 'var(--surface-elevated)',
+              border: '1px solid var(--border-strong)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            {savingProfile ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Save className="w-3.5 h-3.5" />
+            )}
+            Guardar perfil
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPrefsTab = () => (
+    <div className="space-y-6">
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-soft)',
+        }}
+      >
+        <div
+          className="flex items-center gap-3 px-6 py-4"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: '#E3B34118', border: '1px solid #E3B34130' }}
+          >
+            <Settings className="w-4 h-4" style={{ color: '#E3B341' }} />
+          </div>
+          <div>
+            <h3
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Preferencias
+            </h3>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Comportamiento general de la aplicación
+            </p>
+          </div>
+        </div>
+
+        <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+          {[
+            {
+              key: 'autosave',
+              label: 'Guardar automáticamente',
+              desc: 'Persistir cambios sin confirmación',
+              icon: Zap,
+            },
+            {
+              key: 'notifications',
+              label: 'Notificaciones',
+              desc: 'Alertas y actualizaciones en tiempo real',
+              icon: Bell,
+            },
+            {
+              key: 'confirmActions',
+              label: 'Confirmar acciones destructivas',
+              desc: 'Pedir confirmación antes de eliminar',
+              icon: Shield,
+            },
+          ].map(({ key, label, desc, icon: Icon }) => (
+            <div key={key} className="flex items-center justify-between px-6 py-4 gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Icon className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
+                <div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {label}
+                  </p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {desc}
+                  </p>
+                </div>
+              </div>
+              <Toggle
+                checked={appConfig[key]}
+                onChange={(v) => setAppConfig((p) => ({ ...p, [key]: v }))}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderDangerTab = () => (
+    <div className="space-y-6">
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: 'var(--surface-card)',
+          border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+        }}
+      >
+        <div
+          className="flex items-center gap-3 px-6 py-4"
+          style={{ borderBottom: '1px solid color-mix(in srgb, var(--danger) 15%, transparent)' }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{
+              background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
+            }}
+          >
+            <AlertTriangle className="w-4 h-4" style={{ color: 'var(--danger)' }} />
+          </div>
+          <div>
+            <h3 className="font-mono text-sm font-semibold" style={{ color: 'var(--danger)' }}>
+              Zona de Peligro
+            </h3>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Acciones irreversibles
+            </p>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {!deleteConfirm ? (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  Eliminar proyecto
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Esta acción eliminará el proyecto, todas sus tareas e hitos de forma permanente.
+                </p>
+              </div>
+              <button
+                onClick={() => setDeleteConfirm(true)}
+                className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-lg transition-all shrink-0"
+                style={{
+                  background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
+                  color: 'var(--danger)',
+                }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Eliminar
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div
+                className="flex items-start gap-3 p-3 rounded-lg"
+                style={{
+                  background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+                }}
+              >
+                <AlertTriangle
+                  className="w-5 h-5 shrink-0 mt-0.5"
+                  style={{ color: 'var(--danger)' }}
+                />
+                <div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--danger)' }}>
+                    ¿Estás seguro?
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Esta acción no se puede deshacer. Se perderán todos los datos del proyecto.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirm(false)}
+                  className="flex-1 py-2.5 rounded-lg text-sm transition-all"
+                  style={{
+                    border: '1px solid var(--border-strong)',
+                    color: 'var(--text-muted)',
+                    background: 'var(--surface-muted)',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={deleteProject}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+                  style={{
+                    background: 'color-mix(in srgb, var(--danger) 16%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--danger) 42%, transparent)',
+                    color: 'var(--danger)',
+                  }}
+                >
+                  {deleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  Sí, eliminar proyecto
                 </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--danger)" }}>
-                  <AlertTriangle className="w-4 h-4" />
-                  ¿Estás seguro? Esta acción no se puede deshacer.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setDeleteConfirm(false)}
-                    className="flex-1 py-2 rounded-lg text-sm transition-all"
-                    style={{ border: "1px solid var(--border-strong)", color: "var(--text-muted)", background: "var(--surface-muted)" }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={deleteProject}
-                    disabled={deleting}
-                    className="flex-1 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
-                    style={{ background: "color-mix(in srgb, var(--danger) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--danger) 42%, transparent)", color: "var(--danger)" }}
-                  >
-                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    Sí, eliminar proyecto
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </Section>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const TAB_RENDERERS = {
+    project: renderProjectTab,
+    theme: renderThemeTab,
+    profile: renderProfileTab,
+    prefs: renderPrefsTab,
+    danger: renderDangerTab,
+  };
+
+  return (
+    <div
+      className="min-h-screen"
+      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
+    >
+      {/* Header */}
+      <div
+        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
+        style={{
+          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
+          borderColor: 'var(--border-subtle)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <Settings
+            className="w-4 h-4"
+            strokeWidth={1.5}
+            style={{ color: 'var(--accent-primary)' }}
+          />
+          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+            Ajustes
+          </h1>
+          {project?.name && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+              {project.name}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
+        {/* Breadcrumb */}
+        <div
+          className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
+          style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
+        >
+          <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            DevHub
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            ›
+          </span>
+          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+            Ajustes
+          </span>
+        </div>
+
+        {/* Tab navigation */}
+        <div
+          className="flex items-center gap-1 mb-6 overflow-x-auto pb-1"
+          style={{ scrollbarWidth: 'none' }}
+        >
+          {TABS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${
+                activeTab === key
+                  ? 'text-text-primary'
+                  : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated'
+              }`}
+              style={
+                activeTab === key
+                  ? {
+                      background: 'var(--surface-elevated)',
+                      border: '1px solid var(--border-subtle)',
+                      boxShadow: 'var(--shadow-soft)',
+                    }
+                  : { border: '1px solid transparent' }
+              }
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="fade-in-up">{TAB_RENDERERS[activeTab]?.()}</div>
       </div>
 
       <OnboardingWizard

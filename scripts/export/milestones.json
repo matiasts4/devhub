@@ -1,0 +1,178 @@
+[
+  {
+    "id": "7bbd1dd6-639a-4a48-8342-eec9f61cf8b5",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Integración de Motor Git (MCP Backend)",
+    "description": "Integración de Motor Git en la capa Backend (MCP) para que los Agentes puedan crear ramas temporales de forma aslada, comitear cambios de código y hacer Diff para pruebas de QA.",
+    "status": "completed",
+    "due_date": "2026-04-10",
+    "created_at": "2026-03-28T16:02:49.162064+00:00",
+    "updated_at": "2026-03-28T22:11:26.222325+00:00"
+  },
+  {
+    "id": "2a9d75b7-2586-4fbf-8ac9-3133b909aaa3",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Protocolos Anti-Colisión (Agent Prompts)",
+    "description": "Redactar y acoplar los Context Windows Globales (System Prompts) para asegurar que un Worker-Agent no puede completar su tarea sin antes modificar el Directorio Docs.",
+    "status": "completed",
+    "due_date": "2026-04-12",
+    "created_at": "2026-03-28T16:02:50.260248+00:00",
+    "updated_at": "2026-03-28T22:11:26.340208+00:00"
+  },
+  {
+    "id": "c9834571-ebb1-4bd0-b821-26d05b654083",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Pizarra Swarm Control (Frontend UI)",
+    "description": "Crear en el frontend una interfaz estilo 'Supervisor' donde el humano pueda ver en tiempo real en qué ramas están los IAs trabajando, los Pull Requests automáticos y aprobar el código final a la línea base.",
+    "status": "completed",
+    "due_date": "2026-04-17",
+    "created_at": "2026-03-28T16:02:50.391783+00:00",
+    "updated_at": "2026-03-28T22:11:26.461823+00:00"
+  },
+  {
+    "id": "05d32b9b-061b-4f7b-94b9-0626c77e2dc9",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 6 — Calidad, Testing y Anti-Deuda Técnica",
+    "description": "DevHub tiene deuda técnica acumulada: archivos fix_*.js en raíz, patch_server.js suelto, middleware.js.bak, tests no automatizados, y crasheo de Terminal en modo export. Esta fase limpia la base de código, establece suites de testing E2E con Playwright, y crea pipelines de CI/CD en GitHub Actions. ✅ COMPLETADO 2026-03-28 — Implementado por Agente Antigravity.",
+    "status": "completed",
+    "due_date": "2026-05-15",
+    "created_at": "2026-03-28T20:25:58.686932+00:00",
+    "updated_at": "2026-03-28T21:19:25.279384+00:00"
+  },
+  {
+    "id": "20cd7ef5-52d3-41ff-8e71-4cdb308d2771",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 4 — Sistema de Priorización Inteligente de Tareas",
+    "description": "El corazón de DevHub es hacer que el desarrollador sepa QUÉ ejecutar primero. Esta fase construye el motor de priorización: scoring automático por urgencia+valor, vista de cola ordenada para agentes, filtros avanzados por bloqueo/dependencia, y un algoritmo anti-parálisis que detecta tareas estancadas y las reactiva.",
+    "status": "completed",
+    "due_date": "2026-04-25",
+    "created_at": "2026-03-28T20:25:49.818452+00:00",
+    "updated_at": "2026-03-28T22:11:26.592815+00:00"
+  },
+  {
+    "id": "9e1c1076-ebd6-4ce3-b39f-13132f8c3f7e",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 5 — Ejecución Autónoma del Agente (Swarm v2)",
+    "description": "Evolución del Swarm Control hacia ejecución real: los Workers deben poder recibir una tarea, crear su rama Git, ejecutar el trabajo (invocando un LLM real), y hacer el commit automáticamente sin intervención manual. Incluye herramienta pick_up_task() en MCP, sistema de cola de agentes, y panel de aprobación humana final.",
+    "status": "completed",
+    "due_date": "2026-05-05",
+    "created_at": "2026-03-28T20:25:53.876284+00:00",
+    "updated_at": "2026-03-28T22:11:26.703822+00:00"
+  },
+  {
+    "id": "aff13d0b-f4a0-4a14-b4a2-89f051f7a651",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 9 — Producción, Seguridad y Distribución",
+    "description": "Preparar DevHub para uso real en producción: auditoría de seguridad (RLS de Supabase, rate limiting de API, validación de inputs), empaquetado como app Tauri para desktop, PWA offline-capable, documentación de usuario final, y estrategia de lanzamiento.",
+    "status": "completed",
+    "due_date": "2026-06-25",
+    "created_at": "2026-03-28T20:26:04.791373+00:00",
+    "updated_at": "2026-03-28T22:18:20.321755+00:00"
+  },
+  {
+    "id": "f9ed7a40-06db-4f26-bd1f-9d75c026f49c",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 8 — Multi-Proyecto y Colaboración en Equipo",
+    "description": "DevHub actualmente es single-user. Esta fase añade capacidades multi-usuario: invitación de colaboradores por proyecto, roles (Admin/Worker/Viewer), atribución de tareas a personas o agentes específicos, workspace compartido, y notificaciones en tiempo real usando Supabase Realtime.",
+    "status": "completed",
+    "due_date": "2026-06-10",
+    "created_at": "2026-03-28T20:26:04.587865+00:00",
+    "updated_at": "2026-03-28T21:43:36.430814+00:00"
+  },
+  {
+    "id": "869a5cef-3024-43cf-99d3-4c8814f21618",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 7 — Analítica Avanzada y Gestión de Memoria del Agente",
+    "description": "Los agentes necesitan memoria persistente entre sesiones para no repetir errores ni re-investigar lo mismo. Esta fase implementa: Memory Graph (grafo de conocimiento del proyecto), velocity tracking real del equipo de agentes, predicciones de fecha de entrega por IA, y reportes exportables del sprint.",
+    "status": "completed",
+    "due_date": "2026-05-28",
+    "created_at": "2026-03-28T20:26:01.221481+00:00",
+    "updated_at": "2026-03-28T21:44:37.51091+00:00"
+  },
+  {
+    "id": "371a2ccd-bb48-4c18-bed1-6408f9815e98",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "[DESKTOP-1] Setup y Configuración de Tauri para Linux",
+    "description": "Instalar y configurar Tauri en el proyecto Next.js existente, ajustando la arquitectura para que el backend Node-pty corra como proceso separado (sidecar) y la UI se sirva desde Tauri con WebView nativo de Linux (WebKit2GTK).",
+    "status": "completed",
+    "due_date": "2026-04-15",
+    "created_at": "2026-03-28T22:52:55.988737+00:00",
+    "updated_at": "2026-03-28T23:27:12.217326+00:00"
+  },
+  {
+    "id": "86cef342-3a94-4526-8fbe-e8a02a05fd51",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "[DESKTOP-2] Backend Sidecar y Gestión de Procesos",
+    "description": "Adaptar el servidor Node.js (node-pty, terminal WebSocket, MCP server) para funcionar como proceso sidecar dentro de Tauri, garantizando que la terminal no muera cuando el usuario cierra y reabre la ventana.",
+    "status": "completed",
+    "due_date": "2026-04-25",
+    "created_at": "2026-03-28T22:53:02.270865+00:00",
+    "updated_at": "2026-03-28T23:27:13.083799+00:00"
+  },
+  {
+    "id": "d286c1fd-e935-4d6e-858d-848c8664c1e0",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "[DESKTOP-3] UX Nativa de Escritorio (Tray, Ventana, Notificaciones)",
+    "description": "Personalizar la experiencia desktop: ventana nativa, system tray, auto-start, ícono de aplicación, atajos de teclado globales y notificaciones nativas del SO.",
+    "status": "completed",
+    "due_date": "2026-05-05",
+    "created_at": "2026-03-28T22:53:08.645937+00:00",
+    "updated_at": "2026-03-28T23:27:14.184403+00:00"
+  },
+  {
+    "id": "07291536-1f2e-4f24-b938-42ce2c80834a",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "[DESKTOP-4] Empaquetado y Distribución Linux (.deb, .AppImage)",
+    "description": "Empaquetar y distribuir el binario de DevHub para Linux como .deb (Debian/Ubuntu), .AppImage (universal) y .tar.gz. Configurar pipeline de build automatizado en GitHub Actions.",
+    "status": "in_progress",
+    "due_date": "2026-05-18",
+    "created_at": "2026-03-28T22:53:15.335144+00:00",
+    "updated_at": "2026-03-28T23:27:14.75391+00:00"
+  },
+  {
+    "id": "6ba8ae9c-445a-456c-9f57-c5bb5fe9c918",
+    "project_id": "d7be6acc-9563-47ce-913c-968d5512caca",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 1: Punto de Restauración y Seguridad",
+    "description": "Asegurar el sistema para evitar reinstalar el SO en caso de fallos de Wayland o pantalla negra.",
+    "status": "planned",
+    "due_date": "2026-03-29",
+    "created_at": "2026-03-29T15:33:15.879437+00:00",
+    "updated_at": "2026-03-29T15:33:15.879437+00:00"
+  },
+  {
+    "id": "adc07d2f-0186-4bbd-8bba-21a37bfcf43a",
+    "project_id": "d7be6acc-9563-47ce-913c-968d5512caca",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 2: Configuración Híbrida y Drivers NVIDIA",
+    "description": "Instalación segura de drivers NVIDIA, configuración del kernel y manejo de gráficos híbridos (Optimus).",
+    "status": "planned",
+    "due_date": "2026-03-30",
+    "created_at": "2026-03-29T15:33:16.71586+00:00",
+    "updated_at": "2026-03-29T15:33:16.71586+00:00"
+  },
+  {
+    "id": "4b8afde0-88ba-48bc-bf9d-4e6109eda952",
+    "project_id": "d7be6acc-9563-47ce-913c-968d5512caca",
+    "user_id": "54fee7d7-340d-4683-b259-b61a39567f94",
+    "title": "Fase 3: Configuración de Veloce (PyTorch con CUDA)",
+    "description": "Verificación y compilación de dependencias de Veloce para aprovechar CUDA.",
+    "status": "planned",
+    "due_date": "2026-03-30",
+    "created_at": "2026-03-29T15:33:16.895741+00:00",
+    "updated_at": "2026-03-29T15:33:16.895741+00:00"
+  }
+]

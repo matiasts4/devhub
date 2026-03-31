@@ -1,35 +1,27 @@
 export const dynamic = 'force-static';
 
-import { createClient } from '@/lib/supabase/server';
-
+import { getDb } from '@/lib/db/localDb';
 import { NextResponse } from 'next/server';
 
 /**
  * GET /api/mcp/connections
- * Returns all active MCP connections for the current user.
+ * Returns all active MCP connections.
  */
 export async function GET() {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json(
-      {
-        error: 'API route not available in static export build.',
-      },
-      { status: 501 },
+      { error: 'API route not available in static export build.' },
+      { status: 501 }
     );
   }
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const db = getDb();
+  const connections = db.tables.mcp_connections.select({
+    select: 'id, name, type, endpoint_url, is_active, last_sync, created_at',
+    orderBy: [['created_at', 'DESC']],
+  });
 
-  const { data, error } = await supabase
-    .from('mcp_connections')
-    .select('id, name, type, endpoint_url, is_active, last_sync, created_at')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ connections: data });
+  return NextResponse.json({ connections });
 }
 
 /**
@@ -39,16 +31,10 @@ export async function GET() {
 export async function POST(request) {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json(
-      {
-        error: 'API route not available in static export build.',
-      },
-      { status: 501 },
+      { error: 'API route not available in static export build.' },
+      { status: 501 }
     );
   }
-
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
   const { name, type, endpoint_url, api_key, config } = body;
@@ -57,15 +43,17 @@ export async function POST(request) {
     return NextResponse.json({ error: 'name and type are required' }, { status: 400 });
   }
 
-  const { data, error } = await supabase.from('mcp_connections').insert({
-    user_id: user.id,
+  const db = getDb();
+  const data = db.tables.mcp_connections.insert({
+    id: `conn-${Date.now()}`,
+    user_id: 'local-user',
     name,
     type: type || 'generic',
     endpoint_url: endpoint_url || null,
-    api_key_encrypted: api_key || null, // TODO: encrypt with server-side key
-    config: config || {},
-  }).select().single();
+    api_key_encrypted: api_key || null,
+    config: config ? JSON.stringify(config) : '{}',
+    is_active: 1,
+  });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ connection: data }, { status: 201 });
 }

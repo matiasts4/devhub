@@ -14,12 +14,19 @@ import {
   Sparkles,
   Info,
   Clock,
+  Activity,
+  Cpu,
+  Zap,
+  Network,
+  Hash,
 } from 'lucide-react';
 import ChatAgente from '@/components/ChatAgente';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useOutletContext } from 'react-router-dom';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/db/localSupabase';
+import { getAgentRegistryLiveSnapshot, getAgentDisplayMeta } from '@/lib/agentRegistryLive';
+import { getDocOpsContextBudgetPolicy } from '@/lib/docopsPolicy';
 
 const TOOLS = [
   { name: 'list_projects', desc: 'Listar todos los proyectos' },
@@ -35,9 +42,77 @@ const TOOLS = [
   { name: 'get_dashboard', desc: 'Resumen global' },
 ];
 
+const STATUS_CONFIG = {
+  working: {
+    color: 'text-accent-primary',
+    bg: 'bg-accent-primary/10',
+    border: 'border-accent-primary/20',
+    icon: Loader2,
+    spin: true,
+    label: 'Ejecutando',
+  },
+  running: {
+    color: 'text-accent-primary',
+    bg: 'bg-accent-primary/10',
+    border: 'border-accent-primary/20',
+    icon: Loader2,
+    spin: true,
+    label: 'Ejecutando',
+  },
+  active: {
+    color: 'text-emerald-400',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/20',
+    icon: Activity,
+    spin: false,
+    label: 'Activo',
+  },
+  thinking: {
+    color: 'text-purple-400',
+    bg: 'bg-purple-500/10',
+    border: 'border-purple-500/20',
+    icon: Bot,
+    spin: true,
+    label: 'Pensando',
+  },
+  asking_questions: {
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/10',
+    border: 'border-amber-500/20',
+    icon: Info,
+    spin: false,
+    label: 'Esperando input',
+  },
+  completed: {
+    color: 'text-green-500',
+    bg: 'bg-green-500/10',
+    border: 'border-green-500/20',
+    icon: CheckCircle2,
+    spin: false,
+    label: 'Completado',
+  },
+  failed: {
+    color: 'text-red-500',
+    bg: 'bg-red-500/10',
+    border: 'border-red-500/20',
+    icon: XCircle,
+    spin: false,
+    label: 'Error',
+  },
+  idle: {
+    color: 'text-text-muted',
+    bg: 'bg-surface-elevated',
+    border: 'border-borders-subtle',
+    icon: Clock,
+    spin: false,
+    label: 'Inactivo',
+  },
+};
+
 export default function CentroIA() {
   const { project } = useOutletContext() || {};
   const supabase = createClient();
+  const docopsBudget = getDocOpsContextBudgetPolicy();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -48,13 +123,39 @@ export default function CentroIA() {
   const [querying, setQuerying] = useState(false);
   const [history, setHistory] = useState([]);
 
-  // Agent History State
-  const [agentHistory, setAgentHistory] = useState([]);
+  // Agent State
+  const [agents, setAgents] = useState([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
+  const [agentRuns, setAgentRuns] = useState({});
+  const [liveSessions, setLiveSessions] = useState({});
 
   useEffect(() => {
     const saved = localStorage.getItem('memory_query_history');
     if (saved) setHistory(JSON.parse(saved));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
+      setAgentRuns(runs);
+    } catch {
+      setAgentRuns({});
+    }
+  }, []);
+
+  const fetchTerminalSessions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/terminal/sessions', { cache: 'no-store' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      const byId = {};
+      for (const session of payload.sessions || []) {
+        byId[session.terminalId] = session;
+      }
+      setLiveSessions(byId);
+    } catch {
+      // Keep UI functional if sessions endpoint is unavailable.
+    }
   }, []);
 
   const handleQuery = async (e) => {
@@ -111,14 +212,32 @@ export default function CentroIA() {
     if (!project?.id) return;
     const { data } = await supabase
       .from('agent_registry')
-      .select('*')
+      .select('*, current_task_id, last_heartbeat, status')
       .eq('project_id', project.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
+      .order('last_heartbeat', { ascending: false })
+      .limit(50);
 
-    if (data) setAgentHistory(data);
+    if (data) {
+      const taskIds = data.map((a) => a.current_task_id).filter(Boolean);
+      let tasksDict = {};
+      if (taskIds.length > 0) {
+        const { data: tasksData } = await supabase
+          .from('tasks')
+          .select('id, title')
+          .in('id', taskIds);
+        tasksData?.forEach((t) => (tasksDict[t.id] = t.title));
+      }
+
+      setAgents(
+        data.map((a) => ({
+          ...a,
+          current_task: { title: tasksDict[a.current_task_id] },
+        }))
+      );
+    }
     setLoadingAgents(false);
-  }, [project?.id, supabase]);
+    await fetchTerminalSessions();
+  }, [project?.id, supabase, fetchTerminalSessions]);
 
   useEffect(() => {
     fetchStats();
@@ -149,131 +268,594 @@ export default function CentroIA() {
     };
   }, [project?.id, fetchAgents, supabase]);
 
+  const { activeAgents, activeAgentsCount } = getAgentRegistryLiveSnapshot({
+    agents,
+    liveSessions,
+    agentRuns,
+  });
+  const visibleAgents = activeAgents.filter((agent) => {
+    const run = agentRuns[agent.agent_id];
+    const hasLiveSession = run?.panelId && liveSessions[run.panelId]?.alive;
+    const lastSeen = agent.last_heartbeat || agent.updated_at || agent.created_at;
+    const heartbeatFresh = lastSeen ? Date.now() - new Date(lastSeen).getTime() <= 90_000 : false;
+    return hasLiveSession || heartbeatFresh;
+  });
+  const historyAgents = agents
+    .filter(
+      (a) =>
+        !['working', 'running', 'active', 'thinking', 'asking_questions'].includes(
+          a.status?.toLowerCase()
+        )
+    )
+    .slice(0, 10);
+
   return (
-    <div className="min-h-screen bg-surface-app">
+    <div
+      className="min-h-screen"
+      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
+    >
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-sm border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
+      <div
+        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
+        style={{
+          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
+          borderColor: 'var(--border-subtle)',
+        }}
+      >
         <div className="flex items-center gap-3">
-          <Bot className="w-4 h-4 text-success" strokeWidth={1.5} />
-          <h1 className="font-mono text-base font-bold text-text-primary">
-            Centro de Control de Agentes
+          <Bot className="w-4 h-4" strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
+          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+            Agentes IA
           </h1>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#3FB950]/10 border border-[#3FB950]/20 text-success flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3FB950] animate-pulse" />
-            MCP Local
-          </span>
+          {project?.name && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+              {project.name}
+            </span>
+          )}
         </div>
         <button
           onClick={() => {
             fetchStats();
             fetchAgents();
           }}
-          className="text-borders-strong hover:text-white transition-colors p-1.5 rounded-md hover:bg-surface-elevated"
+          className="transition-colors p-1.5 rounded-md hover:bg-surface-elevated"
+          style={{ color: 'var(--text-muted)' }}
         >
           <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.5} />
         </button>
       </div>
 
-      <div className="px-6 py-6 grid grid-cols-1 xl:grid-cols-12 gap-6 max-w-[1400px] mx-auto w-full">
-        {/* Left Column - Action Center (7 cols) */}
-        <div className="xl:col-span-7 space-y-6">
-          {/* Main Launcher */}
-          <ChatAgente projectId={project?.id} projectName={project?.name} />
+      <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
+        {/* Breadcrumb */}
+        <div
+          className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
+          style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
+        >
+          <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            DevHub
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            ›
+          </span>
+          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+            Agentes IA
+          </span>
+        </div>
 
-          {/* Active / Recent Agents History */}
-          <div className="bg-surface-card border border-borders-subtle rounded-xl overflow-hidden flex flex-col min-h-[300px]">
-            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-borders-subtle">
-              <Terminal className="w-4 h-4 text-accent-primary" strokeWidth={1.5} />
-              <h3 className="font-mono text-sm font-semibold text-text-primary">
-                Historial de Ejecución
-              </h3>
+        {/* Stats / Budget Card */}
+        <div
+          className="rounded-2xl overflow-hidden mb-6"
+          style={{
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-soft)',
+          }}
+        >
+          <div
+            className="flex items-center gap-3 px-6 py-4"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          >
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{
+                background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+              }}
+            >
+              <Zap className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
             </div>
+            <div>
+              <h3
+                className="font-mono text-sm font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Presupuesto DocOps
+              </h3>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                Contexto compartido para agentes
+              </p>
+            </div>
+          </div>
 
-            <div className="p-0 flex-1 overflow-auto">
-              {loadingAgents ? (
-                <div className="flex items-center justify-center h-full p-8 text-text-muted">
-                  <Loader2 className="w-5 h-5 animate-spin" />
+          <div className="p-6">
+            {loading ? (
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Cargando estadísticas...
+              </div>
+            ) : stats ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[
+                  { label: 'Tareas', value: stats.tasks, sub: `${stats.tasks_done} completadas` },
+                  { label: 'Hitos', value: stats.milestones, sub: `${stats.ms_done} completados` },
+                  { label: 'Interacciones IA', value: stats.interactions, sub: 'Total consultas' },
+                  {
+                    label: 'Budget Contexto',
+                    value: docopsBudget.max_tokens_context,
+                    sub: `${docopsBudget.max_expansions} expansiones`,
+                  },
+                ].map(({ label, value, sub }) => (
+                  <div
+                    key={label}
+                    className="rounded-xl p-4"
+                    style={{
+                      background: 'var(--surface-muted)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                      {label}
+                    </p>
+                    <p className="text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
+                      {value}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {sub}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Swarm Active Card */}
+        <div
+          className="rounded-2xl overflow-hidden mb-6"
+          style={{
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-soft)',
+          }}
+        >
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{
+                  background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+                }}
+              >
+                <Network className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+              </div>
+              <div>
+                <h3
+                  className="font-mono text-sm font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Swarm Activo
+                </h3>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  En tiempo real
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                {activeAgents.length > 0 && (
+                  <span
+                    className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                    style={{ background: 'var(--success)' }}
+                  />
+                )}
+                <span
+                  className="relative inline-flex rounded-full h-2 w-2"
+                  style={{
+                    background: activeAgentsCount > 0 ? 'var(--success)' : 'var(--text-muted)',
+                  }}
+                />
+              </span>
+              <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                {activeAgentsCount} Agentes
+              </span>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {loadingAgents ? (
+              <div
+                className="flex items-center justify-center py-8"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="w-5 h-5 animate-spin" />
+              </div>
+            ) : visibleAgents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
+                <Cpu
+                  className="w-10 h-10 opacity-20"
+                  strokeWidth={1}
+                  style={{ color: 'var(--text-muted)' }}
+                />
+                <div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Swarm Inactivo
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Lanza un nuevo agente usando el panel de la derecha o desde una tarea.
+                  </p>
                 </div>
-              ) : agentHistory.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full p-12 text-center text-text-muted space-y-2">
-                  <Bot className="w-8 h-8 opacity-20" />
-                  <p className="text-xs">Aún no se han ejecutado agentes en este proyecto.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-borders-subtle">
-                  {agentHistory.map((agent) => (
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {visibleAgents.map((agent) => {
+                  const statusKey = agent.status?.toLowerCase() || 'running';
+                  const session = agentRuns[agent.agent_id]?.panelId
+                    ? liveSessions[agentRuns[agent.agent_id].panelId]
+                    : null;
+                  const isWaiting = statusKey === 'idle' && Boolean(session?.alive);
+                  const config = isWaiting
+                    ? {
+                        color: 'text-amber-400',
+                        bg: 'bg-amber-500/10',
+                        border: 'border-amber-500/20',
+                        icon: Clock,
+                        spin: false,
+                        label: 'Activo en espera',
+                      }
+                    : STATUS_CONFIG[statusKey] || STATUS_CONFIG.running;
+                  const StatusIcon = config.icon;
+                  const isSubAgent =
+                    agent.nombre?.includes('sdd-') || agent.agent_id?.includes('worker');
+                  const executionMeta = getAgentDisplayMeta(agent, { agentRuns });
+
+                  return (
                     <div
-                      key={agent.id}
-                      className="p-4 hover:bg-surface-elevated transition-colors flex items-start gap-4"
+                      key={agent.id || agent.agent_id}
+                      className="p-4 rounded-xl border shadow-sm flex flex-col gap-3 fade-in-up transition-all hover:border-borders-strong"
+                      style={{
+                        background: 'var(--surface-card)',
+                        borderColor: 'var(--border-subtle)',
+                      }}
                     >
-                      {/* Status Icon */}
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex gap-3 min-w-0">
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                            style={{
+                              background:
+                                'color-mix(in srgb, var(--accent-primary) 8%, transparent)',
+                            }}
+                          >
+                            <Bot className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+                          </div>
+                          <div className="min-w-0">
+                            <h4
+                              className="text-sm font-semibold truncate"
+                              style={{ color: 'var(--text-primary)' }}
+                              title={agent.nombre || agent.profile_name || 'Agente Autónomo'}
+                            >
+                              {agent.nombre || agent.profile_name || 'Agente Autónomo'}
+                            </h4>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {isSubAgent && (
+                                <span
+                                  className="text-[9px] px-1.5 py-0.5 rounded border"
+                                  style={{
+                                    background: 'var(--surface-elevated)',
+                                    borderColor: 'var(--border-subtle)',
+                                    color: 'var(--text-secondary)',
+                                  }}
+                                >
+                                  Sub-Agente
+                                </span>
+                              )}
+                              <span
+                                className="text-[9px] px-1.5 py-0.5 rounded border"
+                                style={{
+                                  background: 'var(--surface-elevated)',
+                                  borderColor: 'var(--border-subtle)',
+                                  color: 'var(--text-secondary)',
+                                }}
+                              >
+                                {executionMeta.label}
+                              </span>
+                              <span
+                                className="text-[10px] font-mono truncate"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                {agent.agent_id
+                                  ? agent.agent_id.slice(0, 15) + '...'
+                                  : 'ID: ' + (agent.id?.slice(0, 8) || 'N/A')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded border shrink-0 ${config.bg} ${config.border}`}
+                        >
+                          <StatusIcon
+                            className={`w-3 h-3 ${config.color} ${config.spin ? 'animate-spin' : ''}`}
+                          />
+                          <span
+                            className={`text-[10px] font-semibold uppercase tracking-wider ${config.color}`}
+                          >
+                            {config.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        className="rounded-lg p-2.5 border text-xs line-clamp-2"
+                        style={{
+                          background: 'var(--surface-muted)',
+                          borderColor: 'var(--border-subtle)',
+                          color: 'var(--text-secondary)',
+                        }}
+                        title={executionMeta.summary || 'Trabajando...'}
+                      >
+                        {`En tarea: ${executionMeta.summary}`}
+                      </div>
+
+                      <p
+                        className="text-[10px] line-clamp-1"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Resumen: {executionMeta.summary}
+                      </p>
+
+                      <div className="flex justify-between items-center mt-1">
+                        <span
+                          className="text-[10px] flex items-center gap-1"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          <Clock className="w-3 h-3" />
+                          Actualizado{' '}
+                          {formatDistanceToNow(new Date(agent.last_heartbeat || agent.created_at), {
+                            addSuffix: true,
+                            locale: es,
+                          })}
+                        </span>
+                        {agent.modelo_llm && (
+                          <span
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded border"
+                            style={{
+                              background:
+                                'color-mix(in srgb, var(--accent-primary) 8%, transparent)',
+                              borderColor:
+                                'color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+                              color: 'var(--accent-primary)',
+                            }}
+                          >
+                            {agent.modelo_llm}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* History Card */}
+        <div
+          className="rounded-2xl overflow-hidden mb-6"
+          style={{
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-soft)',
+          }}
+        >
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{
+                  background: 'color-mix(in srgb, var(--text-muted) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--text-muted) 15%, transparent)',
+                }}
+              >
+                <Terminal className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+              </div>
+              <div>
+                <h3
+                  className="font-mono text-sm font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Historial de Ejecución
+                </h3>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Ejecuciones recientes de agentes
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-0">
+            {loadingAgents ? (
+              <div
+                className="flex items-center justify-center p-8"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Loader2 className="w-5 h-5 animate-spin" />
+              </div>
+            ) : historyAgents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-12 text-center space-y-2">
+                <Bot className="w-8 h-8 opacity-20" style={{ color: 'var(--text-muted)' }} />
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  No hay ejecuciones recientes.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                {historyAgents.map((agent) => {
+                  const statusKey = agent.status?.toLowerCase() || 'idle';
+                  const config = STATUS_CONFIG[statusKey] || STATUS_CONFIG.idle;
+                  const StatusIcon = config.icon;
+                  const executionMeta = getAgentDisplayMeta(agent, { agentRuns });
+
+                  return (
+                    <div
+                      key={agent.id || agent.agent_id}
+                      className="p-4 transition-colors flex items-start gap-4"
+                      style={{
+                        color: 'var(--text-primary)',
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background = 'var(--surface-elevated)')
+                      }
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
                       <div className="mt-1 flex-shrink-0">
-                        {agent.status === 'running' && (
-                          <Loader2 className="w-4 h-4 text-accent-primary animate-spin" />
-                        )}
-                        {agent.status === 'completed' && (
-                          <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        )}
-                        {agent.status === 'failed' && <XCircle className="w-4 h-4 text-red-500" />}
-                        {!['running', 'completed', 'failed'].includes(agent.status) && (
-                          <Clock className="w-4 h-4 text-text-muted" />
-                        )}
+                        <StatusIcon className={`w-4 h-4 ${config.color}`} />
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-4 mb-1">
-                          <span className="text-[10px] font-mono text-[#D2A8FF] bg-[#D2A8FF]/10 px-1.5 py-0.5 rounded border border-[#D2A8FF]/20">
-                            {agent.profile_name || 'default'}
-                          </span>
-                          <span className="text-[10px] text-text-muted flex items-center gap-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="text-[11px] font-semibold"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {agent.nombre || agent.profile_name || 'Agente'}
+                            </span>
+                            <span
+                              className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${config.bg} ${config.border} ${config.color}`}
+                            >
+                              {config.label}
+                            </span>
+                          </div>
+                          <span
+                            className="text-[10px] flex items-center gap-1"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
                             <Clock className="w-3 h-3" />
-                            {formatDistanceToNow(new Date(agent.created_at), {
-                              addSuffix: true,
-                              locale: es,
-                            })}
+                            {formatDistanceToNow(
+                              new Date(agent.last_heartbeat || agent.created_at),
+                              {
+                                addSuffix: true,
+                                locale: es,
+                              }
+                            )}
                           </span>
                         </div>
-                        <p className="text-xs text-text-primary leading-relaxed break-words">
-                          {agent.task_description}
+                        <p
+                          className="text-xs leading-relaxed break-words mt-1"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {`Tarea: ${executionMeta.summary}`}
                         </p>
 
-                        {agent.status === 'failed' && agent.error_message && (
-                          <div className="mt-2 text-[10px] text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20">
+                        {statusKey === 'failed' && agent.error_message && (
+                          <div
+                            className="mt-2 text-[10px] p-2 rounded border"
+                            style={{
+                              background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+                              borderColor: 'color-mix(in srgb, var(--danger) 20%, transparent)',
+                              color: 'var(--danger)',
+                            }}
+                          >
                             {agent.error_message}
                           </div>
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right Column - Context & Stats (5 cols) */}
-        <div className="xl:col-span-5 space-y-6">
-          {/* MCP Status Banner */}
+        {/* Right Column - ChatAgente, MCP, Memory Graph */}
+        <div className="space-y-6 fade-in-up">
+          {/* ChatAgente Launcher */}
+          <ChatAgente projectId={project?.id} projectName={project?.name} />
+
+          {/* MCP Status Card */}
           <div
-            className="bg-surface-card border border-[#3FB950]/25 rounded-xl p-5 flex gap-4"
-            style={{ borderLeft: '3px solid #3FB950' }}
+            className="rounded-2xl overflow-hidden"
+            style={{
+              background: 'var(--surface-card)',
+              border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
+              boxShadow: 'var(--shadow-soft)',
+            }}
           >
-            <div className="w-10 h-10 rounded-xl bg-[#3FB950]/10 border border-[#3FB950]/20 flex items-center justify-center flex-shrink-0">
-              <Plug2 className="w-5 h-5 text-success" strokeWidth={1.5} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="font-mono font-semibold text-sm text-text-primary">
-                  DevHub MCP Server
-                </h2>
-                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-[#3FB950]/15 text-success border border-[#3FB950]/20 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#3FB950] animate-pulse" />
-                  ACTIVO
-                </span>
+            <div
+              className="flex items-center gap-3 px-6 py-4"
+              style={{
+                borderBottom: '1px solid color-mix(in srgb, var(--success) 15%, transparent)',
+              }}
+            >
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{
+                  background: 'color-mix(in srgb, var(--success) 10%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
+                }}
+              >
+                <Plug2 className="w-4 h-4" style={{ color: 'var(--success)' }} />
               </div>
-              <p className="text-xs text-text-muted leading-relaxed">
-                Antigravity está conectado a DevHub localmente vía MCP{' '}
-                <code className="text-[#D2A8FF] font-mono text-[10px] bg-surface-elevated px-1 rounded">
+              <div>
+                <h3
+                  className="font-mono text-sm font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  DevHub MCP Server
+                </h3>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Conexión local vía stdio
+                </p>
+              </div>
+              <span
+                className="ml-auto text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
+                style={{
+                  background: 'color-mix(in srgb, var(--success) 12%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)',
+                  color: 'var(--success)',
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full animate-pulse"
+                  style={{ background: 'var(--success)' }}
+                />
+                ACTIVO
+              </span>
+            </div>
+
+            <div className="p-6">
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                Antigravity está conectado localmente vía MCP{' '}
+                <code
+                  className="font-mono text-[10px] px-1 rounded"
+                  style={{
+                    background: 'var(--surface-elevated)',
+                    color: 'var(--accent-primary)',
+                  }}
+                >
                   stdio
                 </code>
                 . Con control total de OpenCode.
@@ -281,72 +863,42 @@ export default function CentroIA() {
             </div>
           </div>
 
-          {/* Project stats */}
-          {!loading && stats && (
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                {
-                  label: 'Tareas',
-                  value: stats.tasks,
-                  sub: `${stats.tasks_done} completadas`,
-                  color: '#58A6FF',
-                  icon: ListTodo,
-                },
-                {
-                  label: 'Hitos',
-                  value: stats.milestones,
-                  sub: `${stats.ms_done} completados`,
-                  color: '#E3B341',
-                  icon: MapPin,
-                },
-                {
-                  label: 'Proyecto',
-                  value: project?.name?.slice(0, 8) || '—',
-                  sub: project?.status || '',
-                  color: '#3FB950',
-                  icon: FolderOpen,
-                },
-                {
-                  label: 'Agentes Lanzados',
-                  value: agentHistory.length,
-                  sub: 'en este proyecto',
-                  color: '#D2A8FF',
-                  icon: Sparkles,
-                },
-              ].map((s, i) => {
-                const Icon = s.icon;
-                return (
-                  <div
-                    key={i}
-                    className="bg-surface-card border border-borders-subtle rounded-lg px-4 py-3 flex items-center justify-between fade-in-up"
-                    style={{ animationDelay: `${i * 40}ms` }}
-                  >
-                    <div>
-                      <p className="text-[10px] text-text-secondary">{s.label}</p>
-                      <p className="font-mono text-xl font-bold" style={{ color: s.color }}>
-                        {s.value}
-                      </p>
-                      <p className="text-[9px] text-text-secondary">{s.sub}</p>
-                    </div>
-                    <Icon className="w-5 h-5 text-text-secondary" strokeWidth={1.5} />
-                  </div>
-                );
-              })}
+          {/* Memory Graph Card */}
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{
+              background: 'var(--surface-card)',
+              border: '1px solid var(--border-subtle)',
+              boxShadow: 'var(--shadow-soft)',
+            }}
+          >
+            <div
+              className="flex items-center gap-3 px-6 py-4"
+              style={{ borderBottom: '1px solid var(--border-subtle)' }}
+            >
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{
+                  background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+                }}
+              >
+                <Sparkles className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+              </div>
+              <div>
+                <h3
+                  className="font-mono text-sm font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Consulta al Memory Graph
+                </h3>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Pregunta al agente sobre decisiones, errores y arquitectura
+                </p>
+              </div>
             </div>
-          )}
 
-          {/* Memory Graph Query */}
-          <div className="bg-surface-card border border-[#8957e5]/30 rounded-xl overflow-hidden relative">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#8957e5] to-[#d2a8ff]" />
-            <div className="p-5">
-              <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#d2a8ff]" />
-                Consulta al Memory Graph
-              </h3>
-              <p className="text-[11px] text-text-muted mb-4">
-                Pregunta al agente sobre decisiones, errores y arquitectura.
-              </p>
-
+            <div className="p-6">
               <form onSubmit={handleQuery} className="flex flex-col gap-3">
                 <div className="flex gap-2">
                   <input
@@ -354,12 +906,18 @@ export default function CentroIA() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Ej. ¿Qué BD decidimos usar?"
-                    className="flex-1 bg-surface-elevated border border-borders-subtle rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-[#8957e5] transition-colors"
+                    className="flex-1 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+                    style={{
+                      background: 'var(--surface-muted)',
+                      border: '1px solid var(--border-strong)',
+                      color: 'var(--text-primary)',
+                    }}
                   />
                   <button
                     type="submit"
                     disabled={querying || !query.trim()}
-                    className="bg-[#8957e5] hover:bg-[#9a6bea] disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors"
+                    className="text-white px-3 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
+                    style={{ background: 'var(--accent-primary)' }}
                   >
                     {querying ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -376,7 +934,16 @@ export default function CentroIA() {
                         key={i}
                         type="button"
                         onClick={() => setQuery(h)}
-                        className="text-[9px] bg-surface-app px-2 py-0.5 rounded-full border border-borders-subtle text-text-secondary hover:text-white transition-colors"
+                        className="text-[9px] px-2 py-0.5 rounded-full border transition-colors"
+                        style={{
+                          background: 'var(--surface-muted)',
+                          borderColor: 'var(--border-subtle)',
+                          color: 'var(--text-secondary)',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.color = 'var(--text-secondary)')
+                        }
                       >
                         {h.length > 25 ? h.substring(0, 25) + '...' : h}
                       </button>
@@ -386,9 +953,18 @@ export default function CentroIA() {
               </form>
 
               {querying && (
-                <div className="mt-4 p-3 rounded-lg bg-surface-elevated border border-borders-subtle flex flex-col items-center justify-center gap-2">
-                  <div className="w-6 h-6 rounded-full border-t-2 border-l-2 border-[#8957e5] animate-spin" />
-                  <p className="text-[10px] text-text-muted animate-pulse">
+                <div
+                  className="mt-4 p-3 rounded-lg border flex flex-col items-center justify-center gap-2"
+                  style={{
+                    background: 'var(--surface-elevated)',
+                    borderColor: 'var(--border-subtle)',
+                  }}
+                >
+                  <div
+                    className="w-6 h-6 rounded-full border-t-2 border-l-2 animate-spin"
+                    style={{ borderColor: 'var(--accent-primary)' }}
+                  />
+                  <p className="text-[10px] animate-pulse" style={{ color: 'var(--text-muted)' }}>
                     Analizando memorias...
                   </p>
                 </div>
@@ -396,34 +972,22 @@ export default function CentroIA() {
 
               {answer && !querying && (
                 <div className="mt-4 space-y-3 fade-in-up">
-                  <div className="p-3 rounded-lg bg-[#21262D]/60 border border-borders-subtle">
-                    <p className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap">
+                  <div
+                    className="p-3 rounded-lg border"
+                    style={{
+                      background: 'var(--surface-muted)',
+                      borderColor: 'var(--border-subtle)',
+                    }}
+                  >
+                    <p
+                      className="text-xs leading-relaxed whitespace-pre-wrap"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
                       {answer}
                     </p>
                   </div>
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* Tools list (Collapsed look) */}
-          <div className="bg-surface-card border border-borders-subtle rounded-xl overflow-hidden">
-            <div className="flex items-center gap-2.5 px-5 py-3 border-b border-borders-subtle">
-              <Info className="w-3.5 h-3.5 text-text-secondary" strokeWidth={1.5} />
-              <h3 className="font-mono text-xs font-semibold text-text-primary">
-                Herramientas MCP ({TOOLS.length})
-              </h3>
-            </div>
-            <div className="divide-y divide-borders-subtle max-h-[150px] overflow-y-auto custom-scrollbar">
-              {TOOLS.map((tool) => (
-                <div key={tool.name} className="flex items-center gap-3 px-4 py-2">
-                  <CheckCircle2 className="w-3 h-3 flex-shrink-0 text-success" strokeWidth={1.5} />
-                  <code className="text-[9px] font-mono text-[#D2A8FF] w-[110px] flex-shrink-0">
-                    {tool.name}
-                  </code>
-                  <span className="text-[9px] text-text-secondary truncate">{tool.desc}</span>
-                </div>
-              ))}
             </div>
           </div>
         </div>
