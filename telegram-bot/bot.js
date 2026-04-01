@@ -46,6 +46,7 @@ const commands = {
   agente: require('./commands/agente'),
   reset: require('./commands/reset'),
   historial: require('./commands/historial'),
+  nueva_sesion: require('./commands/nueva_sesion'),
 };
 
 // ── Validation ──────────────────────────────────────────────────────────────
@@ -155,6 +156,9 @@ const commandMap = [
   { pattern: /^\/agente(.*)/, handler: commands.agente },
   { pattern: /^\/reset(.*)/, handler: commands.reset },
   { pattern: /^\/historial(.*)/, handler: commands.historial },
+  { pattern: /^\/nueva_sesion(.*)/, handler: commands.nueva_sesion },
+  { pattern: /^\/new_session(.*)/, handler: commands.nueva_sesion },
+  { pattern: /^\/newsession(.*)/, handler: commands.nueva_sesion },
   // Help
   { pattern: /^\/help(.*)/, handler: commands.help },
 ];

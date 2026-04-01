@@ -1,6 +1,7 @@
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
 // Inicializar de manera condicional por si no hay env vars
 const redis =
@@ -19,12 +20,12 @@ const ratelimit = redis
     })
   : null;
 
-export async function middleware(request) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Rate Limiting para APIs
   if (pathname.startsWith('/api') && ratelimit) {
-    const ip = request.ip || '127.0.0.1';
+    const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1';
     const { success } = await ratelimit.limit(ip);
     if (!success) {
       return new NextResponse('Too Many Requests', { status: 429 });

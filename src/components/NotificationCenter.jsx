@@ -1,11 +1,39 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, Clock3, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, Bell, Clock3, RefreshCw, Terminal, Wifi, WifiOff } from "lucide-react";
+import { Link } from "react-router-dom";
 import { createClient } from "@/lib/db/localSupabase";
 
 const DEADLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STALE_MCP_SYNC_MS = 30 * 60 * 1000;
+const TELEGRAM_REFRESH_MS = 30000;
+
+function safeFetch(url) {
+  return fetch(url).then((res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  });
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return "Nunca";
+  const ms = new Date(dateStr + "Z").getTime();
+  const diff = Date.now() - ms;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+async function fetchTelegramStatus() {
+  try {
+    return await safeFetch("/api/telegram/status");
+  } catch {
+    return { bot_connected: false, active_chats: 0, total_sessions: 0, last_activity: null, recent_errors: 0 };
+  }
+}
 
 function formatTimeLeft(targetDate) {
   const msLeft = new Date(targetDate).getTime() - Date.now();
@@ -62,12 +90,13 @@ function buildMcpAlerts(connections) {
 }
 
 export default function NotificationCenter({ projectId, collapsed }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deadlineAlerts, setDeadlineAlerts] = useState([]);
   const [mcpAlerts, setMcpAlerts] = useState([]);
+  const [tgStatus, setTgStatus] = useState(null);
 
   const fetchAlerts = useCallback(async () => {
     if (!projectId) return;
@@ -100,7 +129,7 @@ export default function NotificationCenter({ projectId, collapsed }) {
     setDeadlineAlerts(tasks);
     setMcpAlerts(buildMcpAlerts(mcpResult.data || []));
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, supabase]);
 
   useEffect(() => {
     fetchAlerts();
@@ -116,6 +145,18 @@ export default function NotificationCenter({ projectId, collapsed }) {
     () => mcpAlerts.filter((alert) => alert.level !== "ok"),
     [mcpAlerts]
   );
+
+  // ── Telegram refresh ─────────────────────────────────────────────
+  const fetchTelegram = useCallback(async () => {
+    const statusRes = await fetchTelegramStatus();
+    setTgStatus(statusRes);
+  }, []);
+
+  useEffect(() => {
+    fetchTelegram();
+    const timer = setInterval(fetchTelegram, TELEGRAM_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [fetchTelegram]);
 
   const unreadCount = deadlineAlerts.length + criticalMcpAlerts.length;
 
@@ -226,6 +267,65 @@ export default function NotificationCenter({ projectId, collapsed }) {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[10px] text-text-muted uppercase tracking-[0.12em] mb-2">
+                Bot Telegram
+              </p>
+              {!tgStatus ? (
+                <p className="text-[11px] text-text-muted">Cargando estado del bot...</p>
+              ) : (
+                <>
+                  <div className="space-y-1.5 mb-3">
+                    <div
+                      className={`rounded-md border px-2.5 py-2 flex items-center justify-between ${
+                        tgStatus.bot_connected
+                          ? "border-[#3FB950]/25 bg-[#3FB950]/5"
+                          : "border-[#FFA657]/25 bg-[#FFA657]/8"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {tgStatus.bot_connected ? (
+                          <Wifi className="w-3.5 h-3.5 text-success flex-shrink-0" strokeWidth={1.7} />
+                        ) : (
+                          <WifiOff className="w-3.5 h-3.5 text-[#FFA657] flex-shrink-0" strokeWidth={1.7} />
+                        )}
+                        <p className="text-[11px] text-text-primary">
+                          {tgStatus.bot_connected ? "Conectado" : "Sin actividad reciente"}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-medium text-text-muted">
+                        {tgStatus.active_chats} chat{tgStatus.active_chats !== 1 ? "s" : ""} activo{tgStatus.active_chats !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    {tgStatus.last_activity && (
+                      <p className="text-[10px] text-text-muted text-right">
+                        Ultima actividad: {timeAgo(tgStatus.last_activity)}
+                      </p>
+                    )}
+                  </div>
+
+                  {tgStatus.recent_errors > 0 && (
+                    <div className="rounded-md border border-[#F85149]/25 bg-[#F85149]/5 px-2.5 py-1.5 mb-2 flex items-center gap-2">
+                      <AlertTriangle className="w-3 h-3 text-[#F85149] flex-shrink-0" strokeWidth={1.7} />
+                      <p className="text-[10px] text-[#F85149]">
+                        {tgStatus.recent_errors} error{tgStatus.recent_errors > 1 ? "es" : ""} reciente{tgStatus.recent_errors > 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  )}
+
+                  {projectId && (
+                    <Link
+                      to={`/project/${projectId}/telegram`}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-borders-strong bg-surface-card px-2.5 py-1.5 text-[10px] font-medium text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+                    >
+                      <Terminal className="w-3 h-3" strokeWidth={1.7} />
+                      Abrir monitor detallado
+                    </Link>
+                  )}
+                </>
               )}
             </div>
           </div>

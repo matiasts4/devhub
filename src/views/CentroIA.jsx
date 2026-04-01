@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Bot,
   Plug2,
@@ -27,6 +27,7 @@ import { useOutletContext } from 'react-router-dom';
 import { createClient } from '@/lib/db/localSupabase';
 import { getAgentRegistryLiveSnapshot, getAgentDisplayMeta } from '@/lib/agentRegistryLive';
 import { getDocOpsContextBudgetPolicy } from '@/lib/docopsPolicy';
+import StatusSignal from '@/components/ui/StatusSignal';
 
 const TOOLS = [
   { name: 'list_projects', desc: 'Listar todos los proyectos' },
@@ -111,10 +112,13 @@ const STATUS_CONFIG = {
 
 export default function CentroIA() {
   const { project } = useOutletContext() || {};
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const docopsBudget = getDocOpsContextBudgetPolicy();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [quotaSnapshot, setQuotaSnapshot] = useState(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [quotaError, setQuotaError] = useState('');
 
   // Memory Graph state
   const [query, setQuery] = useState('');
@@ -129,10 +133,52 @@ export default function CentroIA() {
   const [agentRuns, setAgentRuns] = useState({});
   const [liveSessions, setLiveSessions] = useState({});
 
+  const QUOTA_CACHE_KEY = 'devhub_gemini_quota_snapshot';
+
+  const loadQuotaCache = useCallback(() => {
+    try {
+      const cached = localStorage.getItem(QUOTA_CACHE_KEY);
+      if (!cached) return;
+      setQuotaSnapshot(JSON.parse(cached));
+    } catch {
+      // Ignore cache parsing issues.
+    }
+  }, []);
+
+  const refreshQuotaSnapshot = useCallback(async () => {
+    setQuotaLoading(true);
+    setQuotaError('');
+
+    try {
+      const res = await fetch('/api/agents/quotas', { cache: 'no-store' });
+      const payload = await res.json();
+
+      if (!res.ok) {
+        throw new Error(payload?.error || 'No se pudieron consultar las cuotas.');
+      }
+
+      const snapshot = {
+        checkedAt: payload.checkedAt || new Date().toISOString(),
+        quotas: payload.quotas || [],
+      };
+
+      setQuotaSnapshot(snapshot);
+      localStorage.setItem(QUOTA_CACHE_KEY, JSON.stringify(snapshot));
+    } catch (error) {
+      setQuotaError(error.message || 'No se pudieron consultar las cuotas.');
+    } finally {
+      setQuotaLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const saved = localStorage.getItem('memory_query_history');
     if (saved) setHistory(JSON.parse(saved));
   }, []);
+
+  useEffect(() => {
+    loadQuotaCache();
+  }, [loadQuotaCache]);
 
   useEffect(() => {
     try {
@@ -288,6 +334,13 @@ export default function CentroIA() {
         )
     )
     .slice(0, 10);
+  const quotaRows = quotaSnapshot?.quotas || [];
+  const checkedAtLabel = quotaSnapshot?.checkedAt
+    ? formatDistanceToNow(new Date(quotaSnapshot.checkedAt), {
+        addSuffix: true,
+        locale: es,
+      })
+    : 'Nunca';
 
   return (
     <div
@@ -459,20 +512,11 @@ export default function CentroIA() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                {activeAgents.length > 0 && (
-                  <span
-                    className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                    style={{ background: 'var(--success)' }}
-                  />
-                )}
-                <span
-                  className="relative inline-flex rounded-full h-2 w-2"
-                  style={{
-                    background: activeAgentsCount > 0 ? 'var(--success)' : 'var(--text-muted)',
-                  }}
-                />
-              </span>
+              <StatusSignal
+                tone={activeAgentsCount > 0 ? 'success' : 'neutral'}
+                animation={activeAgentsCount > 0 ? 'pulse' : 'none'}
+                compact
+              />
               <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
                 {activeAgentsCount} Agentes
               </span>
@@ -795,6 +839,199 @@ export default function CentroIA() {
           {/* ChatAgente Launcher */}
           <ChatAgente projectId={project?.id} projectName={project?.name} />
 
+          {/* Quotas Card */}
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{
+              background: 'var(--surface-card)',
+              border: '1px solid var(--border-subtle)',
+              boxShadow: 'var(--shadow-soft)',
+            }}
+          >
+            <div
+              className="flex items-center justify-between gap-3 px-6 py-4"
+              style={{ borderBottom: '1px solid var(--border-subtle)' }}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                  style={{
+                    background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+                  }}
+                >
+                  <Zap className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+                </div>
+                <div className="min-w-0">
+                  <h3
+                    className="font-mono text-sm font-semibold"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    Cuotas Gemini
+                  </h3>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Caché local + consulta manual bajo demanda
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={refreshQuotaSnapshot}
+                disabled={quotaLoading}
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+                  color: 'var(--accent-primary)',
+                }}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${quotaLoading ? 'animate-spin' : ''}`} />
+                Consultar cuotas
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between gap-3 text-[11px]">
+                <span style={{ color: 'var(--text-muted)' }}>Última consulta</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{checkedAtLabel}</span>
+              </div>
+
+              {quotaError && (
+                <div
+                  className="rounded-lg border px-3 py-2 text-xs"
+                  style={{
+                    background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+                    borderColor: 'color-mix(in srgb, var(--danger) 18%, transparent)',
+                    color: 'var(--danger)',
+                  }}
+                >
+                  {quotaError}
+                </div>
+              )}
+
+              {!quotaSnapshot ? (
+                <div
+                  className="rounded-xl border px-4 py-4 text-sm"
+                  style={{
+                    background: 'var(--surface-muted)',
+                    borderColor: 'var(--border-subtle)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  No hay una lectura guardada todavía. Tocá <strong>Consultar cuotas</strong> para
+                  traer el estado actual de tus perfiles.
+                </div>
+              ) : quotaRows.length === 0 ? (
+                <div
+                  className="rounded-xl border px-4 py-4 text-sm"
+                  style={{
+                    background: 'var(--surface-muted)',
+                    borderColor: 'var(--border-subtle)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  La última consulta no devolvió perfiles.
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {quotaRows.map((quota) => {
+                    const used = quota.quotaUsedPercent;
+                    const statusTone =
+                      quota.status === 'exhausted'
+                        ? 'danger'
+                        : quota.status === 'available'
+                          ? 'success'
+                          : 'neutral';
+                    return (
+                      <div
+                        key={quota.profile}
+                        className="rounded-xl border p-4"
+                        style={{
+                          background: 'var(--surface-muted)',
+                          borderColor: 'var(--border-subtle)',
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p
+                              className="text-sm font-semibold"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {quota.profile}
+                            </p>
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              {quota.source || 'manual'}
+                            </p>
+                          </div>
+                          <span
+                            className="text-[10px] font-semibold uppercase px-2 py-1 rounded-full border"
+                            style={{
+                              color:
+                                statusTone === 'success'
+                                  ? 'var(--success)'
+                                  : statusTone === 'danger'
+                                    ? 'var(--danger)'
+                                    : 'var(--text-muted)',
+                              borderColor:
+                                statusTone === 'success'
+                                  ? 'color-mix(in srgb, var(--success) 25%, transparent)'
+                                  : statusTone === 'danger'
+                                    ? 'color-mix(in srgb, var(--danger) 25%, transparent)'
+                                    : 'var(--border-subtle)',
+                              background:
+                                statusTone === 'success'
+                                  ? 'color-mix(in srgb, var(--success) 8%, transparent)'
+                                  : statusTone === 'danger'
+                                    ? 'color-mix(in srgb, var(--danger) 8%, transparent)'
+                                    : 'var(--surface-elevated)',
+                            }}
+                          >
+                            {quota.status}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex items-end justify-between gap-3">
+                          <div>
+                            <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                              {used === null ? 'N/A' : `${used}%`}
+                            </p>
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              usado en el modelo más cargado
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              Reset
+                            </p>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                              {quota.resetIn || '-'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {Array.isArray(quota.models) && quota.models.length > 0 && (
+                          <div className="mt-3 space-y-1.5">
+                            {quota.models.slice(0, 3).map((model) => (
+                              <div
+                                key={`${quota.profile}:${model.model}`}
+                                className="flex items-center justify-between text-[11px]"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                <span className="truncate pr-2">{model.model}</span>
+                                <span className="shrink-0">{model.usedPercent}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* MCP Status Card */}
           <div
             className="rounded-2xl overflow-hidden"
@@ -830,19 +1067,8 @@ export default function CentroIA() {
                   Conexión local vía stdio
                 </p>
               </div>
-              <span
-                className="ml-auto text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
-                style={{
-                  background: 'color-mix(in srgb, var(--success) 12%, transparent)',
-                  border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)',
-                  color: 'var(--success)',
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full animate-pulse"
-                  style={{ background: 'var(--success)' }}
-                />
-                ACTIVO
+              <span className="ml-auto">
+                <StatusSignal tone="success" animation="pulse" label="ACTIVO" />
               </span>
             </div>
 

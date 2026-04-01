@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@/lib/db/localSupabase';
 
+const LOCAL_USER = { id: 'local-user', email: 'local@devhub.local' };
+
 export default function PresenceAvatars({ projectId }) {
   const [onlineUsers, setOnlineUsers] = useState([]);
-  const user = { id: 'local-user', email: 'local@devhub.local' };
 
   useEffect(() => {
-    if (!projectId || !user) return;
+    if (!projectId) return;
 
     const supabase = createClient();
     const room = supabase.channel(`presence:project:${projectId}`);
@@ -28,8 +29,8 @@ export default function PresenceAvatars({ projectId }) {
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await room.track({
-            user_id: user.id,
-            email: user.email,
+            user_id: LOCAL_USER.id,
+            email: LOCAL_USER.email,
             online_at: new Date().toISOString(),
           });
         }
@@ -38,7 +39,7 @@ export default function PresenceAvatars({ projectId }) {
     return () => {
       supabase.removeChannel(room);
     };
-  }, [projectId, user]);
+  }, [projectId]);
 
   if (onlineUsers.length === 0) return null;
 

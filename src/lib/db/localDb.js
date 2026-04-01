@@ -22,6 +22,50 @@ function resolveDbPath() {
 const DB_PATH = resolveDbPath();
 let _db = null;
 
+function ensureRuntimeSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_files (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      user_id TEXT,
+      file_name TEXT NOT NULL,
+      content TEXT,
+      file_type TEXT,
+      size_chars INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id);
+
+    CREATE TABLE IF NOT EXISTS telegram_activity (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT,
+      event_type TEXT NOT NULL,
+      direction TEXT,
+      source TEXT DEFAULT 'telegram',
+      command TEXT,
+      content_preview TEXT,
+      status TEXT DEFAULT 'ok',
+      metadata TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_telegram_activity_created ON telegram_activity(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_telegram_activity_chat ON telegram_activity(chat_id);
+
+    CREATE TABLE IF NOT EXISTS telegram_sessions (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL UNIQUE,
+      user_name TEXT,
+      agent TEXT,
+      message_count INTEGER DEFAULT 0,
+      last_activity TEXT,
+      status TEXT DEFAULT 'active',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_telegram_sessions_chat ON telegram_sessions(chat_id);
+  `);
+}
+
 function getDb() {
   if (!_db) {
     const dir = path.dirname(DB_PATH);
@@ -30,6 +74,7 @@ function getDb() {
     _db.pragma('journal_mode = WAL');
     _db.pragma('foreign_keys = ON');
     _db.pragma('busy_timeout = 5000');
+    ensureRuntimeSchema(_db);
   }
   return _db;
 }
@@ -64,10 +109,26 @@ function buildSelectQuery(table, options = {}) {
 
 function buildWhere(where) {
   if (!where || where.length === 0) return { clauses: ['1=1'], values: [] };
-  return {
-    clauses: where.map(([c]) => `${c} = ?`),
-    values: where.map(([, , v]) => v),
-  };
+  const clauses = [];
+  const values = [];
+  for (const [col, op, val] of where) {
+    if (op === 'IN') {
+      if (!Array.isArray(val) || val.length === 0) {
+        clauses.push('1=0');
+      } else {
+        clauses.push(`${col} IN (${val.map(() => '?').join(', ')})`);
+        values.push(...val);
+      }
+      continue;
+    }
+    if (op === 'IS NOT' && val === null) {
+      clauses.push(`${col} IS NOT NULL`);
+      continue;
+    }
+    clauses.push(`${col} ${op} ?`);
+    values.push(val);
+  }
+  return { clauses, values };
 }
 
 function makeTableOps(tableName, idCol = 'id') {
@@ -117,6 +178,7 @@ const tables = {
   projects: makeTableOps('projects', 'id'),
   tasks: makeTableOps('tasks', 'id'),
   milestones: makeTableOps('milestones', 'id'),
+  project_files: makeTableOps('project_files', 'id'),
   agent_registry: makeTableOps('agent_registry', 'agent_id'),
   mcp_connections: makeTableOps('mcp_connections', 'id'),
   ai_interactions: makeTableOps('ai_interactions', 'id'),

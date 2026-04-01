@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import {
   Brain,
@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localSupabase';
 import { toast } from 'sonner';
+import StatusSignal from '@/components/ui/StatusSignal';
 
 // ─── Tipos de proyecto ────────────────────────────────────────────────────────
 const PROJECT_TYPES = {
@@ -200,7 +201,7 @@ function formatBytes(bytes) {
 export default function PlanningMode() {
   const { project } = useOutletContext() || {};
   const navigate = useNavigate();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const dropRef = useRef(null);
 
   const user = { id: 'local-user', email: 'local@devhub.local' };
@@ -244,9 +245,22 @@ export default function PlanningMode() {
 
   const fetchFiles = useCallback(async () => {
     if (!project?.id) return;
-    const res = await fetch(`/api/projects/${project.id}/files`);
-    const data = await res.json();
-    setFiles(data.files || []);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/files`);
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : {};
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Error ${res.status} cargando archivos`);
+      }
+
+      setFiles(Array.isArray(data.files) ? data.files : []);
+    } catch (e) {
+      setFiles([]);
+      toast.error('No se pudieron cargar los archivos del contexto', {
+        description: e.message,
+      });
+    }
   }, [project?.id]);
 
   useEffect(() => {
@@ -463,6 +477,23 @@ ${selectedType.areas.map((a, i) => `${i + 1}. ${a}`).join('\n')}
           )}
         </div>
         <div className="flex items-center gap-2">
+          <StatusSignal
+            tone={
+              planningStatus === 'completed'
+                ? 'success'
+                : planningStatus === 'pending'
+                  ? 'warning'
+                  : 'neutral'
+            }
+            animation={planningStatus === 'pending' ? 'pulse' : 'none'}
+            label={
+              planningStatus === 'completed'
+                ? 'Planning completado'
+                : planningStatus === 'pending'
+                  ? 'Planning pendiente'
+                  : 'Sin planning activo'
+            }
+          />
           {stats.tasks > 0 && (
             <span
               className="text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5"

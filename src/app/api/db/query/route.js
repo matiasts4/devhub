@@ -3,17 +3,27 @@ import localDb from '@/lib/db/localDb';
 
 export const dynamic = 'force-dynamic';
 
-// Convert Supabase-style select to SQL-compatible select
-function normalizeSelect(selectStr) {
-  if (!selectStr || selectStr === '*') return '*';
-  // Remove nested relations like tasks(count), project(*)
-  return (
-    selectStr
-      .split(',')
-      .map((f) => f.trim())
-      .filter((f) => !f.includes('('))
-      .join(', ') || '*'
-  );
+// Parse select string to extract relations like tasks(count)
+function parseSelect(selectStr) {
+  if (!selectStr || selectStr === '*') return { fields: '*', relations: [] };
+  
+  const parts = selectStr.split(',').map(f => f.trim());
+  const fields = [];
+  const relations = [];
+  
+  for (const part of parts) {
+    const relationMatch = part.match(/^(\w+)\((\w+)\)$/);
+    if (relationMatch) {
+      relations.push({ name: relationMatch[1], aggregate: relationMatch[2] });
+    } else if (!part.includes('(')) {
+      fields.push(part);
+    }
+  }
+  
+  return {
+    fields: fields.length > 0 ? fields.join(', ') : '*',
+    relations
+  };
 }
 
 export async function GET(request) {
@@ -29,7 +39,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Missing table parameter' }, { status: 400 });
     }
 
-    const select = normalizeSelect(selectRaw);
+    const { fields, relations } = parseSelect(selectRaw);
     const where = whereStr ? JSON.parse(whereStr) : [];
     const orderBy = orderByStr ? JSON.parse(orderByStr) : [];
     const limit = limitStr ? parseInt(limitStr) : null;
@@ -57,6 +67,20 @@ export async function GET(request) {
         } else {
           whereConditions.push('1 = 0');
         }
+      } else if (w.op === 'lt') {
+        whereConditions.push(`${w.col} < ?`);
+        whereParams.push(w.val);
+      } else if (w.op === 'lte') {
+        whereConditions.push(`${w.col} <= ?`);
+        whereParams.push(w.val);
+      } else if (w.op === 'gt') {
+        whereConditions.push(`${w.col} > ?`);
+        whereParams.push(w.val);
+      } else if (w.op === 'gte') {
+        whereConditions.push(`${w.col} >= ?`);
+        whereParams.push(w.val);
+      } else if (w.op === 'not' && w.operator === 'is' && w.val === null) {
+        whereConditions.push(`${w.col} IS NOT NULL`);
       }
     }
 
@@ -64,7 +88,7 @@ export async function GET(request) {
     const orderByClauses = orderBy.map((o) => `${o.col} ${o.ascending ? 'ASC' : 'DESC'}`);
 
     // Build query
-    let sql = `SELECT ${select} FROM ${table}`;
+    let sql = `SELECT ${fields} FROM ${table}`;
     if (whereConditions.length > 0) {
       sql += ` WHERE ${whereConditions.join(' AND ')}`;
     }
@@ -79,6 +103,21 @@ export async function GET(request) {
     const db = localDb.getDb();
     const stmt = db.prepare(sql);
     const rows = stmt.all(...whereParams);
+
+    // Process relations (e.g., tasks(count))
+    if (relations.length > 0 && rows.length > 0) {
+      for (const row of rows) {
+        for (const rel of relations) {
+          if (rel.name === 'tasks' && rel.aggregate === 'count') {
+            const countStmt = db.prepare(
+              `SELECT COUNT(*) as count FROM tasks WHERE project_id = ?`
+            );
+            const result = countStmt.get(row.id);
+            row.tasks = [{ count: result.count }];
+          }
+        }
+      }
+    }
 
     return NextResponse.json(rows);
   } catch (error) {

@@ -1,145 +1,160 @@
 # DevHub Telegram Bot
 
-A Telegram bot that lets you interact with your **DevHub** projects, tasks, and milestones directly from Telegram.
+> **Estado**: ~85% funcional | **Commits**: 5 | **LOC**: 2,560
+>
+> Bot de Telegram para controlar DevHub desde el celular.
+> Consulta proyectos, gestiona agentes, y chatea con OpenCode.
 
-## Prerequisites
+---
 
-- Node.js 18+ (for `--watch` support in dev mode)
-- npm
-
-## Installation
+## Instalación Rápida
 
 ```bash
 cd telegram-bot
 npm install
 cp .env.example .env
+# Editá .env con tu TELEGRAM_BOT_TOKEN y ALLOWED_USER_IDS
+node bot.js
 ```
 
-Then edit `.env` with your actual values.
+## Configuración
 
-## Configuration
+### Telegram Bot Token
 
-### Getting a Telegram Bot Token
+1. Abrí Telegram → buscá **@BotFather**
+2. Enviá `/newbot` y seguí las instrucciones
+3. Copiá el token en `.env` como `TELEGRAM_BOT_TOKEN`
 
-1. Open Telegram and search for **@BotFather**
-2. Send `/newbot` and follow the instructions
-3. Choose a name and username for your bot
-4. BotFather will give you a **token** — paste it in `.env` as `TELEGRAM_BOT_TOKEN`
+### Tu Telegram User ID
 
-### Getting Your Telegram User ID
+1. Abrí Telegram → buscá **@userinfobot**
+2. Enviá `/start`
+3. Copiá el ID en `.env` como `ALLOWED_USER_IDS`
 
-1. Open Telegram and search for **@userinfobot**
-2. Send `/start`
-3. The bot will reply with your **Id** — paste it in `.env` as `ALLOWED_USER_IDS`
-4. For multiple users, separate IDs with commas: `ALLOWED_USER_IDS=123456789,987654321`
+### Variables de Entorno
 
-### Environment Variables
+| Variable             | Descripción                                                |
+| -------------------- | ---------------------------------------------------------- |
+| `TELEGRAM_BOT_TOKEN` | Token de @BotFather                                        |
+| `ALLOWED_USER_IDS`   | Tu Telegram ID (solo vos podés usar el bot)                |
+| `NEXT_JS_URL`        | URL del backend Next.js (default: `http://localhost:3000`) |
+| `NODE_ENV`           | `production` o `development`                               |
 
-| Variable             | Description                                                          |
-| -------------------- | -------------------------------------------------------------------- |
-| `TELEGRAM_BOT_TOKEN` | Token from @BotFather                                                |
-| `ALLOWED_USER_IDS`   | Comma-separated Telegram user IDs allowed to use the bot             |
-| `NEXT_JS_URL`        | URL of the DevHub Next.js backend (default: `http://localhost:3000`) |
-| `NODE_ENV`           | `production` or `development`                                        |
+---
 
-## Running
+## Comandos
 
-### Development (with auto-reload)
+### 💬 Chat Conversacional
+
+Escribile **cualquier cosa** sin slash y el bot chatea con OpenCode usando el agente configurado.
+
+```
+¿Cuál es el estado del proyecto devhub?
+→ El bot le pregunta a OpenCode y te responde con contexto de conversación
+```
+
+### 🔧 Gestión de Chat
+
+| Comando            | Descripción                                                                |
+| ------------------ | -------------------------------------------------------------------------- |
+| `/agente [nombre]` | Ver o cambiar agente actual (gentleman, sdd-orchestrator, build, plan, qa) |
+| `/reset`           | Limpiar historial de conversación                                          |
+| `/historial`       | Ver últimos 10 mensajes                                                    |
+
+### 📊 Consultas
+
+| Comando                | Descripción                     | Ejemplo            |
+| ---------------------- | ------------------------------- | ------------------ |
+| `/estado`              | Dashboard de proyectos activos  | `/estado`          |
+| `/tareas [proyecto]`   | Tareas pendientes con prioridad | `/tareas veloce`   |
+| `/progreso [proyecto]` | Barra de progreso visual        | `/progreso devhub` |
+| `/agentes`             | Estado del swarm                | `/agentes`         |
+
+### ⚡ Acciones
+
+| Comando                   | Descripción                  | Ejemplo                |
+| ------------------------- | ---------------------------- | ---------------------- |
+| `/pausar [agente]`        | Pausar agente(s)             | `/pausar`              |
+| `/reanudar [agente]`      | Reanudar agente(s)           | `/reanudar`            |
+| `/continuar [proyecto]`   | Next task + launch de agente | `/continuar veloce`    |
+| `/spawn [tarea] [perfil]` | Launch con tarea custom      | `/spawn Fix login bug` |
+| `/sesiones`               | Sesiones activas de OpenCode | `/sesiones`            |
+
+---
+
+## Arquitectura
+
+```
+[Celular] → Telegram Cloud (Bot API)
+                  ↑ polling
+[telegram-bot/] → Node.js independiente
+    ├── SQLite directo (consultas, logging)
+    ├── HTTP a Next.js (launch de agentes)
+    └── tmux (ejecución de OpenCode con TTY real)
+
+[SQLite] → data/devhub.db
+    ├── telegram_activity → logs de cada comando
+    └── telegram_sessions → sesiones activas
+```
+
+### ¿Por qué tmux?
+
+OpenCode necesita un TTY real para funcionar. El bot usa `tmux` para crear sesiones temporales, ejecutar `opencode run`, y capturar el output cuando termina.
+
+---
+
+## Systemd Service
 
 ```bash
-npm run dev
-```
-
-### Production
-
-```bash
-npm start
-```
-
-### Running as a Systemd Service
-
-1. Create a service file:
-
-```bash
-sudo nano /etc/systemd/system/devhub-bot.service
-```
-
-2. Add the following (adjust paths):
-
-```ini
-[Unit]
-Description=DevHub Telegram Bot
-After=network.target
-
-[Service]
-Type=simple
-User=matias
-WorkingDirectory=/home/matias/devhub/telegram-bot
-ExecStart=/usr/bin/node bot.js
-Restart=on-failure
-RestartSec=5
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target
-```
-
-3. Enable and start:
-
-```bash
+sudo cp devhub-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable devhub-bot
-sudo systemctl start devhub-bot
-```
-
-4. Check status:
-
-```bash
+sudo systemctl enable --now devhub-bot
 sudo systemctl status devhub-bot
 ```
 
-## Available Commands
+---
 
-### Consultas (Read-only)
+## Estado Actual
 
-| Comando                | Descripción                              | Ejemplo            |
-| ---------------------- | ---------------------------------------- | ------------------ |
-| `/estado`              | Dashboard de todos los proyectos activos | `/estado`          |
-| `/tareas [proyecto]`   | Lista de tareas pendientes               | `/tareas veloce`   |
-| `/progreso [proyecto]` | Barra de progreso visual                 | `/progreso devhub` |
-| `/agentes`             | Estado del swarm de agentes              | `/agentes`         |
+### ✅ Funcional
 
-### Acciones (Write/Launch)
+- 12 comandos slash (todos implementados)
+- Chat conversacional con OpenCode via tmux
+- Logging persistente a SQLite
+- UI de monitoreo (`TelegramMonitor.jsx`)
+- API routes (`/api/telegram/status`, `/api/telegram/activity`)
 
-| Comando                   | Descripción                      | Ejemplo                |
-| ------------------------- | -------------------------------- | ---------------------- |
-| `/pausar [agente]`        | Pausa un agente o todos          | `/pausar`              |
-| `/reanudar [agente]`      | Reanuda un agente pausado        | `/reanudar`            |
-| `/continuar [proyecto]`   | Obtiene next task y lanza agente | `/continuar veloce`    |
-| `/spawn [tarea] [perfil]` | Lanza agente con tarea custom    | `/spawn Fix login bug` |
-| `/sesiones`               | Sesiones activas de OpenCode     | `/sesiones`            |
+### ⚠️ Pendiente
 
-### Ayuda
+- Fix bug de código duplicado en `opencode.js`
+- Integrar `TelegramMonitor` en el router de la app
+- Testing manual de todos los comandos
+- Notificaciones push cuando un agente termina
 
-| Comando  | Descripción           |
-| -------- | --------------------- |
-| `/start` | Mensaje de bienvenida |
-| `/help`  | Lista de comandos     |
+---
 
-## Project Structure
+## Estructura
 
 ```
 telegram-bot/
-├── bot.js              # Main entry point
-├── commands/           # Telegram command handlers
-├── services/           # Business logic & API clients
-├── utils/              # Helper functions
-├── data/               # SQLite database (auto-created)
-├── .env.example        # Environment template
-├── .gitignore
-├── package.json
-└── README.md
+├── bot.js                    # Entry point
+├── commands/                 # 13 handlers
+│   ├── estado, tareas, progreso, agentes, help
+│   ├── pausar, reanudar, continuar, spawn, sesiones
+│   └── agente, reset, historial, chat
+├── services/
+│   ├── db.js                 # SQLite (444 líneas)
+│   ├── api.js                # HTTP client Next.js
+│   ├── auth.js               # Auth guard
+│   ├── formatter.js          # Markdown formatter
+│   ├── conversation.js       # Historial en memoria
+│   ├── opencode.js           # Runner via tmux
+│   └── activityLogger.js     # Logging persistente
+└── utils/
+    └── logger.js             # Logger con colores
 ```
+
+---
 
 ## License
 

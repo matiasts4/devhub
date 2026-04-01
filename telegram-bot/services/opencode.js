@@ -36,24 +36,45 @@ function cleanOutput(text) {
   if (!text) return '';
   let c = stripAnsi(text);
   c = c
+    // Remove bash script execution line
+    .replace(/.*bash.*devhub-bot.*\.sh.*\n?/gm, '')
+    .replace(/.*bash.*run_.*\.sh.*\n?/gm, '')
+    // Remove Kali banner
     .replace(/┏━.*$/gm, '')
     .replace(/┃.*$/gm, '')
     .replace(/┗━.*$/gm, '')
+    // Remove zsh prompt decorations
     .replace(/┌──.*$/gm, '')
     .replace(/└─\$.*$/gm, '')
     .replace(/└─#.*$/gm, '')
     .replace(/^\$ /gm, '')
     .replace(/^# /gm, '')
+    // Remove the opencode command echo
     .replace(/.*opencode run --agent.*\n?/gm, '')
+    // Remove zsh warnings
     .replace(/zsh:.*\n?/gm, '')
+    // Remove terminal control artifacts
     .replace(/\[\?1h=\[?2004h/g, '')
     .replace(/\[\?1l>\[?2004l/g, '')
+    // "> agent · model" headers
     .replace(/^> .+? · .+?\n?/gm, '')
     .replace(/wen3\.6-plus-free\n?/g, '')
+    // Remove leaked tool execution traces (MCP/mem/tool logs)
+    .replace(/^[⚙🔧]\s*\S+\s*\{[\s\S]*?\}\s*$/gm, '')
+    .replace(/^\s*(?:mcp\d*_|engram_|mem_|tool_)[\w.-]*\s*\{[\s\S]*?\}\s*$/gm, '')
+    // Remove occasional single-line JSON arg dumps that start with "content":"**What**"
+    .replace(/^\{\s*"content"\s*:\s*"\*\*What\*\*[\s\S]*?\}\s*$/gm, '')
+    // Remove narrated tool actions leaked into text output
+    .replace(/^\s*[→>-]\s*Read\b.*$/gim, '')
+    // Thinking block markers
     .replace(/^<\/?thinking>\s*$/gm, '')
+    // Repeated separator lines
     .replace(/^[=\-]{3,}\s*$/gm, '')
+    // Progress bars
     .replace(/\[[═━─━═\s=>·]+\]\s*\d*%?\s*/g, '')
+    // Terminal control remnants
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+    // Collapse 3+ consecutive newlines into 2
     .replace(/\n{3,}/g, '\n\n')
     .replace(/^\s*\n+/, '')
     .trim();
@@ -76,9 +97,16 @@ function run(agent, prompt, options = {}) {
     // Write prompt to file (no escaping needed)
     fs.writeFileSync(promptFile, prompt, 'utf-8');
 
-    // Write wrapper script
+    // Write wrapper script — captures stderr, preserves exit code
     const modelFlag = model ? ` --model ${model}` : '';
-    const script = `#!/bin/bash\ncd "${cwd}"\nPROMPT=$(cat '${promptFile}')\nopencode run --agent ${agent}${modelFlag} "$PROMPT"\n`;
+    const script =
+      `#!/bin/bash\n` +
+      `cd "${cwd}"\n` +
+      `PROMPT=$(cat '${promptFile}')\n` +
+      `OUTPUT=$(opencode run --agent ${agent}${modelFlag} "$PROMPT" 2>&1)\n` +
+      `EXIT_CODE=$?\n` +
+      `echo "$OUTPUT"\n` +
+      `exit $EXIT_CODE\n`;
     fs.writeFileSync(scriptFile, script, { mode: 0o755 });
 
     logger.info(`Running: opencode run --agent ${agent} (tmux: ${sessionName})`);
@@ -102,6 +130,17 @@ function run(agent, prompt, options = {}) {
       try {
         fs.unlinkSync(scriptFile);
       } catch (_) {}
+    }
+
+    // Helper to build the final resolved value (deduplicated truncation logic)
+    function finalizeOutput(raw, suffix) {
+      const clean = cleanOutput(raw);
+      if (!clean || clean.length < MIN_CONTENT_CHARS) return null;
+      const truncated =
+        clean.length > MAX_OUTPUT_LENGTH
+          ? clean.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… ' + (suffix || '[truncada]')
+          : clean;
+      return truncated;
     }
 
     function doResolve(value) {
@@ -137,82 +176,92 @@ function run(agent, prompt, options = {}) {
           return;
         }
 
-        // Poll for output
+        // Poll for output — capture full scrollback with -S -10000 -E -1
         pollId = setInterval(() => {
           if (resolved) return;
-          exec(`tmux capture-pane -t "${sessionName}" -p 2>/dev/null`, (capErr, stdout) => {
-            if (resolved) return;
-            const raw = stdout || '';
+          exec(
+            `tmux capture-pane -t "${sessionName}" -p -S -10000 -E -1 2>/dev/null`,
+            (capErr, stdout) => {
+              if (resolved) return;
+              const raw = stdout || '';
 
-            if (capErr) {
-              const clean = cleanOutput(lastOutput);
-              if (clean && clean.length >= MIN_CONTENT_CHARS) {
-                doResolve(
-                  clean.length > MAX_OUTPUT_LENGTH
-                    ? clean.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [truncada]'
-                    : clean
-                );
-              } else {
-                doReject(new Error('OpenCode no produjo respuesta'));
-              }
-              return;
-            }
-
-            const cleaned = cleanOutput(raw);
-            if (cleaned.length >= MIN_CONTENT_CHARS) hasRealContent = true;
-
-            // KEY FIX: Detect when shell prompt returns = opencode finished
-            // The prompt pattern "└─$" or "$ " appears after opencode exits
-            const shellPromptReturned = raw.includes('└─$') || raw.includes('└─#');
-
-            if (shellPromptReturned && hasRealContent) {
-              // Give it 1 extra poll (3s) to capture any trailing output
-              if (stableCount >= 1) {
-                logger.info(`OpenCode done (shell prompt returned, ${cleaned.length} chars)`);
-                doResolve(
-                  cleaned.length > MAX_OUTPUT_LENGTH
-                    ? cleaned.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [truncada]'
-                    : cleaned
-                );
+              if (capErr) {
+                const final = finalizeOutput(lastOutput, '[truncada]');
+                if (final) {
+                  doResolve(final);
+                } else {
+                  doReject(new Error('OpenCode no produjo respuesta'));
+                }
                 return;
               }
-              stableCount++;
-            } else if (raw === lastOutput && raw.length > 0) {
-              stableCount++;
-            } else {
-              stableCount = 0;
-              lastOutput = raw;
-            }
 
-            // Fallback: stable for 30s even without shell prompt detection
-            if (stableCount >= STABLE_THRESHOLD && hasRealContent) {
-              logger.info(`OpenCode done (stable ${stableCount * 3}s, ${cleaned.length} chars)`);
-              doResolve(
-                cleaned.length > MAX_OUTPUT_LENGTH
-                  ? cleaned.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [truncada]'
-                  : cleaned
-              );
-              return;
+              const cleaned = cleanOutput(raw);
+              if (cleaned.length >= MIN_CONTENT_CHARS) hasRealContent = true;
+
+              // Detect when shell prompt returns = opencode finished
+              // Check if the LAST non-empty line is the shell prompt
+              const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+              const lastLine = lines[lines.length - 1] || '';
+              const shellPromptReturned =
+                lastLine.includes('└─$') || lastLine.includes('└─#') || /^\$ $/.test(lastLine);
+
+              // Deduplicated completion detection
+              function tryResolveWithPrompt() {
+                const final = finalizeOutput(raw, '[truncada]');
+                if (final) {
+                  logger.info(`OpenCode done (shell prompt returned, ${cleaned.length} chars)`);
+                  doResolve(final);
+                }
+              }
+
+              if (shellPromptReturned && hasRealContent) {
+                // Wait for 2 consecutive polls to ensure truly done
+                if (stableCount >= 2) {
+                  tryResolveWithPrompt();
+                  return;
+                }
+                stableCount++;
+              } else if (raw === lastOutput && raw.length > 0) {
+                stableCount++;
+              } else {
+                stableCount = 0;
+                lastOutput = raw;
+              }
+
+              // Fallback: stable for 30s even without shell prompt detection
+              if (stableCount >= STABLE_THRESHOLD && hasRealContent) {
+                const final = finalizeOutput(raw, '[truncada]');
+                if (final) {
+                  logger.info(
+                    `OpenCode done (stable ${stableCount * 3}s, ${cleaned.length} chars)`
+                  );
+                  doResolve(final);
+                }
+                return;
+              }
+              if (stableCount >= STABLE_THRESHOLD * 2 && !hasRealContent) {
+                doReject(new Error('OpenCode se quedó sin producir output'));
+              }
             }
-            if (stableCount >= STABLE_THRESHOLD * 2 && !hasRealContent) {
-              doReject(new Error('OpenCode se quedó sin producir output'));
-            }
-          });
+          );
         }, POLL_INTERVAL);
 
         // Hard timeout
         timeoutId = setTimeout(() => {
           if (resolved) return;
           logger.error(`OpenCode timeout after ${timeout / 1000}s`);
-          exec(`tmux capture-pane -t "${sessionName}" -p 2>/dev/null`, (_e, finalOutput) => {
-            const raw = finalOutput || lastOutput;
-            const clean = cleanOutput(raw);
-            if (clean && clean.length >= MIN_CONTENT_CHARS) {
-              doResolve(clean.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [timeout — parcial]');
-            } else {
-              doReject(new Error(`OpenCode timeout después de ${timeout / 1000}s`));
+          exec(
+            `tmux capture-pane -t "${sessionName}" -p -S -10000 -E -1 2>/dev/null`,
+            (_e, finalOutput) => {
+              const raw = finalOutput || lastOutput;
+              const final = finalizeOutput(raw, '[timeout — parcial]');
+              if (final) {
+                doResolve(final);
+              } else {
+                doReject(new Error(`OpenCode timeout después de ${timeout / 1000}s`));
+              }
             }
-          });
+          );
         }, timeout);
       });
     });

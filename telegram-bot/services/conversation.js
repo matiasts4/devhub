@@ -1,5 +1,15 @@
 const conversations = new Map();
 
+function createSession(agent = 'gentleman') {
+  return {
+    messages: [],
+    agent,
+    maxMessages: 20,
+    sessionId: `sess-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`,
+    createdAt: Date.now(),
+  };
+}
+
 /**
  * Gets or creates a conversation for a given chatId.
  * @param {string|number} chatId
@@ -7,11 +17,7 @@ const conversations = new Map();
  */
 function getConversation(chatId) {
   if (!conversations.has(chatId)) {
-    conversations.set(chatId, {
-      messages: [],
-      agent: 'gentleman',
-      maxMessages: 20,
-    });
+    conversations.set(chatId, createSession());
   }
   return conversations.get(chatId);
 }
@@ -39,13 +45,25 @@ function addMessage(chatId, role, content) {
  */
 function buildContextPrompt(chatId, newMessage) {
   const conv = getConversation(chatId);
-  if (conv.messages.length === 0) return newMessage;
+  const instructionBlock = [
+    '[INSTRUCCIONES DE SALIDA PARA TELEGRAM]',
+    '- Respondé SOLO con la respuesta final para el usuario.',
+    '- NO incluyas razonamiento interno, thinking, análisis, ni pasos de depuración.',
+    '- NO repitas ni cites el bloque de contexto.',
+    '- Idioma: español rioplatense, claro y directo.',
+    '',
+  ];
+
+  if (conv.messages.length === 0) {
+    return [...instructionBlock, '[NUEVO MENSAJE DEL USUARIO]', newMessage].join('\n');
+  }
 
   const contextLines = conv.messages.map(
     (m) => `${m.role === 'user' ? 'Usuario' : 'Asistente'}: ${m.content}`
   );
 
   return [
+    ...instructionBlock,
     `[CONTEXTO DE CONVERSACIÓN PREVIA — ${conv.messages.length} mensajes]`,
     ...contextLines,
     '',
@@ -79,6 +97,38 @@ function getAgent(chatId) {
  */
 function resetConversation(chatId) {
   conversations.delete(chatId);
+}
+
+/**
+ * Starts a fresh session for a chat, optionally preserving current agent.
+ * @param {string|number} chatId
+ * @param {{ keepAgent?: boolean }} options
+ * @returns {{ sessionId: string, agent: string }}
+ */
+function startNewSession(chatId, options = {}) {
+  const { keepAgent = true } = options;
+  const current = conversations.get(chatId);
+  const preservedAgent = keepAgent && current?.agent ? current.agent : 'gentleman';
+
+  const fresh = createSession(preservedAgent);
+  conversations.set(chatId, fresh);
+
+  return { sessionId: fresh.sessionId, agent: fresh.agent };
+}
+
+/**
+ * Returns lightweight session metadata for the chat.
+ * @param {string|number} chatId
+ * @returns {{ sessionId: string, agent: string, messageCount: number, createdAt: number }}
+ */
+function getSessionInfo(chatId) {
+  const conv = getConversation(chatId);
+  return {
+    sessionId: conv.sessionId,
+    agent: conv.agent,
+    messageCount: conv.messages.length,
+    createdAt: conv.createdAt,
+  };
 }
 
 /**
@@ -125,6 +175,8 @@ module.exports = {
   setAgent,
   getAgent,
   resetConversation,
+  startNewSession,
+  getSessionInfo,
   getHistory,
   getConversationCount,
   cleanupOldConversations,

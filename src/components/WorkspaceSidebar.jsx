@@ -17,11 +17,16 @@ import {
   FolderOpen,
   Terminal,
   Brain,
+  Send,
   Cpu,
   Network,
 } from 'lucide-react';
 import NotificationCenter from './NotificationCenter';
 import { createClient } from '@/lib/db/localSupabase';
+import StatusSignal from '@/components/ui/StatusSignal';
+
+const ACTIVE_AGENT_STATUSES = new Set(['working', 'running', 'active', 'thinking', 'asking_questions']);
+const HEARTBEAT_FRESH_MS = 90_000;
 
 const allNavItems = {
   dashboard: { icon: LayoutDashboard, label: 'Dashboard' },
@@ -34,6 +39,7 @@ const allNavItems = {
   planning: { icon: Brain, label: 'Planning IA' },
   swarm: { icon: Cpu, label: 'Swarm Control' },
   cerebro: { icon: Network, label: 'Cerebro / Engram' },
+  telegram: { icon: Send, label: 'Telegram Bot' },
 };
 
 const configNavItems = {
@@ -52,6 +58,7 @@ const DEFAULT_NAV = [
   'planning',
   'swarm',
   'cerebro',
+  'telegram',
 ];
 
 export default function WorkspaceSidebar({
@@ -74,10 +81,21 @@ export default function WorkspaceSidebar({
     const fetchAgents = async () => {
       const { data } = await supabase
         .from('agent_registry')
-        .select('agent_id')
+        .select('agent_id, status, last_heartbeat, updated_at, created_at')
         .eq('project_id', project.id)
         .in('status', ['working', 'running', 'active', 'thinking', 'asking_questions']);
-      setActiveAgentsCount(data?.length || 0);
+
+      const activeAgents = (data || []).filter((agent) => {
+        const status = (agent.status || '').toLowerCase();
+        if (!ACTIVE_AGENT_STATUSES.has(status)) return false;
+
+        const lastSeen = agent.last_heartbeat || agent.updated_at || agent.created_at;
+        if (!lastSeen) return false;
+
+        return Date.now() - new Date(lastSeen).getTime() <= HEARTBEAT_FRESH_MS;
+      });
+
+      setActiveAgentsCount(activeAgents.length);
     };
 
     fetchAgents();
@@ -223,12 +241,13 @@ export default function WorkspaceSidebar({
               <div className="relative flex-shrink-0">
                 <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
                 {key === 'planning' && project?.planning_status === 'pending' && (
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#D2A8FF] animate-pulse" />
+                  <span className="absolute -top-1 -right-1">
+                    <StatusSignal tone="warning" animation="none" compact />
+                  </span>
                 )}
                 {(key === 'agentes' || key === 'swarm') && activeAgentsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-success" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+                  <span className="absolute -top-1 -right-1">
+                    <StatusSignal tone="success" animation="pulse" compact />
                   </span>
                 )}
               </div>

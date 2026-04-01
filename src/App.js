@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   HashRouter,
   Routes,
@@ -24,6 +24,7 @@ import Ajustes from './views/Ajustes';
 import PlanningMode from './views/PlanningMode';
 import SwarmControl from './views/SwarmControl';
 import Cerebro from './views/Cerebro';
+import TelegramMonitor from './views/TelegramMonitor';
 import { createClient } from '@/lib/db/localSupabase';
 import { Loader2 } from 'lucide-react';
 import { applyThemeToDocument, getStoredTheme } from '@/lib/theme/themes';
@@ -42,7 +43,7 @@ function WorkspaceLayout() {
   const [uiPrefsReady, setUiPrefsReady] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const pollRef = useRef(null);
 
   const loadProject = useCallback(async () => {
@@ -223,6 +224,7 @@ function App() {
             <Route path="planning" element={<PlanningMode />} />
             <Route path="swarm" element={<SwarmControl />} />
             <Route path="cerebro" element={<Cerebro />} />
+            <Route path="telegram" element={<TelegramMonitor />} />
 
             {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}
             <Route path="terminales" element={<div />} />

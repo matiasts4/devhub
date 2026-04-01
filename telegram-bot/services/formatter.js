@@ -199,6 +199,7 @@ function formatHelp() {
     '*Gestión de chat:*',
     '/agente \\[nombre\\] — Ver/cambiar agente actual',
     '/reset — Limpiar historial de conversación',
+    '/nueva_sesion \\[full\\] — Nueva sesión \\(mantener o resetear agente\\)',
     '/historial — Ver últimos mensajes',
     '',
     '*Ejemplos:*',
@@ -256,4 +257,5 @@ module.exports = {
   formatError,
   formatSuccess,
   formatLaunch,
+  esc,
 };

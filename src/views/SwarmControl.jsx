@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { createClient } from '@/lib/db/localSupabase';
 import { getAgentRegistryLiveSnapshot, getAgentDisplayMeta } from '@/lib/agentRegistryLive';
@@ -17,6 +17,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import StatusSignal from '@/components/ui/StatusSignal';
 
 const STATUS_BADGE = {
   active: { cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', label: 'Activo' },
@@ -32,7 +33,7 @@ const STATUS_BADGE = {
 
 export default function SwarmControl() {
   const { project } = useOutletContext() || {};
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const docopsBudget = getDocOpsContextBudgetPolicy();
 
   const [agents, setAgents] = useState([]);
@@ -150,7 +151,7 @@ export default function SwarmControl() {
       clearInterval(interval);
       supabase.removeChannel(channel);
     };
-  }, [project?.id, fetchData, supabase]);
+  }, [project?.id, fetchAgents, fetchData, supabase]);
 
   const { activeAgents, activeAgentsCount } = getAgentRegistryLiveSnapshot({
     agents,
@@ -210,6 +211,11 @@ export default function SwarmControl() {
         </div>
 
         <div className="flex items-center gap-3">
+          <StatusSignal
+            tone={activeAgentsCount > 0 ? 'success' : 'neutral'}
+            animation={activeAgentsCount > 0 ? 'pulse' : 'none'}
+            label={activeAgentsCount > 0 ? 'Swarm activo' : 'Sin actividad'}
+          />
           <button
             onClick={() => {
               fetchData();

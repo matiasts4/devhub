@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plug2,
   Plus,
@@ -13,7 +13,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
-  Github,
+  Code2,
   MessageSquare,
   Layers,
   LayoutDashboard,
@@ -26,7 +26,7 @@ import { createClient } from '@/lib/db/localSupabase';
 import { toast } from 'sonner';
 
 const TYPE_CONFIG = {
-  github: { label: 'GitHub', color: '#F0F6FC', Icon: Github, desc: 'Repositorios y PRs' },
+  github: { label: 'GitHub', color: '#F0F6FC', Icon: Code2, desc: 'Repositorios y PRs' },
   linear: { label: 'Linear', color: '#5E6AD2', Icon: Layers, desc: 'Gestión de proyectos' },
   notion: { label: 'Notion', color: '#FFFFFF', Icon: LayoutDashboard, desc: 'Wiki y documentos' },
   jira: { label: 'Jira', color: '#0052CC', Icon: Layers, desc: 'Issue tracking' },
@@ -206,7 +206,7 @@ function AddConnectionModal({ onClose, onCreated }) {
 
 // ─── Main View ────────────────────────────────────────────────────────────────
 export default function Conexiones() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);

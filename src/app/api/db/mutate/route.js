@@ -18,9 +18,17 @@ export async function POST(request) {
     }
 
     // Build where conditions for update/delete
-    const whereConditions = where
-      ? where.map((w) => [w.col, w.op === 'eq' ? '=' : '!=', w.val])
-      : [];
+    const whereConditions = (where || []).map((w) => {
+      if (w.op === 'eq') return [w.col, '=', w.val];
+      if (w.op === 'neq') return [w.col, '!=', w.val];
+      if (w.op === 'in') return [w.col, 'IN', w.val];
+      if (w.op === 'lt') return [w.col, '<', w.val];
+      if (w.op === 'lte') return [w.col, '<=', w.val];
+      if (w.op === 'gt') return [w.col, '>', w.val];
+      if (w.op === 'gte') return [w.col, '>=', w.val];
+      if (w.op === 'not' && w.operator === 'is' && w.val === null) return [w.col, 'IS NOT', null];
+      return [w.col, '=', w.val];
+    });
 
     let result;
     if (action === 'insert') {

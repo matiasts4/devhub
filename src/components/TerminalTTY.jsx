@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 
-export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar, initialCommand }) {
+export default function TerminalTTY({
+  id,
+  onClose,
+  cwd,
+  autoFocus,
+  hideTitleBar,
+  initialCommand,
+}) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);

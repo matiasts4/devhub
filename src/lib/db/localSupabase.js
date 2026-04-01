@@ -19,6 +19,9 @@ class LocalQueryClient {
     this._where = [];
     this._orderBy = [];
     this._limitVal = null;
+    this._action = null;
+    this._actionData = null;
+    this._single = false;
   }
 
   select(fields) {
@@ -49,6 +52,31 @@ class LocalQueryClient {
     return this;
   }
 
+  lt(col, val) {
+    this._where.push({ op: 'lt', col, val });
+    return this;
+  }
+
+  lte(col, val) {
+    this._where.push({ op: 'lte', col, val });
+    return this;
+  }
+
+  gt(col, val) {
+    this._where.push({ op: 'gt', col, val });
+    return this;
+  }
+
+  gte(col, val) {
+    this._where.push({ op: 'gte', col, val });
+    return this;
+  }
+
+  not(col, operator, val) {
+    this._where.push({ op: 'not', col, operator, val });
+    return this;
+  }
+
   order(col, { ascending = true } = {}) {
     this._orderBy.push({ col, ascending });
     return this;
@@ -56,6 +84,11 @@ class LocalQueryClient {
 
   limit(n) {
     this._limitVal = n;
+    return this;
+  }
+
+  single() {
+    this._single = true;
     return this;
   }
 
@@ -88,93 +121,71 @@ class LocalQueryClient {
       return { data: null, error: { message: error.error || 'Query failed' } };
     }
 
-    const data = await response.json();
+    let data = await response.json();
+    if (this._single && Array.isArray(data) && data.length > 0) {
+      data = data[0];
+    }
     return { data, error: null };
   }
 
-  // For insert/update/delete
-  async insert(data) {
-    const response = await fetch('/api/db/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: this.table,
-        action: 'insert',
-        data,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || 'Insert failed' } };
-    }
-
-    const result = await response.json();
-    return { data: result, error: null };
+  // For insert/update/delete - returns a chainable builder
+  insert(data) {
+    this._action = 'insert';
+    this._actionData = data;
+    return this;
   }
 
-  async update(data) {
+  update(data) {
+    this._action = 'update';
+    this._actionData = data;
+    return this;
+  }
+
+  upsert(data) {
+    this._action = 'upsert';
+    this._actionData = data;
+    return this;
+  }
+
+  delete() {
+    this._action = 'delete';
+    return this;
+  }
+
+  // Override execute to handle mutations
+  async _executeMutation() {
     const response = await fetch('/api/db/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         table: this.table,
-        action: 'update',
-        data,
+        action: this._action,
+        data: this._actionData,
         where: this._where,
       }),
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || 'Update failed' } };
+      return { data: null, error: { message: error.error || `${this._action} failed` } };
     }
 
-    const result = await response.json();
-    return { data: result, error: null };
-  }
-
-  async upsert(data) {
-    const response = await fetch('/api/db/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: this.table,
-        action: 'upsert',
-        data,
-        where: this._where,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || 'Upsert failed' } };
+    let result = await response.json();
+    if (this._single && Array.isArray(result) && result.length > 0) {
+      result = result[0];
     }
-
-    const result = await response.json();
-    return { data: result, error: null };
-  }
-
-  async delete() {
-    const response = await fetch('/api/db/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: this.table,
-        action: 'delete',
-        where: this._where,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || 'Delete failed' } };
-    }
-
-    const result = await response.json();
     return { data: result, error: null };
   }
 }
+
+// Override then to handle mutations
+const originalThen = LocalQueryClient.prototype.then;
+LocalQueryClient.prototype.then = function (resolve, reject) {
+  if (this._action) {
+    return this._executeMutation().then(resolve, reject);
+  }
+  return originalThen.call(this, resolve, reject);
+};
 
 // ── Auth stub (no auth needed for local) ──────────────────────────────────────
 
@@ -217,13 +228,33 @@ const localAuth = {
 
 const localRealtime = {
   channel(_name) {
+    const handlers = [];
+    const state = {};
     return {
-      on(_event, _filter, _callback) {
+      on(event, filter, callback) {
+        handlers.push({ event, filter, callback });
         return this;
       },
-      subscribe(_callback) {
-        if (_callback) _callback('SUBSCRIBED');
+      subscribe(callback) {
+        if (callback) callback('SUBSCRIBED');
+        handlers.forEach((h) => {
+          if (h.event === 'presence' && h.filter?.event === 'sync') {
+            h.callback();
+          }
+        });
         return this;
+      },
+      async track(payload) {
+        state[payload.user_id || 'local-user'] = [payload];
+        handlers.forEach((h) => {
+          if (h.event === 'presence' && h.filter?.event === 'sync') {
+            h.callback();
+          }
+        });
+        return { error: null };
+      },
+      presenceState() {
+        return state;
       },
       unsubscribe() {
         return this;

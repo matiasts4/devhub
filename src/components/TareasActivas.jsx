@@ -22,7 +22,7 @@ const STATUS_CONFIG = {
 };
 
 export default function TareasActivas({ projectId }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [agents, setAgents] = useState([]);
   const [agentRuns, setAgentRuns] = useState({});
   const [loading, setLoading] = useState(true);
