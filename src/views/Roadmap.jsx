@@ -186,21 +186,48 @@ export default function Roadmap() {
   const userId = 'local-user';
   const [showModal, setShowModal] = useState(false);
 
-  const fetchMilestones = useCallback(async () => {
+  const fetchMilestones = useCallback(async ({ silent = false } = {}) => {
     if (!project?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     const { data } = await supabase
       .from('milestones')
       .select('*')
       .eq('project_id', project.id)
       .order('due_date', { ascending: true, nullsFirst: false });
     setMilestones(data || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [project?.id]);
 
   useEffect(() => {
     fetchMilestones();
   }, [fetchMilestones]);
+
+  useEffect(() => {
+    if (!project?.id) return;
+
+    const intervalId = setInterval(() => {
+      fetchMilestones({ silent: true });
+    }, 8000);
+
+    const handleFocus = () => {
+      fetchMilestones({ silent: true });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchMilestones({ silent: true });
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [project?.id, fetchMilestones]);
 
   async function toggleComplete(milestone) {
     const newStatus = milestone.status === 'completed' ? 'in_progress' : 'completed';

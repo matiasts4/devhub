@@ -16,8 +16,10 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "node-telegram-bot-api": "latest",
+    "@copilot-extensions/preview-sdk": "^5.0.1",
     "better-sqlite3": "latest",
-    "dotenv": "latest"
+    "dotenv": "latest",
+    "node-telegram-bot-api": "latest",
+    "openai": "^6.33.0"
   }
 }

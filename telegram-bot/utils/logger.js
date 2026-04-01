@@ -17,6 +17,7 @@ const LEVEL_COLORS = {
   INFO: COLORS.green,
   WARN: COLORS.yellow,
   ERROR: COLORS.red,
+  DEBUG: COLORS.gray,
 };
 
 /**
@@ -60,4 +61,15 @@ function error(msg) {
   log('ERROR', msg);
 }
 
-module.exports = { info, warn, error };
+/**
+ * Log a debug message.
+ * @param {string} msg
+ */
+function debug(msg) {
+  if (process.env.LOG_LEVEL && String(process.env.LOG_LEVEL).toLowerCase() !== 'debug') {
+    return;
+  }
+  log('DEBUG', msg);
+}
+
+module.exports = { info, warn, error, debug };

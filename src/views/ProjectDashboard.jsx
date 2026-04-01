@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localSupabase';
 import BannerIA from '../components/BannerIA';
-import ChatAgente from '../components/ChatAgente';
 
 export default function ProjectDashboard() {
   const { project } = useOutletContext() || {};
@@ -553,11 +552,6 @@ export default function ProjectDashboard() {
                   })
                 )}
               </div>
-            </div>
-
-            {/* AI Chat */}
-            <div className="flex flex-col gap-4">
-              <ChatAgente projectId={project?.id} projectName={project?.name || 'el proyecto'} />
             </div>
           </div>
         </div>

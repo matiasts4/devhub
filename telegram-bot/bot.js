@@ -22,6 +22,7 @@ const formatter = require('./services/formatter');
 const conversation = require('./services/conversation');
 const chatHandler = require('./commands/chat');
 const activityLogger = require('./services/activityLogger');
+const { getDb } = require('./services/db');
 
 // Boot-time system log
 activityLogger.logSystem('startup', 'Bot iniciado con polling activo');
@@ -94,9 +95,35 @@ function logOutboundCommand(chatId, cmdName, status, errMsg) {
 // ── Bot initialization ──────────────────────────────────────────────────────
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
+const fs = require('fs');
+const path = require('path');
+const settingsPath = path.join(__dirname, '..', 'data', 'llm-providers-config.json');
+
+let chatMode = 'OpenCode agents (Legacy)';
+try {
+  if (process.env.LLM_BRIDGE_ENABLED !== 'false') {
+    if (fs.existsSync(settingsPath)) {
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      if (parsed?.bridgeEnabled !== false) {
+        const activeProviders = Object.entries(parsed.providers || {})
+          .filter(([_, p]) => p.enabled !== false)
+          .sort((a, b) => (a[1].priority || 99) - (b[1].priority || 99));
+          
+        if (activeProviders.length > 0) {
+          chatMode = `LLM Bridge (${activeProviders[0][0]} prioritario)`;
+        } else {
+          chatMode = 'LLM Bridge (sin proveedores, fallback a OpenCode)';
+        }
+      }
+    } else {
+      chatMode = 'LLM Bridge (config por defecto)';
+    }
+  }
+} catch (e) {}
+
 logger.info('✅ DevHub Telegram Bot iniciado');
 logger.info('   Polling activo — esperando comandos...');
-logger.info('   Modo chat: mensajes de texto → OpenCode agents');
+logger.info(`   Modo chat: mensajes de texto → ${chatMode}`);
 
 // ── Periodic cleanup ────────────────────────────────────────────────────────
 setInterval(() => {
@@ -232,7 +259,7 @@ bot.on('message', (msg) => {
   });
   activityLogger.upsertSession({ chatId: String(chatId), userName });
 
-  chatHandler(bot, msg)
+  chatHandler(bot, msg, getDb())
     .then(() => {
       const agent = conversation.getAgent(chatId);
       activityLogger.logActivity({

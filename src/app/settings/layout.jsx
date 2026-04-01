@@ -1,12 +1,31 @@
-"use client";
+'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { User, Palette, Keyboard, Bot, Mic, Bell, Terminal, Key, Plus, Settings, Zap } from 'lucide-react';
+import {
+  User,
+  Palette,
+  Keyboard,
+  Bot,
+  Mic,
+  Bell,
+  Terminal,
+  Key,
+  Plus,
+  Settings,
+  Zap,
+  Cpu,
+} from 'lucide-react';
 
 const navItems = [
   { name: 'Account', hint: 'Profile and billing', href: '/settings/account', icon: User },
   { name: 'Appearance', hint: 'Theme and display', href: '/settings/appearance', icon: Palette },
+  {
+    name: 'LLM Providers',
+    hint: 'Configure AI providers',
+    href: '/settings/llm-providers',
+    icon: Cpu,
+  },
   { name: 'Shortcuts', hint: 'Keyboard bindings', href: '/settings/shortcuts', icon: Keyboard },
   { name: 'AI Agents', hint: 'Default coding agent', href: '/settings/agents', icon: Bot },
   { name: 'BridgeVoice', hint: 'Voice to text dictation', href: '/settings/voice', icon: Mic },
@@ -28,7 +47,10 @@ export default function SettingsLayout({ children }) {
     >
       <aside
         className="w-72 border-r flex flex-col"
-        style={{ background: 'color-mix(in srgb, var(--surface-card) 78%, black)', borderColor: 'var(--border-subtle)' }}
+        style={{
+          background: 'color-mix(in srgb, var(--surface-card) 78%, black)',
+          borderColor: 'var(--border-subtle)',
+        }}
       >
         <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
           <button
@@ -51,7 +73,10 @@ export default function SettingsLayout({ children }) {
               type="button"
               aria-label="Create workspace"
               className="h-7 w-7 grid place-items-center rounded-md"
-              style={{ background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)' }}
+              style={{
+                background: 'var(--surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+              }}
             >
               <Plus size={14} />
             </button>
@@ -60,7 +85,10 @@ export default function SettingsLayout({ children }) {
 
         <div className="px-5 pt-5 pb-2">
           <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
-          <p className="text-[10px] tracking-[0.18em] uppercase mt-1" style={{ color: 'var(--text-muted)' }}>
+          <p
+            className="text-[10px] tracking-[0.18em] uppercase mt-1"
+            style={{ color: 'var(--text-muted)' }}
+          >
             DevHub
           </p>
         </div>
@@ -68,22 +96,24 @@ export default function SettingsLayout({ children }) {
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || (pathname?.startsWith(item.href) && item.href !== '/settings/appearance');
+            const isActive =
+              pathname === item.href ||
+              (pathname?.startsWith(item.href) && item.href !== '/settings/appearance');
 
             return (
               <Link
                 key={item.name}
                 href={item.href}
                 className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
-                  isActive
-                    ? 'font-medium'
-                    : 'hover:text-zinc-100'
+                  isActive ? 'font-medium' : 'hover:text-zinc-100'
                 }`}
                 style={{
                   background: isActive
                     ? 'linear-gradient(90deg, color-mix(in srgb, var(--accent-primary) 18%, transparent), color-mix(in srgb, var(--surface-elevated) 88%, transparent))'
                     : 'transparent',
-                  border: isActive ? '1px solid color-mix(in srgb, var(--accent-primary) 28%, var(--border-subtle))' : '1px solid transparent',
+                  border: isActive
+                    ? '1px solid color-mix(in srgb, var(--accent-primary) 28%, var(--border-subtle))'
+                    : '1px solid transparent',
                   color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
                 }}
               >
@@ -93,14 +123,22 @@ export default function SettingsLayout({ children }) {
                     background: isActive
                       ? 'color-mix(in srgb, var(--accent-primary) 18%, transparent)'
                       : 'color-mix(in srgb, var(--surface-elevated) 70%, transparent)',
-                    border: isActive ? '1px solid color-mix(in srgb, var(--accent-primary) 34%, transparent)' : '1px solid var(--border-subtle)',
+                    border: isActive
+                      ? '1px solid color-mix(in srgb, var(--accent-primary) 34%, transparent)'
+                      : '1px solid var(--border-subtle)',
                   }}
                 >
-                  <Icon size={15} style={{ color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
+                  <Icon
+                    size={15}
+                    style={{ color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)' }}
+                  />
                 </span>
                 <span className="min-w-0">
                   <span className="block leading-tight">{item.name}</span>
-                  <span className="block text-[11px] leading-tight mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                  <span
+                    className="block text-[11px] leading-tight mt-0.5 truncate"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     {item.hint}
                   </span>
                 </span>
@@ -139,7 +177,10 @@ export default function SettingsLayout({ children }) {
             <button
               type="button"
               className="h-8 w-8 rounded-full grid place-items-center"
-              style={{ background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)' }}
+              style={{
+                background: 'var(--surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+              }}
               aria-label="Quick actions"
             >
               <Zap size={14} style={{ color: 'var(--accent-primary)' }} />

@@ -1,4 +1,29 @@
 export const THEME_STORAGE_KEY = 'devhub:theme';
+export const APP_ZOOM_STORAGE_KEY = 'devhub:zoom';
+
+export function getStoredZoom() {
+  if (typeof window === 'undefined') return 1;
+  const stored = window.localStorage.getItem(APP_ZOOM_STORAGE_KEY);
+  return stored ? parseFloat(stored) : 1;
+}
+
+export function setStoredZoom(zoom) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(APP_ZOOM_STORAGE_KEY, zoom.toString());
+}
+
+export function applyZoomToDocument(zoom) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.setProperty('--app-zoom', zoom.toString());
+}
+
+export function setZoom(zoom) {
+  const rounded = Math.round(zoom * 10) / 10;
+  applyZoomToDocument(rounded);
+  setStoredZoom(rounded);
+  return rounded;
+}
+
 
 export const THEMES = {
   DEEP_SEA: 'deep-sea',

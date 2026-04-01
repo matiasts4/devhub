@@ -24,10 +24,12 @@ import {
   Moon,
   Sun,
   Hash,
+  Cpu,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localSupabase';
 import { toast } from 'sonner';
 import { getStoredTheme, setTheme, THEMES, THEME_OPTIONS } from '@/lib/theme/themes';
+import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
 
 const ACCENT_COLORS = [
   '#58A6FF',
@@ -300,6 +302,7 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
 const TABS = [
   { key: 'project', label: 'Proyecto', icon: LayoutGrid },
   { key: 'theme', label: 'Apariencia', icon: Palette },
+  { key: 'llm', label: 'LLM', icon: Cpu },
   { key: 'profile', label: 'Perfil', icon: User },
   { key: 'prefs', label: 'Preferencias', icon: Settings },
   { key: 'danger', label: 'Peligro', icon: AlertTriangle },
@@ -726,6 +729,8 @@ export default function Ajustes() {
     </div>
   );
 
+  const renderLlmTab = () => <LLMProviderSettings embedded />;
+
   const renderProfileTab = () => (
     <div className="space-y-6">
       <div
@@ -1022,6 +1027,7 @@ export default function Ajustes() {
   const TAB_RENDERERS = {
     project: renderProjectTab,
     theme: renderThemeTab,
+    llm: renderLlmTab,
     profile: renderProfileTab,
     prefs: renderPrefsTab,
     danger: renderDangerTab,

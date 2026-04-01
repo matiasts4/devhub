@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Palette } from 'lucide-react';
-import { getStoredTheme, setTheme, THEME_OPTIONS, THEMES } from '@/lib/theme/themes';
+import { getStoredTheme, setTheme, THEME_OPTIONS, THEMES, getStoredZoom, setZoom } from '@/lib/theme/themes';
+import { Minus, Plus, RotateCcw, Monitor } from 'lucide-react';
+
 
 const PREVIEW_BY_THEME = {
   [THEMES.DEEP_SEA]: {
@@ -37,10 +39,17 @@ const PREVIEW_BY_THEME = {
 
 export default function AppearancePage() {
   const [activeTheme, setActiveTheme] = useState(THEMES.DEEP_SEA);
+  const [currentZoom, setCurrentZoom] = useState(1);
 
   useEffect(() => {
     setActiveTheme(getStoredTheme());
+    setCurrentZoom(getStoredZoom());
   }, []);
+
+  const handleZoomChange = (newZoom) => {
+    const zoom = setZoom(newZoom);
+    setCurrentZoom(zoom);
+  };
 
   const activeThemeLabel = useMemo(
     () => THEME_OPTIONS.find((theme) => theme.id === activeTheme)?.label ?? 'Deep Sea',
@@ -168,7 +177,74 @@ export default function AppearancePage() {
             color: 'var(--text-muted)',
           }}
         >
-          Your current platform shortcuts and components adapt to this theme automatically.
+        Your current platform shortcuts and components adapt to this theme automatically.
+        </div>
+      </section>
+
+      <section
+        className="rounded-2xl border p-6"
+        style={{
+          background: 'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 94%, transparent), color-mix(in srgb, var(--surface-elevated) 45%, transparent))',
+          borderColor: 'var(--border-subtle)',
+          boxShadow: 'var(--shadow-soft)',
+        }}
+      >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
+              Zoom Level
+            </h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Adjust the overall size of the interface (Ctrl +/-).
+            </p>
+          </div>
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
+            style={{
+              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <Monitor size={12} style={{ color: 'var(--accent-primary)' }} />
+            Scale: {Math.round(currentZoom * 100)}%
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => handleZoomChange(currentZoom - 0.1)}
+            disabled={currentZoom <= 0.5}
+            className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+          >
+            <Minus size={18} style={{ color: 'var(--text-primary)' }} />
+          </button>
+          
+          <div className="flex-1 h-2 rounded-full bg-surface-muted border border-border-subtle relative overflow-hidden">
+            <div 
+              className="absolute inset-y-0 left-0 bg-accent-primary transition-all duration-300"
+              style={{ width: `${((currentZoom - 0.5) / 1.5) * 100}%` }}
+            />
+          </div>
+
+          <button
+            onClick={() => handleZoomChange(currentZoom + 0.1)}
+            disabled={currentZoom >= 2}
+            className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+          >
+            <Plus size={18} style={{ color: 'var(--text-primary)' }} />
+          </button>
+
+          <button
+            onClick={() => handleZoomChange(1)}
+            title="Reset to 100%"
+            className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all hover:bg-surface-elevated"
+            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+          >
+            <RotateCcw size={18} style={{ color: 'var(--text-muted)' }} />
+          </button>
         </div>
       </section>
 

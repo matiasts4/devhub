@@ -19,26 +19,29 @@ import {
   Brain,
   Send,
   Cpu,
-  Network,
 } from 'lucide-react';
 import NotificationCenter from './NotificationCenter';
 import { createClient } from '@/lib/db/localSupabase';
 import StatusSignal from '@/components/ui/StatusSignal';
 
-const ACTIVE_AGENT_STATUSES = new Set(['working', 'running', 'active', 'thinking', 'asking_questions']);
+const ACTIVE_AGENT_STATUSES = new Set([
+  'working',
+  'running',
+  'active',
+  'thinking',
+  'asking_questions',
+]);
 const HEARTBEAT_FRESH_MS = 90_000;
 
 const allNavItems = {
   dashboard: { icon: LayoutDashboard, label: 'Dashboard' },
   tareas: { icon: ListTodo, label: 'Tareas' },
-  agentes: { icon: Bot, label: 'Agentes IA' },
   editor: { icon: FolderOpen, label: 'Sistema de Archivos' },
   scaffolding: { icon: Layers, label: 'Scaffolding' },
   roadmap: { icon: MapPin, label: 'Roadmap' },
   historial: { icon: History, label: 'Historial' },
-  planning: { icon: Brain, label: 'Planning IA' },
+  agenthub: { icon: Brain, label: 'Agent Hub' },
   swarm: { icon: Cpu, label: 'Swarm Control' },
-  cerebro: { icon: Network, label: 'Cerebro / Engram' },
   telegram: { icon: Send, label: 'Telegram Bot' },
 };
 
@@ -54,10 +57,8 @@ const DEFAULT_NAV = [
   'editor',
   'roadmap',
   'historial',
-  'agentes',
-  'planning',
+  'agenthub',
   'swarm',
-  'cerebro',
   'telegram',
 ];
 
@@ -240,12 +241,12 @@ export default function WorkspaceSidebar({
             >
               <div className="relative flex-shrink-0">
                 <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
-                {key === 'planning' && project?.planning_status === 'pending' && (
+                {key === 'agenthub' && project?.planning_status === 'pending' && (
                   <span className="absolute -top-1 -right-1">
                     <StatusSignal tone="warning" animation="none" compact />
                   </span>
                 )}
-                {(key === 'agentes' || key === 'swarm') && activeAgentsCount > 0 && (
+                {key === 'swarm' && activeAgentsCount > 0 && (
                   <span className="absolute -top-1 -right-1">
                     <StatusSignal tone="success" animation="pulse" compact />
                   </span>

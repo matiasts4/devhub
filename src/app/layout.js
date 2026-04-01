@@ -5,6 +5,9 @@ export const metadata = {
   title: 'DevHub – Gestión Personal',
   description: 'Tu espacio central para proyectos, tareas y cronología personal con IA integrada',
   manifest: '/manifest.json',
+};
+
+export const viewport = {
   themeColor: '#0d0d0d',
 };
 

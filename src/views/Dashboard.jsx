@@ -5,8 +5,6 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/db/localSupabase';
 import MetricCard from '../components/MetricCard';
 import BannerIA from '../components/BannerIA';
-import TareasActivas from '../components/TareasActivas';
-import ChatAgente from '../components/ChatAgente';
 import HistorialCommits from '../components/HistorialCommits';
 import UltimasInteracciones from '../components/UltimasInteracciones';
 
@@ -189,11 +187,9 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 flex flex-col gap-4">
-            <TareasActivas projectId={project?.id} />
             <UltimasInteracciones />
           </div>
           <div className="flex flex-col gap-4">
-            <ChatAgente />
             <HistorialCommits />
           </div>
         </div>

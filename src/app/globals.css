@@ -5,6 +5,14 @@
 @config "../../tailwind.config.js";
 
 
+:root {
+  --app-zoom: 1;
+}
+
+html {
+  font-size: calc(16px * var(--app-zoom));
+}
+
 body {
   margin: 0;
   font-family:

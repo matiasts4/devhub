@@ -10,11 +10,11 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import fs from 'fs/promises';
 import path from 'path';
 import { exec } from 'child_process';
@@ -27,6 +27,10 @@ const execAsync = promisify(exec);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../.env.local') });
 
+const require = createRequire(import.meta.url);
+const localDb = require('../src/lib/db/localDb.js');
+
+const DB_DRIVER = (process.env.DEVHUB_MCP_DB_DRIVER || 'sqlite').toLowerCase();
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -41,14 +45,389 @@ if (OPENAI_API_KEY) {
   );
 }
 
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  process.stderr.write('❌ ERROR: Faltan variables SUPABASE en .env.local\n');
-  process.exit(1);
+function nowIso() {
+  return new Date().toISOString();
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+function generateId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function ensureLocalMcpTables() {
+  const db = localDb.getDb();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      author_type TEXT DEFAULT 'agent',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_memory (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      agent_id TEXT,
+      key TEXT NOT NULL,
+      tipo TEXT NOT NULL,
+      value TEXT NOT NULL,
+      embedding TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_memory_project ON agent_memory(project_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_memory_tipo ON agent_memory(tipo);
+    CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
+  `);
+}
+
+function parseOrIlike(expression) {
+  if (!expression) return [];
+  return expression
+    .split(',')
+    .map((raw) => raw.trim())
+    .map((raw) => {
+      const match = raw.match(/^([a-zA-Z0-9_]+)\.ilike\.(.+)$/);
+      if (!match) return null;
+      const col = match[1];
+      const pattern = match[2].replace(/\*/g, '%');
+      return { col, pattern };
+    })
+    .filter(Boolean);
+}
+
+function toSqlOrder(orderItems) {
+  if (!orderItems || orderItems.length === 0) return '';
+  const clauses = orderItems.map(({ col, ascending = true, nullsFirst }) => {
+    const dir = ascending ? 'ASC' : 'DESC';
+    if (nullsFirst === undefined) return `${col} ${dir}`;
+    const nulls = nullsFirst ? 'NULLS FIRST' : 'NULLS LAST';
+    return `${col} ${dir} ${nulls}`;
+  });
+  return ` ORDER BY ${clauses.join(', ')}`;
+}
+
+class LocalQueryBuilder {
+  constructor(db, table) {
+    this.db = db;
+    this.table = table;
+    this._filters = [];
+    this._orIlike = [];
+    this._orderBy = [];
+    this._limit = null;
+    this._single = false;
+    this._selectFields = '*';
+    this._action = 'select';
+    this._payload = null;
+    this._upsertOptions = null;
+    this._count = null;
+    this._head = false;
+  }
+
+  select(fields = '*', options = {}) {
+    if (typeof fields === 'string' && fields.trim().length > 0) {
+      this._selectFields = fields;
+    }
+    this._count = options?.count || null;
+    this._head = !!options?.head;
+    return this;
+  }
+
+  eq(col, val) {
+    this._filters.push({ op: 'eq', col, val });
+    return this;
+  }
+
+  in(col, vals) {
+    this._filters.push({ op: 'in', col, val: vals || [] });
+    return this;
+  }
+
+  or(expression) {
+    this._orIlike = parseOrIlike(expression);
+    return this;
+  }
+
+  order(col, { ascending = true, nullsFirst } = {}) {
+    this._orderBy.push({ col, ascending, nullsFirst });
+    return this;
+  }
+
+  limit(n) {
+    this._limit = n;
+    return this;
+  }
+
+  single() {
+    this._single = true;
+    return this;
+  }
+
+  insert(data) {
+    this._action = 'insert';
+    this._payload = data;
+    return this;
+  }
+
+  update(data) {
+    this._action = 'update';
+    this._payload = data;
+    return this;
+  }
+
+  upsert(data, options = {}) {
+    this._action = 'upsert';
+    this._payload = data;
+    this._upsertOptions = options;
+    return this;
+  }
+
+  delete() {
+    this._action = 'delete';
+    this._payload = null;
+    return this;
+  }
+
+  _buildWhere() {
+    const clauses = [];
+    const params = [];
+
+    for (const f of this._filters) {
+      if (f.op === 'eq') {
+        clauses.push(`${f.col} = ?`);
+        params.push(f.val);
+      } else if (f.op === 'in') {
+        if (!Array.isArray(f.val) || f.val.length === 0) {
+          clauses.push('1 = 0');
+        } else {
+          clauses.push(`${f.col} IN (${f.val.map(() => '?').join(', ')})`);
+          params.push(...f.val);
+        }
+      }
+    }
+
+    if (this._orIlike.length > 0) {
+      const orParts = this._orIlike.map((it) => `LOWER(${it.col}) LIKE LOWER(?)`);
+      clauses.push(`(${orParts.join(' OR ')})`);
+      params.push(...this._orIlike.map((it) => it.pattern));
+    }
+
+    return {
+      whereSql: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
+      params,
+    };
+  }
+
+  _queryRows(fields = this._selectFields) {
+    const { whereSql, params } = this._buildWhere();
+    const orderSql = toSqlOrder(this._orderBy);
+    const limitSql = Number.isInteger(this._limit) ? ' LIMIT ?' : '';
+    const sql = `SELECT ${fields} FROM ${this.table}${whereSql}${orderSql}${limitSql}`;
+    const finalParams = Number.isInteger(this._limit) ? [...params, this._limit] : params;
+    return this.db.prepare(sql).all(...finalParams);
+  }
+
+  _insertRow(row) {
+    const payload = { ...row };
+    if (
+      payload.id === undefined &&
+      [
+        'projects',
+        'tasks',
+        'milestones',
+        'task_comments',
+        'agent_memory',
+        'mcp_connections',
+      ].includes(this.table)
+    ) {
+      payload.id = generateId(this.table.slice(0, -1));
+    }
+    if (payload.created_at === undefined) payload.created_at = nowIso();
+    if (
+      payload.updated_at === undefined &&
+      ['projects', 'tasks', 'milestones', 'agent_registry'].includes(this.table)
+    ) {
+      payload.updated_at = nowIso();
+    }
+
+    const cols = Object.keys(payload);
+    const values = cols.map((k) => payload[k] ?? null);
+    const placeholders = cols.map(() => '?').join(', ');
+    const sql = `INSERT INTO ${this.table} (${cols.join(', ')}) VALUES (${placeholders})`;
+    this.db.prepare(sql).run(...values);
+
+    if (payload.id !== undefined) {
+      return this.db.prepare(`SELECT * FROM ${this.table} WHERE id = ?`).get(payload.id);
+    }
+    if (payload.agent_id !== undefined) {
+      return this.db
+        .prepare(`SELECT * FROM ${this.table} WHERE agent_id = ?`)
+        .get(payload.agent_id);
+    }
+    return this.db.prepare(`SELECT * FROM ${this.table} ORDER BY rowid DESC LIMIT 1`).get();
+  }
+
+  _updateRows() {
+    const data = this._payload || {};
+    const keys = Object.keys(data);
+    if (keys.length === 0) return [];
+    const { whereSql, params } = this._buildWhere();
+    const setSql = keys.map((k) => `${k} = ?`).join(', ');
+    const values = keys.map((k) => data[k] ?? null);
+    const sql = `UPDATE ${this.table} SET ${setSql}${whereSql}`;
+    this.db.prepare(sql).run(...values, ...params);
+    return this._queryRows('*');
+  }
+
+  _upsertRows() {
+    const rows = Array.isArray(this._payload) ? this._payload : [this._payload];
+    const conflict = this._upsertOptions?.onConflict || 'id';
+    const results = [];
+
+    for (const row of rows) {
+      if (!row || row[conflict] === undefined || row[conflict] === null) {
+        results.push(this._insertRow(row || {}));
+        continue;
+      }
+
+      const existing = this.db
+        .prepare(`SELECT * FROM ${this.table} WHERE ${conflict} = ? LIMIT 1`)
+        .get(row[conflict]);
+
+      if (!existing) {
+        results.push(this._insertRow(row));
+        continue;
+      }
+
+      const merged = { ...row, updated_at: nowIso() };
+      const keys = Object.keys(merged);
+      const setSql = keys.map((k) => `${k} = ?`).join(', ');
+      const values = keys.map((k) => merged[k] ?? null);
+      this.db
+        .prepare(`UPDATE ${this.table} SET ${setSql} WHERE ${conflict} = ?`)
+        .run(...values, row[conflict]);
+      const updated = this.db
+        .prepare(`SELECT * FROM ${this.table} WHERE ${conflict} = ? LIMIT 1`)
+        .get(row[conflict]);
+      results.push(updated);
+    }
+
+    return results;
+  }
+
+  async execute() {
+    try {
+      if (this._action === 'select') {
+        const rows = this._queryRows(this._selectFields);
+        if (this._head && this._count === 'exact') {
+          return { data: null, error: null, count: rows.length };
+        }
+        return {
+          data: this._single ? rows[0] || null : rows,
+          error: null,
+          count: this._count === 'exact' ? rows.length : null,
+        };
+      }
+
+      if (this._action === 'insert') {
+        const rows = Array.isArray(this._payload) ? this._payload : [this._payload];
+        const inserted = rows.map((row) => this._insertRow(row));
+        return { data: this._single ? inserted[0] || null : inserted, error: null };
+      }
+
+      if (this._action === 'update') {
+        const updatedRows = this._updateRows();
+        return { data: this._single ? updatedRows[0] || null : updatedRows, error: null };
+      }
+
+      if (this._action === 'upsert') {
+        const upserted = this._upsertRows();
+        return { data: this._single ? upserted[0] || null : upserted, error: null };
+      }
+
+      if (this._action === 'delete') {
+        const { whereSql, params } = this._buildWhere();
+        this.db.prepare(`DELETE FROM ${this.table}${whereSql}`).run(...params);
+        return { data: null, error: null };
+      }
+
+      return { data: null, error: { message: `Acción no soportada: ${this._action}` } };
+    } catch (e) {
+      return { data: null, error: { message: e.message } };
+    }
+  }
+
+  then(resolve, reject) {
+    return this.execute().then(resolve, reject);
+  }
+}
+
+function createLocalClient() {
+  const db = localDb.getDb();
+  ensureLocalMcpTables();
+
+  return {
+    from(table) {
+      return new LocalQueryBuilder(db, table);
+    },
+    async rpc(name, params = {}) {
+      try {
+        if (name === 'search_memory_fts') {
+          const projectId = params.p_project_id;
+          const query = params.p_query || '';
+          const tipo = params.p_tipo || 'all';
+          const limit = params.p_limit || 10;
+          const where = ['project_id = ?'];
+          const values = [projectId];
+          if (tipo !== 'all') {
+            where.push('tipo = ?');
+            values.push(tipo);
+          }
+          where.push('(LOWER(key) LIKE LOWER(?) OR LOWER(value) LIKE LOWER(?))');
+          values.push(`%${query}%`, `%${query}%`);
+          values.push(limit);
+          const rows = db
+            .prepare(
+              `SELECT id, key, tipo, value, created_at FROM agent_memory WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`
+            )
+            .all(...values);
+          return { data: rows, error: null };
+        }
+
+        if (name === 'search_memory_semantic') {
+          const projectId = params.p_project_id;
+          const limit = params.p_match_count || 10;
+          const rows = db
+            .prepare(
+              'SELECT id, key, tipo, value, created_at FROM agent_memory WHERE project_id = ? ORDER BY created_at DESC LIMIT ?'
+            )
+            .all(projectId, limit);
+          return { data: rows, error: null };
+        }
+
+        return { data: null, error: { message: `RPC no soportado en SQLite: ${name}` } };
+      } catch (e) {
+        return { data: null, error: { message: e.message } };
+      }
+    },
+  };
+}
+
+let supabase;
+if (DB_DRIVER === 'supabase') {
+  const { createClient } = await import('@supabase/supabase-js');
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    process.stderr.write('❌ ERROR: Faltan variables SUPABASE en .env.local\n');
+    process.exit(1);
+  }
+  supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  process.stderr.write('ℹ️  DevHub MCP usando driver Supabase (DEVHUB_MCP_DB_DRIVER=supabase)\n');
+} else {
+  supabase = createLocalClient();
+  process.stderr.write('ℹ️  DevHub MCP usando driver SQLite local (local-first)\n');
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -59,8 +438,7 @@ function err(msg) {
   return { content: [{ type: 'text', text: `ERROR: ${msg}` }], isError: true };
 }
 
-const TOPIC_KEY_REGEX =
-  /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*){1,3}$/;
+const TOPIC_KEY_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*){1,3}$/;
 
 function normalizeTopicKey(value) {
   return String(value || '')
@@ -94,161 +472,6 @@ const server = new McpServer({
   name: 'devhub',
   version: '1.0.0',
 });
-
-server.tool(
-  'git_branch',
-  'Crea y/o cambia a una rama de Git aislada en el repositorio actual.',
-  { branch_name: z.string().describe('Nombre de la nueva rama o rama a la que cambiar') },
-  async ({ branch_name }) => {
-    try {
-      const cwd = path.resolve(__dirname, '..');
-      // Intenta cambiar a la rama, si no existe la crea
-      let stdout, stderr;
-      try {
-        const res = await execAsync(`git checkout ${branch_name}`, { cwd });
-        stdout = res.stdout;
-        stderr = res.stderr;
-      } catch (errSwitch) {
-        const res = await execAsync(`git checkout -b ${branch_name}`, { cwd });
-        stdout = res.stdout;
-        stderr = res.stderr;
-      }
-      return ok({ branch: branch_name, stdout, stderr });
-    } catch (error) {
-      return err(error.message + '\n\nstderr: ' + (error.stderr || ''));
-    }
-  }
-);
-
-server.tool(
-  'git_commit',
-  'Realiza un commit en Git con los cambios actuales (añade los archivos indicados o todo al staging).',
-  {
-    message: z.string().describe('Mensaje del commit'),
-    files: z
-      .string()
-      .optional()
-      .describe("Archivos específicos a añadir (por defecto '.', todo el directorio)"),
-  },
-  async ({ message, files }) => {
-    try {
-      const cwd = path.resolve(__dirname, '..');
-      const targetFiles = files || '.';
-      const addCmd = `git add ${targetFiles}`;
-      const safeMessage = message.replace(/"/g, '\\"');
-      const commitCmd = `git commit -m "${safeMessage}"`;
-
-      await execAsync(addCmd, { cwd });
-      const { stdout, stderr } = await execAsync(commitCmd, { cwd });
-
-      return ok({ success: true, message, stdout, stderr });
-    } catch (error) {
-      return err(error.message + '\n\nstderr: ' + (error.stderr || ''));
-    }
-  }
-);
-
-server.tool(
-  'git_diff_review',
-  'Inspecciona el delta entre una rama y otra (por defecto main) para validar documentación y cambios en el código. Útil para QA.',
-  {
-    branch: z.string().describe('La rama a inspeccionar (ej: la rama de un agente)'),
-    base_branch: z
-      .string()
-      .optional()
-      .describe("La rama contra la cual comparar, por defecto es 'main'"),
-  },
-  async ({ branch, base_branch }) => {
-    try {
-      const cwd = path.resolve(__dirname, '..');
-      const base = base_branch || 'main';
-      // Fetch opcional? asumiendo estado local sincronizado por ahora.
-      const diffCmd = `git diff ${base}..${branch}`;
-
-      const { stdout, stderr } = await execAsync(diffCmd, { cwd });
-
-      return ok({ base, branch, diff: stdout, stderr });
-    } catch (error) {
-      return err(error.message + '\n\nstderr: ' + (error.stderr || ''));
-    }
-  }
-);
-
-server.tool(
-  'explore_files',
-  "Explora los archivos de un directorio específico. Usa '.' para la raíz del proyecto.",
-  {
-    dir_path: z
-      .string()
-      .describe("Ruta relativa del directorio a explorar (ej. 'src/components' o '.')"),
-  },
-  async ({ dir_path }) => {
-    try {
-      const targetPath = path.resolve(__dirname, '..', dir_path === '.' ? '' : dir_path);
-      const items = await fs.readdir(targetPath, { withFileTypes: true });
-      const result = items
-        .map((item) => ({
-          name: item.name,
-          type: item.isDirectory() ? 'directory' : 'file',
-        }))
-        .sort((a, b) => {
-          if (a.type === b.type) return a.name.localeCompare(b.name);
-          return a.type === 'directory' ? -1 : 1;
-        });
-      return ok({ path: dir_path, items: result });
-    } catch (error) {
-      return err(error.message);
-    }
-  }
-);
-
-server.tool(
-  'read_file',
-  'Lee el contenido de un archivo específico.',
-  { file_path: z.string().describe("Ruta relativa del archivo (ej. 'package.json')") },
-  async ({ file_path }) => {
-    try {
-      const targetPath = path.resolve(__dirname, '..', file_path);
-      const content = await fs.readFile(targetPath, 'utf-8');
-      return ok({ path: file_path, content });
-    } catch (error) {
-      return err(error.message);
-    }
-  }
-);
-
-server.tool(
-  'write_file',
-  'Escribe o sobrescribe el contenido de un archivo.',
-  {
-    file_path: z.string().describe('Ruta relativa del archivo'),
-    content: z.string().describe('Contenido a escribir en el archivo'),
-  },
-  async ({ file_path, content }) => {
-    try {
-      const targetPath = path.resolve(__dirname, '..', file_path);
-      await fs.writeFile(targetPath, content, 'utf-8');
-      return ok({ success: true, path: file_path });
-    } catch (error) {
-      return err(error.message);
-    }
-  }
-);
-
-server.tool(
-  'mkdir_p',
-  'Crea un directorio recursivamente si no existe.',
-  { dir_path: z.string().describe('Ruta relativa del directorio a crear') },
-  async ({ dir_path }) => {
-    try {
-      const targetPath = path.resolve(__dirname, '..', dir_path);
-      await fs.mkdir(targetPath, { recursive: true });
-      return ok({ success: true, path: dir_path });
-    } catch (error) {
-      return err(error.message);
-    }
-  }
-);
 
 // ────────────────────────────────────────────────────────────────────────────
 // PROYECTOS
@@ -296,8 +519,18 @@ server.tool(
     if (projRes.error) return err(projRes.error.message);
     return ok({
       project: projRes.data,
-      tasks: (tasksRes.data || []).map(t => ({ id: t.id, title: t.title, status: t.status, priority: t.priority })),
-      milestones: (msRes.data || []).map(m => ({ id: m.id, title: m.title, status: m.status, due_date: m.due_date })),
+      tasks: (tasksRes.data || []).map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+      })),
+      milestones: (msRes.data || []).map((m) => ({
+        id: m.id,
+        title: m.title,
+        status: m.status,
+        due_date: m.due_date,
+      })),
       summary: {
         total_tasks: tasksRes.data?.length || 0,
         completed_tasks: tasksRes.data?.filter((t) => t.status === 'completed').length || 0,
@@ -347,7 +580,9 @@ server.tool(
     priority: z.enum(['low', 'medium', 'high', 'critical', 'all']).optional(),
   },
   async ({ project_id, status, priority }) => {
-    let query = supabase.from('tasks').select('id, title, status, priority, description')
+    let query = supabase
+      .from('tasks')
+      .select('id, title, status, priority, description')
       .eq('project_id', project_id)
       .order('created_at', { ascending: false });
     if (status && status !== 'all') query = query.eq('status', status);
@@ -373,14 +608,19 @@ server.tool(
     priority: z.enum(['low', 'medium', 'high', 'critical']).optional().default('medium'),
     due_date: z.string().optional().describe('Fecha ISO YYYY-MM-DD'),
     milestone_id: z.string().uuid().optional().describe('UUID del hito al que pertenece la tarea'),
-    assigned_to: z
-      .string()
-      .uuid()
-      .nullable()
-      .optional()
-      .describe('UUID del usuario o agente asignado'),
+    assigned_to: z.string().uuid().optional().describe('UUID del usuario o agente asignado'),
   },
-  async ({ project_id, user_id, title, description, status, priority, due_date, milestone_id }) => {
+  async ({
+    project_id,
+    user_id,
+    title,
+    description,
+    status,
+    priority,
+    due_date,
+    milestone_id,
+    assigned_to,
+  }) => {
     const { data, error } = await supabase
       .from('tasks')
       .insert({
@@ -389,12 +629,7 @@ server.tool(
         title,
         description: description || null,
         milestone_id: milestone_id || null,
-        assigned_to: z
-          .string()
-          .uuid()
-          .nullable()
-          .optional()
-          .describe('UUID del usuario o agente asignado'),
+        assigned_to: assigned_to || null,
         status,
         priority,
         due_date: due_date || null,
@@ -602,15 +837,15 @@ server.tool(
       await supabase.from('tasks').update({ status: 'in_progress' }).eq('id', bestTask.id);
       bestTask.status = 'in_progress';
 
-      return ok({ 
+      return ok({
         task: {
           id: bestTask.id,
           title: bestTask.title,
           description: bestTask.description,
           priority: bestTask.priority,
-          status: bestTask.status
-        }, 
-        message: 'Tarea asignada al agente.' 
+          status: bestTask.status,
+        },
+        message: 'Tarea asignada al agente.',
       });
     } catch (e) {
       return err(e.message);
@@ -1046,138 +1281,6 @@ server.tool(
 );
 
 server.tool(
-  'qa_evaluate_branch',
-  'Evalúa los cambios de una rama. Llama a git_diff_review para analizar el diff. Ideal para el QA Agent.',
-  {
-    task_id: z.string().uuid().describe('UUID de la tarea evaluada'),
-    branch_name: z.string().describe('Nombre de la rama a evaluar'),
-    qa_agent_id: z.string().describe('ID del agente QA que realiza la evaluación'),
-  },
-  async ({ task_id, branch_name, qa_agent_id }) => {
-    // Esto es un helper que invoca el git diff y carga el prompt de la tarea para ayudar al QA a razonar
-    const { stdout: diff } = await execAsync(`git diff main...${branch_name}`).catch((e) => ({
-      stdout: e.message,
-    }));
-
-    const { data: taskData, error: taskError } = await supabase
-      .from('tasks')
-      .select('title, description')
-      .eq('id', task_id)
-      .single();
-
-    if (taskError) return err(taskError.message);
-
-    return ok({
-      success: true,
-      diff,
-      task: taskData,
-      instructions:
-        'Usa estos datos para evaluar el diff. Responde con un resumen de tu análisis y sugiere un score. Tras esto, debes llamar al orquestador backend con tu veredicto (approved/rejected).',
-    });
-  }
-);
-
-// ─── Phase 7: MEMO & Analytics ───────────────────────────────────────────────
-
-server.tool(
-  'save_memory',
-  'Guarda una memoria persistente en el Knowledge Graph del agente.',
-  {
-    project_id: z.string().uuid().describe('UUID del proyecto'),
-    key: z.string().describe("Identificador corto o semántico, ej. 'auth_backend_decision'"),
-    value: z.string().describe('Contenido en texto de la memoria o experiencia'),
-    tipo: z.enum(['fact', 'decision', 'error', 'context']).describe('Clasificación de la memoria'),
-    agent_id: z.string().optional().describe('ID del agente (opcional, si es compartida se omite)'),
-  },
-  async ({ project_id, key, value, tipo, agent_id }) => {
-    let embedding = null;
-    if (openai) {
-      try {
-        const response = await openai.embeddings.create({
-          model: 'text-embedding-3-small',
-          input: value,
-        });
-        embedding = `[${response.data[0].embedding.join(',')}]`;
-      } catch (err) {
-        process.stderr.write(`⚠️ ERROR OpenAI embedding: ${err.message}\n`);
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('agent_memory')
-      .upsert({ project_id, agent_id, key, value, tipo, embedding }, { onConflict: 'id' })
-      .select()
-      .single();
-
-    if (error) return err(error.message);
-    return ok({ success: true, memory: data });
-  }
-);
-
-server.tool(
-  'recall_memory',
-  'Recupera memorias usando búsqueda full-text tradicional.',
-  {
-    project_id: z.string().uuid().describe('UUID del proyecto'),
-    query: z.string().describe('Texto libre a buscar'),
-    tipo: z
-      .enum(['fact', 'decision', 'error', 'context', 'all'])
-      .default('all')
-      .describe('Filtro por tipo de memoria'),
-    limit: z.number().default(10).describe('Límite de resultados'),
-  },
-  async ({ project_id, query, tipo, limit }) => {
-    const { data, error } = await supabase.rpc('search_memory_fts', {
-      p_project_id: project_id,
-      p_query: query,
-      p_tipo: tipo,
-      p_limit: limit,
-    });
-
-    if (error) return err(error.message);
-    return ok({ success: true, memories: data || [] });
-  }
-);
-
-server.tool(
-  'recall_memory_semantic',
-  'Búsqueda semántica usando embeddings (RAG). Requiere pgvector configurado.',
-  {
-    project_id: z.string().uuid().describe('UUID del proyecto'),
-    query: z.string().describe("Texto de búsqueda semántica (ej. 'cómo resolver error de auth')"),
-    match_threshold: z.number().default(0.7).describe('Umbral de similitud mínima'),
-    limit: z.number().default(10).describe('Límite de resultados'),
-  },
-  async ({ project_id, query, match_threshold, limit }) => {
-    if (!openai) {
-      return err('No hay OPENAI_API_KEY configurado para generar embeddings');
-    }
-
-    let embedding;
-    try {
-      const resp = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: query,
-      });
-      embedding = `[${resp.data[0].embedding.join(',')}]`;
-    } catch (e) {
-      return err(`Fallo al generar embedding: ${e.message}`);
-    }
-
-    const { data, error } = await supabase.rpc('search_memory_semantic', {
-      p_project_id: project_id,
-      p_query_embedding: embedding,
-      p_match_threshold: match_threshold,
-      p_match_count: limit,
-    });
-
-    if (error) return err(error.message);
-    return ok({ success: true, memories: data || [] });
-  }
-);
-
-
-server.tool(
   'update_agent_status',
   'Actualiza el estado visual de tu agente en el DevHub Control Center.',
   {
@@ -1193,7 +1296,7 @@ server.tool(
       'idle',
       'error',
     ]),
-    task_description: z.string().optional().describe('Qué estás haciendo ahora mismo (corto)')
+    task_description: z.string().optional().describe('Qué estás haciendo ahora mismo (corto)'),
   },
   async ({ agent_id, status, task_description }) => {
     const statusMap = {
@@ -1212,14 +1315,14 @@ server.tool(
       status: statusMap[status] || 'working',
       last_heartbeat: new Date().toISOString(),
     };
-    
+
     const { data, error } = await supabase
       .from('agent_registry')
       .update(updateData)
       .eq('agent_id', agent_id)
       .select()
       .single();
-      
+
     if (error) return err(error.message);
     return ok({ success: true, message: 'Estado actualizado en la UI', agent: data });
   }

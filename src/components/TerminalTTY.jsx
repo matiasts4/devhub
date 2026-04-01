@@ -128,6 +128,9 @@ export default function TerminalTTY({
 
           if (payload.type === 'exit') {
             termRef.current?.writeln('\r\n\x1b[31mProceso de terminal finalizado.\x1b[0m');
+            window.dispatchEvent(new CustomEvent('devhub:terminal-exit', { 
+              detail: { id, initialCommand } 
+            }));
           }
         } catch {
           // Ignore malformed frames.

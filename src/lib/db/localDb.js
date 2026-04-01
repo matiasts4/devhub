@@ -63,6 +63,26 @@ function ensureRuntimeSchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_telegram_sessions_chat ON telegram_sessions(chat_id);
+    
+    CREATE TABLE IF NOT EXISTS agent_hub_sessions (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      agent_model TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_hub_sessions_project ON agent_hub_sessions(project_id);
+
+    CREATE TABLE IF NOT EXISTS agent_hub_messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      meta TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_hub_messages_session ON agent_hub_messages(session_id);
   `);
 }
 
@@ -182,6 +202,8 @@ const tables = {
   agent_registry: makeTableOps('agent_registry', 'agent_id'),
   mcp_connections: makeTableOps('mcp_connections', 'id'),
   ai_interactions: makeTableOps('ai_interactions', 'id'),
+  agent_hub_sessions: makeTableOps('agent_hub_sessions', 'id'),
+  agent_hub_messages: makeTableOps('agent_hub_messages', 'id'),
   profiles: {
     ...makeTableOps('profiles', 'id'),
     upsert(data) {

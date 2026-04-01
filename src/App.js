@@ -14,20 +14,24 @@ import WorkspaceSidebar from './components/WorkspaceSidebar';
 import ProjectHub from './views/ProjectHub';
 import ProjectDashboard from './views/ProjectDashboard';
 import Tareas from './views/Tareas';
-import CentroIA from './views/CentroIA';
 import CodeEditor from './views/CodeEditor';
 import Scaffolding from './views/Scaffolding';
 import Roadmap from './views/Roadmap';
 import Historial from './views/Historial';
 import Conexiones from './views/Conexiones';
 import Ajustes from './views/Ajustes';
-import PlanningMode from './views/PlanningMode';
+import AgentHub from './views/AgentHub';
 import SwarmControl from './views/SwarmControl';
-import Cerebro from './views/Cerebro';
 import TelegramMonitor from './views/TelegramMonitor';
 import { createClient } from '@/lib/db/localSupabase';
 import { Loader2 } from 'lucide-react';
-import { applyThemeToDocument, getStoredTheme } from '@/lib/theme/themes';
+import {
+  applyThemeToDocument,
+  getStoredTheme,
+  applyZoomToDocument,
+  getStoredZoom,
+  setZoom,
+} from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 
@@ -167,6 +171,27 @@ function WorkspaceLayout() {
 function App() {
   useEffect(() => {
     applyThemeToDocument(getStoredTheme());
+    applyZoomToDocument(getStoredZoom());
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+' || e.key === '-')) {
+        e.preventDefault();
+        const currentZoom = getStoredZoom();
+        if (e.key === '=' || e.key === '+') {
+          if (currentZoom < 2) setZoom(currentZoom + 0.1);
+        } else {
+          if (currentZoom > 0.5) setZoom(currentZoom - 0.1);
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault();
+        setZoom(1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -214,16 +239,14 @@ function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<ProjectDashboard />} />
             <Route path="tareas" element={<Tareas />} />
-            <Route path="agentes" element={<CentroIA />} />
             <Route path="editor" element={<CodeEditor />} />
             <Route path="scaffolding" element={<Scaffolding />} />
             <Route path="roadmap" element={<Roadmap />} />
             <Route path="historial" element={<Historial />} />
             <Route path="conexiones" element={<Conexiones />} />
             <Route path="ajustes" element={<Ajustes />} />
-            <Route path="planning" element={<PlanningMode />} />
+            <Route path="agenthub" element={<AgentHub />} />
             <Route path="swarm" element={<SwarmControl />} />
-            <Route path="cerebro" element={<Cerebro />} />
             <Route path="telegram" element={<TelegramMonitor />} />
 
             {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}
