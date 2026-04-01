@@ -161,13 +161,30 @@ function run(agent, prompt, options = {}) {
             const cleaned = cleanOutput(raw);
             if (cleaned.length >= MIN_CONTENT_CHARS) hasRealContent = true;
 
-            if (raw === lastOutput && raw.length > 0) {
+            // KEY FIX: Detect when shell prompt returns = opencode finished
+            // The prompt pattern "└─$" or "$ " appears after opencode exits
+            const shellPromptReturned = raw.includes('└─$') || raw.includes('└─#');
+
+            if (shellPromptReturned && hasRealContent) {
+              // Give it 1 extra poll (3s) to capture any trailing output
+              if (stableCount >= 1) {
+                logger.info(`OpenCode done (shell prompt returned, ${cleaned.length} chars)`);
+                doResolve(
+                  cleaned.length > MAX_OUTPUT_LENGTH
+                    ? cleaned.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [truncada]'
+                    : cleaned
+                );
+                return;
+              }
+              stableCount++;
+            } else if (raw === lastOutput && raw.length > 0) {
               stableCount++;
             } else {
               stableCount = 0;
               lastOutput = raw;
             }
 
+            // Fallback: stable for 30s even without shell prompt detection
             if (stableCount >= STABLE_THRESHOLD && hasRealContent) {
               logger.info(`OpenCode done (stable ${stableCount * 3}s, ${cleaned.length} chars)`);
               doResolve(
