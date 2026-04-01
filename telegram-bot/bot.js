@@ -21,6 +21,10 @@ const logger = require('./utils/logger');
 const formatter = require('./services/formatter');
 const conversation = require('./services/conversation');
 const chatHandler = require('./commands/chat');
+const activityLogger = require('./services/activityLogger');
+
+// Boot-time system log
+activityLogger.logSystem('startup', 'Bot iniciado con polling activo');
 
 // ── Command handlers ────────────────────────────────────────────────────────
 const commands = {
@@ -52,6 +56,40 @@ if (!BOT_TOKEN) {
   process.exit(1);
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function extractCommandName(pattern) {
+  const m = pattern.source.match(/\/(\w+)/);
+  return m ? m[1] : 'unknown';
+}
+
+function logInboundCommand(chatId, cmdName, args) {
+  activityLogger.logActivity({
+    chatId: String(chatId),
+    eventType: 'command',
+    direction: 'inbound',
+    source: 'telegram',
+    command: cmdName,
+    contentPreview: args ? `${cmdName} ${args}` : cmdName,
+    status: 'pending',
+  });
+}
+
+function logOutboundCommand(chatId, cmdName, status, errMsg) {
+  activityLogger.logActivity({
+    chatId: String(chatId),
+    eventType: status === 'error' ? 'error' : 'command',
+    direction: 'outbound',
+    source: 'telegram',
+    command: cmdName,
+    contentPreview: errMsg
+      ? `Error: ${errMsg.substring(0, 480)}`
+      : `Comando ${cmdName} ejecutado exitosamente`,
+    status,
+    metadata: errMsg ? JSON.stringify({ error: errMsg }) : null,
+  });
+}
+
 // ── Bot initialization ──────────────────────────────────────────────────────
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
@@ -79,11 +117,25 @@ bot.onText(/^\/start/, (msg) => {
   bot.sendMessage(
     chatId,
     `👋 ¡Hola *${name}*! Soy el bot de DevHub.\n\n` +
-      `🔹 Usá /help para ver los comandos de gestión\n` +
-      `💬 O simplemente escribime cualquier cosa para chatear con OpenCode`,
+      '🔹 Usá /help para ver los comandos de gestión\n' +
+      '💬 O simplemente escribime cualquier cosa para chatear con OpenCode',
     { parse_mode: 'Markdown' }
   );
   logger.info(`Nuevo usuario: ${name} (${chatId})`);
+
+  activityLogger.logActivity({
+    chatId: String(chatId),
+    eventType: 'system',
+    direction: 'inbound',
+    source: 'telegram',
+    command: 'start',
+    contentPreview: `${name} inició el bot`,
+    status: 'ok',
+  });
+  activityLogger.upsertSession({
+    chatId: String(chatId),
+    userName: name,
+  });
 });
 
 // ── Command routing ─────────────────────────────────────────────────────────
@@ -113,20 +165,41 @@ commandMap.forEach(({ pattern, handler }) => {
 
     // Auth guard
     if (!isAllowed(chatId)) {
+      activityLogger.logActivity({
+        chatId: String(chatId),
+        eventType: 'error',
+        direction: 'inbound',
+        source: 'telegram',
+        command: extractCommandName(pattern),
+        contentPreview: `Intento no autorizado de ${msg.from.username || msg.from.first_name || chatId}`,
+        status: 'error',
+      });
       bot.sendMessage(chatId, '⛔ Acceso no autorizado.');
       return;
     }
 
-    // Extract args (everything after the command name)
     const args = match[1] ? match[1].trim() : '';
+    const cmdName = extractCommandName(pattern);
 
-    // Execute handler with error handling
-    handler(bot, msg, args).catch((err) => {
-      logger.error(`Error en comando: ${err.message}`);
-      bot.sendMessage(chatId, formatter.formatError(err.message), {
-        parse_mode: 'Markdown',
-      });
+    // Log inbound + update session
+    logInboundCommand(chatId, cmdName, args);
+    activityLogger.upsertSession({
+      chatId: String(chatId),
+      userName: msg.from.username || msg.from.first_name || String(chatId),
     });
+
+    // Execute handler
+    handler(bot, msg, args)
+      .then(() => {
+        logOutboundCommand(chatId, cmdName, 'ok');
+      })
+      .catch((err) => {
+        logger.error(`Error en comando: ${err.message}`);
+        logOutboundCommand(chatId, cmdName, 'error', err.message);
+        bot.sendMessage(chatId, formatter.formatError(err.message), {
+          parse_mode: 'Markdown',
+        });
+      });
   });
 });
 
@@ -135,40 +208,69 @@ bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || '';
 
-  // Skip commands (handled above)
-  if (text.startsWith('/')) {
-    return;
-  }
+  if (text.startsWith('/')) return;
+  if (!text.trim()) return;
 
-  // Skip non-text messages (photos, stickers, etc.)
-  if (!text.trim()) {
-    return;
-  }
-
-  // Auth guard
   if (!isAllowed(chatId)) {
     bot.sendMessage(chatId, '⛔ Acceso no autorizado.');
     return;
   }
 
-  // Route to chat handler
-  chatHandler(bot, msg).catch((err) => {
-    logger.error(`Error en chat: ${err.message}`);
-    bot.sendMessage(chatId, formatter.formatError(err.message), {
-      parse_mode: 'Markdown',
-    });
+  const userName = msg.from.username || msg.from.first_name || String(chatId);
+
+  activityLogger.logActivity({
+    chatId: String(chatId),
+    eventType: 'chat_message',
+    direction: 'inbound',
+    source: 'telegram',
+    contentPreview: text.substring(0, 500),
+    status: 'ok',
   });
+  activityLogger.upsertSession({ chatId: String(chatId), userName });
+
+  chatHandler(bot, msg)
+    .then(() => {
+      const agent = conversation.getAgent(chatId);
+      activityLogger.logActivity({
+        chatId: String(chatId),
+        eventType: 'chat_response',
+        direction: 'outbound',
+        source: 'opencode',
+        contentPreview: `Respuesta del agente ${agent}`,
+        status: 'ok',
+        metadata: JSON.stringify({ agent }),
+      });
+    })
+    .catch((err) => {
+      logger.error(`Error en chat: ${err.message}`);
+      activityLogger.logActivity({
+        chatId: String(chatId),
+        eventType: 'error',
+        direction: 'outbound',
+        source: 'opencode',
+        contentPreview: `Error en chat: ${err.message.substring(0, 480)}`,
+        status: 'error',
+        metadata: JSON.stringify({ error: err.message }),
+      });
+      bot.sendMessage(chatId, formatter.formatError(err.message), {
+        parse_mode: 'Markdown',
+      });
+    });
 });
 
 // ── Graceful shutdown ───────────────────────────────────────────────────────
 process.on('SIGINT', () => {
+  activityLogger.logSystem('shutdown', 'Bot apagado por señal SIGINT');
   logger.info('Recibida señal de apagado. Cerrando bot...');
   bot.stopPolling();
+  activityLogger.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
+  activityLogger.logSystem('shutdown', 'Bot apagado por señal SIGTERM');
   logger.info('Recibida señal de terminación. Cerrando bot...');
   bot.stopPolling();
+  activityLogger.close();
   process.exit(0);
 });

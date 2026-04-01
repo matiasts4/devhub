@@ -1,266 +1,229 @@
 /**
  * OpenCode runner service.
  *
- * Spawns `opencode run --agent <agent> "<prompt>"` as a child process,
- * captures stdout, strips ANSI escape codes and opencode UI artifacts,
- * and returns clean text.
- *
- * Timeout: 120 seconds (configurable).
+ * Runs opencode inside a tmux session (which provides a real TTY),
+ * polls captured pane output for completion, then tears down the session.
  */
 
-const { spawn } = require('child_process');
-const fs = require('fs');
+const { exec } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const logger = require('../utils/logger');
 
-// ── Constants ────────────────────────────────────────────────────────────────
+const DEFAULT_TIMEOUT = 120_000;
+const MAX_OUTPUT_LENGTH = 4000;
+const POLL_INTERVAL = 3_000;
+const STABLE_THRESHOLD = 10;
+const MIN_CONTENT_CHARS = 20;
 
-const DEFAULT_TIMEOUT = 120_000; // 120 seconds
-const MAX_OUTPUT_LENGTH = 4000; // Telegram message limit safety margin
-
-// ── Output Cleaning ──────────────────────────────────────────────────────────
-
-/**
- * Strip ANSI escape codes from text.
- * @param {string} text
- * @returns {string}
- */
 function stripAnsi(text) {
   return text
-    .replace(/\x1b\[[0-9;]*m/g, '') // SGR color/style codes
-    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // All other escape sequences (cursor, erase, etc.)
-    .replace(/\x1b\][^\x07]*\x07/g, '') // OSC sequences (terminal title, etc.)
-    .replace(/\x1b\^[^\x1b]*\x1b\\/g, ''); // DCS sequences
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/\x1b\^[^\x1b]*\x1b\\/g, '');
 }
 
-/**
- * Remove opencode UI artifacts and normalize whitespace.
- *
- * Strips:
- * - "> agent · model" progress headers
- * - Thinking/thought block markers
- * - Repeated separator lines
- * - Leading/trailing blank lines
- *
- * @param {string} text
- * @returns {string}
- */
 function cleanOutput(text) {
   if (!text) return '';
-
   let cleaned = stripAnsi(text);
-
   cleaned = cleaned
-    // "> agent · model" or "> agent · model · thought" headers
+    // Remove Kali banner
+    .replace(/┏━.*$/gm, '')
+    .replace(/┃.*$/gm, '')
+    .replace(/┗━.*$/gm, '')
+    // Remove zsh prompt decorations
+    .replace(/┌──.*$/gm, '')
+    .replace(/└─\$.*$/gm, '')
+    .replace(/└─#.*$/gm, '')
+    .replace(/^\$ /gm, '')
+    .replace(/^# /gm, '')
+    // Remove the opencode command echo (with any quote artifacts)
+    .replace(/.*opencode run --agent.*\n?/gm, '')
+    .replace(/.*solo OK'.*\n?/gm, '')
+    .replace(/.*nde solo OK'.*\n?/gm, '')
+    // Remove zsh warnings
+    .replace(/zsh:.*\n?/gm, '')
+    // Remove terminal control artifacts
+    .replace(/\[\?1h=\[?2004h/g, '')
+    .replace(/\[\?1l>\[?2004l/g, '')
+    // "> agent · model" headers
     .replace(/^> .+? · .+?\n?/gm, '')
-    // Thinking block markers: "thinking", "/thought"
+    .replace(/wen3\.6-plus-free\n?/g, '')
+    // Thinking block markers
     .replace(/^<\/?thinking>\s*$/gm, '')
-    // Repeated dash/equals separator lines (3+ chars)
+    // Repeated separator lines
     .replace(/^[=\-]{3,}\s*$/gm, '')
-    // Progress bars like [====>     ] or [████████░░]
+    // Progress bars
     .replace(/\[[═━─━═\s=>·]+\]\s*\d*%?\s*/g, '')
-    // Terminal control remnants (bell, backspace artifacts)
+    // Terminal control remnants
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
     // Collapse 3+ consecutive newlines into 2
     .replace(/\n{3,}/g, '\n\n')
-    // Remove leading blank lines
     .replace(/^\s*\n+/, '')
     .trim();
-
   return cleaned;
 }
 
-// ── Core Runner ──────────────────────────────────────────────────────────────
-
-/**
- * Run an OpenCode agent with a prompt.
- *
- * @param {string} agent - Agent name (e.g. 'gentleman', 'sdd-orchestrator')
- * @param {string} prompt - The prompt/task to execute
- * @param {object} [options]
- * @param {number} [options.timeout] - Timeout in ms (default: 120000)
- * @param {string} [options.cwd] - Working directory (default: process.cwd())
- * @param {string} [options.model] - Optional model override
- * @returns {Promise<string>} Clean text output from the agent
- */
 function run(agent, prompt, options = {}) {
   const { timeout = DEFAULT_TIMEOUT, cwd = process.cwd(), model } = options;
 
-  if (!agent || typeof agent !== 'string') {
+  if (!agent || typeof agent !== 'string')
     return Promise.reject(new Error('Agent name is required'));
-  }
-  if (!prompt || typeof prompt !== 'string') {
-    return Promise.reject(new Error('Prompt is required'));
-  }
+  if (!prompt || typeof prompt !== 'string') return Promise.reject(new Error('Prompt is required'));
 
   return new Promise((resolve, reject) => {
-    const args = ['run', '--agent', agent];
-    if (model) {
-      args.push('--model', model);
+    const ts = Date.now();
+    const rand = Math.random().toString(36).substring(2, 8);
+    const sessionName = `oc-${ts}-${rand}`;
+
+    // Use tmux run-shell instead of send-keys to avoid quoting issues
+    // run-shell executes the command directly, not as keystrokes
+    const escapedPrompt = prompt.replace(/'/g, "'\"'\"'");
+    const modelFlag = model ? ` --model ${model}` : '';
+    const safeCwd = cwd.replace(/ /g, '\\ ');
+    const command = `cd ${safeCwd} && opencode run --agent ${agent}${modelFlag} '${escapedPrompt}'`;
+
+    logger.info(`Running: opencode run --agent ${agent} (tmux: ${sessionName})`);
+
+    let resolved = false;
+    let lastOutput = '';
+    let stableCount = 0;
+    let hasRealContent = false;
+    let pollId = null;
+    let timeoutId = null;
+
+    function killSession() {
+      try {
+        exec(`tmux kill-session -t "${sessionName}" 2>/dev/null`, () => {});
+      } catch (_) {}
     }
-    args.push(prompt);
 
-    logger.info(
-      `opencode run --agent ${agent} "${prompt.substring(0, 60)}${prompt.length > 60 ? '...' : ''}"`
-    );
-
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-
-    const child = spawn('opencode', args, {
-      cwd,
-      env: { ...process.env },
-      // Do NOT use spawn's built-in timeout — it fires 'timeout' event but
-      // doesn't kill the process. We manage it manually for proper cleanup.
-    });
-
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      logger.error(`OpenCode timeout after ${timeout / 1000}s for agent "${agent}"`);
-      child.kill('SIGTERM');
-      // Force kill after 5s grace period
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill('SIGKILL');
-        }
-      }, 5000);
-    }, timeout);
-
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('close', (code, signal) => {
+    function doResolve(value) {
+      if (resolved) return;
+      resolved = true;
+      clearInterval(pollId);
       clearTimeout(timeoutId);
+      killSession();
+      resolve(value);
+    }
 
-      if (timedOut) {
-        reject(new Error(`OpenCode timeout después de ${timeout / 1000}s para agente "${agent}"`));
+    function doReject(err) {
+      if (resolved) return;
+      resolved = true;
+      clearInterval(pollId);
+      clearTimeout(timeoutId);
+      killSession();
+      reject(err);
+    }
+
+    // Step 1: Create empty tmux session
+    exec(`tmux new-session -d -s "${sessionName}"`, (err) => {
+      if (err) {
+        doReject(new Error(`No se pudo iniciar tmux: ${err.message}`));
         return;
       }
 
-      if (signal === 'SIGKILL' || signal === 'SIGTERM') {
-        reject(new Error(`OpenCode killed by signal ${signal} para agente "${agent}"`));
-        return;
-      }
-
-      if (code !== 0) {
-        const detail = cleanOutput(stderr || stdout);
-        const msg = detail
-          ? `OpenCode exit ${code}: ${detail.substring(0, MAX_OUTPUT_LENGTH)}`
-          : `OpenCode exit ${code} (no output)`;
-        logger.error(`OpenCode failed: ${msg}`);
-        reject(new Error(msg));
-        return;
-      }
-
-      const clean = cleanOutput(stdout);
-      if (!clean) {
-        const fallback = cleanOutput(stderr);
-        if (fallback) {
-          logger.warn(`OpenCode stdout empty for "${agent}", using stderr output`);
-          resolve(fallback);
+      // Step 2: Send command via send-keys
+      exec(`tmux send-keys -t "${sessionName}" "${command}" Enter`, (sendErr) => {
+        if (sendErr) {
+          doReject(new Error(`No se pudo enviar comando: ${sendErr.message}`));
           return;
         }
-        logger.warn(`OpenCode produced no output for agent "${agent}"`);
-        reject(new Error('OpenCode no produjo respuesta'));
-        return;
-      }
 
-      // Truncate if too long for Telegram
-      if (clean.length > MAX_OUTPUT_LENGTH) {
-        logger.warn(`OpenCode output truncated (${clean.length} → ${MAX_OUTPUT_LENGTH} chars)`);
-        resolve(clean.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [respuesta truncada]');
-        return;
-      }
+        // Step 3: Poll for output
+        pollId = setInterval(() => {
+          if (resolved) return;
 
-      resolve(clean);
-    });
+          exec(`tmux capture-pane -t "${sessionName}" -p 2>/dev/null`, (capErr, stdout) => {
+            if (resolved) return;
+            const raw = stdout || '';
 
-    child.on('error', (err) => {
-      clearTimeout(timeoutId);
+            // Session ended
+            if (capErr) {
+              const clean = cleanOutput(lastOutput);
+              if (clean && clean.length >= MIN_CONTENT_CHARS) {
+                doResolve(
+                  clean.length > MAX_OUTPUT_LENGTH
+                    ? clean.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [truncada]'
+                    : clean
+                );
+              } else {
+                doReject(new Error('OpenCode no produjo respuesta'));
+              }
+              return;
+            }
 
-      // Provide actionable error messages
-      if (err.code === 'ENOENT') {
-        reject(new Error('OpenCode no está instalado o no está en el PATH'));
-      } else if (err.code === 'EACCES') {
-        reject(new Error('OpenCode no tiene permisos de ejecución'));
-      } else {
-        reject(new Error(`OpenCode error: ${err.message}`));
-      }
+            const cleaned = cleanOutput(raw);
+            if (cleaned.length >= MIN_CONTENT_CHARS) hasRealContent = true;
+
+            if (raw === lastOutput && raw.length > 0) {
+              stableCount++;
+            } else {
+              stableCount = 0;
+              lastOutput = raw;
+            }
+
+            if (stableCount >= STABLE_THRESHOLD && hasRealContent) {
+              logger.info(
+                `OpenCode done (stable ${stableCount * (POLL_INTERVAL / 1000)}s, ${cleaned.length} chars)`
+              );
+              doResolve(
+                cleaned.length > MAX_OUTPUT_LENGTH
+                  ? cleaned.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [truncada]'
+                  : cleaned
+              );
+              return;
+            }
+
+            if (stableCount >= STABLE_THRESHOLD * 2 && !hasRealContent) {
+              doReject(new Error('OpenCode se quedó sin producir output'));
+            }
+          });
+        }, POLL_INTERVAL);
+
+        // Step 4: Hard timeout
+        timeoutId = setTimeout(() => {
+          if (resolved) return;
+          logger.error(`OpenCode timeout after ${timeout / 1000}s`);
+          exec(`tmux capture-pane -t "${sessionName}" -p 2>/dev/null`, (_e, finalOutput) => {
+            const raw = finalOutput || lastOutput;
+            const clean = cleanOutput(raw);
+            if (clean && clean.length >= MIN_CONTENT_CHARS) {
+              doResolve(clean.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [timeout — parcial]');
+            } else {
+              doReject(new Error(`OpenCode timeout después de ${timeout / 1000}s`));
+            }
+          });
+        }, timeout);
+      });
     });
   });
 }
 
-// ── Agent Discovery ──────────────────────────────────────────────────────────
-
-/**
- * Get available agents from opencode config or fallback to known defaults.
- *
- * Looks for opencode.json in common locations:
- * - Current working directory
- * - Home directory (~/.config/opencode/)
- * - Project root (parent dirs)
- *
- * @returns {Promise<string[]>}
- */
 async function getAvailableAgents() {
   const knownAgents = ['gentleman', 'sdd-orchestrator', 'build', 'plan', 'qa'];
-
   const configPaths = [
     path.join(process.cwd(), 'opencode.json'),
     path.join(process.env.HOME || '', '.config', 'opencode', 'opencode.json'),
-    path.join(process.cwd(), '.opencode.json'),
   ];
-
   for (const configPath of configPaths) {
     try {
       if (fs.existsSync(configPath)) {
-        const raw = fs.readFileSync(configPath, 'utf-8');
-        const config = JSON.parse(raw);
-
-        // Try common config shapes
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
         const agents = config.agents || config.profiles || config.models || [];
-
         if (Array.isArray(agents)) {
           const names = agents
-            .map((a) => {
-              if (typeof a === 'string') return a;
-              if (a && typeof a === 'object') return a.name || a.id || a.agent || null;
-              return null;
-            })
+            .map((a) => (typeof a === 'string' ? a : a?.name || a?.id || a?.agent || null))
             .filter(Boolean);
-
-          if (names.length > 0) {
-            logger.info(`Loaded ${names.length} agents from ${configPath}`);
-            return names;
-          }
+          if (names.length > 0) return names;
         }
-
-        // If agents is an object (keyed by name)
-        if (agents && typeof agents === 'object' && !Array.isArray(agents)) {
+        if (agents && typeof agents === 'object' && !Array.isArray(agents))
           return Object.keys(agents);
-        }
       }
-    } catch (err) {
-      logger.warn(`Could not parse ${configPath}: ${err.message}`);
-    }
+    } catch (_) {}
   }
-
-  logger.warn(`No opencode config found, using default agents: ${knownAgents.join(', ')}`);
   return knownAgents;
 }
 
-// ── Exports ──────────────────────────────────────────────────────────────────
-
-module.exports = {
-  run,
-  cleanOutput,
-  stripAnsi,
-  getAvailableAgents,
-  DEFAULT_TIMEOUT,
-};
+module.exports = { run, cleanOutput, stripAnsi, getAvailableAgents, DEFAULT_TIMEOUT };
