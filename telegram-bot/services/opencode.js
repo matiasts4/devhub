@@ -1,13 +1,18 @@
 /**
- * OpenCode runner service.
+ * OpenCode runner service — tmux-based with temp script.
  *
- * Runs opencode inside a tmux session (which provides a real TTY),
- * polls captured pane output for completion, then tears down the session.
+ * Strategy:
+ * 1. Write prompt to temp file (no escaping needed)
+ * 2. Write a wrapper bash script that reads the file and runs opencode
+ * 3. Create tmux session, run the script via send-keys
+ * 4. Poll capture-pane until output is stable
+ * 5. Kill session, return cleaned output
  */
 
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const logger = require('../utils/logger');
 
 const DEFAULT_TIMEOUT = 120_000;
@@ -15,6 +20,9 @@ const MAX_OUTPUT_LENGTH = 4000;
 const POLL_INTERVAL = 3_000;
 const STABLE_THRESHOLD = 10;
 const MIN_CONTENT_CHARS = 20;
+const TMP_DIR = path.join(os.tmpdir(), 'devhub-bot');
+
+if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
 function stripAnsi(text) {
   return text
@@ -26,48 +34,34 @@ function stripAnsi(text) {
 
 function cleanOutput(text) {
   if (!text) return '';
-  let cleaned = stripAnsi(text);
-  cleaned = cleaned
-    // Remove Kali banner
+  let c = stripAnsi(text);
+  c = c
     .replace(/┏━.*$/gm, '')
     .replace(/┃.*$/gm, '')
     .replace(/┗━.*$/gm, '')
-    // Remove zsh prompt decorations
     .replace(/┌──.*$/gm, '')
     .replace(/└─\$.*$/gm, '')
     .replace(/└─#.*$/gm, '')
     .replace(/^\$ /gm, '')
     .replace(/^# /gm, '')
-    // Remove the opencode command echo (with any quote artifacts)
     .replace(/.*opencode run --agent.*\n?/gm, '')
-    .replace(/.*solo OK'.*\n?/gm, '')
-    .replace(/.*nde solo OK'.*\n?/gm, '')
-    // Remove zsh warnings
     .replace(/zsh:.*\n?/gm, '')
-    // Remove terminal control artifacts
     .replace(/\[\?1h=\[?2004h/g, '')
     .replace(/\[\?1l>\[?2004l/g, '')
-    // "> agent · model" headers
     .replace(/^> .+? · .+?\n?/gm, '')
     .replace(/wen3\.6-plus-free\n?/g, '')
-    // Thinking block markers
     .replace(/^<\/?thinking>\s*$/gm, '')
-    // Repeated separator lines
     .replace(/^[=\-]{3,}\s*$/gm, '')
-    // Progress bars
     .replace(/\[[═━─━═\s=>·]+\]\s*\d*%?\s*/g, '')
-    // Terminal control remnants
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
-    // Collapse 3+ consecutive newlines into 2
     .replace(/\n{3,}/g, '\n\n')
     .replace(/^\s*\n+/, '')
     .trim();
-  return cleaned;
+  return c;
 }
 
 function run(agent, prompt, options = {}) {
   const { timeout = DEFAULT_TIMEOUT, cwd = process.cwd(), model } = options;
-
   if (!agent || typeof agent !== 'string')
     return Promise.reject(new Error('Agent name is required'));
   if (!prompt || typeof prompt !== 'string') return Promise.reject(new Error('Prompt is required'));
@@ -76,13 +70,16 @@ function run(agent, prompt, options = {}) {
     const ts = Date.now();
     const rand = Math.random().toString(36).substring(2, 8);
     const sessionName = `oc-${ts}-${rand}`;
+    const promptFile = path.join(TMP_DIR, `prompt_${ts}.txt`);
+    const scriptFile = path.join(TMP_DIR, `run_${ts}.sh`);
 
-    // Use tmux run-shell instead of send-keys to avoid quoting issues
-    // run-shell executes the command directly, not as keystrokes
-    const escapedPrompt = prompt.replace(/'/g, "'\"'\"'");
+    // Write prompt to file (no escaping needed)
+    fs.writeFileSync(promptFile, prompt, 'utf-8');
+
+    // Write wrapper script
     const modelFlag = model ? ` --model ${model}` : '';
-    const safeCwd = cwd.replace(/ /g, '\\ ');
-    const command = `cd ${safeCwd} && opencode run --agent ${agent}${modelFlag} '${escapedPrompt}'`;
+    const script = `#!/bin/bash\ncd "${cwd}"\nPROMPT=$(cat '${promptFile}')\nopencode run --agent ${agent}${modelFlag} "$PROMPT"\n`;
+    fs.writeFileSync(scriptFile, script, { mode: 0o755 });
 
     logger.info(`Running: opencode run --agent ${agent} (tmux: ${sessionName})`);
 
@@ -98,6 +95,14 @@ function run(agent, prompt, options = {}) {
         exec(`tmux kill-session -t "${sessionName}" 2>/dev/null`, () => {});
       } catch (_) {}
     }
+    function cleanup() {
+      try {
+        fs.unlinkSync(promptFile);
+      } catch (_) {}
+      try {
+        fs.unlinkSync(scriptFile);
+      } catch (_) {}
+    }
 
     function doResolve(value) {
       if (resolved) return;
@@ -105,41 +110,40 @@ function run(agent, prompt, options = {}) {
       clearInterval(pollId);
       clearTimeout(timeoutId);
       killSession();
+      cleanup();
       resolve(value);
     }
-
     function doReject(err) {
       if (resolved) return;
       resolved = true;
       clearInterval(pollId);
       clearTimeout(timeoutId);
       killSession();
+      cleanup();
       reject(err);
     }
 
-    // Step 1: Create empty tmux session
+    // Create empty tmux session
     exec(`tmux new-session -d -s "${sessionName}"`, (err) => {
       if (err) {
         doReject(new Error(`No se pudo iniciar tmux: ${err.message}`));
         return;
       }
 
-      // Step 2: Send command via send-keys
-      exec(`tmux send-keys -t "${sessionName}" "${command}" Enter`, (sendErr) => {
+      // Send the script path and execute it
+      exec(`tmux send-keys -t "${sessionName}" "bash '${scriptFile}'" Enter`, (sendErr) => {
         if (sendErr) {
           doReject(new Error(`No se pudo enviar comando: ${sendErr.message}`));
           return;
         }
 
-        // Step 3: Poll for output
+        // Poll for output
         pollId = setInterval(() => {
           if (resolved) return;
-
           exec(`tmux capture-pane -t "${sessionName}" -p 2>/dev/null`, (capErr, stdout) => {
             if (resolved) return;
             const raw = stdout || '';
 
-            // Session ended
             if (capErr) {
               const clean = cleanOutput(lastOutput);
               if (clean && clean.length >= MIN_CONTENT_CHARS) {
@@ -165,9 +169,7 @@ function run(agent, prompt, options = {}) {
             }
 
             if (stableCount >= STABLE_THRESHOLD && hasRealContent) {
-              logger.info(
-                `OpenCode done (stable ${stableCount * (POLL_INTERVAL / 1000)}s, ${cleaned.length} chars)`
-              );
+              logger.info(`OpenCode done (stable ${stableCount * 3}s, ${cleaned.length} chars)`);
               doResolve(
                 cleaned.length > MAX_OUTPUT_LENGTH
                   ? cleaned.substring(0, MAX_OUTPUT_LENGTH) + '\n\n… [truncada]'
@@ -175,14 +177,13 @@ function run(agent, prompt, options = {}) {
               );
               return;
             }
-
             if (stableCount >= STABLE_THRESHOLD * 2 && !hasRealContent) {
               doReject(new Error('OpenCode se quedó sin producir output'));
             }
           });
         }, POLL_INTERVAL);
 
-        // Step 4: Hard timeout
+        // Hard timeout
         timeoutId = setTimeout(() => {
           if (resolved) return;
           logger.error(`OpenCode timeout after ${timeout / 1000}s`);

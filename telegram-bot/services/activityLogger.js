@@ -61,7 +61,7 @@ const insertActivity = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-const upsertSession = db.prepare(`
+const _upsertSessionStmt = db.prepare(`
   INSERT INTO telegram_sessions
     (id, chat_id, user_name, agent, message_count, last_activity, status)
   VALUES (
@@ -137,7 +137,7 @@ function logActivity({
  */
 function upsertSession({ chatId, userName, agent, status = 'active' }) {
   try {
-    upsertSession.run(
+    _upsertSessionStmt.run(
       crypto.randomUUID(),
       String(chatId),
       userName || null,
