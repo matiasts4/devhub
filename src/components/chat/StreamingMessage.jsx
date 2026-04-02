@@ -64,7 +64,7 @@ export default function StreamingMessage({ contentRef, model, className = '' }) 
         >
           <ChatMarkdown>{content || ''}</ChatMarkdown>
         </div>
-        {model && <div className="mt-2 text-[10px] text-gray-600 font-mono">{model}</div>}
+        {model && <div className="mt-2 text-xs text-gray-600 font-mono">{model}</div>}
       </div>
     </div>
   );

@@ -470,7 +470,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                   <span className="text-xs font-semibold tracking-tight truncate">
                     {getWorkspaceDisplayLabel(ws.id)}
                   </span>
-                  <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded-full ml-1 font-mono">
+                  <span className="text-[11px] bg-white/10 px-1.5 py-0.5 rounded-full ml-1 font-mono">
                     {totalPanels}
                   </span>
                 </div>
@@ -497,7 +497,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
         <div className="flex items-center h-[36px] px-2 gap-2 pb-1 shrink-0">
           <button
             onClick={() => handleSplit('horizontal')}
-            className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase text-accent-primary hover:bg-accent-primary/10 px-2 py-1.5 rounded-md transition-colors border border-accent-primary/20"
+            className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase text-accent-primary hover:bg-accent-primary/10 px-2 py-1.5 rounded-md transition-colors border border-accent-primary/20 cursor-pointer"
             title="Split Right (Ctrl+Shift+R)"
           >
             <SplitSquareHorizontal className="w-3.5 h-3.5" />
@@ -505,7 +505,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
           </button>
           <button
             onClick={() => handleSplit('vertical')}
-            className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase text-accent-primary hover:bg-accent-primary/10 px-2 py-1.5 rounded-md transition-colors border border-accent-primary/20"
+            className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase text-accent-primary hover:bg-accent-primary/10 px-2 py-1.5 rounded-md transition-colors border border-accent-primary/20 cursor-pointer"
             title="Split Down (Ctrl+Shift+D)"
           >
             <SplitSquareVertical className="w-3.5 h-3.5" />
@@ -535,7 +535,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                     e.stopPropagation();
                     fetchOpenCodeSessions();
                   }}
-                  className="inline-flex items-center gap-1 text-[10px] text-gray-300 hover:text-white"
+                  className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
                 >
                   <RefreshCw
                     className={`w-3 h-3 ${isLoadingOpenCodeSessions ? 'animate-spin' : ''}`}
@@ -578,7 +578,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                       <span className="truncate text-sm font-medium text-white">
                         {session.title || session.id}
                       </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-gray-400">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-xs text-gray-400">
                         <ExternalLink className="w-3 h-3" />
                         Resume
                       </span>
@@ -644,7 +644,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                                   className={`flex items-center gap-1.5 min-w-0 ${isActive ? 'opacity-100' : 'opacity-85'}`}
                                 >
                                   <span
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono border"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-mono border"
                                     style={{
                                       color: isActive ? '#9ec1ff' : '#9aa6bd',
                                       borderColor: isActive ? '#44639a' : '#30405c',
@@ -656,13 +656,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                                   </span>
 
                                   {getAgentFromCommand(panel.initialCommand) && (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border border-[#355787] bg-[#10233d] text-[#6da9ff]">
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-semibold border border-[#355787] bg-[#10233d] text-[#6da9ff]">
                                       <Bot className="w-3 h-3" />
                                       {getAgentFromCommand(panel.initialCommand)}
                                     </span>
                                   )}
 
-                                  <span className="text-[10px] font-mono uppercase text-gray-400 truncate">
+                                  <span className="text-xs font-mono uppercase text-gray-400 truncate">
                                     {getPanelDisplayLabel(ws, panel.id)}
                                   </span>
                                 </div>
@@ -722,7 +722,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                             {pIdx < col.panels.length - 1 && (
                               <PanelResizeHandle className="relative h-3 flex items-center justify-center z-20 cursor-row-resize">
                                 <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-[#2a344a]" />
-                                <div className="h-1 w-10 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors" />
+                                <div className="h-1 w-10 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors cursor-pointer" />
                               </PanelResizeHandle>
                             )}
                           </React.Fragment>
@@ -735,7 +735,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                   {colIdx < ws.columns.length - 1 && (
                     <PanelResizeHandle className="relative w-3 flex items-center justify-center z-20 cursor-col-resize">
                       <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
-                      <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors" />
+                      <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors cursor-pointer" />
                     </PanelResizeHandle>
                   )}
                 </React.Fragment>

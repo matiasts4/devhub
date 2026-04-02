@@ -81,7 +81,7 @@ export default function BannerIA({ project }) {
           <p className="text-[11px] text-[#8957e5] font-semibold uppercase tracking-wider">
             Flujo SDD Completo
           </p>
-          <p className="text-[10px] text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Budget: {docopsBudget.max_tokens_context}/{docopsBudget.max_expansions}/
             {docopsBudget.expansion_step_tokens}
           </p>

@@ -19,7 +19,7 @@ export default function HistorialCommits() {
           <GitCommit className="w-3.5 h-3.5 text-danger" strokeWidth={1.5} />
           <h3 className="font-mono text-sm font-semibold text-text-primary">Historial de Commits</h3>
         </div>
-        <span className="text-[10px] text-text-muted">{commits.length} recientes</span>
+        <span className="text-xs text-text-muted">{commits.length} recientes</span>
       </div>
 
       <div className="divide-y divide-[#21262D]">
@@ -27,7 +27,7 @@ export default function HistorialCommits() {
           <div
             key={commit.hash}
             data-testid={`commit-${commit.hash}`}
-            className="fade-in-up flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors"
+            className="fade-in-up flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors cursor-pointer"
             style={{ animationDelay: `${i * 40}ms` }}
           >
             <div className="flex-shrink-0 mt-0.5">
@@ -39,18 +39,18 @@ export default function HistorialCommits() {
             <div className="flex-1 min-w-0">
               <p className="text-xs text-text-primary truncate leading-snug">{commit.message}</p>
               <div className="flex items-center gap-2 mt-1">
-                <code className="text-[9px] font-mono text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-borders-strong">
+                <code className="text-[11px] font-mono text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-borders-strong">
                   {commit.hash}
                 </code>
-                <span className="flex items-center gap-1 text-[9px]" style={{ color: branchColors[commit.branch] || "#8B949E" }}>
+                <span className="flex items-center gap-1 text-[11px]" style={{ color: branchColors[commit.branch] || "#8B949E" }}>
                   <GitBranch className="w-2.5 h-2.5" strokeWidth={1.5} />
                   {commit.branch}
                 </span>
               </div>
             </div>
             <div className="flex-shrink-0 text-right">
-              <p className="text-[10px] text-text-muted">{commit.author}</p>
-              <p className="text-[9px] text-text-muted">hace {commit.time}</p>
+              <p className="text-xs text-text-muted">{commit.author}</p>
+              <p className="text-[11px] text-text-muted">hace {commit.time}</p>
             </div>
           </div>
         ))}

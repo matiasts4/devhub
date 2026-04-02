@@ -171,13 +171,10 @@ export default function SwarmControl() {
   };
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
-    >
+    <div className="min-h-screen core-page-shell" style={{ color: 'var(--text-primary)' }}>
       {/* Sticky Header */}
       <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
+        className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between core-sticky-header"
         style={{
           background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
           borderColor: 'var(--border-subtle)',
@@ -200,11 +197,11 @@ export default function SwarmControl() {
           <h1 className="font-mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
             Swarm Control
           </h1>
-          <span className="text-[10px] text-text-muted bg-surface-elevated px-2 py-0.5 rounded-full border border-borders-strong">
+          <span className="text-xs text-text-muted bg-surface-elevated px-2 py-0.5 rounded-full border border-borders-strong">
             v2.0
           </span>
           {project?.name && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
               {project.name}
             </span>
           )}
@@ -238,7 +235,7 @@ export default function SwarmControl() {
       <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
         {/* Breadcrumb */}
         <div
-          className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
+          className="rounded-xl px-4 py-2.5 flex items-center gap-2 mb-6 core-toolbar-card"
           style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
         >
           <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
@@ -255,7 +252,7 @@ export default function SwarmControl() {
 
         {/* Stats Cards */}
         <div
-          className="rounded-2xl overflow-hidden fade-in-up"
+          className="rounded-2xl overflow-hidden fade-in-up core-panel"
           style={{
             background: 'var(--surface-card)',
             border: '1px solid var(--border-subtle)',
@@ -295,14 +292,14 @@ export default function SwarmControl() {
           <div className="p-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div
-                className="rounded-xl px-4 py-3"
+                className="rounded-xl px-4 py-3 core-kpi-card"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-subtle)',
                 }}
               >
                 <p
-                  className="text-[10px] uppercase tracking-wider"
+                  className="text-xs uppercase tracking-wider"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Activos
@@ -312,14 +309,14 @@ export default function SwarmControl() {
                 </p>
               </div>
               <div
-                className="rounded-xl px-4 py-3"
+                className="rounded-xl px-4 py-3 core-kpi-card"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-subtle)',
                 }}
               >
                 <p
-                  className="text-[10px] uppercase tracking-wider"
+                  className="text-xs uppercase tracking-wider"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   Heartbeat stale
@@ -334,14 +331,14 @@ export default function SwarmControl() {
                 </p>
               </div>
               <div
-                className="rounded-xl px-4 py-3"
+                className="rounded-xl px-4 py-3 core-kpi-card"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-subtle)',
                 }}
               >
                 <p
-                  className="text-[10px] uppercase tracking-wider"
+                  className="text-xs uppercase tracking-wider"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   En cola
@@ -371,7 +368,7 @@ export default function SwarmControl() {
             </div>
 
             <div
-              className="flex items-center justify-between mt-3 text-[10px]"
+              className="flex items-center justify-between mt-3 text-xs"
               style={{ color: 'var(--text-muted)' }}
             >
               <span>
@@ -390,7 +387,7 @@ export default function SwarmControl() {
           {/* Workers Activos */}
           <div className="lg:col-span-2">
             <div
-              className="rounded-2xl overflow-hidden"
+              className="rounded-2xl overflow-hidden core-panel"
               style={{
                 background: 'var(--surface-card)',
                 border: '1px solid var(--border-subtle)',
@@ -464,16 +461,10 @@ export default function SwarmControl() {
                       return (
                         <div
                           key={agent.agent_id}
-                          className="rounded-xl p-4 transition-all"
+                          className="rounded-xl p-4 transition-all hover:border-[var(--border-strong)]"
                           style={{
                             background: 'var(--surface-muted)',
                             border: '1px solid var(--border-subtle)',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = 'var(--border-strong)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = 'var(--border-subtle)';
                           }}
                         >
                           <div className="flex items-center justify-between mb-3">
@@ -501,21 +492,18 @@ export default function SwarmControl() {
                                   {agent.nombre}
                                 </h3>
                                 <p
-                                  className="text-[10px] font-mono"
+                                  className="text-xs font-mono"
                                   style={{ color: 'var(--text-muted)' }}
                                 >
                                   {agent.agent_id} · {agent.modelo_llm || 'N/A'}
                                 </p>
                                 <div className="mt-1 flex items-center gap-2">
                                   <span
-                                    className={`text-[9px] font-semibold px-2 py-0.5 rounded-md border ${execMeta.tone}`}
+                                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${execMeta.tone}`}
                                   >
                                     {execMeta.label}
                                   </span>
-                                  <span
-                                    className="text-[10px]"
-                                    style={{ color: 'var(--text-muted)' }}
-                                  >
+                                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                     {execMeta.summary}
                                   </span>
                                 </div>
@@ -523,29 +511,17 @@ export default function SwarmControl() {
                             </div>
                             <div className="flex items-center gap-2">
                               <span
-                                className={`text-[10px] font-semibold px-2 py-1 rounded-lg border ${badge.cls}`}
+                                className={`text-xs font-semibold px-2 py-1 rounded-lg border ${badge.cls}`}
                               >
                                 {badge.label}
                               </span>
                               <button
                                 onClick={() => killAgent(agent.agent_id)}
-                                className="p-1.5 rounded-lg transition-colors"
+                                className="p-1.5 rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] hover:text-[var(--danger)] hover:border-[color-mix(in_srgb,var(--danger)_20%,transparent)] cursor-pointer"
                                 style={{
                                   background: 'transparent',
                                   border: '1px solid transparent',
                                   color: 'var(--text-muted)',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background =
-                                    'color-mix(in srgb, var(--danger) 10%, transparent)';
-                                  e.currentTarget.style.color = 'var(--danger)';
-                                  e.currentTarget.style.borderColor =
-                                    'color-mix(in srgb, var(--danger) 20%, transparent)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = 'transparent';
-                                  e.currentTarget.style.color = 'var(--text-muted)';
-                                  e.currentTarget.style.borderColor = 'transparent';
                                 }}
                                 title="Forzar interrupción"
                               >
@@ -561,7 +537,7 @@ export default function SwarmControl() {
                             }}
                           >
                             <p
-                              className="text-[9px] uppercase tracking-wider font-semibold mb-1"
+                              className="text-[11px] uppercase tracking-wider font-semibold mb-1"
                               style={{ color: 'var(--text-muted)' }}
                             >
                               Tarea Actual
@@ -573,7 +549,7 @@ export default function SwarmControl() {
                               {execMeta.summary}
                             </p>
                             <p
-                              className="text-[10px] mt-1 line-clamp-2"
+                              className="text-xs mt-1 line-clamp-2"
                               style={{ color: 'var(--text-muted)' }}
                             >
                               {agent.current_task?.title
@@ -581,7 +557,7 @@ export default function SwarmControl() {
                                 : 'El contexto de lanzamiento se toma del prompt o metadata del spawn.'}
                             </p>
                             <p
-                              className="text-[10px] mt-1 line-clamp-1"
+                              className="text-xs mt-1 line-clamp-1"
                               style={{ color: 'var(--text-muted)' }}
                             >
                               Heartbeat: {agent.last_heartbeat || 'N/A'}
@@ -599,7 +575,7 @@ export default function SwarmControl() {
           {/* Cola de Ejecución */}
           <div>
             <div
-              className="rounded-2xl overflow-hidden"
+              className="rounded-2xl overflow-hidden core-panel"
               style={{
                 background: 'var(--surface-card)',
                 border: '1px solid var(--border-subtle)',
@@ -654,17 +630,11 @@ export default function SwarmControl() {
                     {queue.slice(0, 5).map((task, i) => (
                       <div
                         key={task.id}
-                        className="py-3 flex items-start gap-2.5 transition-colors"
+                        className="py-3 flex items-start gap-2.5 transition-colors hover:bg-surface-elevated cursor-pointer"
                         style={{ color: 'var(--text-primary)' }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--surface-elevated)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent';
-                        }}
                       >
                         <span
-                          className="text-[10px] font-mono mt-0.5 w-4 shrink-0"
+                          className="text-xs font-mono mt-0.5 w-4 shrink-0"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           {i + 1}
@@ -677,7 +647,7 @@ export default function SwarmControl() {
                             {task.title}
                           </p>
                           <p
-                            className="text-[10px] mt-0.5 capitalize"
+                            className="text-xs mt-0.5 capitalize"
                             style={{ color: 'var(--text-muted)' }}
                           >
                             {task.priority}
@@ -687,7 +657,7 @@ export default function SwarmControl() {
                     ))}
                     {queue.length > 5 && (
                       <div
-                        className="py-2.5 text-center text-[10px]"
+                        className="py-2.5 text-center text-xs"
                         style={{ color: 'var(--text-muted)' }}
                       >
                         +{queue.length - 5} más en cola
@@ -703,7 +673,7 @@ export default function SwarmControl() {
         {/* Historial de Ejecuciones */}
         <div className="mt-6 fade-in-up">
           <div
-            className="rounded-2xl overflow-hidden"
+            className="rounded-2xl overflow-hidden core-panel"
             style={{
               background: 'var(--surface-card)',
               border: '1px solid var(--border-subtle)',
@@ -747,7 +717,7 @@ export default function SwarmControl() {
                     {['Tarea', 'Estado Final', 'Reintentos QA', 'Última Actividad'].map((h) => (
                       <th
                         key={h}
-                        className="px-6 py-3 text-[9px] uppercase tracking-wider font-semibold"
+                        className="px-6 py-3 text-[11px] uppercase tracking-wider font-semibold"
                         style={{ color: 'var(--text-muted)' }}
                       >
                         {h}
@@ -770,14 +740,8 @@ export default function SwarmControl() {
                     history.map((th) => (
                       <tr
                         key={th.id}
-                        className="border-b transition-colors last:border-0"
+                        className="border-b transition-colors hover:bg-surface-elevated last:border-0 cursor-pointer"
                         style={{ borderColor: 'var(--border-subtle)' }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--surface-elevated)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent';
-                        }}
                       >
                         <td
                           className="px-6 py-3 font-medium text-xs"

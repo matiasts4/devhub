@@ -32,6 +32,7 @@ import {
   Palette,
   Zap,
   Monitor,
+  Database,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/db/localSupabase';
@@ -72,6 +73,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 
@@ -79,28 +82,28 @@ const formatMessage = (content) => {
   // 1. Tags Completos
   let formatted = content.replace(
     /<execute_opencode agent="([^"]+)">(.*?)<\/execute_opencode>/gis,
-    '\n\n> 🚀 **Dispatching Sub-Agent**: `$1`\n> \n> **Instructions:** $2\n\n'
+    '\n\n> **▶ Dispatching Sub-Agent**: `$1`\n> \n> **Instructions:** $2\n\n'
   );
 
   formatted = formatted.replace(
     /<execute_engram tool="([^"]+)" args='(.*?)'><\/execute_engram>/gis,
-    '\n\n> 🧠 **Accediendo a Memoria (Engram MCP)**\n> \n> **Herramienta:** `$1`\n> **Argumentos:** `$2`\n\n'
+    '\n\n> **◈ Accediendo a Memoria (Engram MCP)**\n> \n> **Herramienta:** `$1`\n> **Argumentos:** `$2`\n\n'
   );
 
   // 2. Tags Parciales (mientras la IA está escribiendo/Streaming)
   formatted = formatted.replace(
     /<execute_opencode agent="([^"]+)">(.*?)$/gis,
-    '\n\n> ⏳ *Preparando Sub-Agente...*\n> \n> **Agente:** `$1`\n> **Instrucciones:** $2\n\n'
+    '\n\n> *Preparando Sub-Agente...*\n> \n> **Agente:** `$1`\n> **Instrucciones:** $2\n\n'
   );
 
   formatted = formatted.replace(
     /<execute_engram tool="([^"]*)"?.*?$/gis,
-    '\n\n> ⏳ *Engram MCP contactando...*\n> \n> **Herramienta:** `$1`\n\n'
+    '\n\n> *Engram MCP contactando...*\n> \n> **Herramienta:** `$1`\n\n'
   );
 
   formatted = formatted.replace(
     /<execute_(opencode|engram).*?$/gis,
-    '\n\n> ⏳ *Generando ejecución de sub-sistema...*\n\n'
+    '\n\n> *Generando ejecución de sub-sistema...*\n\n'
   );
 
   return formatted;
@@ -122,9 +125,16 @@ export default function AgentHub() {
   const streamingContentRef = useRef('');
   const [streamingModel, setStreamingModel] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [sessionUsage, setSessionUsage] = useState({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
+  const [isCompressing, setIsCompressing] = useState(false);
 
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+
+  const [llmConfig, setLlmConfig] = useState(null);
+  const [activeProviderName, setActiveProviderName] = useState(null);
+  const [activeModelOverride, setActiveModelOverride] = useState('');
+  const [favoriteModels, setFavoriteModels] = useState([]);
   const [slashFilter, setSlashFilter] = useState(''); // filter text after /
 
   const messagesEndRef = useRef(null);
@@ -135,8 +145,51 @@ export default function AgentHub() {
   useEffect(() => {
     if (project?.id) {
       loadSessions();
+      loadLlmConfig();
     }
   }, [project?.id]);
+
+  const loadLlmConfig = async () => {
+    try {
+      const res = await fetch('/api/settings/llm-providers');
+      if (res.ok) {
+        const config = await res.json();
+        setLlmConfig(config);
+
+        let provider = null;
+        for (const p of config.priorityOrder || []) {
+          const pc = config.providers?.[p];
+          if (p === 'openrouter' && pc?.OPENROUTER_API_KEY) {
+            provider = p;
+            break;
+          }
+          if (p === 'copilot' && pc?.COPILOT_OAUTH_TOKEN) {
+            provider = p;
+            break;
+          }
+          if (p === 'direct' && pc?.LLM_BASE_URL) {
+            provider = p;
+            break;
+          }
+        }
+
+        setActiveProviderName(provider);
+
+        if (provider && config.favoriteModels) {
+          const pFavs = Object.keys(config.favoriteModels)
+            .filter((k) => k.startsWith(provider + '.') && config.favoriteModels[k])
+            .map((k) => k.replace(provider + '.', ''));
+          setFavoriteModels(pFavs);
+
+          if (pFavs.length > 0) {
+            // Set default override if you wish
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load LLM config', e);
+    }
+  };
 
   const loadSessions = async () => {
     const { data } = await supabase
@@ -298,6 +351,38 @@ export default function AgentHub() {
     await processLLM([...messages, userMessage], currentSessionId);
   };
 
+  const handleCompressContext = async () => {
+    if (!currentSessionId || isCompressing || messages.length <= 3) return;
+
+    setIsCompressing(true);
+    const toastId = toast.loading('Comprimiendo espacio de contexto...');
+
+    try {
+      const res = await fetch('/api/agenthub/compress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: currentSessionId,
+          project_id: project?.id,
+          model: activeModelOverride || 'gpt-4o-mini',
+          keep_last_n: 3
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Error comprimiendo');
+      }
+
+      await loadMessages(currentSessionId);
+      toast.success('Contexto comprimido exitosamente', { id: toastId });
+    } catch (e) {
+      toast.error(`Error de compresión: ${e.message}`, { id: toastId });
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
   const processLLM = async (chatMessages, sessionId) => {
     try {
       const res = await fetch('/api/agenthub/chat', {
@@ -306,6 +391,7 @@ export default function AgentHub() {
         body: JSON.stringify({
           project_id: project.id,
           projectName: project.name,
+          modelOverride: activeModelOverride || undefined,
           messages: chatMessages.map((m) => ({ role: m.role, content: m.content })),
         }),
       });
@@ -347,6 +433,8 @@ export default function AgentHub() {
               setStreamingModel(activeModel);
             } else if (parsed.type === 'error') {
               throw new Error(parsed.error);
+            } else if (parsed.type === 'usage') {
+              setSessionUsage(parsed.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
             } else if (parsed.type === 'chunk') {
               activeMessage += parsed.content;
               // KEY OPTIMIZATION: Update ref only — NO state change, NO re-render of message list
@@ -534,7 +622,7 @@ export default function AgentHub() {
   return (
     <div className="flex flex-col h-full bg-[#090c13] text-gray-200 overflow-hidden">
       {/* Elegante Header con Sesiones en Dropdown */}
-      <div className="flex-shrink-0 h-[50px] px-5 border-b border-[#2a3441] flex items-center justify-between bg-[#111825]">
+      <div className="flex-shrink-0 h-[50px] px-5 border-b border-[#1a2333] flex items-center justify-between bg-[#090c13]">
         <div className="flex items-center gap-4">
           <div className="w-8 h-8 rounded-lg bg-[#5b8cff]/10 border border-[#5b8cff]/30 flex items-center justify-center">
             <Brain className="w-4 h-4 text-[#5b8cff]" />
@@ -543,13 +631,36 @@ export default function AgentHub() {
             <h1 className="text-sm font-bold font-mono text-gray-100 uppercase tracking-wide">
               Agent Hub
             </h1>
-            <p className="text-[10px] text-gray-400 font-sans tracking-wider uppercase">
+            <p className="text-xs text-gray-400 font-sans tracking-wider uppercase">
               Orquestador SDD
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Token Metrics Widget */}
+          {sessionUsage.total_tokens > 0 && (
+            <div className="hidden md:flex items-center gap-2 px-3 h-8 bg-[#182234] border border-[#2a3441] rounded-md text-xs font-mono text-gray-300" title="Tokens Acumulados de la Sesión">
+               <Database className="w-3.5 h-3.5 text-[#5b8cff]" />
+               <span>{(sessionUsage.total_tokens / 1000).toFixed(1)}k</span>
+               {activeProviderName === 'copilot' && (
+                 <span className="text-gray-500 text-[10px] ml-1 uppercase pl-2 border-l border-[#2a3441]">Copilot</span>
+               )}
+            </div>
+          )}
+
+          <Button
+            onClick={handleCompressContext}
+            disabled={!currentSessionId || isCompressing || messages.length <= 3}
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-xs bg-[#182234] border border-[#2a3441] hover:bg-[#2a364a] hover:text-red-400 disabled:opacity-30"
+            title="Comprimir Contexto Atómico (Libera tokens resumiendo la historia antigua)"
+          >
+            {isCompressing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" /> : <Archive className="w-3.5 h-3.5 text-red-400" />}
+            <span className="hidden sm:inline">Comprimir</span>
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -586,7 +697,7 @@ export default function AgentHub() {
                     >
                       <div className="flex flex-col min-w-0">
                         <span className="text-sm font-medium truncate">{s.title}</span>
-                        <span className="text-[10px] opacity-60">
+                        <span className="text-xs opacity-60">
                           {new Date(s.updated_at).toLocaleDateString()}
                         </span>
                       </div>
@@ -625,7 +736,7 @@ export default function AgentHub() {
       <div
         className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth"
         style={{
-          backgroundImage: 'radial-gradient(circle at center, #1b2538 0%, transparent 80%)',
+          backgroundImage: 'radial-gradient(circle at center, #0e1219 0%, transparent 80%)',
         }}
       >
         <div className="max-w-4xl mx-auto space-y-8 pb-4">
@@ -650,7 +761,7 @@ export default function AgentHub() {
                   <button
                     key={i}
                     onClick={() => setPrompt(sc.cmd)}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-mono font-medium rounded-full bg-[#182234] border border-[#2a3441] text-gray-300 hover:text-white hover:border-[#5b8cff]/50 transition-colors shadow-sm"
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-mono font-medium rounded-full bg-[#182234] border border-[#2a3441] text-gray-300 hover:text-white hover:border-[#5b8cff]/50 transition-colors shadow-sm cursor-pointer"
                   >
                     <TerminalSquare className="w-3.5 h-3.5 text-[#5b8cff]" />
                     {sc.cmd}
@@ -799,11 +910,11 @@ export default function AgentHub() {
                   <div className="absolute bottom-full left-4 mb-2 w-[420px] bg-[#1a2333] border border-[#2a3441] rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
                     {/* Header */}
                     <div className="px-4 py-2.5 bg-[#111825] border-b border-[#2a3441] flex items-center justify-between">
-                      <span className="text-[10px] font-bold tracking-wider text-gray-500 uppercase">
+                      <span className="text-xs font-bold tracking-wider text-gray-500 uppercase">
                         Comandos
                       </span>
                       {slashFilter && (
-                        <span className="text-[10px] text-[#5b8cff] font-mono">
+                        <span className="text-xs text-[#5b8cff] font-mono">
                           {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
                         </span>
                       )}
@@ -822,7 +933,7 @@ export default function AgentHub() {
                             // Category header
                             <div
                               key={`cat-${cat}`}
-                              className="px-3 py-1.5 text-[9px] font-bold tracking-widest text-gray-600 uppercase bg-[#151d2b] border-y border-[#2a3441]/50 mt-1 first:mt-0"
+                              className="px-3 py-1.5 text-[11px] font-bold tracking-widest text-gray-600 uppercase bg-[#151d2b] border-y border-[#2a3441]/50 mt-1 first:mt-0"
                             >
                               {cat === 'SDD'
                                 ? 'Spec-Driven Development'
@@ -860,12 +971,12 @@ export default function AgentHub() {
                                         >
                                           {opt.cmd}
                                         </span>
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#253147] text-gray-500 font-mono">
+                                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#253147] text-gray-500 font-mono">
                                           {opt.category}
                                         </span>
                                       </div>
                                       <p
-                                        className={`text-[10px] mt-0.5 leading-relaxed ${
+                                        className={`text-xs mt-0.5 leading-relaxed ${
                                           isSelected ? 'text-blue-200/70' : 'text-gray-500'
                                         }`}
                                       >
@@ -882,19 +993,19 @@ export default function AgentHub() {
 
                     {/* Footer hint */}
                     <div className="px-3 py-1.5 bg-[#111825] border-t border-[#2a3441] flex items-center gap-3">
-                      <span className="text-[9px] text-gray-600">
+                      <span className="text-[11px] text-gray-600">
                         <kbd className="px-1 py-0.5 bg-[#1e2a3f] rounded text-gray-500 font-mono">
                           ↑↓
                         </kbd>{' '}
                         navegar
                       </span>
-                      <span className="text-[9px] text-gray-600">
+                      <span className="text-[11px] text-gray-600">
                         <kbd className="px-1 py-0.5 bg-[#1e2a3f] rounded text-gray-500 font-mono">
                           Enter
                         </kbd>{' '}
                         seleccionar
                       </span>
-                      <span className="text-[9px] text-gray-600">
+                      <span className="text-[11px] text-gray-600">
                         <kbd className="px-1 py-0.5 bg-[#1e2a3f] rounded text-gray-500 font-mono">
                           Esc
                         </kbd>{' '}
@@ -908,17 +1019,58 @@ export default function AgentHub() {
             <div className="flex justify-between items-center px-4 pb-3 pt-1">
               <div className="flex items-center gap-3">
                 <button
-                  className="p-1.5 text-gray-500 hover:text-white bg-[#1e2a3f] rounded-lg transition-colors"
+                  className="p-1.5 text-gray-500 hover:text-white bg-[#1e2a3f] rounded-lg transition-colors cursor-pointer"
                   title="Adjuntar Contexto"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
                 <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded bg-[#182234] border border-[#2a3441]">
                   <Slash className="w-3 h-3 text-[#5b8cff]" />
-                  <span className="text-[10px] text-gray-400 font-mono font-bold tracking-tight uppercase">
+                  <span className="text-xs text-gray-400 font-mono font-bold tracking-tight uppercase">
                     Agent Teams Lite
                   </span>
                 </div>
+
+                {favoriteModels.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#182234] hover:bg-[#1e2a3f] border border-[#2a3441] transition-colors text-xs text-gray-300 font-medium">
+                        <Cpu className="w-3.5 h-3.5 text-amber-500" />
+                        {activeModelOverride || '🌐 Default Provider Model'}
+                        <ChevronDown className="w-3 h-3 opacity-50 ml-1" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="bg-[#111825] border-[#2a3441] text-gray-200 w-[200px]"
+                    >
+                      <DropdownMenuLabel className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+                        Modelos Favoritos ({activeProviderName})
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator className="bg-[#2a3441]" />
+                      <DropdownMenuRadioGroup
+                        value={activeModelOverride}
+                        onValueChange={setActiveModelOverride}
+                      >
+                        <DropdownMenuRadioItem
+                          value=""
+                          className="text-sm cursor-pointer hover:bg-[#1e2a3f] focus:bg-[#1e2a3f]"
+                        >
+                          Configuración Mágica
+                        </DropdownMenuRadioItem>
+                        {favoriteModels.map((mId) => (
+                          <DropdownMenuRadioItem
+                            key={mId}
+                            value={mId}
+                            className="text-sm cursor-pointer hover:bg-[#1e2a3f] focus:bg-[#1e2a3f]"
+                          >
+                            {mId}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
 
               <button

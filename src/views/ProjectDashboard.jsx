@@ -12,6 +12,7 @@ import {
   CalendarClock,
   Hash,
   LayoutDashboard,
+  Trophy,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localSupabase';
 import BannerIA from '../components/BannerIA';
@@ -106,14 +107,13 @@ export default function ProjectDashboard() {
 
   return (
     <div
-      className="min-h-screen"
+      className="min-h-screen core-page-shell"
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
       {/* Sticky header */}
       <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
+        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
         style={{
-          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
           borderColor: 'var(--border-subtle)',
         }}
       >
@@ -127,14 +127,14 @@ export default function ProjectDashboard() {
             Dashboard
           </h1>
           {project?.name && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
               {project.name}
             </span>
           )}
         </div>
         <button
           onClick={() => navigate(`/project/${project?.id}/tareas`)}
-          className="flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg text-xs transition-colors active:scale-95"
+          className="flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg text-xs transition-colors active:scale-95 cursor-pointer"
           style={{ background: 'var(--success)', color: 'white' }}
         >
           <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
@@ -142,7 +142,7 @@ export default function ProjectDashboard() {
         </button>
       </div>
 
-      <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
+      <div className="px-6 py-6 w-full max-w-[1280px] mx-auto">
         {/* Breadcrumb */}
         <div
           className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
@@ -172,11 +172,11 @@ export default function ProjectDashboard() {
 
           {/* Stats cards */}
           <div
-            className="rounded-2xl overflow-hidden"
+            className="rounded-2xl overflow-hidden reveal-on-scroll"
             style={{
               background: 'var(--surface-card)',
               border: '1px solid var(--border-subtle)',
-              boxShadow: 'var(--shadow-soft)',
+              boxShadow: '0 14px 36px rgba(0,0,0,0.22)',
             }}
           >
             <div
@@ -203,20 +203,23 @@ export default function ProjectDashboard() {
             </div>
 
             <div className="p-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 stagger-children">
                 {stats.map((stat, i) => {
                   const Icon = stat.icon;
                   return (
                     <div
                       key={i}
-                      className="rounded-xl px-4 py-3 flex items-center justify-between"
+                      className="rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 hover:-translate-y-0.5"
                       style={{
-                        background: 'var(--surface-muted)',
-                        border: '1px solid var(--border-subtle)',
+                        background:
+                          'linear-gradient(135deg, color-mix(in srgb, var(--surface-muted) 88%, transparent), color-mix(in srgb, var(--surface-card) 90%, transparent))',
+                        border:
+                          '1px solid color-mix(in srgb, var(--border-subtle) 86%, transparent)',
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03)',
                       }}
                     >
                       <div>
-                        <p className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>
+                        <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>
                           {stat.label}
                         </p>
                         <p className="font-mono text-xl font-bold" style={{ color: stat.color }}>
@@ -243,19 +246,23 @@ export default function ProjectDashboard() {
                   </span>
                 </div>
                 <div
-                  className="h-[4px] rounded-full overflow-hidden"
-                  style={{ background: 'var(--surface-elevated)' }}
+                  className="h-2 rounded-full overflow-hidden"
+                  style={{
+                    background:
+                      'linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, black), color-mix(in srgb, var(--surface-muted) 88%, black))',
+                  }}
                 >
                   <div
                     className="h-full rounded-full transition-all duration-1000"
                     style={{
                       width: `${compPct}%`,
-                      background: `linear-gradient(90deg, ${accentColor}, #3FB950)`,
+                      background: `linear-gradient(90deg, ${accentColor}, color-mix(in srgb, ${accentColor} 55%, #3FB950), #3FB950)`,
+                      boxShadow: `0 0 12px color-mix(in srgb, ${accentColor} 55%, transparent)`,
                     }}
                   />
                 </div>
                 <div
-                  className="flex justify-between text-[10px] mt-2"
+                  className="flex justify-between text-xs mt-2"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <span>{completed} completadas</span>
@@ -266,14 +273,14 @@ export default function ProjectDashboard() {
           </div>
 
           {/* Next milestone + Delivery Prediction */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 stagger-children">
             {/* Next milestone */}
             <div
-              className="rounded-2xl overflow-hidden"
+              className="rounded-2xl overflow-hidden reveal-on-scroll"
               style={{
                 background: 'var(--surface-card)',
                 border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-soft)',
+                boxShadow: '0 12px 30px rgba(0,0,0,0.2)',
               }}
             >
               <div
@@ -318,7 +325,7 @@ export default function ProjectDashboard() {
                     )}
                     {nextMilestone.due_date && (
                       <span
-                        className="text-[10px] flex items-center gap-1"
+                        className="text-xs flex items-center gap-1"
                         style={{ color: '#E3B341' }}
                       >
                         <Clock className="w-3 h-3" />
@@ -341,8 +348,11 @@ export default function ProjectDashboard() {
                     </button>
                   </p>
                 ) : (
-                  <p className="text-xs" style={{ color: 'var(--success)' }}>
-                    🎉 ¡Todos los hitos completados!
+                  <p
+                    className="text-xs flex items-center gap-1.5"
+                    style={{ color: 'var(--success)' }}
+                  >
+                    <Trophy className="w-3.5 h-3.5 text-yellow-400" /> ¡Todos los hitos completados!
                   </p>
                 )}
               </div>
@@ -350,11 +360,11 @@ export default function ProjectDashboard() {
 
             {/* Delivery Prediction AI Card */}
             <div
-              className="rounded-2xl overflow-hidden relative"
+              className="rounded-2xl overflow-hidden relative reveal-on-scroll"
               style={{
                 background: 'var(--surface-card)',
                 border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-soft)',
+                boxShadow: '0 12px 30px rgba(0,0,0,0.2)',
               }}
             >
               <div
@@ -388,7 +398,7 @@ export default function ProjectDashboard() {
                   </p>
                 </div>
                 <span
-                  className="text-[10px] uppercase tracking-[0.12em] px-2 py-0.5 rounded-full border"
+                  className="text-xs uppercase tracking-[0.12em] px-2 py-0.5 rounded-full border"
                   style={{
                     borderColor: 'var(--border-strong)',
                     color: 'var(--text-muted)',
@@ -425,7 +435,7 @@ export default function ProjectDashboard() {
                     </div>
 
                     <div
-                      className="pt-2 mt-2 flex justify-between text-[10px]"
+                      className="pt-2 mt-2 flex justify-between text-xs"
                       style={{ borderTop: '1px solid var(--border-subtle)' }}
                     >
                       <span style={{ color: 'var(--text-muted)' }}>
@@ -445,14 +455,14 @@ export default function ProjectDashboard() {
           </div>
 
           {/* Upcoming tasks + Chat */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 reveal-on-scroll">
             {/* Upcoming tasks */}
             <div
               className="lg:col-span-2 rounded-2xl overflow-hidden"
               style={{
                 background: 'var(--surface-card)',
                 border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-soft)',
+                boxShadow: '0 12px 30px rgba(0,0,0,0.2)',
               }}
             >
               <div
@@ -483,10 +493,8 @@ export default function ProjectDashboard() {
                 </div>
                 <button
                   onClick={() => navigate(`/project/${project?.id}/tareas`)}
-                  className="text-[10px] transition-colors"
+                  className="text-xs transition-colors hover:text-[var(--text-primary)] cursor-pointer"
                   style={{ color: 'var(--text-muted)' }}
-                  onMouseEnter={(e) => (e.target.style.color = 'var(--text-primary)')}
-                  onMouseLeave={(e) => (e.target.style.color = 'var(--text-muted)')}
                 >
                   Ver todas →
                 </button>
@@ -503,12 +511,8 @@ export default function ProjectDashboard() {
                     return (
                       <div
                         key={task.id}
-                        className="flex items-center gap-4 px-6 py-3 transition-colors"
+                        className="flex items-center gap-4 px-6 py-3 transition-colors hover:bg-surface-elevated cursor-pointer"
                         style={{ background: 'transparent' }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.background = 'var(--surface-elevated)')
-                        }
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                       >
                         <div className="flex-1 min-w-0">
                           <p
@@ -518,10 +522,16 @@ export default function ProjectDashboard() {
                             {task.title}
                           </p>
                           <p
-                            className="text-[10px] mt-0.5"
+                            className="text-xs mt-0.5"
                             style={{ color: isOverdue ? 'var(--danger)' : 'var(--text-muted)' }}
                           >
-                            {isOverdue ? '⚠ Vencida: ' : ''}
+                            {isOverdue ? (
+                              <span className="inline-flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" /> Vencida:
+                              </span>
+                            ) : (
+                              ''
+                            )}
                             {new Date(task.due_date).toLocaleDateString('es-ES', {
                               day: '2-digit',
                               month: 'short',
@@ -529,7 +539,7 @@ export default function ProjectDashboard() {
                           </p>
                         </div>
                         <span
-                          className="text-[9px] px-2 py-0.5 rounded-full font-medium"
+                          className="text-[11px] px-2 py-0.5 rounded-full font-medium"
                           style={{
                             background:
                               task.priority === 'critical'

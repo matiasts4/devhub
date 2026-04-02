@@ -154,13 +154,13 @@ export default function TelegramMonitor() {
           <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
             Telegram Bot Monitor
           </h1>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
             {project?.name || 'Proyecto'}
           </span>
         </div>
         <button
           onClick={() => fetchTelegram({ soft: true })}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors hover:bg-surface-card"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors hover:bg-surface-card cursor-pointer"
           style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
         >
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} strokeWidth={1.8} />
@@ -171,7 +171,7 @@ export default function TelegramMonitor() {
       <div className="px-6 py-6 w-full max-w-[1300px] mx-auto space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <p className="text-[10px] uppercase tracking-[0.12em] text-text-muted mb-1">Conectividad</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Conectividad</p>
             <div className="flex items-center gap-2">
               {status?.bot_connected ? (
                 <Wifi className="w-4 h-4 text-success" strokeWidth={1.8} />
@@ -185,17 +185,17 @@ export default function TelegramMonitor() {
           </div>
 
           <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <p className="text-[10px] uppercase tracking-[0.12em] text-text-muted mb-1">Chats activos</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Chats activos</p>
             <p className="font-mono text-2xl font-bold text-text-primary">{status?.active_chats ?? 0}</p>
           </div>
 
           <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <p className="text-[10px] uppercase tracking-[0.12em] text-text-muted mb-1">Sesiones totales</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Sesiones totales</p>
             <p className="font-mono text-2xl font-bold text-text-primary">{status?.total_sessions ?? 0}</p>
           </div>
 
           <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <p className="text-[10px] uppercase tracking-[0.12em] text-text-muted mb-1">Errores recientes</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Errores recientes</p>
             <p className="font-mono text-2xl font-bold text-[#F85149]">{status?.recent_errors ?? 0}</p>
           </div>
         </div>
@@ -229,7 +229,7 @@ export default function TelegramMonitor() {
                   className="px-2 py-1 rounded-lg border text-center"
                   style={{ borderColor: 'var(--border-subtle)' }}
                 >
-                  <p className="text-[9px] text-text-muted">{evt}</p>
+                  <p className="text-[11px] text-text-muted">{evt}</p>
                   <p className="text-xs font-semibold text-text-primary">{eventCounters[evt] || 0}</p>
                 </div>
               ))}
@@ -238,7 +238,7 @@ export default function TelegramMonitor() {
 
           <div className="px-6 py-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="text-[10px] uppercase tracking-[0.12em] text-text-muted">Filtros</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-text-muted">Filtros</span>
 
               <select
                 value={eventFilter}
@@ -283,7 +283,7 @@ export default function TelegramMonitor() {
                     setDirectionFilter('');
                     setToolFilter('');
                   }}
-                  className="text-[10px] text-text-muted hover:text-text-primary transition-colors"
+                  className="text-xs text-text-muted hover:text-text-primary transition-colors cursor-pointer"
                 >
                   Limpiar filtros
                 </button>
@@ -322,7 +322,7 @@ export default function TelegramMonitor() {
                             {item.command ? `/${item.command}` : item.event_type}
                             {item.content_preview ? ` — ${item.content_preview}` : ''}
                           </p>
-                          <p className="text-[10px] text-text-muted mt-0.5">
+                          <p className="text-xs text-text-muted mt-0.5">
                             {timeAgo(item.created_at)} · {item.direction || 'n/a'} · source: {item.source || 'telegram'}
                           </p>
                         </div>
@@ -330,13 +330,13 @@ export default function TelegramMonitor() {
 
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
                         <span
-                          className="text-[9px] px-1.5 py-0.5 rounded-full border"
+                          className="text-[11px] px-1.5 py-0.5 rounded-full border"
                           style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}
                         >
                           {item.inferred_tool_type}
                         </span>
                         <span
-                          className="text-[9px] px-1.5 py-0.5 rounded-full border"
+                          className="text-[11px] px-1.5 py-0.5 rounded-full border"
                           style={{
                             borderColor:
                               item.status === 'error' ? 'rgba(248, 81, 73, 0.35)' : 'rgba(63, 185, 80, 0.35)',

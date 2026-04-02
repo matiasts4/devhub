@@ -65,10 +65,9 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
           </h2>
           <button
             onClick={onClose}
-            className="transition-colors"
+            aria-label="Cerrar modal"
+            className="cursor-pointer transition-colors hover:text-[var(--text-primary)]"
             style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -83,7 +82,7 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
               value={form.title}
               onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
               placeholder="Nombre del hito o fase..."
-              className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
+              className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors cursor-pointer"
               style={{
                 background: 'var(--surface-muted)',
                 border: '1px solid var(--border-strong)',
@@ -100,7 +99,7 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
               value={form.description}
               onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
               placeholder="¿Qué se entregará en este hito?"
-              className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors resize-none"
+              className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
               style={{
                 background: 'var(--surface-muted)',
                 border: '1px solid var(--border-strong)',
@@ -144,28 +143,22 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 rounded-lg text-sm transition-all"
+              className="flex-1 py-2 rounded-lg text-sm transition-all hover:text-[var(--text-primary)] cursor-pointer"
               style={{
                 border: '1px solid var(--border-strong)',
                 color: 'var(--text-muted)',
                 background: 'var(--surface-muted)',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+              className="flex-1 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all hover:brightness-110 cursor-pointer"
               style={{
                 background: 'linear-gradient(135deg, #E3B341, #F59E0B)',
               }}
-              onMouseEnter={(e) => {
-                if (!saving) e.currentTarget.style.filter = 'brightness(1.1)';
-              }}
-              onMouseLeave={(e) => (e.currentTarget.style.filter = '')}
             >
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Crear Hito
@@ -186,17 +179,20 @@ export default function Roadmap() {
   const userId = 'local-user';
   const [showModal, setShowModal] = useState(false);
 
-  const fetchMilestones = useCallback(async ({ silent = false } = {}) => {
-    if (!project?.id) return;
-    if (!silent) setLoading(true);
-    const { data } = await supabase
-      .from('milestones')
-      .select('*')
-      .eq('project_id', project.id)
-      .order('due_date', { ascending: true, nullsFirst: false });
-    setMilestones(data || []);
-    if (!silent) setLoading(false);
-  }, [project?.id]);
+  const fetchMilestones = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!project?.id) return;
+      if (!silent) setLoading(true);
+      const { data } = await supabase
+        .from('milestones')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('due_date', { ascending: true, nullsFirst: false });
+      setMilestones(data || []);
+      if (!silent) setLoading(false);
+    },
+    [project?.id]
+  );
 
   useEffect(() => {
     fetchMilestones();
@@ -235,7 +231,7 @@ export default function Roadmap() {
     setMilestones((prev) =>
       prev.map((m) => (m.id === milestone.id ? { ...m, status: newStatus } : m))
     );
-    toast.success(newStatus === 'completed' ? 'Hito completado 🎉' : 'Hito reabierto');
+    toast.success(newStatus === 'completed' ? 'Hito completado' : 'Hito reabierto');
   }
 
   async function deleteMilestone(id) {
@@ -251,14 +247,13 @@ export default function Roadmap() {
 
   return (
     <div
-      className="min-h-screen"
+      className="min-h-screen core-page-shell"
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
       {/* Sticky header */}
       <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
+        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
         style={{
-          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
           borderColor: 'var(--border-subtle)',
         }}
       >
@@ -273,7 +268,7 @@ export default function Roadmap() {
           </h1>
           {project?.name && (
             <span
-              className="text-[10px] px-2 py-0.5 rounded-full"
+              className="text-xs px-2 py-0.5 rounded-full"
               style={{
                 background: 'var(--surface-elevated)',
                 border: '1px solid var(--border-strong)',
@@ -286,20 +281,11 @@ export default function Roadmap() {
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg transition-all"
+          className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg transition-all hover:text-[var(--text-primary)] hover:border-[color-mix(in_srgb,var(--accent-primary)_40%,transparent)] cursor-pointer"
           style={{
             background: 'var(--surface-elevated)',
             border: '1px solid var(--border-strong)',
             color: 'var(--text-muted)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--text-primary)';
-            e.currentTarget.style.borderColor =
-              'color-mix(in srgb, var(--accent-primary) 40%, transparent)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--text-muted)';
-            e.currentTarget.style.borderColor = 'var(--border-strong)';
           }}
         >
           <Plus
@@ -389,7 +375,7 @@ export default function Roadmap() {
               />
             </div>
             <div
-              className="flex justify-between mt-2 text-[10px]"
+              className="flex justify-between mt-2 text-xs"
               style={{ color: 'var(--text-muted)' }}
             >
               <span>{completed} completados</span>
@@ -441,10 +427,8 @@ export default function Roadmap() {
               </p>
               <button
                 onClick={() => setShowModal(true)}
-                className="text-xs underline underline-offset-2 transition-colors"
+                className="text-xs underline underline-offset-2 transition-colors cursor-pointer"
                 style={{ color: 'var(--accent-primary)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.2)')}
-                onMouseLeave={(e) => (e.currentTarget.style.filter = '')}
               >
                 + Añadir el primer hito
               </button>
@@ -495,17 +479,11 @@ export default function Roadmap() {
 
                     {/* Milestone card */}
                     <div
-                      className="rounded-2xl overflow-hidden transition-all"
+                      className="rounded-2xl overflow-hidden transition-all hover:bg-surface-elevated"
                       style={{
                         background: 'var(--surface-card)',
                         border: `1px solid ${isOverdue ? 'color-mix(in srgb, var(--danger) 25%, transparent)' : 'var(--border-subtle)'}`,
                         boxShadow: 'var(--shadow-soft)',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--surface-elevated)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'var(--surface-card)';
                       }}
                     >
                       {/* Card header */}
@@ -539,7 +517,7 @@ export default function Roadmap() {
                             </h3>
                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                               <span
-                                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                                className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full"
                                 style={{
                                   color: cfg.color,
                                   background: `${cfg.color}15`,
@@ -550,7 +528,7 @@ export default function Roadmap() {
                               </span>
                               {isOverdue && (
                                 <span
-                                  className="text-[9px] flex items-center gap-1"
+                                  className="text-[11px] flex items-center gap-1"
                                   style={{ color: 'var(--danger)' }}
                                 >
                                   <AlertTriangle className="w-2.5 h-2.5" />
@@ -563,32 +541,19 @@ export default function Roadmap() {
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => toggleComplete(ms)}
-                            className="text-[10px] px-2 py-0.5 rounded-full transition-colors"
+                            className="text-xs px-2 py-0.5 rounded-full transition-colors hover:text-[var(--text-primary)] hover:border-[color-mix(in_srgb,#3FB950_40%,transparent)] cursor-pointer"
                             style={{
                               border: '1px solid var(--border-strong)',
                               background: 'var(--surface-muted)',
                               color: 'var(--text-muted)',
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.color = 'var(--text-primary)';
-                              e.currentTarget.style.borderColor =
-                                'color-mix(in srgb, #3FB950 40%, transparent)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.color = 'var(--text-muted)';
-                              e.currentTarget.style.borderColor = 'var(--border-strong)';
                             }}
                           >
                             {ms.status === 'completed' ? 'Reabrir' : 'Completar'}
                           </button>
                           <button
                             onClick={() => deleteMilestone(ms.id)}
-                            className="opacity-0 group-hover:opacity-100 transition-all p-1"
+                            className="opacity-0 group-hover:opacity-100 transition-all p-1 hover:text-[var(--danger)] cursor-pointer"
                             style={{ color: 'var(--text-muted)' }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--danger)')}
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.color = 'var(--text-muted)')
-                            }
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -607,7 +572,7 @@ export default function Roadmap() {
                         )}
                         {ms.due_date && (
                           <div
-                            className="flex items-center gap-1.5 text-[10px]"
+                            className="flex items-center gap-1.5 text-xs"
                             style={{ color: 'var(--text-muted)' }}
                           >
                             <Clock className="w-3 h-3" strokeWidth={1.5} />

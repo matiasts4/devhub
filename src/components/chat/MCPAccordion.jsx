@@ -16,6 +16,13 @@ import {
 } from '@/components/ui/accordion';
 import { detectMcpOutput } from './utils/detectMcpOutput';
 
+// Map icon names from detectMcpOutput to Lucide components with styling
+const iconMap = {
+  AlertTriangle: <AlertTriangle className="w-3.5 h-3.5 text-red-400" />,
+  CheckCircle2: <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />,
+  Info: <Info className="w-3.5 h-3.5 text-blue-400" />,
+};
+
 const typeConfig = {
   error: {
     accent: 'red',
@@ -73,7 +80,7 @@ function TerminalContent({ content }) {
       {/* Copy button */}
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono text-gray-500 hover:text-gray-300 bg-[#0c1018]/80 border border-[#2a3441] rounded transition-colors"
+        className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 text-xs font-mono text-gray-500 hover:text-gray-300 bg-[#0c1018]/80 border border-[#2a3441] rounded transition-colors cursor-pointer"
         title="Copy output"
       >
         {copied ? (
@@ -162,9 +169,9 @@ export default function MCPAccordion({ content, defaultOpen, className = '' }) {
                 <div className="w-2 h-2 rounded-full bg-gray-600" />
               </div>
               <Terminal className="w-3.5 h-3.5 text-gray-500" />
-              {icon}
+              {iconMap[icon] || iconMap.Info}
               <span
-                className={`text-[10px] font-bold uppercase tracking-widest ${config.title} font-mono`}
+                className={`text-xs font-bold uppercase tracking-widest ${config.title} font-mono`}
               >
                 {label}
               </span>

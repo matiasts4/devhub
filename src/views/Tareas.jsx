@@ -91,7 +91,7 @@ function StyledSelect({ label, value, onChange, options, placeholder }) {
   return (
     <div>
       {label && (
-        <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+        <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
           {label}
         </label>
       )}
@@ -243,7 +243,7 @@ function TaskModal({
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-lg hover:bg-surface-elevated flex items-center justify-center text-text-muted hover:text-white transition-colors"
+            className="w-7 h-7 rounded-lg hover:bg-surface-elevated flex items-center justify-center text-text-muted hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -254,7 +254,7 @@ function TaskModal({
           <form id="task-form" className="space-y-4" onSubmit={handleSubmit}>
             {/* Title */}
             <div>
-              <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                 Título *
               </label>
               <input
@@ -262,13 +262,13 @@ function TaskModal({
                 value={form.title}
                 onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
                 placeholder="Describe la tarea brevemente..."
-                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]/50 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors"
+                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]/50 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors cursor-pointer"
               />
             </div>
 
             {/* Description */}
             <div>
-              <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                 Descripción
               </label>
               <textarea
@@ -276,7 +276,7 @@ function TaskModal({
                 value={form.description}
                 onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                 placeholder="Contexto, criterios de aceptación..."
-                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]/50 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors resize-none leading-relaxed"
+                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]/50 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors resize-none leading-relaxed cursor-pointer"
               />
             </div>
 
@@ -301,7 +301,7 @@ function TaskModal({
             <div className="grid grid-cols-2 gap-3">
               {/* Priority — colored pills */}
               <div>
-                <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+                <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                   Prioridad
                 </label>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -330,7 +330,7 @@ function TaskModal({
 
               {/* Business Value */}
               <div>
-                <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+                <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                   Valor Negocio: <span className="text-white font-mono">{form.business_value}</span>
                 </label>
                 <div className="pt-3">
@@ -344,7 +344,7 @@ function TaskModal({
                     }
                     className="w-full accent-[#58A6FF] cursor-pointer"
                   />
-                  <div className="flex justify-between text-[9px] text-text-muted mt-1">
+                  <div className="flex justify-between text-[11px] text-text-muted mt-1">
                     <span>Mínimo (1)</span>
                     <span>Core (10)</span>
                   </div>
@@ -354,7 +354,7 @@ function TaskModal({
 
             {/* Due date */}
             <div>
-              <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                 Fecha Límite
               </label>
               <DatePicker
@@ -365,7 +365,7 @@ function TaskModal({
 
             {/* Dependencies */}
             <div className="pt-1 border-t border-borders-subtle">
-              <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                 Depende de (Bloqueada por)
               </label>
               <Select
@@ -380,7 +380,7 @@ function TaskModal({
 
             {blocksTasks.length > 0 && (
               <div className="bg-surface-elevated p-3 rounded-lg border border-borders-subtle">
-                <p className="text-[10px] text-text-muted mb-1.5 font-semibold uppercase tracking-wider">
+                <p className="text-xs text-text-muted mb-1.5 font-semibold uppercase tracking-wider">
                   Bloquea a ({blocksTasks.length}):
                 </p>
                 <ul className="text-xs text-white space-y-1">
@@ -448,7 +448,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
   }, [tasks, dependencies, milestones]);
 
   const handleCopy = (task) => {
-    const text = `🤖 TAREA: ${task.title}\nMILESTONE: ${task.m_title || 'N/A'}\nSCORE: ${task.score.toFixed(1)}\n\nDESCRIPCIÓN:\n${task.description || ''}\n\nEjecuta esta tarea siguiendo el System Prompt del Worker. Asegúrate de nunca hacer push a main.`;
+    const text = `[AGENT] TAREA: ${task.title}\nMILESTONE: ${task.m_title || 'N/A'}\nSCORE: ${task.score.toFixed(1)}\n\nDESCRIPCIÓN:\n${task.description || ''}\n\nEjecuta esta tarea siguiendo el System Prompt del Worker. Asegúrate de nunca hacer push a main.`;
     navigator.clipboard.writeText(text);
     toast.success('Prompt de Agente Copiado');
     setCopiedTask(task.id);
@@ -541,23 +541,23 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
                   <span className="text-white font-mono font-bold text-sm leading-none">
                     {task.score.toFixed(1)}
                   </span>
-                  <span className="text-[8px] text-text-muted uppercase mt-0.5">Score</span>
+                  <span className="text-xs text-text-muted uppercase mt-0.5">Score</span>
                 </div>
                 <div>
                   <h4 className="text-white font-medium text-sm">{task.title}</h4>
                   <div className="flex items-center gap-3 mt-1 opacity-80">
                     <span
-                      className="text-[10px] flex items-center gap-1"
+                      className="text-xs flex items-center gap-1"
                       style={{ color: task.priorityObj.color }}
                     >
                       <Flag className="w-3 h-3" /> {task.priorityObj.label}
                     </span>
                     {task.m_title && (
-                      <span className="text-[10px] text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md border border-borders-subtle">
+                      <span className="text-xs text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md border border-borders-subtle">
                         {task.m_title}
                       </span>
                     )}
-                    <span className="text-[10px] text-text-muted">Desbloquea: {task.unlocks}</span>
+                    <span className="text-xs text-text-muted">Desbloquea: {task.unlocks}</span>
                   </div>
                 </div>
               </div>
@@ -707,9 +707,9 @@ export default function Tareas() {
   const activeFiltersCount = [fMilestone, fSearch, fUnlocked, fMyTasks].filter(Boolean).length;
 
   return (
-    <div className="min-h-screen bg-surface-app flex flex-col">
+    <div className="min-h-screen core-page-shell flex flex-col">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-sm border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 core-sticky-header border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-[#58A6FF]/10 border border-[#58A6FF]/20 flex items-center justify-center">
@@ -754,13 +754,16 @@ export default function Tareas() {
       <div className="flex-1 p-5 flex flex-col gap-4">
         {/* Filter bar */}
         {viewMode === 'kanban' && (
-          <div className="bg-surface-card border border-borders-subtle rounded-xl p-3 flex flex-wrap items-center gap-2.5">
+          <div
+            className="core-panel rounded-xl p-3 flex flex-wrap items-center gap-2.5"
+            style={{ background: 'var(--surface-card, #161b26)' }}
+          >
             {/* Filter icon + label */}
             <div className="flex items-center gap-1.5 text-text-muted pr-1 border-r border-borders-subtle mr-1">
               <Filter className="w-3.5 h-3.5" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider">Filtros</span>
+              <span className="text-xs font-semibold uppercase tracking-wider">Filtros</span>
               {activeFiltersCount > 0 && (
-                <span className="text-[9px] bg-[#58A6FF] text-white rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                <span className="text-[11px] bg-[#58A6FF] text-white rounded-full w-4 h-4 flex items-center justify-center font-bold">
                   {activeFiltersCount}
                 </span>
               )}
@@ -773,7 +776,7 @@ export default function Tareas() {
                 placeholder="Buscar tarea..."
                 value={fSearch}
                 onChange={(e) => setFSearch(e.target.value)}
-                className="bg-surface-app border border-borders-subtle text-xs text-text-primary placeholder-[#484F58] pl-7 pr-3 py-1.5 rounded-lg w-44 outline-none focus:border-[#58A6FF]/40 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors"
+                className="bg-surface-app border border-borders-subtle text-xs text-text-primary placeholder-[#484F58] pl-7 pr-3 py-1.5 rounded-lg w-44 outline-none focus:border-[#58A6FF]/40 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors cursor-pointer"
               />
             </div>
 
@@ -817,7 +820,7 @@ export default function Tareas() {
                   setFUnlocked(false);
                   setFMyTasks(false);
                 }}
-                className="ml-auto flex items-center gap-1 text-[10px] text-text-muted hover:text-white transition-colors"
+                className="ml-auto flex items-center gap-1 text-xs text-text-muted hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-3 h-3" /> Limpiar
               </button>
@@ -845,7 +848,8 @@ export default function Tareas() {
               return (
                 <div
                   key={col.id}
-                  className="bg-surface-card border border-borders-subtle rounded-xl overflow-hidden flex flex-col max-h-[80vh]"
+                  className="core-panel rounded-xl overflow-hidden flex flex-col max-h-[80vh] shadow-sm"
+                  style={{ background: 'var(--surface-card, #161b26)' }}
                 >
                   {/* Column header */}
                   <div
@@ -858,13 +862,13 @@ export default function Tareas() {
                         style={{ background: col.color }}
                       />
                       <span
-                        className="text-[10px] font-bold uppercase tracking-wider"
+                        className="text-xs font-bold uppercase tracking-wider"
                         style={{ color: col.color }}
                       >
                         {col.label}
                       </span>
                     </div>
-                    <span className="font-mono text-[10px] text-text-muted bg-surface-elevated px-2 py-0.5 rounded-full border border-borders-subtle">
+                    <span className="font-mono text-xs text-text-muted bg-surface-elevated px-2 py-0.5 rounded-full border border-borders-subtle">
                       {colTasks.length}
                     </span>
                   </div>
@@ -885,10 +889,10 @@ export default function Tareas() {
                             setEditingTask(task);
                             setModalOpen(true);
                           }}
-                          className={`bg-surface-app border rounded-xl p-3 hover:shadow-lg transition-all cursor-pointer group relative ${isBlocked ? 'border-danger/30 bg-red-950/5' : 'border-borders-subtle hover:border-borders-strong'}`}
+                          className={`bg-surface-card border border-borders-strong rounded-xl p-3 hover:shadow-lg transition-all cursor-pointer group relative ${isBlocked ? 'border-danger/30 bg-red-950/5' : 'border-borders-subtle hover:border-borders-strong'}`}
                         >
                           {isBlocked && (
-                            <div className="flex items-center gap-1 text-[9px] text-danger font-semibold mb-1.5">
+                            <div className="flex items-center gap-1 text-[11px] text-danger font-semibold mb-1.5">
                               <ShieldAlert className="w-3 h-3" /> BLOQUEADA
                             </div>
                           )}
@@ -898,21 +902,21 @@ export default function Tareas() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span
-                                className="text-[9px] font-semibold flex items-center gap-0.5"
+                                className="text-[11px] font-semibold flex items-center gap-0.5"
                                 style={{ color: prio.color }}
                               >
                                 <Flag className="w-2.5 h-2.5" />
                               </span>
                               {task.business_value && (
                                 <span
-                                  className="text-[9px] text-[#58A6FF] font-mono"
+                                  className="text-[11px] text-[#58A6FF] font-mono"
                                   title="Valor Negocio"
                                 >
                                   V:{task.business_value}
                                 </span>
                               )}
                               {task.due_date && (
-                                <span className="text-[9px] text-text-muted flex items-center gap-0.5">
+                                <span className="text-[11px] text-text-muted flex items-center gap-0.5">
                                   <Calendar className="w-2.5 h-2.5" />
                                   {new Date(task.due_date).toLocaleDateString('es-ES', {
                                     day: '2-digit',
@@ -935,7 +939,7 @@ export default function Tareas() {
                                   <button
                                     key={nc.id}
                                     onClick={() => moveTask(task.id, nc.id)}
-                                    className="w-full text-left px-3 py-1.5 text-[10px] text-text-muted hover:text-white hover:bg-surface-elevated flex items-center gap-2 transition-colors"
+                                    className="w-full text-left px-3 py-1.5 text-xs text-text-muted hover:text-white hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
                                   >
                                     <span
                                       className="w-1.5 h-1.5 rounded-full"
@@ -947,7 +951,7 @@ export default function Tareas() {
                                 <div className="border-t border-borders-subtle mt-1 pt-1">
                                   <button
                                     onClick={() => deleteTask(task.id)}
-                                    className="w-full text-left px-3 py-1.5 text-[10px] text-danger hover:bg-red-500/10 flex items-center gap-2 transition-colors"
+                                    className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-red-500/10 flex items-center gap-2 transition-colors cursor-pointer"
                                   >
                                     <Trash2 className="w-3 h-3" /> Eliminar
                                   </button>
@@ -965,7 +969,7 @@ export default function Tareas() {
                         setInitialStatus(col.id);
                         setModalOpen(true);
                       }}
-                      className="w-full py-2 text-[10px] text-text-muted hover:text-white hover:bg-surface-elevated rounded-xl transition-all flex items-center justify-center gap-1 border border-dashed border-borders-subtle"
+                      className="w-full py-2 text-xs text-text-muted hover:text-white hover:bg-surface-elevated rounded-xl transition-all flex items-center justify-center gap-1 border border-dashed border-borders-subtle"
                     >
                       <Plus className="w-3 h-3" /> Añadir
                     </button>

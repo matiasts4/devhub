@@ -461,17 +461,11 @@ export default function Scaffolding() {
           type="button"
           data-testid="generar-stack-btn"
           onClick={loadTree}
-          className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg transition-all"
+          className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg transition-all hover:text-[var(--text-primary)] cursor-pointer"
           style={{
             background: 'var(--surface-elevated)',
             border: '1px solid var(--border-strong)',
             color: 'var(--text-secondary)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--text-primary)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--text-secondary)';
           }}
         >
           {loadingTree ? (
@@ -555,7 +549,7 @@ export default function Scaffolding() {
                       <div
                         key={t.id}
                         data-testid={`template-${t.id}`}
-                        className="rounded-xl border p-4 transition-all"
+                        className="rounded-xl border p-4 transition-all hover:border-[var(--border-strong)] hover:bg-surface-elevated"
                         style={{
                           borderColor: isSelected
                             ? 'var(--accent-primary)'
@@ -565,24 +559,12 @@ export default function Scaffolding() {
                             : 'var(--surface-card)',
                           animationDelay: `${i * 50}ms`,
                         }}
-                        onMouseEnter={(e) => {
-                          if (!isSelected) {
-                            e.currentTarget.style.borderColor = 'var(--border-strong)';
-                            e.currentTarget.style.background = 'var(--surface-elevated)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isSelected) {
-                            e.currentTarget.style.borderColor = 'var(--border-subtle)';
-                            e.currentTarget.style.background = 'var(--surface-card)';
-                          }
-                        }}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <Icon className="w-4 h-4" strokeWidth={1.5} style={{ color: t.color }} />
                           {t.popular && (
                             <span
-                              className="text-[9px] px-1.5 py-0.5 rounded-full border"
+                              className="text-[11px] px-1.5 py-0.5 rounded-full border"
                               style={{
                                 color: 'var(--accent-primary)',
                                 background:
@@ -608,7 +590,7 @@ export default function Scaffolding() {
                           {t.tags.map((tag) => (
                             <span
                               key={tag}
-                              className="text-[9px] font-mono px-1.5 py-0.5 rounded border"
+                              className="text-[11px] font-mono px-1.5 py-0.5 rounded border"
                               style={{
                                 background: 'var(--surface-elevated)',
                                 color: 'var(--text-muted)',
@@ -624,7 +606,7 @@ export default function Scaffolding() {
                           className="mt-4 pt-3 flex items-center justify-between gap-2"
                           style={{ borderTop: '1px solid var(--border-subtle)' }}
                         >
-                          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                             {t.files.length} archivo(s) boilerplate
                           </span>
                           <button
@@ -633,18 +615,10 @@ export default function Scaffolding() {
                               Boolean(generatingTemplateId) || Boolean(treeError) || loadingTree
                             }
                             onClick={() => generarPlantilla(t)}
-                            className="text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="text-xs font-medium px-2.5 py-1 rounded-md transition-colors hover:bg-[#388BFD] inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                             style={{
                               background: '#1F6FEB',
                               color: 'white',
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!e.currentTarget.disabled) {
-                                e.currentTarget.style.background = '#388BFD';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#1F6FEB';
                             }}
                           >
                             {isGenerating ? (
@@ -691,7 +665,7 @@ export default function Scaffolding() {
                     {stack.map((item) => (
                       <span
                         key={item.id}
-                        className="text-[10px] font-mono px-2 py-0.5 rounded-full border"
+                        className="text-xs font-mono px-2 py-0.5 rounded-full border"
                         style={{
                           color: item.color,
                           borderColor: `${item.color}55`,
@@ -704,7 +678,7 @@ export default function Scaffolding() {
                   </div>
                 )}
                 {rootPath && (
-                  <p className="mt-3 text-[10px] break-all" style={{ color: 'var(--text-muted)' }}>
+                  <p className="mt-3 text-xs break-all" style={{ color: 'var(--text-muted)' }}>
                     Root: {rootPath}
                   </p>
                 )}
@@ -743,13 +717,13 @@ export default function Scaffolding() {
                         {s.paquete}
                       </span>
                       <span
-                        className="text-[9px] font-medium"
+                        className="text-[11px] font-medium"
                         style={{ color: urgenciaColor[s.urgencia] }}
                       >
                         {s.urgencia}
                       </span>
                     </div>
-                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                       {s.motivo}
                     </p>
                   </div>
@@ -773,7 +747,7 @@ export default function Scaffolding() {
                 subtitle="Reporte de archivos generados"
               />
 
-              <div className="p-6 space-y-3 text-[10px]">
+              <div className="p-6 space-y-3 text-xs">
                 {generationReport.created.length === 0 && generationReport.skipped.length === 0 ? (
                   <p style={{ color: 'var(--text-muted)' }}>Aun no se generaron archivos.</p>
                 ) : (

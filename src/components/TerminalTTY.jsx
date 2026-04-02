@@ -275,7 +275,7 @@ export default function TerminalTTY({
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[#111111] relative">
       {!hideTitleBar && (
-        <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle">
+        <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle cursor-pointer">
           <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none">
             <svg
               className="w-4 h-4 text-gray-400"
@@ -299,7 +299,7 @@ export default function TerminalTTY({
               <WifiOff className="w-3 h-3 text-[#ff7b72]" strokeWidth={2} />
             )}
             <span
-              className={`text-[10px] font-sans tracking-wide uppercase font-semibold ${isConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}
+              className={`text-xs font-sans tracking-wide uppercase font-semibold ${isConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}
             >
               {statusLabel}
             </span>
@@ -308,14 +308,14 @@ export default function TerminalTTY({
           <div className="flex items-center gap-2">
             <button
               onClick={reconnect}
-              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group"
+              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
             >
               <RotateCcw className="w-3 h-3 text-gray-400 group-hover:text-white" strokeWidth={2} />
             </button>
             {onClose && (
               <button
                 onClick={onClose}
-                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group"
+                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
               >
                 <X
                   className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#ff7b72]"

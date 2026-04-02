@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { getCopilotToken } from '@/lib/copilot-token';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -17,7 +18,7 @@ async function loadConfig() {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { messages, project_id, projectName, temperature: requestTemp, maxTokens: requestMaxTokens } = body;
+    const { messages, project_id, projectName, temperature: requestTemp, maxTokens: requestMaxTokens, modelOverride } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Mensajes inválidos' }, { status: 400 });
@@ -42,9 +43,9 @@ export async function POST(req) {
         model = pConfig.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
         break;
       }
-      if (p === 'copilot' && pConfig.COPILOT_TOKEN) {
+      if (p === 'copilot' && pConfig.COPILOT_OAUTH_TOKEN) {
         activeProvider = 'copilot';
-        apiKey = pConfig.COPILOT_TOKEN;
+        apiKey = pConfig.COPILOT_OAUTH_TOKEN;
         baseURL = 'https://api.githubcopilot.com';
         model = pConfig.COPILOT_MODEL || 'gpt-4o';
         break;
@@ -65,16 +66,61 @@ export async function POST(req) {
       );
     }
 
+    if (modelOverride) {
+      model = modelOverride;
+    }
+
+    // Para Copilot: intercambiar el gho_ por un copilot_token efímero
+    let copilotHeaders = {};
+    if (activeProvider === 'copilot') {
+      try {
+        // Mapeo interno de modelos FIM/Autocomplete a modelos Chat funcionales
+        const copilotModelMap = {
+          'gpt-5.4-mini': 'gpt-4o-mini',
+          'GPT-5.4 mini': 'gpt-4o-mini',
+          'gpt-5.2-codex': 'gpt-4o',
+          'GPT-5.2-Codex': 'gpt-4o',
+          'gpt-5.3-codex': 'gpt-4o',
+          'GPT-5.3-Codex': 'gpt-4o',
+          'gpt-4.1': 'gpt-4o',
+          'GPT-4.1': 'gpt-4o',
+          'GPT-5.1': 'gpt-4o',
+          'gpt-5.1': 'gpt-4o',
+          'GPT-5.2': 'gpt-4o',
+          'gpt-5.2': 'gpt-4o',
+          'Claude Haiku 4.5': 'claude-3.5-sonnet',
+          'claude-haiku-4.5': 'claude-3.5-sonnet',
+          'Gemini 2.5 Pro': 'gpt-4o',
+          'gemini-2.5-pro': 'gpt-4o',
+        };
+
+        if (copilotModelMap[model]) {
+          console.warn(`[Copilot] Mapped OpenCode model ${model} -> ${copilotModelMap[model]} for Chat API compatibility`);
+          model = copilotModelMap[model];
+        }
+
+        const copilotToken = await getCopilotToken(apiKey);
+        apiKey = copilotToken;
+        copilotHeaders = {
+          'editor-version': 'vscode/1.85.1',
+          'editor-plugin-version': 'copilot-chat/0.12.2023120701',
+          'user-agent': 'GithubCopilot/1.138.0',
+          'copilot-integration-id': 'vscode-chat',
+        };
+      } catch (tokenErr) {
+        return NextResponse.json({ error: `Copilot auth: ${tokenErr.message}` }, { status: 401 });
+      }
+    }
+
     const openai = new OpenAI({
       apiKey,
       baseURL,
       defaultHeaders:
         activeProvider === 'openrouter'
-          ? {
-              'HTTP-Referer': 'https://devhub.local',
-              'X-Title': 'DevHub Agent Hub',
-            }
-          : {},
+          ? { 'HTTP-Referer': 'https://devhub.local', 'X-Title': 'DevHub Agent Hub' }
+          : activeProvider === 'copilot'
+            ? copilotHeaders
+            : {},
     });
 
     // Leer tokens ajustados por el usuario si vienen en el body, sino fallback a globales o 4000
@@ -140,6 +186,7 @@ Proyecto: ${projectName || project_id || 'El Proyecto Actual'}`;
       temperature,
       max_tokens,
       stream: true,
+      stream_options: { include_usage: true },
     });
 
     const encoder = new TextEncoder();
@@ -150,7 +197,12 @@ Proyecto: ${projectName || project_id || 'El Proyecto Actual'}`;
           controller.enqueue(encoder.encode(JSON.stringify({ type: 'meta', model_used: model }) + '\n'));
 
           for await (const chunk of response) {
-            const content = chunk.choices[0]?.delta?.content || '';
+            // chunk.usage only arrives at the end of the stream if include_usage: true is set
+            if (chunk.usage) {
+              controller.enqueue(encoder.encode(JSON.stringify({ type: 'usage', usage: chunk.usage }) + '\n'));
+            }
+
+            const content = chunk.choices?.[0]?.delta?.content || '';
             if (content) {
               controller.enqueue(encoder.encode(JSON.stringify({ type: 'chunk', content }) + '\n'));
             }
@@ -176,3 +228,4 @@ Proyecto: ${projectName || project_id || 'El Proyecto Actual'}`;
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+

@@ -213,9 +213,12 @@ export default function ProjectHub() {
   ];
 
   return (
-    <div className="min-h-screen bg-surface-app dot-grid">
+    <div className="min-h-screen core-page-shell dot-grid">
       {/* Top bar */}
-      <div className="border-b border-borders-subtle px-8 py-4 flex items-center justify-between bg-surface-app/95 backdrop-blur-sm sticky top-0 z-10">
+      <div
+        className="px-8 py-4 flex items-center justify-between sticky top-0 z-20 core-sticky-header"
+        style={{ borderBottomColor: 'var(--border-subtle)' }}
+      >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-[#58A6FF]/15 border border-[#58A6FF]/25 flex items-center justify-center">
             <Cpu className="w-4 h-4 text-accent-primary" strokeWidth={1.5} />
@@ -234,12 +237,12 @@ export default function ProjectHub() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar proyecto..."
-              className="bg-surface-card border border-borders-subtle rounded-lg pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]/50 w-52 transition-all"
+              className="bg-surface-card border border-borders-subtle rounded-lg pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder-[#484F58] focus:outline-none focus:border-[var(--accent-primary)] w-52 transition-all"
             />
           </div>
           <button
             onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-2 bg-success text-white font-medium px-4 py-1.5 rounded-lg text-xs hover:bg-success transition-colors active:scale-95"
+            className="flex items-center gap-2 bg-success text-white font-medium px-4 py-1.5 rounded-lg text-xs hover:bg-success transition-colors active:scale-95 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
             Nuevo Proyecto
@@ -259,12 +262,16 @@ export default function ProjectHub() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 stagger-children">
           {stats.map((stat, i) => (
             <div
               key={i}
-              className="fade-in-up bg-surface-card border border-borders-subtle rounded-lg px-5 py-4"
-              style={{ animationDelay: `${i * 50}ms` }}
+              className="fade-in-up core-kpi-card rounded-lg px-5 py-4 hover-lift"
+              style={{
+                animationDelay: `${i * 50}ms`,
+                background: 'var(--surface-card, #161b26)',
+                borderColor: 'var(--border-subtle, #30363d)',
+              }}
             >
               <p className="text-text-muted text-xs mb-1">{stat.label}</p>
               <p className="font-mono text-2xl font-bold" style={{ color: stat.color }}>
@@ -275,7 +282,10 @@ export default function ProjectHub() {
         </div>
 
         {/* Status filters */}
-        <div className="flex items-center gap-2 mb-6 flex-wrap">
+        <div
+          className="flex items-center gap-2 mb-6 flex-wrap core-panel rounded-xl px-3 py-2"
+          style={{ background: 'var(--surface-card, #161b26)' }}
+        >
           {[
             { key: 'all', label: 'Todos' },
             ...Object.entries(STATUS_CONFIG).map(([k, v]) => ({ key: k, label: v.label })),
@@ -300,7 +310,7 @@ export default function ProjectHub() {
             <Loader2 className="w-8 h-8 text-[#388BFD] animate-spin" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 stagger-children">
             {filtered.map((project, i) => {
               const estado = STATUS_CONFIG[project.status] || STATUS_CONFIG.active;
               const accentColor = project.color || ACCENT_COLORS[i % ACCENT_COLORS.length];
@@ -308,8 +318,12 @@ export default function ProjectHub() {
                 <div
                   key={project.id}
                   onClick={() => navigate(`/project/${project.id}/dashboard`)}
-                  className="fade-in-up project-card-hover bg-surface-card border border-borders-subtle rounded-xl p-5 cursor-pointer group"
-                  style={{ animationDelay: `${i * 60}ms` }}
+                  className="fade-in-up project-card-hover core-panel hover-lift rounded-xl p-5 cursor-pointer group"
+                  style={{
+                    animationDelay: `${i * 60}ms`,
+                    background: 'var(--surface-card, #161b26)',
+                    borderColor: 'var(--border-subtle, #30363d)',
+                  }}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
@@ -330,14 +344,14 @@ export default function ProjectHub() {
                         <h3 className="font-mono font-semibold text-text-primary text-sm leading-tight">
                           {project.name}
                         </h3>
-                        <span className="text-[10px] font-medium" style={{ color: accentColor }}>
+                        <span className="text-xs font-medium" style={{ color: accentColor }}>
                           Proyecto
                         </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
                       {project.planning_status === 'pending' && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#D2A8FF]/10 border border-[#D2A8FF]/20 text-[#D2A8FF] flex items-center gap-1">
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[#D2A8FF]/10 border border-[#D2A8FF]/20 text-[#D2A8FF] flex items-center gap-1">
                           <Brain className="w-2.5 h-2.5" />
                           Plan pendiente
                         </span>
@@ -345,7 +359,7 @@ export default function ProjectHub() {
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${estado.dot} ${estado.animate ? 'animate-pulse' : ''}`}
                       />
-                      <span className="text-[10px]" style={{ color: estado.color }}>
+                      <span className="text-xs" style={{ color: estado.color }}>
                         {estado.label}
                       </span>
                     </div>
@@ -366,22 +380,22 @@ export default function ProjectHub() {
                       />
                     </div>
                     <div className="flex justify-between mt-1">
-                      <span className="text-[10px] text-text-muted">
+                      <span className="text-xs text-text-muted">
                         {project.tasks?.[0]?.count || 0} tareas
                       </span>
-                      <span className="text-[10px] text-text-muted">{project.progress || 0}%</span>
+                      <span className="text-xs text-text-muted">{project.progress || 0}%</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1 text-[10px] text-text-muted">
+                    <div className="flex items-center gap-1 text-xs text-text-muted">
                       <Clock className="w-3 h-3" strokeWidth={1.5} />
                       {new Date(project.created_at).toLocaleDateString('es-ES', {
                         day: '2-digit',
                         month: 'short',
                       })}
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 text-xs text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
                       <span>Abrir</span>
                       <ChevronRight className="w-3 h-3" strokeWidth={2} />
                     </div>
@@ -393,17 +407,22 @@ export default function ProjectHub() {
             {/* New project card */}
             <div
               onClick={() => setShowNewModal(true)}
-              className="fade-in-up bg-surface-card/50 border border-borders-subtle border-dashed rounded-xl p-5 flex flex-col items-center justify-center gap-3 cursor-pointer hover:bg-surface-card hover:border-[#388BFD]/30 transition-all group min-h-[180px]"
-              style={{ animationDelay: `${filtered.length * 60}ms` }}
+              className="fade-in-up rounded-xl p-5 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group min-h-[180px] hover:border-[color-mix(in_srgb,var(--accent-primary)_45%,transparent)]"
+              style={{
+                background:
+                  'linear-gradient(135deg, color-mix(in srgb, var(--surface-card, #161b26) 96%, black), color-mix(in srgb, var(--surface-muted, #111827) 92%, black))',
+                border:
+                  '1px dashed color-mix(in srgb, var(--accent-primary) 24%, var(--border-subtle))',
+              }}
             >
-              <div className="w-10 h-10 rounded-full bg-surface-elevated flex items-center justify-center group-hover:bg-[#388BFD]/15 transition-colors">
+              <div className="w-10 h-10 rounded-full bg-surface-elevated flex items-center justify-center group-hover:bg-[#388BFD]/15 transition-colors cursor-pointer">
                 <Plus
-                  className="w-5 h-5 text-text-muted group-hover:text-accent-primary transition-colors"
+                  className="w-5 h-5 text-text-muted group-hover:text-accent-primary transition-colors cursor-pointer"
                   strokeWidth={1.5}
                 />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-text-muted group-hover:text-text-primary transition-colors">
+                <p className="text-sm font-medium text-text-muted group-hover:text-text-primary transition-colors cursor-pointer">
                   Nuevo Proyecto
                 </p>
                 <p className="text-[11px] text-text-muted">Software, Universidad, Personal...</p>
@@ -428,7 +447,7 @@ export default function ProjectHub() {
                   setShowNewModal(false);
                   setPendingFiles([]);
                 }}
-                className="text-text-muted hover:text-white transition-colors"
+                className="text-text-muted hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -446,7 +465,7 @@ export default function ProjectHub() {
                   value={newProject.name}
                   onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Mi proyecto increíble"
-                  className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
+                  className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors cursor-pointer"
                 />
               </div>
 
@@ -461,12 +480,12 @@ export default function ProjectHub() {
                     value={newProject.local_path}
                     onChange={(e) => setNewProject((p) => ({ ...p, local_path: e.target.value }))}
                     placeholder="/home/usuario/proyectos/mi-proyecto"
-                    className="flex-1 bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
+                    className="flex-1 bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors cursor-pointer"
                   />
                   <button
                     type="button"
                     onClick={handleSelectFolder}
-                    className="flex items-center justify-center p-2.5 bg-surface-elevated border border-borders-strong rounded-lg text-text-muted hover:text-white hover:bg-surface-active hover:border-text-muted transition-colors tooltip-trigger"
+                    className="flex items-center justify-center p-2.5 bg-surface-elevated border border-borders-strong rounded-lg text-text-muted hover:text-white hover:bg-surface-active hover:border-text-muted transition-colors tooltip-trigger cursor-pointer"
                     title="Explorar carpetas"
                   >
                     <FolderOpen className="w-4 h-4" />
@@ -484,7 +503,7 @@ export default function ProjectHub() {
                   value={newProject.description}
                   onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                   placeholder="¿Qué hace este proyecto en una frase?"
-                  className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors"
+                  className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors cursor-pointer"
                 />
               </div>
 
@@ -538,7 +557,7 @@ export default function ProjectHub() {
                   <div className="space-y-3">
                     {/* Type selector — compact */}
                     <div>
-                      <p className="text-[10px] text-text-muted mb-1.5">Tipo de proyecto</p>
+                      <p className="text-xs text-text-muted mb-1.5">Tipo de proyecto</p>
                       <div className="grid grid-cols-3 gap-1.5">
                         {PROJECT_TYPES_MODAL.map(({ key, label, Icon, color }) => {
                           const sel = projectType === key;
@@ -576,7 +595,7 @@ export default function ProjectHub() {
                       onChange={(e) => setPlanningPrompt(e.target.value)}
                       rows={3}
                       placeholder="Describe tu proyecto: qué construirás, contexto, recursos, plazos, requerimientos específicos..."
-                      className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-xs text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 transition-colors resize-none font-mono"
+                      className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-xs text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 transition-colors resize-none font-mono cursor-pointer"
                     />
 
                     {/* Mini dropzone */}
@@ -612,7 +631,7 @@ export default function ProjectHub() {
                         <p className="text-xs text-text-muted">
                           Arrastra archivos de contexto (specs, READMEs, wireframes...)
                         </p>
-                        <p className="text-[10px] text-[#484F58]">
+                        <p className="text-xs text-[#484F58]">
                           Opcional · .txt .md .json .py .js .ts — máx 2MB
                         </p>
                       </div>
@@ -626,16 +645,16 @@ export default function ProjectHub() {
                             className="flex items-center gap-2 bg-surface-elevated rounded-lg px-3 py-1.5"
                           >
                             <FileText className="w-3 h-3 text-[#58A6FF] flex-shrink-0" />
-                            <span className="text-[10px] font-mono text-text-primary flex-1 truncate">
+                            <span className="text-xs font-mono text-text-primary flex-1 truncate">
                               {f.file_name}
                             </span>
-                            <span className="text-[10px] text-text-muted">
+                            <span className="text-xs text-text-muted">
                               {(f.size / 1024).toFixed(1)}KB
                             </span>
                             <button
                               type="button"
                               onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
-                              className="text-text-muted hover:text-danger transition-colors"
+                              className="text-text-muted hover:text-danger transition-colors cursor-pointer"
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>
@@ -644,7 +663,7 @@ export default function ProjectHub() {
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2 text-[10px] text-[#D2A8FF]">
+                    <div className="flex items-center gap-2 text-xs text-[#D2A8FF]">
                       <Zap className="w-3 h-3" />
                       Se generarán 40-60+ tareas organizadas en hitos — plan exhaustivo
                     </div>

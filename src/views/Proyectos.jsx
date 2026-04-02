@@ -81,7 +81,7 @@ export default function Proyectos() {
                     ))}
                   </div>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${estadoConfig[p.estado]}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${estadoConfig[p.estado]}`}>
                   {p.estado}
                 </span>
               </div>
@@ -90,14 +90,14 @@ export default function Proyectos() {
 
               <div className="flex flex-wrap gap-1 mb-4">
                 {p.stack.map(s => (
-                  <span key={s} className="text-[10px] px-2 py-0.5 bg-white/5 border border-white/8 rounded-md text-slate-300 font-mono">
+                  <span key={s} className="text-xs px-2 py-0.5 bg-white/5 border border-white/8 rounded-md text-slate-300 font-mono">
                     {s}
                   </span>
                 ))}
               </div>
 
               <div className="mb-3">
-                <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+                <div className="flex justify-between text-xs text-slate-500 mb-1">
                   <span>Progreso</span>
                   <span className="font-mono" style={{ color: p.color }}>{p.progreso}%</span>
                 </div>
@@ -107,11 +107,11 @@ export default function Proyectos() {
               </div>
 
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                <div className="flex items-center gap-1 text-xs text-slate-500">
                   <Clock className="w-3 h-3" strokeWidth={1.5} />
                   {p.ultimaActividad}
                 </div>
-                <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-[#00F0FF] transition-colors" strokeWidth={1.5} />
+                <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-[#00F0FF] transition-colors cursor-pointer" strokeWidth={1.5} />
               </div>
             </div>
           ))}

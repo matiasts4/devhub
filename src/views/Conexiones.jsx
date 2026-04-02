@@ -84,7 +84,8 @@ function AddConnectionModal({ onClose, onCreated }) {
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-lg hover:bg-surface-elevated flex items-center justify-center text-text-muted hover:text-white transition-colors"
+            aria-label="Cerrar modal"
+            className="cursor-pointer w-7 h-7 rounded-lg hover:bg-surface-elevated flex items-center justify-center text-text-muted hover:text-white transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -93,7 +94,7 @@ function AddConnectionModal({ onClose, onCreated }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name */}
           <div>
-            <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+            <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
               Nombre *
             </label>
             <input
@@ -101,13 +102,13 @@ function AddConnectionModal({ onClose, onCreated }) {
               value={form.name}
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
               placeholder="ej. GitHub Personal"
-              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors"
+              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors cursor-pointer"
             />
           </div>
 
           {/* Type — icon grid */}
           <div>
-            <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-2">
+            <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">
               Tipo de conexión
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -136,7 +137,7 @@ function AddConnectionModal({ onClose, onCreated }) {
                       />
                     </div>
                     <span
-                      className="text-[10px] font-semibold leading-tight"
+                      className="text-xs font-semibold leading-tight"
                       style={{ color: isSelected ? v.color : 'var(--text-muted)' }}
                     >
                       {v.label}
@@ -146,7 +147,7 @@ function AddConnectionModal({ onClose, onCreated }) {
               })}
             </div>
             {selectedType.desc && (
-              <p className="text-[10px] text-text-muted mt-2 flex items-center gap-1">
+              <p className="text-xs text-text-muted mt-2 flex items-center gap-1">
                 <Info className="w-3 h-3" style={{ color: selectedType.color }} />
                 {selectedType.desc}
               </p>
@@ -155,20 +156,20 @@ function AddConnectionModal({ onClose, onCreated }) {
 
           {/* Endpoint URL */}
           <div>
-            <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+            <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
               Endpoint URL
             </label>
             <input
               value={form.endpoint_url}
               onChange={(e) => setForm((p) => ({ ...p, endpoint_url: e.target.value }))}
               placeholder="https://api.example.com o stdio://..."
-              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors font-mono text-xs"
+              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors font-mono text-xs cursor-pointer"
             />
           </div>
 
           {/* API Key */}
           <div>
-            <label className="block text-[10px] text-text-muted font-semibold uppercase tracking-wider mb-1.5">
+            <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
               API Key / Token
             </label>
             <input
@@ -176,7 +177,7 @@ function AddConnectionModal({ onClose, onCreated }) {
               value={form.api_key}
               onChange={(e) => setForm((p) => ({ ...p, api_key: e.target.value }))}
               placeholder="sk-..."
-              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors"
+              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors cursor-pointer"
             />
           </div>
 
@@ -252,13 +253,10 @@ export default function Conexiones() {
   const inactive = connections.length - active;
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
-    >
+    <div className="min-h-screen core-page-shell" style={{ color: 'var(--text-primary)' }}>
       {/* Sticky Header */}
       <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
+        className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between core-sticky-header"
         style={{
           background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
           borderColor: 'var(--border-subtle)',
@@ -269,7 +267,7 @@ export default function Conexiones() {
           <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
             Conexiones MCP
           </h1>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
             {active}/{connections.length} activas
           </span>
         </div>
@@ -285,7 +283,7 @@ export default function Conexiones() {
       <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
         {/* Breadcrumb */}
         <div
-          className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
+          className="rounded-xl px-4 py-2.5 flex items-center gap-2 mb-6 core-toolbar-card"
           style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
         >
           <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
@@ -302,7 +300,7 @@ export default function Conexiones() {
 
         {/* Info Banner — as a card with header */}
         <div
-          className="rounded-2xl overflow-hidden mb-6 fade-in-up"
+          className="rounded-2xl overflow-hidden mb-6 fade-in-up core-panel"
           style={{
             background: 'var(--surface-card)',
             border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
@@ -352,7 +350,7 @@ export default function Conexiones() {
 
         {/* Stats — as a card with header */}
         <div
-          className="rounded-2xl overflow-hidden mb-6 fade-in-up"
+          className="rounded-2xl overflow-hidden mb-6 fade-in-up core-panel"
           style={{
             background: 'var(--surface-card)',
             border: '1px solid var(--border-subtle)',
@@ -391,7 +389,7 @@ export default function Conexiones() {
               ].map((s, i) => (
                 <div
                   key={i}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl"
+                  className="flex items-center justify-between px-4 py-3 rounded-xl core-kpi-card"
                   style={{
                     background: 'var(--surface-muted)',
                     border: '1px solid var(--border-subtle)',
@@ -411,7 +409,7 @@ export default function Conexiones() {
 
         {/* Connections list — as a card with header */}
         <div
-          className="rounded-2xl overflow-hidden fade-in-up"
+          className="rounded-2xl overflow-hidden fade-in-up core-panel"
           style={{
             background: 'var(--surface-card)',
             border: '1px solid var(--border-subtle)',
@@ -477,7 +475,7 @@ export default function Conexiones() {
                 </p>
                 <button
                   onClick={() => setShowModal(true)}
-                  className="text-xs underline underline-offset-2 transition-colors"
+                  className="text-xs underline underline-offset-2 transition-colors cursor-pointer"
                   style={{ color: 'var(--accent-primary)' }}
                 >
                   + Añadir primera conexión MCP
@@ -491,17 +489,11 @@ export default function Conexiones() {
                   return (
                     <div
                       key={conn.id}
-                      className="rounded-xl overflow-hidden transition-all fade-in-up"
+                      className="rounded-xl overflow-hidden transition-all fade-in-up hover:border-[var(--border-strong)]"
                       style={{
                         background: 'var(--surface-muted)',
                         border: '1px solid var(--border-subtle)',
                         animationDelay: `${i * 30}ms`,
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--border-strong)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--border-subtle)';
                       }}
                     >
                       {/* Row */}
@@ -543,7 +535,7 @@ export default function Conexiones() {
                               {conn.name}
                             </p>
                             <span
-                              className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md border"
+                              className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md border"
                               style={{
                                 color: typeCfg.color,
                                 background: `${typeCfg.color}10`,
@@ -553,7 +545,7 @@ export default function Conexiones() {
                               {typeCfg.label}
                             </span>
                             <span
-                              className="text-[9px] font-medium"
+                              className="text-[11px] font-medium"
                               style={{
                                 color: conn.is_active ? 'var(--success)' : 'var(--text-muted)',
                               }}
@@ -563,7 +555,7 @@ export default function Conexiones() {
                           </div>
                           {conn.endpoint_url && (
                             <p
-                              className="text-[10px] truncate mt-0.5 font-mono"
+                              className="text-xs truncate mt-0.5 font-mono"
                               style={{ color: 'var(--text-muted)' }}
                             >
                               {conn.endpoint_url}
@@ -579,7 +571,7 @@ export default function Conexiones() {
                               toggleActive(conn);
                             }}
                             disabled={toggling === conn.id}
-                            className="text-[10px] px-3 py-1.5 rounded-lg border font-medium transition-all disabled:opacity-40"
+                            className="text-xs px-3 py-1.5 rounded-lg border font-medium transition-all disabled:opacity-40"
                             style={{
                               borderColor: conn.is_active
                                 ? 'color-mix(in srgb, var(--danger) 25%, transparent)'
@@ -624,7 +616,7 @@ export default function Conexiones() {
                           <div className="grid grid-cols-2 gap-4 text-xs">
                             <div>
                               <p
-                                className="text-[9px] uppercase tracking-wider mb-1 font-semibold"
+                                className="text-[11px] uppercase tracking-wider mb-1 font-semibold"
                                 style={{ color: 'var(--text-muted)' }}
                               >
                                 Tipo
@@ -633,7 +625,7 @@ export default function Conexiones() {
                             </div>
                             <div>
                               <p
-                                className="text-[9px] uppercase tracking-wider mb-1 font-semibold"
+                                className="text-[11px] uppercase tracking-wider mb-1 font-semibold"
                                 style={{ color: 'var(--text-muted)' }}
                               >
                                 Creada
@@ -645,7 +637,7 @@ export default function Conexiones() {
                             {conn.last_sync && (
                               <div>
                                 <p
-                                  className="text-[9px] uppercase tracking-wider mb-1 font-semibold"
+                                  className="text-[11px] uppercase tracking-wider mb-1 font-semibold"
                                   style={{ color: 'var(--text-muted)' }}
                                 >
                                   Último sync
@@ -659,13 +651,13 @@ export default function Conexiones() {
                           {conn.endpoint_url && (
                             <div>
                               <p
-                                className="text-[9px] uppercase tracking-wider mb-1.5 font-semibold"
+                                className="text-[11px] uppercase tracking-wider mb-1.5 font-semibold"
                                 style={{ color: 'var(--text-muted)' }}
                               >
                                 Endpoint
                               </p>
                               <code
-                                className="text-[10px] font-mono px-3 py-1.5 rounded-lg border block truncate"
+                                className="text-xs font-mono px-3 py-1.5 rounded-lg border block truncate"
                                 style={{
                                   color: 'var(--accent-primary)',
                                   background: 'var(--surface-elevated)',
@@ -679,22 +671,11 @@ export default function Conexiones() {
                           <div className="flex gap-2 pt-1">
                             <button
                               onClick={() => deleteConnection(conn.id, conn.name)}
-                              className="flex items-center gap-1.5 text-[10px] px-3 py-1.5 rounded-lg border transition-all"
+                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all hover:text-[var(--danger)] hover:border-[color-mix(in_srgb,var(--danger)_40%,transparent)] cursor-pointer"
                               style={{
                                 borderColor: 'color-mix(in srgb, var(--danger) 20%, transparent)',
                                 color: 'color-mix(in srgb, var(--danger) 70%, transparent)',
                                 background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.color = 'var(--danger)';
-                                e.currentTarget.style.borderColor =
-                                  'color-mix(in srgb, var(--danger) 40%, transparent)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.color =
-                                  'color-mix(in srgb, var(--danger) 70%, transparent)';
-                                e.currentTarget.style.borderColor =
-                                  'color-mix(in srgb, var(--danger) 20%, transparent)';
                               }}
                             >
                               <Trash2 className="w-3 h-3" /> Eliminar

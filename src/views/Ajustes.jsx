@@ -120,7 +120,7 @@ function Toggle({ checked, onChange }) {
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none"
+      className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer"
       style={{
         background: checked
           ? 'var(--success)'
@@ -196,7 +196,7 @@ function ThemeOptionCard({ option, active, onClick }) {
         </div>
         {active && (
           <span
-            className="absolute right-1.5 top-1.5 h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-[10px] font-medium"
+            className="absolute right-1.5 top-1.5 h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-xs font-medium"
             style={{ background: 'var(--accent-primary)', color: 'white' }}
           >
             <Check className="w-3 h-3" />
@@ -501,7 +501,7 @@ export default function Ajustes() {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+                className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-strong)',
@@ -545,7 +545,7 @@ export default function Ajustes() {
               rows={2}
               value={description}
               onChange={(e) => setDesc(e.target.value)}
-              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none"
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
               style={{
                 background: 'var(--surface-muted)',
                 border: '1px solid var(--border-strong)',
@@ -566,7 +566,7 @@ export default function Ajustes() {
                 value={localPath}
                 onChange={(e) => setLocalPath(e.target.value)}
                 placeholder="/home/usuario/proyectos/mi-app"
-                className="flex-1 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+                className="flex-1 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-strong)',
@@ -576,7 +576,7 @@ export default function Ajustes() {
               <button
                 type="button"
                 onClick={handleSelectFolder}
-                className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0"
+                className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer"
                 style={{
                   background: 'var(--surface-elevated)',
                   border: '1px solid var(--border-strong)',
@@ -801,7 +801,7 @@ export default function Ajustes() {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Tu nombre"
-              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
               style={{
                 background: 'var(--surface-muted)',
                 border: '1px solid var(--border-strong)',
@@ -1034,18 +1034,9 @@ export default function Ajustes() {
   };
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
-    >
+    <div className="min-h-screen core-page-shell" style={{ color: 'var(--text-primary)' }}>
       {/* Header */}
-      <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
-        style={{
-          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
-          borderColor: 'var(--border-subtle)',
-        }}
-      >
+      <div className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between core-sticky-header">
         <div className="flex items-center gap-3">
           <Settings
             className="w-4 h-4"
@@ -1056,7 +1047,7 @@ export default function Ajustes() {
             Ajustes
           </h1>
           {project?.name && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
               {project.name}
             </span>
           )}
@@ -1065,10 +1056,7 @@ export default function Ajustes() {
 
       <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
         {/* Breadcrumb */}
-        <div
-          className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
-          style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
-        >
+        <div className="rounded-xl px-4 py-2.5 flex items-center gap-2 mb-6 core-panel shadow-sm">
           <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             DevHub
@@ -1083,7 +1071,7 @@ export default function Ajustes() {
 
         {/* Tab navigation */}
         <div
-          className="flex items-center gap-1 mb-6 overflow-x-auto pb-1"
+          className="flex items-center gap-1 mb-6 overflow-x-auto pb-1 core-panel shadow-sm p-1"
           style={{ scrollbarWidth: 'none' }}
         >
           {TABS.map(({ key, label, icon: Icon }) => (

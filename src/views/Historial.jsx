@@ -144,14 +144,13 @@ export default function Historial() {
 
   return (
     <div
-      className="min-h-screen"
+      className="min-h-screen core-page-shell"
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
       {/* Sticky Header */}
       <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
+        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
         style={{
-          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
           borderColor: 'var(--border-subtle)',
         }}
       >
@@ -166,12 +165,12 @@ export default function Historial() {
             Historial de Actividad
           </h1>
           {project?.name && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
               {project.name}
             </span>
           )}
           <span
-            className="text-[10px] px-2 py-0.5 rounded-full"
+            className="text-xs px-2 py-0.5 rounded-full"
             style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
           >
             {filtered.length} registros
@@ -371,7 +370,7 @@ export default function Historial() {
                   >
                     <button
                       onClick={() => handleToggleMonth(month)}
-                      className="flex items-center gap-3 w-full text-left px-6 py-4 transition-colors"
+                      className="flex items-center gap-3 w-full text-left px-6 py-4 transition-colors cursor-pointer"
                       style={{ borderBottom: isOpen ? '1px solid var(--border-subtle)' : 'none' }}
                     >
                       <div
@@ -432,16 +431,10 @@ export default function Historial() {
                                     }}
                                   />
                                   <div
-                                    className="flex-1 rounded-xl p-4 transition-all"
+                                    className="flex-1 rounded-xl p-4 transition-all hover:border-[var(--border-strong)]"
                                     style={{
                                       background: 'var(--surface-muted)',
                                       border: '1px solid var(--border-subtle)',
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.borderColor = 'var(--border-strong)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.borderColor = 'var(--border-subtle)';
                                     }}
                                   >
                                     <div className="flex items-start justify-between gap-3">
@@ -452,7 +445,7 @@ export default function Historial() {
                                         {task.title}
                                       </p>
                                       <span
-                                        className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                        className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
                                         style={{
                                           background: `${st.color}18`,
                                           color: st.color,
@@ -472,14 +465,14 @@ export default function Historial() {
                                     )}
                                     <div className="flex items-center gap-3 mt-2.5">
                                       <span
-                                        className="text-[10px] font-medium flex items-center gap-1"
+                                        className="text-xs font-medium flex items-center gap-1"
                                         style={{ color: prioColor }}
                                       >
                                         <Flag className="w-3 h-3" />
                                         {task.priority || 'medium'}
                                       </span>
                                       <span
-                                        className="text-[10px]"
+                                        className="text-xs"
                                         style={{ color: 'var(--text-muted)' }}
                                       >
                                         {date.toLocaleDateString('es-ES', {
@@ -491,7 +484,7 @@ export default function Historial() {
                                       </span>
                                       {task.due_date && (
                                         <span
-                                          className="text-[10px] flex items-center gap-1"
+                                          className="text-xs flex items-center gap-1"
                                           style={{ color: 'var(--text-muted)' }}
                                         >
                                           <Calendar className="w-3 h-3" />

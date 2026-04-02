@@ -163,7 +163,7 @@ export default function Dashboard() {
       <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-md border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-semibold leading-none mb-0.5">
+            <p className="text-xs uppercase tracking-[0.2em] text-text-muted font-semibold leading-none mb-0.5">
               Proyecto Activo
             </p>
             <h1 className="font-mono text-base font-bold text-text-primary leading-none">

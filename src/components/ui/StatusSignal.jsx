@@ -59,7 +59,7 @@ export default function StatusSignal({
         className={`inline-flex rounded-full ${dotClass}`}
         style={{ width: 6, height: 6, background: style.dot }}
       />
-      {label ? <span className="text-[10px] font-semibold">{label}</span> : null}
+      {label ? <span className="text-xs font-semibold">{label}</span> : null}
     </span>
   );
 }

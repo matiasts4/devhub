@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Zap,
   CheckCircle2,
@@ -17,25 +17,30 @@ import {
   Plug,
   Cpu,
   Star,
+  LogIn,
+  LogOut,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 // Provider configurations
 const PROVIDER_CONFIGS = {
   copilot: {
     name: 'GitHub Copilot',
-    description: 'Proveedor oficial de GitHub con soporte MCP nativo y multi-modelo.',
+    description: 'Proveedor oficial de GitHub Copilot con acceso a la flota real (gpt-4o, gpt-4.1, gpt-5.2, Raptor) y soporte de reasoning_effort.',
     envVars: {
-      COPILOT_TOKEN: {
-        label: 'GitHub Token',
-        type: 'password',
-        placeholder: 'ghp_...',
-        required: true,
-      },
       COPILOT_MODEL: {
         label: 'Modelo',
         type: 'select',
-        options: ['gpt-4o', 'gpt-4o-mini', 'claude-3.5-sonnet', 'o1', 'o3-mini'],
-        default: 'gpt-4o',
+        options: [],
+        default: 'gpt-5.2',
+      },
+      COPILOT_REASONING_EFFORT: {
+        label: 'Reasoning Effort',
+        type: 'button-group',
+        options: ['none', 'low', 'medium', 'high', 'xhigh'],
+        default: 'none',
       },
     },
     priority: 1,
@@ -113,6 +118,18 @@ export default function LLMProviderSettings({ embedded = false }) {
   const [modelOptions, setModelOptions] = useState({});
   const [modelErrors, setModelErrors] = useState({});
   const [modelSearch, setModelSearch] = useState({});
+  const [copilotAuth, setCopilotAuth] = useState({
+    state: 'idle', // idle | loading | pending | success | error
+    userCode: null,
+    verificationUri: null,
+    deviceCode: null,
+    interval: 5,
+    username: null,
+    error: null,
+    copied: false,
+  });
+  const copilotPollRef = useRef(null);
+
   const [priorityOrder, setPriorityOrder] = useState(['copilot', 'openrouter', 'zen', 'direct']);
   const [globalTemperature, setGlobalTemperature] = useState(0.7);
   const [globalMaxTokens, setGlobalMaxTokens] = useState(4000);
@@ -168,11 +185,82 @@ export default function LLMProviderSettings({ embedded = false }) {
       setBridgeEnabled(data.bridgeEnabled !== false);
       setModelOptions(data.modelOptions || {});
       setFavoriteModels(data.favoriteModels || {});
+      // Detectar si hay un OAuth token guardado
+      const copilotData = data.providers?.copilot || {};
+      if (copilotData.COPILOT_OAUTH_TOKEN) {
+        setCopilotAuth((prev) => ({ ...prev, state: 'success', username: copilotData._username || 'GitHub' }));
+      }
     } catch (err) {
       console.error('Failed to load LLM config:', err);
     } finally {
       setLoading(false);
     }
+  }
+
+  // ============================================================
+  // GitHub Copilot Device Flow
+  // ============================================================
+
+  async function startCopilotLogin() {
+    setCopilotAuth({ state: 'loading', userCode: null, verificationUri: null, deviceCode: null, interval: 5, username: null, error: null, copied: false });
+    try {
+      const res = await fetch('/api/settings/llm-providers/copilot/device-flow', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error iniciando Device Flow');
+      setCopilotAuth((prev) => ({
+        ...prev,
+        state: 'pending',
+        userCode: data.user_code,
+        verificationUri: data.verification_uri,
+        deviceCode: data.device_code,
+        interval: data.interval || 5,
+      }));
+      // Iniciar polling
+      pollCopilotAuth(data.device_code, data.interval || 5);
+    } catch (err) {
+      setCopilotAuth((prev) => ({ ...prev, state: 'error', error: err.message }));
+    }
+  }
+
+  function pollCopilotAuth(deviceCode, interval) {
+    if (copilotPollRef.current) clearTimeout(copilotPollRef.current);
+    const doPoll = async () => {
+      try {
+        const res = await fetch('/api/settings/llm-providers/copilot/poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_code: deviceCode }),
+        });
+        const data = await res.json();
+        if (data.status === 'pending') {
+          copilotPollRef.current = setTimeout(doPoll, interval * 1000);
+        } else if (data.status === 'success') {
+          setCopilotAuth((prev) => ({ ...prev, state: 'success', username: data.username }));
+          // Recargar config para que el provider vea el nuevo token
+          await loadConfig();
+        } else if (data.status === 'expired') {
+          setCopilotAuth((prev) => ({ ...prev, state: 'error', error: 'El código venció. Intentalo de nuevo.' }));
+        } else {
+          setCopilotAuth((prev) => ({ ...prev, state: 'error', error: data.error || 'Error desconocido' }));
+        }
+      } catch (err) {
+        setCopilotAuth((prev) => ({ ...prev, state: 'error', error: err.message }));
+      }
+    };
+    copilotPollRef.current = setTimeout(doPoll, interval * 1000);
+  }
+
+  function logoutCopilot() {
+    if (copilotPollRef.current) clearTimeout(copilotPollRef.current);
+    setCopilotAuth({ state: 'idle', userCode: null, verificationUri: null, deviceCode: null, interval: 5, username: null, error: null, copied: false });
+    setProviders((prev) => {
+      const next = { ...prev };
+      if (next.copilot) {
+        delete next.copilot.COPILOT_OAUTH_TOKEN;
+        delete next.copilot._username;
+      }
+      return next;
+    });
   }
 
   async function persistConfig(overrides = {}) {
@@ -221,6 +309,8 @@ export default function LLMProviderSettings({ embedded = false }) {
       const nextModelOptions = { ...modelOptions, [providerName]: models };
       setModelOptions(nextModelOptions);
       await persistConfig({ modelOptions: nextModelOptions });
+      
+      toast.success(`Lista actualizada: ${models.length} modelos encontrados.`);
 
       const modelFieldKey = getModelFieldKey(providerName);
       if (modelFieldKey) {
@@ -434,7 +524,7 @@ export default function LLMProviderSettings({ embedded = false }) {
           <div>
             <button
               onClick={() => setBridgeEnabled(!bridgeEnabled)}
-              className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none"
+              className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer"
               style={{
                 background: bridgeEnabled
                   ? 'var(--success, #22c55e)'
@@ -520,7 +610,7 @@ export default function LLMProviderSettings({ embedded = false }) {
                   <button
                     onClick={() => moveProviderUp(providerName)}
                     disabled={index === 0}
-                    className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-muted)]"
+                    className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-muted)] cursor-pointer"
                     style={{
                       background: 'var(--surface-sunken)',
                       borderRight: '1px solid var(--border-subtle)',
@@ -531,7 +621,7 @@ export default function LLMProviderSettings({ embedded = false }) {
                   <button
                     onClick={() => moveProviderDown(providerName)}
                     disabled={index === priorityOrder.length - 1}
-                    className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-muted)]"
+                    className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-muted)] cursor-pointer"
                     style={{ background: 'var(--surface-sunken)' }}
                   >
                     <ArrowDown size={12} style={{ color: 'var(--text-primary)' }} />
@@ -541,7 +631,7 @@ export default function LLMProviderSettings({ embedded = false }) {
                 {/* Toggle Provider */}
                 <button
                   onClick={() => toggleProvider(providerName)}
-                  className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none ml-1"
+                  className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none ml-1 cursor-pointer"
                   style={{
                     background: isEnabled
                       ? 'var(--success, #22c55e)'
@@ -561,8 +651,147 @@ export default function LLMProviderSettings({ embedded = false }) {
             <div
               className={`space-y-5 transition-all w-full ${!isEnabled && 'pointer-events-none opacity-50'}`}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full pt-2">
-                {Object.entries(config.envVars).map(([key, field]) => (
+              {/* === RENDER ESPECIAL PARA COPILOT (Device Flow) === */}
+              {providerName === 'copilot' && (
+                <div className="space-y-4 pt-2">
+                  {/* Auth Status Card */}
+                  {copilotAuth.state === 'success' ? (
+                    <div
+                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl"
+                      style={{
+                        background: 'color-mix(in srgb, #22c55e 8%, var(--surface-sunken))',
+                        border: '1px solid color-mix(in srgb, #22c55e 25%, transparent)',
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={16} style={{ color: '#22c55e' }} />
+                        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                          Autenticado como{' '}
+                          <span className="font-mono font-semibold" style={{ color: '#22c55e' }}>
+                            {copilotAuth.username}
+                          </span>
+                        </span>
+                      </div>
+                      <button
+                        onClick={logoutCopilot}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                        style={{
+                          background: 'color-mix(in srgb, #ef4444 12%, transparent)',
+                          border: '1px solid color-mix(in srgb, #ef4444 25%, transparent)',
+                          color: '#ef4444',
+                        }}
+                      >
+                        <LogOut size={12} /> Cerrar sesión
+                      </button>
+                    </div>
+                  ) : copilotAuth.state === 'pending' ? (
+                    /* Modal de código inline */
+                    <div
+                      className="rounded-xl p-4 space-y-3"
+                      style={{
+                        background: 'color-mix(in srgb, var(--accent-primary) 5%, var(--surface-sunken))',
+                        border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Loader2 size={14} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />
+                        <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                          Esperando autorización en GitHub...
+                        </span>
+                      </div>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        1. Abrí{' '}
+                        <a
+                          href={copilotAuth.verificationUri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline inline-flex items-center gap-0.5"
+                          style={{ color: 'var(--accent-primary)' }}
+                        >
+                          {copilotAuth.verificationUri} <ExternalLink size={11} />
+                        </a>
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>2. Ingresá este código:</p>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-mono text-2xl font-bold tracking-widest px-4 py-2 rounded-xl"
+                          style={{
+                            background: 'var(--surface-card)',
+                            border: '2px solid var(--accent-primary)',
+                            color: 'var(--accent-primary)',
+                            letterSpacing: '0.25em',
+                          }}
+                        >
+                          {copilotAuth.userCode}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(copilotAuth.userCode || '');
+                            setCopilotAuth((p) => ({ ...p, copied: true }));
+                            setTimeout(() => setCopilotAuth((p) => ({ ...p, copied: false })), 2000);
+                          }}
+                          className="p-2 rounded-lg transition-all"
+                          style={{
+                            background: copilotAuth.copied ? 'color-mix(in srgb, #22c55e 15%, transparent)' : 'var(--surface-card)',
+                            border: '1px solid var(--border-subtle)',
+                            color: copilotAuth.copied ? '#22c55e' : 'var(--text-muted)',
+                          }}
+                          title="Copiar código"
+                        >
+                          {copilotAuth.copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setCopilotAuth((p) => ({ ...p, state: 'idle' }))}
+                        className="text-xs underline"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    /* Estado idle / error: botón de login */
+                    <div className="space-y-2">
+                      {copilotAuth.state === 'error' && (
+                        <div
+                          className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg"
+                          style={{
+                            background: 'color-mix(in srgb, #ef4444 10%, transparent)',
+                            border: '1px solid color-mix(in srgb, #ef4444 25%, transparent)',
+                            color: '#ef4444',
+                          }}
+                        >
+                          <XCircle size={13} /> {copilotAuth.error}
+                        </div>
+                      )}
+                      <button
+                        onClick={startCopilotLogin}
+                        disabled={copilotAuth.state === 'loading'}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                        style={{
+                          background: 'var(--accent-primary)',
+                          color: 'white',
+                          boxShadow: '0 2px 8px color-mix(in srgb, var(--accent-primary) 30%, transparent)',
+                        }}
+                      >
+                        {copilotAuth.state === 'loading' ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <LogIn size={16} />
+                        )}
+                        Login con GitHub Copilot
+                      </button>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        Usás el mismo mecanismo que VS Code y OpenCode. No se almacenan contraseñas.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(providerName !== 'copilot' || copilotAuth.state === 'success') && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full pt-2">
+                  {Object.entries(config.envVars).map(([key, field]) => (
                   <div key={key} className={field.type === 'select' ? 'md:col-span-2' : ''}>
                     <label
                       className="text-xs font-medium mb-1.5 block"
@@ -600,7 +829,7 @@ export default function LLMProviderSettings({ embedded = false }) {
                                 [providerName]: !prev[providerName],
                               }))
                             }
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
                             style={{
                               background: showFavoritesOnly[providerName]
                                 ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
@@ -618,7 +847,7 @@ export default function LLMProviderSettings({ embedded = false }) {
                             Solo Favoritos
                           </button>
                           {(favoriteModels[providerName] || []).length > 0 && (
-                            <span className="text-[10px] text-gray-500">
+                            <span className="text-xs text-gray-500">
                               {(favoriteModels[providerName] || []).length} favorito
                               {(favoriteModels[providerName] || []).length !== 1 ? 's' : ''}
                             </span>
@@ -705,6 +934,28 @@ export default function LLMProviderSettings({ embedded = false }) {
                           })()}
                         </div>
                       </div>
+                    ) : field.type === 'button-group' ? (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {field.options?.map((opt) => {
+                          const active = (providerData[key] || field.default) === opt;
+                          return (
+                            <button
+                              key={opt}
+                              onClick={() => updateProviderConfig(providerName, key, opt)}
+                              className="font-mono text-[11px] px-3 py-1.5 rounded-lg border transition-all"
+                              style={{
+                                borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                                background: active
+                                  ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
+                                  : 'var(--surface-sunken)',
+                                color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                              }}
+                            >
+                              {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
                     ) : (
                       <input
                         type={field.type}
@@ -720,7 +971,8 @@ export default function LLMProviderSettings({ embedded = false }) {
                     )}
                   </div>
                 ))}
-              </div>
+                </div>
+              )}
 
               {/* Botones de acción y estado (Cargar modelos, Probar) */}
               <div
@@ -731,7 +983,7 @@ export default function LLMProviderSettings({ embedded = false }) {
                   <button
                     onClick={() => loadModels(providerName)}
                     disabled={loadingModels === providerName}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors hover:opacity-80 disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors hover:opacity-80 disabled:opacity-50 cursor-pointer"
                     style={{
                       background: 'var(--surface-sunken)',
                       border: '1px solid var(--border-strong)',
@@ -748,7 +1000,7 @@ export default function LLMProviderSettings({ embedded = false }) {
                   <button
                     onClick={() => testProvider(providerName)}
                     disabled={testing === providerName}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors hover:opacity-80 disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors hover:opacity-80 disabled:opacity-50 cursor-pointer"
                     style={{
                       background: 'var(--surface-sunken)',
                       border: '1px solid var(--border-strong)',

@@ -82,7 +82,7 @@ export default function TaskComments({ taskId }) {
               {c.author_type === 'agent' ? (
                 <Bot className="w-5 h-5 text-[#F778BA]" />
               ) : (
-                <div className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[10px]">
+                <div className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">
                   {c.auth_users?.email?.substring(0, 1).toUpperCase() || 'U'}
                 </div>
               )}
@@ -94,7 +94,7 @@ export default function TaskComments({ taskId }) {
                     ? 'Agente (Swarm)'
                     : c.auth_users?.email?.split('@')[0] || 'Miembro'}
                 </span>
-                <span className="text-[10px] text-text-muted">
+                <span className="text-xs text-text-muted">
                   {new Date(c.created_at).toLocaleDateString()}{' '}
                   {new Date(c.created_at).toLocaleTimeString([], {
                     hour: '2-digit',

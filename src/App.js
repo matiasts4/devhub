@@ -34,6 +34,8 @@ import {
 } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
+import NotificationCenter from './components/NotificationCenter';
+import { Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 
 function WorkspaceLayout() {
   const { projectId } = useParams();
@@ -134,14 +136,85 @@ function WorkspaceLayout() {
   if (!project) return <Navigate to="/hub" replace />;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-app text-text-primary">
-      <WorkspaceSidebar
-        project={project}
-        collapsed={collapsed}
-        onToggle={() => setCollapsed(!collapsed)}
-      />
+    <div className="relative flex h-screen overflow-hidden bg-surface-app text-text-primary">
+      <WorkspaceSidebar project={project} collapsed={collapsed} />
+
+      {/* Lateral floating sidebar toggle */}
+      <button
+        data-testid="sidebar-toggle-float"
+        onClick={() => setCollapsed(!collapsed)}
+        aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+        className="absolute z-30 w-7 h-7 rounded-full border flex items-center justify-center transition-all hover:scale-105 cursor-pointer"
+        style={{
+          left: collapsed ? 56 : 280,
+          top: '52%',
+          transform: 'translate(-50%, -50%)',
+          borderColor: 'color-mix(in srgb, var(--accent-primary) 35%, var(--border-subtle))',
+          background:
+            'linear-gradient(135deg, color-mix(in srgb, var(--surface-card) 95%, transparent), color-mix(in srgb, var(--surface-elevated) 80%, transparent))',
+          color: 'var(--text-muted)',
+          boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+        }}
+      >
+        {collapsed ? (
+          <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
+        ) : (
+          <ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.8} />
+        )}
+      </button>
 
       <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
+        {/* Floating command topbar */}
+        {!isTerminalRoute && (
+          <header
+            className="sticky top-0 z-20 px-6 pt-4"
+            style={{
+              background:
+                'linear-gradient(180deg, color-mix(in srgb, var(--surface-app) 96%, transparent), transparent)',
+            }}
+          >
+            <div
+              className="rounded-2xl border px-4 py-2.5 flex items-center justify-between"
+              style={{
+                borderColor: 'var(--border-subtle)',
+                background:
+                  'linear-gradient(135deg, color-mix(in srgb, var(--surface-card) 90%, transparent), color-mix(in srgb, var(--surface-elevated) 65%, transparent))',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.22)',
+              }}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent-primary) 35%, transparent)',
+                    background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                    color: 'var(--accent-primary)',
+                  }}
+                >
+                  <Sparkles className="w-3 h-3" /> DevHub Command Deck
+                </span>
+                <span className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                  {project?.name}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <NotificationCenter projectId={project?.id} variant="topbar" />
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full border"
+                  style={{
+                    borderColor: 'var(--border-subtle)',
+                    background: 'var(--surface-muted)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  Ruta: {location.pathname.split('/').slice(-1)[0]}
+                </span>
+              </div>
+            </div>
+          </header>
+        )}
+
         {/* Main Routed Content */}
         <main
           className="h-full w-full overflow-y-auto"

@@ -48,7 +48,7 @@ export function BlockCode({ children, ...props }) {
         <span className="text-xs text-gray-500 font-mono lowercase">{language}</span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors cursor-pointer"
           title="Copy to clipboard"
         >
           {copied ? (
