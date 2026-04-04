@@ -25,8 +25,11 @@ import {
   Sun,
   Hash,
   Cpu,
+  Server,
+  SlidersHorizontal,
+  Power,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import { getStoredTheme, setTheme, THEMES, THEME_OPTIONS } from '@/lib/theme/themes';
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
@@ -120,7 +123,7 @@ function Toggle({ checked, onChange }) {
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none"
+      className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer"
       style={{
         background: checked
           ? 'var(--success)'
@@ -196,7 +199,7 @@ function ThemeOptionCard({ option, active, onClick }) {
         </div>
         {active && (
           <span
-            className="absolute right-1.5 top-1.5 h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-[10px] font-medium"
+            className="absolute right-1.5 top-1.5 h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-xs font-medium"
             style={{ background: 'var(--accent-primary)', color: 'white' }}
           >
             <Check className="w-3 h-3" />
@@ -303,6 +306,7 @@ const TABS = [
   { key: 'project', label: 'Proyecto', icon: LayoutGrid },
   { key: 'theme', label: 'Apariencia', icon: Palette },
   { key: 'llm', label: 'LLM', icon: Cpu },
+  { key: 'swarm', label: 'Swarm', icon: Server },
   { key: 'profile', label: 'Perfil', icon: User },
   { key: 'prefs', label: 'Preferencias', icon: Settings },
   { key: 'danger', label: 'Peligro', icon: AlertTriangle },
@@ -312,7 +316,7 @@ const TABS = [
 
 export default function Ajustes() {
   const { project } = useOutletContext() || {};
-  const supabase = createClient();
+  const db = createClient();
   const navigate = useNavigate();
 
   // Project settings
@@ -350,6 +354,15 @@ export default function Ajustes() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Swarm settings
+  const [swarmConfig, setSwarmConfigState] = useState({
+    max_concurrent_swarms: 5,
+    swarm_enabled: true,
+  });
+  const [swarmStatus, setSwarmStatus] = useState(null);
+  const [savingSwarm, setSavingSwarm] = useState(false);
+  const [loadingSwarm, setLoadingSwarm] = useState(false);
+
   const handleSelectFolder = async () => {
     try {
       const selected = await openDialog({
@@ -365,8 +378,7 @@ export default function Ajustes() {
 
   useEffect(() => {
     // Local-first: load profile directly
-    supabase
-      .from('profiles')
+    db.from('profiles')
       .select('*')
       .single()
       .then(({ data }) => {
@@ -383,6 +395,8 @@ export default function Ajustes() {
     setTheme(storedTheme);
     const onboardingDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
     if (!onboardingDone) setWizardOpen(true);
+    // Load swarm settings
+    loadSwarmSettings();
   }, []);
 
   const handleThemeChange = useCallback((themeId) => {
@@ -406,7 +420,7 @@ export default function Ajustes() {
 
   async function saveProject() {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await db
       .from('projects')
       .update({ name, description, color, status, local_path: localPath })
       .eq('id', project?.id);
@@ -420,9 +434,7 @@ export default function Ajustes() {
 
   async function saveProfile() {
     setSavingProfile(true);
-    const { error } = await supabase
-      .from('profiles')
-      .upsert({ id: 'local-user', full_name: fullName });
+    const { error } = await db.from('profiles').upsert({ id: 'local-user', full_name: fullName });
     setSavingProfile(false);
     if (error) {
       toast.error('Error al guardar perfil');
@@ -433,9 +445,9 @@ export default function Ajustes() {
 
   async function deleteProject() {
     setDeleting(true);
-    await supabase.from('tasks').delete().eq('project_id', project?.id);
-    await supabase.from('milestones').delete().eq('project_id', project?.id);
-    const { error } = await supabase.from('projects').delete().eq('id', project?.id);
+    await db.from('tasks').delete().eq('project_id', project?.id);
+    await db.from('milestones').delete().eq('project_id', project?.id);
+    const { error } = await db.from('projects').delete().eq('id', project?.id);
     setDeleting(false);
     if (error) {
       toast.error('Error al eliminar');
@@ -443,6 +455,56 @@ export default function Ajustes() {
     }
     toast.success('Proyecto eliminado');
     navigate('/hub');
+  }
+
+  async function loadSwarmSettings() {
+    setLoadingSwarm(true);
+    try {
+      const [configRes, statusRes] = await Promise.all([
+        fetch('/api/agenthub/config'),
+        fetch('/api/agenthub/opencode/status'),
+      ]);
+      if (configRes.ok) {
+        const config = await configRes.json();
+        setSwarmConfigState(config);
+      }
+      if (statusRes.ok) {
+        const status = await statusRes.json();
+        setSwarmStatus(status);
+      }
+    } catch (err) {
+      console.error('Error loading swarm settings:', err.message);
+    } finally {
+      setLoadingSwarm(false);
+    }
+  }
+
+  async function saveSwarmSettings() {
+    setSavingSwarm(true);
+    try {
+      const res = await fetch('/api/agenthub/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(swarmConfig),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.error || 'Error al guardar configuración del swarm');
+        return;
+      }
+      const data = await res.json();
+      setSwarmConfigState(data);
+      toast.success('Configuración del swarm actualizada');
+      // Refresh status
+      const statusRes = await fetch('/api/agenthub/opencode/status');
+      if (statusRes.ok) {
+        setSwarmStatus(await statusRes.json());
+      }
+    } catch (err) {
+      toast.error('Error al guardar: ' + err.message);
+    } finally {
+      setSavingSwarm(false);
+    }
   }
 
   const filteredThemes = useMemo(() => {
@@ -501,7 +563,7 @@ export default function Ajustes() {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+                className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-strong)',
@@ -545,7 +607,7 @@ export default function Ajustes() {
               rows={2}
               value={description}
               onChange={(e) => setDesc(e.target.value)}
-              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none"
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
               style={{
                 background: 'var(--surface-muted)',
                 border: '1px solid var(--border-strong)',
@@ -566,7 +628,7 @@ export default function Ajustes() {
                 value={localPath}
                 onChange={(e) => setLocalPath(e.target.value)}
                 placeholder="/home/usuario/proyectos/mi-app"
-                className="flex-1 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+                className="flex-1 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-strong)',
@@ -576,7 +638,7 @@ export default function Ajustes() {
               <button
                 type="button"
                 onClick={handleSelectFolder}
-                className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0"
+                className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer"
                 style={{
                   background: 'var(--surface-elevated)',
                   border: '1px solid var(--border-strong)',
@@ -731,6 +793,268 @@ export default function Ajustes() {
 
   const renderLlmTab = () => <LLMProviderSettings embedded />;
 
+  const renderSwarmTab = () => (
+    <div className="space-y-6">
+      {/* Swarm Status Card */}
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-soft)',
+        }}
+      >
+        <div
+          className="flex items-center gap-3 px-6 py-4"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{
+              background: swarmStatus?.running
+                ? 'color-mix(in srgb, var(--success) 12%, transparent)'
+                : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
+              border: `1px solid ${swarmStatus?.running ? 'color-mix(in srgb, var(--success) 25%, transparent)' : 'color-mix(in srgb, var(--text-muted) 20%, transparent)'}`,
+            }}
+          >
+            <Server
+              className="w-4 h-4"
+              style={{ color: swarmStatus?.running ? 'var(--success)' : 'var(--text-muted)' }}
+            />
+          </div>
+          <div>
+            <h3
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Estado del Servidor
+            </h3>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {swarmStatus?.running
+                ? `OpenCode corriendo en puerto ${swarmStatus.port} (PID: ${swarmStatus.pid})`
+                : 'Servidor no detectado'}
+            </p>
+          </div>
+          <div className="ml-auto">
+            <span
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg"
+              style={{
+                background: swarmStatus?.running
+                  ? 'color-mix(in srgb, var(--success) 12%, transparent)'
+                  : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
+                color: swarmStatus?.running ? 'var(--success)' : 'var(--text-muted)',
+                border: `1px solid ${swarmStatus?.running ? 'color-mix(in srgb, var(--success) 25%, transparent)' : 'color-mix(in srgb, var(--text-muted) 20%, transparent)'}`,
+              }}
+            >
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{
+                  background: swarmStatus?.running ? 'var(--success)' : 'var(--text-muted)',
+                }}
+              />
+              {swarmStatus?.running ? 'Activo' : 'Inactivo'}
+            </span>
+          </div>
+        </div>
+
+        {swarmStatus && (
+          <div className="p-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                {
+                  label: 'Sesiones Activas',
+                  value: swarmStatus.activeSessions || 0,
+                  color: 'var(--warning)',
+                },
+                {
+                  label: 'Máx. Concurrente',
+                  value: swarmStatus.maxConcurrent || 5,
+                  color: 'var(--accent-primary)',
+                },
+                {
+                  label: 'PID',
+                  value: swarmStatus.pid || '—',
+                  color: 'var(--text-primary)',
+                },
+                {
+                  label: 'Puerto',
+                  value: swarmStatus.port || 4153,
+                  color: 'var(--text-primary)',
+                },
+              ].map(({ label, value, color }) => (
+                <div
+                  key={label}
+                  className="rounded-xl px-4 py-3"
+                  style={{
+                    background: 'var(--surface-muted)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <p
+                    className="text-[10px] uppercase tracking-wider"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {label}
+                  </p>
+                  <p className="text-lg font-mono mt-1" style={{ color }}>
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Swarm Configuration Card */}
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-soft)',
+        }}
+      >
+        <div
+          className="flex items-center gap-3 px-6 py-4"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{
+              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
+            }}
+          >
+            <SlidersHorizontal className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+          </div>
+          <div>
+            <h3
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Configuración del Swarm
+            </h3>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Límites de concurrencia y estado del servicio
+            </p>
+          </div>
+        </div>
+
+        {loadingSwarm ? (
+          <div
+            className="p-6 flex items-center justify-center gap-2"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Cargando configuración...</span>
+          </div>
+        ) : (
+          <div className="p-6 space-y-6">
+            {/* Swarm Enabled Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Power
+                  className="w-4 h-4"
+                  style={{
+                    color: swarmConfig.swarm_enabled ? 'var(--success)' : 'var(--text-muted)',
+                  }}
+                />
+                <div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Swarm Habilitado
+                  </p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Activar o desactivar el procesamiento por swarm
+                  </p>
+                </div>
+              </div>
+              <Toggle
+                checked={swarmConfig.swarm_enabled}
+                onChange={(v) => setSwarmConfigState((p) => ({ ...p, swarm_enabled: v }))}
+              />
+            </div>
+
+            {/* Max Concurrent Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <Cpu className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Máximo de Swarms Concurrentes
+                    </p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      Cada proceso consume ~1.8GB de RAM
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className="text-lg font-mono font-bold px-3 py-1 rounded-lg"
+                  style={{
+                    background: 'var(--surface-muted)',
+                    border: '1px solid var(--border-strong)',
+                    color: 'var(--accent-primary)',
+                  }}
+                >
+                  {swarmConfig.max_concurrent_swarms}
+                </span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                  1
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  value={swarmConfig.max_concurrent_swarms}
+                  onChange={(e) =>
+                    setSwarmConfigState((p) => ({
+                      ...p,
+                      max_concurrent_swarms: parseInt(e.target.value, 10),
+                    }))
+                  }
+                  className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
+                  style={{
+                    background: `linear-gradient(to right, var(--accent-primary) ${((swarmConfig.max_concurrent_swarms - 1) / 19) * 100}%, var(--surface-muted) ${((swarmConfig.max_concurrent_swarms - 1) / 19) * 100}%)`,
+                  }}
+                />
+                <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                  20
+                </span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5" style={{ color: 'var(--warning)' }} />
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Memoria estimada: ~{(swarmConfig.max_concurrent_swarms * 1.8).toFixed(1)}GB RAM al
+                  máximo
+                </p>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-2">
+              <button
+                onClick={saveSwarmSettings}
+                disabled={savingSwarm}
+                className="flex items-center gap-2 text-white font-medium px-5 py-2.5 rounded-lg text-xs transition-all disabled:opacity-50"
+                style={{ background: 'var(--success)' }}
+              >
+                {savingSwarm ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                Guardar configuración
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const renderProfileTab = () => (
     <div className="space-y-6">
       <div
@@ -801,7 +1125,7 @@ export default function Ajustes() {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Tu nombre"
-              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
               style={{
                 background: 'var(--surface-muted)',
                 border: '1px solid var(--border-strong)',
@@ -1028,24 +1352,16 @@ export default function Ajustes() {
     project: renderProjectTab,
     theme: renderThemeTab,
     llm: renderLlmTab,
+    swarm: renderSwarmTab,
     profile: renderProfileTab,
     prefs: renderPrefsTab,
     danger: renderDangerTab,
   };
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
-    >
+    <div className="min-h-screen core-page-shell" style={{ color: 'var(--text-primary)' }}>
       {/* Header */}
-      <div
-        className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
-        style={{
-          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
-          borderColor: 'var(--border-subtle)',
-        }}
-      >
+      <div className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between core-sticky-header">
         <div className="flex items-center gap-3">
           <Settings
             className="w-4 h-4"
@@ -1056,7 +1372,7 @@ export default function Ajustes() {
             Ajustes
           </h1>
           {project?.name && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
               {project.name}
             </span>
           )}
@@ -1065,10 +1381,7 @@ export default function Ajustes() {
 
       <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
         {/* Breadcrumb */}
-        <div
-          className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
-          style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
-        >
+        <div className="rounded-xl px-4 py-2.5 flex items-center gap-2 mb-6 core-panel shadow-sm">
           <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             DevHub
@@ -1083,7 +1396,7 @@ export default function Ajustes() {
 
         {/* Tab navigation */}
         <div
-          className="flex items-center gap-1 mb-6 overflow-x-auto pb-1"
+          className="flex items-center gap-1 mb-6 overflow-x-auto pb-1 core-panel shadow-sm p-1"
           style={{ scrollbarWidth: 'none' }}
         >
           {TABS.map(({ key, label, icon: Icon }) => (

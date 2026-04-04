@@ -6,11 +6,34 @@ const logger = require('../utils/logger');
  * /reanudar [agente] — Resume a paused agent.
  * If args provided: find agent by agent_id and resume it.
  * If no args: resume ALL paused agents.
+ *
+ * Multi-turn integration: If there's a paused multi-turn session for this chat,
+ * it takes priority and resumes the SSE execution loop. Falls back to the
+ * existing DB-only behavior when no paused multi-turn session exists.
  */
 module.exports = async function reanudar(bot, msg, args) {
   try {
     const chatId = msg.chat.id;
 
+    // === Multi-turn executor integration ===
+    const USE_MULTI_TURN = process.env.TELEGRAM_MULTI_TURN !== 'false';
+    if (USE_MULTI_TURN) {
+      const { getExecutor } = require('../services/executor');
+      const dbBridge = require('../lib/db-bridge');
+      const executor = getExecutor(bot, dbBridge);
+
+      // Check for paused multi-turn session
+      if (executor.hasPausedTask(chatId)) {
+        const result = await executor.resumeTask(chatId);
+        if (result) {
+          logger.info(`Multi-turn task resumed for chat ${chatId}`);
+          // Executor sends its own notifications; return the result for chat.js to handle
+          return;
+        }
+      }
+    }
+
+    // === Fallback: existing DB-only behavior ===
     if (args && args.trim()) {
       // Resume a specific agent by agent_id (partial match)
       const search = args.trim();

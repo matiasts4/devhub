@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getCopilotToken } from '@/lib/copilot-token';
 
 function normalizeBaseUrl(url) {
   if (!url) return null;
@@ -25,11 +26,16 @@ function extractModels(payload) {
 function getProviderRequest(provider, config = {}) {
   switch (provider) {
     case 'copilot': {
+      // Copilot usa su propio endpoint y requiere token exchange
       return {
         baseUrl: 'https://api.githubcopilot.com',
-        apiKey: config.COPILOT_TOKEN,
+        apiKey: config.COPILOT_OAUTH_TOKEN,
+        modelsPath: '/models',
+        isCopilot: true,
         headers: {
-          'Editor-Version': 'DevHub/1.0.0',
+          'editor-version': 'vscode/1.85.1',
+          'editor-plugin-version': 'copilot-chat/0.12.2023120701',
+          'user-agent': 'GithubCopilot/1.138.0',
         },
       };
     }
@@ -80,16 +86,33 @@ export async function POST(request) {
       );
     }
 
+    // Para Copilot: intercambiar el gho_ por copilot_token
+    let effectiveApiKey = reqConfig.apiKey;
+    if (reqConfig.isCopilot) {
+      if (!effectiveApiKey) {
+        return NextResponse.json(
+          { models: [], error: 'No configurado. Autenticáte con GitHub Copilot en Ajustes.' },
+          { status: 200 }
+        );
+      }
+      try {
+        effectiveApiKey = await getCopilotToken(effectiveApiKey);
+      } catch (err) {
+        return NextResponse.json({ models: [], error: err.message }, { status: 200 });
+      }
+    }
+
     const headers = {
       'Content-Type': 'application/json',
       ...reqConfig.headers,
     };
 
-    if (reqConfig.apiKey) {
-      headers.Authorization = `Bearer ${reqConfig.apiKey}`;
+    if (effectiveApiKey) {
+      headers.Authorization = `Bearer ${effectiveApiKey}`;
     }
 
-    const response = await fetch(`${baseUrl}/models`, {
+    const modelsPath = reqConfig.modelsPath || '/models';
+    const response = await fetch(`${baseUrl}${modelsPath}`, {
       method: 'GET',
       headers,
       cache: 'no-store',
@@ -103,7 +126,27 @@ export async function POST(request) {
     }
 
     const payload = await response.json().catch(() => ({}));
-    const models = extractModels(payload);
+    let models = extractModels(payload);
+
+    if (reqConfig.isCopilot) {
+      const openCodeModels = [
+        'Claude Haiku 4.5',
+        'Gemini 2.5 Pro',
+        'Gemini 3 Flash (Preview)',
+        'Gemini 3.1 Pro (Preview)',
+        'GPT-4.1',
+        'GPT-4o',
+        'GPT-5 mini',
+        'GPT-5.1',
+        'GPT-5.2',
+        'GPT-5.2-Codex',
+        'GPT-5.3-Codex',
+        'GPT-5.4 mini',
+        'Grok Code Fast 1',
+        'Raptor mini (Preview)'
+      ];
+      models = [...new Set([...models, ...openCodeModels])];
+    }
 
     return NextResponse.json({
       models: [...new Set(models)].sort((a, b) => a.localeCompare(b)),

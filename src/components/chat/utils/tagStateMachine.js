@@ -83,7 +83,7 @@ export function createTagParser() {
         pendingBeforeTag += beforePartial;
         state = STATES.TAG_OPENING;
         buffer = partialOpen[0];
-        return pendingBeforeTag + '> ⏳ *Generando ejecución de sub-sistema...*\n\n';
+        return pendingBeforeTag + '> *Generando ejecución de sub-sistema...*\n\n';
       }
 
       // If inside a tag, check for closing
@@ -130,9 +130,9 @@ export function createTagParser() {
      */
     _formatCompleteTag() {
       if (toolType === 'opencode') {
-        return `\n\n> 🚀 **Dispatching Sub-Agent**: \`${toolName}\`\n> \n> **Instructions:** ${tagContent}\n\n`;
+        return `\n\n> **▶ Dispatching Sub-Agent**: \`${toolName}\`\n> \n> **Instructions:** ${tagContent}\n\n`;
       } else if (toolType === 'engram') {
-        return `\n\n> 🧠 **Accediendo a Memoria (Engram MCP)**\n> \n> **Herramienta:** \`${toolName}\`\n> **Argumentos:** \`${toolArgs}\`\n\n`;
+        return `\n\n> **◈ Accediendo a Memoria (Engram MCP)**\n> \n> **Herramienta:** \`${toolName}\`\n> **Argumentos:** \`${toolArgs}\`\n\n`;
       }
       return '';
     },
@@ -142,11 +142,11 @@ export function createTagParser() {
      */
     _formatLoading() {
       if (toolType === 'opencode') {
-        return `\n\n> ⏳ *Preparando Sub-Agente...*\n> \n> **Agente:** \`${toolName}\`\n\n`;
+        return `\n\n> *Preparando Sub-Agente...*\n> \n> **Agente:** \`${toolName}\`\n\n`;
       } else if (toolType === 'engram') {
-        return `\n\n> ⏳ *Engram MCP contactando...*\n> \n> **Herramienta:** \`${toolName}\`\n\n`;
+        return `\n\n> *Engram MCP contactando...*\n> \n> **Herramienta:** \`${toolName}\`\n\n`;
       }
-      return '\n\n> ⏳ *Generando ejecución de sub-sistema...*\n\n';
+      return '\n\n> *Generando ejecución de sub-sistema...*\n\n';
     },
   };
 }

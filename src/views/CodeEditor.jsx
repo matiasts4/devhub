@@ -221,13 +221,13 @@ export default function CodeEditor() {
   );
 
   return (
-    <div className="h-full min-h-screen bg-surface-app flex flex-col">
-      <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-sm border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
+    <div className="h-full min-h-screen core-page-shell flex flex-col">
+      <div className="sticky top-0 z-10 core-sticky-header border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <FileCode2 className="w-4 h-4 text-accent-primary" strokeWidth={1.5} />
           <h1 className="font-mono text-base font-bold text-text-primary">Editor de Código</h1>
           {project?.name && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted truncate max-w-[220px]">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted truncate max-w-[220px]">
               {project.name}
             </span>
           )}
@@ -235,7 +235,7 @@ export default function CodeEditor() {
         <button
           type="button"
           onClick={loadTree}
-          className="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-md hover:bg-surface-elevated"
+          className="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-md hover:bg-surface-elevated cursor-pointer"
           title="Recargar árbol de archivos"
         >
           <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -247,7 +247,7 @@ export default function CodeEditor() {
           <ResizablePanel defaultSize={26} minSize={18} maxSize={40}>
             <aside className="h-full border-r border-borders-subtle bg-surface-app flex flex-col">
               <div className="px-4 py-2.5 border-b border-borders-subtle">
-                <p className="text-[10px] uppercase tracking-[0.13em] text-text-muted font-semibold">
+                <p className="text-xs uppercase tracking-[0.13em] text-text-muted font-semibold">
                   Workspace
                 </p>
               </div>
@@ -337,7 +337,7 @@ export default function CodeEditor() {
                         download
                         target="_blank"
                         rel="noreferrer"
-                        className="mt-4 px-4 py-2 bg-surface-elevated hover:bg-surface-hover rounded-md text-sm transition-colors border border-borders-subtle flex items-center gap-2"
+                        className="mt-4 px-4 py-2 bg-surface-elevated hover:bg-surface-hover rounded-md text-sm transition-colors border border-borders-subtle flex items-center gap-2 cursor-pointer"
                       >
                         <FolderOpen className="w-4 h-4" /> Descargar / Abrir Nativo
                       </a>

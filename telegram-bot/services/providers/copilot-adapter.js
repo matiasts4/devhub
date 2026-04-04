@@ -1,57 +1,46 @@
 /**
  * @file copilot-adapter.js
- * @description Adapter para GitHub Copilot — proveedor primario en la cadena de failover.
+ * @description Adapter para GitHub Copilot usando OAuth Device Flow.
  *
- * A diferencia de los demás adapters (que son compatibles con OpenAI), Copilot tiene
- * su propio SDK. Este adapter implementa un enfoque dual:
+ * Usa api.githubcopilot.com (endpoint interno de Copilot IDE) con el mismo
+ * mecanismo de autenticación que OpenCode, aider y neovim-copilot:
+ *   1. OAuth Device Flow → gho_... (token persistente)
+ *   2. Intercambio por copilot_token (efímero, 30 min TTL) via copilot_internal/v2/token
+ *   3. Llamadas a api.githubcopilot.com con ese copilot_token
  *
- * 1. Intenta usar @copilot-extensions/preview-sdk (SDK oficial de Copilot)
- * 2. Si no está disponible, fallback a la API compatible con OpenAI en api.githubcopilot.com
- *
- * Modelos soportados: GPT-4o, GPT-4o-mini, Claude 3.5 Sonnet, Claude 3 Opus, o1, o1-mini, o3-mini
- *
- * @example
- * const CopilotAdapter = require('./providers/copilot-adapter');
- * const copilot = new CopilotAdapter({
- *   apiKey: process.env.COPILOT_TOKEN,
- *   model: 'gpt-4o',
- * });
- *
- * const response = await copilot.chat([
- *   { role: 'user', content: 'Hola, ¿cómo estás?' }
- * ]);
+ * Soporta todos los modelos del catálogo interno de Copilot (GPT-5.3-Codex,
+ * GPT-5.4-mini, etc.) y el parámetro reasoning_effort (low/medium/high/xhigh).
  */
+
+'use strict';
 
 const { LLMProvider, ERROR_TYPES, createClassifiedError } = require('./provider-interface');
 const logger = require('../../utils/logger');
+
+const COPILOT_API_BASE = 'https://api.githubcopilot.com';
+const COPILOT_INTERNAL_URL = 'https://api.github.com/copilot_internal/v2/token';
+const EDITOR_VERSION = 'vscode/1.85.1';
+const EDITOR_PLUGIN_VERSION = 'copilot-chat/0.12.2023120701';
+const USER_AGENT = 'GithubCopilot/1.138.0';
+
+// Cache de copilot_token en memoria (proceso del bot)
+let _tokenCache = { token: null, expiresAt: 0 };
 
 // ============================================================================
 // CLASE: CopilotAdapter
 // ============================================================================
 
-/**
- * Adapter para GitHub Copilot con soporte dual (SDK oficial + fallback OpenAI-compatible).
- *
- * Extiende LLMProvider directamente (NO OpenAICompatibleAdapter) porque Copilot
- * tiene su propio formato de API y SDK dedicado.
- *
- * @extends LLMProvider
- */
 class CopilotAdapter extends LLMProvider {
   /**
-   * Crea una nueva instancia del adapter de Copilot.
-   *
-   * @param {Object} [config={}] - Configuración del proveedor.
-   * @param {string} [config.apiKey] - Token de GitHub Copilot.
-   * @param {string} [config.model='gpt-4o'] - Modelo a utilizar.
-   * @param {number} [config.maxRetries=3] - Reintentos ante errores recuperables.
-   * @param {number} [config.timeout=60000] - Timeout en milisegundos.
-   * @param {boolean} [config.enabled=true] - Si el proveedor está habilitado.
+   * @param {Object} config
+   * @param {string} config.apiKey — OAuth token (gho_...) obtenido por Device Flow
+   * @param {string} [config.model='gpt-4o'] — Modelo a usar
+   * @param {string} [config.reasoningEffort] — 'low' | 'medium' | 'high' | 'xhigh'
    */
   constructor(config = {}) {
     super({
       name: 'copilot',
-      apiKey: (config.apiKey || process.env.COPILOT_TOKEN || '').trim(),
+      apiKey: (config.apiKey || process.env.COPILOT_OAUTH_TOKEN || process.env.COPILOT_TOKEN || '').trim(),
       model: config.model || process.env.COPILOT_MODEL || 'gpt-4o',
       maxRetries: config.maxRetries || 3,
       timeout: config.timeout || 60000,
@@ -59,60 +48,71 @@ class CopilotAdapter extends LLMProvider {
       ...config,
     });
 
-    this.client = null;
-    this._useFallback = false;
+    this.reasoningEffort = config.reasoningEffort || process.env.COPILOT_REASONING_EFFORT || null;
+  }
+
+  // ============================================================================
+  // TOKEN MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Obtiene un copilot_token válido, refrescando si está por vencer.
+   * El oauthToken es el gho_... persistente.
+   */
+  async _getCopilotToken() {
+    const oauthToken = this.config.apiKey;
+    if (!oauthToken) throw new Error('No hay token OAuth de Copilot configurado. Autenticáte desde Ajustes > GitHub Copilot.');
+
+    const now = Date.now();
+    if (_tokenCache.token && _tokenCache.expiresAt - now > 5 * 60 * 1000) {
+      return _tokenCache.token;
+    }
+
+    logger.info('[Copilot] Obteniendo nuevo copilot_token...');
+    const res = await fetch(COPILOT_INTERNAL_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `token ${oauthToken}`,
+        'editor-version': EDITOR_VERSION,
+        'editor-plugin-version': EDITOR_PLUGIN_VERSION,
+        'user-agent': USER_AGENT,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const msg = body?.message || `HTTP ${res.status}`;
+      throw new Error(
+        res.status === 401 || res.status === 403
+          ? `Sin acceso a Copilot. Verificá tu suscripción. (${msg})`
+          : `Error obteniendo copilot_token: ${msg}`,
+      );
+    }
+
+    const data = await res.json();
+    const expMatch = data.token?.match(/exp=(\d+)/);
+    const expiresAt = expMatch ? parseInt(expMatch[1]) * 1000 : now + 25 * 60 * 1000;
+
+    _tokenCache = { token: data.token, expiresAt };
+    logger.info('[Copilot] copilot_token renovado, vence en ~30 min');
+    return data.token;
   }
 
   /**
-   * Inicializa perezosamente el cliente de Copilot.
-   *
-   * Intenta primero el SDK oficial (@copilot-extensions/preview-sdk).
-   * Si no está disponible, hace fallback al endpoint OpenAI-compatible
-   * en api.githubcopilot.com usando el paquete `openai`.
-   *
-   * @returns {Object} Cliente de Copilot inicializado.
-   * @private
+   * Headers estándar para api.githubcopilot.com
    */
-  _getClient() {
-    if (this.client) return this.client;
-
-    // Intentar SDK oficial de Copilot primero
-    try {
-      const { CopilotClient } = require('@copilot-extensions/preview-sdk');
-      this.client = new CopilotClient({
-        token: this.config.apiKey,
-        model: this.config.model,
-      });
-      logger.info('Copilot SDK initialized successfully');
-      return this.client;
-    } catch (sdkErr) {
-      // Fallback: usar API compatible con OpenAI
-      logger.warn(
-        'Copilot SDK not available (' + sdkErr.message + '), using OpenAI-compatible fallback'
-      );
-
-      // Lazy require del paquete openai
-      let OpenAI;
-      try {
-        const openaiModule = require('openai');
-        OpenAI = openaiModule.OpenAI || openaiModule.default;
-      } catch (e) {
-        throw new Error(
-          'Ni el SDK de Copilot ni el paquete "openai" están disponibles. ' +
-            'Instala uno de ellos: npm install @copilot-extensions/preview-sdk openai'
-        );
-      }
-
-      this.client = new OpenAI({
-        apiKey: this.config.apiKey,
-        baseURL: 'https://api.githubcopilot.com',
-        defaultHeaders: {
-          'Editor-Version': 'DevHub/1.0.0',
-        },
-      });
-      this._useFallback = true;
-      return this.client;
-    }
+  async _getHeaders() {
+    const copilotToken = await this._getCopilotToken();
+    return {
+      Authorization: `Bearer ${copilotToken}`,
+      'Content-Type': 'application/json',
+      'editor-version': EDITOR_VERSION,
+      'editor-plugin-version': EDITOR_PLUGIN_VERSION,
+      'user-agent': USER_AGENT,
+      'copilot-integration-id': 'vscode-chat',
+    };
   }
 
   // ============================================================================
@@ -120,335 +120,270 @@ class CopilotAdapter extends LLMProvider {
   // ============================================================================
 
   /**
-   * Envía una solicitud de chat al proveedor y retorna la respuesta.
-   *
-   * @param {ChatMessage[]} messages - Historial de mensajes de la conversación.
-   * @param {ChatOptions} [options] - Opciones adicionales para la solicitud.
-   * @returns {Promise<ChatResponse>} Respuesta estandarizada del proveedor.
-   * @throws {ErrorClassification} Error clasificado si la solicitud falla.
+   * Chat con GitHub Copilot.
+   * Soporta reasoning_effort: 'low' | 'medium' | 'high' | 'xhigh'
    */
   async chat(messages, options = {}) {
-    const client = this._getClient();
-
     try {
-      if (this._useFallback) {
-        return this._chatViaOpenAI(client, messages, options);
+      const headers = await this._getHeaders();
+      let model = options.model || this.config.model;
+      
+      const MAP = {
+        'gpt-5.4-mini': 'gpt-4o-mini', 'GPT-5.4 mini': 'gpt-4o-mini',
+        'gpt-5.2-codex': 'gpt-4o', 'GPT-5.2-Codex': 'gpt-4o',
+        'gpt-5.3-codex': 'gpt-4o', 'GPT-5.3-Codex': 'gpt-4o',
+        'gpt-4.1': 'gpt-4o', 'GPT-4.1': 'gpt-4o',
+        'GPT-5.1': 'gpt-4o', 'gpt-5.1': 'gpt-4o',
+        'GPT-5.2': 'gpt-4o', 'gpt-5.2': 'gpt-4o',
+        'Claude Haiku 4.5': 'claude-3.5-sonnet', 'claude-haiku-4.5': 'claude-3.5-sonnet',
+        'Gemini 2.5 Pro': 'gpt-4o', 'gemini-2.5-pro': 'gpt-4o',
+      };
+      if (MAP[model]) {
+        logger.warn(`[Copilot Adapter] Mapped ${model} -> ${MAP[model]}`);
+        model = MAP[model];
       }
-      return this._chatViaSDK(client, messages, options);
+
+      const reasoningEffort = options.reasoningEffort || this.reasoningEffort;
+
+      const body = {
+        model,
+        messages: this._normalizeMessages(messages),
+        max_tokens: options.maxTokens || options.max_tokens || 4096,
+        stream: false,
+      };
+
+      // Temperatura solo para modelos que la soportan (no para reasoning models)
+      if (options.temperature !== undefined) {
+        body.temperature = options.temperature;
+      }
+
+      // reasoning_effort para GPT-5.3-Codex, GPT-5.4-mini, o4-mini, etc.
+      if (reasoningEffort && reasoningEffort !== 'none') {
+        body.reasoning_effort = reasoningEffort;
+      }
+
+      const res = await fetch(`${COPILOT_API_BASE}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.config.timeout || 60000),
+      });
+
+      if (!res.ok) {
+        await this._handleApiError(res);
+      }
+
+      const data = await res.json();
+      const choice = data.choices?.[0];
+
+      return {
+        content: choice?.message?.content || '',
+        model: data.model || model,
+        usage: data.usage || {},
+        finishReason: choice?.finish_reason || 'stop',
+      };
     } catch (error) {
       throw this._mapError(error);
     }
   }
 
   /**
-   * Chat usando el SDK oficial de Copilot.
-   *
-   * @param {Object} client - Instancia de CopilotClient.
-   * @param {ChatMessage[]} messages - Mensajes de la conversación.
-   * @param {ChatOptions} options - Opciones de la solicitud.
-   * @returns {Promise<ChatResponse>} Respuesta estandarizada.
-   * @private
+   * Streaming chat con GitHub Copilot.
    */
-  async _chatViaSDK(client, messages, options) {
-    const response = await client.chat({
-      messages: messages.map(function (m) {
-        return {
-          role: m.role,
-          content: m.content,
-        };
-      }),
-      tools: options.tools
-        ? options.tools.map(function (t) {
-            return {
-              type: 'function',
-              function: {
-                name: t.function.name,
-                description: t.function.description,
-                parameters: t.function.parameters,
-              },
-            };
-          })
-        : undefined,
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-    });
+  async *chatStream(messages, options = {}) {
+    try {
+      const headers = await this._getHeaders();
+      let model = options.model || this.config.model;
+      
+      const MAP = {
+        'gpt-5.4-mini': 'gpt-4o-mini', 'GPT-5.4 mini': 'gpt-4o-mini',
+        'gpt-5.2-codex': 'gpt-4o', 'GPT-5.2-Codex': 'gpt-4o',
+        'gpt-5.3-codex': 'gpt-4o', 'GPT-5.3-Codex': 'gpt-4o',
+        'gpt-4.1': 'gpt-4o', 'GPT-4.1': 'gpt-4o',
+        'GPT-5.1': 'gpt-4o', 'gpt-5.1': 'gpt-4o',
+        'GPT-5.2': 'gpt-4o', 'gpt-5.2': 'gpt-4o',
+        'Claude Haiku 4.5': 'claude-3.5-sonnet', 'claude-haiku-4.5': 'claude-3.5-sonnet',
+        'Gemini 2.5 Pro': 'gpt-4o', 'gemini-2.5-pro': 'gpt-4o',
+      };
+      if (MAP[model]) {
+        logger.warn(`[Copilot Adapter] Mapped ${model} -> ${MAP[model]}`);
+        model = MAP[model];
+      }
 
-    return {
-      content: (response.message && response.message.content) || '',
-      toolCalls: (response.message && response.message.tool_calls
-        ? response.message.tool_calls
-        : []
-      ).map(function (tc) {
-        return {
-          id: tc.id,
-          name: tc.function.name,
-          arguments: JSON.parse(tc.function.arguments || '{}'),
-        };
-      }),
-      usage: {
-        promptTokens: (response.usage && response.usage.prompt_tokens) || 0,
-        completionTokens: (response.usage && response.usage.completion_tokens) || 0,
-        totalTokens: (response.usage && response.usage.total_tokens) || 0,
-      },
-      model: response.model || this.config.model,
-      finishReason: response.finish_reason || 'stop',
-    };
-  }
+      const reasoningEffort = options.reasoningEffort || this.reasoningEffort;
 
-  /**
-   * Chat usando el fallback OpenAI-compatible (api.githubcopilot.com).
-   *
-   * @param {Object} client - Instancia de OpenAI client.
-   * @param {ChatMessage[]} messages - Mensajes de la conversación.
-   * @param {ChatOptions} options - Opciones de la solicitud.
-   * @returns {Promise<ChatResponse>} Respuesta estandarizada.
-   * @private
-   */
-  async _chatViaOpenAI(client, messages, options) {
-    const params = {
-      model: this.config.model,
-      messages: messages.map(function (m) {
-        return {
-          role: m.role,
-          content: m.content,
-        };
-      }),
-    };
+      const body = {
+        model,
+        messages: this._normalizeMessages(messages),
+        max_tokens: options.maxTokens || options.max_tokens || 4096,
+        stream: true,
+      };
 
-    if (options.temperature !== undefined) {
-      params.temperature = options.temperature;
-    }
-    if (options.maxTokens !== undefined) {
-      params.max_tokens = options.maxTokens;
-    }
+      if (options.temperature !== undefined) body.temperature = options.temperature;
+      if (reasoningEffort && reasoningEffort !== 'none') body.reasoning_effort = reasoningEffort;
 
-    if (options.tools && options.tools.length > 0) {
-      params.tools = options.tools;
-    }
+      const res = await fetch(`${COPILOT_API_BASE}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.config.timeout || 120000),
+      });
 
-    const response = await client.chat.completions.create(params);
-    var choice = response.choices[0];
+      if (!res.ok) await this._handleApiError(res);
 
-    return {
-      content: (choice.message && choice.message.content) || '',
-      toolCalls: (choice.message && choice.message.tool_calls ? choice.message.tool_calls : []).map(
-        function (tc) {
-          return {
-            id: tc.id,
-            name: tc.function.name,
-            arguments: JSON.parse(tc.function.arguments || '{}'),
-          };
-        }
-      ),
-      usage: {
-        promptTokens: (response.usage && response.usage.prompt_tokens) || 0,
-        completionTokens: (response.usage && response.usage.completion_tokens) || 0,
-        totalTokens: (response.usage && response.usage.total_tokens) || 0,
-      },
-      model: response.model || this.config.model,
-      finishReason: choice.finish_reason || 'stop',
-    };
-  }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-  /**
-   * Variante streaming del chat. Invoca `onChunk` por cada fragmento generado.
-   *
-   * NOTA: El SDK de Copilot no soporta streaming de la misma forma que OpenAI.
-   * En modo fallback (OpenAI-compatible), se usa streaming nativo. En modo SDK,
-   * se delega a chat() no-streaming.
-   *
-   * @param {ChatMessage[]} messages - Historial de mensajes de la conversación.
-   * @param {ChatOptions} [options] - Opciones adicionales para la solicitud.
-   * @param {function(string): void} onChunk - Callback invocado con cada fragmento de texto.
-   * @returns {Promise<ChatResponse>} Respuesta completa al finalizar el stream.
-   * @throws {ErrorClassification} Error clasificado si el stream falla.
-   */
-  async streamChat(messages, options = {}, onChunk) {
-    const client = this._getClient();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-    if (this._useFallback) {
-      // Streaming nativo vía OpenAI-compatible
-      const abortController = new AbortController();
-      var timeoutId = setTimeout(function () {
-        abortController.abort();
-      }, this.config.timeout);
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      try {
-        var stream = await client.chat.completions.create(
-          {
-            model: this.config.model,
-            messages: messages.map(function (m) {
-              return { role: m.role, content: m.content };
-            }),
-            stream: true,
-            temperature: options.temperature,
-            max_tokens: options.maxTokens,
-          },
-          { signal: abortController.signal }
-        );
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data:')) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          if (jsonStr === '[DONE]') return;
 
-        var fullContent = '';
-        for await (var chunk of stream) {
-          var delta =
-            (chunk.choices &&
-              chunk.choices[0] &&
-              chunk.choices[0].delta &&
-              chunk.choices[0].delta.content) ||
-            '';
-          if (delta) {
-            fullContent += delta;
-            if (typeof onChunk === 'function') {
-              onChunk(delta);
-            }
+          try {
+            const chunk = JSON.parse(jsonStr);
+            const delta = chunk.choices?.[0]?.delta?.content;
+            if (delta) yield { content: delta };
+          } catch {
+            // ignorar líneas malformadas
           }
         }
-
-        clearTimeout(timeoutId);
-
-        return {
-          content: fullContent,
-          toolCalls: [],
-          usage: {
-            promptTokens: 0,
-            completionTokens: this.estimateTokens(fullContent),
-            totalTokens: 0,
-          },
-          model: this.config.model,
-          finishReason: 'stop',
-        };
-      } catch (error) {
-        clearTimeout(timeoutId);
-        throw this._mapError(error);
       }
+    } catch (error) {
+      throw this._mapError(error);
     }
-
-    // El SDK de Copilot no soporta streaming — usar modo no-streaming
-    logger.warn('Copilot SDK streaming not available, using non-streaming mode');
-    return this.chat(messages, options);
   }
 
   /**
-   * Retorna la lista de modelos disponibles en GitHub Copilot.
-   *
-   * @returns {Promise<string[]>} Lista de identificadores de modelos.
+   * Valida que el token OAuth pueda obtener un copilot_token.
+   */
+  async validateCredentials() {
+    if (!this.config.apiKey) {
+      return { valid: false, error: 'No hay token OAuth. Autenticáte desde Ajustes.' };
+    }
+
+    try {
+      // Forzar renovación del token para validar
+      _tokenCache = { token: null, expiresAt: 0 };
+      await this._getCopilotToken();
+      return { valid: true };
+    } catch (err) {
+      return { valid: false, error: err.message };
+    }
+  }
+
+  /**
+   * Lista los modelos disponibles en api.githubcopilot.com
    */
   async getModels() {
+    try {
+      const headers = await this._getHeaders();
+      const res = await fetch(`${COPILOT_API_BASE}/models`, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) {
+        // Fallback a lista conocida si el endpoint no responde
+        return this._getKnownModels();
+      }
+
+      const data = await res.json();
+      const models = Array.isArray(data)
+        ? data
+        : Array.isArray(data.data)
+          ? data.data
+          : Array.isArray(data.models)
+            ? data.models
+            : [];
+
+      const ids = models
+        .map((m) => (typeof m === 'string' ? m : m?.id || m?.name))
+        .filter(Boolean)
+        .sort();
+
+      return ids.length > 0 ? ids : this._getKnownModels();
+    } catch {
+      return this._getKnownModels();
+    }
+  }
+
+  /**
+   * Lista de modelos conocidos del catálogo interno de Copilot.
+   * Se usa como fallback si /models no responde.
+   */
+  _getKnownModels() {
     return [
       'gpt-4o',
       'gpt-4o-mini',
-      'claude-3.5-sonnet',
-      'claude-3-opus',
-      'o1',
-      'o1-mini',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-5.3-codex',
+      'gpt-5.4-mini',
+      'o3',
       'o3-mini',
+      'o4-mini',
     ];
   }
 
-  /**
-   * Valida que las credenciales de Copilot sean correctas y estén activas.
-   *
-   * Realiza una llamada mínima al API para verificar conectividad y autenticación.
-   * Errores de rate limit u otros errores transitorios se consideran como
-   * credenciales válidas (solo 401/403 indican credenciales inválidas).
-   *
-   * @returns {Promise<{ valid: boolean, error?: string }>} Resultado de la validación.
-   */
-  async validateCredentials() {
-    try {
-      var client = this._getClient();
+  // ============================================================================
+  // HELPERS
+  // ============================================================================
 
-      // Hacer una llamada mínima para verificar credenciales
-      await client.chat.completions.create({
-        model: this.config.model,
-        messages: [{ role: 'user', content: 'test' }],
-        max_tokens: 1,
-      });
-      return { valid: true };
-    } catch (error) {
-      var status = error.status || error.statusCode;
-      if (status === 401 || status === 403) {
-        return { valid: false, error: 'Token inválido o sin permisos' };
-      }
-      // Otros errores (rate limit, etc.) significan que las credenciales son válidas
-      return { valid: true };
+  _normalizeMessages(messages) {
+    return messages.map((m) => ({
+      role: m.role || 'user',
+      content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+    }));
+  }
+
+  async _handleApiError(res) {
+    const body = await res.json().catch(() => ({}));
+    const msg = body?.error?.message || body?.message || `HTTP ${res.status}`;
+
+    if (res.status === 401 || res.status === 403) {
+      // Invalidar cache para forzar renovación
+      _tokenCache = { token: null, expiresAt: 0 };
+      throw new Error(`Copilot: sin autorización. ${msg}`);
     }
+    if (res.status === 429) throw new Error(`Copilot: rate limit alcanzado. ${msg}`);
+    if (res.status >= 500) throw new Error(`Copilot: error del servidor. ${msg}`);
+    throw new Error(`Copilot: ${msg}`);
   }
 
-  /**
-   * Retorna el tamaño máximo de la ventana de contexto del modelo configurado.
-   *
-   * @returns {number} Máxima cantidad de tokens de contexto (entrada + salida).
-   */
-  getMaxTokens() {
-    var model = this.config.model;
-    if (model.indexOf('gpt-4o') !== -1) return 128000;
-    if (model.indexOf('claude-3.5-sonnet') !== -1) return 200000;
-    if (model.indexOf('claude-3-opus') !== -1) return 200000;
-    if (model.indexOf('o1') !== -1) return 200000;
-    if (model.indexOf('o3') !== -1) return 200000;
-    return 128000;
-  }
-
-  /**
-   * Retorna el nombre identificador del proveedor.
-   *
-   * @returns {string} 'copilot'
-   */
-  getName() {
-    return 'copilot';
-  }
-
-  // ============================================================================
-  // MANEJO DE ERRORES
-  // ============================================================================
-
-  /**
-   * Mapea errores de la API de Copilot a ErrorClassification estandarizado.
-   *
-   * @param {Error} error - Error original de la API.
-   * @returns {ErrorClassification} Error clasificado para manejo estratégico.
-   * @private
-   */
   _mapError(error) {
-    var status = error.status || error.statusCode;
-    var message = error.message || String(error);
+    const msg = error.message || String(error);
 
-    // Rate limit (429)
-    if (status === 429) {
-      var retryAfter =
-        error.headers && error.headers['retry-after']
-          ? parseInt(error.headers['retry-after'], 10) * 1000
-          : null;
-      return createClassifiedError(ERROR_TYPES.RATE_LIMIT, message, { retryAfter: retryAfter });
+    if (msg.includes('rate limit') || msg.includes('429')) {
+      return createClassifiedError(msg, ERROR_TYPES.RATE_LIMIT, true);
     }
-
-    // Auth errors (401/403)
-    if (status === 401 || status === 403) {
-      return createClassifiedError(ERROR_TYPES.AUTH_ERROR, message);
+    if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) {
+      return createClassifiedError(msg, ERROR_TYPES.TIMEOUT, true);
     }
-
-    // Quota exceeded
-    if (message.indexOf('quota') !== -1 || message.indexOf('billing') !== -1) {
-      return createClassifiedError(ERROR_TYPES.QUOTA_EXCEEDED, message);
+    if (msg.includes('sin autorización') || msg.includes('401') || msg.includes('403')) {
+      return createClassifiedError(msg, ERROR_TYPES.AUTH, false);
     }
+    return createClassifiedError(msg, ERROR_TYPES.UNKNOWN, false);
+  }
 
-    // Context overflow
-    if (message.indexOf('context_length') !== -1 || message.indexOf('maximum context') !== -1) {
-      return createClassifiedError(ERROR_TYPES.CONTEXT_OVERFLOW, message);
-    }
+  isAvailable() {
+    return !!(this.config.enabled && this.config.apiKey);
+  }
 
-    // Model unavailable
-    if (message.indexOf('model_not_found') !== -1 || message.indexOf('not available') !== -1) {
-      return createClassifiedError(ERROR_TYPES.MODEL_UNAVAILABLE, message);
-    }
-
-    // Server errors (5xx)
-    if (status >= 500) {
-      return createClassifiedError(ERROR_TYPES.SERVER_ERROR, message);
-    }
-
-    // Fallback: error genérico
-    return createClassifiedError(ERROR_TYPES.SERVER_ERROR, message);
+  async isHealthy() {
+    const result = await this.validateCredentials();
+    return result.valid;
   }
 }
 

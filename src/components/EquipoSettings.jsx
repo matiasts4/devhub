@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Mail, Loader2, Trash2, userPlus } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 
 export default function EquipoSettings({ projectId }) {
@@ -9,7 +9,7 @@ export default function EquipoSettings({ projectId }) {
   const [inviting, setInviting] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('worker');
-  const supabase = createClient();
+  const db = createClient();
 
   useEffect(() => {
     if (projectId) fetchMembers();
@@ -17,7 +17,7 @@ export default function EquipoSettings({ projectId }) {
 
   async function fetchMembers() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('project_members')
       .select(`id, role, invited_email, accepted_at, user_id, auth_users:user_id (email)`)
       .eq('project_id', projectId);
@@ -58,7 +58,7 @@ export default function EquipoSettings({ projectId }) {
   async function removeMember(id) {
     if (!confirm('¿Quitar miembro?')) return;
     
-    const { error } = await supabase.from('project_members').delete().eq('id', id);
+    const { error } = await db.from('project_members').delete().eq('id', id);
     if (error) {
       toast.error("Error: " + error.message);
     } else {

@@ -102,7 +102,7 @@ Si el usuario pide crear, completar o modificar tareas o hitos, explica exactame
     }
   } else {
     // Fallback when no API key is configured
-    assistantContent = `⚠️ No hay una clave API de Gemini configurada. Agrega \`GEMINI_API_KEY\` a tu \`.env.local\` para habilitar el agente IA.\n\nPuedes obtener una clave gratuita en [Google AI Studio](https://aistudio.google.com/).`;
+    assistantContent = `No hay una clave API de Gemini configurada. Agrega \`GEMINI_API_KEY\` a tu \`.env.local\` para habilitar el agente IA.\n\nPuedes obtener una clave gratuita en [Google AI Studio](https://aistudio.google.com/).`;
   }
 
   // Save assistant response

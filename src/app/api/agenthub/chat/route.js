@@ -1,7 +1,135 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { getCopilotToken } from '@/lib/copilot-token';
 import fs from 'fs/promises';
 import path from 'path';
+
+// ──────────────────────────────────────────────────────────────
+// Retry helpers — exponential backoff for LLM API calls
+// ──────────────────────────────────────────────────────────────
+
+const RETRYABLE_PATTERNS = [
+  'overloaded',
+  'rate_limit',
+  'too_many_requests',
+  'rate limited',
+  'econnreset',
+  'econnrefused',
+  'etimedout',
+  'socket hang up',
+  'failed to fetch',
+  'load failed',
+  'network connection was lost',
+];
+
+const RETRYABLE_STATUS = new Set([429, 500, 503]);
+
+/**
+ * Check if an error is retryable based on HTTP status or error message.
+ * Non-retryable: 400, 401, 403, 404, and any error without matching patterns.
+ */
+function isRetryableError(error) {
+  // Check HTTP status code (OpenAI SDK exposes it as error.status)
+  if (error?.status && RETRYABLE_STATUS.has(error.status)) {
+    return true;
+  }
+
+  // Check error message for known patterns
+  const msg = (error?.message || '').toLowerCase();
+  return RETRYABLE_PATTERNS.some((pattern) => msg.includes(pattern));
+}
+
+/**
+ * Parse the Retry-After header from an error.
+ * Supports: milliseconds (number < 10000), seconds (number), or HTTP-date string.
+ * Returns delay in ms, or null if not parseable.
+ */
+function parseRetryAfter(error) {
+  const raw = error?.headers?.['retry-after'] ?? error?.headers?.['retry-after-ms'];
+
+  if (!raw) return null;
+
+  // Milliseconds header (e.g. "1500")
+  if (error?.headers?.['retry-after-ms']) {
+    const ms = parseInt(error.headers['retry-after-ms'], 10);
+    if (!isNaN(ms) && ms > 0) return ms;
+  }
+
+  const val = String(raw).trim();
+
+  // Plain number: if < 10000 treat as ms, otherwise as seconds
+  const num = parseInt(val, 10);
+  if (!isNaN(num) && num > 0) {
+    return num < 10000 ? num : num * 1000;
+  }
+
+  // HTTP-date (e.g. "Wed, 21 Oct 2025 07:28:00 GMT")
+  const date = new Date(val);
+  if (!isNaN(date.getTime())) {
+    const delay = date.getTime() - Date.now();
+    return delay > 0 ? delay : null;
+  }
+
+  return null;
+}
+
+/**
+ * Call an async function with exponential backoff retry.
+ *
+ * @param {Function} fn - Async function to call (returns a Promise)
+ * @param {Object} [options]
+ * @param {number} [options.maxRetries=3] - Maximum number of attempts
+ * @param {number} [options.baseDelay=1000] - Base delay in ms
+ * @param {number} [options.maxDelay=30000] - Maximum delay cap in ms
+ * @param {number} [options.jitter=200] - Random jitter ±ms
+ * @param {Function} [options.onRetry] - Callback(attempt, error, delayMs) for logging
+ * @returns {Promise<*>} - Result of fn()
+ */
+async function callWithRetry(fn, options = {}) {
+  const { maxRetries = 3, baseDelay = 1000, maxDelay = 30000, jitter = 200, onRetry } = options;
+
+  let lastError;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      // Non-retryable errors propagate immediately
+      if (!isRetryableError(error)) {
+        throw error;
+      }
+
+      // Last attempt — propagate the error
+      if (attempt === maxRetries - 1) {
+        break;
+      }
+
+      // Calculate delay: respect Retry-After if present, otherwise exponential backoff
+      let delay = parseRetryAfter(error);
+      if (delay === null) {
+        delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+        // Add jitter
+        delay += (Math.random() - 0.5) * 2 * jitter;
+      }
+
+      delay = Math.max(0, Math.round(delay));
+
+      if (onRetry) {
+        onRetry(attempt + 1, maxRetries, error, delay);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
+
+// ──────────────────────────────────────────────────────────────
+// End retry helpers
+// ──────────────────────────────────────────────────────────────
 
 // Helper to load LLM config (bypassing full REST call for speed)
 async function loadConfig() {
@@ -17,7 +145,15 @@ async function loadConfig() {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { messages, project_id, projectName, temperature: requestTemp, maxTokens: requestMaxTokens } = body;
+    const {
+      messages,
+      project_id,
+      projectName,
+      temperature: requestTemp,
+      maxTokens: requestMaxTokens,
+      modelOverride,
+      session_id,
+    } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Mensajes inválidos' }, { status: 400 });
@@ -42,9 +178,9 @@ export async function POST(req) {
         model = pConfig.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
         break;
       }
-      if (p === 'copilot' && pConfig.COPILOT_TOKEN) {
+      if (p === 'copilot' && pConfig.COPILOT_OAUTH_TOKEN) {
         activeProvider = 'copilot';
-        apiKey = pConfig.COPILOT_TOKEN;
+        apiKey = pConfig.COPILOT_OAUTH_TOKEN;
         baseURL = 'https://api.githubcopilot.com';
         model = pConfig.COPILOT_MODEL || 'gpt-4o';
         break;
@@ -65,16 +201,65 @@ export async function POST(req) {
       );
     }
 
+    if (modelOverride) {
+      model = modelOverride;
+    }
+
+    let displayModel = model;
+
+    // Para Copilot: intercambiar el gho_ por un copilot_token efímero
+    let copilotHeaders = {};
+    if (activeProvider === 'copilot') {
+      try {
+        // Mapeo interno de modelos FIM/Autocomplete a modelos Chat funcionales
+        const copilotModelMap = {
+          'gpt-5.4-mini': 'gpt-4o-mini',
+          'GPT-5.4 mini': 'gpt-4o-mini',
+          'gpt-5.2-codex': 'gpt-4o',
+          'GPT-5.2-Codex': 'gpt-4o',
+          'gpt-5.3-codex': 'gpt-4o',
+          'GPT-5.3-Codex': 'gpt-4o',
+          'gpt-4.1': 'gpt-4o',
+          'GPT-4.1': 'gpt-4o',
+          'GPT-5.1': 'gpt-4o',
+          'gpt-5.1': 'gpt-4o',
+          'GPT-5.2': 'gpt-4o',
+          'gpt-5.2': 'gpt-4o',
+          'Claude Haiku 4.5': 'claude-3.5-sonnet',
+          'claude-haiku-4.5': 'claude-3.5-sonnet',
+          'Gemini 2.5 Pro': 'gpt-4o',
+          'gemini-2.5-pro': 'gpt-4o',
+        };
+
+        if (copilotModelMap[model]) {
+          console.warn(
+            `[Copilot] Mapped OpenCode model ${model} -> ${copilotModelMap[model]} for Chat API compatibility`
+          );
+          model = copilotModelMap[model];
+        }
+
+        const copilotToken = await getCopilotToken(apiKey);
+        apiKey = copilotToken;
+        copilotHeaders = {
+          'editor-version': 'vscode/1.85.1',
+          'editor-plugin-version': 'copilot-chat/0.12.2023120701',
+          'user-agent': 'GithubCopilot/1.138.0',
+          'copilot-integration-id': 'vscode-chat',
+        };
+      } catch (tokenErr) {
+        return NextResponse.json({ error: `Copilot auth: ${tokenErr.message}` }, { status: 401 });
+      }
+    }
+
     const openai = new OpenAI({
       apiKey,
       baseURL,
       defaultHeaders:
         activeProvider === 'openrouter'
-          ? {
-              'HTTP-Referer': 'https://devhub.local',
-              'X-Title': 'DevHub Agent Hub',
-            }
-          : {},
+          ? { 'HTTP-Referer': 'https://devhub.local', 'X-Title': 'DevHub Agent Hub' }
+          : activeProvider === 'copilot'
+            ? copilotHeaders
+            : {},
     });
 
     // Leer tokens ajustados por el usuario si vienen en el body, sino fallback a globales o 4000
@@ -129,46 +314,110 @@ Actúa siempre como el Orquestador maestro. ¡Pídele al usuario confirmación a
 CONTEXTO ACTUAL:
 Proyecto: ${projectName || project_id || 'El Proyecto Actual'}`;
 
+    const VALID_CHAT_ROLES = new Set(['user', 'assistant']);
+
+    // Tool context injection — when resuming a session, include tool results
+    let toolContextMessage = null;
+    if (session_id) {
+      try {
+        const { getToolTracesBySession } = await import('@/lib/db/localDb');
+        const toolTraces = getToolTracesBySession(session_id, {
+          tool_status: 'ok',
+          limit: 50, // Cap to avoid context overflow
+        });
+
+        if (toolTraces.length > 0) {
+          const toolBlocks = toolTraces
+            .filter((t) => t.tool_name && t.tool_output)
+            .map((t) => {
+              const outputPreview =
+                t.tool_output.length > 500
+                  ? t.tool_output.substring(0, 500) + '... (truncated)'
+                  : t.tool_output;
+              return `- Tool: \`${t.tool_name}\` → Status: ${t.tool_status}\n  Output: ${outputPreview}`;
+            })
+            .join('\n\n');
+
+          if (toolBlocks) {
+            toolContextMessage = {
+              role: 'system',
+              content: `[TOOL EXECUTION HISTORY — Previous session context]\nEstas son las herramientas que se ejecutaron en esta sesión antes de que se retomara. Usá este contexto para continuar donde quedaste:\n\n${toolBlocks}`,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load tool context:', err.message);
+      }
+    }
+
     const chatMessages = [
       { role: 'system', content: GENTLEMAN_SYSTEM_PROMPT },
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
+      ...(toolContextMessage ? [toolContextMessage] : []),
+      ...messages
+        .filter((m) => VALID_CHAT_ROLES.has(m.role) && m.content != null && m.content !== '')
+        .map((m) => ({
+          role: m.role,
+          content: String(m.content),
+        })),
     ];
 
-    const response = await openai.chat.completions.create({
-      model,
-      messages: chatMessages,
-      temperature,
-      max_tokens,
-      stream: true,
-    });
+    const response = await callWithRetry(
+      () =>
+        openai.chat.completions.create({
+          model,
+          messages: chatMessages,
+          temperature,
+          max_tokens,
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+      {
+        onRetry: (attempt, maxRetries, error, delayMs) => {
+          console.warn(
+            `[LLM Retry] Attempt ${attempt}/${maxRetries} failed (${error.message || error.status || 'unknown'}), retrying in ${delayMs}ms`
+          );
+        },
+      }
+    );
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
           // Send initial metadata if needed
-          controller.enqueue(encoder.encode(JSON.stringify({ type: 'meta', model_used: model }) + '\n'));
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ type: 'meta', model_used: displayModel }) + '\n')
+          );
 
           for await (const chunk of response) {
-            const content = chunk.choices[0]?.delta?.content || '';
+            // chunk.usage only arrives at the end of the stream if include_usage: true is set
+            if (chunk.usage) {
+              controller.enqueue(
+                encoder.encode(JSON.stringify({ type: 'usage', usage: chunk.usage }) + '\n')
+              );
+            }
+
+            const content = chunk.choices?.[0]?.delta?.content || '';
             if (content) {
               controller.enqueue(encoder.encode(JSON.stringify({ type: 'chunk', content }) + '\n'));
             }
           }
         } catch (e) {
           console.error('Stream error:', e);
-          controller.enqueue(encoder.encode(JSON.stringify({ type: 'error', error: e.message }) + '\n'));
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ type: 'error', error: e.message }) + '\n')
+          );
         } finally {
           controller.close();
         }
-      }
+      },
     });
 
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        Connection: 'keep-alive',
       },
     });
   } catch (err) {

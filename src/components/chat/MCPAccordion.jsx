@@ -7,57 +7,44 @@ import {
   Info,
   Copy,
   Check,
+  Database,
 } from 'lucide-react';
-import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
-} from '@/components/ui/accordion';
 import { detectMcpOutput } from './utils/detectMcpOutput';
 
+// Configuración por tipo
 const typeConfig = {
   error: {
-    accent: 'red',
-    border: 'border-red-500/40',
-    headerBg: 'bg-red-500/10',
-    headerBorder: 'border-b-red-500/20',
-    title: 'text-red-400',
-    icon: <AlertTriangle className="w-3.5 h-3.5 text-red-400" />,
-    label: 'Error MCP',
-    dot: 'bg-red-500',
-    glow: 'shadow-[0_0_20px_rgba(239,68,68,0.1)]',
+    dotColor: '#f87171',
+    labelColor: 'var(--status-danger, #f87171)',
+    bgColor: 'rgba(248,113,113,0.08)',
+    borderColor: 'rgba(248,113,113,0.25)',
+    label: 'MCP Error',
+    icon: AlertTriangle,
   },
   success: {
-    accent: 'amber',
-    border: 'border-amber-500/30',
-    headerBg: 'bg-amber-500/5',
-    headerBorder: 'border-b-amber-500/15',
-    title: 'text-amber-400',
-    icon: <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />,
-    label: 'Engram MCP',
-    dot: 'bg-amber-500',
-    glow: 'shadow-[0_0_20px_rgba(245,158,11,0.05)]',
+    dotColor: '#f59e0b',
+    labelColor: '#f59e0b',
+    bgColor: 'rgba(245,158,11,0.06)',
+    borderColor: 'rgba(245,158,11,0.2)',
+    label: 'Engram',
+    icon: Database,
   },
   info: {
-    accent: 'blue',
-    border: 'border-blue-500/30',
-    headerBg: 'bg-blue-500/5',
-    headerBorder: 'border-b-blue-500/15',
-    title: 'text-blue-400',
-    icon: <Info className="w-3.5 h-3.5 text-blue-400" />,
-    label: 'Sistema',
-    dot: 'bg-blue-500',
-    glow: 'shadow-[0_0_20px_rgba(59,130,246,0.05)]',
+    dotColor: 'var(--accent-primary)',
+    labelColor: 'var(--accent-primary)',
+    bgColor: 'color-mix(in srgb, var(--accent-primary) 6%, transparent)',
+    borderColor: 'color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+    label: 'Sistema MCP',
+    icon: Info,
   },
 };
 
 /**
- * Terminal-style content renderer for MCP outputs.
- * Renders raw text with line numbers, semantic colors, and monospace font.
+ * TerminalContent — renderiza el contenido con syntax coloring.
  */
 function TerminalContent({ content }) {
   const [copied, setCopied] = useState(false);
+  const lines = content.split('\n');
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(content);
@@ -65,65 +52,49 @@ function TerminalContent({ content }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Split content into lines for terminal-style rendering
-  const lines = content.split('\n');
-
   return (
     <div className="relative">
-      {/* Copy button */}
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono text-gray-500 hover:text-gray-300 bg-[#0c1018]/80 border border-[#2a3441] rounded transition-colors"
-        title="Copy output"
+        className="absolute top-2 right-2 z-10 flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono rounded transition-colors cursor-pointer"
+        style={{
+          color: copied ? '#34d399' : 'var(--text-muted)',
+          background: 'color-mix(in srgb, var(--surface-elevated) 80%, transparent)',
+          border: '1px solid var(--border-subtle)',
+        }}
+        title="Copiar"
       >
-        {copied ? (
-          <>
-            <Check className="w-3 h-3 text-emerald-400" />
-            <span className="text-emerald-400">Copied</span>
-          </>
-        ) : (
-          <>
-            <Copy className="w-3 h-3" />
-            <span>Copy</span>
-          </>
-        )}
+        {copied ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
+        {copied ? 'Copiado' : 'Copiar'}
       </button>
 
-      {/* Terminal content */}
-      <pre className="font-mono text-[11px] leading-relaxed text-gray-300 whitespace-pre-wrap break-words overflow-x-auto p-4 pr-20">
+      <pre
+        className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words overflow-x-auto p-3 pr-16"
+        style={{ color: 'var(--text-secondary)' }}
+      >
         {lines.map((line, i) => (
-          <div key={i} className="flex">
-            <span className="text-gray-600 select-none w-8 text-right mr-4 flex-shrink-0">
-              {i + 1}
-            </span>
-            <span className="flex-1">
-              {line.startsWith('**') && line.endsWith('**') ? (
-                <span className="text-emerald-400 font-semibold">{line.slice(2, -2)}</span>
-              ) : line.startsWith('- ') ? (
-                <>
-                  <span className="text-[#5b8cff] mr-1">→</span>
-                  <span>{line.slice(2)}</span>
-                </>
-              ) : line.match(/^\d+\./) ? (
-                <>
-                  <span className="text-amber-400 mr-1">#{line.match(/^(\d+)/)?.[1]}</span>
-                  <span>{line.replace(/^\d+\.\s*/, '')}</span>
-                </>
-              ) : line.includes('✅') || line.includes('✓') ? (
-                <span className="text-emerald-400">{line}</span>
-              ) : line.includes('❌') ||
-                line.includes('✗') ||
-                line.includes('ERROR') ||
-                line.includes('Error:') ? (
-                <span className="text-red-400">{line}</span>
-              ) : line.includes('⚠') || line.includes('WARNING') || line.includes('Warning:') ? (
-                <span className="text-amber-400">{line}</span>
-              ) : line.match(/^`.*`$/) ? (
-                <span className="text-[#9bc2ff] bg-[#111825] px-1 rounded">{line}</span>
-              ) : (
-                <span>{line}</span>
-              )}
-            </span>
+          <div key={i}>
+            {line.startsWith('**') && line.endsWith('**') ? (
+              <span className="text-emerald-400 font-semibold">{line.slice(2, -2)}</span>
+            ) : line.startsWith('- ') ? (
+              <>
+                <span style={{ color: 'var(--accent-primary)' }} className="mr-1">→</span>
+                <span>{line.slice(2)}</span>
+              </>
+            ) : line.match(/^\d+\./) ? (
+              <>
+                <span className="text-amber-400 mr-1">#{line.match(/^(\d+)/)?.[1]}</span>
+                <span>{line.replace(/^\d+\.\s*/, '')}</span>
+              </>
+            ) : line.includes('✅') || line.includes('✓') ? (
+              <span className="text-emerald-400">{line}</span>
+            ) : line.includes('❌') || line.includes('✗') || line.includes('ERROR') ? (
+              <span className="text-red-400">{line}</span>
+            ) : line.includes('⚠') || line.includes('WARNING') ? (
+              <span className="text-amber-400">{line}</span>
+            ) : (
+              <span>{line}</span>
+            )}
           </div>
         ))}
       </pre>
@@ -131,51 +102,88 @@ function TerminalContent({ content }) {
   );
 }
 
+/**
+ * MCPAccordion — pill compacto estilo OpenCode para responses de herramientas MCP.
+ * Collapsed por defecto, expandible con transición.
+ */
 export default function MCPAccordion({ content, defaultOpen, className = '' }) {
   const [open, setOpen] = useState(defaultOpen !== undefined ? defaultOpen : false);
-  const { type, icon, label } = detectMcpOutput(content);
+  const { type } = detectMcpOutput(content);
   const config = typeConfig[type] || typeConfig.info;
+  const Icon = config.icon;
 
-  // Clean the MCP prefix from content
-  const cleanContent = content.replace(/^\[.*?Sistema Engram\]:\n/, '').trim();
+  // Limpiar el prefijo [Sistema Engram]: del contenido
+  const cleanContent = content
+    .replace(/^\[(?:Respuesta|Error) del Sistema Engram\]:\n?/, '')
+    .trim();
+
+  // Primera línea como preview
+  const previewLine = cleanContent.split('\n')[0]?.trim().slice(0, 80) || '';
+  const hasMoreLines = cleanContent.split('\n').length > 1 || cleanContent.length > 80;
 
   return (
     <div className={`w-full ${className}`}>
-      <Accordion
-        type="single"
-        collapsible
-        value={open ? 'mcp-output' : undefined}
-        onValueChange={(val) => setOpen(val === 'mcp-output')}
+      {/* ── Pill header — siempre visible ── */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 w-full text-left py-1 px-0 group/mcp"
       >
-        <AccordionItem
-          value="mcp-output"
-          className={`rounded-lg overflow-hidden border ${config.border} ${config.glow} transition-all`}
+        {/* Dot de color */}
+        <span
+          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+          style={{ background: config.dotColor }}
+        />
+
+        {/* Icon */}
+        <Icon
+          className="w-3 h-3 flex-shrink-0"
+          style={{ color: config.labelColor }}
+        />
+
+        {/* Label */}
+        <span
+          className="text-[10px] font-bold uppercase tracking-widest flex-shrink-0 font-mono"
+          style={{ color: config.labelColor }}
         >
-          <AccordionTrigger
-            className={`cursor-pointer px-3 py-2 ${config.headerBg} ${config.headerBorder} transition-colors select-none [&[data-state=open]>svg]:rotate-180`}
+          {config.label}
+        </span>
+
+        {/* Separator */}
+        <span className="text-[11px]" style={{ color: 'var(--border-strong)' }}>→</span>
+
+        {/* Preview text */}
+        <span
+          className="text-[11px] font-mono truncate flex-1"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {previewLine}
+        </span>
+
+        {/* Chevron */}
+        {hasMoreLines && (
+          <ChevronDown
+            className={`w-3 h-3 flex-shrink-0 transition-transform duration-200 opacity-40 group-hover/mcp:opacity-70 ${open ? 'rotate-180' : ''}`}
+            style={{ color: 'var(--text-muted)' }}
+          />
+        )}
+      </button>
+
+      {/* ── Expanded content ── */}
+      <div
+        className={`grid transition-all duration-200 ${open ? 'grid-rows-[1fr] mt-1' : 'grid-rows-[0fr]'}`}
+      >
+        <div className="overflow-hidden">
+          <div
+            className="rounded-md overflow-hidden ml-3"
+            style={{
+              background: config.bgColor,
+              border: `1px solid ${config.borderColor}`,
+            }}
           >
-            <div className="flex items-center gap-2.5">
-              {/* Terminal dots */}
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${config.dot}`} />
-                <div className="w-2 h-2 rounded-full bg-gray-600" />
-                <div className="w-2 h-2 rounded-full bg-gray-600" />
-              </div>
-              <Terminal className="w-3.5 h-3.5 text-gray-500" />
-              {icon}
-              <span
-                className={`text-[10px] font-bold uppercase tracking-widest ${config.title} font-mono`}
-              >
-                {label}
-              </span>
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-500 transition-transform duration-200 shrink-0" />
-          </AccordionTrigger>
-          <AccordionContent className="bg-[#090c13]">
             <TerminalContent content={cleanContent} />
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

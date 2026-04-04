@@ -2,67 +2,90 @@ import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import MetricCard from '../components/MetricCard';
-import BannerIA from '../components/BannerIA';
 import HistorialCommits from '../components/HistorialCommits';
 import UltimasInteracciones from '../components/UltimasInteracciones';
-
-const metricCards = [
-  {
-    id: 'security',
-    title: 'Seguridad y Auth',
-    value: '85%',
-    subtitle: 'Progreso completado',
-    icon: 'Shield',
-    accentColor: '#39FF14',
-    progressValue: 85,
-    badge: 'Activo',
-    trend: '+5% esta semana',
-  },
-  {
-    id: 'ui-ux',
-    title: 'UI / UX',
-    value: '12/15',
-    subtitle: 'Tareas completadas',
-    icon: 'Palette',
-    accentColor: '#00F0FF',
-    progressValue: 80,
-    badge: 'En progreso',
-    trend: '3 tareas pendientes',
-  },
-  {
-    id: 'backend',
-    title: 'Backend & Base de Datos',
-    value: 'En rev.',
-    subtitle: 'Esperando revisión',
-    icon: 'Database',
-    accentColor: '#FF007F',
-    progressValue: 60,
-    badge: 'Revisión',
-    trend: '2 PRs abiertos',
-  },
-  {
-    id: 'tech-debt',
-    title: 'Deuda Técnica',
-    value: '3',
-    subtitle: 'Alertas de refactorización',
-    icon: 'AlertTriangle',
-    accentColor: '#FFE600',
-    progressValue: 30,
-    badge: 'Crítico',
-    trend: 'Requiere atención',
-  },
-];
+import AgentActivityFeed from '../components/AgentActivityFeed';
+import UsageChart from '../components/UsageChart';
 
 export default function Dashboard() {
   const { project } = useOutletContext() || {};
-  const supabase = createClient();
+  const db = createClient();
+  const [metricsData, setMetricsData] = useState(null);
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch('/api/metrics');
+        const data = await res.json();
+        if (data.success) {
+          setMetricsData(data);
+        }
+      } catch (err) {
+        console.error('Error fetching metrics', err);
+      }
+    };
+
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const metricCards = [
+    {
+      id: 'active-sessions',
+      title: 'Sesiones OpenCode',
+      value: metricsData ? metricsData.kpis.total_sessions : '-',
+      subtitle: 'Sesiones únicas registradas',
+      icon: 'Bot',
+      accentColor: '#00F0FF',
+      progressValue: 100,
+      badge: 'Activo',
+      trend: 'En vivo',
+    },
+    {
+      id: 'tool-usage',
+      title: 'Herramientas Ejecutadas',
+      value: metricsData ? metricsData.kpis.total_tools_used : '-',
+      subtitle: 'Comandos disparados por LLM',
+      icon: 'Activity',
+      accentColor: '#B026FF',
+      progressValue: 100,
+      badge: 'Sistema',
+      trend: 'Todas las herramientas',
+    },
+    {
+      id: 'avg-time',
+      title: 'Tiempo de Herramientas',
+      value:
+        metricsData && metricsData.kpis.avg_tool_duration_ms
+          ? `${Math.round(metricsData.kpis.avg_tool_duration_ms)}ms`
+          : '-',
+      subtitle: 'Promedio de ejecución',
+      icon: 'Clock',
+      accentColor: '#39FF14',
+      progressValue: 100,
+      badge: 'Performance',
+      trend: 'Rápido',
+    },
+    {
+      id: 'errors',
+      title: 'Errores de Agente',
+      value: metricsData ? metricsData.kpis.total_errors : '-',
+      subtitle: 'Alertas de contexto/herramienta',
+      icon: 'AlertTriangle',
+      accentColor: '#FF007F',
+      progressValue: 30,
+      badge: metricsData && metricsData.kpis.total_errors > 0 ? 'Revisar' : 'Estable',
+      trend: 'Histórico',
+    },
+  ];
 
   const handleStaleTasks = async (tasks) => {
     const resetTasks = async () => {
       for (const t of tasks) {
-        await supabase
+        await db
           .from('tasks')
           .update({ status: 'pending', stale_alert: false, priority: 'medium' })
           .eq('id', t.id);
@@ -72,7 +95,7 @@ export default function Dashboard() {
 
     const escalateTasks = async () => {
       for (const t of tasks) {
-        await supabase
+        await db
           .from('tasks')
           .update({ priority: 'critical', stale_alert: false })
           .eq('id', t.id);
@@ -126,7 +149,7 @@ export default function Dashboard() {
       const checkStale = async () => {
         // To simulate the scheduled edge function immediately for testing:
         const fortyEightHoursAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-        const { data: staleData } = await supabase
+        const { data: staleData } = await db
           .from('tasks')
           .select('id')
           .eq('project_id', project.id)
@@ -134,7 +157,7 @@ export default function Dashboard() {
           .lt('updated_at', fortyEightHoursAgo);
 
         if (staleData && staleData.length > 0) {
-          await supabase
+          await db
             .from('tasks')
             .update({ stale_alert: true })
             .in(
@@ -144,7 +167,7 @@ export default function Dashboard() {
         }
 
         // Actual notification query
-        const { data: alerts } = await supabase
+        const { data: alerts } = await db
           .from('tasks')
           .select('id, title')
           .eq('project_id', project.id)
@@ -163,7 +186,7 @@ export default function Dashboard() {
       <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-md border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-semibold leading-none mb-0.5">
+            <p className="text-xs uppercase tracking-[0.2em] text-text-muted font-semibold leading-none mb-0.5">
               Proyecto Activo
             </p>
             <h1 className="font-mono text-base font-bold text-text-primary leading-none">
@@ -179,7 +202,6 @@ export default function Dashboard() {
         </button>
       </div>
       <div className="px-6 py-5 space-y-5">
-        <BannerIA />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {metricCards.map((card, index) => (
             <MetricCard key={card.id} {...card} index={index} />
@@ -187,9 +209,16 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 flex flex-col gap-4">
+            {/* Componente de gráfico de uso de herramientas */}
+            <div className="h-[300px]">
+              <UsageChart data={metricsData?.chartData || []} />
+            </div>
             <UltimasInteracciones />
           </div>
           <div className="flex flex-col gap-4">
+            <div className="h-[450px]">
+              <AgentActivityFeed events={metricsData?.recentEvents || []} />
+            </div>
             <HistorialCommits />
           </div>
         </div>

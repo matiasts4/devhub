@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { Bot, User as UserIcon, Loader2, Send } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -9,13 +9,13 @@ export default function TaskComments({ taskId }) {
   const [newComment, setNewComment] = useState('');
   const [sending, setSending] = useState(false);
   const user = { id: 'local-user', email: 'local@devhub.local' };
-  const supabase = createClient();
+  const db = createClient();
 
   useEffect(() => {
     if (!taskId) return;
     fetchComments();
 
-    const channel = supabase
+    const channel = db
       .channel(`public:task_comments:${taskId}`)
       .on(
         'postgres_changes',
@@ -27,13 +27,13 @@ export default function TaskComments({ taskId }) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      db.removeChannel(channel);
     };
   }, [taskId]);
 
   async function fetchComments() {
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await db
       .from('task_comments')
       .select('*, auth_users:user_id(email)')
       .eq('task_id', taskId)
@@ -46,7 +46,7 @@ export default function TaskComments({ taskId }) {
     e.preventDefault();
     if (!newComment.trim() || !user) return;
     setSending(true);
-    await supabase.from('task_comments').insert({
+    await db.from('task_comments').insert({
       task_id: taskId,
       user_id: user.id,
       content: newComment.trim(),
@@ -82,7 +82,7 @@ export default function TaskComments({ taskId }) {
               {c.author_type === 'agent' ? (
                 <Bot className="w-5 h-5 text-[#F778BA]" />
               ) : (
-                <div className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[10px]">
+                <div className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">
                   {c.auth_users?.email?.substring(0, 1).toUpperCase() || 'U'}
                 </div>
               )}
@@ -94,7 +94,7 @@ export default function TaskComments({ taskId }) {
                     ? 'Agente (Swarm)'
                     : c.auth_users?.email?.split('@')[0] || 'Miembro'}
                 </span>
-                <span className="text-[10px] text-text-muted">
+                <span className="text-xs text-text-muted">
                   {new Date(c.created_at).toLocaleDateString()}{' '}
                   {new Date(c.created_at).toLocaleTimeString([], {
                     hour: '2-digit',

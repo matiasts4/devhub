@@ -1,27 +1,26 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
+import { Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
+import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
 
-export default function TerminalTTY({
-  id,
-  onClose,
-  cwd,
-  autoFocus,
-  hideTitleBar,
-  initialCommand,
-}) {
+export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar, initialCommand }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
   const resizeObserverRef = useRef(null);
   const wsRef = useRef(null);
+  const searchRef = useRef(null);
 
   const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState(null);
   const [connectionState, setConnectionState] = useState('idle');
+  const [copied, setCopied] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
   const hasSentInitialCommand = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
+  const initTimeoutRef = useRef(null);
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -128,9 +127,11 @@ export default function TerminalTTY({
 
           if (payload.type === 'exit') {
             termRef.current?.writeln('\r\n\x1b[31mProceso de terminal finalizado.\x1b[0m');
-            window.dispatchEvent(new CustomEvent('devhub:terminal-exit', { 
-              detail: { id, initialCommand } 
-            }));
+            window.dispatchEvent(
+              new CustomEvent('devhub:terminal-exit', {
+                detail: { id, initialCommand },
+              })
+            );
           }
         } catch {
           // Ignore malformed frames.
@@ -161,48 +162,38 @@ export default function TerminalTTY({
     let mounted = true;
 
     async function initializeTerminal() {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { SearchAddon }] = await Promise.all([
         import('xterm'),
         import('xterm-addon-fit'),
+        import('xterm-addon-search'),
       ]);
 
       if (!mounted || !containerRef.current) return;
 
       const ready = await waitForVisibleDimensions();
-      if (!mounted || !containerRef.current || !ready) return;
+      if (!mounted || !containerRef.current) {
+        setIsInitializing(false);
+        return;
+      }
+      if (!ready) {
+        setInitError('El contenedor de terminal no tiene dimensiones visibles.');
+        setIsInitializing(false);
+        return;
+      }
 
-      const style = getComputedStyle(document.body);
       const terminal = new Terminal({
         cursorBlink: true,
         fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
         fontSize: 13,
         lineHeight: 1.4,
         allowTransparency: true,
-        theme: {
-          background: 'transparent',
-          foreground: '#F0F6FC',
-          cursor: '#58A6FF',
-          black: '#484F58',
-          red: '#FF7B72',
-          green: '#3FB950',
-          yellow: '#D29922',
-          blue: '#58A6FF',
-          magenta: '#BC8CFF',
-          cyan: '#39C5CF',
-          white: '#B1BAC4',
-          brightBlack: '#6E7681',
-          brightRed: '#FFA198',
-          brightGreen: '#56D364',
-          brightYellow: '#E3B341',
-          brightBlue: '#79C0FF',
-          brightMagenta: '#D2A8FF',
-          brightCyan: '#56D4DD',
-          brightWhite: '#F0F6FC',
-        },
+        theme: getTerminalTheme(),
       });
 
       const fitAddon = new FitAddon();
+      const searchAddon = new SearchAddon();
       terminal.loadAddon(fitAddon);
+      terminal.loadAddon(searchAddon);
       terminal.open(containerRef.current);
       fitAddon.fit();
 
@@ -219,6 +210,7 @@ export default function TerminalTTY({
 
       termRef.current = terminal;
       fitRef.current = fitAddon;
+      searchRef.current = searchAddon;
 
       setIsInitializing(false);
       connect();
@@ -236,9 +228,31 @@ export default function TerminalTTY({
       termRef.current?.dispose();
       termRef.current = null;
       fitRef.current = null;
+      searchRef.current = null;
       wsRef.current = null;
     };
   }, [connect, sendResize, fitAndResize, clearTimers, waitForVisibleDimensions]);
+
+  useEffect(() => {
+    const handleSearch = (event) => {
+      const detail = event.detail || {};
+      const targetId = detail.targetId;
+      const query = detail.query;
+      const direction = detail.direction || 'next';
+
+      if (!targetId || targetId !== id || !query || !searchRef.current) return;
+
+      if (direction === 'prev') {
+        searchRef.current.findPrevious(query, { caseSensitive: false, incremental: true });
+        return;
+      }
+
+      searchRef.current.findNext(query, { caseSensitive: false, incremental: true });
+    };
+
+    window.addEventListener('devhub:terminal-search', handleSearch);
+    return () => window.removeEventListener('devhub:terminal-search', handleSearch);
+  }, [id]);
 
   // Handle focus when tab becomes active
   useEffect(() => {
@@ -265,6 +279,70 @@ export default function TerminalTTY({
     };
   }, [sendResize]);
 
+  // ── Custom context menu for terminal ────────────────────────────────────────
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = termRef.current?.getSelection();
+    if (text) {
+      setContextMenu({ x: e.clientX, y: e.clientY, text });
+    }
+  }, []);
+
+  const handleCopyFromMenu = useCallback(async () => {
+    if (contextMenu?.text) {
+      try {
+        await navigator.clipboard.writeText(contextMenu.text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch {
+        // Fallback: select all and copy
+        const textarea = document.createElement('textarea');
+        textarea.value = contextMenu.text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }
+    }
+    setContextMenu(null);
+  }, [contextMenu]);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [contextMenu]);
+
+  // ── Keyboard shortcut: Ctrl+Shift+C to copy ─────────────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = termRef.current?.getSelection();
+        if (text) {
+          navigator.clipboard.writeText(text).catch(() => {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+          });
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
   const isConnected = connectionState === 'connected';
   const statusLabel = isConnected
     ? 'Conectado'
@@ -275,7 +353,7 @@ export default function TerminalTTY({
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[#111111] relative">
       {!hideTitleBar && (
-        <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle">
+        <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle cursor-pointer">
           <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none">
             <svg
               className="w-4 h-4 text-gray-400"
@@ -299,7 +377,7 @@ export default function TerminalTTY({
               <WifiOff className="w-3 h-3 text-[#ff7b72]" strokeWidth={2} />
             )}
             <span
-              className={`text-[10px] font-sans tracking-wide uppercase font-semibold ${isConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}
+              className={`text-xs font-sans tracking-wide uppercase font-semibold ${isConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}
             >
               {statusLabel}
             </span>
@@ -308,14 +386,14 @@ export default function TerminalTTY({
           <div className="flex items-center gap-2">
             <button
               onClick={reconnect}
-              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group"
+              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
             >
               <RotateCcw className="w-3 h-3 text-gray-400 group-hover:text-white" strokeWidth={2} />
             </button>
             {onClose && (
               <button
                 onClick={onClose}
-                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group"
+                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
               >
                 <X
                   className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#ff7b72]"
@@ -328,13 +406,67 @@ export default function TerminalTTY({
       )}
 
       {/* Terminal View */}
-      <div className="relative flex-1 bg-[#111111]">
+      <div className="relative flex-1 bg-[#111111]" onContextMenu={handleContextMenu}>
         <div ref={containerRef} className="devhub-xterm-container h-full w-full p-2.5" />
 
+        {/* Loading overlay — only during init or connecting */}
         {(isInitializing || connectionState === 'connecting') && (
           <div className="absolute inset-0 bg-[#111111]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
             <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
-            Leyendo ~/.zshrc ...
+            {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
+          </div>
+        )}
+
+        {/* Copy button — top-right corner */}
+        {isConnected && (
+          <button
+            onClick={async () => {
+              if (termRef.current) {
+                try {
+                  const text = termRef.current.getSelection();
+                  if (text) {
+                    await navigator.clipboard.writeText(text);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  }
+                } catch {
+                  // Clipboard API may not be available
+                }
+              }
+            }}
+            className="absolute top-2 right-2 z-20 p-1.5 rounded-md bg-[#1e1e1e]/90 border border-white/10 hover:bg-white/10 transition-colors"
+            title="Copiar selección"
+          >
+            <Copy className={`w-3.5 h-3.5 ${copied ? 'text-[#3fb950]' : 'text-gray-400'}`} />
+          </button>
+        )}
+
+        {/* Custom context menu */}
+        {contextMenu && (
+          <div
+            className="fixed z-50 min-w-[160px] rounded-lg border shadow-xl animate-in fade-in zoom-in-95 duration-100"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+              background: '#1e1e1e',
+              borderColor: '#3a3a3a',
+            }}
+          >
+            <button
+              onClick={handleCopyFromMenu}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+            >
+              <Copy className="w-3.5 h-3.5 text-gray-400" />
+              Copiar selección
+              <span className="ml-auto text-[10px] text-gray-500 font-mono">Ctrl+Shift+C</span>
+            </button>
+            <div className="h-px bg-[#3a3a3a] mx-2 my-1" />
+            <button
+              onClick={() => setContextMenu(null)}
+              className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+            >
+              Cerrar
+            </button>
           </div>
         )}
       </div>

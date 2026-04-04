@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, WrapText, ListOrdered } from 'lucide-react';
 
 /**
  * Inline code component — used for `<code>` elements inside paragraphs.
@@ -9,7 +9,13 @@ import { Check, Copy } from 'lucide-react';
 export function InlineCode({ className, children, ...props }) {
   return (
     <code
-      className="bg-[#111825] border border-[#2a3441] rounded px-1.5 py-0.5 text-[#9bc2ff] text-[0.85em]"
+      className="rounded px-1.5 py-0.5 text-[0.85em]"
+      style={{
+        background: 'var(--surface-muted)',
+        borderColor: 'var(--border-strong)',
+        color: 'var(--accent-primary)',
+        border: '1px solid var(--border-strong)',
+      }}
       {...props}
     >
       {children}
@@ -24,13 +30,20 @@ export function InlineCode({ className, children, ...props }) {
  */
 export function BlockCode({ children, ...props }) {
   const [copied, setCopied] = useState(false);
+  const [wrap, setWrap] = useState(false);
+  const [showLines, setShowLines] = useState(true);
 
-  // Extract language from the nested <code> element's className
+  // Extract language and optional filename from the nested <code> element's className
   const codeChild = children?.props?.children;
   const codeClassName = children?.props?.className || '';
-  const match = /language-(\w+)/.exec(codeClassName || '');
-  const language = match ? match[1] : 'text';
+  const langMatch = /language-(\S+)/.exec(codeClassName || '');
+  const rawLang = langMatch ? langMatch[1] : 'text';
+
+  // Parse filename from info string: e.g. "language-typescript:src/foo.ts"
+  const [language, filename] = rawLang.includes(':') ? rawLang.split(':', 2) : [rawLang, null];
+
   const codeText = codeChild ? String(codeChild).replace(/\n$/, '') : '';
+  const lines = codeText.split('\n');
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(codeText);
@@ -40,32 +53,117 @@ export function BlockCode({ children, ...props }) {
 
   return (
     <div
-      className="my-4 rounded-xl overflow-hidden border border-[#2a3441] bg-[#0c1018]"
+      className="my-4 rounded-xl overflow-hidden border"
+      style={{ borderColor: 'var(--border-strong)' }}
       {...props}
     >
-      {/* Header bar with language + copy button */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#111825] border-b border-[#2a3441]">
-        <span className="text-xs text-gray-500 font-mono lowercase">{language}</span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-          title="Copy to clipboard"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-emerald-400">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" />
-              <span>Copy</span>
-            </>
+      {/* Header bar with language, filename, and action buttons */}
+      <div
+        className="flex items-center justify-between px-4 py-2 border-b"
+        style={{
+          background: 'var(--surface-muted)',
+          borderColor: 'var(--border-strong)',
+        }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-mono lowercase" style={{ color: 'var(--text-muted)' }}>
+            {language}
+          </span>
+          {filename && (
+            <span className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
+              {filename}
+            </span>
           )}
-        </button>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {/* Toggle line numbers */}
+          <button
+            onClick={() => setShowLines((v) => !v)}
+            className="flex items-center gap-1 px-1.5 py-1 rounded text-xs transition-colors cursor-pointer hover:opacity-80"
+            style={{ color: showLines ? 'var(--accent-primary)' : 'var(--text-muted)' }}
+            title={showLines ? 'Hide line numbers' : 'Show line numbers'}
+          >
+            <ListOrdered className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Toggle word wrap */}
+          <button
+            onClick={() => setWrap((v) => !v)}
+            className="flex items-center gap-1 px-1.5 py-1 rounded text-xs transition-colors cursor-pointer hover:opacity-80"
+            style={{ color: wrap ? 'var(--accent-primary)' : 'var(--text-muted)' }}
+            title={wrap ? 'Disable word wrap' : 'Enable word wrap'}
+          >
+            <WrapText className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Copy button */}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-1.5 py-1 rounded text-xs transition-colors cursor-pointer hover:opacity-80"
+            style={{ color: copied ? 'var(--success)' : 'var(--text-muted)' }}
+            title="Copy to clipboard"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Copy</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
-      {/* Code body — render the original <code> child */}
-      <div className="p-4 overflow-x-auto">{children}</div>
+
+      {/* Code body */}
+      <div
+        className="p-4 font-mono text-sm"
+        style={{
+          background: 'var(--surface-elevated)',
+          overflowX: wrap ? 'hidden' : 'auto',
+          whiteSpace: wrap ? 'pre-wrap' : 'pre',
+          wordBreak: wrap ? 'break-word' : 'normal',
+        }}
+      >
+        {showLines ? (
+          <div className="flex">
+            {/* Line numbers — non-selectable gutter */}
+            <div
+              className="flex-shrink-0 pr-4 text-right select-none border-r"
+              style={{
+                color: 'var(--text-muted)',
+                opacity: 0.4,
+                borderColor: 'var(--border-subtle)',
+              }}
+              aria-hidden="true"
+            >
+              {lines.map((_, i) => (
+                <div key={i} className="leading-6">
+                  {i + 1}
+                </div>
+              ))}
+            </div>
+            {/* Code content */}
+            <div className="pl-4 flex-1 min-w-0">
+              {lines.map((line, i) => (
+                <div key={i} className="leading-6">
+                  {line || ' '}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div>
+            {lines.map((line, i) => (
+              <div key={i}>{line || ' '}</div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import 'xterm/css/xterm.css';
+@import './opencode-vars.css';
 
-@import "tailwindcss";
+@import 'tailwindcss';
 @config "../../tailwind.config.js";
-
 
 :root {
   --app-zoom: 1;
@@ -470,4 +470,16 @@ code {
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+/* Allow text selection in xterm.js */
+.devhub-xterm-container .xterm .xterm-screen {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+.devhub-xterm-container .xterm .xterm-viewport {
+  cursor: text !important;
 }

@@ -86,7 +86,7 @@ export default function SettingsLayout({ children }) {
         <div className="px-5 pt-5 pb-2">
           <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
           <p
-            className="text-[10px] tracking-[0.18em] uppercase mt-1"
+            className="text-xs tracking-[0.18em] uppercase mt-1"
             style={{ color: 'var(--text-muted)' }}
           >
             DevHub

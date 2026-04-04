@@ -20,6 +20,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import OpenAI from 'openai';
+import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
 
@@ -49,8 +50,32 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function generateId(prefix) {
+function generateLegacyId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const UUID_REQUIRED_TABLES = new Set(['projects', 'tasks', 'milestones']);
+const AUTO_ID_TABLES = new Set([
+  'projects',
+  'tasks',
+  'milestones',
+  'task_comments',
+  'agent_memory',
+  'mcp_connections',
+]);
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LEGACY_ID_REGEX = /^[a-z]+-\d{10,}-[a-z0-9]{8}$/i;
+
+const UUID_OR_LEGACY_ID_SCHEMA = z
+  .string()
+  .refine((value) => UUID_REGEX.test(String(value)) || LEGACY_ID_REGEX.test(String(value)), {
+    message: 'Debe ser UUID o ID legacy (<tipo>-<timestamp>-<suffix>)',
+  });
+
+function generatePrimaryIdForTable(tableName) {
+  if (UUID_REQUIRED_TABLES.has(tableName)) return randomUUID();
+  return generateLegacyId(tableName.replace(/s$/, ''));
 }
 
 function ensureLocalMcpTables() {
@@ -229,18 +254,8 @@ class LocalQueryBuilder {
 
   _insertRow(row) {
     const payload = { ...row };
-    if (
-      payload.id === undefined &&
-      [
-        'projects',
-        'tasks',
-        'milestones',
-        'task_comments',
-        'agent_memory',
-        'mcp_connections',
-      ].includes(this.table)
-    ) {
-      payload.id = generateId(this.table.slice(0, -1));
+    if (payload.id === undefined && AUTO_ID_TABLES.has(this.table)) {
+      payload.id = generatePrimaryIdForTable(this.table);
     }
     if (payload.created_at === undefined) payload.created_at = nowIso();
     if (
@@ -607,7 +622,9 @@ server.tool(
       .default('pending'),
     priority: z.enum(['low', 'medium', 'high', 'critical']).optional().default('medium'),
     due_date: z.string().optional().describe('Fecha ISO YYYY-MM-DD'),
-    milestone_id: z.string().uuid().optional().describe('UUID del hito al que pertenece la tarea'),
+    milestone_id: UUID_OR_LEGACY_ID_SCHEMA.optional().describe(
+      'ID del hito (UUID o legacy) al que pertenece la tarea'
+    ),
     assigned_to: z.string().uuid().optional().describe('UUID del usuario o agente asignado'),
   },
   async ({
@@ -645,18 +662,15 @@ server.tool(
   'update_task',
   'Actualiza el estado, prioridad u otros campos de una tarea existente.',
   {
-    task_id: z.string().uuid(),
+    task_id: UUID_OR_LEGACY_ID_SCHEMA,
     title: z.string().optional(),
     description: z.string().optional(),
     status: z.enum(['pending', 'in_progress', 'completed', 'blocked']).optional(),
     priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
     due_date: z.string().nullable().optional(),
-    milestone_id: z
-      .string()
-      .uuid()
-      .nullable()
+    milestone_id: UUID_OR_LEGACY_ID_SCHEMA.nullable()
       .optional()
-      .describe('UUID del hito (null para desvincular)'),
+      .describe('ID del hito (UUID o legacy). null para desvincular'),
     assigned_to: z
       .string()
       .uuid()
@@ -687,7 +701,7 @@ server.tool(
   'add_task_comment',
   'Añade un comentario a una tarea (útil para que los agentes dejen notas técnicas o log de QA).',
   {
-    task_id: z.string().uuid(),
+    task_id: UUID_OR_LEGACY_ID_SCHEMA,
     content: z.string(),
     author_type: z.enum(['human', 'agent']).default('agent'),
   },
@@ -705,7 +719,7 @@ server.tool(
 server.tool(
   'delete_task',
   'Elimina una tarea de DevHub. ¡Acción irreversible!',
-  { task_id: z.string().uuid() },
+  { task_id: UUID_OR_LEGACY_ID_SCHEMA },
   async ({ task_id }) => {
     const { error } = await supabase.from('tasks').delete().eq('id', task_id);
     if (error) return err(error.message);
@@ -721,8 +735,8 @@ server.tool(
   'create_task_dependency',
   'Crea una relación de dependencia o bloqueo entre dos tareas.',
   {
-    task_id: z.string().uuid(),
-    depends_on: z.string().uuid(),
+    task_id: UUID_OR_LEGACY_ID_SCHEMA,
+    depends_on: UUID_OR_LEGACY_ID_SCHEMA,
     tipo: z.enum(['blocks', 'related']).optional().default('blocks'),
   },
   async ({ task_id, depends_on, tipo }) => {
@@ -743,7 +757,7 @@ server.tool(
 server.tool(
   'get_task_dependencies',
   'Devuelve qué tareas bloquean o son bloqueadas por una tarea específica.',
-  { task_id: z.string().uuid() },
+  { task_id: UUID_OR_LEGACY_ID_SCHEMA },
   async ({ task_id }) => {
     const [blockingRes, blockedByRes] = await Promise.all([
       supabase.from('task_dependencies').select('*').eq('task_id', task_id),
@@ -913,7 +927,7 @@ server.tool(
   'update_milestone',
   'Actualiza el estado o los campos de un hito del roadmap.',
   {
-    milestone_id: z.string().uuid(),
+    milestone_id: UUID_OR_LEGACY_ID_SCHEMA,
     assigned_to: z
       .string()
       .uuid()

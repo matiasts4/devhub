@@ -14,13 +14,13 @@ export default function UltimasInteracciones() {
     <div data-testid="ultimas-interacciones" className="bg-surface-card border border-borders-subtle rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-borders-subtle">
         <h3 className="font-mono text-sm font-semibold text-text-primary">Últimas Interacciones</h3>
-        <span className="text-[10px] text-text-muted">Hoy</span>
+        <span className="text-xs text-text-muted">Hoy</span>
       </div>
       <table className="w-full">
         <thead>
           <tr className="border-b border-borders-subtle">
             {["Tipo", "Acción", "Destino", "Agente", "Hace"].map((h) => (
-              <th key={h} className="text-left px-5 py-2 text-[9px] uppercase tracking-[0.12em] text-text-muted font-semibold">{h}</th>
+              <th key={h} className="text-left px-5 py-2 text-[11px] uppercase tracking-[0.12em] text-text-muted font-semibold">{h}</th>
             ))}
           </tr>
         </thead>
@@ -31,7 +31,7 @@ export default function UltimasInteracciones() {
               <tr
                 key={item.id}
                 data-testid={`interaction-${item.id}`}
-                className="fade-in-up hover:bg-surface-elevated transition-colors"
+                className="fade-in-up hover:bg-surface-elevated transition-colors cursor-pointer"
                 style={{ animationDelay: `${i * 40}ms` }}
               >
                 <td className="px-5 py-2.5">
@@ -41,10 +41,10 @@ export default function UltimasInteracciones() {
                 </td>
                 <td className="px-5 py-2.5"><p className="text-xs text-text-primary">{item.action}</p></td>
                 <td className="px-5 py-2.5">
-                  <code className="text-[9px] font-mono text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-borders-strong">{item.target}</code>
+                  <code className="text-[11px] font-mono text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-borders-strong">{item.target}</code>
                 </td>
                 <td className="px-5 py-2.5"><span className="text-xs text-text-muted">{item.user}</span></td>
-                <td className="px-5 py-2.5"><span className="text-[10px] text-text-muted">hace {item.time}</span></td>
+                <td className="px-5 py-2.5"><span className="text-xs text-text-muted">hace {item.time}</span></td>
               </tr>
             );
           })}

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { validateCopilotOAuth } from '@/lib/copilot-token';
 
 export async function POST(request) {
   try {
@@ -32,7 +33,7 @@ export async function POST(request) {
         );
         break;
       case 'copilot':
-        result = await testCopilot((config.COPILOT_TOKEN || '').trim(), config.COPILOT_MODEL || 'gpt-4o');
+        result = await testCopilot((config.COPILOT_OAUTH_TOKEN || '').trim());
         break;
       default:
         return NextResponse.json({ valid: false, error: 'Proveedor desconocido' });
@@ -70,52 +71,17 @@ async function testOpenAICompatible(baseUrl, apiKey, model) {
   }
 }
 
-async function testCopilot(token, model) {
-  if (!token || !String(token).trim()) {
-    return { valid: false, error: 'Falta COPILOT_TOKEN' };
-  }
-
-  // Copilot no acepta PAT clásicos (ghp_...)
-  if (String(token).trim().startsWith('ghp_')) {
+async function testCopilot(oauthToken) {
+  if (!oauthToken) {
     return {
       valid: false,
-      error:
-        'Token clásico detectado (ghp_...). Usa Fine-grained PAT con permiso Copilot Requests.',
+      error: 'No hay token OAuth de Copilot. Hacé login desde Ajustes > GitHub Copilot.',
     };
   }
 
-  try {
-    const res = await fetch('https://api.githubcopilot.com/models', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        'Editor-Version': 'DevHub/1.0.0',
-      },
-      body: undefined,
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (res.ok) {
-      const payload = await res.json().catch(() => ({}));
-      const models = Array.isArray(payload?.data)
-        ? payload.data.map((m) => m?.id).filter(Boolean)
-        : [];
-
-      if (model && models.length > 0 && !models.includes(model)) {
-        return {
-          valid: true,
-          warning: `Credenciales válidas, pero el modelo '${model}' no aparece en los disponibles de Copilot.`,
-        };
-      }
-
-      return { valid: true };
-    }
-
-    const payload = await res.json().catch(() => ({}));
-    const message = payload?.error?.message || payload?.message || `HTTP ${res.status}`;
-    return { valid: false, error: message };
-  } catch (err) {
-    return { valid: false, error: err.message };
+  const result = await validateCopilotOAuth(oauthToken);
+  if (result.valid) {
+    return { valid: true };
   }
+  return { valid: false, error: result.error };
 }
