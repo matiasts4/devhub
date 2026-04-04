@@ -22,7 +22,7 @@ import {
   Info,
   Hash,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 
 const TYPE_CONFIG = {
@@ -36,14 +36,14 @@ const TYPE_CONFIG = {
 
 // ─── Add Connection Modal ─────────────────────────────────────────────────────
 function AddConnectionModal({ onClose, onCreated }) {
-  const supabase = createClient();
+  const db = createClient();
   const [form, setForm] = useState({ name: '', type: 'generic', endpoint_url: '', api_key: '' });
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
-    const { error } = await supabase.from('mcp_connections').insert({
+    const { error } = await db.from('mcp_connections').insert({
       id: `conn-${Date.now()}`,
       user_id: 'local-user',
       name: form.name,
@@ -207,7 +207,7 @@ function AddConnectionModal({ onClose, onCreated }) {
 
 // ─── Main View ────────────────────────────────────────────────────────────────
 export default function Conexiones() {
-  const supabase = useMemo(() => createClient(), []);
+  const db = useMemo(() => createClient(), []);
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -216,7 +216,7 @@ export default function Conexiones() {
 
   const fetchConnections = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('mcp_connections')
       .select('id, name, type, endpoint_url, is_active, last_sync, created_at')
       .order('created_at', { ascending: false });
@@ -227,7 +227,7 @@ export default function Conexiones() {
       setConnections(data || []);
     }
     setLoading(false);
-  }, [supabase]);
+  }, [db]);
 
   useEffect(() => {
     fetchConnections();
@@ -235,7 +235,7 @@ export default function Conexiones() {
 
   async function toggleActive(conn) {
     setToggling(conn.id);
-    await supabase.from('mcp_connections').update({ is_active: !conn.is_active }).eq('id', conn.id);
+    await db.from('mcp_connections').update({ is_active: !conn.is_active }).eq('id', conn.id);
     setConnections((prev) =>
       prev.map((c) => (c.id === conn.id ? { ...c, is_active: !c.is_active } : c))
     );
@@ -244,7 +244,7 @@ export default function Conexiones() {
   }
 
   async function deleteConnection(id, name) {
-    await supabase.from('mcp_connections').delete().eq('id', id);
+    await db.from('mcp_connections').delete().eq('id', id);
     setConnections((prev) => prev.filter((c) => c.id !== id));
     toast.success(`"${name}" eliminada`);
   }

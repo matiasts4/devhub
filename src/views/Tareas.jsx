@@ -23,7 +23,7 @@ import {
   Milestone,
   ChevronRight,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import Select from 'react-select';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -126,7 +126,7 @@ function TaskModal({
   onClose,
   onSaved,
 }) {
-  const supabase = createClient();
+  const db = createClient();
 
   const existingDepsIds = existingTask
     ? dependencies
@@ -166,7 +166,7 @@ function TaskModal({
     let targetTaskId = existingTask?.id;
 
     if (existingTask) {
-      const { error } = await supabase
+      const { error } = await db
         .from('tasks')
         .update({ ...form, milestone_id: form.milestone_id || null })
         .eq('id', existingTask.id);
@@ -176,7 +176,7 @@ function TaskModal({
         return;
       }
     } else {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tasks')
         .insert({
           ...form,
@@ -196,13 +196,13 @@ function TaskModal({
     }
 
     if (targetTaskId) {
-      await supabase
+      await db
         .from('task_dependencies')
         .delete()
         .eq('task_id', targetTaskId)
         .eq('tipo', 'blocks');
       if (selectedDeps.length > 0) {
-        await supabase.from('task_dependencies').insert(
+        await db.from('task_dependencies').insert(
           selectedDeps.map((d) => ({
             task_id: targetTaskId,
             depends_on: d.value,
@@ -461,7 +461,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
     const agentId = `worker-sdd-orchestrator-${Date.now()}`;
 
     // Telemetría UI inmediata
-    const supabase = createClient();
+    const db = createClient();
     try {
       const hints = JSON.parse(localStorage.getItem('devhub_agent_task_hints') || '{}');
       hints[agentId] = task.title;
@@ -470,7 +470,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
       // Ignore localStorage failures (private mode / storage disabled)
     }
 
-    await supabase.from('agent_registry').insert({
+    await db.from('agent_registry').insert({
       agent_id: agentId,
       project_id: project.id,
       nombre: 'SDD ORCHESTRATOR',
@@ -598,7 +598,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
 export default function Tareas() {
   const { project, user } = useOutletContext() || {};
   const navigate = useNavigate();
-  const supabase = createClient();
+  const db = createClient();
 
   const [tasks, setTasks] = useState([]);
   const [dependencies, setDependencies] = useState([]);
@@ -643,13 +643,13 @@ export default function Tareas() {
     if (!project?.id) return;
     setLoading(true);
     const [tRes, dRes, mRes] = await Promise.all([
-      supabase
+      db
         .from('tasks')
         .select('*')
         .eq('project_id', project.id)
         .order('created_at', { ascending: false }),
-      supabase.from('task_dependencies').select('*'),
-      supabase.from('milestones').select('*').eq('project_id', project.id),
+      db.from('task_dependencies').select('*'),
+      db.from('milestones').select('*').eq('project_id', project.id),
     ]);
     setTasks(tRes.data || []);
     setDependencies(dRes.data || []);
@@ -662,7 +662,7 @@ export default function Tareas() {
   }, [fetchData]);
   useEffect(() => {
     if (!project?.id) return;
-    const channel = supabase
+    const channel = db
       .channel(`public:tasks:${project.id}`)
       .on(
         'postgres_changes',
@@ -671,13 +671,13 @@ export default function Tareas() {
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      db.removeChannel(channel);
     };
   }, [project?.id, fetchData]);
 
   async function moveTask(taskId, newStatus) {
     const completed_at = newStatus === 'completed' ? new Date().toISOString() : null;
-    await supabase.from('tasks').update({ status: newStatus, completed_at }).eq('id', taskId);
+    await db.from('tasks').update({ status: newStatus, completed_at }).eq('id', taskId);
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, status: newStatus, completed_at } : t))
     );
@@ -686,7 +686,7 @@ export default function Tareas() {
   }
 
   async function deleteTask(taskId) {
-    await supabase.from('tasks').delete().eq('id', taskId);
+    await db.from('tasks').delete().eq('id', taskId);
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     toast.success('Tarea eliminada');
   }

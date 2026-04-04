@@ -157,6 +157,10 @@ export async function ensureTTYServer() {
         DEVHUB_MCP_CMD: 'node /home/matias/devhub/devhub-mcp/server.js',
         GEMINI_MCP_HINT: 'Use DEVHUB_MCP_CMD to connect Gemini CLI to your local server.',
         DEVHUB_TMUX_SESSION: tmuxSession,
+        // Suppress shell MOTD (Kali "minimal installation" banner, etc.)
+        MOTD_SHOWN: 'true',
+        SSH_CONNECTION: '',
+        HUSHLOGIN: 'true',
       });
 
       let spawnArgs = [];
@@ -194,8 +198,21 @@ export async function ensureTTYServer() {
 
       terminal.onData((chunk) => {
         session.lastActivityAt = Date.now();
+
+        // Suppress Kali MOTD and zsh history corruption messages
+        let filtered = chunk;
+        if (typeof filtered === 'string') {
+          // Remove Kali minimal installation banner
+          filtered = filtered.replace(
+            /┃\s*This is a minimal installation of Kali Linux[\s\S]*?┃\s*\(Run: "touch ~\/\.hushlogin" to hide this message\)\s*\n?/g,
+            ''
+          );
+          // Remove zsh corrupt history message
+          filtered = filtered.replace(/zsh: corrupt history file[^\n]*\n?/g, '');
+        }
+
         if (session.historyEnabled) {
-          session.history += chunk;
+          session.history += filtered;
           if (session.history.length > 100000) {
             session.history = session.history.slice(-100000);
           }
@@ -203,7 +220,7 @@ export async function ensureTTYServer() {
 
         for (const s of session.sockets) {
           if (s.readyState === s.OPEN) {
-            s.send(JSON.stringify({ type: 'output', data: chunk }));
+            s.send(JSON.stringify({ type: 'output', data: filtered }));
           }
         }
       });

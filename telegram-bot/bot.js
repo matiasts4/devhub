@@ -48,6 +48,11 @@ const commands = {
   reset: require('./commands/reset'),
   historial: require('./commands/historial'),
   nueva_sesion: require('./commands/nueva_sesion'),
+
+  // Session & project management (Phase 3)
+  session: require('./commands/session'),
+  project: require('./commands/project'),
+  status: require('./commands/status'),
 };
 
 // ── Validation ──────────────────────────────────────────────────────────────
@@ -99,24 +104,28 @@ const fs = require('fs');
 const path = require('path');
 const settingsPath = path.join(__dirname, '..', 'data', 'llm-providers-config.json');
 
-let chatMode = 'OpenCode agents (Legacy)';
+let chatMode = 'OpenCode headless (persistent sessions)';
 try {
-  if (process.env.LLM_BRIDGE_ENABLED !== 'false') {
-    if (fs.existsSync(settingsPath)) {
-      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      if (parsed?.bridgeEnabled !== false) {
-        const activeProviders = Object.entries(parsed.providers || {})
-          .filter(([_, p]) => p.enabled !== false)
-          .sort((a, b) => (a[1].priority || 99) - (b[1].priority || 99));
-          
-        if (activeProviders.length > 0) {
-          chatMode = `LLM Bridge (${activeProviders[0][0]} prioritario)`;
-        } else {
-          chatMode = 'LLM Bridge (sin proveedores, fallback a OpenCode)';
+  if (process.env.TELEGRAM_USE_OPENCODE === 'false') {
+    if (process.env.LLM_BRIDGE_ENABLED !== 'false') {
+      if (fs.existsSync(settingsPath)) {
+        const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        if (parsed?.bridgeEnabled !== false) {
+          const activeProviders = Object.entries(parsed.providers || {})
+            .filter(([_, p]) => p.enabled !== false)
+            .sort((a, b) => (a[1].priority || 99) - (b[1].priority || 99));
+
+          if (activeProviders.length > 0) {
+            chatMode = `LLM Bridge (${activeProviders[0][0]} prioritario)`;
+          } else {
+            chatMode = 'LLM Bridge (sin proveedores, fallback a OpenCode)';
+          }
         }
+      } else {
+        chatMode = 'LLM Bridge (config por defecto)';
       }
     } else {
-      chatMode = 'LLM Bridge (config por defecto)';
+      chatMode = 'OpenCode legacy (tmux)';
     }
   }
 } catch (e) {}
@@ -124,6 +133,18 @@ try {
 logger.info('✅ DevHub Telegram Bot iniciado');
 logger.info('   Polling activo — esperando comandos...');
 logger.info(`   Modo chat: mensajes de texto → ${chatMode}`);
+
+// ── Ensure multi-turn DB columns exist ────────────────────────────────────────
+const USE_MULTI_TURN = process.env.TELEGRAM_MULTI_TURN !== 'false';
+if (USE_MULTI_TURN) {
+  try {
+    const dbBridge = require('./lib/db-bridge');
+    dbBridge.ensureMultiTurnColumns();
+    logger.info('   Multi-turn DB columns verified/created');
+  } catch (err) {
+    logger.warn(`Multi-turn DB columns check failed: ${err.message}`);
+  }
+}
 
 // ── Periodic cleanup ────────────────────────────────────────────────────────
 setInterval(() => {
@@ -186,6 +207,10 @@ const commandMap = [
   { pattern: /^\/nueva_sesion(.*)/, handler: commands.nueva_sesion },
   { pattern: /^\/new_session(.*)/, handler: commands.nueva_sesion },
   { pattern: /^\/newsession(.*)/, handler: commands.nueva_sesion },
+  // Session & project management (Phase 3)
+  { pattern: /^\/session(.*)/, handler: commands.session },
+  { pattern: /^\/project(.*)/, handler: commands.project },
+  { pattern: /^\/status(.*)/, handler: commands.status },
   // Help
   { pattern: /^\/help(.*)/, handler: commands.help },
 ];
@@ -290,18 +315,33 @@ bot.on('message', (msg) => {
 });
 
 // ── Graceful shutdown ───────────────────────────────────────────────────────
-process.on('SIGINT', () => {
-  activityLogger.logSystem('shutdown', 'Bot apagado por señal SIGINT');
-  logger.info('Recibida señal de apagado. Cerrando bot...');
-  bot.stopPolling();
-  activityLogger.close();
-  process.exit(0);
-});
+async function gracefulShutdown(signal) {
+  activityLogger.logSystem('shutdown', `Bot apagado por señal ${signal}`);
+  logger.info(
+    `Recibida señal de ${signal === 'SIGINT' ? 'apagado' : 'terminación'}. Cerrando bot...`
+  );
 
-process.on('SIGTERM', () => {
-  activityLogger.logSystem('shutdown', 'Bot apagado por señal SIGTERM');
-  logger.info('Recibida señal de terminación. Cerrando bot...');
+  // Cancel all active multi-turn tasks
+  const USE_MULTI_TURN = process.env.TELEGRAM_MULTI_TURN !== 'false';
+  if (USE_MULTI_TURN) {
+    try {
+      const { getExecutor } = require('./services/executor');
+      const dbBridge = require('./lib/db-bridge');
+      const executor = getExecutor(bot, dbBridge);
+      const activeCount = executor.tasks.size;
+      if (activeCount > 0) {
+        logger.info(`Cancelling ${activeCount} active multi-turn task(s)...`);
+        await executor.cancelAll();
+      }
+    } catch (err) {
+      logger.warn(`Error during executor cleanup: ${err.message}`);
+    }
+  }
+
   bot.stopPolling();
   activityLogger.close();
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

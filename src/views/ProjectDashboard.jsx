@@ -14,13 +14,12 @@ import {
   LayoutDashboard,
   Trophy,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
-import BannerIA from '../components/BannerIA';
+import { createClient } from '@/lib/db/localClient';
 
 export default function ProjectDashboard() {
   const { project } = useOutletContext() || {};
   const navigate = useNavigate();
-  const supabase = createClient();
+  const db = createClient();
 
   const [tasks, setTasks] = useState([]);
   const [milestones, setMilestones] = useState([]);
@@ -30,8 +29,8 @@ export default function ProjectDashboard() {
     if (!project?.id) return;
     setLoading(true);
     const [{ data: tasksData }, { data: msData }] = await Promise.all([
-      supabase.from('tasks').select('*').eq('project_id', project.id),
-      supabase
+      db.from('tasks').select('*').eq('project_id', project.id),
+      db
         .from('milestones')
         .select('*')
         .eq('project_id', project.id)
@@ -167,9 +166,6 @@ export default function ProjectDashboard() {
         </div>
 
         <div className="fade-in-up space-y-6">
-          {/* AI Banner */}
-          <BannerIA project={project} />
-
           {/* Stats cards */}
           <div
             className="rounded-2xl overflow-hidden reveal-on-scroll"

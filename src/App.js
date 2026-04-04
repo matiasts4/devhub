@@ -23,7 +23,7 @@ import Ajustes from './views/Ajustes';
 import AgentHub from './views/AgentHub';
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { Loader2 } from 'lucide-react';
 import {
   applyThemeToDocument,
@@ -49,11 +49,11 @@ function WorkspaceLayout() {
   const [uiPrefsReady, setUiPrefsReady] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
-  const supabase = useMemo(() => createClient(), []);
+  const db = useMemo(() => createClient(), []);
   const pollRef = useRef(null);
 
   const loadProject = useCallback(async () => {
-    const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
+    const { data } = await db.from('projects').select('*').eq('id', projectId).single();
     setProject(data || null);
     setLoading(false);
   }, [projectId]);
@@ -76,12 +76,12 @@ function WorkspaceLayout() {
     saveUIPref(projectId, 'sidebarCollapsed', collapsed);
   }, [projectId, collapsed, uiPrefsReady]);
 
-  // Polling for project updates (replaces Supabase realtime in local mode)
+  // Polling for project updates (local mode)
   useEffect(() => {
     if (!projectId) return;
 
     const refreshProject = async () => {
-      const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
+      const { data } = await db.from('projects').select('*').eq('id', projectId).single();
       if (data) setProject(data);
     };
 
@@ -91,14 +91,14 @@ function WorkspaceLayout() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [projectId, supabase]);
+  }, [projectId, db]);
 
   // Auto-calcula progress cuando el agente IA crea/completa tareas
   useEffect(() => {
     if (!projectId) return;
 
     const recalcProgress = async () => {
-      const { data: tasks } = await supabase
+      const { data: tasks } = await db
         .from('tasks')
         .select('status')
         .eq('project_id', projectId);
@@ -112,7 +112,7 @@ function WorkspaceLayout() {
       // Update sidebar/UI immediately, even if persistence fails.
       setProject((prev) => (prev ? { ...prev, progress: newProgress } : prev));
 
-      await supabase.from('projects').update({ progress: newProgress }).eq('id', projectId);
+      await db.from('projects').update({ progress: newProgress }).eq('id', projectId);
     };
 
     recalcProgress();
@@ -123,7 +123,7 @@ function WorkspaceLayout() {
     return () => {
       clearInterval(taskPoll);
     };
-  }, [projectId, supabase]);
+  }, [projectId, db]);
 
   if (loading) {
     return (

@@ -2,6 +2,10 @@
  * @file llm-bridge.js
  * @description LLM Bridge — punto de entrada principal que commands/chat.js invoca.
  *
+ * ⚠️ DEPRECATED: This service is deprecated in favor of OpenCode headless with
+ * persistent sessions (TELEGRAM_USE_OPENCODE=true). The LLM Bridge is kept as
+ * a fallback path. Set TELEGRAM_USE_OPENCODE=false to use this path.
+ *
  * Orquesta:
  * 1. ConversationManager (historial de mensajes en SQLite)
  * 2. ToolRegistry (herramientas MCP como function calling)
@@ -16,7 +20,10 @@
  *   const response = await bridge.chat(chatId, userMessage);
  */
 
-const { getLLMBridge: getProviderBridge, resetLLMBridge: resetProviderBridge } = require('./provider-registry');
+const {
+  getLLMBridge: getProviderBridge,
+  resetLLMBridge: resetProviderBridge,
+} = require('./provider-registry');
 const { getToolRegistry } = require('./tool-registry');
 const ConversationManager = require('./conversation-manager');
 const { ERROR_TYPES, createClassifiedError } = require('./provider-interface');
@@ -221,6 +228,10 @@ let _bridge = null;
  */
 function getLLMBridgeService(db, options) {
   if (!_bridge) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '⚠️ LLM Bridge is deprecated. Use OpenCode headless instead (TELEGRAM_USE_OPENCODE=true)'
+    );
     _bridge = new LLMBridge(db, options);
   }
   return _bridge;

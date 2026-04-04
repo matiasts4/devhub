@@ -6,11 +6,33 @@ const logger = require('../utils/logger');
  * /pausar [agente] — Pause an agent or all agents.
  * If args provided: find agent by agent_id (partial match ok) and pause it.
  * If no args: pause ALL agents with status 'working' or 'idle'.
+ *
+ * Multi-turn integration: If there's an active multi-turn task for this chat,
+ * it takes priority and pauses the SSE execution loop. Falls back to the
+ * existing DB-only behavior when no multi-turn task is active.
  */
 module.exports = async function pausar(bot, msg, args) {
   try {
     const chatId = msg.chat.id;
 
+    // === Multi-turn executor integration ===
+    const USE_MULTI_TURN = process.env.TELEGRAM_MULTI_TURN !== 'false';
+    if (USE_MULTI_TURN) {
+      const { getExecutor } = require('../services/executor');
+      const dbBridge = require('../lib/db-bridge');
+      const executor = getExecutor(bot, dbBridge);
+
+      // Check for active multi-turn task
+      if (executor.hasActiveTask(chatId)) {
+        const result = await executor.pauseTask(chatId);
+        if (result) {
+          logger.info(`Multi-turn task paused for chat ${chatId}: ${result.turnCount} turns`);
+          return; // Executor already sent the confirmation message
+        }
+      }
+    }
+
+    // === Fallback: existing DB-only behavior ===
     if (args && args.trim()) {
       // Pause a specific agent by agent_id (partial match)
       const search = args.trim();

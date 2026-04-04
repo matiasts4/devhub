@@ -15,7 +15,7 @@ import {
   Hash,
   Flag,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import { DatePicker } from '@/components/ui/date-picker';
 
@@ -27,14 +27,14 @@ const STATUS_CFG = {
 };
 
 function MilestoneModal({ projectId, userId, onClose, onCreated }) {
-  const supabase = createClient();
+  const db = createClient();
   const [form, setForm] = useState({ title: '', description: '', status: 'planned', due_date: '' });
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
-    const { error } = await supabase.from('milestones').insert({
+    const { error } = await db.from('milestones').insert({
       ...form,
       project_id: projectId,
       user_id: userId,
@@ -172,7 +172,7 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
 
 export default function Roadmap() {
   const { project } = useOutletContext() || {};
-  const supabase = createClient();
+  const db = createClient();
 
   const [milestones, setMilestones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +183,7 @@ export default function Roadmap() {
     async ({ silent = false } = {}) => {
       if (!project?.id) return;
       if (!silent) setLoading(true);
-      const { data } = await supabase
+      const { data } = await db
         .from('milestones')
         .select('*')
         .eq('project_id', project.id)
@@ -227,7 +227,7 @@ export default function Roadmap() {
 
   async function toggleComplete(milestone) {
     const newStatus = milestone.status === 'completed' ? 'in_progress' : 'completed';
-    await supabase.from('milestones').update({ status: newStatus }).eq('id', milestone.id);
+    await db.from('milestones').update({ status: newStatus }).eq('id', milestone.id);
     setMilestones((prev) =>
       prev.map((m) => (m.id === milestone.id ? { ...m, status: newStatus } : m))
     );
@@ -235,7 +235,7 @@ export default function Roadmap() {
   }
 
   async function deleteMilestone(id) {
-    await supabase.from('milestones').delete().eq('id', id);
+    await db.from('milestones').delete().eq('id', id);
     setMilestones((prev) => prev.filter((m) => m.id !== id));
     toast.success('Hito eliminado');
   }

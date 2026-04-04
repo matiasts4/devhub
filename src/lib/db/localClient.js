@@ -1,13 +1,14 @@
 /**
- * Local Supabase-compatible client (CLIENT-SIDE ONLY)
+ * DevHub Local DB Client (CLIENT-SIDE ONLY)
  *
- * Drop-in replacement for @supabase/supabase-js client.
- * Uses fetch to talk to /api/db/* routes.
+ * Query builder that talks to local SQLite via /api/db/* routes.
+ * Drop-in compatible with Supabase-style chains: .from().select().eq()
+ * (API surface mimics Supabase for easy migration — all queries hit local SQLite)
  *
  * Usage:
- *   import { createClient } from '@/lib/db/localSupabase';
- *   const supabase = createClient();
- *   const { data } = await supabase.from('tasks').select('*').eq('project_id', id);
+ *   import { createClient } from '@/lib/db/localClient';
+ *   const db = createClient();
+ *   const { data } = await db.from('tasks').select('*').eq('project_id', id);
  */
 
 // ── Client-side query builder (uses fetch to API routes) ──────────────────────
@@ -112,7 +113,7 @@ class LocalQueryClient {
       params.set('limit', String(this._limitVal));
     }
 
-    const response = await fetch(`/api/db/query?${params.toString()}`, {
+    const response = await fetch(`/api/db/query/?${params.toString()}`, {
       cache: 'no-store',
     });
 
@@ -154,7 +155,7 @@ class LocalQueryClient {
 
   // Override execute to handle mutations
   async _executeMutation() {
-    const response = await fetch('/api/db/mutate', {
+    const response = await fetch('/api/db/mutate/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -185,6 +186,19 @@ LocalQueryClient.prototype.then = function (resolve, reject) {
     return this._executeMutation().then(resolve, reject);
   }
   return originalThen.call(this, resolve, reject);
+};
+
+// Add catch() for full Promise compatibility (Supabase API parity)
+LocalQueryClient.prototype.catch = function (reject) {
+  return this.then(undefined, reject);
+};
+
+// Add finally() for full Promise compatibility
+LocalQueryClient.prototype.finally = function (onSettled) {
+  return this.then(
+    (result) => { onSettled?.(); return result; },
+    (error) => { onSettled?.(); throw error; }
+  );
 };
 
 // ── Auth stub (no auth needed for local) ──────────────────────────────────────

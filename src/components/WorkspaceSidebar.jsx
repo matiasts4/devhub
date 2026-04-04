@@ -20,7 +20,7 @@ import {
   Sparkles,
   Radar,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import StatusSignal from '@/components/ui/StatusSignal';
 
 const ACTIVE_AGENT_STATUSES = new Set([
@@ -110,10 +110,10 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
 
   useEffect(() => {
     if (!project?.id) return;
-    const supabase = createClient();
+    const db = createClient();
 
     const fetchAgents = async () => {
-      const { data } = await supabase
+      const { data } = await db
         .from('agent_registry')
         .select('agent_id, status, last_heartbeat, updated_at, created_at')
         .eq('project_id', project.id)
@@ -134,7 +134,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
 
     fetchAgents();
 
-    const channel = supabase
+    const channel = db
       .channel('sidebar_agents')
       .on(
         'postgres_changes',
@@ -149,7 +149,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      db.removeChannel(channel);
     };
   }, [project?.id]);
 

@@ -25,7 +25,7 @@ import {
   Cpu,
   FolderOpen,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 
 const PROJECT_TYPES_MODAL = [
@@ -48,7 +48,7 @@ const ACCENT_COLORS = ['#58A6FF', '#3FB950', '#F778BA', '#D2A8FF', '#E3B341', '#
 
 export default function ProjectHub() {
   const navigate = useNavigate();
-  const supabase = createClient();
+  const db = createClient();
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -117,7 +117,7 @@ export default function ProjectHub() {
 
   async function fetchProjects() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('projects')
       .select('*, tasks(count)')
       .order('created_at', { ascending: false });
@@ -147,7 +147,7 @@ export default function ProjectHub() {
   async function createProject(e) {
     e.preventDefault();
     setCreating(true);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('projects')
       .insert({
         user_id: localUser.id,

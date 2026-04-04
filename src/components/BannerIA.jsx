@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Bot, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import {
   buildDocOpsOrchestratorLaunchPrompt,
   enforceDocOpsGateOnLaunchCommand,
@@ -13,7 +13,7 @@ import { getDocOpsContextBudgetPolicy } from '@/lib/docopsPolicy';
 export default function BannerIA({ project }) {
   const [prompt, setPrompt] = useState('');
   const navigate = useNavigate();
-  const supabase = createClient();
+  const db = createClient();
   const docopsBudget = getDocOpsContextBudgetPolicy();
 
   const handleLaunch = async (e) => {
@@ -32,7 +32,7 @@ export default function BannerIA({ project }) {
     }
 
     // Registrar el agente en UI antes de lanzarlo para visualización en tiempo real
-    await supabase.from('agent_registry').insert({
+    await db.from('agent_registry').insert({
       agent_id: agentId,
       project_id: project.id,
       nombre: 'SDD ORCHESTRATOR',
@@ -78,9 +78,6 @@ export default function BannerIA({ project }) {
         </div>
         <div>
           <h3 className="text-sm font-bold text-white tracking-wide">Orquestador IA</h3>
-          <p className="text-[11px] text-[#8957e5] font-semibold uppercase tracking-wider">
-            Flujo SDD Completo
-          </p>
           <p className="text-xs text-text-muted mt-1">
             Budget: {docopsBudget.max_tokens_context}/{docopsBudget.max_expansions}/
             {docopsBudget.expansion_step_tokens}

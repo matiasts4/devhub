@@ -106,6 +106,15 @@ code {
 }
 
 /* ─── Animation keyframes ─── */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;

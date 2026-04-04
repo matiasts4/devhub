@@ -12,7 +12,7 @@ import {
   Flag,
   Hash,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
 
 const STATUS_COLORS = {
@@ -54,7 +54,7 @@ const FILTER_OPTIONS = [
 
 export default function Historial() {
   const { project } = useOutletContext() || {};
-  const supabase = createClient();
+  const db = createClient();
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +81,7 @@ export default function Historial() {
   const fetchHistory = useCallback(async () => {
     if (!project?.id) return;
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('tasks')
       .select('*')
       .eq('project_id', project.id)
@@ -110,7 +110,7 @@ export default function Historial() {
   useEffect(() => {
     fetchHistory();
     if (!project?.id) return;
-    const channel = supabase
+    const channel = db
       .channel(`historial-${project.id}`)
       .on(
         'postgres_changes',
@@ -121,7 +121,7 @@ export default function Historial() {
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      db.removeChannel(channel);
     };
   }, [project?.id, fetchHistory]);
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bell, Clock3, RefreshCw, Terminal, Wifi, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 
 const DEADLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STALE_MCP_SYNC_MS = 30 * 60 * 1000;
@@ -96,7 +96,7 @@ function buildMcpAlerts(connections) {
 }
 
 export default function NotificationCenter({ projectId, collapsed = false, variant = 'sidebar' }) {
-  const supabase = useMemo(() => createClient(), []);
+  const db = useMemo(() => createClient(), []);
   const isTopbar = variant === 'topbar';
 
   const [open, setOpen] = useState(false);
@@ -113,7 +113,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
     const end = new Date(now.getTime() + DEADLINE_WINDOW_MS);
 
     const [tasksResult, mcpResult] = await Promise.all([
-      supabase
+      db
         .from('tasks')
         .select('id, title, due_date, priority, status')
         .eq('project_id', projectId)
@@ -121,7 +121,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
         .not('due_date', 'is', null)
         .lte('due_date', end.toISOString())
         .order('due_date', { ascending: true }),
-      supabase
+      db
         .from('mcp_connections')
         .select('id, name, is_active, last_sync')
         .order('created_at', { ascending: false }),
@@ -136,7 +136,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
     setDeadlineAlerts(tasks);
     setMcpAlerts(buildMcpAlerts(mcpResult.data || []));
     setLoading(false);
-  }, [projectId, supabase]);
+  }, [projectId, db]);
 
   useEffect(() => {
     fetchAlerts();

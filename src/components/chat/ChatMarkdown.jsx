@@ -13,11 +13,26 @@ import { InlineCode, BlockCode } from '@/components/chat/CodeBlock';
  * - `pre` component handles fenced/block code (wraps <pre><code>...</code></pre>)
  * - `inline` prop is no longer passed to code components
  */
+/**
+ * Safe highlight wrapper to prevent crashes during active streaming
+ * of incomplete or malformed code blocks.
+ */
+const safeHighlight = (options) => {
+  const highlighter = rehypeHighlight(options);
+  return (tree, file) => {
+    try {
+      if (highlighter) highlighter(tree, file);
+    } catch (e) {
+      console.warn('rehype-highlight ignorable stream error:', e.message);
+    }
+  };
+};
+
 export default function ChatMarkdown({ children }) {
   return (
     <MarkdownReact
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[[safeHighlight, { ignoreMissing: true }]]}
       components={{
         code: InlineCode,
         pre: BlockCode,

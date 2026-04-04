@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 // Parse select string to extract relations like tasks(count)
 function parseSelect(selectStr) {
   if (!selectStr || selectStr === '*') return { fields: '*', relations: [] };
-  
-  const parts = selectStr.split(',').map(f => f.trim());
+
+  const parts = selectStr.split(',').map((f) => f.trim());
   const fields = [];
   const relations = [];
-  
+
   for (const part of parts) {
     const relationMatch = part.match(/^(\w+)\((\w+)\)$/);
     if (relationMatch) {
@@ -19,10 +19,10 @@ function parseSelect(selectStr) {
       fields.push(part);
     }
   }
-  
+
   return {
     fields: fields.length > 0 ? fields.join(', ') : '*',
-    relations
+    relations,
   };
 }
 
@@ -35,8 +35,13 @@ export async function GET(request) {
     const orderByStr = searchParams.get('orderBy');
     const limitStr = searchParams.get('limit');
 
-    if (!table) {
-      return NextResponse.json({ error: 'Missing table parameter' }, { status: 400 });
+    // Validate table name against allowlist BEFORE building any SQL
+    const ALLOWED_TABLES = Object.keys(localDb.tables);
+    if (!table || !ALLOWED_TABLES.includes(table)) {
+      return NextResponse.json(
+        { error: `Invalid table: ${table}. Allowed: ${ALLOWED_TABLES.join(', ')}` },
+        { status: 400 }
+      );
     }
 
     const { fields, relations } = parseSelect(selectRaw);

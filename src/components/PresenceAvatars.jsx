@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { createClient } from '@/lib/db/localSupabase';
+import { createClient } from '@/lib/db/localClient';
 
 const LOCAL_USER = { id: 'local-user', email: 'local@devhub.local' };
 
@@ -9,8 +9,8 @@ export default function PresenceAvatars({ projectId }) {
   useEffect(() => {
     if (!projectId) return;
 
-    const supabase = createClient();
-    const room = supabase.channel(`presence:project:${projectId}`);
+    const db = createClient();
+    const room = db.channel(`presence:project:${projectId}`);
 
     room
       .on('presence', { event: 'sync' }, () => {
@@ -37,7 +37,7 @@ export default function PresenceAvatars({ projectId }) {
       });
 
     return () => {
-      supabase.removeChannel(room);
+      db.removeChannel(room);
     };
   }, [projectId]);
 

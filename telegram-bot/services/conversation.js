@@ -1,169 +1,175 @@
-const conversations = new Map();
+/**
+ * Conversation Service — DB-backed conversation history for Telegram.
+ *
+ * Replaces the previous in-memory Map with SQLite persistence via
+ * telegram-persister. Messages survive bot restarts and are visible
+ * in the web UI.
+ *
+ * This module maintains backward compatibility with the old API
+ * (getConversation, addMessage, buildContextPrompt, etc.) but
+ * delegates all persistence to telegram-persister.js.
+ */
 
-function createSession(agent = 'gentleman') {
+const persister = require('./telegram-persister');
+const sessionBridge = require('./session-bridge');
+const logger = require('../utils/logger');
+
+// Lightweight in-memory cache for agent settings per chat (not messages)
+const agentCache = new Map();
+
+/**
+ * Gets or creates a conversation reference for a chatId.
+ * Returns metadata only — messages are in the DB.
+ */
+function getConversation(chatId) {
+  const session = sessionBridge.getActiveSession(chatId);
+  const agent = agentCache.get(String(chatId)) || 'gentleman';
+
   return {
-    messages: [],
+    messages: [], // Messages are now in DB, not in-memory
     agent,
     maxMessages: 20,
-    sessionId: `sess-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`,
-    createdAt: Date.now(),
+    sessionId: session?.id || null,
+    createdAt: session ? new Date(session.created_at).getTime() : Date.now(),
   };
 }
 
 /**
- * Gets or creates a conversation for a given chatId.
- * @param {string|number} chatId
- * @returns {{ messages: Array<{role: string, content: string, timestamp: number}>, agent: string, maxMessages: number }}
- */
-function getConversation(chatId) {
-  if (!conversations.has(chatId)) {
-    conversations.set(chatId, createSession());
-  }
-  return conversations.get(chatId);
-}
-
-/**
- * Adds a message to the conversation and trims to maxMessages.
+ * Adds a message to the conversation — persists to SQLite.
  * @param {string|number} chatId
  * @param {'user'|'assistant'} role
  * @param {string} content
  */
 function addMessage(chatId, role, content) {
-  const conv = getConversation(chatId);
-  conv.messages.push({ role, content, timestamp: Date.now() });
-  while (conv.messages.length > conv.maxMessages) {
-    conv.messages.shift();
+  const session = sessionBridge.getActiveSession(chatId);
+  if (!session) {
+    logger.warn(`Cannot add message: no active session for chat ${chatId}`);
+    return;
   }
+
+  persister.persistMessage(chatId, session.id, role, content);
 }
 
 /**
- * Builds a context prompt that includes previous conversation history
- * followed by the new user message.
+ * Builds a context prompt from DB messages + new user message.
  * @param {string|number} chatId
  * @param {string} newMessage
  * @returns {string}
  */
 function buildContextPrompt(chatId, newMessage) {
-  const conv = getConversation(chatId);
-  const instructionBlock = [
-    '[INSTRUCCIONES DE SALIDA PARA TELEGRAM]',
-    '- Respondé SOLO con la respuesta final para el usuario.',
-    '- NO incluyas razonamiento interno, thinking, análisis, ni pasos de depuración.',
-    '- NO repitas ni cites el bloque de contexto.',
-    '- Idioma: español rioplatense, claro y directo.',
-    '',
-  ];
-
-  if (conv.messages.length === 0) {
-    return [...instructionBlock, '[NUEVO MENSAJE DEL USUARIO]', newMessage].join('\n');
+  const session = sessionBridge.getActiveSession(chatId);
+  if (!session) {
+    // No session yet — just return the new message with instructions
+    const instructionBlock = [
+      '[INSTRUCCIONES DE SALIDA PARA TELEGRAM]',
+      '- Respondé SOLO con la respuesta final para el usuario.',
+      '- NO incluyas razonamiento interno, thinking, análisis, ni pasos de depuración.',
+      '- NO repitas ni cites el bloque de contexto.',
+      '- Idioma: español rioplatense, claro y directo.',
+      '',
+      '[NUEVO MENSAJE DEL USUARIO]',
+      newMessage,
+    ].join('\n');
+    return instructionBlock;
   }
 
-  const contextLines = conv.messages.map(
-    (m) => `${m.role === 'user' ? 'Usuario' : 'Asistente'}: ${m.content}`
-  );
-
-  return [
-    ...instructionBlock,
-    `[CONTEXTO DE CONVERSACIÓN PREVIA — ${conv.messages.length} mensajes]`,
-    ...contextLines,
-    '',
-    '[NUEVO MENSAJE DEL USUARIO]',
-    newMessage,
-  ].join('\n');
+  return persister.buildContextPrompt(session.id, newMessage);
 }
 
 /**
  * Sets the agent for a conversation.
- * @param {string|number} chatId
- * @param {string} agent
  */
 function setAgent(chatId, agent) {
-  const conv = getConversation(chatId);
-  conv.agent = agent;
+  agentCache.set(String(chatId), agent);
 }
 
 /**
  * Gets the current agent for a conversation.
- * @param {string|number} chatId
- * @returns {string}
  */
 function getAgent(chatId) {
-  return getConversation(chatId).agent;
+  return agentCache.get(String(chatId)) || 'gentleman';
 }
 
 /**
- * Resets (deletes) a conversation entirely.
- * @param {string|number} chatId
+ * Resets (deletes) a conversation — clears agent cache only.
+ * Messages remain in DB for audit trail.
  */
 function resetConversation(chatId) {
-  conversations.delete(chatId);
+  agentCache.delete(String(chatId));
+  logger.info(`Conversation reset for chat ${chatId} (messages preserved in DB)`);
 }
 
 /**
  * Starts a fresh session for a chat, optionally preserving current agent.
- * @param {string|number} chatId
- * @param {{ keepAgent?: boolean }} options
- * @returns {{ sessionId: string, agent: string }}
  */
 function startNewSession(chatId, options = {}) {
   const { keepAgent = true } = options;
-  const current = conversations.get(chatId);
-  const preservedAgent = keepAgent && current?.agent ? current.agent : 'gentleman';
+  const preservedAgent = keepAgent ? getAgent(chatId) : 'gentleman';
 
-  const fresh = createSession(preservedAgent);
-  conversations.set(chatId, fresh);
+  // Create a new session via session-bridge
+  sessionBridge
+    .resolveSession(chatId)
+    .then(({ session }) => {
+      logger.info(`New session started for chat ${chatId}: ${session.id}`);
+    })
+    .catch((err) => {
+      logger.error(`Failed to start new session for chat ${chatId}: ${err.message}`);
+    });
 
-  return { sessionId: fresh.sessionId, agent: fresh.agent };
+  return { sessionId: `sess-${Date.now().toString(36)}`, agent: preservedAgent };
 }
 
 /**
  * Returns lightweight session metadata for the chat.
- * @param {string|number} chatId
- * @returns {{ sessionId: string, agent: string, messageCount: number, createdAt: number }}
  */
 function getSessionInfo(chatId) {
-  const conv = getConversation(chatId);
+  const session = sessionBridge.getActiveSession(chatId);
+  const agent = getAgent(chatId);
+
   return {
-    sessionId: conv.sessionId,
-    agent: conv.agent,
-    messageCount: conv.messages.length,
-    createdAt: conv.createdAt,
+    sessionId: session?.id || `sess-${Date.now().toString(36)}`,
+    agent,
+    messageCount: session ? persister.getSessionMessages(session.id).length : 0,
+    createdAt: session ? new Date(session.created_at).getTime() : Date.now(),
   };
 }
 
 /**
  * Returns a sanitized history view with truncated previews.
- * @param {string|number} chatId
- * @returns {Array<{role: string, preview: string, timestamp: string}>}
  */
 function getHistory(chatId) {
-  const conv = getConversation(chatId);
-  return conv.messages.map((m) => ({
+  const session = sessionBridge.getActiveSession(chatId);
+  if (!session) return [];
+
+  const messages = persister.getSessionMessages(session.id, 20);
+  return messages.map((m) => ({
     role: m.role,
     preview: m.content.length > 100 ? m.content.substring(0, 100) + '...' : m.content,
-    timestamp: new Date(m.timestamp).toLocaleTimeString(),
+    timestamp: new Date(m.created_at).toLocaleTimeString(),
   }));
 }
 
 /**
- * Returns the total number of active conversations.
- * @returns {number}
+ * Returns the total number of active conversations (with agents in cache).
  */
 function getConversationCount() {
-  return conversations.size;
+  return agentCache.size;
 }
 
 /**
- * Removes conversations whose last message is older than maxAgeMs.
- * Default: 1 hour (3600000 ms).
- * @param {number} maxAgeMs
+ * Cleanup old conversations — clears agent cache for chats inactive > maxAgeMs.
  */
 function cleanupOldConversations(maxAgeMs = 3_600_000) {
   const now = Date.now();
-  for (const [chatId, conv] of conversations) {
-    const lastMsg = conv.messages[conv.messages.length - 1];
-    if (lastMsg && now - lastMsg.timestamp > maxAgeMs) {
-      conversations.delete(chatId);
+  for (const [chatId] of agentCache) {
+    const session = sessionBridge.getActiveSession(chatId);
+    if (session) {
+      const lastActivity = new Date(session.updated_at).getTime();
+      if (now - lastActivity > maxAgeMs) {
+        agentCache.delete(chatId);
+      }
+    } else {
+      agentCache.delete(chatId);
     }
   }
 }

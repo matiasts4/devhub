@@ -426,6 +426,62 @@ function getActiveProjects() {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Logs (Phase 5: Traceability & Analytics)
+// ---------------------------------------------------------------------------
+
+function getAgentLogs(sessionId, { limit = 50 } = {}) {
+  const db = getDb();
+  try {
+    if (sessionId) {
+      return db
+        .prepare(
+          `
+        SELECT * FROM agent_logs
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+        LIMIT ?
+      `
+        )
+        .all(sessionId, limit);
+    }
+    return db
+      .prepare(
+        `
+      SELECT * FROM agent_logs
+      ORDER BY created_at DESC
+      LIMIT ?
+    `
+      )
+      .all(limit);
+  } finally {
+    db.close();
+  }
+}
+
+function getAgentStats() {
+  const db = getDb();
+  try {
+    return db
+      .prepare(
+        `
+      SELECT
+        agent_name,
+        COUNT(*) AS total_events,
+        COUNT(CASE WHEN status = 'error' THEN 1 END) AS errors,
+        AVG(duration_ms) AS avg_duration_ms,
+        MAX(created_at) AS last_activity
+      FROM agent_logs
+      GROUP BY agent_name
+      ORDER BY last_activity DESC
+    `
+      )
+      .all();
+  } finally {
+    db.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -441,4 +497,6 @@ module.exports = {
   updateTaskStatus,
   getProjectByName,
   getActiveProjects,
+  getAgentLogs,
+  getAgentStats,
 };
