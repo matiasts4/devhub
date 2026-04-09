@@ -559,7 +559,7 @@ server.tool(
 
 server.tool(
   'update_project',
-  'Actualiza los campos de un proyecto (nombre, descripción, progreso, estado, color).',
+  'Actualiza los campos de un proyecto (nombre, descripción, progreso, estado, color, planning_status).',
   {
     project_id: z.string().uuid(),
     name: z.string().optional(),
@@ -567,6 +567,7 @@ server.tool(
     status: z.enum(['active', 'paused', 'completed', 'archived']).optional(),
     progress: z.number().min(0).max(100).optional(),
     color: z.string().optional(),
+    planning_status: z.enum(['none', 'pending', 'completed']).optional().describe('Estado del planning IA del proyecto'),
   },
   async ({ project_id, ...updates }) => {
     const fields = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
@@ -713,63 +714,6 @@ server.tool(
       .single();
     if (error) return err(error.message);
     return ok({ created: true, comment: data });
-  }
-);
-
-server.tool(
-  'delete_task',
-  'Elimina una tarea de DevHub. ¡Acción irreversible!',
-  { task_id: UUID_OR_LEGACY_ID_SCHEMA },
-  async ({ task_id }) => {
-    const { error } = await supabase.from('tasks').delete().eq('id', task_id);
-    if (error) return err(error.message);
-    return ok({ deleted: true, task_id });
-  }
-);
-
-// ────────────────────────────────────────────────────────────────────────────
-// DEPENDENCIAS DE TAREAS
-// ────────────────────────────────────────────────────────────────────────────
-
-server.tool(
-  'create_task_dependency',
-  'Crea una relación de dependencia o bloqueo entre dos tareas.',
-  {
-    task_id: UUID_OR_LEGACY_ID_SCHEMA,
-    depends_on: UUID_OR_LEGACY_ID_SCHEMA,
-    tipo: z.enum(['blocks', 'related']).optional().default('blocks'),
-  },
-  async ({ task_id, depends_on, tipo }) => {
-    const { data, error } = await supabase
-      .from('task_dependencies')
-      .insert({
-        task_id,
-        depends_on,
-        tipo,
-      })
-      .select()
-      .single();
-    if (error) return err(error.message);
-    return ok({ created: true, dependency: data });
-  }
-);
-
-server.tool(
-  'get_task_dependencies',
-  'Devuelve qué tareas bloquean o son bloqueadas por una tarea específica.',
-  { task_id: UUID_OR_LEGACY_ID_SCHEMA },
-  async ({ task_id }) => {
-    const [blockingRes, blockedByRes] = await Promise.all([
-      supabase.from('task_dependencies').select('*').eq('task_id', task_id),
-      supabase.from('task_dependencies').select('*').eq('depends_on', task_id),
-    ]);
-    if (blockingRes.error) return err(blockingRes.error.message);
-    if (blockedByRes.error) return err(blockedByRes.error.message);
-    return ok({
-      task_id,
-      blocking: blockingRes.data || [],
-      blocked_by: blockedByRes.data || [],
-    });
   }
 );
 
@@ -1046,186 +990,6 @@ server.tool(
         has_planning_prompt: !!projRes.data.planning_prompt,
         planning_status: projRes.data.planning_status,
       },
-    });
-  }
-);
-
-server.tool(
-  'mark_planning_done',
-  'Marca el planning de un proyecto como completado. Llamar DESPUÉS de haber creado todos los hitos y tareas del plan exhaustivo.',
-  { project_id: z.string().uuid().describe('UUID del proyecto cuyo planning se completó') },
-  async ({ project_id }) => {
-    const { data, error } = await supabase
-      .from('projects')
-      .update({ planning_status: 'completed' })
-      .eq('id', project_id)
-      .select('id, name, planning_status')
-      .single();
-    if (error) return err(error.message);
-    return ok({
-      success: true,
-      project: data,
-      message: 'Planning marcado como completado. El workspace está listo.',
-    });
-  }
-);
-
-server.tool(
-  'validate_topic_key',
-  'Valida y normaliza una topic_key para el flujo documental retrieval-first.',
-  {
-    topic_key: z
-      .string()
-      .describe('Formato esperado: <dominio>/<subdominio>/<tema>, lowercase y guion medio'),
-  },
-  async ({ topic_key }) => {
-    const result = validateTopicKey(topic_key);
-    return ok({
-      topic_key: topic_key,
-      normalized_topic_key: result.normalized,
-      valid: result.valid,
-      reason: result.reason,
-      regex: TOPIC_KEY_REGEX.source,
-    });
-  }
-);
-
-server.tool(
-  'build_context_pack',
-  'Construye un Context Pack minimo para documentacion usando estrategia retrieval-first y presupuesto de contexto.',
-  {
-    project_id: z.string().uuid().describe('UUID del proyecto'),
-    objective: z.string().min(8).describe('Objetivo puntual de la operacion documental'),
-    topic_key: z.string().describe('Topic key canonica del documento objetivo'),
-    max_evidence: z
-      .number()
-      .int()
-      .min(3)
-      .max(12)
-      .optional()
-      .default(7)
-      .describe('Cantidad maxima de evidencias'),
-    max_tokens_context: z
-      .number()
-      .int()
-      .min(800)
-      .max(8000)
-      .optional()
-      .default(2500)
-      .describe('Presupuesto maximo de tokens de contexto para este pack'),
-  },
-  async ({ project_id, objective, topic_key, max_evidence, max_tokens_context }) => {
-    const topicValidation = validateTopicKey(topic_key);
-    if (!topicValidation.valid) {
-      return err(`topic_key invalida: ${topicValidation.reason}`);
-    }
-
-    const [projectRes, tasksRes, milestonesRes, memoryRes] = await Promise.all([
-      supabase
-        .from('projects')
-        .select('id, name, description, planning_prompt, planning_status')
-        .eq('id', project_id)
-        .single(),
-      supabase
-        .from('tasks')
-        .select('id, title, status, priority, updated_at, created_at')
-        .eq('project_id', project_id)
-        .order('updated_at', { ascending: false, nullsFirst: false })
-        .limit(Math.max(3, max_evidence)),
-      supabase
-        .from('milestones')
-        .select('id, title, status, due_date, updated_at, created_at')
-        .eq('project_id', project_id)
-        .order('updated_at', { ascending: false, nullsFirst: false })
-        .limit(Math.max(3, max_evidence)),
-      supabase
-        .from('agent_memory')
-        .select('id, key, tipo, value, created_at')
-        .eq('project_id', project_id)
-        .or(`key.ilike.%${topicValidation.normalized}%,value.ilike.%${topicValidation.normalized}%`)
-        .order('created_at', { ascending: false })
-        .limit(Math.max(3, max_evidence)),
-    ]);
-
-    if (projectRes.error) return err(projectRes.error.message);
-
-    const evidence = [];
-
-    for (const t of tasksRes.data || []) {
-      evidence.push({
-        type: 'task',
-        id: t.id,
-        summary: `${t.title} (${t.status})`,
-        reason: 'Tarea reciente potencialmente vinculada al objetivo documental',
-        recency: t.updated_at || t.created_at || null,
-      });
-    }
-
-    for (const m of milestonesRes.data || []) {
-      evidence.push({
-        type: 'milestone',
-        id: m.id,
-        summary: `${m.title} (${m.status})`,
-        reason: 'Hito reciente que puede impactar el canonico',
-        recency: m.updated_at || m.created_at || null,
-      });
-    }
-
-    for (const mem of memoryRes.data || []) {
-      evidence.push({
-        type: 'memory',
-        id: mem.id,
-        summary: `${mem.key} [${mem.tipo}]`,
-        reason: 'Memoria relevante por topic_key para reducir drift documental',
-        recency: mem.created_at || null,
-      });
-    }
-
-    evidence.sort((a, b) => {
-      const av = a.recency ? new Date(a.recency).getTime() : 0;
-      const bv = b.recency ? new Date(b.recency).getTime() : 0;
-      return bv - av;
-    });
-
-    const boundedEvidence = evidence.slice(0, max_evidence);
-
-    const currentCanonicalSummary =
-      projectRes.data.planning_prompt?.slice(0, 220) ||
-      projectRes.data.description?.slice(0, 220) ||
-      'Sin resumen canonico disponible';
-
-    const contextPack = {
-      objective,
-      project_id,
-      topic_key: topicValidation.normalized,
-      current_canonical_summary: currentCanonicalSummary,
-      constraints: [
-        'No reemplazar canonico sin validacion posterior',
-        'No inyectar contexto completo por defecto',
-        'Priorizar evidencia reciente y relevante',
-      ],
-      retrieved_evidence: boundedEvidence,
-      open_questions:
-        boundedEvidence.length === 0
-          ? ['No hay evidencia suficiente. Recuperar mas contexto antes de editar.']
-          : [],
-      budget: {
-        max_tokens_context,
-        estimated_tokens: estimateTokensFromText(
-          [objective, currentCanonicalSummary, ...boundedEvidence.map((e) => e.summary)].join(' ')
-        ),
-        max_expansions: 2,
-        expansion_step_tokens: 1000,
-      },
-      retrieval_order: ['project', 'tasks/milestones', 'memory'],
-      generated_at: new Date().toISOString(),
-    };
-
-    return ok({
-      success: true,
-      context_pack: contextPack,
-      notes:
-        'Este pack es minimo y deterministico. Si no alcanza, solicitar expansion explicita en vez de inyectar todo el historial.',
     });
   }
 );

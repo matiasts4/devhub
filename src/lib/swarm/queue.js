@@ -61,9 +61,9 @@ class SwarmQueue {
 
     this.pollingInterval = setInterval(() => {
       this._poll();
-    }, 2000);
+    }, 500);
 
-    console.log('[SwarmQueue] Polling started (2s interval)');
+    console.log('[SwarmQueue] Polling started (500ms interval)');
   }
 
   /**

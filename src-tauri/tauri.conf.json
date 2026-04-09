@@ -19,7 +19,8 @@
         "minHeight": 700,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true,
+        "decorations": false,
+        "transparent": true,
         "center": true
       }
     ],
@@ -37,13 +38,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../sidecar-backend",
-      "resources/standalone.zip"
-    ],
-    "externalBin": [
-      "binaries/devhub-server"
-    ],
+    "resources": ["../sidecar-backend", "resources/standalone.zip"],
+    "externalBin": ["binaries/devhub-server"],
     "linux": {
       "deb": {
         "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]

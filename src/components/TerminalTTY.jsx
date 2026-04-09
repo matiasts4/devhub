@@ -11,6 +11,7 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
   const resizeObserverRef = useRef(null);
   const wsRef = useRef(null);
   const searchRef = useRef(null);
+  const transportRef = useRef('json');
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
@@ -88,35 +89,64 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
     try {
       wsRef.current?.close();
       const cwdParam = cwd ? `cwd=${encodeURIComponent(cwd)}` : '';
-      const idParam = id ? `id=${encodeURIComponent(id)}` : '';
-      const queryParams = [cwdParam, idParam].filter(Boolean).join('&');
+      const sessionIdParam = id ? `sessionId=${encodeURIComponent(id)}` : '';
+      const legacyIdParam = id ? `id=${encodeURIComponent(id)}` : '';
+      const queryParams = [cwdParam, sessionIdParam, legacyIdParam].filter(Boolean).join('&');
       const queryStr = queryParams ? `?${queryParams}` : '';
 
+      console.log(`[TTY:${id}] Connecting to /api/terminal/session${queryStr}`);
       const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
         cache: 'no-store',
       });
       if (!sessionResponse.ok) {
-        throw new Error('No se pudo crear la sesión de terminal.');
+        const errText = await sessionResponse.text().catch(() => '');
+        console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
+        throw new Error(`No se pudo crear la sesión de terminal (${sessionResponse.status}).`);
       }
 
       const { port, wsPath } = await sessionResponse.json();
+      console.log(`[TTY:${id}] Got port=${port}, wsPath=${wsPath}`);
+      transportRef.current = wsPath === '/' ? 'raw' : 'json';
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsUrl = `${wsProtocol}://127.0.0.1:${port}${wsPath}${queryStr}`;
+      console.log(`[TTY:${id}] WebSocket URL: ${wsUrl}`);
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
+      const connectionTimeout = setTimeout(() => {
+        if (socket.readyState !== WebSocket.OPEN) {
+          console.error(`[TTY:${id}] WebSocket connection timeout after 10s`);
+          socket.close();
+          setConnectionState('error');
+        }
+      }, 10000);
+
       socket.onopen = () => {
+        clearTimeout(connectionTimeout);
+        console.log(`[TTY:${id}] WebSocket connected`);
         setConnectionState('connected');
         sendResize();
         // Only send initial command once per component lifecycle to avoid rerunning on fast reconnects
         if (initialCommand && !hasSentInitialCommand.current) {
-          socket.send(JSON.stringify({ type: 'input', data: initialCommand + '\r' }));
+          console.log(`[TTY:${id}] Sending initial command: ${initialCommand}`);
+          if (transportRef.current === 'raw') {
+            socket.send(initialCommand + '\r');
+          } else {
+            socket.send(JSON.stringify({ type: 'input', data: initialCommand + '\r' }));
+          }
           hasSentInitialCommand.current = true;
         }
         // Initial focus handled by the other useEffect
       };
 
       socket.onmessage = (event) => {
+        if (transportRef.current === 'raw') {
+          if (typeof event.data === 'string' && event.data.length > 0) {
+            termRef.current?.write(event.data);
+          }
+          return;
+        }
+
         try {
           const payload = JSON.parse(event.data);
 
@@ -134,22 +164,28 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
             );
           }
         } catch {
-          // Ignore malformed frames.
+          if (typeof event.data === 'string' && event.data.length > 0) {
+            termRef.current?.write(event.data);
+          }
         }
       };
 
-      socket.onerror = () => {
+      socket.onerror = (err) => {
+        clearTimeout(connectionTimeout);
+        console.error(`[TTY:${id}] WebSocket error:`, err);
         setConnectionState('error');
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        clearTimeout(connectionTimeout);
+        console.log(`[TTY:${id}] WebSocket closed: code=${event.code}, reason=${event.reason}`);
         setConnectionState((prev) => (prev === 'error' ? 'error' : 'disconnected'));
       };
     } catch (error) {
-      console.error(error);
+      console.error(`[TTY:${id}] Connection failed:`, error);
       setConnectionState('error');
     }
-  }, [sendResize, cwd, initialCommand]);
+  }, [sendResize, cwd, initialCommand, id]);
 
   const reconnect = useCallback(() => {
     hasSentInitialCommand.current = false;
@@ -199,7 +235,11 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
 
       terminal.onData((data) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'input', data }));
+          if (transportRef.current === 'raw') {
+            wsRef.current.send(data);
+          } else {
+            wsRef.current.send(JSON.stringify({ type: 'input', data }));
+          }
         }
       });
 
@@ -414,6 +454,28 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
           <div className="absolute inset-0 bg-[#111111]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
             <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
             {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
+          </div>
+        )}
+
+        {/* Error/Disconnected overlay */}
+        {(connectionState === 'error' || connectionState === 'disconnected') && !isInitializing && (
+          <div className="absolute inset-0 bg-[#111111]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
+            <WifiOff className="w-8 h-8 text-red-400" />
+            <span className="text-red-400 font-semibold">
+              {connectionState === 'error' ? 'Error de conexión' : 'Desconectado'}
+            </span>
+            <span className="text-gray-500 text-center max-w-xs">
+              {connectionState === 'error'
+                ? 'No se pudo conectar al servidor de terminal. Verificá que el servidor esté corriendo.'
+                : 'La conexión con la terminal se perdió.'}
+            </span>
+            <button
+              onClick={reconnect}
+              className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reconectar
+            </button>
           </div>
         )}
 

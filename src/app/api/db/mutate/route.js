@@ -52,7 +52,12 @@ export async function POST(request) {
       return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
 
-    return NextResponse.json(result);
+    // Safe serialization for results that might contain BigInt or other non-JSON types
+    const serializedResult = JSON.parse(
+      JSON.stringify(result, (key, value) => (typeof value === 'bigint' ? value.toString() : value))
+    );
+
+    return NextResponse.json(serializedResult);
   } catch (error) {
     console.error('DB mutate error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,0 +1,62 @@
+{
+  "sessionID": "headless-1775580730513",
+  "metadata": {
+    "prompt": "Decí solo ok y finalizá.",
+    "agent": "sdd-explore",
+    "project_id": "debug",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775580730513
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775580730513,
+      "timeStr": "16:52:10"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775580731457,
+      "timeStr": "16:52:11"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_2972426eaffe1fY5Coottl3xD6"
+      },
+      "timestamp": 1775580731682,
+      "timeStr": "16:52:11"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 24,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775580731682,
+      "timeStr": "16:52:11"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775580731711,
+      "timeStr": "16:52:11"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "NO_TOOLS",
+      "severity": "warning",
+      "message": "No tool calls detected"
+    },
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

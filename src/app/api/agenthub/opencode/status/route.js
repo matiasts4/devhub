@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
  */
 export async function GET() {
   try {
-    const pmStatus = processManager.getStatus();
+    const pmStatus = await processManager.getStatus();
     const config = getSwarmConfig();
     const maxConcurrent = parseInt(config.max_concurrent, 10) || 5;
     const activeCount = getActiveAgentCount();
@@ -28,10 +28,12 @@ export async function GET() {
         memoryRss: pmStatus.processInfo?.memoryMB
           ? pmStatus.processInfo.memoryMB * 1024 * 1024
           : null,
-        status: pmStatus.processInfo ? (pmStatus.running ? 'healthy' : 'stopped') : 'stopped',
+        status: pmStatus.running ? 'healthy' : 'stopped',
       },
       concurrency: {
         active: activeCount,
+        activeSessions: activeCount,
+        effectiveActive: activeCount,
         max: maxConcurrent,
         atLimit: activeCount >= maxConcurrent,
       },

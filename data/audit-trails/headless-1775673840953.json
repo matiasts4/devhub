@@ -1,0 +1,105 @@
+{
+  "sessionID": "headless-1775673840953",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Proponer decisiones arquitectónicas y enfoques formales para abordar los code smells detectados en el codebase de devhub.\"]",
+    "agent": "sdd-propose",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775673840953,
+    "completedAt": 1775673841299,
+    "duration": 346
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775673840953,
+      "timeStr": "18:44:00"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775673840959,
+      "timeStr": "18:44:00"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_291976abcffeX1oSMuEG1EdIhQ"
+      },
+      "timestamp": 1775673840967,
+      "timeStr": "18:44:00"
+    },
+    {
+      "type": "model_resolved",
+      "data": {
+        "raw": "opencode/gpt-5.4-mini",
+        "providerID": "opencode",
+        "modelID": "gpt-5.4-mini"
+      },
+      "timestamp": 1775673840970,
+      "timeStr": "18:44:00"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 163,
+        "agent": "sdd-propose"
+      },
+      "timestamp": 1775673840970,
+      "timeStr": "18:44:00"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775673840973,
+      "timeStr": "18:44:00"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "[Tú eres el sub-agente. Instrucciones: \"Proponer decisiones arquitectónicas y enfoques formales para abordar los code smells detectados en el codebase de devhub.\"]"
+      },
+      "timestamp": 1775673840984,
+      "timeStr": "18:44:00"
+    },
+    {
+      "type": "session_error",
+      "data": {
+        "error": {
+          "name": "APIError",
+          "data": {
+            "message": "No payment method. Add a payment method here: https://opencode.ai/workspace/wrk_01KN5GG9KJFYRA7MWVKSXDW6A7/billing",
+            "statusCode": 401,
+            "isRetryable": false,
+            "responseHeaders": {
+              "cf-ray": "9e936bc32b03b3c1-MIA",
+              "connection": "keep-alive",
+              "content-length": "175",
+              "content-type": "text/plain;charset=UTF-8",
+              "date": "Wed, 08 Apr 2026 18:44:01 GMT",
+              "server": "cloudflare"
+            },
+            "responseBody": "{\"type\":\"error\",\"error\":{\"type\":\"CreditsError\",\"message\":\"No payment method. Add a payment method here: https://opencode.ai/workspace/wrk_01KN5GG9KJFYRA7MWVKSXDW6A7/billing\"}}",
+            "metadata": {
+              "url": "https://opencode.ai/zen/v1/responses"
+            }
+          }
+        }
+      },
+      "timestamp": 1775673841298,
+      "timeStr": "18:44:01"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "ANY_ERROR",
+      "severity": "error",
+      "message": "Error detected: [object Object]",
+      "timestamp": 1775673841298
+    }
+  ],
+  "completed": true
+}

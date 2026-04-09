@@ -1,6 +1,7 @@
 'use client';
 import TaskComments from '../components/TaskComments';
 import PresenceAvatars from '../components/PresenceAvatars';
+import PageHeader from '@/components/PageHeader';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import {
@@ -707,51 +708,41 @@ export default function Tareas() {
   const activeFiltersCount = [fMilestone, fSearch, fUnlocked, fMyTasks].filter(Boolean).length;
 
   return (
-    <div className="min-h-screen core-page-shell flex flex-col">
-      {/* Header */}
-      <div className="sticky top-0 z-10 core-sticky-header border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#58A6FF]/10 border border-[#58A6FF]/20 flex items-center justify-center">
-              <ListTodo className="w-3.5 h-3.5 text-[#58A6FF]" strokeWidth={1.5} />
-            </div>
-            <h1 className="font-mono text-sm font-bold text-text-primary">Tareas</h1>
-          </div>
-
-          {/* View mode toggle */}
-          <div className="flex bg-surface-elevated p-0.5 rounded-lg border border-borders-subtle">
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'kanban' ? 'bg-surface-card text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" /> Kanban
-            </button>
-            <button
-              onClick={() => setViewMode('agent')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'agent' ? 'bg-surface-card text-[#58A6FF] shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
-            >
-              <Bot className="w-3.5 h-3.5" /> Cola Agente
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <PresenceAvatars projectId={project?.id} />
+    <div className="h-full flex flex-col">
+      {/* Integrated Page Header */}
+      <PageHeader project={project} pageName="tareas">
+        {/* View mode toggle */}
+        <div className="flex bg-surface-elevated p-0.5 rounded-lg border border-borders-subtle">
           <button
-            onClick={() => {
-              setEditingTask(null);
-              setInitialStatus('pending');
-              setModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 bg-[#2ea043] hover:bg-[#3FB950] text-white font-semibold px-3.5 py-2 rounded-lg text-xs transition-all active:scale-95"
+            onClick={() => setViewMode('kanban')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'kanban' ? 'bg-surface-card text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
           >
-            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Añadir Tarea
+            <LayoutDashboard className="w-3.5 h-3.5" /> Kanban
+          </button>
+          <button
+            onClick={() => setViewMode('agent')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'agent' ? 'bg-surface-card text-[#58A6FF] shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
+          >
+            <Bot className="w-3.5 h-3.5" /> Cola Agente
           </button>
         </div>
-      </div>
+
+        <PresenceAvatars projectId={project?.id} />
+        
+        <button
+          onClick={() => {
+            setEditingTask(null);
+            setInitialStatus('pending');
+            setModalOpen(true);
+          }}
+          className="flex items-center gap-1.5 bg-[#2ea043] hover:bg-[#3FB950] text-white font-semibold px-3.5 py-2 rounded-lg text-xs transition-all active:scale-95"
+        >
+          <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Añadir Tarea
+        </button>
+      </PageHeader>
 
       {/* Content */}
-      <div className="flex-1 p-5 flex flex-col gap-4">
+      <div className="flex-1 overflow-hidden p-5 flex flex-col gap-4">
         {/* Filter bar */}
         {viewMode === 'kanban' && (
           <div
@@ -979,21 +970,21 @@ export default function Tareas() {
             })}
           </div>
         )}
-      </div>
 
-      {modalOpen && (
-        <TaskModal
-          projectId={project?.id}
-          userId={user?.id || tasks[0]?.user_id}
-          initialStatus={initialStatusForNew}
-          existingTask={editingTask}
-          allTasks={tasks}
-          milestones={milestones}
-          dependencies={dependencies}
-          onClose={() => setModalOpen(false)}
-          onSaved={fetchData}
-        />
-      )}
+        {modalOpen && (
+          <TaskModal
+            projectId={project?.id}
+            userId={user?.id || tasks[0]?.user_id}
+            initialStatus={initialStatusForNew}
+            existingTask={editingTask}
+            allTasks={tasks}
+            milestones={milestones}
+            dependencies={dependencies}
+            onClose={() => setModalOpen(false)}
+            onSaved={fetchData}
+          />
+        )}
+      </div>
     </div>
   );
 }

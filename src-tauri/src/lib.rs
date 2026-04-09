@@ -2,10 +2,77 @@ use tauri::{RunEvent, WindowEvent, Manager};
 use tauri_plugin_shell::ShellExt;
 use sysinfo::System;
 use std::fs;
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
+
+/// Espera hasta que el puerto 3000 (Next.js) esté disponible.
+/// Tauri carga la webview inmediatamente, pero el sidecar tarda en arrancar Next.js.
+fn wait_for_nextjs_ready() {
+    println!("[DevHub] Esperando a que Next.js esté listo en puerto 3000...");
+    for attempt in 0..30 {
+        // Máx 15 segundos (30 * 500ms)
+        thread::sleep(Duration::from_millis(500));
+        if TcpStream::connect_timeout(
+            &"127.0.0.1:3000".parse().unwrap(),
+            Duration::from_millis(500),
+        )
+        .is_ok()
+        {
+            println!("[DevHub] Next.js listo en puerto 3000 (intento {}).", attempt + 1);
+            return;
+        }
+    }
+    eprintln!("[DevHub] ⚠️  Next.js no respondió en 15s. La webview puede mostrar error.");
+}
+
+/// Matar procesos zombie que ocupan los puertos del sidecar (4000) y Next.js (3000).
+/// Esto pasa cuando `tauri dev` se cierra con Ctrl+C y los procesos hijos no mueren.
+fn cleanup_zombie_ports() {
+    let zombie_ports = [3000u16, 4000u16];
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    for port in zombie_ports {
+        // Buscar procesos que escuchen en este puerto
+        let output = std::process::Command::new("ss")
+            .args(["-tlnp", &format!("sport = :{}", port)])
+            .output();
+
+        if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if stdout.is_empty() {
+                continue; // Puerto libre
+            }
+
+            // Extraer PIDs del output de ss (formato: "pid=12345")
+            for pid_str in stdout.split("pid=") {
+                if let Some(pid_part) = pid_str.split(',').next() {
+                    if let Ok(pid) = pid_part.parse::<u32>() {
+                        if pid == 0 { continue; }
+                        // Verificar si es un proceso de DevHub (node con devhub o next)
+                        if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
+                            let name = process.name().to_string_lossy().to_lowercase();
+                            let cmdline: String = process.cmd().iter()
+                                .map(|s| s.to_string_lossy().to_lowercase())
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            if name.contains("node") && (cmdline.contains("devhub") || cmdline.contains("next") || cmdline.contains("sidecar")) {
+                                println!("[DevHub] Matando proceso zombie PID {} en puerto {} ({}).", pid, port, name);
+                                process.kill();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Breve pausa para que el SO libere los puertos
+    thread::sleep(Duration::from_millis(300));
+}
 
 fn get_devhub_dir() -> PathBuf {
     let p = dirs::home_dir().unwrap().join(".devhub");
@@ -118,6 +185,9 @@ pub fn run() {
                     )?;
                 }
 
+                // Limpiar procesos zombie de sesiones anteriores (tauri dev, crashes, etc.)
+                cleanup_zombie_ports();
+
                 // Comprobar si ya hay un sidecar corriendo
                 if let Some(existing_pid) = check_existing_sidecar() {
                     println!("[DevHub] Sidecar ya activo con PID {}. No se spawnea uno nuevo.", existing_pid);
@@ -161,6 +231,16 @@ pub fn run() {
                                 }
                             }
                         }
+                    }
+
+                    // Esperar a que Next.js (puerto 3000) esté listo antes de cargar la webview
+                    wait_for_nextjs_ready();
+                }
+
+                // Setear el ícono de la ventana explícitamente (necesario en dev mode en Linux)
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Some(icon) = app.default_window_icon() {
+                        let _ = window.set_icon(icon.clone());
                     }
                 }
 

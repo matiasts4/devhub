@@ -1,0 +1,39 @@
+{
+  "sessionID": "headless-1775609552809",
+  "metadata": {
+    "prompt": "Explora el codebase y detecta code smells",
+    "agent": "sdd-explore",
+    "project_id": "devhub",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775609552809
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775609552809,
+      "timeStr": "00:52:32"
+    },
+    {
+      "type": "server_failed",
+      "data": {
+        "error": "It seems that your package manager failed to install the right version of the opencode CLI for your platform. You can try manually installing \"opencode-linux-x64\" or \"opencode-linux-x64-baseline\" or \"opencode-linux-x64-musl\" or \"opencode-linux-x64-baseline-musl\" package"
+      },
+      "timestamp": 1775609552883,
+      "timeStr": "00:52:32"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "NO_TOOLS",
+      "severity": "warning",
+      "message": "No tool calls detected"
+    },
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

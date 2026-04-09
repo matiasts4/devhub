@@ -20,6 +20,7 @@ import {
   Loader2,
   Server,
   Eye,
+  EyeOff,
   X,
   Wifi,
   WifiOff,
@@ -513,6 +514,15 @@ export default function SwarmControl() {
   const [history, setHistory] = useState([]);
   const [isLoadingSessionsData, setIsLoadingSessionsData] = useState(false);
   const [isLoadingTaskData, setIsLoadingTaskData] = useState(false);
+  // Hidden tasks (localStorage persisted, visual only)
+  const [hiddenTaskIds, setHiddenTaskIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem('swarm_hidden_tasks');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Trace panel state (T-39)
   const [expandedSession, setExpandedSession] = useState(null);
@@ -531,6 +541,9 @@ export default function SwarmControl() {
   // Breadcrumb chain for session hierarchy navigation
   const [breadcrumbChain, setBreadcrumbChain] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
+  // Visibility toggles
+  const [showHiddenActive, setShowHiddenActive] = useState(false);
+  const [showHiddenHistory, setShowHiddenHistory] = useState(false);
   const opencodePort =
     Number(import.meta?.env?.VITE_OPENCODE_PORT || import.meta?.env?.NEXT_PUBLIC_OPENCODE_PORT) ||
     4153;
@@ -829,7 +842,6 @@ export default function SwarmControl() {
     fetchTasks,
     fetchRegistryAgents,
     fetchMcpStatus,
-    fetchProjects,
     fetchSwarmStatus,
     db,
   ]);
@@ -848,15 +860,47 @@ export default function SwarmControl() {
 
   // ─── Derived state ─────────────────────────────────────────────────────────
 
+  const hiddenActiveCount = useMemo(
+    () =>
+      sessions.filter((s) => {
+        const status = (s.status || '').toLowerCase();
+        const isActive = [
+          'active',
+          'working',
+          'running',
+          'thinking',
+          'idle',
+          'error',
+          'completed',
+        ].includes(status);
+        if (!isActive) return false;
+        // Count if it's hidden
+        return s.visibility === 'hidden_all' || s.visibility === 'hidden_active';
+      }).length,
+    [sessions]
+  );
+
   const activeSessions = useMemo(
     () =>
       sessions.filter((s) => {
         const status = (s.status || '').toLowerCase();
-        return ['active', 'working', 'running', 'thinking', 'idle', 'error', 'completed'].includes(
-          status
-        );
+        const isActive = [
+          'active',
+          'working',
+          'running',
+          'thinking',
+          'idle',
+          'error',
+          'completed',
+        ].includes(status);
+        if (!isActive) return false;
+        // Filter by visibility
+        if (s.visibility === 'hidden_all' || s.visibility === 'hidden_active') {
+          return showHiddenActive;
+        }
+        return true;
       }),
-    [sessions]
+    [sessions, showHiddenActive]
   );
 
   const workingSessions = useMemo(
@@ -964,6 +1008,77 @@ export default function SwarmControl() {
     }
     toast.success('Todas las sesiones canceladas');
   }, [activeSessions, killSession]);
+
+  // ─── Rename session ──────────────────────────────────────────────────────
+
+  const renameSession = useCallback(async (sessionId, newName) => {
+    try {
+      const res = await fetch(`/api/agenthub/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ custom_name: newName }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSessions((prev) =>
+          prev.map((s) => (s.id === sessionId ? { ...s, custom_name: updated.custom_name } : s))
+        );
+        toast.success(newName ? `Sesión renombrada a "${newName}"` : 'Nombre restaurado');
+      } else {
+        toast.error('Error al renombrar sesión');
+      }
+    } catch {
+      toast.error('Error al renombrar sesión');
+    }
+  }, []);
+
+  // ─── Toggle session visibility ───────────────────────────────────────────
+
+  const toggleSessionVisibility = useCallback(async (sessionId, newVisibility) => {
+    try {
+      const res = await fetch(`/api/agenthub/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility: newVisibility }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSessions((prev) =>
+          prev.map((s) => (s.id === sessionId ? { ...s, visibility: updated.visibility } : s))
+        );
+        const isHiding = newVisibility !== 'visible';
+        toast.success(isHiding ? 'Sesión ocultada' : 'Sesión visible');
+      } else {
+        toast.error('Error al cambiar visibilidad');
+      }
+    } catch {
+      toast.error('Error al cambiar visibilidad');
+    }
+  }, []);
+
+  // ─── Hide task from history (visual only, localStorage) ──────────────────
+
+  const toggleHideTask = useCallback((taskId) => {
+    setHiddenTaskIds((prev) => {
+      const isHidden = prev.includes(taskId);
+      const next = isHidden ? prev.filter((id) => id !== taskId) : [...prev, taskId];
+      localStorage.setItem('swarm_hidden_tasks', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const visibleHistory = useMemo(() => {
+    const filtered = history.filter((t) => !hiddenTaskIds.includes(t.id));
+    if (showHiddenHistory) {
+      return history;
+    }
+    return filtered;
+  }, [history, hiddenTaskIds, showHiddenHistory]);
+
+  const hiddenHistoryCount = useMemo(
+    () => history.filter((t) => hiddenTaskIds.includes(t.id)).length,
+    [history, hiddenTaskIds]
+  );
 
   const openSessionTerminal = useCallback(
     (session) => {
@@ -1512,6 +1627,25 @@ export default function SwarmControl() {
                     Cerrar Todas
                   </button>
                 )}
+                {hiddenActiveCount > 0 && (
+                  <button
+                    onClick={() => setShowHiddenActive((v) => !v)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border transition-colors"
+                    style={{
+                      background: showHiddenActive
+                        ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
+                        : 'var(--surface-elevated)',
+                      borderColor: 'var(--border-strong)',
+                      color: showHiddenActive ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    }}
+                    title={
+                      showHiddenActive ? 'Ocultar sesiones ocultas' : 'Mostrar sesiones ocultas'
+                    }
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    {showHiddenActive ? 'Ocultar' : 'Mostrar'} ocultas ({hiddenActiveCount})
+                  </button>
+                )}
               </div>
 
               <div className="p-6">
@@ -1607,6 +1741,8 @@ export default function SwarmControl() {
                                   )}
                                   onViewTrace={setExpandedSession}
                                   onKill={killSession}
+                                  onRename={renameSession}
+                                  onHide={toggleSessionVisibility}
                                 />
                               </div>
                             );
@@ -1761,13 +1897,30 @@ export default function SwarmControl() {
                   Últimas tareas completadas o bloqueadas
                 </p>
               </div>
+              {hiddenHistoryCount > 0 && (
+                <button
+                  onClick={() => setShowHiddenHistory((v) => !v)}
+                  className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border transition-colors"
+                  style={{
+                    background: showHiddenHistory
+                      ? 'color-mix(in srgb, var(--success) 15%, transparent)'
+                      : 'var(--surface-elevated)',
+                    borderColor: 'var(--border-strong)',
+                    color: showHiddenHistory ? 'var(--success)' : 'var(--text-muted)',
+                  }}
+                  title={showHiddenHistory ? 'Ocultar tareas ocultas' : 'Mostrar tareas ocultas'}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  {showHiddenHistory ? 'Ocultar' : 'Mostrar'} ocultas ({hiddenHistoryCount})
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                   <tr>
-                    {['Tarea', 'Estado Final', 'Reintentos QA', 'Última Actividad'].map((h) => (
+                    {['Tarea', 'Estado Final', 'Reintentos QA', 'Última Actividad', ''].map((h) => (
                       <th
                         key={h}
                         className="px-6 py-3 text-[11px] uppercase tracking-wider font-semibold"
@@ -1788,21 +1941,23 @@ export default function SwarmControl() {
                         </div>
                       </td>
                     </tr>
-                  ) : history.length === 0 ? (
+                  ) : visibleHistory.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={5}
                         className="px-6 py-10 text-center text-sm"
                         style={{ color: 'var(--text-muted)' }}
                       >
-                        No hay ejecuciones recientes
+                        {history.length > 0
+                          ? 'Todas las tareas están ocultas'
+                          : 'No hay ejecuciones recientes'}
                       </td>
                     </tr>
                   ) : (
-                    history.map((th) => (
+                    visibleHistory.map((th) => (
                       <tr
                         key={th.id}
-                        className="border-b transition-colors hover:bg-surface-elevated last:border-0 cursor-pointer"
+                        className="border-b transition-colors hover:bg-surface-elevated last:border-0"
                         style={{ borderColor: 'var(--border-subtle)' }}
                       >
                         <td
@@ -1835,6 +1990,20 @@ export default function SwarmControl() {
                         <td className="px-6 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                           {new Date(th.updated_at).toLocaleString('es-ES')}
                         </td>
+                        <td className="px-6 py-3">
+                          <button
+                            onClick={() => toggleHideTask(th.id)}
+                            className="p-1 rounded transition-colors cursor-pointer"
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid transparent',
+                              color: 'var(--text-muted)',
+                            }}
+                            title="Ocultar del historial"
+                          >
+                            <EyeOff className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1860,7 +2029,7 @@ export default function SwarmControl() {
       <AgentLaunchModal
         isOpen={launchModalOpen}
         onClose={() => setLaunchModalOpen(false)}
-        onLaunch={handleLaunchAgent}
+        onLaunch={launchAgent}
         projects={projects}
       />
     </div>

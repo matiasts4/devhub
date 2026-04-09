@@ -25,7 +25,30 @@ export async function GET() {
     ]);
 
     const parsed = stdout?.trim() ? JSON.parse(stdout) : [];
-    return NextResponse.json(normalizeSessions(parsed));
+    const sessions = normalizeSessions(parsed);
+
+    // Cross-reference with live PTY sessions to detect which OpenCode sessions are currently running
+    let activeSessionIds = {};
+    try {
+      const { getActiveOpenCodeSessionIds } = await import('@/lib/terminal/ttyServer');
+      activeSessionIds = getActiveOpenCodeSessionIds();
+    } catch {
+      // PTY server may not be running yet — sessions won't have isActive flag
+    }
+
+    // Build a reverse map: opencodeSessionId → terminalId
+    const sessionToTerminal = {};
+    for (const [terminalId, sessionId] of Object.entries(activeSessionIds)) {
+      sessionToTerminal[sessionId] = terminalId;
+    }
+
+    const enriched = sessions.map((s) => ({
+      ...s,
+      isActive: Boolean(sessionToTerminal[s.id]),
+      activePanelId: sessionToTerminal[s.id] || null,
+    }));
+
+    return NextResponse.json(enriched);
   } catch (error) {
     const message =
       error?.code === 'ENOENT'

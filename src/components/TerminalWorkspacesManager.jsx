@@ -2,10 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Plus,
   X,
+  Minus,
   LayoutGrid,
   SplitSquareHorizontal,
   SplitSquareVertical,
-  TerminalSquare,
   Folder,
   Bot,
   ChevronDown,
@@ -13,10 +13,16 @@ import {
   RefreshCw,
   Clock3,
   ExternalLink,
+  Maximize2,
+  Minimize2,
+  PanelLeft,
+  Grip,
 } from 'lucide-react';
 import TerminalTTY from './TerminalTTY';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
+import { createClient } from '@/lib/db/localClient';
+import NotificationCenter from './NotificationCenter';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -27,6 +33,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { formatDistanceToNow } from 'date-fns';
+import AgentRoomSidebar from './AgentRoomSidebar';
+import { findAgentWorkspaceAndPanel } from '@/lib/agentRegistryLive';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null) => ({
@@ -52,6 +60,13 @@ function getAgentFromCommand(command) {
   if (opencodeMatch?.[1]) return opencodeMatch[1];
   if (command.toLowerCase().includes('gentleman')) return 'gentleman';
   if (command.toLowerCase().includes('gemini')) return 'gemini';
+
+  // Custom detection for opencode sessions
+  const opencodeSessionMatch = command.match(/opencode\s+--session\s+([\w-]+)/i);
+  if (opencodeSessionMatch) return `OpenCode (${opencodeSessionMatch[1].substring(0, 6)})`;
+
+  if (command.trim().toLowerCase() === 'opencode') return 'OpenCode';
+
   return null;
 }
 
@@ -69,7 +84,7 @@ function shortenCommandSummary(command) {
   return `${raw.slice(0, 137)}...`;
 }
 
-export default function TerminalWorkspacesManager({ cwd, isVisible }) {
+export default function TerminalWorkspacesManager({ cwd, isVisible, projectId }) {
   const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [isOpenCodeMenuOpen, setIsOpenCodeMenuOpen] = useState(false);
   const [isLoadingOpenCodeSessions, setIsLoadingOpenCodeSessions] = useState(false);
@@ -86,10 +101,52 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
   const [activeWsId, setActiveWsId] = useState('ws1');
   const [activePanelIds, setActivePanelIds] = useState({ ws1: 'p1' });
   const [draggedWsId, setDraggedWsId] = useState(null);
+  const [gridCommand, setGridCommand] = useState('opencode');
+
+  // Agent Room Sidebar state
+  const [isAgentSidebarVisible, setIsAgentSidebarVisible] = useState(() => {
+    try {
+      return localStorage.getItem('devhub_agent_room_sidebar_visibility') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Maximize state
+  const [isMaximized, setIsMaximized] = useState(() => {
+    try {
+      return localStorage.getItem('devhub_terminal_maximized') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   const wsCounterRef = useRef(1);
   const panelCounterRef = useRef(1);
   const colCounterRef = useRef(1);
+
+  // Persist agent sidebar visibility
+  useEffect(() => {
+    try {
+      localStorage.setItem('devhub_agent_room_sidebar_visibility', String(isAgentSidebarVisible));
+    } catch {
+      /* ignore */
+    }
+  }, [isAgentSidebarVisible]);
+
+  // Persist maximize state
+  useEffect(() => {
+    try {
+      localStorage.setItem('devhub_terminal_maximized', String(isMaximized));
+    } catch {
+      /* ignore */
+    }
+  }, [isMaximized]);
+
+  // Dispatch maximize toggle event for App.js to react
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('devhub:toggle-maximize', { detail: { isMaximized } }));
+  }, [isMaximized]);
 
   // --- LocalStorage Persistence ---
   useEffect(() => {
@@ -225,6 +282,43 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
     });
   };
 
+  const handleApplyGrid = (numCols, numRows) => {
+    wsCounterRef.current += 1;
+    const newWsId = `ws${wsCounterRef.current}`;
+
+    const newColumns = [];
+    let firstPanelId = null;
+
+    for (let c = 0; c < numCols; c++) {
+      colCounterRef.current += 1;
+      const colId = `c${colCounterRef.current}`;
+
+      const panels = [];
+      for (let r = 0; r < numRows; r++) {
+        panelCounterRef.current += 1;
+        const panelId = `p${panelCounterRef.current}`;
+        if (!firstPanelId) firstPanelId = panelId;
+        panels.push(createPanel(panelId, gridCommand, cwd));
+      }
+
+      newColumns.push({
+        id: colId,
+        panels: panels,
+      });
+    }
+
+    setWorkspaces((prev) => [
+      ...prev,
+      {
+        id: newWsId,
+        name: `Workspace ${wsCounterRef.current}`,
+        columns: newColumns,
+      },
+    ]);
+    setActiveWsId(newWsId);
+    setActivePanelIds((prev) => ({ ...prev, [newWsId]: firstPanelId }));
+  };
+
   const reorderWorkspaceTabs = useCallback((sourceWsId, targetWsId) => {
     if (!sourceWsId || !targetWsId || sourceWsId === targetWsId) return;
 
@@ -316,18 +410,56 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
   }, []);
 
   const reopenOpenCodeSession = useCallback(
-    (session) => {
+    async (session) => {
       if (!session?.id) return;
 
       const sessionCwd = session.directory || cwd;
       const command = `opencode --session ${session.id}`;
-      launchPanelWithCommand(command, sessionCwd);
+      const createdPanelId = launchPanelWithCommand(command, sessionCwd);
+
+      // Register in devhub_agent_runs so Agent Room can track it
+      try {
+        const taskId = `oc-reopen-${session.id}`;
+        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
+        runs[taskId] = {
+          panelId: createdPanelId,
+          taskTitle: session.title || `OpenCode: ${session.id.slice(0, 8)}`,
+          promptSummary: session.title || null,
+          selectedAgent: 'opencode',
+          launchOrigin: 'reopen-session',
+          opencodeSessionId: session.id,
+          launchedAt: Date.now(),
+        };
+        localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+      } catch {
+        // Ignore localStorage failures
+      }
+
+      // Register in agent_registry so Activity tab shows this session
+      if (projectId) {
+        try {
+          const db = createClient();
+          await db.from('agent_registry').insert({
+            agent_id: `oc-reopen-${session.id}`,
+            project_id: projectId,
+            nombre: 'opencode',
+            modelo_llm: 'N/A',
+            status: 'running',
+            current_task_id: session.id,
+            last_heartbeat: new Date().toISOString(),
+          });
+        } catch {
+          // Ignore DB failures — the localStorage entry is enough for display
+        }
+      }
+
+      return createdPanelId;
     },
-    [cwd, launchPanelWithCommand]
+    [cwd, launchPanelWithCommand, projectId]
   );
 
   const handleClosePanel = useCallback(
-    (panelIdToClose = null) => {
+    async (panelIdToClose = null) => {
       const targetId = panelIdToClose || activePanelId;
       if (!targetId || !activeWorkspace) return;
 
@@ -359,8 +491,34 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
           return prev;
         });
       }
+
+      // When a panel closes, mark any associated OC session as terminated
+      // so Agent Room Activity updates correctly on next poll (5s)
+      try {
+        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
+        const matchingRunKey = Object.keys(runs).find((k) => runs[k]?.panelId === targetId);
+        if (matchingRunKey) {
+          const run = runs[matchingRunKey];
+          // If it was an OpenCode session, write to terminated list
+          if (run?.opencodeSessionId) {
+            const terminated = JSON.parse(localStorage.getItem('devhub_oc_terminated') || '{}');
+            terminated[run.opencodeSessionId] = Date.now();
+            localStorage.setItem('devhub_oc_terminated', JSON.stringify(terminated));
+          }
+          // Also mark in agent_registry if projectId available
+          if (projectId) {
+            const db = createClient();
+            await db
+              .from('agent_registry')
+              .update({ status: 'idle', updated_at: new Date().toISOString() })
+              .eq('agent_id', matchingRunKey);
+          }
+        }
+      } catch {
+        // Non-critical
+      }
     },
-    [activeWorkspace, activeWsId, activePanelId]
+    [activeWorkspace, activeWsId, activePanelId, projectId]
   );
 
   useEffect(() => {
@@ -380,10 +538,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
       }
     };
 
-    const handleRunAgent = (e) => {
+    const handleRunAgent = async (e) => {
       const { taskId, command, selectedAgent, launchOrigin, promptSummary, taskTitle } = e.detail;
       const cmdToRun = enforceDocOpsGateOnLaunchCommand(
-        command || `gentleman task start --id=${taskId}`
+        command || `opencode --agent ${selectedAgent || 'sdd-orchestrator'}`
       );
       // Use split right by default for agents
       const createdPanelId = handleSplit('horizontal', activePanelId, cmdToRun, cwd);
@@ -404,6 +562,24 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
           localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
         } catch {
           // Ignore localStorage failures.
+        }
+
+        // Also create a record in agent_registry so the sidebar can display it
+        if (projectId) {
+          try {
+            const db = createClient();
+            await db.from('agent_registry').insert({
+              agent_id: taskId,
+              project_id: projectId,
+              nombre: selectedAgent || 'sdd-orchestrator',
+              modelo_llm: 'N/A',
+              status: 'running',
+              current_task_id: taskId,
+              last_heartbeat: new Date().toISOString(),
+            });
+          } catch (dbErr) {
+            console.warn('Failed to write agent_registry entry:', dbErr);
+          }
         }
       }
     };
@@ -428,10 +604,81 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
     fetchOpenCodeSessions,
   ]);
 
+  // --- Agent Card Click → Focus Panel ---
+  const handleAgentCardClick = useCallback(
+    (agent) => {
+      const agentRuns = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
+      const { wsId, panelId } = findAgentWorkspaceAndPanel(agent, agentRuns, workspaces);
+
+      if (!panelId) return; // No terminal panel for this agent
+
+      // If panel is in a different workspace, switch workspace first
+      if (wsId && wsId !== activeWsId) {
+        setActiveWsId(wsId);
+      }
+
+      // Focus the panel
+      setActivePanelIds((prev) => ({ ...prev, [wsId || activeWsId]: panelId }));
+    },
+    [workspaces, activeWsId]
+  );
+
+  // --- Window Controls (for integrated titlebar) ---
+  const getTauriWindow = useCallback(async () => {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      return getCurrentWindow();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [isWinMaximized, setIsWinMaximized] = useState(false);
+
+  useEffect(() => {
+    let unlisten;
+    (async () => {
+      const win = await getTauriWindow();
+      if (!win) return;
+      const current = await win.isMaximized().catch(() => false);
+      setIsWinMaximized(current);
+      unlisten = await win
+        .onResized(async () => {
+          const max = await win.isMaximized().catch(() => false);
+          setIsWinMaximized(max);
+        })
+        .catch(() => null);
+    })();
+    return () => {
+      try {
+        unlisten?.();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [getTauriWindow]);
+
+  const handleWinMinimize = useCallback(async () => {
+    const win = await getTauriWindow();
+    await win?.minimize().catch(() => {});
+  }, [getTauriWindow]);
+
+  const handleWinToggleMaximize = useCallback(async () => {
+    const win = await getTauriWindow();
+    await win?.toggleMaximize().catch(() => {});
+  }, [getTauriWindow]);
+
+  const handleWinClose = useCallback(async () => {
+    const win = await getTauriWindow();
+    await win?.close().catch(() => {});
+  }, [getTauriWindow]);
+
   return (
     <div className="flex flex-col h-full w-full bg-[#090c13] overflow-hidden">
       {/* Top Workspace Tab Bar */}
-      <div className="flex items-end h-[46px] bg-[#1a1a1a] select-none shrink-0 border-b border-[#2a2a2a] px-3 pt-2">
+      <div
+        className="flex items-end h-[40px] bg-[#1a1a1a] select-none shrink-0 border-b border-[#2a2a2a] px-3 pt-1"
+      >
         <div className="flex-1 flex gap-1 h-full items-end overflow-x-auto no-scrollbar">
           {workspaces.map((ws) => {
             const totalPanels = getAllPanelIds(ws.columns).length;
@@ -493,8 +740,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
           </button>
         </div>
 
-        {/* Global Toolbar */}
-        <div className="flex items-center h-[36px] px-2 gap-2 pb-1 shrink-0">
+        {/* Global Toolbar + Window Controls */}
+        <div
+          className="flex items-center h-[36px] gap-1 pb-1 shrink-0"
+          style={{ WebkitAppRegion: 'no-drag' }}
+        >
           <button
             onClick={() => handleSplit('horizontal')}
             className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase text-accent-primary hover:bg-accent-primary/10 px-2 py-1.5 rounded-md transition-colors border border-accent-primary/20 cursor-pointer"
@@ -511,6 +761,83 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
             <SplitSquareVertical className="w-3.5 h-3.5" />
             <span>Split Down</span>
           </button>
+
+          {/* Agent Room Sidebar Toggle */}
+          <button
+            onClick={() => setIsAgentSidebarVisible((prev) => !prev)}
+            className={`flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase px-2 py-1.5 rounded-md transition-colors cursor-pointer ${
+              isAgentSidebarVisible
+                ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20'
+                : 'text-gray-400 hover:bg-white/5 border border-transparent'
+            }`}
+            title={isAgentSidebarVisible ? 'Hide Agent Room' : 'Show Agent Room'}
+          >
+            <PanelLeft className="w-3.5 h-3.5" />
+            <span>Agents</span>
+          </button>
+
+          {/* Grid Launcher */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase px-2 py-1.5 rounded-md transition-colors border border-transparent hover:bg-white/5 text-gray-300 cursor-pointer"
+                title="Lanzar Cuadrícula"
+              >
+                <Grip className="w-3.5 h-3.5" />
+                <span>Grilla</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50">
+              <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
+                Grillas Predefinidas
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-white/10" />
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {[
+                  { label: '2 Paneles', cols: 2, rows: 1 },
+                  { label: '4 Paneles', cols: 2, rows: 2 },
+                  { label: '6 Paneles', cols: 3, rows: 2 },
+                ].map((layout) => (
+                  <button
+                    key={layout.label}
+                    onClick={() => handleApplyGrid(layout.cols, layout.rows)}
+                    className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                  >
+                    <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
+                    <span className="text-[10px] font-semibold">{layout.label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 px-1 mb-1">
+                <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
+                  Comando Inicial
+                </label>
+                <input
+                  type="text"
+                  value={gridCommand}
+                  onChange={(e) => setGridCommand(e.target.value)}
+                  placeholder="ej. opencode"
+                  className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Notificaciones e Indicador de Página */}
+          <div className="flex items-center gap-3 ml-2 pl-2 border-l border-[#2a2a2a]">
+            <NotificationCenter projectId={projectId} variant="topbar" />
+            <div
+              className="text-[11px] px-3 py-1 rounded-full border shadow-sm flex items-center gap-2"
+              style={{
+                borderColor: 'var(--border-subtle)',
+                background: 'rgba(255,255,255,0.03)',
+                color: 'var(--text-muted)',
+              }}
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500/80 shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+              terminales
+            </div>
+          </div>
 
           <DropdownMenu onOpenChange={(open) => setIsOpenCodeMenuOpen(open)}>
             <DropdownMenuTrigger asChild>
@@ -597,152 +924,224 @@ export default function TerminalWorkspacesManager({ cwd, isVisible }) {
                 ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Window Controls - Circular macOS style */}
+          <div className="flex items-center gap-2.5 ml-3 pl-3 border-l border-[#2a2a2a]">
+            <button
+              onClick={handleWinMinimize}
+              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+              title="Minimize"
+            >
+              <Minus className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={3} />
+            </button>
+            <button
+              onClick={handleWinToggleMaximize}
+              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+              title={isWinMaximized ? 'Restore' : 'Maximize'}
+            >
+              <Plus className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={3} />
+            </button>
+            <button
+              onClick={handleWinClose}
+              className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+              title="Close"
+            >
+              <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Persistent Grid Area */}
-      <div className="flex-1 relative bg-[#080b12]">
-        {workspaces.map((ws) => (
-          <div
-            key={ws.id}
-            className="absolute inset-0 p-[6px]"
-            style={{
-              visibility: activeWsId === ws.id && isVisible ? 'visible' : 'hidden',
-              zIndex: activeWsId === ws.id ? 10 : 0,
+      <div className="flex-1 flex bg-[#080b12] relative overflow-hidden">
+        {/* Agent Room Sidebar — always rendered, width animates */}
+        <div
+          className="shrink-0 border-r border-[#2a2a2a] bg-[#0d1018] flex flex-col h-full relative"
+          style={{
+            width: isAgentSidebarVisible && !isMaximized ? '280px' : '0px',
+            transition: 'width 200ms ease-in-out',
+          }}
+        >
+          <AgentRoomSidebar
+            projectId={projectId}
+            onAgentClick={handleAgentCardClick}
+            onReopenSession={reopenOpenCodeSession}
+            onTerminateAgent={(agent) => {
+              // If the agent has an active panel still open, close it too
+              if (agent._activePanelId) {
+                handleClosePanel(agent._activePanelId);
+              }
             }}
-          >
-            <PanelGroup direction="horizontal" className="w-full h-full">
-              {ws.columns.map((col, colIdx) => (
-                <React.Fragment key={col.id}>
-                  <Panel minSize={10} className="flex flex-col">
-                    <PanelGroup direction="vertical" className="w-full h-full">
-                      {col.panels.map((panel, pIdx) => {
-                        const isActive = panel.id === activePanelId && activeWsId === ws.id;
+            onMaximizeToggle={() => setIsMaximized((prev) => !prev)}
+            isMaximized={isMaximized}
+            workspaces={workspaces}
+            activePanelIds={activePanelIds}
+            isVisible={isAgentSidebarVisible}
+            onToggleVisibility={() => setIsAgentSidebarVisible((prev) => !prev)}
+          />
+        </div>
 
-                        return (
-                          <React.Fragment key={panel.id}>
-                            <Panel
-                              minSize={10}
-                              className={`flex flex-col bg-[#0c1018] rounded-md overflow-hidden border transition-shadow ${
-                                isActive
-                                  ? 'border-[#5b8cff99] shadow-[0_0_0_1px_rgba(91,140,255,0.5),0_10px_24px_rgba(6,10,18,0.55)] z-10 relative'
-                                  : 'border-[#273041] z-0'
-                              }`}
-                            >
-                              {/* Header del Panel */}
-                              <div
-                                onClick={() =>
-                                  setActivePanelIds((prev) => ({ ...prev, [ws.id]: panel.id }))
-                                }
-                                className={`h-[34px] flex items-center justify-between px-2.5 shrink-0 border-b transition-colors cursor-pointer group select-none ${
+        {/* Toggle button when sidebar is collapsed — overlay on grid */}
+        {!isAgentSidebarVisible && !isMaximized && (
+          <button
+            onClick={() => setIsAgentSidebarVisible(true)}
+            className="absolute left-1 top-1/2 -translate-y-1/2 z-30 flex items-center justify-center w-6 h-14 rounded-r-md transition-colors cursor-pointer"
+            style={{
+              background: '#1a1a1a',
+              border: '1px solid #2a2a2a',
+              borderLeft: 'none',
+            }}
+            title="Show Agent Room Sidebar"
+          >
+            <PanelLeft className="w-4 h-4 text-gray-400" />
+          </button>
+        )}
+
+        {/* Terminal Grid */}
+        <div className="flex-1 relative min-w-0">
+          {workspaces.map((ws) => (
+            <div
+              key={ws.id}
+              className={`absolute inset-0 p-[6px] ${activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+              style={{
+                zIndex: activeWsId === ws.id ? 10 : 0,
+              }}
+            >
+              <PanelGroup direction="horizontal" className="w-full h-full">
+                {ws.columns.map((col, colIdx) => (
+                  <React.Fragment key={col.id}>
+                    <Panel minSize={10} className="flex flex-col">
+                      <PanelGroup direction="vertical" className="w-full h-full">
+                        {col.panels.map((panel, pIdx) => {
+                          const isActive = panel.id === activePanelId && activeWsId === ws.id;
+
+                          return (
+                            <React.Fragment key={panel.id}>
+                              <Panel
+                                minSize={10}
+                                className={`flex flex-col bg-[#0c1018] rounded-md overflow-hidden border transition-shadow ${
                                   isActive
-                                    ? 'bg-[#0f1626] border-[#5b8cff66]'
-                                    : 'bg-[#111826] border-[#263146]'
+                                    ? 'border-[#5b8cff99] shadow-[0_0_0_1px_rgba(91,140,255,0.5),0_10px_24px_rgba(6,10,18,0.55)] z-10 relative'
+                                    : 'border-[#273041] z-0'
                                 }`}
                               >
+                                {/* Header del Panel */}
                                 <div
-                                  className={`flex items-center gap-1.5 min-w-0 ${isActive ? 'opacity-100' : 'opacity-85'}`}
+                                  onClick={() =>
+                                    setActivePanelIds((prev) => ({ ...prev, [ws.id]: panel.id }))
+                                  }
+                                  className={`h-[34px] flex items-center justify-between px-2.5 shrink-0 border-b transition-colors cursor-pointer group select-none ${
+                                    isActive
+                                      ? 'bg-[#0f1626] border-[#5b8cff66]'
+                                      : 'bg-[#111826] border-[#263146]'
+                                  }`}
                                 >
-                                  <span
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-mono border"
-                                    style={{
-                                      color: isActive ? '#9ec1ff' : '#9aa6bd',
-                                      borderColor: isActive ? '#44639a' : '#30405c',
-                                      background: isActive ? '#16233a' : '#111a2b',
-                                    }}
+                                  <div
+                                    className={`flex items-center gap-1.5 min-w-0 ${isActive ? 'opacity-100' : 'opacity-85'}`}
                                   >
-                                    <Folder className="w-3 h-3" />
-                                    {shortPath(panel.cwd || cwd)}
-                                  </span>
-
-                                  {getAgentFromCommand(panel.initialCommand) && (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-semibold border border-[#355787] bg-[#10233d] text-[#6da9ff]">
-                                      <Bot className="w-3 h-3" />
-                                      {getAgentFromCommand(panel.initialCommand)}
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-mono border"
+                                      style={{
+                                        color: isActive ? '#9ec1ff' : '#9aa6bd',
+                                        borderColor: isActive ? '#44639a' : '#30405c',
+                                        background: isActive ? '#16233a' : '#111a2b',
+                                      }}
+                                    >
+                                      <Folder className="w-3 h-3" />
+                                      {shortPath(panel.cwd || cwd)}
                                     </span>
-                                  )}
 
-                                  <span className="text-xs font-mono uppercase text-gray-400 truncate">
-                                    {getPanelDisplayLabel(ws, panel.id)}
-                                  </span>
-                                </div>
+                                    {getAgentFromCommand(panel.initialCommand) && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-semibold border border-[#355787] bg-[#10233d] text-[#6da9ff] max-w-[150px] truncate">
+                                        <Bot className="w-3 h-3 shrink-0" />
+                                        <span className="truncate">
+                                          {getAgentFromCommand(panel.initialCommand)}
+                                        </span>
+                                      </span>
+                                    )}
 
-                                {/* Acciones (Hover) */}
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSplit('horizontal', panel.id);
-                                    }}
-                                    className="w-5 h-5 flex items-center justify-center hover:bg-white/10 rounded text-gray-400 hover:text-white"
-                                  >
-                                    <SplitSquareHorizontal className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSplit('vertical', panel.id);
-                                    }}
-                                    className="w-5 h-5 flex items-center justify-center hover:bg-white/10 rounded text-gray-400 hover:text-white"
-                                  >
-                                    <SplitSquareVertical className="w-3 h-3" />
-                                  </button>
-                                  {getAllPanelIds(ws.columns).length > 1 && (
+                                    <span className="text-xs font-mono uppercase text-gray-400 truncate">
+                                      {getPanelDisplayLabel(ws, panel.id)}
+                                    </span>
+                                  </div>
+
+                                  {/* Acciones (Hover) */}
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleClosePanel(panel.id);
+                                        handleSplit('horizontal', panel.id);
                                       }}
-                                      className="w-5 h-5 flex items-center justify-center hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 ml-1"
+                                      className="w-5 h-5 flex items-center justify-center hover:bg-white/10 rounded text-gray-400 hover:text-white"
                                     >
-                                      <X className="w-3.5 h-3.5" />
+                                      <SplitSquareHorizontal className="w-3 h-3" />
                                     </button>
-                                  )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSplit('vertical', panel.id);
+                                      }}
+                                      className="w-5 h-5 flex items-center justify-center hover:bg-white/10 rounded text-gray-400 hover:text-white"
+                                    >
+                                      <SplitSquareVertical className="w-3 h-3" />
+                                    </button>
+                                    {getAllPanelIds(ws.columns).length > 1 && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleClosePanel(panel.id);
+                                        }}
+                                        className="w-5 h-5 flex items-center justify-center hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 ml-1"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
 
-                              {/* Terminal */}
-                              <div
-                                className="flex-1 relative min-h-0"
-                                onClick={() =>
-                                  setActivePanelIds((prev) => ({ ...prev, [ws.id]: panel.id }))
-                                }
-                              >
-                                <TerminalTTY
-                                  id={panel.id}
-                                  cwd={panel.cwd || cwd}
-                                  hideTitleBar={true}
-                                  autoFocus={isActive}
-                                  initialCommand={panel.initialCommand}
-                                />
-                              </div>
-                            </Panel>
+                                {/* Terminal */}
+                                <div
+                                  className="flex-1 relative min-h-0"
+                                  onClick={() =>
+                                    setActivePanelIds((prev) => ({ ...prev, [ws.id]: panel.id }))
+                                  }
+                                >
+                                  <TerminalTTY
+                                    id={panel.id}
+                                    cwd={panel.cwd || cwd}
+                                    hideTitleBar={true}
+                                    autoFocus={isActive}
+                                    initialCommand={panel.initialCommand}
+                                  />
+                                </div>
+                              </Panel>
 
-                            {/* Separador Vertical (Split Down) */}
-                            {pIdx < col.panels.length - 1 && (
-                              <PanelResizeHandle className="relative h-3 flex items-center justify-center z-20 cursor-row-resize">
-                                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-[#2a344a]" />
-                                <div className="h-1 w-10 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors cursor-pointer" />
-                              </PanelResizeHandle>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </PanelGroup>
-                  </Panel>
+                              {/* Separador Vertical (Split Down) */}
+                              {pIdx < col.panels.length - 1 && (
+                                <PanelResizeHandle className="relative h-3 flex items-center justify-center z-20 cursor-row-resize">
+                                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-[#2a344a]" />
+                                  <div className="h-1 w-10 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors cursor-pointer" />
+                                </PanelResizeHandle>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </PanelGroup>
+                    </Panel>
 
-                  {/* Separador Horizontal (Split Right) */}
-                  {colIdx < ws.columns.length - 1 && (
-                    <PanelResizeHandle className="relative w-3 flex items-center justify-center z-20 cursor-col-resize">
-                      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
-                      <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors cursor-pointer" />
-                    </PanelResizeHandle>
-                  )}
-                </React.Fragment>
-              ))}
-            </PanelGroup>
-          </div>
-        ))}
+                    {/* Separador Horizontal (Split Right) */}
+                    {colIdx < ws.columns.length - 1 && (
+                      <PanelResizeHandle className="relative w-3 flex items-center justify-center z-20 cursor-col-resize">
+                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
+                        <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[#5b8cff] transition-colors cursor-pointer" />
+                      </PanelResizeHandle>
+                    )}
+                  </React.Fragment>
+                ))}
+              </PanelGroup>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -1,67 +1,132 @@
 # DevHub MCP Server
 
-Servidor MCP local que expone herramientas de DevHub a Antigravity (y cualquier cliente MCP compatible).
+Servidor MCP local que expone herramientas de DevHub a agentes AI (Antigravity, OpenCode, HOOF, etc.).
 
-**Sin API key externa** — se conecta directamente a Supabase usando tus credenciales locales.
+**Sin API key externa** — se conecta directamente a SQLite local (local-first).
 
 ---
 
 ## Setup: 2 pasos
 
-### 1. Añadir `SUPABASE_SERVICE_ROLE_KEY` a `.env.local`
-
-Obtén la Service Role Key desde el [Dashboard de Supabase](https://supabase.com/dashboard/project/kpgeyukrsydjujqouape/settings/api):
+### 1. Instalar dependencias
 
 ```bash
-# En /home/matias/devhub/.env.local — añadir:
-SUPABASE_SERVICE_ROLE_KEY=tu-service-role-key-aqui
+cd devhub-mcp
+npm install
 ```
 
-> ⚠️ **Nunca commitear esta clave.** El `.gitignore` ya la excluye (`*.local`).
+### 2. Iniciar el servidor
 
-### 2. (Ya hecho) Configuración en Antigravity
+```bash
+npm start
+# o desde la raíz del proyecto:
+node devhub-mcp/server.js
+```
 
-El servidor ya está registrado en `/home/matias/.gemini/antigravity/mcp_config.json`:
+Si ves `✅ DevHub MCP Server iniciado (stdio)` el servidor funciona correctamente.
+
+---
+
+## Configuración en clientes MCP
+
+### OpenCode / Antigravity
+
+Registrar el servidor en tu configuración MCP:
 
 ```json
-"devhub": {
-  "command": "node",
-  "args": ["/home/matias/devhub/devhub-mcp/server.js"]
+{
+  "mcpServers": {
+    "devhub": {
+      "command": "node",
+      "args": ["/ruta/a/devhub/devhub-mcp/server.js"]
+    }
+  }
 }
 ```
 
-Reinicia Antigravity para que cargue el nuevo servidor.
+### HOOF (Telegram Bot)
+
+El bot de Telegram usa las herramientas MCP directamente vía el bridge. No requiere configuración adicional si el servidor está corriendo.
 
 ---
 
-## Herramientas disponibles
+## Herramientas disponibles (23 total)
 
-| Herramienta | Descripción |
-|-------------|-------------|
-| `list_projects` | Lista todos los proyectos (filtro por estado) |
-| `get_project` | Detalles completos de un proyecto + tareas + hitos |
-| `update_project` | Actualiza nombre, estado, progreso, color |
-| `list_tasks` | Tareas de un proyecto (filtro por estado/prioridad) |
-| `create_task` | Crea una nueva tarea |
-| `update_task` | Cambia estado, prioridad, título de una tarea |
-| `delete_task` | Elimina una tarea |
-| `list_milestones` | Hitos del roadmap |
-| `create_milestone` | Crea un nuevo hito |
+### Proyectos
+
+| Herramienta      | Descripción                                        |
+| ---------------- | -------------------------------------------------- |
+| `list_projects`  | Lista todos los proyectos (filtro por estado)      |
+| `get_project`    | Detalles completos de un proyecto + tareas + hitos |
+| `update_project` | Actualiza nombre, estado, progreso, color          |
+
+### Tareas
+
+| Herramienta              | Descripción                                         |
+| ------------------------ | --------------------------------------------------- |
+| `list_tasks`             | Tareas de un proyecto (filtro por estado/prioridad) |
+| `create_task`            | Crea una nueva tarea                                |
+| `update_task`            | Cambia estado, prioridad, título de una tarea       |
+| `add_task_comment`       | Añade comentario a una tarea                        |
+| `delete_task`            | Elimina una tarea                                   |
+| `create_task_dependency` | Crea relación de bloqueo entre tareas               |
+| `get_task_dependencies`  | Devuelve dependencias de una tarea                  |
+| `get_next_task`          | Siguiente tarea priorizada para un agente           |
+
+### Hitos
+
+| Herramienta        | Descripción                       |
+| ------------------ | --------------------------------- |
+| `list_milestones`  | Hitos del roadmap                 |
+| `create_milestone` | Crea un nuevo hito                |
 | `update_milestone` | Actualiza estado/fecha de un hito |
+
+### Dashboard
+
+| Herramienta     | Descripción                           |
+| --------------- | ------------------------------------- |
 | `get_dashboard` | Resumen global de todos los proyectos |
 
+### Planning / Contexto
+
+| Herramienta           | Descripción                                  |
+| --------------------- | -------------------------------------------- |
+| `get_project_context` | Lee contexto de planificación de un proyecto |
+| `mark_planning_done`  | Marca el planning como completado            |
+| `validate_topic_key`  | Valida topic_key para engram                 |
+| `build_context_pack`  | Construye Context Pack para documentación    |
+
+### Swarm v2 (Agentes)
+
+| Herramienta           | Descripción                           |
+| --------------------- | ------------------------------------- |
+| `register_agent`      | Registra un agente Worker en el swarm |
+| `heartbeat_agent`     | Renueva señal de vida del agente      |
+| `unregister_agent`    | Elimina un agente del registry        |
+| `update_agent_status` | Actualiza estado visual del agente    |
+
 ---
 
-## Test manual
+## Arquitectura
+
+- **Base de datos**: SQLite local-first (vía `better-sqlite3`)
+- **Protocolo**: MCP sobre stdio
+- **Query Builder**: `LocalQueryBuilder` (compatible con API de Supabase)
+- **Sin dependencias externas**: No requiere Supabase, OpenAI, ni API keys
+
+---
+
+## Tests
 
 ```bash
-cd /home/matias/devhub
-node devhub-mcp/server.js
-# Si ves "✅ DevHub MCP Server iniciado" el servidor funciona
+npm test
+npm run test:coverage
 ```
 
 ---
 
-## Sin SUPABASE_SERVICE_ROLE_KEY
+## Notas
 
-El servidor también funciona con el `NEXT_PUBLIC_SUPABASE_ANON_KEY`, pero verás solo los datos cuyo RLS permite acceso anónimo (ninguno por defecto). La service role key bypasea RLS y permite acceso total.
+- El servidor usa `localDb` compartido con la app Next.js (`src/lib/db/localDb.js`)
+- Las tablas se crean automáticamente al iniciar (`ensureLocalMcpTables`)
+- Soporta IDs UUID y IDs legacy (`tipo-timestamp-suffix`)

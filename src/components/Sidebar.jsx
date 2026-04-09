@@ -36,8 +36,8 @@ export default function Sidebar({ collapsed, onToggle }) {
       <div
         className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-4 border-b border-white/10 h-16`}
       >
-        <div className="w-8 h-8 rounded-lg bg-[#00F0FF]/15 border border-[#00F0FF]/30 flex items-center justify-center flex-shrink-0">
-          <Cpu className="w-4 h-4 text-[#00F0FF]" strokeWidth={1.5} />
+        <div className="w-8 h-8 rounded-lg bg-[#00F0FF]/15 border border-[#00F0FF]/30 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <img src="/logo.png" alt="DevNexus Logo" className="w-full h-full object-cover" />
         </div>
         {!collapsed && (
           <div>

@@ -95,6 +95,14 @@ function detectSessionModeFromInput(session, input) {
     session.mode = 'tui';
     session.historyEnabled = false;
     session.history = '';
+
+    // Extract OpenCode session ID from --session <id> pattern immediately
+    if (!session.opencodeSessionId) {
+      const sessionMatch = input.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
+      if (sessionMatch?.[1]) {
+        session.opencodeSessionId = sessionMatch[1];
+      }
+    }
     return;
   }
 
@@ -105,10 +113,19 @@ function detectSessionModeFromInput(session, input) {
   session.pendingInput = lines.pop() || '';
 
   for (const line of lines) {
-    if (/^\s*opencode\b/i.test(line.trim())) {
+    const trimmed = line.trim();
+    if (/^\s*opencode\b/i.test(trimmed)) {
       session.mode = 'tui';
       session.historyEnabled = false;
       session.history = '';
+
+      // Extract session ID from the command line
+      if (!session.opencodeSessionId) {
+        const sessionMatch = trimmed.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
+        if (sessionMatch?.[1]) {
+          session.opencodeSessionId = sessionMatch[1];
+        }
+      }
       return;
     }
   }
@@ -305,8 +322,49 @@ export function getTTYSessionsSnapshot() {
       createdAt: session.createdAt || null,
       lastActivityAt: session.lastActivityAt || null,
       alive: true,
+      opencodeSessionId: session.opencodeSessionId || null,
     });
   }
 
   return snapshot;
+}
+
+/**
+ * getActiveOpenCodeSessionIds — Inspects live PTY sessions to detect running OpenCode processes.
+ *
+ * Strategy (in order):
+ * 1. If session has a stored opencodeSessionId (set when initialCommand matched pattern), return it.
+ * 2. Scan the session history buffer for `--session <id>` patterns.
+ * 3. Return a map of { terminalId → opencodeSessionId } for all sessions where OpenCode is active.
+ */
+export function getActiveOpenCodeSessionIds() {
+  const sessions = globalThis[GLOBAL_TTY_SESSIONS_KEY];
+  if (!sessions || typeof sessions.values !== 'function') return {};
+
+  const OPENCODE_SESSION_RE = /opencode\s+(?:--session\s+|session\s+resume\s+)(ses_[\w]+)/i;
+  const OPENCODE_ACTIVE_RE = /opencode/i;
+
+  const result = {};
+
+  for (const [terminalId, session] of sessions.entries()) {
+    // Fast path: already detected and stored
+    if (session.opencodeSessionId) {
+      result[terminalId] = session.opencodeSessionId;
+      continue;
+    }
+
+    // Only check TUI sessions (opencode triggers TUI mode detection in detectSessionModeFromInput)
+    if (session.mode !== 'tui') continue;
+
+    // Scan history for session ID pattern
+    if (session.history) {
+      const match = session.history.match(OPENCODE_SESSION_RE);
+      if (match?.[1]) {
+        session.opencodeSessionId = match[1];
+        result[terminalId] = match[1];
+      }
+    }
+  }
+
+  return result;
 }

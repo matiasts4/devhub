@@ -85,9 +85,15 @@ function groupTraces(parts) {
 function ReasoningRow({ text }) {
   const [expanded, setExpanded] = useState(false);
   const [showFull, setShowFull] = useState(false);
-  const safeText = typeof text === 'string' ? text : JSON.stringify(text);
-  const preview = safeText.length > 120 ? safeText.slice(0, 120) + '…' : safeText;
-  const isTruncated = safeText.length > 120;
+  const safeText =
+    typeof text === 'string'
+      ? text
+      : text == null
+        ? 'Sin reasoning disponible'
+        : JSON.stringify(text);
+  const displayText = safeText.trim() ? safeText : 'Sin reasoning disponible';
+  const preview = displayText.length > 120 ? displayText.slice(0, 120) + '…' : displayText;
+  const isTruncated = displayText.length > 120;
 
   return (
     <>
@@ -122,7 +128,7 @@ function ReasoningRow({ text }) {
             className="text-[11px] italic font-mono leading-relaxed whitespace-pre-wrap"
             style={{ color: 'var(--text-muted)' }}
           >
-            {expanded ? safeText : preview}
+            {expanded ? displayText : preview}
           </p>
         </div>
       </div>
@@ -131,7 +137,7 @@ function ReasoningRow({ text }) {
         isOpen={showFull}
         onClose={() => setShowFull(false)}
         title="Reasoning"
-        content={safeText}
+        content={displayText}
         language="text"
       />
     </>
@@ -305,10 +311,7 @@ export default function AgentTracePanel({
         </div>
       )}
 
-      <div
-        ref={scrollRef}
-        className="overflow-y-auto scroll-smooth px-3 py-2 space-y-1.5"
-      >
+      <div ref={scrollRef} className="overflow-y-auto scroll-smooth px-3 py-2 space-y-1.5">
         {groupedTrace.map((group, i) => {
           if (group.type === 'context-group') {
             return (
@@ -466,9 +469,7 @@ function GenericToolRow({ part }) {
           </div>
 
           {/* Tool name */}
-          <span
-            className={`text-[11px] font-mono font-semibold flex-shrink-0 ${statusColor}`}
-          >
+          <span className={`text-[11px] font-mono font-semibold flex-shrink-0 ${statusColor}`}>
             {part.toolName || 'tool'}
           </span>
 
@@ -492,11 +493,12 @@ function GenericToolRow({ part }) {
                 {timing}ms
               </span>
             )}
-            {hasDetails && (
-              expanded
-                ? <ChevronDown className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
-                : <ChevronRight className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
-            )}
+            {hasDetails &&
+              (expanded ? (
+                <ChevronDown className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+              ) : (
+                <ChevronRight className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+              ))}
           </div>
         </button>
 
@@ -541,7 +543,11 @@ function GenericToolRow({ part }) {
                         style={{ color: copiedOutput ? '#34d399' : 'var(--text-muted)' }}
                         title="Copiar output"
                       >
-                        {copiedOutput ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                        {copiedOutput ? (
+                          <Check className="w-2.5 h-2.5" />
+                        ) : (
+                          <Copy className="w-2.5 h-2.5" />
+                        )}
                         {copiedOutput ? 'Copiado' : 'Copiar'}
                       </button>
                       {outputTruncated && (
@@ -582,4 +588,3 @@ function GenericToolRow({ part }) {
     </>
   );
 }
-

@@ -37,6 +37,7 @@ Este documento formaliza el Camino A (implementacion incremental sobre DevHub ac
 
 - DocOps no reemplaza el orquestador actual.
 - Los gates MCP agregan validacion, registro y cronologia encima del flujo existente.
+- El orquestador debe respetar `documentation_policy` antes de planificar o reescribir docs.
 
 5. Promocion controlada
 
@@ -136,7 +137,21 @@ budget:
 ```
 
 Regla: si falta informacion, el agente pide retrieval adicional; no rellena con suposiciones.
-Pendiente: la policy de presupuesto debe centralizarse para que no dependa de cada launcher.
+La policy de presupuesto ya quedó centralizada y debe consumirse desde prompts y MCP.
+
+### 2.1 Gate de clasificación documental
+
+Antes de transformar documentación, el agente debe clasificar el proyecto con `documentation_policy`.
+Ese gate decide si el flujo es DevHub, legacy-preserve o archive-first:
+
+- `personal` / `DevHub` → aplica el flujo DevHub de documentación y planning.
+- `shared_legacy` → preserva la documentación legacy y no la transforma por defecto.
+- `archive_only` → archiva primero la documentación legacy y luego crea docs DevHub nuevas.
+
+Si la policy falta o es ambigua, el agente debe preguntar al usuario antes de seguir.
+Los proyectos compartidos no se fuerzan al formato DevHub por defecto.
+Los docs legacy importados se archivan, no se sobrescriben.
+En `archive_only`, primero se archiva el material legado y recién después se genera la nueva documentación.
 
 ## 3) Pipeline operativo
 
@@ -176,6 +191,16 @@ Presupuesto:
 - Maximo por expansion: +1k tokens por solicitud justificada.
 - Tope de iteraciones de expansion por ciclo: 2.
 - Esta politica se esta endureciendo en runtime; hoy ya no debe quedar solo en texto de prompt.
+
+### 4.1 Schema / metadata en proyectos
+
+Cuando un documento describa `projects`, debe mencionar explícitamente estos campos:
+
+- `planning_prompt`
+- `planning_status`
+- `project_type`
+- `local_path`
+- `documentation_policy`
 
 ## 5) Tools MCP nuevas recomendadas
 

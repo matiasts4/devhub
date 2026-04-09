@@ -7,7 +7,9 @@ function normalizeText(value) {
 }
 
 export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
-  const run = agentRuns?.[agent.agent_id] || {};
+  // devhub_agent_runs is keyed by taskId, which matches current_task_id or agent_id
+  const runKey = agent.current_task_id || agent.agent_id;
+  const run = agentRuns?.[runKey] || agentRuns?.[agent.agent_id] || {};
   return {
     ...run,
     selectedAgent: run.selectedAgent || run.selected_agent || null,
@@ -21,10 +23,9 @@ export function getAgentDisplayMeta(agent = {}, { agentRuns = {} } = {}) {
   const selectedAgent = normalizeText(launch.selectedAgent);
   const launchOrigin = normalizeText(launch.launchOrigin);
   const name = normalizeText(agent.nombre || agent.profile_name || agent.agent_id);
-  const taskTitle = agent.current_task?.title || null;
+  const taskTitle = launch.promptSummary || null;
   const summary =
     taskTitle ||
-    launch.promptSummary ||
     launch.commandSummary ||
     (agent.current_task_id ? `Tarea ${String(agent.current_task_id).slice(0, 8)}` : null) ||
     'Sin contexto activo';
@@ -78,7 +79,9 @@ export function getAgentRegistryLiveSnapshot({
   agentRuns = {},
 } = {}) {
   const activeAgents = (agents || []).filter((agent) => {
-    const run = agentRuns?.[agent.agent_id];
+    // Try multiple key sources since agent_registry schema may vary
+    const runKey = agent.current_task_id || agent.agent_id;
+    const run = agentRuns?.[runKey] || agentRuns?.[agent.agent_id];
     const hasLiveSession = run?.panelId && liveSessions?.[run.panelId]?.alive;
     return isActiveAgent(agent) || hasLiveSession;
   });
@@ -89,11 +92,58 @@ export function getAgentRegistryLiveSnapshot({
   };
 }
 
+/**
+ * resolveAgentToPanelId — Bridge between agent_registry and devhub_agent_runs.
+ *
+ * Maps agent.task_id (or agent_id) → agentRuns[taskId].panelId.
+ * Handles missing keys gracefully — returns null if no match found.
+ *
+ * @param {object} agent — agent_registry row
+ * @param {object} agentRuns — devhub_agent_runs from localStorage (keyed by taskId)
+ * @returns {string|null} panelId or null
+ */
+export function resolveAgentToPanelId(agent = {}, agentRuns = {}) {
+  if (!agent || !agentRuns) return null;
+
+  // agent_registry schema: agent_id, current_task_id (no task_id or run_id columns)
+  const taskId = agent.current_task_id || agent.agent_id;
+  if (!taskId) return null;
+
+  const run = agentRuns[taskId];
+  return run?.panelId || null;
+}
+
+/**
+ * findAgentWorkspaceAndPanel — Full bridge that finds which workspace + panel
+ * an agent's terminal is in, given all workspaces and agent runs.
+ *
+ * @param {object} agent — agent_registry row
+ * @param {object} agentRuns — devhub_agent_runs from localStorage
+ * @param {Array} workspaces — current workspaces state
+ * @returns {{ wsId: string|null, panelId: string|null }}
+ */
+export function findAgentWorkspaceAndPanel(agent = {}, agentRuns = {}, workspaces = []) {
+  const panelId = resolveAgentToPanelId(agent, agentRuns);
+  if (!panelId) return { wsId: null, panelId: null };
+
+  // Find which workspace contains this panel
+  for (const ws of workspaces) {
+    for (const col of ws.columns) {
+      const found = col.panels.find((p) => p.id === panelId);
+      if (found) {
+        return { wsId: ws.id, panelId };
+      }
+    }
+  }
+
+  // Panel exists in agentRuns but not in current workspaces (may have been closed)
+  return { wsId: null, panelId };
+}
+
 export function getAgentExecutionContext(agent = {}) {
   const status = String(agent.status || '').toLowerCase();
-  const hasTask = Boolean(agent.current_task_id || agent.current_task?.title);
-  const hasLiveSession = Boolean(agent.live_session?.alive);
-  const staleHeartbeat = !hasLiveSession && !isActiveAgent(agent);
+  const hasTask = Boolean(agent.current_task_id);
+  const staleHeartbeat = !isActiveAgent(agent);
 
   if (status === 'completed') {
     return { label: 'COMPLETADO', tone: 'bg-green-500/10 text-green-400 border-green-500/20' };

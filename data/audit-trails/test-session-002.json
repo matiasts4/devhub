@@ -1,0 +1,105 @@
+{
+  "sessionID": "test-session-002",
+  "metadata": {
+    "prompt": "Fix the login bug",
+    "agent": "worker-sonnet",
+    "project_id": "devhub",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775404052242,
+    "completedAt": 1775404060244,
+    "duration": 8002
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775404052242,
+      "timeStr": "15:47:32"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4153
+      },
+      "timestamp": 1775404052342,
+      "timeStr": "15:47:32"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "def-456"
+      },
+      "timestamp": 1775404052443,
+      "timeStr": "15:47:32"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 15,
+        "agent": "worker-sonnet"
+      },
+      "timestamp": 1775404052543,
+      "timeStr": "15:47:32"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775404052642,
+      "timeStr": "15:47:32"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/auth/login.js"
+      },
+      "timestamp": 1775404053043,
+      "timeStr": "15:47:33"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "success",
+        "duration": 50
+      },
+      "timestamp": 1775404053093,
+      "timeStr": "15:47:33"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "write",
+        "file": "src/auth/login.js"
+      },
+      "timestamp": 1775404057246,
+      "timeStr": "15:47:37"
+    },
+    {
+      "type": "tool_error",
+      "data": {
+        "tool": "write",
+        "error": "Permission denied"
+      },
+      "timestamp": 1775404057342,
+      "timeStr": "15:47:37"
+    },
+    {
+      "type": "session_error",
+      "data": {
+        "error": "Agent stopped responding"
+      },
+      "timestamp": 1775404060244,
+      "timeStr": "15:47:40"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "ANY_ERROR",
+      "severity": "error",
+      "message": "Error detected: Agent stopped responding",
+      "timestamp": 1775404060244
+    }
+  ],
+  "completed": true
+}

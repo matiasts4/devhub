@@ -15,6 +15,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import PageHeader from '@/components/PageHeader';
 
 export default function ProjectDashboard() {
   const { project } = useOutletContext() || {};
@@ -106,31 +107,11 @@ export default function ProjectDashboard() {
 
   return (
     <div
-      className="min-h-screen core-page-shell"
+      className="h-full flex flex-col"
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
-      {/* Sticky header */}
-      <div
-        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
-        style={{
-          borderColor: 'var(--border-subtle)',
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <LayoutDashboard
-            className="w-4 h-4"
-            strokeWidth={1.5}
-            style={{ color: 'var(--accent-primary)' }}
-          />
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Dashboard
-          </h1>
-          {project?.name && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
-              {project.name}
-            </span>
-          )}
-        </div>
+      {/* Integrated Page Header */}
+      <PageHeader project={project} pageName="dashboard">
         <button
           onClick={() => navigate(`/project/${project?.id}/tareas`)}
           className="flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg text-xs transition-colors active:scale-95 cursor-pointer"
@@ -139,9 +120,11 @@ export default function ProjectDashboard() {
           <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
           Nueva Tarea
         </button>
-      </div>
+      </PageHeader>
 
-      <div className="px-6 py-6 w-full max-w-[1280px] mx-auto">
+      {/* Page Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 pt-6 pb-6 w-full max-w-[1280px] mx-auto">
         {/* Breadcrumb */}
         <div
           className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
@@ -561,6 +544,7 @@ export default function ProjectDashboard() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

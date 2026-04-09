@@ -25,30 +25,30 @@ El alcance del Servidor MCP se divide en **cinco grandes módulos**:
 
 ## 🛠️ Tabla de Herramientas MCP (13 tools activas)
 
-| Tool | Módulo | Descripción |
-|------|--------|-------------|
-| `list_projects` | Proyectos | Lista todos los proyectos (filtro por estado) |
-| `get_project` | Proyectos | Detalles completos + tareas + hitos |
-| `update_project` | Proyectos | Actualiza nombre, estado, progreso, color |
-| `list_tasks` | Tareas | Tareas de un proyecto (filtro estado/prioridad) |
-| `create_task` | Tareas | Crea nueva tarea con milestone_id opcional |
-| `update_task` | Tareas | Cambia estado, prioridad, milestone de tarea |
-| `delete_task` | Tareas | Elimina tarea (irreversible) |
-| `list_milestones` | Hitos | Hitos del roadmap |
-| `create_milestone` | Hitos | Crea nuevo hito |
-| `update_milestone` | Hitos | Actualiza estado/fecha de hito |
-| `get_dashboard` | Global | Resumen global de todos los proyectos |
-| `explore_files` | FS | Explora directorio local del proyecto |
-| `read_file` | FS | Lee contenido de un archivo local |
-| `write_file` | FS | Escribe/sobreescribe archivo local |
-| `mkdir_p` | FS | Crea directorio recursivamente |
-| `run_terminal_command` | CLI | Ejecuta comando shell en background |
-| `git_branch` | Git | Crea/cambia a rama aislada |
-| `git_commit` | Git | Hace commit con los cambios actuales |
-| `git_diff_review` | Git | Revisa diff entre rama y main (QA) |
-| `get_project_context` | Planning IA ⭐ | Lee planning_prompt + todos los project_files |
-| `mark_planning_done` | Planning IA ⭐ | Marca planning_status = 'completed' |
-| `spawn_background_worker` | Swarm | Despacha proceso en segundo plano |
+| Tool                      | Módulo         | Descripción                                                          |
+| ------------------------- | -------------- | -------------------------------------------------------------------- |
+| `list_projects`           | Proyectos      | Lista todos los proyectos (filtro por estado)                        |
+| `get_project`             | Proyectos      | Detalles completos + tareas + hitos                                  |
+| `update_project`          | Proyectos      | Actualiza nombre, estado, progreso, color, documentation_policy      |
+| `list_tasks`              | Tareas         | Tareas de un proyecto (filtro estado/prioridad)                      |
+| `create_task`             | Tareas         | Crea nueva tarea con milestone_id opcional                           |
+| `update_task`             | Tareas         | Cambia estado, prioridad, milestone de tarea                         |
+| `delete_task`             | Tareas         | Elimina tarea (irreversible)                                         |
+| `list_milestones`         | Hitos          | Hitos del roadmap                                                    |
+| `create_milestone`        | Hitos          | Crea nuevo hito                                                      |
+| `update_milestone`        | Hitos          | Actualiza estado/fecha de hito                                       |
+| `get_dashboard`           | Global         | Resumen global de todos los proyectos                                |
+| `explore_files`           | FS             | Explora directorio local del proyecto                                |
+| `read_file`               | FS             | Lee contenido de un archivo local                                    |
+| `write_file`              | FS             | Escribe/sobreescribe archivo local                                   |
+| `mkdir_p`                 | FS             | Crea directorio recursivamente                                       |
+| `run_terminal_command`    | CLI            | Ejecuta comando shell en background                                  |
+| `git_branch`              | Git            | Crea/cambia a rama aislada                                           |
+| `git_commit`              | Git            | Hace commit con los cambios actuales                                 |
+| `git_diff_review`         | Git            | Revisa diff entre rama y main (QA)                                   |
+| `get_project_context`     | Planning IA ⭐ | Lee planning_prompt + documentation_policy + todos los project_files |
+| `mark_planning_done`      | Planning IA ⭐ | Marca planning_status = 'completed'                                  |
+| `spawn_background_worker` | Swarm          | Despacha proceso en segundo plano                                    |
 
 ---
 
@@ -73,20 +73,38 @@ Cuando un usuario crea un proyecto con Planning IA habilitado, el flujo es:
 > [!IMPORTANT]
 > El planning exhaustivo debe generar **mínimo 40 tareas** distribuidas en los milestones. Si el proyecto es complejo, se deben hacer múltiples rondas de `create_task` hasta cubrir todas las áreas: Setup, Arquitectura, DB, Backend, Frontend (por pantalla), Integraciones, Testing, DevOps, Documentación, Performance, Seguridad, Monitoreo.
 
+### Gate de clasificación documental
+
+Antes de reescribir documentación, el agente debe respetar `documentation_policy`:
+
+- `personal` / `DevHub` → aplica el flujo DevHub de documentación y planning.
+- `shared_legacy` → preserva la documentación legacy y no la transforma por defecto.
+- `archive_only` → primero archiva la documentación legacy y después crea docs DevHub nuevas.
+
+Si la policy falta o es ambigua, el agente debe preguntar antes de seguir.
+Los proyectos compartidos no se fuerzan al formato DevHub por defecto.
+Los docs legacy importados se archivan, no se sobrescriben.
+
+> [!NOTE]
+> `get_project_context` ya devuelve `documentation_policy`, `documentation_policy_summary` y `documentation_policy_metadata` para que el gate pueda decidir sin inferencias.
+
 ---
 
 ## 🏗️ División de Agents por Módulo
 
 ### 1. **Planning Agent (Controller)**
+
 - **Responsabilidad:** Leer contexto completo con `get_project_context`, generar plan exhaustivo de 40-60+ tareas usando `create_milestone` y `create_task`, cerrar con `mark_planning_done`.
 - **Restricción:** No modifica código fuente — solo opera sobre Supabase vía MCP.
 
 ### 2. **Worker Agent**
+
 - **Responsabilidad:** Ejecutar tareas individuales del plan. Opera en rama Git aislada (`git_branch`), commitea cambios (`git_commit`), actualiza docs.
 - **Regla obligatoria:** Debe actualizar `/docs` antes de marcar su tarea como completada.
 - **Ámbito:** Código fuente + MCP tools de FS y Git.
 
 ### 3. **QA Agent**
+
 - **Responsabilidad:** Inspeccionar el diff de la rama del Worker (`git_diff_review`), verificar que docs estén actualizados, aprobar o rechazar el merge.
 - **Ámbito:** Solo lectura de branches + operaciones de merge.
 

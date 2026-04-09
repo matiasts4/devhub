@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   ListTodo,
@@ -9,7 +10,8 @@ import {
   Settings,
   History,
   ArrowLeft,
-  Code2,
+  ChevronLeft,
+  ChevronRight,
   Plug2,
   FolderOpen,
   Terminal,
@@ -101,7 +103,7 @@ function ProgressRing({ value, color = '#58A6FF' }) {
   );
 }
 
-export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen }) {
+export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, onToggleCollapse }) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -178,23 +180,31 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
 
     return (
       <div className="space-y-1.5">
-        {!collapsed && (
-          <div className="px-1.5 flex items-center justify-between">
-            <p
-              className="text-[11px] uppercase tracking-[0.16em] font-semibold"
-              style={{ color: 'var(--text-muted)' }}
+        <AnimatePresence>
+          {!collapsed && (
+            <motion.div 
+              className="px-1.5 flex items-center justify-between"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
             >
-              {title}
-            </p>
-            {withSignals && (
-              <StatusSignal
-                tone={activeAgentsCount > 0 ? 'success' : 'neutral'}
-                animation={activeAgentsCount > 0 ? 'pulse' : 'none'}
-                compact
-              />
-            )}
-          </div>
-        )}
+              <p
+                className="text-[11px] uppercase tracking-[0.16em] font-semibold"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {title}
+              </p>
+              {withSignals && (
+                <StatusSignal
+                  tone={activeAgentsCount > 0 ? 'success' : 'neutral'}
+                  animation={activeAgentsCount > 0 ? 'pulse' : 'none'}
+                  compact
+                />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {filtered.map((key) => {
           const item = allNavItems[key];
@@ -236,7 +246,19 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
                   </span>
                 )}
               </div>
-              {!collapsed && <span className="truncate">{label}</span>}
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.span 
+                    className="truncate"
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.2, delay: collapsed ? 0 : 0.1 }}
+                  >
+                    {label}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </Link>
           );
         })}
@@ -245,17 +267,22 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
   };
 
   return (
-    <aside
+    <motion.aside
       data-testid="workspace-sidebar"
-      className={`flex-shrink-0 border-r flex flex-col h-full transition-all duration-300 overflow-hidden ${
-        collapsed ? 'w-16' : 'w-[280px]'
-      }`}
+      initial={false}
+      animate={{ width: collapsed ? 64 : 280 }}
+      transition={{ 
+        duration: 0.35, 
+        ease: [0.25, 0.1, 0.25, 1.0] // easeInOutCubic para suavidad
+      }}
+      className="relative flex-shrink-0 border-r h-full"
       style={{
         background:
           'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 95%, #02050a 5%), color-mix(in srgb, var(--surface-app) 80%, #000 20%))',
         borderRightColor: 'var(--border-subtle)',
       }}
     >
+      <div className="flex flex-col w-full h-full overflow-hidden">
       {/* Top strip */}
       <div
         className="px-3 py-3 border-b"
@@ -268,38 +295,60 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
         <div
           className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} gap-2`}
         >
-          <button
+          <motion.button
             data-testid="back-to-hub"
             onClick={() => navigate('/hub')}
             aria-label="Volver a proyectos"
+            whileHover={{ x: -2 }}
+            whileTap={{ scale: 0.95 }}
             className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-surface-elevated cursor-pointer"
             style={{ color: 'var(--text-muted)' }}
             title={collapsed ? 'Volver a proyectos' : undefined}
           >
             <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.7} />
-            {!collapsed && <span>Proyectos</span>}
-          </button>
+            <AnimatePresence>
+              {!collapsed && (
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.2, delay: collapsed ? 0 : 0.15 }}
+                >
+                  Proyectos
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
 
-          {!collapsed && (
-            <button
-              onClick={() => navigate(`/project/${project?.id}/tareas`)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold border transition-all hover:brightness-110 cursor-pointer"
-              style={{
-                color: 'white',
-                background:
-                  'linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 95%, white 5%), #4f8cff)',
-                borderColor: 'color-mix(in srgb, var(--accent-primary) 45%, transparent)',
-              }}
-            >
-              <Plus className="w-3 h-3" strokeWidth={2.2} /> Nueva
-            </button>
-          )}
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.2 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => navigate(`/project/${project?.id}/tareas`)}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold border transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  color: 'white',
+                  background:
+                    'linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 95%, white 5%), #4f8cff)',
+                  borderColor: 'color-mix(in srgb, var(--accent-primary) 45%, transparent)',
+                }}
+              >
+                <Plus className="w-3 h-3" strokeWidth={2.2} /> Nueva
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
       {/* Identity block */}
       <div className="px-3 py-3 border-b" style={{ borderBottomColor: 'var(--border-subtle)' }}>
-        <div
+        <motion.div
+          layout
           className={`rounded-2xl border p-3 ${collapsed ? 'flex justify-center' : ''}`}
           style={{
             borderColor: 'color-mix(in srgb, var(--accent-primary) 28%, var(--border-subtle))',
@@ -311,8 +360,8 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
           {collapsed ? (
             <div className="relative">
               <ProgressRing value={progressValue} color={accentColor} />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Code2 className="w-3.5 h-3.5" style={{ color: accentColor }} strokeWidth={1.7} />
+              <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full w-5 h-5 m-auto">
+                <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
               </div>
             </div>
           ) : (
@@ -320,16 +369,17 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
               <div className="flex items-center gap-2.5">
                 <div className="relative">
                   <ProgressRing value={progressValue} color={accentColor} />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Code2
-                      className="w-3.5 h-3.5"
-                      style={{ color: accentColor }}
-                      strokeWidth={1.7}
-                    />
+                  <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full w-5 h-5 m-auto">
+                    <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
                   </div>
                 </div>
 
-                <div className="min-w-0">
+                <motion.div 
+                  className="min-w-0"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3, delay: 0.1 }}
+                >
                   <p
                     className="font-mono text-sm font-semibold truncate"
                     style={{ color: 'var(--text-primary)' }}
@@ -341,10 +391,15 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
                       ? 'Proyecto activo'
                       : project?.status || 'Proyecto'}
                   </p>
-                </div>
+                </motion.div>
               </div>
 
-              <div className="grid grid-cols-3 gap-1.5">
+              <motion.div 
+                className="grid grid-cols-3 gap-1.5"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.2 }}
+              >
                 <div
                   className="rounded-lg px-2 py-1.5 border"
                   style={{
@@ -395,10 +450,10 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
                     <Sparkles className="w-3 h-3" /> lista
                   </p>
                 </div>
-              </div>
+              </motion.div>
             </div>
           )}
-        </div>
+        </motion.div>
       </div>
 
       {/* Nav blocks */}
@@ -407,14 +462,20 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
         {renderNavSection('AI Ops', SECTION_AI, true)}
 
         <div className="space-y-1.5">
-          {!collapsed && (
-            <p
-              className="px-1.5 text-[11px] uppercase tracking-[0.16em] font-semibold"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              Infra
-            </p>
-          )}
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.p
+                className="px-1.5 text-[11px] uppercase tracking-[0.16em] font-semibold"
+                style={{ color: 'var(--text-muted)' }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                Infra
+              </motion.p>
+            )}
+          </AnimatePresence>
 
           <Link
             to={`/project/${project?.id}/terminales`}
@@ -432,34 +493,59 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
             }
           >
             <Terminal className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-            {!collapsed && <span>Terminales & IDE</span>}
+            <AnimatePresence>
+              {!collapsed && (
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.2, delay: collapsed ? 0 : 0.1 }}
+                >
+                  Terminales & IDE
+                </motion.span>
+              )}
+            </AnimatePresence>
           </Link>
 
-          {!collapsed && (
-            <button
-              onClick={() => navigate(`/project/${project?.id}/agenthub`)}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition-all hover:brightness-110 cursor-pointer"
-              style={{
-                color: 'white',
-                borderColor: 'color-mix(in srgb, var(--accent-primary) 35%, transparent)',
-                background:
-                  'linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 65%, transparent), color-mix(in srgb, #8b5cf6 45%, transparent))',
-              }}
-            >
-              <Radar className="w-3.5 h-3.5" /> Quick AI Pulse
-            </button>
-          )}
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.button
+                initial={{ opacity: 0, scaleY: 0, height: 0 }}
+                animate={{ opacity: 1, scaleY: 1, height: 'auto' }}
+                exit={{ opacity: 0, scaleY: 0, height: 0 }}
+                transition={{ duration: 0.25, delay: 0.1 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => navigate(`/project/${project?.id}/agenthub`)}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  color: 'white',
+                  borderColor: 'color-mix(in srgb, var(--accent-primary) 35%, transparent)',
+                  background:
+                    'linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 65%, transparent), color-mix(in srgb, #8b5cf6 45%, transparent))',
+                }}
+              >
+                <Radar className="w-3.5 h-3.5" /> Quick AI Pulse
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className="space-y-1.5">
-          {!collapsed && (
-            <p
-              className="px-1.5 text-[11px] uppercase tracking-[0.16em] font-semibold"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              Settings
-            </p>
-          )}
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.p
+                className="px-1.5 text-[11px] uppercase tracking-[0.16em] font-semibold"
+                style={{ color: 'var(--text-muted)' }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                Settings
+              </motion.p>
+            )}
+          </AnimatePresence>
           {Object.entries(configNavItems).map(([key, { icon: Icon, label }]) => {
             const active = isActive(key);
             return (
@@ -481,12 +567,61 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen })
                 }
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-                {!collapsed && <span>{label}</span>}
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.2, delay: collapsed ? 0 : 0.1 }}
+                    >
+                      {label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
               </Link>
             );
           })}
         </div>
       </nav>
-    </aside>
+
+      </div>
+
+      {/* Sidebar collapse toggle — moves WITH the sidebar */}
+      <motion.button
+        data-testid="sidebar-toggle-float"
+        onClick={() => onToggleCollapse && onToggleCollapse(!collapsed)}
+        aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.95 }}
+        className="absolute z-30 w-7 h-7 rounded-full border flex items-center justify-center cursor-pointer"
+        style={{
+          right: -14,
+          top: '52%',
+          transform: 'translateY(-50%)',
+          borderColor: 'color-mix(in srgb, var(--accent-primary) 35%, var(--border-subtle))',
+          background:
+            'linear-gradient(135deg, color-mix(in srgb, var(--surface-card) 95%, transparent), color-mix(in srgb, var(--surface-elevated) 80%, transparent))',
+          color: 'var(--text-muted)',
+          boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+        }}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={collapsed ? 'right' : 'left'}
+            initial={{ opacity: 0, rotate: -90 }}
+            animate={{ opacity: 1, rotate: 0 }}
+            exit={{ opacity: 0, rotate: 90 }}
+            transition={{ duration: 0.2 }}
+          >
+            {collapsed ? (
+              <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
+            ) : (
+              <ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.8} />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </motion.button>
+    </motion.aside>
   );
 }

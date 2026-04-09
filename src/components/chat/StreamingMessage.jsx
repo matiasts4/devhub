@@ -37,7 +37,8 @@ export default function StreamingMessage({ contentRef, model }) {
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [contentRef, content]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentRef]);
 
   return (
     <div

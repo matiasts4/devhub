@@ -1,11 +1,3 @@
-/** @type {import('next').NextConfig} */
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  disable: true, // Desactivado para evitar conflictos con entorno Tauri
-  register: true,
-  skipWaiting: true,
-});
-
 /**
  * QA-07 — Bundle Analyzer
  * Comando de análisis: ANALYZE=true npm run build
@@ -52,4 +44,4 @@ const nextConfig = {
   turbopack: {},
 };
 
-module.exports = withBundleAnalyzer(withPWA(nextConfig));
+module.exports = withBundleAnalyzer(nextConfig);

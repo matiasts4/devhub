@@ -23,6 +23,23 @@ let _db = null;
 
 function ensureRuntimeSchema(db) {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT DEFAULT '#58A6FF',
+      status TEXT DEFAULT 'active',
+      progress INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      planning_prompt TEXT,
+      planning_status TEXT DEFAULT 'none',
+      project_type TEXT DEFAULT 'software',
+      documentation_policy TEXT DEFAULT 'personal',
+      local_path TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS project_files (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -184,6 +201,7 @@ function ensureRuntimeSchema(db) {
 
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
   const alterStatements = [
+    "ALTER TABLE projects ADD COLUMN documentation_policy TEXT DEFAULT 'personal'",
     'ALTER TABLE agent_hub_sessions ADD COLUMN telegram_chat_id TEXT',
     'ALTER TABLE agent_hub_sessions ADD COLUMN directory TEXT',
     "ALTER TABLE agent_hub_sessions ADD COLUMN status TEXT DEFAULT 'active'",
@@ -195,6 +213,9 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE agent_traces ADD COLUMN part_id TEXT',
     'ALTER TABLE agent_traces ADD COLUMN updated_at TEXT',
     'ALTER TABLE agent_hub_sessions ADD COLUMN parent_id TEXT',
+    'ALTER TABLE agent_hub_sessions ADD COLUMN custom_name TEXT',
+    "ALTER TABLE agent_hub_sessions ADD COLUMN visibility TEXT DEFAULT 'visible'",
+    'ALTER TABLE agent_hub_sessions ADD COLUMN error_message TEXT',
   ];
   for (const stmt of alterStatements) {
     try {
@@ -206,6 +227,10 @@ function ensureRuntimeSchema(db) {
       }
     }
   }
+
+  db.exec(
+    "UPDATE projects SET documentation_policy = 'personal' WHERE documentation_policy IS NULL"
+  );
 
   // Composite unique index for idempotent trace upserts (session_id + part_id)
   db.exec(`
@@ -583,10 +608,7 @@ function upsertTrace(trace) {
       tool_input = COALESCE(excluded.tool_input, agent_traces.tool_input),
       tool_output = COALESCE(excluded.tool_output, agent_traces.tool_output),
       tool_status = excluded.tool_status,
-      content = CASE 
-        WHEN LENGTH(excluded.content) > LENGTH(agent_traces.content) THEN excluded.content
-        ELSE agent_traces.content
-      END,
+      content = COALESCE(NULLIF(excluded.content, ''), NULLIF(agent_traces.content, '')),
       duration_ms = COALESCE(excluded.duration_ms, agent_traces.duration_ms),
       time_start = COALESCE(excluded.time_start, agent_traces.time_start),
       time_end = COALESCE(excluded.time_end, agent_traces.time_end),
@@ -759,34 +781,69 @@ function getToolTracesBySession(sessionId, options = {}) {
   }));
 }
 
-function getSessionsByProject(projectId) {
+function getSessionsByProject(projectId, options = {}) {
+  const { includeHidden } = options;
   const db = getDb();
+
+  let whereClause = 'WHERE s.project_id = ?';
+  const params = [projectId];
+
+  if (includeHidden === 'active') {
+    // Include visible + hidden_active
+    whereClause += " AND s.visibility IN ('visible', 'hidden_active')";
+  } else if (includeHidden === 'history') {
+    // Include visible + hidden_history
+    whereClause += " AND s.visibility IN ('visible', 'hidden_history')";
+  } else if (includeHidden === 'all') {
+    // Include everything
+  } else {
+    // Default: exclude hidden_all
+    whereClause += " AND s.visibility != 'hidden_all'";
+  }
+
   return db
     .prepare(
       `
     SELECT s.*, tsm.telegram_chat_id 
     FROM agent_hub_sessions s
     LEFT JOIN telegram_session_map tsm ON s.id = tsm.session_id
-    WHERE s.project_id = ?
+    ${whereClause}
     ORDER BY s.updated_at DESC
   `
     )
-    .all(projectId);
+    .all(...params);
 }
 
-function getRecentSessions(limit = 20) {
+function getRecentSessions(limit = 20, options = {}) {
+  const { includeHidden } = options;
   const db = getDb();
+
+  let whereClause = '';
+  const params = [limit];
+
+  if (includeHidden === 'active') {
+    whereClause = " WHERE s.visibility IN ('visible', 'hidden_active')";
+  } else if (includeHidden === 'history') {
+    whereClause = " WHERE s.visibility IN ('visible', 'hidden_history')";
+  } else if (includeHidden === 'all') {
+    // Include everything
+  } else {
+    // Default: exclude hidden_all
+    whereClause = " WHERE s.visibility != 'hidden_all'";
+  }
+
   return db
     .prepare(
       `
     SELECT s.*, tsm.telegram_chat_id 
     FROM agent_hub_sessions s
     LEFT JOIN telegram_session_map tsm ON s.id = tsm.session_id
+    ${whereClause}
     ORDER BY s.updated_at DESC
     LIMIT ?
   `
     )
-    .all(limit);
+    .all(...params);
 }
 
 function getSessionsByTelegramChat(chatId, limit = 20) {
@@ -809,6 +866,18 @@ function updateSessionStatus(sessionId, status) {
   return db
     .prepare("UPDATE agent_hub_sessions SET status = ?, updated_at = datetime('now') WHERE id = ?")
     .run(status, sessionId);
+}
+
+/**
+ * Marks a session as failed and stores the error message for UI display.
+ */
+function updateSessionError(sessionId, errorMessage) {
+  const db = getDb();
+  return db
+    .prepare(
+      "UPDATE agent_hub_sessions SET status = 'error', error_message = ?, updated_at = datetime('now') WHERE id = ?"
+    )
+    .run(errorMessage || 'Unknown error', sessionId);
 }
 
 function updateSessionOpenCodeId(sessionId, opencodeSessionId) {
@@ -997,6 +1066,7 @@ function getSiblingSessions(sessionId) {
 module.exports = {
   getDb,
   closeDb,
+  ensureRuntimeSchema,
   tables,
   from(table) {
     return new LocalQuery(table);
@@ -1022,6 +1092,7 @@ module.exports = {
   getRecentSessions,
   getSessionsByTelegramChat,
   updateSessionStatus,
+  updateSessionError,
   updateSessionOpenCodeId,
   // Session Hierarchy
   getSessionWithParent,

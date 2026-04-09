@@ -1,19 +1,15 @@
 {
-  "jest": {
-    "testEnvironment": "node",
-    "transform": {},
-    "extensionsToTreatAsEsm": [".js"],
-    "testMatch": ["**/tests/**/*.test.js"],
-    "collectCoverageFrom": [
-      "server.js"
-    ],
-    "coverageThreshold": {
-      "global": {
-        "branches": 40,
-        "functions": 40,
-        "lines": 40,
-        "statements": 40
-      }
+  "testEnvironment": "node",
+  "transform": {},
+  "testMatch": ["**/tests/**/*.test.js"],
+  "forceExit": true,
+  "collectCoverageFrom": ["server.js"],
+  "coverageThreshold": {
+    "global": {
+      "branches": 40,
+      "functions": 40,
+      "lines": 40,
+      "statements": 40
     }
   }
 }

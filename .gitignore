@@ -23,6 +23,7 @@
 # === Misc ===
 .DS_Store
 Thumbs.db
+.atl/
 
 # === Logs ===
 npm-debug.log*
@@ -83,3 +84,8 @@ src-tauri/resources/standalone.zip
 # Bundle analyzer output
 /.next/analyze/
 tmp/
+
+# === OpenCode ===
+opencode/
+.opencode/
+data/logs/opencode_*.log

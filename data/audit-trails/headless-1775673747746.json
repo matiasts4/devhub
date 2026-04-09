@@ -1,0 +1,34 @@
+{
+  "sessionID": "headless-1775673747746",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Por favor, analiza el codebase de devhub y detecta posibles code smells. Incluye detalles sobre las áreas que podrían necesitar refactorización o mejora.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775673747746
+  },
+  "entries": [
+    {
+      "type": "queued",
+      "data": {
+        "queuePosition": 1,
+        "estimatedWaitMs": 30000
+      },
+      "timestamp": 1775673747746,
+      "timeStr": "18:42:27"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "NO_TOOLS",
+      "severity": "warning",
+      "message": "No tool calls detected"
+    },
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

@@ -20,34 +20,35 @@ El cuello de botella más costoso en cualquier proyecto de software no es la eje
 
 ### Base de Datos
 
-| Elemento | Descripción |
-|----------|-------------|
-| `projects.planning_prompt` | Texto libre con el contexto detallado del proyecto |
-| `projects.planning_status` | `none` · `pending` · `completed` |
-| `project_files` | Tabla de archivos de contexto (ver `03_Esquema_BaseDatos.md`) |
+| Elemento                        | Descripción                                                                                            |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `projects.planning_prompt`      | Texto libre con el contexto detallado del proyecto                                                     |
+| `projects.planning_status`      | `none` · `pending` · `completed`                                                                       |
+| `projects.documentation_policy` | `personal` · `shared_legacy` · `archive_only` — clasifica cómo se maneja la documentación del proyecto |
+| `project_files`                 | Tabla de archivos de contexto (ver `03_Esquema_BaseDatos.md`)                                          |
 
 ### API Routes (Next.js)
 
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/api/projects/[id]/files` | `POST` | Sube archivos de contexto como texto a Supabase |
-| `/api/projects/[id]/files` | `GET` | Lista archivos guardados (sin contenido, solo metadata) |
-| `/api/projects/[id]/files` | `DELETE` (query `?file_id=`) | Elimina un archivo del contexto |
+| Endpoint                   | Método                       | Descripción                                             |
+| -------------------------- | ---------------------------- | ------------------------------------------------------- |
+| `/api/projects/[id]/files` | `POST`                       | Sube archivos de contexto como texto a Supabase         |
+| `/api/projects/[id]/files` | `GET`                        | Lista archivos guardados (sin contenido, solo metadata) |
+| `/api/projects/[id]/files` | `DELETE` (query `?file_id=`) | Elimina un archivo del contexto                         |
 
 ### MCP Server (`devhub-mcp/server.js`)
 
-| Tool | Descripción |
-|------|-------------|
+| Tool                                  | Descripción                                                                      |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
 | `get_project_context({ project_id })` | Devuelve `planning_prompt` + todos los `project_files` con su contenido completo |
-| `mark_planning_done({ project_id })` | Setea `planning_status = 'completed'` |
+| `mark_planning_done({ project_id })`  | Setea `planning_status = 'completed'`                                            |
 
 ### Frontend
 
-| Componente | Ruta | Descripción |
-|------------|------|-------------|
-| `ProjectHub.jsx` | `/hub` | Modal mejorado con toggle Planning IA, textarea de prompt, dropzone de archivos |
-| `PlanningMode.jsx` | `/project/:id/planning` | Página completa de onboarding con upload, prompt, generación de contexto y copy prompt |
-| `WorkspaceSidebar.jsx` | — | Item "Planning IA" con dot púrpura pulsante cuando `planning_status = 'pending'` |
+| Componente             | Ruta                    | Descripción                                                                            |
+| ---------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
+| `ProjectHub.jsx`       | `/hub`                  | Modal mejorado con toggle Planning IA, textarea de prompt, dropzone de archivos        |
+| `PlanningMode.jsx`     | `/project/:id/planning` | Página completa de onboarding con upload, prompt, generación de contexto y copy prompt |
+| `WorkspaceSidebar.jsx` | —                       | Item "Planning IA" con dot púrpura pulsante cuando `planning_status = 'pending'`       |
 
 ---
 
@@ -62,6 +63,7 @@ Al hacer clic en **"Nuevo Proyecto"** en el Hub, el modal ahora incluye:
 - **Dropzone** para arrastrar archivos `.txt`, `.md`, `.json`, `.py`, `.js`, etc.
 
 Al confirmar:
+
 - El proyecto se crea con `planning_status = 'pending'`
 - Los archivos se suben a `project_files` vía API
 - El usuario es redirigido a `/project/:id/planning`
@@ -89,7 +91,7 @@ El usuario pega el prompt en el chat con **Antigravity** (u otro agente MCP-comp
 
 ```
 1. get_project_context({ project_id: "..." })
-   → Lee planning_prompt + contenido de TODOS los archivos
+   → Lee planning_prompt + documentación policy + contenido de TODOS los archivos
 
 2. Analizar el contexto y definir la arquitectura del plan
 
@@ -116,8 +118,17 @@ El usuario pega el prompt en el chat con **Antigravity** (u otro agente MCP-comp
    - Seguridad y pen-testing básico
 
 5. mark_planning_done({ project_id: "..." })
-   → Marca planning_status = 'completed'
+    → Marca planning_status = 'completed'
 ```
+
+Antes de generar o transformar documentación, el agente debe revisar `documentation_policy` en el contexto del proyecto y respetar el gate de clasificación:
+
+- `personal` / `DevHub` → aplicar el flujo DevHub de documentación y planning.
+- `shared_legacy` → preservar la documentación legacy y no transformarla por defecto.
+- `archive_only` → archivar primero la documentación legacy y recién después crear documentación nueva en formato DevHub.
+
+Si la policy falta o es ambigua, el agente debe preguntarle al usuario antes de seguir. Los proyectos compartidos no se fuerzan al formato DevHub por defecto.
+Los docs legacy importados se archivan, no se sobrescriben.
 
 > [!IMPORTANT]
 > **El plan NO debe ser superficial.** Si el proyecto es un e-commerce, las tareas deben cubrir: auth, catálogo, carrito, checkout, pagos (Stripe), emails transaccionales, panel de admin, gestión de inventario, reportes, SEO, rendimiento de imágenes, seguridad PCI, etc. Cada área = múltiples tareas.
@@ -125,6 +136,7 @@ El usuario pega el prompt en el chat con **Antigravity** (u otro agente MCP-comp
 ### Paso 4 — Resultado Final
 
 Cuando `mark_planning_done` se ejecuta:
+
 - `planning_status` → `completed`
 - El sidebar cambia el dot de pulsante a estático
 - El usuario puede navegar a **Roadmap** → ver hitos con fechas
@@ -135,15 +147,15 @@ Cuando `mark_planning_done` se ejecuta:
 
 ## Tipos de Archivos Soportados para Contexto
 
-| Extensión | Casos de uso típicos |
-|-----------|---------------------|
-| `.md` | READMEs, specs funcionales, user stories, wireframes en texto |
-| `.txt` | Notas libres, listas de requerimientos |
-| `.json` | Esquemas de DB, configs, estructuras de datos |
-| `.yaml` / `.yml` | Configuraciones de servicios, OpenAPI specs |
-| `.js` / `.ts` / `.jsx` / `.tsx` | Código de referencia, tipos TypeScript |
-| `.py` | Scripts, modelos de datos en Python |
-| `.csv` | Datasets de ejemplo, catálogos de productos |
+| Extensión                       | Casos de uso típicos                                          |
+| ------------------------------- | ------------------------------------------------------------- |
+| `.md`                           | READMEs, specs funcionales, user stories, wireframes en texto |
+| `.txt`                          | Notas libres, listas de requerimientos                        |
+| `.json`                         | Esquemas de DB, configs, estructuras de datos                 |
+| `.yaml` / `.yml`                | Configuraciones de servicios, OpenAPI specs                   |
+| `.js` / `.ts` / `.jsx` / `.tsx` | Código de referencia, tipos TypeScript                        |
+| `.py`                           | Scripts, modelos de datos en Python                           |
+| `.csv`                          | Datasets de ejemplo, catálogos de productos                   |
 
 **Límite:** 2MB por archivo · Los archivos se guardan como texto en Supabase (no binarios)
 

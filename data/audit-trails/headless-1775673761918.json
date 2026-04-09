@@ -1,0 +1,114 @@
+{
+  "sessionID": "headless-1775673761918",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Explora el codebase del proyecto devhub y detecta posibles code smells que puedan existir, como código duplicado, funciones demasiado largas o una mala organización de clases y módulos.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775673761918,
+    "completedAt": 1775673762563,
+    "duration": 645
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775673761919,
+      "timeStr": "18:42:41"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775673761921,
+      "timeStr": "18:42:41"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_291989f7affeGNONRIx3dDCeLr"
+      },
+      "timestamp": 1775673761930,
+      "timeStr": "18:42:41"
+    },
+    {
+      "type": "model_resolved",
+      "data": {
+        "raw": "opencode/gpt-5.4-mini",
+        "providerID": "opencode",
+        "modelID": "gpt-5.4-mini"
+      },
+      "timestamp": 1775673761930,
+      "timeStr": "18:42:41"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 227,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775673761930,
+      "timeStr": "18:42:41"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775673761933,
+      "timeStr": "18:42:41"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "[Tú eres el sub-agente. Instrucciones: \"Explora el codebase del proyecto devhub y detecta posibles code smells que puedan existir, como código duplicado, funciones demasiado largas o una mala organiza"
+      },
+      "timestamp": 1775673761944,
+      "timeStr": "18:42:41"
+    },
+    {
+      "type": "session_error",
+      "data": {
+        "error": {
+          "name": "APIError",
+          "data": {
+            "message": "No payment method. Add a payment method here: https://opencode.ai/workspace/wrk_01KN5GG9KJFYRA7MWVKSXDW6A7/billing",
+            "statusCode": 401,
+            "isRetryable": false,
+            "responseHeaders": {
+              "cf-ray": "9e9369d698468db8-MIA",
+              "connection": "keep-alive",
+              "content-length": "175",
+              "content-type": "text/plain;charset=UTF-8",
+              "date": "Wed, 08 Apr 2026 18:42:42 GMT",
+              "server": "cloudflare"
+            },
+            "responseBody": "{\"type\":\"error\",\"error\":{\"type\":\"CreditsError\",\"message\":\"No payment method. Add a payment method here: https://opencode.ai/workspace/wrk_01KN5GG9KJFYRA7MWVKSXDW6A7/billing\"}}",
+            "metadata": {
+              "url": "https://opencode.ai/zen/v1/responses"
+            }
+          }
+        }
+      },
+      "timestamp": 1775673762563,
+      "timeStr": "18:42:42"
+    },
+    {
+      "type": "session_finished",
+      "data": {
+        "status": "error",
+        "traces": 1
+      },
+      "timestamp": 1775673762566,
+      "timeStr": "18:42:42"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "ANY_ERROR",
+      "severity": "error",
+      "message": "Error detected: [object Object]",
+      "timestamp": 1775673762563
+    }
+  ],
+  "completed": true
+}
