@@ -50,6 +50,7 @@ export function buildProjectCreatePayload(input, userId) {
   const classification = normalizeProjectClassification(input);
 
   return {
+    id: crypto.randomUUID(),
     user_id: userId,
     name: input.name,
     description: input.description,

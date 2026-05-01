@@ -6,7 +6,6 @@
 
 const { TelegramTestHarness } = require('./harness');
 const { seedProject, seedTask, seedSession } = require('../fixtures');
-const { assertDbRow, assertDbRowCount } = require('../assertions');
 
 describe('Telegram Basic Commands', () => {
   let harness;
@@ -14,6 +13,46 @@ describe('Telegram Basic Commands', () => {
   beforeEach(async () => {
     harness = new TelegramTestHarness({ lockOwner: 'telegram-basic' });
     await harness.setup();
+
+    // Mock db service — prevents real disk DB access from estado command
+    harness.mockService('db', {
+      getDashboard: () => [],
+      getActiveProjects: () => [],
+      getTasks: () => [],
+      getAgents: () => [],
+      getAgentStats: () => ({ total: 0, active: 0, idle: 0 }),
+    });
+
+    // Mock conversation + lib/db-bridge to avoid db-bridge opening real DB
+    harness.mockService('conversation', {
+      getConversation: () => [],
+      addMessage: () => {},
+      buildContextPrompt: () => '',
+      setAgent: () => {},
+      getAgent: () => null,
+      resetConversation: () => {},
+      startNewSession: () => {},
+      getSessionInfo: () => ({}),
+      getHistory: () => [],
+      getConversationCount: () => 0,
+      cleanupOldConversations: () => {},
+    });
+
+    harness.mockService('lib/db-bridge', {
+      getTelegramSession: () => null,
+      createTelegramSession: () => ({}),
+      getSessionsByChat: () => [],
+      getSession: () => null,
+      createSession: () => ({}),
+      updateSessionStatus: () => {},
+      insertMessage: () => {},
+      getMessagesForSession: () => [],
+      findProject: () => null,
+      getActiveProjects: () => [],
+      getUsage: () => null,
+      close: () => {},
+      db: harness.db,
+    });
   });
 
   afterEach(async () => {
@@ -27,8 +66,8 @@ describe('Telegram Basic Commands', () => {
 
       const replies = harness.getReplies();
       expect(replies.length).toBe(1);
-      expect(replies[0].text).toContain('help');
-      expect(replies[0].text).toContain('estado');
+      expect(replies[0].text).toContain('Ayuda');
+      expect(replies[0].text).toContain('/estado');
     });
 
     test('uses Markdown parse mode', async () => {
@@ -42,7 +81,24 @@ describe('Telegram Basic Commands', () => {
 
   describe('/estado', () => {
     test('shows dashboard with projects', async () => {
-      seedProject(harness.db, { id: 'test-proj-1', name: 'Mi Proyecto', status: 'active' });
+      // Override db mock to return our seeded project with full shape
+      harness.mockService('db', {
+        getDashboard: () => [
+          {
+            id: 'test-proj-1',
+            name: 'Mi Proyecto',
+            status: 'active',
+            progress: 0,
+            color: null,
+            tasks: { total: 0, completed: 0, in_progress: 0, blocked: 0 },
+            next_milestone: null,
+          },
+        ],
+        getActiveProjects: () => [],
+        getTasks: () => [],
+        getAgents: () => [],
+        getAgentStats: () => ({ total: 0, active: 0, idle: 0 }),
+      });
 
       const ctx = harness.createMockCtx();
       await harness.executeCommand('estado', ctx);
@@ -58,19 +114,20 @@ describe('Telegram Basic Commands', () => {
 
       const replies = harness.getReplies();
       expect(replies.length).toBe(1);
-      // Should not crash even with empty DB
+      expect(replies[0].text).toContain('DevHub — Estado');
+      expect(replies[0].text).toContain('No hay proyectos registrados');
     });
   });
 
   describe('/reset', () => {
     test('clears session state', async () => {
-      seedSession(harness.db, { id: 'test-session-reset', status: 'active' });
-
       const ctx = harness.createMockCtx();
       await harness.executeCommand('reset', ctx);
 
       const replies = harness.getReplies();
-      expect(replies.length).toBeGreaterThanOrEqual(1);
+      expect(replies.length).toBe(1);
+      expect(replies[0].text).toContain('Conversación reiniciada');
+      expect(replies[0].text).toContain('Historial limpio');
     });
   });
 });

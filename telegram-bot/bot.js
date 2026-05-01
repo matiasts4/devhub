@@ -98,7 +98,14 @@ function logOutboundCommand(chatId, cmdName, status, errMsg) {
 }
 
 // ── Bot initialization ──────────────────────────────────────────────────────
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+// Force IPv4 for Telegram API requests. On this host, IPv6 resolution for
+// api.telegram.org is present but not routable (ENETUNREACH), which causes
+// node-telegram-bot-api/request-promise to surface EFATAL AggregateError and
+// spam polling_error events.
+const bot = new TelegramBot(BOT_TOKEN, {
+  polling: true,
+  request: { family: 4 },
+});
 
 const fs = require('fs');
 const path = require('path');
@@ -133,6 +140,27 @@ try {
 logger.info('✅ DevHub Telegram Bot iniciado');
 logger.info('   Polling activo — esperando comandos...');
 logger.info(`   Modo chat: mensajes de texto → ${chatMode}`);
+
+bot.on('polling_error', (err) => {
+  const causes = Array.isArray(err?.errors)
+    ? err.errors
+        .map(
+          (cause) =>
+            `${cause?.code || cause?.name || 'unknown'}: ${cause?.message || 'sin mensaje'}`
+        )
+        .join(' | ')
+    : null;
+
+  logger.error(
+    [
+      `Polling error con Telegram API: ${err?.message || 'error desconocido'}`,
+      err?.code ? `code=${err.code}` : null,
+      causes ? `causes=${causes}` : null,
+    ]
+      .filter(Boolean)
+      .join(' — ')
+  );
+});
 
 // ── Ensure multi-turn DB columns exist ────────────────────────────────────────
 const USE_MULTI_TURN = process.env.TELEGRAM_MULTI_TURN !== 'false';

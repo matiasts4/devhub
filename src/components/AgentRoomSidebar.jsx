@@ -1,8 +1,37 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Bot, ChevronRight, Maximize2, Minimize2, Clock, Zap, Play, Terminal, Square } from 'lucide-react';
+import {
+  Bot,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  Clock,
+  Zap,
+  Play,
+  Terminal,
+  Square,
+} from 'lucide-react';
 import useAgentRegistryPolling from '@/hooks/useAgentRegistryPolling';
 import AgentCard from './AgentCard';
 import AgentLaunchDropdown from './AgentLaunchDropdown';
+
+export function shouldShowQueueBadge(queueLength) {
+  return Number(queueLength) > 0;
+}
+
+function dedupeAgentsById(agents = []) {
+  const seen = new Set();
+  return agents.filter((agent, index) => {
+    const key = agent?.agent_id || agent?._opencodeSessionId || agent?.current_task_id || `agent-${index}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getAgentRenderKey(agent, index) {
+  const rawId = agent?.agent_id || agent?._opencodeSessionId || agent?.current_task_id || 'agent';
+  return `agent-card-${rawId}-${index}`;
+}
 
 /**
  * AgentRoomSidebar — Sidebar with tabbed view for Active / History agents.
@@ -31,8 +60,11 @@ export default function AgentRoomSidebar({
   activePanelIds,
   isVisible,
   onToggleVisibility,
+  resumableSessions = [],
+  resumableStatus = 'empty',
+  resumableError = null,
 }) {
-  const { activeAgents, inactiveAgents, loading, error } = useAgentRegistryPolling(projectId);
+  const { activeAgents, loading, error } = useAgentRegistryPolling(projectId);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [activeTab, setActiveTab] = useState('activity'); // 'activity' | 'history'
   const [, setTick] = useState(0);
@@ -53,13 +85,9 @@ export default function AgentRoomSidebar({
 
   const handleResumeSession = useCallback(
     (agent) => {
-      if (!agent._isOpenCodeSession || !agent._opencodeSessionId) return;
+      if (!agent?._isResumableHistory || !agent?._resumableSession) return;
       if (onReopenSession) {
-        onReopenSession({
-          id: agent._opencodeSessionId,
-          title: agent._displayName,
-          directory: agent._sessionDirectory,
-        });
+        onReopenSession(agent._resumableSession);
       }
     },
     [onReopenSession]
@@ -110,7 +138,7 @@ export default function AgentRoomSidebar({
       <button
         onClick={onToggleVisibility}
         className="absolute right-0 top-1/2 -translate-y-1/2 z-30 flex items-center justify-center w-5 h-12 rounded-l-md transition-colors"
-        style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRight: 'none' }}
+        style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRight: 'none' }}
         title="Show Agent Room Sidebar"
       >
         <ChevronRight className="w-3 h-3 text-gray-400" />
@@ -118,17 +146,34 @@ export default function AgentRoomSidebar({
     );
   }
 
-  const displayAgents = activeTab === 'activity' ? activeAgents : inactiveAgents;
+  const resumableHistoryAgents = dedupeAgentsById(
+    resumableSessions.map((session) => ({
+      agent_id: `resumable-${session.provider}-${session.sessionId}`,
+      nombre: session.provider,
+      modelo_llm: 'N/A',
+      status: 'idle',
+      current_task_id: session.sessionId,
+      _isResumableHistory: true,
+      _resumableSession: session,
+      _displayName: session.title,
+      _selectedAgent: session.provider,
+      _sessionDirectory: session.cwd,
+      _sessionUpdated: session.updatedAt,
+      _isOpenCodeSession: session.provider === 'opencode',
+      _opencodeSessionId: session.provider === 'opencode' ? session.sessionId : null,
+    }))
+  );
+  const displayAgents = dedupeAgentsById(activeTab === 'activity' ? activeAgents : resumableHistoryAgents);
 
   return (
     <div
-      className="flex flex-col h-full bg-[#0d1018]"
+      className="flex flex-col h-full bg-[var(--surface-app)]"
       style={{ width: '280px', minWidth: '280px' }}
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between h-10 px-3 shrink-0 border-b border-[#2a2a2a]"
-        style={{ background: '#111826' }}
+        className="flex items-center justify-between h-10 px-3 shrink-0 border-b border-[var(--border-subtle)]"
+        style={{ background: 'var(--surface-card)' }}
       >
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-blue-400" />
@@ -163,16 +208,16 @@ export default function AgentRoomSidebar({
 
       {/* Tab Selector — Activity / History */}
       <div
-        className="flex shrink-0 border-b border-[#2a2a2a] px-2 pt-1.5"
-        style={{ background: '#111826' }}
+        className="flex shrink-0 border-b border-[var(--border-subtle)] px-2 pt-1.5"
+        style={{ background: 'var(--surface-card)' }}
       >
         <button
           onClick={() => setActiveTab('activity')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-xs font-medium transition-all"
           style={{
-            background: activeTab === 'activity' ? '#1a2744' : 'transparent',
-            color: activeTab === 'activity' ? '#e2e8f0' : '#6b7280',
-            borderBottom: activeTab === 'activity' ? '2px solid #3b82f6' : '2px solid transparent',
+            background: activeTab === 'activity' ? 'var(--surface-elevated)' : 'transparent',
+            color: activeTab === 'activity' ? 'var(--text-primary)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'activity' ? '2px solid var(--accent-primary)' : '2px solid transparent',
           }}
         >
           <Zap className="w-3 h-3" />
@@ -187,16 +232,16 @@ export default function AgentRoomSidebar({
           onClick={() => setActiveTab('history')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-xs font-medium transition-all"
           style={{
-            background: activeTab === 'history' ? '#1a2744' : 'transparent',
-            color: activeTab === 'history' ? '#e2e8f0' : '#6b7280',
-            borderBottom: activeTab === 'history' ? '2px solid #3b82f6' : '2px solid transparent',
+            background: activeTab === 'history' ? 'var(--surface-elevated)' : 'transparent',
+            color: activeTab === 'history' ? 'var(--text-primary)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'history' ? '2px solid var(--accent-primary)' : '2px solid transparent',
           }}
         >
           <Clock className="w-3 h-3" />
           <span>History</span>
-          {inactiveAgents.length > 0 && (
+          {resumableHistoryAgents.length > 0 && (
             <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded-full">
-              {inactiveAgents.length}
+              {resumableHistoryAgents.length}
             </span>
           )}
         </button>
@@ -209,30 +254,34 @@ export default function AgentRoomSidebar({
             <Bot className="w-8 h-8 mb-2 opacity-50" />
             <span className="text-xs">Loading agents...</span>
           </div>
-        ) : error ? (
-          <div className="flex flex-col items-center justify-center h-32 text-red-400">
-            <span className="text-xs">{error}</span>
+         ) : error ? (
+           <div className="flex flex-col items-center justify-center h-32 text-red-400">
+             <span className="text-xs">{error}</span>
+           </div>
+        ) : activeTab === 'history' && resumableStatus === 'error' ? (
+          <div className="flex flex-col items-center justify-center h-32 text-red-400 px-4 text-center">
+            <span className="text-xs">{resumableError?.message || 'Failed to load resumable sessions.'}</span>
           </div>
-        ) : displayAgents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 px-4 text-center">
-            <Bot className="w-12 h-12 mb-3 text-gray-600" />
-            <span className="text-sm font-medium text-gray-400 mb-1">
-              {activeTab === 'activity' ? 'No active agents' : 'No history yet'}
-            </span>
-            <span className="text-xs text-gray-600">
-              {activeTab === 'activity'
-                ? 'Launch an agent or open OpenCode to see it here'
-                : 'Past sessions will appear here'}
-            </span>
-          </div>
+         ) : displayAgents.length === 0 ? (
+           <div className="flex flex-col items-center justify-center h-48 px-4 text-center">
+             <Bot className="w-12 h-12 mb-3 text-gray-600" />
+             <span className="text-sm font-medium text-gray-400 mb-1">
+               {activeTab === 'activity' ? 'No active agents' : 'No history yet'}
+             </span>
+             <span className="text-xs text-gray-600">
+               {activeTab === 'activity'
+                 ? 'Launch an agent or open OpenCode to see it here'
+                 : 'Resumable sessions will appear here'}
+             </span>
+           </div>
         ) : (
           <div className="p-2 flex flex-col gap-1.5">
-            {displayAgents.map((agent) => {
+            {displayAgents.map((agent, index) => {
               const isOCSession = agent._isOpenCodeSession;
               const canResume = isOCSession && activeTab === 'history';
 
               return (
-                <div key={agent.agent_id} className="relative group/card">
+                <div key={getAgentRenderKey(agent, index)} className="relative group/card">
                   <AgentCard
                     agent={agent}
                     isActive={activeTab === 'activity'}
@@ -250,9 +299,9 @@ export default function AgentRoomSidebar({
                       }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold opacity-0 group-hover/card:opacity-100 transition-opacity"
                       style={{
-                        background: '#16233a',
-                        border: '1px solid #2a3f5f',
-                        color: '#6da9ff',
+                        background: 'var(--surface-elevated)',
+                        border: '1px solid var(--border-strong)',
+                        color: 'var(--accent-primary)',
                       }}
                       title={`Resume: ${agent._displayName}`}
                     >
@@ -267,7 +316,11 @@ export default function AgentRoomSidebar({
                       {/* Live badge — hidden on hover to show End button */}
                       <span
                         className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded group-hover/card:hidden"
-                        style={{ background: '#0e1f10', color: '#3fb950', border: '1px solid #2ea04355' }}
+                        style={{
+                          background: 'color-mix(in oklch, var(--success) 12%, transparent)',
+                          color: 'var(--success)',
+                          border: '1px solid color-mix(in oklch, var(--success) 33%, transparent)',
+                        }}
                       >
                         <Terminal className="w-2.5 h-2.5" />
                         live
@@ -277,9 +330,9 @@ export default function AgentRoomSidebar({
                         onClick={(e) => handleTerminate(e, agent)}
                         className="hidden group-hover/card:flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold transition-opacity"
                         style={{
-                          background: '#1f0e0e',
-                          border: '1px solid #5f2a2a',
-                          color: '#f87171',
+                          background: 'color-mix(in oklch, var(--danger) 12%, transparent)',
+                          border: '1px solid color-mix(in oklch, var(--danger) 33%, transparent)',
+                          color: 'var(--danger)',
                         }}
                         title="End session"
                       >

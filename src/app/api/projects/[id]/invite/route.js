@@ -12,7 +12,7 @@ export async function POST(req, { params }) {
     }
 
     // In local mode, invites are not used
-    const inviteUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/project/${id}`;
+    const inviteUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://127.0.0.1:3400'}/project/${id}`;
 
     return NextResponse.json({
       success: true,

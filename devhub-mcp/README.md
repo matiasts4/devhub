@@ -1,6 +1,6 @@
 # DevHub MCP Server
 
-Servidor MCP local que expone herramientas de DevHub a agentes AI (Antigravity, OpenCode, HOOF, etc.).
+Servidor MCP local que expone herramientas de DevHub a agentes AI (OpenCode, Claude, etc.).
 
 **Sin API key externa** — se conecta directamente a SQLite local (local-first).
 
@@ -29,7 +29,7 @@ Si ves `✅ DevHub MCP Server iniciado (stdio)` el servidor funciona correctamen
 
 ## Configuración en clientes MCP
 
-### OpenCode / Antigravity
+### OpenCode
 
 Registrar el servidor en tu configuración MCP:
 
@@ -43,10 +43,6 @@ Registrar el servidor en tu configuración MCP:
   }
 }
 ```
-
-### HOOF (Telegram Bot)
-
-El bot de Telegram usa las herramientas MCP directamente vía el bridge. No requiere configuración adicional si el servidor está corriendo.
 
 ---
 

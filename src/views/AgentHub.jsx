@@ -49,6 +49,12 @@ import ChatMessageList from '@/components/chat/ChatMessageList';
 import { enforceDocOpsGateOnLaunchCommand, shellQuotePrompt } from '@/lib/docopsPrompts';
 import { detectMcpOutput } from '@/components/chat/utils/detectMcpOutput';
 import { slashCommands, filterSlashCommands, groupByCategory } from '@/lib/slashSkills';
+import { createAgentHubStreamParser } from '@/lib/agenthubStream';
+import {
+  DEFAULT_COMPRESSION_KEEP_LAST_N,
+  formatCompressionResultMessage,
+  MIN_MESSAGES_FOR_COMPRESSION,
+} from '@/lib/agenthubCompression';
 
 // Phase 4: Trace Enhancement components
 import OutputViewerModal from '@/components/chat/OutputViewerModal';
@@ -59,12 +65,14 @@ import GeminiQuotasPanel from '@/components/chat/GeminiQuotasPanel';
 import SessionListModal from '@/components/chat/SessionListModal';
 import ChatCommandPalette from '@/components/chat/ChatCommandPalette';
 import { useSessionUsage } from '@/hooks/useSessionUsage';
+import { mergeSessionUsage } from '@/lib/agenthub/contextUsage';
 import {
   getSubagentFinalStatusFromChild,
   isStaleSessionForSubagentMessage,
   getSubagentMeta,
   normalizeSubagentName,
 } from '@/lib/agenthubSubagentState';
+import { emitSubagentOperationalFeedback } from '@/lib/operations/agenthubFeedback';
 // Phase 5: UX Polish components
 import { Skeleton, SkeletonText, SkeletonCard, SkeletonAvatar } from '@/components/chat/Skeleton';
 import KeyboardShortcutsHelp from '@/components/chat/KeyboardShortcutsHelp';
@@ -168,8 +176,11 @@ export default function AgentHub() {
 
   // Chat panel width (drag-resizable)
   const [chatWidth, setChatWidth] = useState(() => {
-    try { return parseInt(localStorage.getItem('agenthub_chat_width') || '380', 10); }
-    catch { return 380; }
+    try {
+      return parseInt(localStorage.getItem('agenthub_chat_width') || '380', 10);
+    } catch {
+      return 380;
+    }
   });
   const dragStateRef = useRef({ isDragging: false, startX: 0, startWidth: 0 });
 
@@ -200,12 +211,24 @@ export default function AgentHub() {
     );
     try {
       await db.from('agent_hub_messages').update({ meta: metaString }).eq('id', subagentMsgId);
-    } catch {}
+    } catch {
+      // Non-critical local persistence failure.
+    }
   }, []);
 
   const finalizeSubagentRun = useCallback(
-    async ({ subagentMsgId, selectedAgent, sessionID, childSessionId, status, errorMessage }) => {
+    async ({
+      subagentMsgId,
+      selectedAgent,
+      sessionID,
+      childSessionId,
+      status,
+      errorMessage,
+      traces = [],
+      textOutput = '',
+    }) => {
       const terminalStatus = status === 'success' ? 'completed' : status;
+      let feedback = null;
 
       if (childSessionId) {
         try {
@@ -214,7 +237,9 @@ export default function AgentHub() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: terminalStatus }),
           });
-        } catch {}
+        } catch {
+          // Child status sync best effort only.
+        }
       }
 
       if (subagentMsgId) {
@@ -227,10 +252,27 @@ export default function AgentHub() {
         });
       }
 
+      try {
+        feedback = await emitSubagentOperationalFeedback({
+          projectId: project?.id,
+          agentName: selectedAgent,
+          status,
+          sessionID,
+          childSessionId,
+          messageId: subagentMsgId,
+          errorMessage,
+          traces,
+          textOutput,
+        });
+      } catch (notificationError) {
+        console.warn('Failed to emit operational feedback:', notificationError);
+      }
+
       resetSubagentUiState();
       subagentRunRef.current = null;
+      return feedback;
     },
-    [resetSubagentUiState, updateSubagentMessageState]
+    [project?.id, resetSubagentUiState, updateSubagentMessageState]
   );
 
   const clearStaleSubagentMessages = useCallback((staleSessions) => {
@@ -462,6 +504,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
   const loadMessages = async (sessionId) => {
     if (!sessionId) return;
     setIsLoadingMessages(true);
+    setSessionUsage({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
     // Clear accumulated Live view state from previous chat
     setChildSessionIds([]);
     setOcMessages([]);
@@ -501,7 +544,9 @@ Dale, empezá leyendo el contexto del proyecto.`;
                 tracesRef.current[mid] = parts;
               }
             }
-          } catch {}
+          } catch {
+            // Ignore trace hydration failures for partial history.
+          }
         }
       }
     } catch (err) {
@@ -726,7 +771,8 @@ Dale, empezá leyendo el contexto del proyecto.`;
   };
 
   const handleCompressContext = async () => {
-    if (!currentSessionId || isCompressing || messages.length <= 3) return;
+    if (!currentSessionId || isCompressing || messages.length < MIN_MESSAGES_FOR_COMPRESSION)
+      return;
 
     setIsCompressing(true);
     const toastId = toast.loading('Comprimiendo espacio de contexto...');
@@ -739,7 +785,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
           session_id: currentSessionId,
           project_id: project?.id,
           model: activeModelOverride || 'gpt-4o-mini',
-          keep_last_n: 3,
+          keep_last_n: DEFAULT_COMPRESSION_KEEP_LAST_N,
         }),
       });
 
@@ -748,8 +794,15 @@ Dale, empezá leyendo el contexto del proyecto.`;
         throw new Error(errJson.error || 'Error comprimiendo');
       }
 
+      const result = await res.json();
       await loadMessages(currentSessionId);
-      toast.success('Contexto comprimido exitosamente', { id: toastId });
+
+      if (!result.compressed) {
+        toast.info(formatCompressionResultMessage(result), { id: toastId });
+        return;
+      }
+
+      toast.success(formatCompressionResultMessage(result), { id: toastId });
     } catch (e) {
       toast.error(`Error de compresión: ${e.message}`, { id: toastId });
     } finally {
@@ -791,41 +844,35 @@ Dale, empezá leyendo el contexto del proyecto.`;
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      const handleStreamEvent = (parsed) => {
+        if (parsed.type === 'meta') {
+          activeModel = parsed.model_used;
+          setStreamingModel(activeModel);
+        } else if (parsed.type === 'error') {
+          throw new Error(parsed.error);
+        } else if (parsed.type === 'usage') {
+          setSessionUsage(
+            parsed.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+          );
+        } else if (parsed.type === 'chunk') {
+          activeMessage += parsed.content;
+          streamingContentRef.current = activeMessage;
+        }
+      };
+
+      const parser = createAgentHubStreamParser({
+        onEvent: handleStreamEvent,
+      });
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        // Mantener la última línea incompleta en el buffer
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.type === 'meta') {
-              activeModel = parsed.model_used;
-              setStreamingModel(activeModel);
-            } else if (parsed.type === 'error') {
-              throw new Error(parsed.error);
-            } else if (parsed.type === 'usage') {
-              setSessionUsage(
-                parsed.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
-              );
-            } else if (parsed.type === 'chunk') {
-              activeMessage += parsed.content;
-              // KEY OPTIMIZATION: Update ref only — NO state change, NO re-render of message list
-              streamingContentRef.current = activeMessage;
-            }
-          } catch (e) {
-            // Ignorar líneas malformadas temporales
-          }
-        }
+        parser.push(decoder.decode(value, { stream: true }));
       }
+
+      parser.push(decoder.decode());
+      parser.flush();
 
       // Streaming complete — flush to messages state (single update)
       setIsStreaming(false);
@@ -1229,42 +1276,20 @@ Dale, empezá leyendo el contexto del proyecto.`;
           const normalizedStatus = getSubagentFinalStatusFromChild(statusData.status);
           if (normalizedStatus === 'running') return;
 
-          await finalizeSubagentRun({
+          const currentTraces = tracesRef.current[subagentMsgId] || [];
+          const feedback = await finalizeSubagentRun({
             subagentMsgId,
             selectedAgent: normalizedAgent,
             sessionID,
             childSessionId,
             status: normalizedStatus,
             errorMessage: statusData.error_message || null,
+            traces: currentTraces,
+            textOutput: statusData.text_output || '',
           });
 
-          // Build enriched notification with actual execution summary.
-          // NOTE: text traces are UPSERTED in the DB (same row updated repeatedly),
-          // so tracesRef.current text traces are always empty (SSE only fires on count++).
-          // statusData.text_output comes from a direct DB query at finalization — it's reliable.
-          const currentTraces = tracesRef.current[subagentMsgId] || [];
-          const toolsDone = currentTraces.filter((t) => t.type === 'tool' && t.toolStatus === 'completed');
-          const toolsFailed = currentTraces.filter((t) => t.type === 'tool' && t.toolStatus === 'error');
-          const textOutput = (statusData.text_output || '').trim();
-          const toolSummary = toolsDone.length > 0
-            ? `Usó ${toolsDone.length} herramienta${toolsDone.length !== 1 ? 's' : ''}: ${[...new Set(toolsDone.map((t) => t.toolName).filter(Boolean))].join(', ')}.`
-            : 'No usó herramientas.';
-          const errorNote = toolsFailed.length > 0
-            ? ` ${toolsFailed.length} herramienta${toolsFailed.length !== 1 ? 's' : ''} con error.`
-            : '';
-          const outputSection = textOutput
-            ? `\n\nResultado de la ejecución:\n${textOutput.slice(0, 3500)}${textOutput.length > 3500 ? '\n…(truncado)' : ''}`
-            : '';
-
-          if (normalizedStatus === 'success') {
-            handleSendInjection(
-              `[SYSTEM NOTIFICATION]: El sub-agente "${normalizedAgent}" ha finalizado su ejecución.\n${toolSummary}${errorNote}${outputSection}\n\nPor favor, analizá este resultado y presentá al usuario los hallazgos principales de forma clara y estructurada.`
-            );
-          } else if (normalizedStatus === 'error') {
-            const errDetail = statusData.error_message ? `\nError: ${statusData.error_message}` : '';
-            handleSendInjection(
-              `[SYSTEM NOTIFICATION]: El sub-agente "${normalizedAgent}" finalizó con errores.\n${toolSummary}${errDetail}${outputSection}`
-            );
+          if (feedback?.injectionMessage) {
+            handleSendInjection(feedback.injectionMessage);
           }
         } catch {
           // Poll error — non-critical, keep polling
@@ -1298,7 +1323,9 @@ Dale, empezá leyendo el contexto del proyecto.`;
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'error' }),
           });
-        } catch {}
+        } catch {
+          // Child error sync best effort only.
+        }
       }
       toast.error(`Headless Error: ${e.message}`);
       handleSendInjection(`[Error]: Fallo al conectar con el sub-agente: ${e.message}`);
@@ -1526,11 +1553,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
           })
         );
         // Sort by OpenCode creation timestamp so multi-session history is chronological
-        allMessages.sort(
-          (a, b) => (a.info?.time?.created || 0) - (b.info?.time?.created || 0)
-        );
+        allMessages.sort((a, b) => (a.info?.time?.created || 0) - (b.info?.time?.created || 0));
         if (!cancelled) setOcMessages(allMessages);
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
     };
 
     poll();
@@ -1573,6 +1600,10 @@ Dale, empezá leyendo el contexto del proyecto.`;
     return () => document.removeEventListener('keydown', handler);
   }, []); // eslint-disable-line
   const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const { usage: persistedSessionUsage } = useSessionUsage(currentSessionId);
+  const mergedSessionUsage = useMemo(() => {
+    return mergeSessionUsage(persistedSessionUsage, sessionUsage);
+  }, [persistedSessionUsage, sessionUsage]);
 
   return (
     <div
@@ -1594,14 +1625,13 @@ Dale, empezá leyendo el contexto del proyecto.`;
         {/* Collapsible Header */}
         <div
           className={`transition-all duration-300 ease-in-out overflow-hidden ${
-            headerCollapsed ? 'max-h-0 opacity-0' : 'max-h-40 opacity-100'
+            headerCollapsed ? 'max-h-0 opacity-0' : 'max-h-80 opacity-100'
           }`}
         >
           <SessionHeader
             currentSession={currentSession}
             sessions={sessions}
             currentSessionId={currentSessionId}
-            mergedUsage={sessionUsage}
             showMCPPanel={showMCPPanel}
             isCompressing={isCompressing}
             messagesCount={messages.length}
@@ -1741,8 +1771,14 @@ Dale, empezá leyendo el contexto del proyecto.`;
           position: 'relative',
           zIndex: 10,
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-primary)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = dragStateRef.current.isDragging ? 'var(--accent-primary)' : 'var(--border-subtle)'; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'var(--accent-primary)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = dragStateRef.current.isDragging
+            ? 'var(--accent-primary)'
+            : 'var(--border-subtle)';
+        }}
         onMouseDown={(e) => {
           e.preventDefault();
           dragStateRef.current = { isDragging: true, startX: e.clientX, startWidth: chatWidth };
@@ -1757,7 +1793,14 @@ Dale, empezá leyendo el contexto del proyecto.`;
             dragStateRef.current.isDragging = false;
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
-            try { localStorage.setItem('agenthub_chat_width', String(dragStateRef.current.lastWidth ?? dragStateRef.current.startWidth)); } catch {}
+            try {
+              localStorage.setItem(
+                'agenthub_chat_width',
+                String(dragStateRef.current.lastWidth ?? dragStateRef.current.startWidth)
+              );
+            } catch {
+              // Persisted panel width is optional.
+            }
           };
           document.addEventListener('mousemove', onMove);
           document.addEventListener('mouseup', onUp);
@@ -1780,10 +1823,13 @@ Dale, empezá leyendo el contexto del proyecto.`;
           {/* Left: title + status badge + active model */}
           <div className="flex items-center gap-2 min-w-0">
             <Activity className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
-            <span className="text-xs font-semibold tracking-wide shrink-0" style={{ color: 'var(--text-primary)' }}>
+            <span
+              className="text-xs font-semibold tracking-wide shrink-0"
+              style={{ color: 'var(--text-primary)' }}
+            >
               Ejecución del Agente
             </span>
-            {(isWaitingForSubagent || isStreaming) ? (
+            {isWaitingForSubagent || isStreaming ? (
               <span
                 className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0"
                 style={{
@@ -1820,12 +1866,17 @@ Dale, empezá leyendo el contexto del proyecto.`;
             )}
           </div>
 
-          {/* Right: view toggle + abort (when running) + terminal link */}
+          {/* Right: context usage + view toggle + abort (when running) + terminal link */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Context usage badge — compact inline */}
+            <TokenUsageBadge usage={mergedSessionUsage} compact />
             {/* Terminal / Trazas toggle */}
             <div
               className="flex items-center rounded-md overflow-hidden"
-              style={{ border: '1px solid var(--border-subtle)', background: 'var(--surface-elevated, var(--surface-card))' }}
+              style={{
+                border: '1px solid var(--border-subtle)',
+                background: 'var(--surface-elevated, var(--surface-card))',
+              }}
             >
               <button
                 onClick={() => setRightPanelView('live')}
@@ -1886,21 +1937,33 @@ Dale, empezá leyendo el contexto del proyecto.`;
         {/* Execution content: shared IIFE resolves lastSubagentMsg, then renders Terminal log OR Trazas */}
         {(() => {
           const runningSubagentMsg = [...messages].reverse().find((m) => {
-            try { return m.role === 'subagent' && JSON.parse(m.meta || '{}').status === 'running'; }
-            catch { return false; }
+            try {
+              return m.role === 'subagent' && JSON.parse(m.meta || '{}').status === 'running';
+            } catch {
+              return false;
+            }
           });
-          const lastSubagentMsg = runningSubagentMsg || [...messages].reverse().find((m) => m.role === 'subagent');
+          const lastSubagentMsg =
+            runningSubagentMsg || [...messages].reverse().find((m) => m.role === 'subagent');
           let meta = {};
-          try { meta = JSON.parse(lastSubagentMsg?.meta || '{}'); } catch {}
+          try {
+            meta = JSON.parse(lastSubagentMsg?.meta || '{}');
+          } catch {
+            // Invalid persisted metadata should not break execution view rendering.
+          }
           const isRunning = meta.status === 'running';
-          const traces = lastSubagentMsg ? (tracesMap?.[lastSubagentMsg.id] || []) : [];
+          const traces = lastSubagentMsg ? tracesMap?.[lastSubagentMsg.id] || [] : [];
           const toolTraces = traces.filter((t) => t.type === 'tool');
           const textTraces = traces.filter((t) => t.type === 'text' || t.type === 'reasoning');
 
           // ── Live tab: render messages from OpenCode HTTP API with Markdown ──
           if (rightPanelView === 'live') {
             const agentLabel = meta.agentProfile || 'opencode';
-            const statusColor = isRunning ? '#3fb950' : meta.status === 'error' ? '#f85149' : '#7d8590';
+            const statusColor = isRunning
+              ? '#3fb950'
+              : meta.status === 'error'
+                ? '#f85149'
+                : '#7d8590';
 
             // Extract parts from OC messages: show all assistant turns
             const assistantMsgs = ocMessages.filter((m) => m.info?.role === 'assistant');
@@ -1911,16 +1974,51 @@ Dale, empezá leyendo el contexto del proyecto.`;
               const isPending = !p.state?.status || p.state?.status === 'pending';
               const inp = p.state?.input;
               const argStr = inp
-                ? String(inp.path || inp.file_path || inp.pattern || inp.command || inp.query || inp.content?.slice?.(0, 80) || '').replace(/^\/home\/[^/]+/, '~')
+                ? String(
+                    inp.path ||
+                      inp.file_path ||
+                      inp.pattern ||
+                      inp.command ||
+                      inp.query ||
+                      inp.content?.slice?.(0, 80) ||
+                      ''
+                  ).replace(/^\/home\/[^/]+/, '~')
                 : '';
               return (
-                <div key={p.callID || i} style={{ display: 'flex', gap: '8px', alignItems: 'baseline', fontSize: '11px', lineHeight: '1.7', fontFamily: "'JetBrains Mono', monospace" }}>
-                  <span style={{ color: isErr ? '#f85149' : isPending ? '#d29922' : '#3fb950', width: '14px', flexShrink: 0 }}>
+                <div
+                  key={p.callID || i}
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    alignItems: 'baseline',
+                    fontSize: '11px',
+                    lineHeight: '1.7',
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: isErr ? '#f85149' : isPending ? '#d29922' : '#3fb950',
+                      width: '14px',
+                      flexShrink: 0,
+                    }}
+                  >
                     {isPending ? '◌' : isErr ? '✗' : '✓'}
                   </span>
-                  <span style={{ color: '#79c0ff', minWidth: '140px', flexShrink: 0 }}>{p.tool || 'tool'}</span>
+                  <span style={{ color: '#79c0ff', minWidth: '140px', flexShrink: 0 }}>
+                    {p.tool || 'tool'}
+                  </span>
                   {argStr && (
-                    <span style={{ color: '#7d8590', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }} title={argStr}>
+                    <span
+                      style={{
+                        color: '#7d8590',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '260px',
+                      }}
+                      title={argStr}
+                    >
                       {argStr}
                     </span>
                   )}
@@ -1929,18 +2027,28 @@ Dale, empezá leyendo el contexto del proyecto.`;
             };
 
             return (
-              <div className="flex-1 flex flex-col overflow-hidden" style={{ background: '#0d1117' }}>
+              <div
+                className="flex-1 flex flex-col overflow-hidden"
+                style={{ background: '#0d1117' }}
+              >
                 {/* Header bar */}
                 <div
                   className="flex items-center gap-2 px-4 py-2 shrink-0"
-                  style={{ borderBottom: '1px solid #21262d', background: '#161b22', fontFamily: "'JetBrains Mono', monospace" }}
+                  style={{
+                    borderBottom: '1px solid #21262d',
+                    background: '#161b22',
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
                 >
                   <span style={{ color: '#58a6ff', fontSize: '12px' }}>~/devhub</span>
                   <span style={{ color: '#3fb950', fontSize: '12px' }}> ❯ </span>
-                  <span style={{ color: '#e6edf3', fontSize: '12px' }}>opencode --agent {agentLabel}</span>
+                  <span style={{ color: '#e6edf3', fontSize: '12px' }}>
+                    opencode --agent {agentLabel}
+                  </span>
                   {isRunning ? (
                     <span style={{ color: '#d29922', fontSize: '11px', marginLeft: '8px' }}>
-                      <Loader2 className="w-3 h-3 animate-spin inline mr-1" />running
+                      <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+                      running
                     </span>
                   ) : lastSubagentMsg ? (
                     <span style={{ color: statusColor, fontSize: '11px', marginLeft: '8px' }}>
@@ -1961,8 +2069,18 @@ Dale, empezá leyendo el contexto del proyecto.`;
                   }}
                 >
                   {!lastSubagentMsg || assistantMsgs.length === 0 ? (
-                    <div style={{ color: '#7d8590', marginTop: '24px', textAlign: 'center', fontSize: '12px', fontFamily: "'JetBrains Mono', monospace" }}>
-                      {isRunning ? '…esperando respuesta del agente' : 'No hay ejecución activa. Despacha un sub-agente para ver la respuesta aquí.'}
+                    <div
+                      style={{
+                        color: '#7d8590',
+                        marginTop: '24px',
+                        textAlign: 'center',
+                        fontSize: '12px',
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
+                      {isRunning
+                        ? '…esperando respuesta del agente'
+                        : 'No hay ejecución activa. Despacha un sub-agente para ver la respuesta aquí.'}
                     </div>
                   ) : (
                     assistantMsgs.map((msg, msgIdx) => {
@@ -1972,22 +2090,49 @@ Dale, empezá leyendo el contexto del proyecto.`;
                       const reasonParts = parts.filter((p) => p.type === 'reasoning');
 
                       return (
-                        <div key={msgIdx} style={{ marginBottom: msgIdx < assistantMsgs.length - 1 ? '24px' : 0 }}>
+                        <div
+                          key={msgIdx}
+                          style={{ marginBottom: msgIdx < assistantMsgs.length - 1 ? '24px' : 0 }}
+                        >
                           {/* Tool calls — compact log */}
                           {toolParts.length > 0 && (
-                            <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#161b22', borderRadius: '6px', border: '1px solid #21262d' }}>
+                            <div
+                              style={{
+                                marginBottom: '12px',
+                                padding: '8px 12px',
+                                background: '#161b22',
+                                borderRadius: '6px',
+                                border: '1px solid #21262d',
+                              }}
+                            >
                               {toolParts.map((p, i) => renderToolPart(p, i))}
                             </div>
                           )}
 
                           {/* Reasoning — collapsed italic block */}
-                          {reasonParts.length > 0 && reasonParts.some((p) => (p.text || '').length > 10) && (
-                            <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#161b22', borderRadius: '6px', border: '1px solid #21262d', fontStyle: 'italic', color: '#7d8590', fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" }}>
-                              {reasonParts.map((p, i) => (
-                                <div key={i}>✦ {(p.text || '').slice(0, 200)}{(p.text || '').length > 200 ? '…' : ''}</div>
-                              ))}
-                            </div>
-                          )}
+                          {reasonParts.length > 0 &&
+                            reasonParts.some((p) => (p.text || '').length > 10) && (
+                              <div
+                                style={{
+                                  marginBottom: '12px',
+                                  padding: '8px 12px',
+                                  background: '#161b22',
+                                  borderRadius: '6px',
+                                  border: '1px solid #21262d',
+                                  fontStyle: 'italic',
+                                  color: '#7d8590',
+                                  fontSize: '11px',
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                              >
+                                {reasonParts.map((p, i) => (
+                                  <div key={i}>
+                                    ✦ {(p.text || '').slice(0, 200)}
+                                    {(p.text || '').length > 200 ? '…' : ''}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
 
                           {/* Text — Markdown rendered */}
                           {textPart?.text && (
@@ -2002,28 +2147,165 @@ Dale, empezá leyendo el contexto del proyecto.`;
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
                                 components={{
-                                  h1: ({children}) => <h1 style={{ color: '#e6edf3', fontSize: '17px', fontWeight: 700, margin: '12px 0 6px', borderBottom: '1px solid #21262d', paddingBottom: '4px' }}>{children}</h1>,
-                                  h2: ({children}) => <h2 style={{ color: '#e6edf3', fontSize: '14px', fontWeight: 700, margin: '10px 0 4px' }}>{children}</h2>,
-                                  h3: ({children}) => <h3 style={{ color: '#cdd0d4', fontSize: '13px', fontWeight: 600, margin: '8px 0 3px' }}>{children}</h3>,
-                                  p: ({children}) => <p style={{ margin: '3px 0 8px', color: '#c9d1d9', lineHeight: 1.6 }}>{children}</p>,
-                                  ul: ({children}) => <ul style={{ paddingLeft: '18px', margin: '2px 0 8px', color: '#c9d1d9' }}>{children}</ul>,
-                                  ol: ({children}) => <ol style={{ paddingLeft: '18px', margin: '2px 0 8px', color: '#c9d1d9' }}>{children}</ol>,
-                                  li: ({children}) => <li style={{ margin: '1px 0', color: '#c9d1d9', lineHeight: 1.5 }}>{children}</li>,
+                                  h1: ({ children }) => (
+                                    <h1
+                                      style={{
+                                        color: '#e6edf3',
+                                        fontSize: '17px',
+                                        fontWeight: 700,
+                                        margin: '12px 0 6px',
+                                        borderBottom: '1px solid #21262d',
+                                        paddingBottom: '4px',
+                                      }}
+                                    >
+                                      {children}
+                                    </h1>
+                                  ),
+                                  h2: ({ children }) => (
+                                    <h2
+                                      style={{
+                                        color: '#e6edf3',
+                                        fontSize: '14px',
+                                        fontWeight: 700,
+                                        margin: '10px 0 4px',
+                                      }}
+                                    >
+                                      {children}
+                                    </h2>
+                                  ),
+                                  h3: ({ children }) => (
+                                    <h3
+                                      style={{
+                                        color: '#cdd0d4',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        margin: '8px 0 3px',
+                                      }}
+                                    >
+                                      {children}
+                                    </h3>
+                                  ),
+                                  p: ({ children }) => (
+                                    <p
+                                      style={{
+                                        margin: '3px 0 8px',
+                                        color: '#c9d1d9',
+                                        lineHeight: 1.6,
+                                      }}
+                                    >
+                                      {children}
+                                    </p>
+                                  ),
+                                  ul: ({ children }) => (
+                                    <ul
+                                      style={{
+                                        paddingLeft: '18px',
+                                        margin: '2px 0 8px',
+                                        color: '#c9d1d9',
+                                      }}
+                                    >
+                                      {children}
+                                    </ul>
+                                  ),
+                                  ol: ({ children }) => (
+                                    <ol
+                                      style={{
+                                        paddingLeft: '18px',
+                                        margin: '2px 0 8px',
+                                        color: '#c9d1d9',
+                                      }}
+                                    >
+                                      {children}
+                                    </ol>
+                                  ),
+                                  li: ({ children }) => (
+                                    <li
+                                      style={{ margin: '1px 0', color: '#c9d1d9', lineHeight: 1.5 }}
+                                    >
+                                      {children}
+                                    </li>
+                                  ),
                                   // pre wraps block code — renders the outer box
-                                  pre: ({children}) => (
-                                    <pre style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: '5px', padding: '10px 12px', overflowX: 'auto', margin: '6px 0', fontSize: '12px', lineHeight: 1.5 }}>
+                                  pre: ({ children }) => (
+                                    <pre
+                                      style={{
+                                        background: '#161b22',
+                                        border: '1px solid #30363d',
+                                        borderRadius: '5px',
+                                        padding: '10px 12px',
+                                        overflowX: 'auto',
+                                        margin: '6px 0',
+                                        fontSize: '12px',
+                                        lineHeight: 1.5,
+                                      }}
+                                    >
                                       {children}
                                     </pre>
                                   ),
                                   // code is called for both inline (inside p) and block (inside pre)
                                   // className presence signals a fenced/block code
-                                  code: ({className, children}) => className
-                                    ? <code style={{ color: '#c9d1d9', fontFamily: "'JetBrains Mono', 'Fira Mono', monospace", fontSize: '12px' }}>{children}</code>
-                                    : <code style={{ background: '#21262d', color: '#79c0ff', padding: '1px 5px', borderRadius: '3px', fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}>{children}</code>,
-                                  blockquote: ({children}) => <blockquote style={{ borderLeft: '3px solid #3fb950', paddingLeft: '10px', margin: '6px 0', color: '#8b949e', fontStyle: 'italic' }}>{children}</blockquote>,
-                                  strong: ({children}) => <strong style={{ color: '#e6edf3', fontWeight: 600 }}>{children}</strong>,
-                                  a: ({href, children}) => <a href={href} style={{ color: '#58a6ff', textDecoration: 'underline' }} target="_blank" rel="noopener noreferrer">{children}</a>,
-                                  hr: () => <hr style={{ border: 'none', borderTop: '1px solid #21262d', margin: '10px 0' }} />,
+                                  code: ({ className, children }) =>
+                                    className ? (
+                                      <code
+                                        style={{
+                                          color: '#c9d1d9',
+                                          fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
+                                          fontSize: '12px',
+                                        }}
+                                      >
+                                        {children}
+                                      </code>
+                                    ) : (
+                                      <code
+                                        style={{
+                                          background: '#21262d',
+                                          color: '#79c0ff',
+                                          padding: '1px 5px',
+                                          borderRadius: '3px',
+                                          fontFamily: "'JetBrains Mono', monospace",
+                                          fontSize: '12px',
+                                        }}
+                                      >
+                                        {children}
+                                      </code>
+                                    ),
+                                  blockquote: ({ children }) => (
+                                    <blockquote
+                                      style={{
+                                        borderLeft: '3px solid #3fb950',
+                                        paddingLeft: '10px',
+                                        margin: '6px 0',
+                                        color: '#8b949e',
+                                        fontStyle: 'italic',
+                                      }}
+                                    >
+                                      {children}
+                                    </blockquote>
+                                  ),
+                                  strong: ({ children }) => (
+                                    <strong style={{ color: '#e6edf3', fontWeight: 600 }}>
+                                      {children}
+                                    </strong>
+                                  ),
+                                  a: ({ href, children }) => (
+                                    <a
+                                      href={href}
+                                      style={{ color: '#58a6ff', textDecoration: 'underline' }}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      {children}
+                                    </a>
+                                  ),
+                                  hr: () => (
+                                    <hr
+                                      style={{
+                                        border: 'none',
+                                        borderTop: '1px solid #21262d',
+                                        margin: '10px 0',
+                                      }}
+                                    />
+                                  ),
                                 }}
                               >
                                 {textPart.text}
@@ -2037,7 +2319,17 @@ Dale, empezá leyendo el contexto del proyecto.`;
 
                   {/* Streaming indicator */}
                   {isRunning && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#7d8590', fontSize: '12px', fontFamily: "'JetBrains Mono', monospace" }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        marginTop: '12px',
+                        color: '#7d8590',
+                        fontSize: '12px',
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
                       <Loader2 className="w-3 h-3 animate-spin" />
                       generando…
                     </div>
@@ -2049,91 +2341,217 @@ Dale, empezá leyendo el contexto del proyecto.`;
 
           // ── Trazas tab: categorized structured view ────────────────────────
           return (
-          <div className="flex-1 overflow-y-auto p-4" style={{ scrollbarWidth: 'thin' }}>
-            {!lastSubagentMsg ? (
-              <div className="flex flex-col items-center justify-center h-full gap-4 opacity-40">
-                <LayoutPanelLeft className="w-12 h-12" style={{ color: 'var(--text-muted)' }} />
-                <div className="text-center">
-                  <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Sin ejecuciones activas</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Las trazas aparecerán aquí en tiempo real</p>
+            <div className="flex-1 overflow-y-auto p-4" style={{ scrollbarWidth: 'thin' }}>
+              {!lastSubagentMsg ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 opacity-40">
+                  <LayoutPanelLeft className="w-12 h-12" style={{ color: 'var(--text-muted)' }} />
+                  <div className="text-center">
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+                      Sin ejecuciones activas
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Las trazas aparecerán aquí en tiempo real
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* Agent identity bar */}
-                <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)' }}>
+              ) : (
+                <div className="space-y-3">
+                  {/* Agent identity bar */}
                   <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    className="flex items-center gap-3 p-3 rounded-lg"
                     style={{
-                      background: isRunning ? 'color-mix(in srgb, var(--success) 15%, transparent)' : 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-                      border: isRunning ? '1px solid color-mix(in srgb, var(--success) 30%, transparent)' : '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
+                      background: 'var(--surface-card)',
+                      border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    {isRunning ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--success)' }} /> : <Cpu className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{meta.agentProfile || 'Sub-Agente'}</p>
-                    <p className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                      {isRunning ? 'ejecutando…' : meta.status || 'completed'}
-                      {toolTraces.length > 0 && ` · ${toolTraces.length} herramientas`}
-                    </p>
-                    {meta.status === 'error' && meta.errorMessage && (
-                      <p className="text-[10px] font-mono mt-0.5 break-words" style={{ color: 'var(--danger)', opacity: 0.85 }} title={meta.errorMessage}>
-                        {meta.errorMessage.length > 120 ? meta.errorMessage.slice(0, 120) + '…' : meta.errorMessage}
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{
+                        background: isRunning
+                          ? 'color-mix(in srgb, var(--success) 15%, transparent)'
+                          : 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+                        border: isRunning
+                          ? '1px solid color-mix(in srgb, var(--success) 30%, transparent)'
+                          : '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
+                      }}
+                    >
+                      {isRunning ? (
+                        <Loader2
+                          className="w-4 h-4 animate-spin"
+                          style={{ color: 'var(--success)' }}
+                        />
+                      ) : (
+                        <Cpu className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-xs font-semibold truncate"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {meta.agentProfile || 'Sub-Agente'}
                       </p>
+                      <p className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                        {isRunning ? 'ejecutando…' : meta.status || 'completed'}
+                        {toolTraces.length > 0 && ` · ${toolTraces.length} herramientas`}
+                      </p>
+                      {meta.status === 'error' && meta.errorMessage && (
+                        <p
+                          className="text-[10px] font-mono mt-0.5 break-words"
+                          style={{ color: 'var(--danger)', opacity: 0.85 }}
+                          title={meta.errorMessage}
+                        >
+                          {meta.errorMessage.length > 120
+                            ? meta.errorMessage.slice(0, 120) + '…'
+                            : meta.errorMessage}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tool calls */}
+                  {toolTraces.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p
+                        className="text-[10px] font-semibold uppercase tracking-widest px-1"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Herramientas ({toolTraces.length})
+                      </p>
+                      <div className="space-y-1">
+                        {toolTraces.map((t, i) => {
+                          const isErr = t.toolStatus === 'error';
+                          const isPending =
+                            !t.toolStatus ||
+                            t.toolStatus === 'pending' ||
+                            t.toolStatus === 'running';
+                          const inp = t.toolInput;
+                          const inputLabel = inp
+                            ? inp.path ||
+                              inp.file_path ||
+                              inp.pattern ||
+                              inp.command ||
+                              inp.query ||
+                              inp.content?.slice?.(0, 60) ||
+                              null
+                            : null;
+                          const displayLabel = inputLabel
+                            ? String(inputLabel).replace(/^\/home\/[^/]+/, '~')
+                            : null;
+                          return (
+                            <div
+                              key={t.id || i}
+                              className="flex items-center gap-2.5 px-3 py-1.5 rounded-md"
+                              style={{
+                                background: 'var(--surface-card)',
+                                border: '1px solid var(--border-subtle)',
+                                opacity: isPending ? 0.75 : 1,
+                              }}
+                            >
+                              <div className="shrink-0 w-4 h-4 flex items-center justify-center">
+                                {isPending ? (
+                                  <Loader2
+                                    className="w-3 h-3 animate-spin"
+                                    style={{ color: 'var(--accent-primary)' }}
+                                  />
+                                ) : isErr ? (
+                                  <X className="w-3 h-3" style={{ color: 'var(--danger)' }} />
+                                ) : (
+                                  <CheckSquare
+                                    className="w-3 h-3"
+                                    style={{ color: 'var(--success)' }}
+                                  />
+                                )}
+                              </div>
+                              <div className="flex flex-col min-w-0 flex-1">
+                                <span
+                                  className="text-[11px] font-mono"
+                                  style={{ color: 'var(--text-secondary)' }}
+                                >
+                                  {t.toolName || t.content || 'tool'}
+                                </span>
+                                {displayLabel && (
+                                  <span
+                                    className="text-[9px] font-mono truncate"
+                                    style={{ color: 'var(--text-muted)' }}
+                                    title={String(inputLabel)}
+                                  >
+                                    {displayLabel}
+                                  </span>
+                                )}
+                              </div>
+                              {t.toolStatus && (
+                                <span
+                                  className="text-[9px] font-mono shrink-0"
+                                  style={{
+                                    color: isErr
+                                      ? 'var(--danger)'
+                                      : isPending
+                                        ? 'var(--accent-primary)'
+                                        : 'var(--text-muted)',
+                                  }}
+                                >
+                                  {t.toolStatus}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Text output */}
+                  {textTraces.length > 0 &&
+                    textTraces.some((t) => (t.content || '').length > 10) && (
+                      <div className="space-y-1.5">
+                        <p
+                          className="text-[10px] font-semibold uppercase tracking-widest px-1"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          Salida
+                        </p>
+                        <div
+                          className="rounded-lg p-3 text-[11px] font-mono whitespace-pre-wrap break-words max-h-[360px] overflow-y-auto"
+                          style={{
+                            background: 'var(--surface-card)',
+                            border: '1px solid var(--border-subtle)',
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {textTraces
+                            .map((t) => t.content || '')
+                            .join('\n\n')
+                            .slice(0, 4000)}
+                          {textTraces.map((t) => t.content || '').join('').length > 4000 && (
+                            <span style={{ color: 'var(--text-muted)' }}>{'\n…(truncado)'}</span>
+                          )}
+                        </div>
+                      </div>
                     )}
-                  </div>
+
+                  {/* Empty */}
+                  {toolTraces.length === 0 && textTraces.length === 0 && (
+                    <div
+                      className="flex flex-col items-center justify-center py-10 gap-2 rounded-lg"
+                      style={{
+                        background: 'var(--surface-card)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      <Loader2
+                        className="w-5 h-5 animate-spin"
+                        style={{ color: 'var(--accent-primary)', opacity: 0.5 }}
+                      />
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {isRunning ? 'Esperando trazas…' : 'Sin trazas disponibles'}
+                      </p>
+                    </div>
+                  )}
                 </div>
-
-                {/* Tool calls */}
-                {toolTraces.length > 0 && (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest px-1" style={{ color: 'var(--text-muted)' }}>Herramientas ({toolTraces.length})</p>
-                    <div className="space-y-1">
-                      {toolTraces.map((t, i) => {
-                        const isErr = t.toolStatus === 'error';
-                        const isPending = !t.toolStatus || t.toolStatus === 'pending' || t.toolStatus === 'running';
-                        const inp = t.toolInput;
-                        const inputLabel = inp ? (inp.path || inp.file_path || inp.pattern || inp.command || inp.query || inp.content?.slice?.(0, 60) || null) : null;
-                        const displayLabel = inputLabel ? String(inputLabel).replace(/^\/home\/[^/]+/, '~') : null;
-                        return (
-                          <div key={t.id || i} className="flex items-center gap-2.5 px-3 py-1.5 rounded-md" style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', opacity: isPending ? 0.75 : 1 }}>
-                            <div className="shrink-0 w-4 h-4 flex items-center justify-center">
-                              {isPending ? <Loader2 className="w-3 h-3 animate-spin" style={{ color: 'var(--accent-primary)' }} /> : isErr ? <X className="w-3 h-3" style={{ color: 'var(--danger)' }} /> : <CheckSquare className="w-3 h-3" style={{ color: 'var(--success)' }} />}
-                            </div>
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="text-[11px] font-mono" style={{ color: 'var(--text-secondary)' }}>{t.toolName || t.content || 'tool'}</span>
-                              {displayLabel && <span className="text-[9px] font-mono truncate" style={{ color: 'var(--text-muted)' }} title={String(inputLabel)}>{displayLabel}</span>}
-                            </div>
-                            {t.toolStatus && <span className="text-[9px] font-mono shrink-0" style={{ color: isErr ? 'var(--danger)' : isPending ? 'var(--accent-primary)' : 'var(--text-muted)' }}>{t.toolStatus}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Text output */}
-                {textTraces.length > 0 && textTraces.some((t) => (t.content || '').length > 10) && (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest px-1" style={{ color: 'var(--text-muted)' }}>Salida</p>
-                    <div className="rounded-lg p-3 text-[11px] font-mono whitespace-pre-wrap break-words max-h-[360px] overflow-y-auto" style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                      {textTraces.map((t) => t.content || '').join('\n\n').slice(0, 4000)}
-                      {textTraces.map((t) => t.content || '').join('').length > 4000 && <span style={{ color: 'var(--text-muted)' }}>{'\n…(truncado)'}</span>}
-                    </div>
-                  </div>
-                )}
-
-                {/* Empty */}
-                {toolTraces.length === 0 && textTraces.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-10 gap-2 rounded-lg" style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)' }}>
-                    <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{isRunning ? 'Esperando trazas…' : 'Sin trazas disponibles'}</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
           );
         })()}
 
@@ -2156,7 +2574,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
 
           if (runningSubagent) {
             let meta = {};
-            try { meta = JSON.parse(runningSubagent.meta || '{}'); } catch {}
+            try {
+              meta = JSON.parse(runningSubagent.meta || '{}');
+            } catch {
+              // Invalid subagent metadata should not break status bar rendering.
+            }
             agentName = meta.agentProfile
               ? meta.agentProfile
                   .replace(/^openai\/|^anthropic\/|^google\//i, '')
@@ -2172,8 +2594,8 @@ Dale, empezá leyendo el contexto del proyecto.`;
               isActive={isActive}
               agentName={agentName}
               model={agentModel}
-              tokenCount={sessionUsage?.total_tokens || 0}
-              tokenLimit={200000}
+              tokenCount={mergedSessionUsage?.total_tokens || 0}
+              tokenLimit={mergedSessionUsage?.context_window_size || 200000}
               toolCallCount={toolCallCount}
               onInterrupt={handleStopGenerating}
               onCommandPalette={() => setShowCommandPalette(true)}
@@ -2235,7 +2657,10 @@ Dale, empezá leyendo el contexto del proyecto.`;
             className="flex items-center justify-between px-4 py-3 border-b"
             style={{ borderColor: 'var(--border-subtle)' }}
           >
-            <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <h3
+              className="text-sm font-semibold flex items-center gap-2"
+              style={{ color: 'var(--text-primary)' }}
+            >
               <Server className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
               MCP Servers
             </h3>

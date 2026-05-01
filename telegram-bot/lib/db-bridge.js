@@ -9,15 +9,17 @@
  */
 
 const Database = require('better-sqlite3');
-const path = require('path');
 const crypto = require('crypto');
+const { ensureRuntimeSchema } = require('../../src/lib/db/localDb');
+const { resolveDbPath } = require('../../src/lib/db/pathResolver');
 
-const DB_PATH = path.resolve(__dirname, '../../data/devhub.db');
+const DB_PATH = resolveDbPath({ moduleDir: __dirname });
 
 const db = new Database(DB_PATH, { fileMustExist: false, readonly: false });
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
+ensureRuntimeSchema(db);
 
 // ── Prepared statements: telegram_session_map ───────────────────────────────
 
@@ -26,13 +28,14 @@ const getActiveTelegramSession = db.prepare(`
   WHERE telegram_chat_id = ? AND active = 1
 `);
 
-const deactivateSessionsForChat = db.prepare(`
-  UPDATE telegram_session_map SET active = 0 WHERE telegram_chat_id = ?
-`);
-
 const createTelegramSessionMap = db.prepare(`
   INSERT INTO telegram_session_map (telegram_chat_id, session_id, project_id, active)
   VALUES (?, ?, ?, 1)
+  ON CONFLICT(telegram_chat_id) DO UPDATE SET
+    session_id = excluded.session_id,
+    project_id = excluded.project_id,
+    active = 1,
+    updated_at = datetime('now')
 `);
 
 const getSessionsByTelegramChat = db.prepare(`
@@ -147,17 +150,14 @@ function getTelegramSession(chatId) {
 }
 
 /**
- * Create a new telegram_session_map entry, deactivating any existing one.
+ * Create or overwrite the telegram_session_map entry for a chat.
  * @param {string} chatId
  * @param {string} sessionId
  * @param {string|null} projectId
  * @returns {object} run result
  */
 function createTelegramSession(chatId, sessionId, projectId) {
-  return db.transaction(() => {
-    deactivateSessionsForChat.run(String(chatId));
-    return createTelegramSessionMap.run(String(chatId), sessionId, projectId || null);
-  })();
+  return createTelegramSessionMap.run(String(chatId), sessionId, projectId || null);
 }
 
 /**

@@ -1,10 +1,42 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
 
-export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar, initialCommand }) {
+/**
+ * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
+ * Never awaited — diagnostic only, does not affect control flow.
+ */
+function cliLog(tag, msg, extra = {}) {
+  try {
+    fetch('/api/terminal/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag, msg, extra }),
+    }).catch(() => {});
+  } catch {
+    // never crash
+  }
+}
+
+/**
+ * Pure function: returns Framer Motion animation props for the xterm container.
+ * Fades in (opacity 0→1, 150ms ease-out) when connection is established.
+ *
+ * @param {boolean} connected - whether the terminal is connected
+ * @returns {{ initial, animate, transition }} Framer Motion props
+ */
+export function getXtermContainerAnimProps(connected) {
+  return {
+    initial: { opacity: 0 },
+    animate: { opacity: connected ? 1 : 0 },
+    transition: { duration: 0.15, ease: 'easeOut' },
+  };
+}
+
+export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar, initialCommand, restored }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -18,6 +50,7 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
   const [connectionState, setConnectionState] = useState('idle');
   const [copied, setCopied] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
+  const [restoredToast, setRestoredToast] = useState(false);
   const hasSentInitialCommand = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -86,8 +119,22 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
     setConnectionState('connecting');
     hasSentInitialCommand.current = false;
 
+    cliLog(`CLIENT:${id}`, 'connect() called', { cwd, autoFocus });
+
     try {
-      wsRef.current?.close();
+      // Silence the stale socket BEFORE closing it so its onclose doesn't
+      // override 'connecting' back to 'disconnected' and trigger a reconnect loop.
+      if (wsRef.current) {
+        const stale = wsRef.current;
+        stale.onopen = null;
+        stale.onmessage = null;
+        stale.onerror = null;
+        stale.onclose = null;
+        stale.close();
+        wsRef.current = null;
+        cliLog(`CLIENT:${id}`, 'stale socket silenced+closed');
+      }
+
       const cwdParam = cwd ? `cwd=${encodeURIComponent(cwd)}` : '';
       const sessionIdParam = id ? `sessionId=${encodeURIComponent(id)}` : '';
       const legacyIdParam = id ? `id=${encodeURIComponent(id)}` : '';
@@ -95,27 +142,32 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       const queryStr = queryParams ? `?${queryParams}` : '';
 
       console.log(`[TTY:${id}] Connecting to /api/terminal/session${queryStr}`);
+      cliLog(`CLIENT:${id}`, 'fetching session API', { queryStr });
       const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
         cache: 'no-store',
       });
       if (!sessionResponse.ok) {
         const errText = await sessionResponse.text().catch(() => '');
         console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
+        cliLog(`CLIENT:${id}`, 'session API FAILED', { status: sessionResponse.status, body: errText });
         throw new Error(`No se pudo crear la sesión de terminal (${sessionResponse.status}).`);
       }
 
       const { port, wsPath } = await sessionResponse.json();
       console.log(`[TTY:${id}] Got port=${port}, wsPath=${wsPath}`);
+      cliLog(`CLIENT:${id}`, 'session API ok', { port, wsPath });
       transportRef.current = wsPath === '/' ? 'raw' : 'json';
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsUrl = `${wsProtocol}://127.0.0.1:${port}${wsPath}${queryStr}`;
       console.log(`[TTY:${id}] WebSocket URL: ${wsUrl}`);
+      cliLog(`CLIENT:${id}`, 'opening WebSocket', { wsUrl });
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
       const connectionTimeout = setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
           console.error(`[TTY:${id}] WebSocket connection timeout after 10s`);
+          cliLog(`CLIENT:${id}`, 'WS connection TIMEOUT (10s)', { readyState: socket.readyState });
           socket.close();
           setConnectionState('error');
         }
@@ -124,8 +176,16 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       socket.onopen = () => {
         clearTimeout(connectionTimeout);
         console.log(`[TTY:${id}] WebSocket connected`);
+        cliLog(`CLIENT:${id}`, 'WS onopen — connected');
         setConnectionState('connected');
         sendResize();
+
+        // Show restored toast for sessions from previous run
+        if (restored && cwd) {
+          setRestoredToast(true);
+          setTimeout(() => setRestoredToast(false), 2000);
+        }
+
         // Only send initial command once per component lifecycle to avoid rerunning on fast reconnects
         if (initialCommand && !hasSentInitialCommand.current) {
           console.log(`[TTY:${id}] Sending initial command: ${initialCommand}`);
@@ -156,12 +216,33 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
           }
 
           if (payload.type === 'exit') {
-            termRef.current?.writeln('\r\n\x1b[31mProceso de terminal finalizado.\x1b[0m');
+            cliLog(`CLIENT:${id}`, 'received exit from server');
+            termRef.current?.writeln('\r\n\x1b[33m[Reconectando...]\x1b[0m');
             window.dispatchEvent(
               new CustomEvent('devhub:terminal-exit', {
                 detail: { id, initialCommand },
               })
             );
+          }
+
+          // The server detected an OpenCode session ID in this terminal — propagate it
+          // so TerminalWorkspacesManager can persist it and restore it after reboots.
+          if (payload.type === 'opencode-session-detected' && payload.sessionId) {
+            window.dispatchEvent(
+              new CustomEvent('devhub:opencode-session-detected', {
+                detail: { panelId: id, sessionId: payload.sessionId },
+              })
+            );
+            return;
+          }
+
+          if (payload.type === 'hermes-session-detected' && payload.sessionId) {
+            window.dispatchEvent(
+              new CustomEvent('devhub:hermes-session-detected', {
+                detail: { panelId: id, sessionId: payload.sessionId },
+              })
+            );
+            return;
           }
         } catch {
           if (typeof event.data === 'string' && event.data.length > 0) {
@@ -173,24 +254,28 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       socket.onerror = (err) => {
         clearTimeout(connectionTimeout);
         console.error(`[TTY:${id}] WebSocket error:`, err);
+        cliLog(`CLIENT:${id}`, 'WS onerror');
         setConnectionState('error');
       };
 
       socket.onclose = (event) => {
         clearTimeout(connectionTimeout);
         console.log(`[TTY:${id}] WebSocket closed: code=${event.code}, reason=${event.reason}`);
+        cliLog(`CLIENT:${id}`, 'WS onclose', { code: event.code, reason: event.reason, wasClean: event.wasClean });
         setConnectionState((prev) => (prev === 'error' ? 'error' : 'disconnected'));
       };
     } catch (error) {
       console.error(`[TTY:${id}] Connection failed:`, error);
+      cliLog(`CLIENT:${id}`, 'connect() catch', { error: error?.message });
       setConnectionState('error');
     }
   }, [sendResize, cwd, initialCommand, id]);
 
   const reconnect = useCallback(() => {
     hasSentInitialCommand.current = false;
+    cliLog(`CLIENT:${id}`, 'reconnect() called');
     termRef.current?.clear();
-    wsRef.current?.close();
+    // connect() already silences and closes the stale socket — just call it directly.
     connect();
   }, [connect]);
 
@@ -198,21 +283,26 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
     let mounted = true;
 
     async function initializeTerminal() {
+      cliLog(`CLIENT:${id}`, 'initializeTerminal() start', { cwd, autoFocus });
       const [{ Terminal }, { FitAddon }, { SearchAddon }] = await Promise.all([
         import('xterm'),
         import('xterm-addon-fit'),
         import('xterm-addon-search'),
       ]);
 
-      if (!mounted || !containerRef.current) return;
-
-      const ready = await waitForVisibleDimensions();
       if (!mounted || !containerRef.current) {
-        setIsInitializing(false);
+        cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted or no container (after import)');
         return;
       }
-      if (!ready) {
-        setInitError('El contenedor de terminal no tiene dimensiones visibles.');
+
+      const ready = await waitForVisibleDimensions();
+      cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
+        ready,
+        width: containerRef.current?.getBoundingClientRect().width,
+        height: containerRef.current?.getBoundingClientRect().height,
+      });
+      if (!mounted || !containerRef.current) {
+        cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted after waitForVisibleDimensions');
         setIsInitializing(false);
         return;
       }
@@ -231,7 +321,10 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       terminal.loadAddon(fitAddon);
       terminal.loadAddon(searchAddon);
       terminal.open(containerRef.current);
-      fitAddon.fit();
+
+      if (ready) {
+        fitAddon.fit();
+      }
 
       terminal.onData((data) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -252,6 +345,7 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       fitRef.current = fitAddon;
       searchRef.current = searchAddon;
 
+      setInitError(null);
       setIsInitializing(false);
       connect();
 
@@ -264,12 +358,21 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       mounted = false;
       clearTimers();
       resizeObserverRef.current?.disconnect();
-      wsRef.current?.close();
+      // Silence the socket before closing so it doesn't set 'disconnected'
+      // on the (possibly re-mounting) component during React Strict Mode double-invoke.
+      if (wsRef.current) {
+        const stale = wsRef.current;
+        stale.onopen = null;
+        stale.onmessage = null;
+        stale.onerror = null;
+        stale.onclose = null;
+        stale.close();
+        wsRef.current = null;
+      }
       termRef.current?.dispose();
       termRef.current = null;
       fitRef.current = null;
       searchRef.current = null;
-      wsRef.current = null;
     };
   }, [connect, sendResize, fitAndResize, clearTimers, waitForVisibleDimensions]);
 
@@ -300,6 +403,45 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       setTimeout(() => termRef.current.focus(), 50);
     }
   }, [autoFocus]);
+
+  // Auto-reconnect when disconnected or error, with exponential backoff.
+  // No hard attempt limit — the EBADF server fix prevents infinite hammering.
+  // Backoff: 300ms → 600ms → 1200ms → 2400ms → 5000ms (max), then stays at 5s.
+  const reconnectAttemptsRef = useRef(0);
+  // Track autoFocus changes to reset the counter when the user switches to this tab.
+  const prevAutoFocusRef = useRef(autoFocus);
+  useEffect(() => {
+    if (autoFocus && !prevAutoFocusRef.current) {
+      // User actively switched to this terminal — give it a fresh reconnect budget.
+      reconnectAttemptsRef.current = 0;
+    }
+    prevAutoFocusRef.current = autoFocus;
+  }, [autoFocus]);
+
+  useEffect(() => {
+    if (connectionState === 'disconnected' || connectionState === 'error') {
+      if (!autoFocus) {
+        cliLog(`CLIENT:${id}`, 'auto-reconnect SKIPPED (not autoFocus)', { connectionState });
+        return;
+      }
+      const delay = Math.min(300 * 2 ** reconnectAttemptsRef.current, 5000);
+      cliLog(`CLIENT:${id}`, 'auto-reconnect scheduled', {
+        connectionState,
+        attempt: reconnectAttemptsRef.current,
+        delayMs: delay,
+      });
+      const timer = setTimeout(() => {
+        reconnectAttemptsRef.current += 1;
+        reconnect();
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+    // Reset counter on stable connection — next disconnect starts from 300ms again.
+    if (connectionState === 'connected') {
+      cliLog(`CLIENT:${id}`, 'connected — resetting reconnect counter');
+      reconnectAttemptsRef.current = 0;
+    }
+  }, [autoFocus, connectionState, reconnect]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -391,7 +533,7 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       : 'Desconectado';
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden bg-[#111111] relative">
+    <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative">
       {!hideTitleBar && (
         <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle cursor-pointer">
           <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none">
@@ -446,28 +588,50 @@ export default function TerminalTTY({ id, onClose, cwd, autoFocus, hideTitleBar,
       )}
 
       {/* Terminal View */}
-      <div className="relative flex-1 bg-[#111111]" onContextMenu={handleContextMenu}>
-        <div ref={containerRef} className="devhub-xterm-container h-full w-full p-2.5" />
+      <div className="relative flex-1 bg-[var(--surface-app)]" onContextMenu={handleContextMenu}>
+        <motion.div
+          ref={containerRef}
+          className="devhub-xterm-container h-full w-full p-2.5"
+          {...getXtermContainerAnimProps(isConnected)}
+        />
+
+        {/* Restored session toast */}
+        {restoredToast && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-md border text-xs font-mono pointer-events-none"
+            style={{
+              background: 'color-mix(in oklch, var(--accent-primary) 15%, var(--surface-elevated))',
+              borderColor: 'var(--accent-primary)',
+              color: 'var(--accent-primary)',
+            }}
+          >
+            ↺ Restored shell at {cwd}
+          </div>
+        )}
 
         {/* Loading overlay — only during init or connecting */}
         {(isInitializing || connectionState === 'connecting') && (
-          <div className="absolute inset-0 bg-[#111111]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
             <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
             {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
           </div>
         )}
 
         {/* Error/Disconnected overlay */}
-        {(connectionState === 'error' || connectionState === 'disconnected') && !isInitializing && (
-          <div className="absolute inset-0 bg-[#111111]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
+        {(initError || connectionState === 'error' || connectionState === 'disconnected') && !isInitializing && (
+          <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
             <WifiOff className="w-8 h-8 text-red-400" />
             <span className="text-red-400 font-semibold">
-              {connectionState === 'error' ? 'Error de conexión' : 'Desconectado'}
+              {initError
+                ? 'Terminal no visible todavía'
+                : connectionState === 'error'
+                  ? 'Error de conexión'
+                  : 'Desconectado'}
             </span>
             <span className="text-gray-500 text-center max-w-xs">
-              {connectionState === 'error'
+              {initError ||
+                (connectionState === 'error'
                 ? 'No se pudo conectar al servidor de terminal. Verificá que el servidor esté corriendo.'
-                : 'La conexión con la terminal se perdió.'}
+                : 'La conexión con la terminal se perdió.')}
             </span>
             <button
               onClick={reconnect}

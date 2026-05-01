@@ -53,6 +53,10 @@ export async function POST(request) {
     }
 
     // Safe serialization for results that might contain BigInt or other non-JSON types
+    // Guard against undefined (e.g. insert returning no row) to avoid JSON.parse crash
+    if (result === undefined || result === null) {
+      return NextResponse.json(null);
+    }
     const serializedResult = JSON.parse(
       JSON.stringify(result, (key, value) => (typeof value === 'bigint' ? value.toString() : value))
     );

@@ -1,4 +1,5 @@
-import { Brain, Server, History, ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { Brain, Server, History, ChevronDown, Plus, Trash2, Archive, Loader2 } from 'lucide-react';
+import { MIN_MESSAGES_FOR_COMPRESSION } from '@/lib/agenthubCompression';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,19 +8,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import TokenUsageBadge from '@/components/chat/TokenUsageBadge';
 
 export default function SessionHeader({
   currentSession,
   sessions,
   currentSessionId,
-  mergedUsage,
   showMCPPanel,
+  isCompressing,
+  messagesCount,
   onToggleMCP,
+  onCompress,
   onLoadSession,
   onDeleteSession,
   onCreateSession,
 }) {
+  const canCompress = messagesCount >= MIN_MESSAGES_FOR_COMPRESSION && !isCompressing;
+  const compressTitle = isCompressing
+    ? 'Comprimiendo historial…'
+    : messagesCount >= MIN_MESSAGES_FOR_COMPRESSION
+      ? 'Comprimir historial anterior'
+      : `Se necesitan al menos ${MIN_MESSAGES_FOR_COMPRESSION} mensajes para comprimir`;
+
   return (
     <div
       className="flex-shrink-0 h-[52px] px-3 border-b flex items-center justify-between gap-2"
@@ -54,8 +63,6 @@ export default function SessionHeader({
 
       {/* Actions — compact, icon-first */}
       <div className="flex items-center gap-1 shrink-0">
-        <TokenUsageBadge usage={mergedUsage} compact />
-
         {/* MCP Servers toggle */}
         <button
           onClick={onToggleMCP}
@@ -77,6 +84,30 @@ export default function SessionHeader({
           aria-pressed={showMCPPanel}
         >
           <Server className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          onClick={onCompress}
+          disabled={!canCompress}
+          aria-busy={isCompressing}
+          className="flex items-center gap-1 h-7 px-2 rounded-md border text-[11px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            background: isCompressing
+              ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
+              : 'transparent',
+            borderColor: isCompressing
+              ? 'color-mix(in srgb, var(--accent-primary) 30%, transparent)'
+              : 'var(--border-subtle)',
+            color: isCompressing ? 'var(--accent-primary)' : 'var(--text-muted)',
+          }}
+          title={compressTitle}
+        >
+          {isCompressing ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Archive className="w-3 h-3" />
+          )}
+          <span>{isCompressing ? 'Comprimiendo' : 'Comprimir'}</span>
         </button>
 
         {/* Sessions history dropdown */}
@@ -115,7 +146,10 @@ export default function SessionHeader({
             <DropdownMenuSeparator style={{ background: 'var(--border-strong)' }} />
             <div className="max-h-[260px] overflow-y-auto">
               {sessions.length === 0 ? (
-                <div className="px-2 py-4 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                <div
+                  className="px-2 py-4 text-center text-xs"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   No hay sesiones previas
                 </div>
               ) : (
@@ -154,7 +188,8 @@ export default function SessionHeader({
                       className="opacity-0 group-hover:opacity-100 p-1 rounded transition-colors"
                       style={{ color: 'var(--text-muted)' }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'color-mix(in srgb, #f87171 12%, transparent)';
+                        e.currentTarget.style.background =
+                          'color-mix(in srgb, #f87171 12%, transparent)';
                         e.currentTarget.style.color = '#f87171';
                       }}
                       onMouseLeave={(e) => {

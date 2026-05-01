@@ -1,3 +1,5 @@
+/* global process */
+
 import { NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs/promises';
@@ -30,6 +32,36 @@ async function getOpenCodeSessions() {
   }
 }
 
+function buildHealthMetadata({ liveCheckAvailable, staleSessions, checkedAt }) {
+  if (!liveCheckAvailable) {
+    return {
+      status: 'stale',
+      authority: 'cached',
+      freshness: 'stale',
+      observed_at: checkedAt,
+      status_reason: 'Live session check unavailable. Returning cached database state.',
+    };
+  }
+
+  if ((staleSessions || []).length > 0) {
+    return {
+      status: 'degraded',
+      authority: 'authoritative',
+      freshness: 'current',
+      observed_at: checkedAt,
+      status_reason: 'One or more sessions were marked stale after live comparison.',
+    };
+  }
+
+  return {
+    status: 'healthy',
+    authority: 'authoritative',
+    freshness: 'current',
+    observed_at: checkedAt,
+    status_reason: 'Live session check completed successfully.',
+  };
+}
+
 export async function GET() {
   try {
     const { getRecentSessions, updateSessionStatus } = await import('@/lib/db/localDb');
@@ -43,22 +75,26 @@ export async function GET() {
     );
 
     if (potentiallyRunning.length === 0) {
+      const checkedAt = new Date().toISOString();
       return NextResponse.json({
         stale_sessions: [],
         aborted_count: 0,
-        checked_at: new Date().toISOString(),
+        checked_at: checkedAt,
+        ...buildHealthMetadata({ liveCheckAvailable: true, staleSessions: [], checkedAt }),
       });
     }
 
     // Get live OpenCode sessions
     const liveSessions = await getOpenCodeSessions();
     if (!liveSessions) {
+      const checkedAt = new Date().toISOString();
       return NextResponse.json({
         active_sessions: [],
         stale_sessions: [],
         aborted_count: 0,
         live_check_available: false,
-        checked_at: new Date().toISOString(),
+        checked_at: checkedAt,
+        ...buildHealthMetadata({ liveCheckAvailable: false, staleSessions: [], checkedAt }),
       });
     }
 
@@ -100,15 +136,18 @@ export async function GET() {
       }
     }
 
+    const checkedAt = new Date().toISOString();
     return NextResponse.json({
       active_sessions: activeSessions,
       stale_sessions: staleSessions,
       aborted_count: abortedCount,
       live_check_available: true,
-      checked_at: new Date().toISOString(),
+      checked_at: checkedAt,
+      ...buildHealthMetadata({ liveCheckAvailable: true, staleSessions, checkedAt }),
     });
   } catch (err) {
     console.error('Health check error:', err);
+    const checkedAt = new Date().toISOString();
     return NextResponse.json(
       {
         error: err.message,
@@ -116,7 +155,8 @@ export async function GET() {
         stale_sessions: [],
         aborted_count: 0,
         live_check_available: false,
-        checked_at: new Date().toISOString(),
+        checked_at: checkedAt,
+        ...buildHealthMetadata({ liveCheckAvailable: false, staleSessions: [], checkedAt }),
       },
       { status: 500 }
     );

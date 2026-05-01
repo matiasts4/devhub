@@ -1,6 +1,53 @@
+import fs from 'fs';
 import net from 'net';
 import os from 'os';
+import path from 'path';
 import { spawnSync } from 'child_process';
+import { saveSessions, loadSessions } from './sessionStore.js';
+
+// ─── Diagnostic file logger ───────────────────────────────────────────────────
+// Writes to data/logs/terminal-debug.log (relative to project root / cwd).
+// Safe for concurrent calls — appendFileSync is atomic per call.
+const TTY_LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log');
+function ttyLog(tag, msg, extra = {}) {
+  try {
+    const ts = new Date().toISOString();
+    const extraStr = Object.keys(extra).length ? ' ' + JSON.stringify(extra) : '';
+    const line = `${ts} [${tag}] ${msg}${extraStr}\n`;
+    fs.mkdirSync(path.dirname(TTY_LOG_FILE), { recursive: true });
+    fs.appendFileSync(TTY_LOG_FILE, line);
+  } catch {
+    // Never crash the server because of logging
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+function findPathUpwards(startDir, ...relativeSegments) {
+  let currentDir = path.resolve(startDir);
+
+  for (let depth = 0; depth <= 6; depth += 1) {
+    const candidate = path.join(currentDir, ...relativeSegments);
+    if (fs.existsSync(candidate)) return candidate;
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+    currentDir = parentDir;
+  }
+
+  return null;
+}
+
+function resolveMcpServerPath() {
+  return (
+    findPathUpwards(process.cwd(), 'devhub-mcp', 'server.js') ||
+    (typeof __dirname !== 'undefined'
+      ? findPathUpwards(__dirname, 'devhub-mcp', 'server.js')
+      : null) ||
+    path.join(process.cwd(), 'devhub-mcp', 'server.js')
+  );
+}
+
+const MCP_SERVER_PATH = resolveMcpServerPath();
 
 // Use global require via eval to bypass Webpack's statically analyzed requires
 // This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly
@@ -87,6 +134,40 @@ function parseClientMessage(rawMessage) {
   }
 }
 
+function broadcastOpenCodeSessionDetected(session, sessionId) {
+  for (const s of session.sockets) {
+    if (s.readyState === s.OPEN) {
+      try {
+        s.send(JSON.stringify({ type: 'opencode-session-detected', sessionId }));
+      } catch {
+        // Ignore send errors on stale sockets.
+      }
+    }
+  }
+}
+
+function broadcastHermesSessionDetected(session, sessionId) {
+  for (const s of session.sockets) {
+    if (s.readyState === s.OPEN) {
+      try {
+        s.send(JSON.stringify({ type: 'hermes-session-detected', sessionId }));
+      } catch {
+        // Ignore send errors on stale sockets.
+      }
+    }
+  }
+}
+
+function ensureHermesSessionId(session) {
+  if (session.hermesSessionId) {
+    return session.hermesSessionId;
+  }
+
+  const stableSessionId = session.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  session.hermesSessionId = `hermes-${stableSessionId}`;
+  return session.hermesSessionId;
+}
+
 function detectSessionModeFromInput(session, input) {
   if (!input || typeof input !== 'string') return;
 
@@ -101,7 +182,21 @@ function detectSessionModeFromInput(session, input) {
       const sessionMatch = input.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
       if (sessionMatch?.[1]) {
         session.opencodeSessionId = sessionMatch[1];
+        broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
       }
+    }
+    return;
+  }
+
+  // Hermes detection
+  if (/\bhermes\b/i.test(input)) {
+    session.mode = 'tui';
+    session.historyEnabled = false;
+    session.history = '';
+
+    if (!session.hermesSessionId) {
+      const hermesId = ensureHermesSessionId(session);
+      broadcastHermesSessionDetected(session, hermesId);
     }
     return;
   }
@@ -124,17 +219,273 @@ function detectSessionModeFromInput(session, input) {
         const sessionMatch = trimmed.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
         if (sessionMatch?.[1]) {
           session.opencodeSessionId = sessionMatch[1];
+          broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
         }
+      }
+      return;
+    }
+
+    if (/^\s*hermes\b/i.test(trimmed)) {
+      session.mode = 'tui';
+      session.historyEnabled = false;
+      session.history = '';
+
+      if (!session.hermesSessionId) {
+        const hermesId = ensureHermesSessionId(session);
+        broadcastHermesSessionDetected(session, hermesId);
       }
       return;
     }
   }
 }
 
+/**
+ * getOrInitSessions — returns the global terminal sessions map, initializing if needed.
+ */
+function getOrInitSessions() {
+  if (!globalThis[GLOBAL_TTY_SESSIONS_KEY]) {
+    globalThis[GLOBAL_TTY_SESSIONS_KEY] = new Map();
+  }
+  return globalThis[GLOBAL_TTY_SESSIONS_KEY];
+}
+
+function buildSessionSpawnConfig(cwd, terminalId) {
+  const tmuxEnabled = hasTmux();
+  const tmuxSession = normalizeTmuxSessionName(terminalId);
+  const env = Object.assign({}, process.env, {
+    DEVHUB_PROJECT_DIR: cwd,
+    DEVHUB_MCP_CMD: `node ${MCP_SERVER_PATH}`,
+    GEMINI_MCP_HINT: 'Use DEVHUB_MCP_CMD to connect Gemini CLI to your local server.',
+    DEVHUB_TMUX_SESSION: tmuxSession,
+    MOTD_SHOWN: 'true',
+    SSH_CONNECTION: '',
+    HUSHLOGIN: 'true',
+  });
+
+  let spawnArgs = [];
+  if (tmuxEnabled && os.platform() !== 'win32') {
+    const attachCommand = `tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
+    spawnArgs = ['-lc', attachCommand];
+  }
+
+  return { env, spawnArgs, tmuxEnabled };
+}
+
+/**
+ * createSession — creates a PTY session and adds it to the sessions map.
+ * Calls saveSessions after creation.
+ *
+ * @param {{ id: string, cwd?: string, shell?: string, restored?: boolean }} opts
+ */
+export function createSession({ id, cwd, shell, restored = false } = {}) {
+  const sessions = getOrInitSessions();
+  const resolvedCwd = cwd || resolveHomeDirectory();
+  const resolvedShell = shell || resolveShell();
+
+  const cwdExists = fs.existsSync(resolvedCwd);
+  const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(resolvedCwd, id);
+
+  ttyLog('createSession', `spawning PTY`, {
+    id,
+    cwd: resolvedCwd,
+    cwdExists,
+    shell: resolvedShell,
+    tmux: tmuxEnabled,
+    spawnArgs,
+    restored,
+  });
+
+  let terminal;
+  try {
+    terminal = pty.spawn(resolvedShell, spawnArgs, {
+      name: 'xterm-256color',
+      cols: 120,
+      rows: 32,
+      cwd: resolvedCwd,
+      env,
+    });
+    ttyLog('createSession', `PTY spawned ok`, { id, pid: terminal.pid });
+  } catch (spawnErr) {
+    ttyLog('createSession', `PTY spawn FAILED`, { id, error: spawnErr?.message });
+    throw spawnErr;
+  }
+
+  const now = new Date().toISOString();
+  const session = {
+    pty: terminal,
+    sockets: new Set(),
+    history: '',
+    mode: 'shell',
+    historyEnabled: true,
+    pendingInput: '',
+    createdAt: now,
+    lastSeenAt: now,
+    lastActivityAt: Date.now(),
+    cwd: resolvedCwd,
+    shell: resolvedShell,
+    title: null,
+    restored,
+    id,
+    _saveDebounceTimer: null,
+  };
+
+  sessions.set(id, session);
+
+  wireSessionPty(session, sessions);
+
+  saveSessions(sessions);
+  return session;
+}
+
+/**
+ * closeSession — removes a session from the map and persists.
+ *
+ * @param {string} id - terminal session id
+ */
+export function closeSession(id) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(id);
+
+  if (session) {
+    try {
+      session.pty?.kill?.();
+    } catch {
+      // ignore PTY kill failures during explicit close
+    }
+
+    // Cancel any pending debounced save
+    if (session._saveDebounceTimer) {
+      clearTimeout(session._saveDebounceTimer);
+      session._saveDebounceTimer = null;
+    }
+
+    // Notify and close sockets
+    for (const s of session.sockets) {
+      if (s.readyState === s.OPEN) {
+        try {
+          s.send(JSON.stringify({ type: 'exit', exitCode: 0, signal: null }));
+          s.close();
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  sessions.delete(id);
+  saveSessions(sessions);
+}
+
+/**
+ * _debouncedSave — debounce saveSessions to max once per 30s per session.
+ */
+function _debouncedSave(sessions, session) {
+  if (session._saveDebounceTimer) return; // already scheduled
+  session._saveDebounceTimer = setTimeout(() => {
+    session._saveDebounceTimer = null;
+    saveSessions(sessions);
+  }, 30000);
+}
+
+const OPENCODE_OUTPUT_SESSION_RE = /\bses_([a-zA-Z0-9_]+)\b/;
+
+function handleSessionOutput(sessions, session, chunk) {
+  session.lastSeenAt = new Date().toISOString();
+  session.lastActivityAt = Date.now();
+  _debouncedSave(sessions, session);
+
+  let filtered = chunk;
+  if (typeof filtered === 'string') {
+    filtered = filtered.replace(
+      /┃\s*This is a minimal installation of Kali Linux[\s\S]*?┃\s*\(Run: "touch ~\/\.hushlogin" to hide this message\)\s*\n?/g,
+      ''
+    );
+    filtered = filtered.replace(/zsh: corrupt history file[^\n]*\n?/g, '');
+
+    if (!session.opencodeSessionId && session.mode === 'tui') {
+      const outputMatch = filtered.match(OPENCODE_OUTPUT_SESSION_RE);
+      if (outputMatch) {
+        const detectedId = `ses_${outputMatch[1]}`;
+        session.opencodeSessionId = detectedId;
+        broadcastOpenCodeSessionDetected(session, detectedId);
+      }
+    }
+  }
+
+  if (session.historyEnabled) {
+    session.history += filtered;
+    if (session.history.length > 100000) {
+      session.history = session.history.slice(-100000);
+    }
+  }
+
+  for (const socket of session.sockets) {
+    if (socket.readyState === socket.OPEN) {
+      socket.send(JSON.stringify({ type: 'output', data: filtered }));
+    }
+  }
+}
+
+function handleSessionExit(sessions, session, exitCode, signal) {
+  ttyLog('PTY_EXIT', `session exited`, {
+    id: session.id,
+    exitCode,
+    signal,
+    socketCount: session.sockets?.size ?? 0,
+  });
+
+  if (!sessions.has(session.id)) return;
+
+  if (session._saveDebounceTimer) {
+    clearTimeout(session._saveDebounceTimer);
+    session._saveDebounceTimer = null;
+  }
+
+  for (const socket of session.sockets) {
+    if (socket.readyState === socket.OPEN) {
+      socket.send(JSON.stringify({ type: 'exit', exitCode, signal }));
+      socket.close();
+    }
+  }
+
+  sessions.delete(session.id);
+  saveSessions(sessions);
+}
+
+function wireSessionPty(session, sessions) {
+  ttyLog('wireSessionPty', `wiring PTY handlers`, { id: session.id });
+
+  session.pty.onData((chunk) => {
+    handleSessionOutput(sessions, session, chunk);
+  });
+
+  session.pty.onExit(({ exitCode, signal } = {}) => {
+    handleSessionExit(sessions, session, exitCode ?? 0, signal ?? null);
+  });
+}
+
+/**
+ * restoreSessions — loads persisted sessions from disk and recreates PTY processes.
+ * Called once at startup. No-op if no file exists.
+ */
+export function restoreSessions() {
+  const saved = loadSessions();
+  for (const s of saved) {
+    try {
+      createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+    } catch (err) {
+      console.warn(`[ttyServer] Failed to restore session ${s.id}:`, err);
+    }
+  }
+}
+
 export async function ensureTTYServer() {
   if (globalThis[GLOBAL_TTY_KEY]) {
+    ttyLog('ensureTTYServer', `reusing existing server`, globalThis[GLOBAL_TTY_KEY]);
     return globalThis[GLOBAL_TTY_KEY];
   }
+
+  ttyLog('ensureTTYServer', `starting new TTY server`, { pid: process.pid, cwd: process.cwd() });
 
   // A map to keep PTY instances alive across WebSocket reconnects
   // Key: terminalId, Value: { pty, sockets: Set, history, mode, historyEnabled }
@@ -145,6 +496,8 @@ export async function ensureTTYServer() {
   const wsPath = '/terminal';
   const port = await findAvailablePort(basePort);
   const wss = new WebSocketServer({ host: '127.0.0.1', port, path: wsPath });
+
+  ttyLog('ensureTTYServer', `WSS ready`, { port, wsPath });
 
   wss.on('connection', (socket, request) => {
     let cwd = resolveHomeDirectory();
@@ -159,41 +512,45 @@ export async function ensureTTYServer() {
         if (reqTermId) terminalId = reqTermId;
       }
     } catch (e) {
+      ttyLog('WS_CONN', `URL parse error`, { error: e?.message });
       console.error('Error parsing WS URL:', e);
     }
+
+    ttyLog('WS_CONN', `new WebSocket connection`, { terminalId, cwd });
 
     let session = terminalSessions.get(terminalId);
 
     if (!session) {
       const shell = resolveShell();
-      const tmuxEnabled = hasTmux();
-      const tmuxSession = normalizeTmuxSessionName(terminalId);
+      const cwdExists = fs.existsSync(cwd);
+      const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(cwd, terminalId);
 
-      const env = Object.assign({}, process.env, {
-        DEVHUB_PROJECT_DIR: cwd,
-        DEVHUB_MCP_CMD: 'node /home/matias/devhub/devhub-mcp/server.js',
-        GEMINI_MCP_HINT: 'Use DEVHUB_MCP_CMD to connect Gemini CLI to your local server.',
-        DEVHUB_TMUX_SESSION: tmuxSession,
-        // Suppress shell MOTD (Kali "minimal installation" banner, etc.)
-        MOTD_SHOWN: 'true',
-        SSH_CONNECTION: '',
-        HUSHLOGIN: 'true',
+      ttyLog('WS_CONN', `creating new session`, {
+        terminalId,
+        cwd,
+        cwdExists,
+        shell,
+        tmux: tmuxEnabled,
+        spawnArgs,
       });
 
-      let spawnArgs = [];
-      if (tmuxEnabled && os.platform() !== 'win32') {
-        const attachCommand = `tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
-        spawnArgs = ['-lc', attachCommand];
+      let terminal;
+      try {
+        terminal = pty.spawn(shell, spawnArgs, {
+          name: 'xterm-256color',
+          cols: 120,
+          rows: 32,
+          cwd,
+          env,
+        });
+        ttyLog('WS_CONN', `PTY spawned`, { terminalId, pid: terminal.pid });
+      } catch (spawnErr) {
+        ttyLog('WS_CONN', `PTY spawn FAILED`, { terminalId, error: spawnErr?.message });
+        socket.close();
+        return;
       }
 
-      const terminal = pty.spawn(shell, spawnArgs, {
-        name: 'xterm-256color',
-        cols: 120,
-        rows: 32,
-        cwd,
-        env,
-      });
-
+      const now = new Date().toISOString();
       session = {
         pty: terminal,
         sockets: new Set([socket]),
@@ -201,58 +558,34 @@ export async function ensureTTYServer() {
         mode: 'shell',
         historyEnabled: true,
         pendingInput: '',
-        createdAt: Date.now(),
+        createdAt: now,
+        lastSeenAt: now,
         lastActivityAt: Date.now(),
+        id: terminalId,
+        cwd,
+        shell,
+        title: null,
+        restored: false,
+        _saveDebounceTimer: null,
       };
 
       terminalSessions.set(terminalId, session);
+      wireSessionPty(session, terminalSessions);
+      saveSessions(terminalSessions);
 
       if (!tmuxEnabled && os.platform() !== 'win32') {
         terminal.write(
           '\r\n\x1b[33m[DevHub]\x1b[0m tmux no está instalado. Para una recuperación más robusta de sesiones por panel, instalá tmux.\r\n\r\n'
         );
       }
-
-      terminal.onData((chunk) => {
-        session.lastActivityAt = Date.now();
-
-        // Suppress Kali MOTD and zsh history corruption messages
-        let filtered = chunk;
-        if (typeof filtered === 'string') {
-          // Remove Kali minimal installation banner
-          filtered = filtered.replace(
-            /┃\s*This is a minimal installation of Kali Linux[\s\S]*?┃\s*\(Run: "touch ~\/\.hushlogin" to hide this message\)\s*\n?/g,
-            ''
-          );
-          // Remove zsh corrupt history message
-          filtered = filtered.replace(/zsh: corrupt history file[^\n]*\n?/g, '');
-        }
-
-        if (session.historyEnabled) {
-          session.history += filtered;
-          if (session.history.length > 100000) {
-            session.history = session.history.slice(-100000);
-          }
-        }
-
-        for (const s of session.sockets) {
-          if (s.readyState === s.OPEN) {
-            s.send(JSON.stringify({ type: 'output', data: filtered }));
-          }
-        }
-      });
-
-      terminal.onExit(({ exitCode, signal }) => {
-        for (const s of session.sockets) {
-          if (s.readyState === s.OPEN) {
-            s.send(JSON.stringify({ type: 'exit', exitCode, signal }));
-            s.close();
-          }
-        }
-        terminalSessions.delete(terminalId);
-      });
     } else {
       // Attach to existing session
+      ttyLog('WS_CONN', `reattaching to existing session`, {
+        terminalId,
+        socketCount: session.sockets.size,
+        mode: session.mode,
+        historyLen: session.history?.length ?? 0,
+      });
       session.sockets.add(socket);
       session.lastActivityAt = Date.now();
       if (session.historyEnabled && session.history && socket.readyState === socket.OPEN) {
@@ -279,7 +612,13 @@ export async function ensureTTYServer() {
       if (message.type === 'input' && typeof message.data === 'string') {
         detectSessionModeFromInput(session, message.data);
         session.lastActivityAt = Date.now();
-        session.pty.write(message.data);
+        try {
+          session.pty.write(message.data);
+        } catch (err) {
+          // PTY file descriptor already closed (EBADF) — ignore silently
+          ttyLog('EBADF', `pty.write failed`, { id: session.id, error: err?.message });
+          console.warn(`[ttyServer] pty.write failed for session ${session.id}:`, err.message);
+        }
       }
 
       if (
@@ -289,11 +628,23 @@ export async function ensureTTYServer() {
         message.cols > 0 &&
         message.rows > 0
       ) {
-        session.pty.resize(message.cols, message.rows);
+        try {
+          session.pty.resize(message.cols, message.rows);
+        } catch (err) {
+          // PTY file descriptor already closed (EBADF) — ignore silently
+          ttyLog('EBADF', `pty.resize failed`, { id: session.id, error: err?.message });
+          console.warn(`[ttyServer] pty.resize failed for session ${session.id}:`, err.message);
+        }
       }
     });
 
-    socket.on('close', () => {
+    socket.on('close', (code, reason) => {
+      ttyLog('WS_CLOSE', `socket closed`, {
+        terminalId,
+        code,
+        reason: reason?.toString?.() || '',
+        remainingSockets: session ? session.sockets.size - 1 : 0,
+      });
       if (session) {
         session.sockets.delete(socket);
         session.lastActivityAt = Date.now();
@@ -301,11 +652,16 @@ export async function ensureTTYServer() {
       }
     });
 
+    ttyLog('WS_CONN', `sending ready to client`, { terminalId });
     socket.send(JSON.stringify({ type: 'ready' }));
   });
 
   const serverState = { port, wsPath };
   globalThis[GLOBAL_TTY_KEY] = serverState;
+
+  // Restore persisted sessions from previous run
+  restoreSessions();
+
   return serverState;
 }
 
@@ -321,8 +677,14 @@ export function getTTYSessionsSnapshot() {
       socketCount: session.sockets?.size || 0,
       createdAt: session.createdAt || null,
       lastActivityAt: session.lastActivityAt || null,
+      lastSeenAt: session.lastSeenAt || null,
+      cwd: session.cwd || null,
+      shell: session.shell || null,
+      title: session.title || null,
+      restored: session.restored || false,
       alive: true,
       opencodeSessionId: session.opencodeSessionId || null,
+      hermesSessionId: session.hermesSessionId || null,
     });
   }
 

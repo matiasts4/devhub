@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * DevHub MCP Server
- * Expone herramientas de DevHub (proyectos, tareas, hitos) para Antigravity.
+ * Expone herramientas de DevHub (proyectos, tareas, hitos) para OpenCode.
  * Comunicación via stdio — sin API key externa necesaria.
  *
  * Uso: node devhub-mcp/server.js
- * Config Antigravity: ver devhub-mcp/README.md
+ * Config OpenCode: ver devhub-mcp/README.md
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -19,7 +19,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import OpenAI from 'openai';
 import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
@@ -35,16 +34,6 @@ const DB_DRIVER = (process.env.DEVHUB_MCP_DB_DRIVER || 'sqlite').toLowerCase();
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-let openai;
-if (OPENAI_API_KEY) {
-  openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-} else {
-  process.stderr.write(
-    '⚠️  AVISO: No se encontró OPENAI_API_KEY. Búsqueda semántica (embeddings) puede fallar.\n'
-  );
-}
 
 function nowIso() {
   return new Date().toISOString();
@@ -567,7 +556,10 @@ server.tool(
     status: z.enum(['active', 'paused', 'completed', 'archived']).optional(),
     progress: z.number().min(0).max(100).optional(),
     color: z.string().optional(),
-    planning_status: z.enum(['none', 'pending', 'completed']).optional().describe('Estado del planning IA del proyecto'),
+    planning_status: z
+      .enum(['none', 'pending', 'completed'])
+      .optional()
+      .describe('Estado del planning IA del proyecto'),
   },
   async ({ project_id, ...updates }) => {
     const fields = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
@@ -580,6 +572,85 @@ server.tool(
       .single();
     if (error) return err(error.message);
     return ok({ updated: true, project: data });
+  }
+);
+
+server.tool(
+  'create_project',
+  'Crea un nuevo proyecto en DevHub con nombre, descripción y opciones de configuración.',
+  {
+    name: z.string().min(1).describe('Nombre del proyecto'),
+    description: z.string().optional().describe('Descripción breve del proyecto'),
+    color: z.string().optional().describe('Color de acento en hex (ej. #58A6FF)'),
+    project_type: z
+      .enum(['software', 'university', 'research', 'security', 'business', 'creative'])
+      .optional()
+      .describe('Tipo de proyecto. Default: software'),
+    documentation_policy: z
+      .enum(['personal', 'shared', 'file-only'])
+      .optional()
+      .describe('Política de documentación. Default: personal'),
+    local_path: z.string().optional().describe('Ruta local del proyecto en disco'),
+    planning_prompt: z.string().optional().describe('Prompt para el planning IA automático'),
+  },
+  async ({
+    name,
+    description,
+    color,
+    project_type,
+    documentation_policy,
+    local_path,
+    planning_prompt,
+  }) => {
+    const id = randomUUID();
+    const payload = {
+      id,
+      user_id: 'local-user',
+      name,
+      description: description || '',
+      color: color || '#58A6FF',
+      project_type: project_type || 'software',
+      documentation_policy: documentation_policy || 'personal',
+      local_path: local_path || '',
+      planning_prompt: planning_prompt || '',
+      status: 'active',
+      progress: 0,
+    };
+    const { data, error } = await supabase.from('projects').insert(payload).select().single();
+    if (error) return err(error.message);
+    return ok({ created: true, project: data });
+  }
+);
+
+server.tool(
+  'delete_project',
+  'Elimina un proyecto de DevHub y todas sus tareas, hitos y archivos asociados.',
+  {
+    project_id: z.string().uuid().describe('UUID del proyecto a eliminar'),
+    confirm: z
+      .boolean()
+      .describe('Debe ser true para confirmar la eliminación. Previene borrados accidentales.'),
+  },
+  async ({ project_id, confirm }) => {
+    if (!confirm)
+      return err('Debes pasar confirm: true para confirmar la eliminación del proyecto.');
+
+    // Verificar que el proyecto existe antes de proceder
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('id, name')
+      .eq('id', project_id)
+      .single();
+    if (!proj) return err(`Proyecto ${project_id} no encontrado.`);
+
+    // Eliminar todas las dependencias en orden correcto
+    await supabase.from('tasks').delete().eq('project_id', project_id);
+    await supabase.from('milestones').delete().eq('project_id', project_id);
+    await supabase.from('project_files').delete().eq('project_id', project_id);
+
+    const { error } = await supabase.from('projects').delete().eq('id', project_id);
+    if (error) return err(error.message);
+    return ok({ deleted: true, project_id, name: proj.name });
   }
 );
 
@@ -1060,7 +1131,7 @@ server.tool(
 
 server.tool(
   'update_agent_status',
-  'Actualiza el estado visual de tu agente en el DevHub Control Center.',
+  'Actualiza el estado del agente (visible en el Kanban de DevHub).',
   {
     agent_id: z.string().describe('Tu identificador único de agente asignado'),
     status: z.enum([

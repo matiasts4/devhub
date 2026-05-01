@@ -6,7 +6,7 @@
  *
  * Usage:
  *   const harness = new ApiTestHarness({
- *     baseUrl: 'http://localhost:3000',
+ *     baseUrl: 'http://localhost:3100',
  *     dbPath: ':memory:',
  *     lockOwner: 'test-headless-1'
  *   });
@@ -20,16 +20,21 @@
 const { TestHarness } = require('../harness');
 const { assertHttpStatus, assertBodyShape } = require('../assertions');
 
-const DEFAULT_BASE_URL = process.env.AGENTHUB_BASE_URL || 'http://localhost:3000';
+const DEFAULT_BASE_URL = 'http://localhost:3100';
+const fetchImpl = global.fetch;
+
+function getAgentHubBaseUrl() {
+  return process.env.AGENTHUB_BASE_URL || DEFAULT_BASE_URL;
+}
 
 class ApiTestHarness extends TestHarness {
   /**
    * @param {object} options
-   * @param {string} [options.baseUrl] - Next.js server URL (default: http://localhost:3000)
+   * @param {string} [options.baseUrl] - Next.js server URL (default: http://localhost:3100)
    * @param {string} [options.dbPath] - SQLite DB path (default: ':memory:')
    * @param {string} [options.lockOwner] - Lock owner identifier
    */
-  constructor({ baseUrl = DEFAULT_BASE_URL, dbPath = ':memory:', lockOwner = 'api-test' } = {}) {
+  constructor({ baseUrl = getAgentHubBaseUrl(), dbPath = ':memory:', lockOwner = 'api-test' } = {}) {
     super({ dbPath, lockOwner });
     this.baseUrl = baseUrl.replace(/\/+$/, ''); // strip trailing slashes
   }
@@ -62,7 +67,11 @@ class ApiTestHarness extends TestHarness {
       fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
     }
 
-    const response = await fetch(url, fetchOptions);
+    if (typeof fetchImpl !== 'function') {
+      throw new Error('Global fetch is unavailable in this Jest runtime');
+    }
+
+    const response = await fetchImpl(url, fetchOptions);
     return response;
   }
 
@@ -233,4 +242,4 @@ class ApiTestHarness extends TestHarness {
   }
 }
 
-module.exports = { ApiTestHarness };
+module.exports = { ApiTestHarness, DEFAULT_BASE_URL, getAgentHubBaseUrl };

@@ -1,37 +1,54 @@
-use tauri::{RunEvent, WindowEvent, Manager};
+use tauri::{RunEvent, WindowEvent, Manager, WebviewWindowBuilder};
 use tauri_plugin_shell::ShellExt;
 use sysinfo::System;
 use std::fs;
 use std::net::TcpStream;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use std::thread;
 
-/// Espera hasta que el puerto 3000 (Next.js) esté disponible.
-/// Tauri carga la webview inmediatamente, pero el sidecar tarda en arrancar Next.js.
+fn nextjs_port() -> u16 {
+    if cfg!(debug_assertions) {
+        3100
+    } else {
+        3400
+    }
+}
+
+fn is_port_ready(port: u16) -> bool {
+    TcpStream::connect_timeout(
+        &format!("127.0.0.1:{}", port).parse().unwrap(),
+        Duration::from_millis(500),
+    )
+    .is_ok()
+}
+
+/// Espera hasta que el puerto de Next.js esté disponible.
+/// En dev usa 3100; en producción empaquetada usa 3400 (standalone).
+/// Tauri carga la webview inmediatamente, pero el sidecar / servidor tarda en arrancar.
 fn wait_for_nextjs_ready() {
-    println!("[DevHub] Esperando a que Next.js esté listo en puerto 3000...");
+    let port = nextjs_port();
+    println!("[DevHub] Esperando a que Next.js esté listo en puerto {}...", port);
     for attempt in 0..30 {
         // Máx 15 segundos (30 * 500ms)
         thread::sleep(Duration::from_millis(500));
         if TcpStream::connect_timeout(
-            &"127.0.0.1:3000".parse().unwrap(),
+            &format!("127.0.0.1:{}", port).parse().unwrap(),
             Duration::from_millis(500),
         )
         .is_ok()
         {
-            println!("[DevHub] Next.js listo en puerto 3000 (intento {}).", attempt + 1);
+            println!("[DevHub] Next.js listo en puerto {} (intento {}).", port, attempt + 1);
             return;
         }
     }
     eprintln!("[DevHub] ⚠️  Next.js no respondió en 15s. La webview puede mostrar error.");
 }
 
-/// Matar procesos zombie que ocupan los puertos del sidecar (4000) y Next.js (3000).
+/// Matar procesos zombie que ocupan los puertos del sidecar (4000) y Next.js.
 /// Esto pasa cuando `tauri dev` se cierra con Ctrl+C y los procesos hijos no mueren.
 fn cleanup_zombie_ports() {
-    let zombie_ports = [3000u16, 4000u16];
+    let zombie_ports = [nextjs_port(), 4000u16];
     let mut sys = System::new_all();
     sys.refresh_all();
 
@@ -90,6 +107,40 @@ fn get_sidecar_port_file() -> PathBuf {
     get_devhub_dir().join("sidecar-port.txt")
 }
 
+fn ensure_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if app.get_webview_window("main").is_some() {
+        return Ok(());
+    }
+
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .ok_or_else(|| tauri::Error::WindowNotFound)?;
+
+    WebviewWindowBuilder::from_config(app, window_config)?.build()?;
+    Ok(())
+}
+
+fn restore_main_window(app: &tauri::AppHandle) {
+    if ensure_runtime_ready(app).is_err() {
+        return;
+    }
+
+    if ensure_main_window(app).is_err() {
+        return;
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.reload();
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 /// Verifica si el proceso con el PID dado sigue vivo y es el sidecar de DevHub.
 fn is_sidecar_running(pid: u32) -> bool {
     let mut sys = System::new_all();
@@ -104,6 +155,25 @@ fn is_sidecar_running(pid: u32) -> bool {
     false
 }
 
+/// Lee el build-id que el sidecar en ejecución grabó al arrancar (mtime del zip instalado).
+fn get_running_build_id() -> Option<u64> {
+    let file = get_devhub_dir().join("sidecar-build-id.txt");
+    fs::read_to_string(&file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+}
+
+/// Obtiene el mtime actual del standalone.zip instalado como build-id de referencia.
+/// Solo aplica a instalaciones .deb/.rpm; en dev mode el path no existe → None.
+fn get_installed_build_id() -> Option<u64> {
+    let path = std::path::Path::new("/usr/lib/DevHub/resources/standalone.zip");
+    fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+}
+
 /// Lee el PID guardado y comprueba si el sidecar ya está corriendo.
 fn check_existing_sidecar() -> Option<u32> {
     let pid_file = get_sidecar_pid_file();
@@ -113,6 +183,21 @@ fn check_existing_sidecar() -> Option<u32> {
     if let Ok(content) = fs::read_to_string(&pid_file) {
         if let Ok(pid) = content.trim().parse::<u32>() {
             if is_sidecar_running(pid) {
+                // Comparar build-id del sidecar en ejecución vs el instalado actualmente.
+                // Si difieren, hay una nueva versión instalada → matar el sidecar viejo.
+                if let (Some(installed), Some(running)) =
+                    (get_installed_build_id(), get_running_build_id())
+                {
+                    if installed != running {
+                        println!(
+                            "[DevHub] Nueva versión detectada (build-id instalado: {} / corriendo: {}). Reiniciando sidecar...",
+                            installed, running
+                        );
+                        shutdown_sidecar();
+                        return None;
+                    }
+                }
+                println!("[DevHub] Sidecar ya activo con PID {} (build-id OK).", pid);
                 return Some(pid);
             }
         }
@@ -166,87 +251,111 @@ fn shutdown_sidecar() {
     let _ = fs::remove_file(get_sidecar_port_file());
 }
 
+fn spawn_sidecar(app: &tauri::AppHandle) {
+    println!("[DevHub] Spawneando nuevo sidecar...");
+    let sidecar_command = app
+        .shell()
+        .sidecar("devhub-server")
+        .expect("No se encontró el sidecar 'devhub-server'");
+
+    let (mut rx, _child) = sidecar_command
+        .spawn()
+        .expect("Error al lanzar el sidecar");
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                    println!("[Sidecar] {}", String::from_utf8_lossy(&line));
+                }
+                tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                    eprintln!("[Sidecar ERR] {}", String::from_utf8_lossy(&line));
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let pid_file = get_sidecar_pid_file();
+    for attempt in 0..6 {
+        thread::sleep(Duration::from_millis(500));
+        if pid_file.exists() {
+            if let Ok(content) = fs::read_to_string(&pid_file) {
+                if let Ok(pid) = content.trim().parse::<u32>() {
+                    println!("[DevHub] Sidecar listo con PID {} (intento {})", pid, attempt + 1);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let has_valid_sidecar = check_existing_sidecar().is_some();
+    let next_ready = is_port_ready(nextjs_port());
+    let sidecar_ready = is_port_ready(4000);
+
+    if has_valid_sidecar && next_ready && sidecar_ready {
+        return Ok(());
+    }
+
+    println!(
+        "[DevHub] Runtime local ausente o caído (sidecar válido: {}, next: {}, pty: {}). Relanzando...",
+        has_valid_sidecar,
+        next_ready,
+        sidecar_ready
+    );
+
+    shutdown_sidecar();
+    cleanup_zombie_ports();
+    spawn_sidecar(app);
+    wait_for_nextjs_ready();
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let sidecar_pid: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
-
-    let builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup({
-            let sidecar_pid = sidecar_pid.clone();
-            move |app| {
-                // Log plugin solo en debug
-                if cfg!(debug_assertions) {
-                    app.handle().plugin(
-                        tauri_plugin_log::Builder::default()
-                            .level(log::LevelFilter::Info)
-                            .build(),
-                    )?;
-                }
-
-                // Limpiar procesos zombie de sesiones anteriores (tauri dev, crashes, etc.)
-                cleanup_zombie_ports();
-
-                // Comprobar si ya hay un sidecar corriendo
-                if let Some(existing_pid) = check_existing_sidecar() {
-                    println!("[DevHub] Sidecar ya activo con PID {}. No se spawnea uno nuevo.", existing_pid);
-                    *sidecar_pid.lock().unwrap() = Some(existing_pid);
-                } else {
-                    println!("[DevHub] Spawneando nuevo sidecar...");
-                    let sidecar_command = app
-                        .shell()
-                        .sidecar("devhub-server")
-                        .expect("No se encontró el sidecar 'devhub-server'");
-
-                    let (mut rx, _child) = sidecar_command
-                        .spawn()
-                        .expect("Error al lanzar el sidecar");
-
-                    // Escuchar stdout/stderr del sidecar en background
-                    tauri::async_runtime::spawn(async move {
-                        while let Some(event) = rx.recv().await {
-                            match event {
-                                tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
-                                    println!("[Sidecar] {}", String::from_utf8_lossy(&line));
-                                }
-                                tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
-                                    eprintln!("[Sidecar ERR] {}", String::from_utf8_lossy(&line));
-                                }
-                                _ => {}
-                            }
-                        }
-                    });
-
-                    // Esperar a que el sidecar escriba su PID (máx 3s)
-                    let pid_file = get_sidecar_pid_file();
-                    for attempt in 0..6 {
-                        thread::sleep(Duration::from_millis(500));
-                        if pid_file.exists() {
-                            if let Ok(content) = fs::read_to_string(&pid_file) {
-                                if let Ok(pid) = content.trim().parse::<u32>() {
-                                    println!("[DevHub] Sidecar listo con PID {} (intento {})", pid, attempt + 1);
-                                    *sidecar_pid.lock().unwrap() = Some(pid);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // Esperar a que Next.js (puerto 3000) esté listo antes de cargar la webview
-                    wait_for_nextjs_ready();
-                }
-
-                // Setear el ícono de la ventana explícitamente (necesario en dev mode en Linux)
-                if let Some(window) = app.get_webview_window("main") {
-                    if let Some(icon) = app.default_window_icon() {
-                        let _ = window.set_icon(icon.clone());
-                    }
-                }
-
-                Ok(())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            // Log plugin solo en debug
+            if cfg!(debug_assertions) {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
             }
+
+            // Limpiar procesos zombie de sesiones anteriores (tauri dev, crashes, etc.)
+            cleanup_zombie_ports();
+
+            ensure_runtime_ready(app.handle())?;
+            ensure_main_window(app.handle())?;
+
+            // Setear el ícono de la ventana explícitamente (necesario en dev mode en Linux)
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = window.set_icon(icon.clone());
+                }
+
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+
+            Ok(())
         });
+
+    if !cfg!(debug_assertions) {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            println!("[DevHub] Segunda instancia detectada → restaurando ventana principal.");
+            restore_main_window(app);
+        }));
+    }
 
     let app = builder
         .build(tauri::generate_context!())

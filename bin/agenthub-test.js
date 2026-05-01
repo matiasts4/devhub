@@ -32,6 +32,7 @@ const ROOT = path.resolve(__dirname, '..');
 const TEST_DIR = path.join(ROOT, 'tests', 'agenthub');
 const LOCKS_MODULE = path.join(ROOT, 'lib', 'test-locks');
 const Database = require('better-sqlite3');
+const { resolveDbPath } = require('../src/lib/db/pathResolver');
 
 // ── Colors ──────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ function discoverTests(suite) {
 // ── Lock Management ─────────────────────────────────────────────────────────
 
 function getLockDb() {
-  const dbPath = path.join(ROOT, 'data', 'devhub.db');
+  const dbPath = resolveDbPath({ moduleDir: ROOT });
   if (!fs.existsSync(dbPath)) {
     console.error(color('❌ Database not found at:', 'red'), dbPath);
     process.exit(1);

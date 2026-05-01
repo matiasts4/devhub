@@ -36,7 +36,7 @@ export async function GET(request) {
     try {
       const port = await readProductionSidecarPort();
       if (port) {
-        return NextResponse.json({ port, wsPath: '/' });
+        return NextResponse.json({ port, wsPath: '/tty' });
       }
     } catch (e) {
       console.error('Error reading sidecar port file:', e);
@@ -63,6 +63,58 @@ export async function GET(request) {
     console.error('Failed to initialize terminal PTY server:', error);
     return NextResponse.json(
       { error: 'No se pudo inicializar el servidor PTY.' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request) {
+  const sessionId = request.nextUrl.searchParams.get('sessionId');
+
+  if (!sessionId) {
+    return NextResponse.json({ error: 'sessionId required' }, { status: 400 });
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      const sidecarPort = await readProductionSidecarPort();
+      if (!sidecarPort) {
+        return NextResponse.json(
+          { error: 'Servidor terminal (sidecar) no encontrado' },
+          { status: 503 }
+        );
+      }
+
+      const response = await fetch(`http://127.0.0.1:${sidecarPort}/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        return NextResponse.json(
+          { error: 'No se pudo cerrar la sesión de terminal.' },
+          { status: response.status }
+        );
+      }
+
+      return NextResponse.json({ success: true, sessionId });
+    } catch (error) {
+      console.error('Failed to close production terminal PTY session:', error);
+      return NextResponse.json(
+        { error: 'No se pudo cerrar la sesión de terminal.' },
+        { status: 500 }
+      );
+    }
+  }
+
+  try {
+    const { closeSession } = await import('@/lib/terminal/ttyServer');
+    closeSession(sessionId);
+    return NextResponse.json({ success: true, sessionId });
+  } catch (error) {
+    console.error('Failed to close terminal PTY session:', error);
+    return NextResponse.json(
+      { error: 'No se pudo cerrar la sesión de terminal.' },
       { status: 500 }
     );
   }

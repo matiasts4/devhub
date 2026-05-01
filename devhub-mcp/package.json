@@ -1,7 +1,7 @@
 {
   "name": "devhub-mcp",
   "version": "1.0.0",
-  "description": "DevHub MCP Server — expone herramientas de proyectos, tareas e hitos de DevHub para Antigravity",
+  "description": "DevHub MCP Server — expone herramientas de proyectos, tareas e hitos de DevHub para OpenCode",
   "type": "module",
   "bin": {
     "devhub-mcp": "./server.js"

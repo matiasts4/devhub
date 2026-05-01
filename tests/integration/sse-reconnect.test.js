@@ -268,41 +268,20 @@ const tests = [
   },
 ];
 
-// ── Test runner ─────────────────────────────────────────────────────────────
+describe('SSE reconnection integration', () => {
+  for (const scenario of tests) {
+    test(
+      scenario.name,
+      async () => {
+        const running = await isOpencodeRunning();
+        if (!running) {
+          console.warn(`SKIP: OpenCode server is not running on port ${OPENCODE_PORT}`);
+          return;
+        }
 
-async function runTests() {
-  console.log('Running SSE reconnection tests...\n');
-
-  // Check if OpenCode is running
-  const running = await isOpencodeRunning();
-  if (!running) {
-    console.log('  ⏭️  SKIP: OpenCode server is not running on port ' + OPENCODE_PORT);
-    console.log('  Start OpenCode with: opencode serve --port ' + OPENCODE_PORT);
-    return;
+        await scenario.run();
+      },
+      20000
+    );
   }
-
-  console.log('  ✅ OpenCode server is running\n');
-
-  let passed = 0;
-  let failed = 0;
-
-  for (const test of tests) {
-    try {
-      await test.run();
-      console.log(`  ✅ ${test.name}`);
-      passed++;
-    } catch (err) {
-      console.log(`  ❌ ${test.name}`);
-      console.log(`     Error: ${err.message}`);
-      failed++;
-    }
-  }
-
-  console.log(`\n${passed}/${tests.length} tests passed`);
-  if (failed > 0) {
-    console.log(`${failed} test(s) failed`);
-    process.exit(1);
-  }
-}
-
-runTests();
+});

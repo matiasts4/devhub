@@ -1,7 +1,6 @@
 'use client';
 import TaskComments from '../components/TaskComments';
 import PresenceAvatars from '../components/PresenceAvatars';
-import PageHeader from '@/components/PageHeader';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import {
@@ -28,6 +27,7 @@ import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import Select from 'react-select';
 import { DatePicker } from '@/components/ui/date-picker';
+import { Button } from '@/components/ui/button';
 import {
   buildDocOpsTaskPrompt,
   enforceDocOpsGateOnLaunchCommand,
@@ -225,7 +225,7 @@ function TaskModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-x-0 bottom-0 top-[46px] bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       onClick={onClose}
     >
       <div
@@ -709,40 +709,45 @@ export default function Tareas() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Integrated Page Header */}
-      <PageHeader project={project} pageName="tareas">
-        {/* View mode toggle */}
-        <div className="flex bg-surface-elevated p-0.5 rounded-lg border border-borders-subtle">
-          <button
-            onClick={() => setViewMode('kanban')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'kanban' ? 'bg-surface-card text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" /> Kanban
-          </button>
-          <button
-            onClick={() => setViewMode('agent')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'agent' ? 'bg-surface-card text-[#58A6FF] shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
-          >
-            <Bot className="w-3.5 h-3.5" /> Cola Agente
-          </button>
-        </div>
-
-        <PresenceAvatars projectId={project?.id} />
-        
-        <button
-          onClick={() => {
-            setEditingTask(null);
-            setInitialStatus('pending');
-            setModalOpen(true);
-          }}
-          className="flex items-center gap-1.5 bg-[#2ea043] hover:bg-[#3FB950] text-white font-semibold px-3.5 py-2 rounded-lg text-xs transition-all active:scale-95"
-        >
-          <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Añadir Tarea
-        </button>
-      </PageHeader>
-
       {/* Content */}
       <div className="flex-1 overflow-hidden p-5 flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 backdrop-blur-xl">
+              <Button
+                onClick={() => setViewMode('kanban')}
+                variant={viewMode === 'kanban' ? 'devhubGlass' : 'devhubGhost'}
+                size="toolbar"
+                className={viewMode === 'kanban' ? 'text-text-primary border-white/16 bg-white/[0.09]' : ''}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" /> Kanban
+              </Button>
+              <Button
+                onClick={() => setViewMode('agent')}
+                variant={viewMode === 'agent' ? 'devhubGlass' : 'devhubGhost'}
+                size="toolbar"
+                className={viewMode === 'agent' ? 'text-[var(--text-primary)] border-white/16 bg-white/[0.09]' : ''}
+              >
+                <Bot className="w-3.5 h-3.5" /> Cola Agente
+              </Button>
+            </div>
+
+            <PresenceAvatars projectId={project?.id} />
+          </div>
+
+          <Button
+            onClick={() => {
+              setEditingTask(null);
+              setInitialStatus('pending');
+              setModalOpen(true);
+            }}
+            variant="devhubPrimary"
+            size="toolbar"
+          >
+            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Añadir Tarea
+          </Button>
+        </div>
+
         {/* Filter bar */}
         {viewMode === 'kanban' && (
           <div

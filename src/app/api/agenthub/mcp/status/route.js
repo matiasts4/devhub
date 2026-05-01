@@ -1,3 +1,5 @@
+/* global process */
+
 import { NextResponse } from 'next/server';
 
 const SERVER_PORT = process.env.OPENCODE_PORT ? parseInt(process.env.OPENCODE_PORT, 10) : 4153;
@@ -40,6 +42,7 @@ const KNOWN_MCP_SERVERS = [
  */
 export async function GET() {
   try {
+    const observedAt = new Date().toISOString();
     // Try to get MCP info from OpenCode headless API
     // As of current OpenCode versions, there's no dedicated MCP endpoint,
     // so we fall back to known servers.
@@ -60,12 +63,32 @@ export async function GET() {
     }
 
     if (liveServers && Array.isArray(liveServers)) {
-      return NextResponse.json({ servers: liveServers });
+      return NextResponse.json({
+        servers: liveServers.map((server) => ({
+          ...server,
+          authority: 'authoritative',
+          freshness: 'current',
+          observed_at: observedAt,
+        })),
+        authority: 'authoritative',
+        freshness: 'current',
+        observed_at: observedAt,
+      });
     }
 
     return NextResponse.json({
-      servers: KNOWN_MCP_SERVERS,
+      servers: KNOWN_MCP_SERVERS.map((server) => ({
+        ...server,
+        authority: 'inferred',
+        freshness: 'stale',
+        observed_at: observedAt,
+      })),
       note: 'MCP status is cached. OpenCode headless does not expose live MCP server info.',
+      authority: 'inferred',
+      freshness: 'stale',
+      observed_at: observedAt,
+      status_reason:
+        'MCP status is inferred from configured servers because OpenCode does not expose a live MCP endpoint.',
     });
   } catch (err) {
     console.error('Error fetching MCP status:', err);

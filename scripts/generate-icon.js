@@ -8,26 +8,45 @@ async function generateSquareIcon() {
 
   console.log('📦 Generando icono cuadrado desde:', inputPath);
 
-  const image = sharp(inputPath);
-  const metadata = await image.metadata();
-  
+  const metadata = await sharp(inputPath).metadata();
+
   console.log(`📐 Dimensiones originales: ${metadata.width}x${metadata.height}`);
 
-  // Usar el lado menor como tamaño del cuadrado + cover para cropear el centro
-  // El logo es landscape (1344x768) con el círculo centrado → cover da el cuadrado central exacto
-  const size = Math.min(metadata.width, metadata.height);
-  
-  await image
-    .resize(size, size, {
-      fit: 'cover',
-      position: 'centre'
-    })
-    .png()
-    .toFile(outputPath);
+  const alphaStats = await sharp(inputPath)
+    .ensureAlpha()
+    .extractChannel('alpha')
+    .stats();
 
-  console.log(`✅ Icono cuadrado generado: ${size}x${size}`);
+  const hasTransparency = alphaStats.channels?.[0]?.min < 255;
+
+  const pipeline = sharp(inputPath).ensureAlpha();
+
+  if (hasTransparency) {
+    const squareSize = Math.max(metadata.width, metadata.height);
+    await pipeline
+      .resize(squareSize, squareSize, {
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .png()
+      .toFile(outputPath);
+
+    console.log(`✅ Icono cuadrado generado con padding transparente: ${squareSize}x${squareSize}`);
+  } else {
+    const size = Math.min(metadata.width, metadata.height);
+    await pipeline
+      .resize(size, size, {
+        fit: 'cover',
+        position: 'centre',
+      })
+      .png()
+      .toFile(outputPath);
+
+    console.log(`✅ Icono cuadrado generado por recorte central: ${size}x${size}`);
+  }
+
   console.log(`📁 Guardado en: ${outputPath}`);
-  
+
   return outputPath;
 }
 
@@ -41,6 +60,7 @@ async function generatePwaIcons(squarePath) {
   for (const size of sizes) {
     const outputPath = path.join(iconsDir, `icon-${size}x${size}.png`);
     await sharp(squarePath)
+      .ensureAlpha()
       .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .png()
       .toFile(outputPath);
@@ -55,7 +75,7 @@ if (require.main === module) {
       console.log('\n🎉 ¡Listo! Ahora ejecuta:');
       console.log('npx @tauri-apps/cli icon public/logo-square.png -o src-tauri/icons');
     })
-    .catch(err => {
+    .catch((err) => {
       console.error('Error:', err);
       process.exit(1);
     });

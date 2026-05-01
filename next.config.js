@@ -41,7 +41,10 @@ const nextConfig = {
   serverExternalPackages: ['node-pty', 'ws', 'better-sqlite3'],
   output: 'standalone',
   // Next.js 16: Turbopack es el bundler por defecto
-  turbopack: {},
+  // root explícito para evitar que Turbopack tome /home/matias como workspace root
+  turbopack: {
+    root: __dirname,
+  },
 };
 
 module.exports = withBundleAnalyzer(nextConfig);

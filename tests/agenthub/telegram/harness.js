@@ -5,11 +5,16 @@
  *   const harness = new TelegramTestHarness();
  *   await harness.setup();
  *   const ctx = harness.createMockCtx({ chatId: '123' });
- *   const handler = harness.loadCommand('help');
- *   await handler(harness.mockBot, ctx.message, '');
+ *   await harness.executeCommand('help', ctx, '');
  *   const replies = harness.getReplies();
  *   expect(replies.length).toBe(1);
  *   await harness.teardown();
+ *
+ * Mock isolation strategy:
+ *   - jest.resetModules() clears Jest's internal module registry
+ *   - jest.setMock(path, mock) registers a mock in Jest's module registry
+ *   - mockServices(map) batches all mocks (single resetModules call)
+ *   - loadCommand() always calls jest.resetModules() + require() fresh
  */
 
 const path = require('path');
@@ -22,6 +27,8 @@ class TelegramTestHarness extends TestHarness {
     this.mockBot = null;
     this._commandsDir = path.join(__dirname, '..', '..', '..', 'telegram-bot', 'commands');
     this._servicesDir = path.join(__dirname, '..', '..', '..', 'telegram-bot', 'services');
+    this._libDir = path.join(__dirname, '..', '..', '..', 'telegram-bot', 'lib');
+    this._activeMocks = {}; // serviceName -> absolute path
   }
 
   /**
@@ -39,6 +46,12 @@ class TelegramTestHarness extends TestHarness {
   async teardown() {
     this.teardownDb();
     this.mockBot = null;
+    // Clean up all active mocks
+    for (const servicePath of Object.values(this._activeMocks)) {
+      jest.unmock(servicePath);
+    }
+    this._activeMocks = {};
+    jest.resetModules();
   }
 
   /**
@@ -81,12 +94,85 @@ class TelegramTestHarness extends TestHarness {
   }
 
   /**
+   * Resolve the absolute path for a service name.
+   * Supports:
+   *   - 'db'            → telegram-bot/services/db.js
+   *   - 'api'           → telegram-bot/services/api.js
+   *   - 'lib/db-bridge' → telegram-bot/lib/db-bridge.js
+   */
+  _resolveServicePath(serviceName) {
+    if (serviceName.startsWith('lib/')) {
+      const libName = serviceName.slice(4); // strip 'lib/'
+      return path.join(this._libDir, `${libName}.js`);
+    }
+    return path.join(this._servicesDir, `${serviceName}.js`);
+  }
+
+  /**
+   * Mock a single service module using Jest's module registry.
+   * NOTE: Calls jest.resetModules() — clears previously registered mocks.
+   * Use mockServices() when mocking multiple services at once.
+   *
+   * @param {string} serviceName - Service name (e.g., 'api', 'db', 'lib/db-bridge')
+   * @param {object} mocks - Methods to mock on the service
+   */
+  mockService(serviceName, mocks) {
+    const servicePath = this._resolveServicePath(serviceName);
+    const mockModule = {};
+    for (const [key, value] of Object.entries(mocks)) {
+      mockModule[key] = typeof value === 'function' ? value : () => value;
+    }
+
+    jest.setMock(servicePath, mockModule);
+    this._activeMocks[serviceName] = servicePath;
+    return mockModule;
+  }
+
+  /**
+   * Mock multiple services at once.
+   * Equivalent to calling mockService() for each entry, but batched.
+   *
+   * @param {object} servicesMap - { serviceName: mocksObject, ... }
+   */
+  mockServices(servicesMap) {
+    for (const [serviceName, mocks] of Object.entries(servicesMap)) {
+      this.mockService(serviceName, mocks);
+    }
+  }
+
+  /**
+   * Restore a mocked service (remove mock from Jest's registry).
+   * @param {string} serviceName
+   */
+  restoreService(serviceName) {
+    const servicePath = this._resolveServicePath(serviceName);
+    jest.unmock(servicePath);
+    delete this._activeMocks[serviceName];
+  }
+
+  /**
    * Load a command handler by name.
+   * Clears the command AND all actively-mocked services from require.cache
+   * so that when the command is re-required it picks up jest.setMock() mocks.
+   *
    * @param {string} name - Command name (e.g., 'help', 'estado', 'tareas')
    * @returns {Function} Command handler function
    */
   loadCommand(name) {
     const cmdPath = path.join(this._commandsDir, `${name}.js`);
+
+    // Remove command from cache so it re-executes its top-level requires
+    try {
+      delete require.cache[require.resolve(cmdPath)];
+    } catch (_) {}
+
+    // Remove all mocked services from cache so require() will hit jest.setMock registry
+    for (const servicePath of Object.values(this._activeMocks)) {
+      try {
+        delete require.cache[require.resolve(servicePath)];
+      } catch (_) {}
+    }
+
     return require(cmdPath);
   }
 
@@ -176,37 +262,6 @@ class TelegramTestHarness extends TestHarness {
         fn.callCount = 0;
       }
     });
-  }
-
-  /**
-   * Mock a service module.
-   * @param {string} serviceName - Service name (e.g., 'api', 'db', 'formatter')
-   * @param {object} mocks - Object with method names as keys and mock functions as values
-   */
-  mockService(serviceName, mocks) {
-    const servicePath = path.join(this._servicesDir, `${serviceName}.js`);
-    // Clear require cache
-    delete require.cache[require.resolve(servicePath)];
-    // Create mock
-    const mockModule = {};
-    for (const [key, value] of Object.entries(mocks)) {
-      mockModule[key] = typeof value === 'function' ? value : () => value;
-    }
-    require.cache[servicePath] = {
-      id: servicePath,
-      filename: servicePath,
-      loaded: true,
-      exports: mockModule,
-    };
-    return mockModule;
-  }
-
-  /**
-   * Restore a service module (remove mock).
-   */
-  restoreService(serviceName) {
-    const servicePath = path.join(this._servicesDir, `${serviceName}.js`);
-    delete require.cache[require.resolve(servicePath)];
   }
 }
 

@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
  * DevHub MCP exposes tools for projects, tasks, milestones, dashboard, and swarm agents.
  *
  * Available tools:
- *   Proyectos:  list_projects, get_project, update_project
+ *   Proyectos:  list_projects, get_project, create_project, update_project, delete_project
  *   Tareas:     list_tasks, create_task, update_task, delete_task, add_task_comment,
  *               create_task_dependency, get_task_dependencies, get_next_task
  *   Hitos:      list_milestones, create_milestone, update_milestone

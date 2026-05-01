@@ -36,14 +36,18 @@ import { toast } from 'sonner';
 import StatusSignal from '@/components/ui/StatusSignal';
 import AgentTracePanel from '@/components/chat/AgentTracePanel';
 import TraceSearchBar from '@/components/chat/TraceSearchBar';
-import MCPStatusPanel from '@/components/chat/MCPStatusPanel';
 import AgentMetricsCard from '@/components/chat/AgentMetricsCard';
 import LiveTracePreview from '@/components/chat/LiveTracePreview';
 import SwarmTimeline from '@/components/chat/SwarmTimeline';
 import SubagentBreadcrumbs from '@/components/chat/SubagentBreadcrumbs';
 import AgentLaunchModal from '@/components/chat/AgentLaunchModal';
+import HealthCenter from '@/components/HealthCenter';
 import { Skeleton, SkeletonCard, SkeletonText } from '@/components/chat/Skeleton';
 import { useAgentTraces } from '@/hooks/useAgentTraces';
+import {
+  deriveSwarmControlHealthModel,
+  deriveSwarmHeaderModel,
+} from '@/lib/operations/swarmControl';
 
 // ─── SSE Connection Hook ──────────────────────────────────────────────────────
 
@@ -411,7 +415,7 @@ function ExpandedTracePanel({ session, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end"
+      className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex justify-end"
       style={{ background: 'rgba(0,0,0,0.5)' }}
       onClick={onClose}
     >
@@ -527,9 +531,6 @@ export default function SwarmControl() {
   // Trace panel state (T-39)
   const [expandedSession, setExpandedSession] = useState(null);
 
-  // MCP status (T-40)
-  const [mcpServers, setMcpServers] = useState([]);
-
   // SSE connection state
   const [sseConnected, setSseConnected] = useState(false);
 
@@ -548,12 +549,11 @@ export default function SwarmControl() {
     Number(import.meta?.env?.VITE_OPENCODE_PORT || import.meta?.env?.NEXT_PUBLIC_OPENCODE_PORT) ||
     4153;
 
-  // Swarm process status
-  const [swarmProcessStatus, setSwarmProcessStatus] = useState(null);
   const [swarmConfig, setSwarmConfigState] = useState({
     max_concurrent_swarms: 5,
     swarm_enabled: true,
   });
+  const [operationsHealth, setOperationsHealth] = useState({ summary: null, sources: [] });
 
   // ─── SSE Handlers ──────────────────────────────────────────────────────────
 
@@ -715,29 +715,15 @@ export default function SwarmControl() {
     }
   }, [project?.id, db]);
 
-  // ─── Fetch MCP status ──────────────────────────────────────────────────────
-
-  const fetchMcpStatus = useCallback(async () => {
-    try {
-      const res = await fetch('/api/agenthub/mcp/status', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.servers) setMcpServers(data.servers);
-      }
-    } catch {
-      // MCP endpoint may not be available
-    }
-  }, []);
-
   const fetchSwarmStatus = useCallback(async () => {
     try {
-      const [statusRes, configRes] = await Promise.all([
-        fetch('/api/agenthub/opencode/status', { cache: 'no-store' }),
+      const [healthRes, configRes] = await Promise.all([
+        fetch('/api/agenthub/operations/health', { cache: 'no-store' }),
         fetch('/api/agenthub/config', { cache: 'no-store' }),
       ]);
-      if (statusRes.ok) {
-        const data = await statusRes.json();
-        setSwarmProcessStatus(data);
+      if (healthRes.ok) {
+        const data = await healthRes.json();
+        setOperationsHealth(data);
       }
       if (configRes.ok) {
         const data = await configRes.json();
@@ -820,7 +806,6 @@ export default function SwarmControl() {
     fetchSessions();
     fetchTasks();
     fetchRegistryAgents();
-    fetchMcpStatus();
     fetchSwarmStatus();
 
     // Realtime channel for tasks/queue (kept separate from SSE)
@@ -836,15 +821,7 @@ export default function SwarmControl() {
     return () => {
       db.removeChannel(channel);
     };
-  }, [
-    project?.id,
-    fetchSessions,
-    fetchTasks,
-    fetchRegistryAgents,
-    fetchMcpStatus,
-    fetchSwarmStatus,
-    db,
-  ]);
+  }, [project?.id, fetchSessions, fetchTasks, fetchRegistryAgents, fetchSwarmStatus, db]);
 
   // Fetch traces for active sessions periodically
   useEffect(() => {
@@ -912,6 +889,19 @@ export default function SwarmControl() {
   );
 
   const activeAgentsCount = workingSessions.length;
+  const swarmHealthModel = useMemo(
+    () => deriveSwarmControlHealthModel(operationsHealth),
+    [operationsHealth]
+  );
+  const swarmHeaderModel = useMemo(
+    () =>
+      deriveSwarmHeaderModel({
+        snapshot: operationsHealth,
+        swarmConfig,
+        activeAgentsCount,
+      }),
+    [operationsHealth, swarmConfig, activeAgentsCount]
+  );
 
   // ─── Grouped sessions (Swarm Control Pro) ──────────────────────────────────
 
@@ -1194,19 +1184,28 @@ export default function SwarmControl() {
           )}
 
           {/* Queue Status Indicator */}
-          {swarmProcessStatus && (
+          {swarmHeaderModel.processLabel && (
             <div
               className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono"
               style={{
-                background: swarmProcessStatus.running
-                  ? 'color-mix(in srgb, var(--success) 8%, transparent)'
-                  : 'color-mix(in srgb, var(--text-muted) 8%, transparent)',
-                border: `1px solid ${swarmProcessStatus.running ? 'color-mix(in srgb, var(--success) 20%, transparent)' : 'var(--border-subtle)'}`,
-                color: swarmProcessStatus.running ? 'var(--success)' : 'var(--text-muted)',
+                background:
+                  swarmHeaderModel.processTone === 'success'
+                    ? 'color-mix(in srgb, var(--success) 8%, transparent)'
+                    : swarmHeaderModel.processTone === 'warning'
+                      ? 'color-mix(in srgb, var(--warning) 8%, transparent)'
+                      : 'color-mix(in srgb, var(--text-muted) 8%, transparent)',
+                border: `1px solid ${swarmHeaderModel.processTone === 'success' ? 'color-mix(in srgb, var(--success) 20%, transparent)' : swarmHeaderModel.processTone === 'warning' ? 'color-mix(in srgb, var(--warning) 20%, transparent)' : 'var(--border-subtle)'}`,
+                color:
+                  swarmHeaderModel.processTone === 'success'
+                    ? 'var(--success)'
+                    : swarmHeaderModel.processTone === 'warning'
+                      ? 'var(--warning)'
+                      : 'var(--text-muted)',
               }}
+              title={swarmHeaderModel.processReason || undefined}
             >
               <Server className="w-3.5 h-3.5" />
-              <span>{swarmProcessStatus.running ? 'Server OK' : 'Server off'}</span>
+              <span>{swarmHeaderModel.processLabel}</span>
             </div>
           )}
 
@@ -1297,7 +1296,6 @@ export default function SwarmControl() {
               fetchSessions();
               fetchTasks();
               fetchRegistryAgents();
-              fetchMcpStatus();
               fetchSwarmStatus();
               reconnect();
             }}
@@ -1427,64 +1425,11 @@ export default function SwarmControl() {
               </div>
             </div>
 
-            {/* Swarm Process Status Row */}
-            {swarmProcessStatus && (
-              <div
-                className="rounded-xl px-4 py-3 mb-4 flex items-center gap-4 text-xs"
-                style={{
-                  background: 'var(--surface-muted)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <Server
-                    className="w-3.5 h-3.5"
-                    style={{
-                      color: swarmProcessStatus.running ? 'var(--success)' : 'var(--text-muted)',
-                    }}
-                  />
-                  <span style={{ color: 'var(--text-muted)' }}>Proceso:</span>
-                  <span
-                    className="font-mono font-semibold"
-                    style={{
-                      color: swarmProcessStatus.running ? 'var(--success)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {swarmProcessStatus.running ? 'Corriendo' : 'Detenido'}
-                  </span>
-                </div>
-                {swarmProcessStatus.pid && (
-                  <div className="flex items-center gap-1">
-                    <span style={{ color: 'var(--text-muted)' }}>PID:</span>
-                    <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
-                      {swarmProcessStatus.pid}
-                    </span>
-                  </div>
-                )}
-                {swarmProcessStatus.processInfo?.memoryMB && (
-                  <div className="flex items-center gap-1">
-                    <span style={{ color: 'var(--text-muted)' }}>RAM:</span>
-                    <span className="font-mono" style={{ color: 'var(--warning)' }}>
-                      {swarmProcessStatus.processInfo.memoryMB}MB
-                    </span>
-                  </div>
-                )}
-                <div className="ml-auto flex items-center gap-2">
-                  <span style={{ color: 'var(--text-muted)' }}>Límite:</span>
-                  <span
-                    className="font-mono font-semibold"
-                    style={{ color: 'var(--accent-primary)' }}
-                  >
-                    {activeAgentsCount}/{swarmConfig.max_concurrent_swarms}
-                  </span>
-                </div>
-              </div>
-            )}
+            <div className="mb-4 space-y-4">
+              <HealthCenter sources={operationsHealth.sources || []} />
 
-            {/* Swarm Process Status Row */}
-            {swarmProcessStatus && (
               <div
-                className="rounded-xl px-4 py-3 mb-4 flex items-center gap-4 text-xs"
+                className="rounded-xl px-4 py-3 flex items-center gap-4 text-xs"
                 style={{
                   background: 'var(--surface-muted)',
                   border: '1px solid var(--border-subtle)',
@@ -1494,32 +1439,42 @@ export default function SwarmControl() {
                   <Server
                     className="w-3.5 h-3.5"
                     style={{
-                      color: swarmProcessStatus.running ? 'var(--success)' : 'var(--text-muted)',
+                      color:
+                        swarmHeaderModel.processTone === 'success'
+                          ? 'var(--success)'
+                          : swarmHeaderModel.processTone === 'warning'
+                            ? 'var(--warning)'
+                            : 'var(--text-muted)',
                     }}
                   />
                   <span style={{ color: 'var(--text-muted)' }}>Proceso:</span>
                   <span
                     className="font-mono font-semibold"
                     style={{
-                      color: swarmProcessStatus.running ? 'var(--success)' : 'var(--text-muted)',
+                      color:
+                        swarmHeaderModel.processTone === 'success'
+                          ? 'var(--success)'
+                          : swarmHeaderModel.processTone === 'warning'
+                            ? 'var(--warning)'
+                            : 'var(--text-muted)',
                     }}
                   >
-                    {swarmProcessStatus.running ? 'Corriendo' : 'Detenido'}
+                    {swarmHeaderModel.processLabel}
                   </span>
                 </div>
-                {swarmProcessStatus.pid && (
+                {swarmHealthModel.process?.pid && (
                   <div className="flex items-center gap-1">
                     <span style={{ color: 'var(--text-muted)' }}>PID:</span>
                     <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
-                      {swarmProcessStatus.pid}
+                      {swarmHealthModel.process.pid}
                     </span>
                   </div>
                 )}
-                {swarmProcessStatus.processInfo?.memoryMB && (
+                {swarmHealthModel.process?.memory_rss && (
                   <div className="flex items-center gap-1">
                     <span style={{ color: 'var(--text-muted)' }}>RAM:</span>
                     <span className="font-mono" style={{ color: 'var(--warning)' }}>
-                      {swarmProcessStatus.processInfo.memoryMB}MB
+                      {Math.round(swarmHealthModel.process.memory_rss / (1024 * 1024))}MB
                     </span>
                   </div>
                 )}
@@ -1529,11 +1484,17 @@ export default function SwarmControl() {
                     className="font-mono font-semibold"
                     style={{ color: 'var(--accent-primary)' }}
                   >
-                    {activeAgentsCount}/{swarmConfig.max_concurrent_swarms}
+                    {swarmHeaderModel.concurrency.current}/{swarmHeaderModel.concurrency.max}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span style={{ color: 'var(--text-muted)' }}>Cola:</span>
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+                    {swarmHealthModel.queue?.length || 0}
                   </span>
                 </div>
               </div>
-            )}
+            </div>
 
             <div
               className="rounded-xl px-4 py-3 flex items-start gap-2 text-xs"
@@ -2012,13 +1973,6 @@ export default function SwarmControl() {
             </div>
           </div>
         </div>
-
-        {/* MCP Status Panel (T-40) */}
-        {mcpServers.length > 0 && (
-          <div className="mt-6 fade-in-up">
-            <MCPStatusPanel servers={mcpServers} collapsed={true} />
-          </div>
-        )}
       </div>
 
       {/* Expanded Trace Panel (T-39) */}

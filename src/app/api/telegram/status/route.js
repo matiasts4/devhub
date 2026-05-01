@@ -11,9 +11,7 @@ export async function GET() {
     const activeChats = db
       .prepare(`SELECT count(*) as cnt FROM telegram_sessions WHERE status = 'active'`)
       .get();
-    const totalSessions = db
-      .prepare(`SELECT count(*) as cnt FROM telegram_sessions`)
-      .get();
+    const totalSessions = db.prepare(`SELECT count(*) as cnt FROM telegram_sessions`).get();
 
     // Last activity across the entire audit log
     const lastActivity = db
@@ -34,6 +32,26 @@ export async function GET() {
       )
       .get();
 
+    const busyStatus = db
+      .prepare(
+        `SELECT count(*) as cnt
+         FROM agent_logs
+         WHERE event_type IN ('tool_execute', 'tool_start', 'session_busy')
+           AND created_at >= datetime('now', '-10 seconds')`
+      )
+      .get();
+
+    const currentTool = db
+      .prepare(
+        `SELECT tool_name
+         FROM agent_logs
+         WHERE tool_name IS NOT NULL
+           AND event_type IN ('tool_execute', 'tool_start')
+         ORDER BY created_at DESC
+         LIMIT 1`
+      )
+      .get();
+
     // Derive bot_connected from recency of last activity
     let botConnected = false;
     if (lastActivity?.created_at) {
@@ -49,6 +67,8 @@ export async function GET() {
       last_activity: lastActivity?.created_at ?? null,
       last_event_type: lastActivity?.event_type ?? null,
       recent_errors: Number(recentErrors?.cnt ?? 0),
+      is_busy: Number(busyStatus?.cnt ?? 0) > 0,
+      current_tool: currentTool?.tool_name ?? null,
     });
   } catch (error) {
     console.error('telegram/status error:', error.message);

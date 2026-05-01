@@ -1,44 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Bell, Clock3, RefreshCw, Terminal, Wifi, WifiOff } from 'lucide-react';
+import { AlertTriangle, Bell, Clock3, RefreshCw, Terminal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createClient } from '@/lib/db/localClient';
+import HealthCenter from '@/components/HealthCenter';
+import { EVENT_NAME, readOperationalEvents } from '@/lib/operations/events';
+import { buildNotificationCenterModel } from '@/lib/operations/notificationCenterModel';
+import { Button } from '@/components/ui/button';
 
 const DEADLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
-const STALE_MCP_SYNC_MS = 30 * 60 * 1000;
-const TELEGRAM_REFRESH_MS = 30000;
 
 function safeFetch(url) {
   return fetch(url).then((res) => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   });
-}
-
-function timeAgo(dateStr) {
-  if (!dateStr) return 'Nunca';
-  const ms = new Date(dateStr + 'Z').getTime();
-  const diff = Date.now() - ms;
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-async function fetchTelegramStatus() {
-  try {
-    return await safeFetch('/api/telegram/status');
-  } catch {
-    return {
-      bot_connected: false,
-      active_chats: 0,
-      total_sessions: 0,
-      last_activity: null,
-      recent_errors: 0,
-    };
-  }
 }
 
 function formatTimeLeft(targetDate) {
@@ -53,46 +30,19 @@ function formatTimeLeft(targetDate) {
   return `${hours}h ${minutes}m`;
 }
 
-function buildMcpAlerts(connections) {
-  if (!Array.isArray(connections)) return [];
+function getProjectOperationalEvents(projectId) {
+  return readOperationalEvents({ projectId }).slice(0, 6);
+}
 
-  const now = Date.now();
-  return connections.map((conn) => {
-    if (!conn.is_active) {
-      return {
-        id: `mcp-${conn.id}`,
-        level: 'warning',
-        name: conn.name,
-        message: 'desconectado',
-      };
-    }
+function getEventToneClasses(event) {
+  if (event.severity === 'critical') return 'border-[#F85149]/25 bg-[#F85149]/5';
+  if (event.severity === 'warning') return 'border-[#FFA657]/25 bg-[#FFA657]/8';
+  return 'border-[#58A6FF]/20 bg-[#58A6FF]/8';
+}
 
-    if (!conn.last_sync) {
-      return {
-        id: `mcp-${conn.id}`,
-        level: 'warning',
-        name: conn.name,
-        message: 'sin ultima sincronizacion',
-      };
-    }
-
-    const elapsed = now - new Date(conn.last_sync).getTime();
-    if (elapsed > STALE_MCP_SYNC_MS) {
-      return {
-        id: `mcp-${conn.id}`,
-        level: 'warning',
-        name: conn.name,
-        message: 'sincronizacion atrasada',
-      };
-    }
-
-    return {
-      id: `mcp-${conn.id}`,
-      level: 'ok',
-      name: conn.name,
-      message: 'operativo',
-    };
-  });
+function getNotificationRenderKey(scope, item, index) {
+  const rawId = item?.id || item?.task_id || item?.event_id || 'item';
+  return `${scope}-${rawId}-${index}`;
 }
 
 export default function NotificationCenter({ projectId, collapsed = false, variant = 'sidebar' }) {
@@ -102,8 +52,8 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deadlineAlerts, setDeadlineAlerts] = useState([]);
-  const [mcpAlerts, setMcpAlerts] = useState([]);
-  const [tgStatus, setTgStatus] = useState(null);
+  const [operationalEvents, setOperationalEvents] = useState([]);
+  const [healthSnapshot, setHealthSnapshot] = useState({ summary: null, sources: [] });
 
   const fetchAlerts = useCallback(async () => {
     if (!projectId) return;
@@ -112,7 +62,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
     const now = new Date();
     const end = new Date(now.getTime() + DEADLINE_WINDOW_MS);
 
-    const [tasksResult, mcpResult] = await Promise.all([
+    const [tasksResult, healthResult] = await Promise.all([
       db
         .from('tasks')
         .select('id, title, due_date, priority, status')
@@ -121,10 +71,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
         .not('due_date', 'is', null)
         .lte('due_date', end.toISOString())
         .order('due_date', { ascending: true }),
-      db
-        .from('mcp_connections')
-        .select('id, name, is_active, last_sync')
-        .order('created_at', { ascending: false }),
+      safeFetch('/api/agenthub/operations/health').catch(() => ({ summary: null, sources: [] })),
     ]);
 
     const tasks = (tasksResult.data || []).filter((task) => {
@@ -134,7 +81,8 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
     });
 
     setDeadlineAlerts(tasks);
-    setMcpAlerts(buildMcpAlerts(mcpResult.data || []));
+    setOperationalEvents(getProjectOperationalEvents(projectId));
+    setHealthSnapshot(healthResult || { summary: null, sources: [] });
     setLoading(false);
   }, [projectId, db]);
 
@@ -148,41 +96,39 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
     if (collapsed) setOpen(false);
   }, [collapsed]);
 
-  const criticalMcpAlerts = useMemo(
-    () => mcpAlerts.filter((alert) => alert.level !== 'ok'),
-    [mcpAlerts]
-  );
-
-  // ── Telegram refresh ─────────────────────────────────────────────
-  const fetchTelegram = useCallback(async () => {
-    const statusRes = await fetchTelegramStatus();
-    setTgStatus(statusRes);
-  }, []);
-
   useEffect(() => {
-    fetchTelegram();
-    const timer = setInterval(fetchTelegram, TELEGRAM_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [fetchTelegram]);
+    if (typeof window === 'undefined') return undefined;
 
-  const unreadCount = deadlineAlerts.length + criticalMcpAlerts.length;
+    const handleOperationalEvent = () => {
+      setOperationalEvents(getProjectOperationalEvents(projectId));
+    };
+
+    window.addEventListener(EVENT_NAME, handleOperationalEvent);
+    return () => window.removeEventListener(EVENT_NAME, handleOperationalEvent);
+  }, [projectId]);
+
+  const { unreadCount, healthSources } = buildNotificationCenterModel({
+    deadlineAlerts,
+    operationalEvents,
+    healthSnapshot,
+  });
 
   return (
     <div className={isTopbar ? 'relative' : 'px-2 py-2 border-b border-borders-subtle'}>
-      <button
+      <Button
         data-testid="notification-bell"
         onClick={() => (isTopbar || !collapsed) && setOpen((prev) => !prev)}
+        variant={isTopbar ? 'devhubGlass' : 'devhubGhost'}
+        size={isTopbar ? 'toolbar' : 'sm'}
         className={
           isTopbar
-            ? `inline-flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs transition-all cursor-pointer ${
+            ? open
+              ? 'text-text-primary border-white/16 bg-white/[0.09]'
+              : 'text-text-secondary'
+            : `w-full ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} rounded-lg ${
                 open
-                  ? 'bg-surface-elevated text-text-primary'
-                  : 'text-text-muted hover:text-text-primary hover:bg-surface-card'
-              }`
-            : `w-full flex items-center ${collapsed ? 'justify-center' : 'justify-between'} rounded-md px-2.5 py-2 text-xs transition-all cursor-pointer ${
-                open
-                  ? 'bg-surface-elevated text-text-primary'
-                  : 'text-text-muted hover:text-text-primary hover:bg-surface-card'
+                  ? 'border-white/16 bg-white/[0.08] text-text-primary'
+                  : 'text-text-muted'
               }`
         }
         title={collapsed && !isTopbar ? 'Notificaciones' : undefined}
@@ -209,7 +155,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
         >
           {unreadCount}
         </span>
-      </button>
+      </Button>
 
       {(isTopbar || !collapsed) && open && (
         <div
@@ -246,9 +192,9 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {deadlineAlerts.map((task) => (
+                  {deadlineAlerts.map((task, index) => (
                     <div
-                      key={task.id}
+                      key={getNotificationRenderKey('deadline', task, index)}
                       className="rounded-md border border-[#F778BA]/25 bg-[#F778BA]/5 px-2.5 py-2"
                     >
                       <div className="flex items-start gap-2">
@@ -274,42 +220,32 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
 
             <div>
               <p className="text-xs text-text-muted uppercase tracking-[0.12em] mb-2">
-                Estado Agentes MCP
+                Alertas operacionales
               </p>
-              {mcpAlerts.length === 0 ? (
-                <p className="text-[11px] text-text-muted">No hay conexiones MCP registradas.</p>
+              {operationalEvents.length === 0 ? (
+                <p className="text-[11px] text-text-muted">Sin alertas operacionales recientes.</p>
               ) : (
-                <div className="space-y-1.5">
-                  {mcpAlerts.map((alert) => (
+                <div className="space-y-2">
+                  {operationalEvents.map((event, index) => (
                     <div
-                      key={alert.id}
-                      className={`rounded-md border px-2.5 py-2 flex items-center justify-between ${
-                        alert.level === 'ok'
-                          ? 'border-[#3FB950]/25 bg-[#3FB950]/5'
-                          : 'border-[#FFA657]/25 bg-[#FFA657]/8'
-                      }`}
+                      key={getNotificationRenderKey('event', event, index)}
+                      className={`rounded-md border px-2.5 py-2 ${getEventToneClasses(event)}`}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {alert.level === 'ok' ? (
-                          <Wifi
-                            className="w-3.5 h-3.5 text-success flex-shrink-0"
-                            strokeWidth={1.7}
-                          />
-                        ) : (
-                          <WifiOff
-                            className="w-3.5 h-3.5 text-[#FFA657] flex-shrink-0"
-                            strokeWidth={1.7}
-                          />
-                        )}
-                        <p className="text-[11px] text-text-primary truncate">{alert.name}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] text-text-primary font-medium truncate">
+                            {event.title}
+                          </p>
+                          {event.body ? (
+                            <p className="text-[11px] text-text-muted mt-1 line-clamp-2">
+                              {event.body}
+                            </p>
+                          ) : null}
+                        </div>
+                        <span className="text-[10px] uppercase text-text-muted shrink-0">
+                          {event.status}
+                        </span>
                       </div>
-                      <span
-                        className={`text-xs font-medium ${
-                          alert.level === 'ok' ? 'text-success' : 'text-[#FFA657]'
-                        }`}
-                      >
-                        {alert.message}
-                      </span>
                     </div>
                   ))}
                 </div>
@@ -318,71 +254,25 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
 
             <div>
               <p className="text-xs text-text-muted uppercase tracking-[0.12em] mb-2">
-                Bot Telegram
+                Estado operacional
               </p>
-              {!tgStatus ? (
-                <p className="text-[11px] text-text-muted">Cargando estado del bot...</p>
+              <HealthCenter sources={healthSources} />
+            </div>
+
+            <div>
+              <p className="text-xs text-text-muted uppercase tracking-[0.12em] mb-2">Atajos</p>
+              {projectId ? (
+                <Link
+                  to={`/project/${projectId}/telegram`}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-borders-strong bg-surface-card px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors cursor-pointer"
+                >
+                  <Terminal className="w-3 h-3" strokeWidth={1.7} />
+                  Abrir monitor detallado
+                </Link>
               ) : (
-                <>
-                  <div className="space-y-1.5 mb-3">
-                    <div
-                      className={`rounded-md border px-2.5 py-2 flex items-center justify-between ${
-                        tgStatus.bot_connected
-                          ? 'border-[#3FB950]/25 bg-[#3FB950]/5'
-                          : 'border-[#FFA657]/25 bg-[#FFA657]/8'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {tgStatus.bot_connected ? (
-                          <Wifi
-                            className="w-3.5 h-3.5 text-success flex-shrink-0"
-                            strokeWidth={1.7}
-                          />
-                        ) : (
-                          <WifiOff
-                            className="w-3.5 h-3.5 text-[#FFA657] flex-shrink-0"
-                            strokeWidth={1.7}
-                          />
-                        )}
-                        <p className="text-[11px] text-text-primary">
-                          {tgStatus.bot_connected ? 'Conectado' : 'Sin actividad reciente'}
-                        </p>
-                      </div>
-                      <span className="text-xs font-medium text-text-muted">
-                        {tgStatus.active_chats} chat{tgStatus.active_chats !== 1 ? 's' : ''} activo
-                        {tgStatus.active_chats !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    {tgStatus.last_activity && (
-                      <p className="text-xs text-text-muted text-right">
-                        Ultima actividad: {timeAgo(tgStatus.last_activity)}
-                      </p>
-                    )}
-                  </div>
-
-                  {tgStatus.recent_errors > 0 && (
-                    <div className="rounded-md border border-[#F85149]/25 bg-[#F85149]/5 px-2.5 py-1.5 mb-2 flex items-center gap-2">
-                      <AlertTriangle
-                        className="w-3 h-3 text-[#F85149] flex-shrink-0"
-                        strokeWidth={1.7}
-                      />
-                      <p className="text-xs text-[#F85149]">
-                        {tgStatus.recent_errors} error{tgStatus.recent_errors > 1 ? 'es' : ''}{' '}
-                        reciente{tgStatus.recent_errors > 1 ? 's' : ''}
-                      </p>
-                    </div>
-                  )}
-
-                  {projectId && (
-                    <Link
-                      to={`/project/${projectId}/telegram`}
-                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-borders-strong bg-surface-card px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors cursor-pointer"
-                    >
-                      <Terminal className="w-3 h-3" strokeWidth={1.7} />
-                      Abrir monitor detallado
-                    </Link>
-                  )}
-                </>
+                <p className="text-[11px] text-text-muted">
+                  Seleccioná un proyecto para ver accesos rápidos.
+                </p>
               )}
             </div>
           </div>

@@ -4,43 +4,56 @@
  *
  * All colors are driven by CSS vars so the terminal always matches the
  * current app theme (dark / light / custom).
+ *
+ * Pure function: buildXtermTheme(getVar) — accepts a CSS var resolver,
+ * returns an xterm theme object. Testable without a DOM.
  */
 
 let cachedTheme = null;
 
-function cssVar(name, fallback) {
-  try {
-    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return value || fallback;
-  } catch {
-    return fallback;
-  }
+/**
+ * Pure function: builds an xterm theme from a CSS var resolver.
+ * @param {(name: string) => string} getVar - CSS var resolver
+ * @returns {object} xterm-compatible ITheme object
+ */
+export function buildXtermTheme(getVar) {
+  return {
+    background: getVar('--terminal-bg') || 'transparent',
+    foreground: getVar('--terminal-fg') || '#F0F6FC',
+    // cursor maps to --accent-primary for theme consistency
+    cursor: getVar('--accent-primary') || '#58A6FF',
+    selectionBackground: getVar('--terminal-selection') || 'rgba(88,166,255,0.3)',
+    black: getVar('--terminal-black') || '#484F58',
+    red: getVar('--terminal-red') || '#FF7B72',
+    green: getVar('--terminal-green') || '#3FB950',
+    yellow: getVar('--terminal-yellow') || '#D29922',
+    blue: getVar('--terminal-blue') || '#79C0FF',
+    magenta: getVar('--terminal-magenta') || '#BC8CFF',
+    cyan: getVar('--terminal-cyan') || '#39C5CF',
+    white: getVar('--terminal-white') || '#B1BAC4',
+    brightBlack: getVar('--terminal-bright-black') || '#6E7681',
+    brightRed: getVar('--terminal-bright-red') || '#FFA198',
+    brightGreen: getVar('--terminal-bright-green') || '#56D364',
+    brightYellow: getVar('--terminal-bright-yellow') || '#E3B341',
+    brightBlue: getVar('--terminal-bright-blue') || '#79C0FF',
+    brightMagenta: getVar('--terminal-bright-magenta') || '#D2A8FF',
+    brightCyan: getVar('--terminal-bright-cyan') || '#56D4DD',
+    brightWhite: getVar('--terminal-bright-white') || '#F0F6FC',
+  };
+}
+
+function makeDomCssVarResolver() {
+  return (name) => {
+    try {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    } catch {
+      return '';
+    }
+  };
 }
 
 export function getTerminalTheme() {
-  const theme = {
-    background: cssVar('--terminal-bg', 'transparent'),
-    foreground: cssVar('--terminal-fg', '#F0F6FC'),
-    cursor: cssVar('--terminal-cursor', '#58A6FF'),
-    selectionBackground: cssVar('--terminal-selection', 'rgba(88,166,255,0.3)'),
-    black: cssVar('--terminal-black', '#484F58'),
-    red: cssVar('--terminal-red', '#FF7B72'),
-    green: cssVar('--terminal-green', '#3FB950'),
-    yellow: cssVar('--terminal-yellow', '#D29922'),
-    blue: cssVar('--terminal-blue', '#58A6FF'),
-    magenta: cssVar('--terminal-magenta', '#BC8CFF'),
-    cyan: cssVar('--terminal-cyan', '#39C5CF'),
-    white: cssVar('--terminal-white', '#B1BAC4'),
-    brightBlack: cssVar('--terminal-bright-black', '#6E7681'),
-    brightRed: cssVar('--terminal-bright-red', '#FFA198'),
-    brightGreen: cssVar('--terminal-bright-green', '#56D364'),
-    brightYellow: cssVar('--terminal-bright-yellow', '#E3B341'),
-    brightBlue: cssVar('--terminal-bright-blue', '#79C0FF'),
-    brightMagenta: cssVar('--terminal-bright-magenta', '#D2A8FF'),
-    brightCyan: cssVar('--terminal-bright-cyan', '#56D4DD'),
-    brightWhite: cssVar('--terminal-bright-white', '#F0F6FC'),
-  };
-
+  const theme = buildXtermTheme(makeDomCssVarResolver());
   cachedTheme = theme;
   return theme;
 }

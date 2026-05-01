@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -13,8 +13,11 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-
-const TELEGRAM_REFRESH_MS = 30000;
+import {
+  getCurrentToolDisplay,
+  getTelegramPollingInterval,
+  shouldShowRealtimeBadge,
+} from './telegramMonitorRealtime';
 
 function safeFetch(url) {
   return fetch(url).then((res) => {
@@ -49,7 +52,11 @@ function inferToolType(item) {
   const metadata = parseMetadata(item.metadata);
 
   const explicit =
-    metadata?.tool_type || metadata?.toolType || metadata?.tool || metadata?.tool_name || metadata?.toolName;
+    metadata?.tool_type ||
+    metadata?.toolType ||
+    metadata?.tool ||
+    metadata?.tool_name ||
+    metadata?.toolName;
   if (explicit) return String(explicit);
 
   if (item.source === 'opencode') return 'opencode_agent';
@@ -68,6 +75,8 @@ const EVENT_ICONS = {
 
 export default function TelegramMonitor() {
   const { project } = useOutletContext() || {};
+  const intervalRef = useRef(null);
+  const fetchTelegramRef = useRef(null);
 
   const [status, setStatus] = useState(null);
   const [activity, setActivity] = useState([]);
@@ -77,39 +86,69 @@ export default function TelegramMonitor() {
   const [directionFilter, setDirectionFilter] = useState('');
   const [toolFilter, setToolFilter] = useState('');
 
-  const fetchTelegram = useCallback(async ({ soft = false } = {}) => {
-    if (soft) setRefreshing(true);
-    else setLoading(true);
-
-    try {
-      const [statusRes, activityRes] = await Promise.all([
-        safeFetch('/api/telegram/status'),
-        safeFetch('/api/telegram/activity?limit=120'),
-      ]);
-      setStatus(statusRes);
-      setActivity(activityRes.items || []);
-    } catch (error) {
-      console.error('TelegramMonitor fetch error:', error.message);
-      setStatus({
-        bot_connected: false,
-        active_chats: 0,
-        total_sessions: 0,
-        last_activity: null,
-        last_event_type: null,
-        recent_errors: 0,
-      });
-      setActivity([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  const schedulePolling = useCallback((nextStatus) => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
     }
+
+    intervalRef.current = setInterval(() => {
+      fetchTelegramRef.current?.({ soft: true });
+    }, getTelegramPollingInterval(nextStatus));
   }, []);
+
+  const fetchTelegram = useCallback(
+    async ({ soft = false } = {}) => {
+      let nextStatus;
+
+      if (soft) setRefreshing(true);
+      else setLoading(true);
+
+      try {
+        const [statusRes, activityRes] = await Promise.all([
+          safeFetch('/api/telegram/status'),
+          safeFetch('/api/telegram/activity?limit=120'),
+        ]);
+        nextStatus = statusRes;
+        setStatus(statusRes);
+        setActivity(activityRes.items || []);
+      } catch (error) {
+        console.error('TelegramMonitor fetch error:', error.message);
+        nextStatus = {
+          bot_connected: false,
+          active_chats: 0,
+          total_sessions: 0,
+          last_activity: null,
+          last_event_type: null,
+          recent_errors: 0,
+          is_busy: false,
+          current_tool: null,
+        };
+        setStatus(nextStatus);
+        setActivity([]);
+      } finally {
+        schedulePolling(nextStatus);
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [schedulePolling]
+  );
+
+  useEffect(() => {
+    fetchTelegramRef.current = fetchTelegram;
+  }, [fetchTelegram]);
 
   useEffect(() => {
     fetchTelegram();
-    const timer = setInterval(() => fetchTelegram({ soft: true }), TELEGRAM_REFRESH_MS);
-    return () => clearInterval(timer);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
   }, [fetchTelegram]);
+
+  const showRealtimeBadge = shouldShowRealtimeBadge(status);
+  const currentToolDisplay = getCurrentToolDisplay(status);
 
   const activityWithTool = useMemo(
     () => activity.map((item) => ({ ...item, inferred_tool_type: inferToolType(item) })),
@@ -141,7 +180,10 @@ export default function TelegramMonitor() {
   }, [activityWithTool]);
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}>
+    <div
+      className="min-h-screen"
+      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
+    >
       <div
         className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
         style={{
@@ -157,20 +199,39 @@ export default function TelegramMonitor() {
           <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
             {project?.name || 'Proyecto'}
           </span>
+          {showRealtimeBadge && (
+            <span
+              aria-label="Agente en vivo ejecutando herramientas"
+              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 animate-pulse"
+            >
+              🔴 EN VIVO
+            </span>
+          )}
+          {showRealtimeBadge && currentToolDisplay && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+              🔧 {currentToolDisplay}
+            </span>
+          )}
         </div>
         <button
           onClick={() => fetchTelegram({ soft: true })}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors hover:bg-surface-card cursor-pointer"
           style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} strokeWidth={1.8} />
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}
+            strokeWidth={1.8}
+          />
           Actualizar
         </button>
       </div>
 
       <div className="px-6 py-6 w-full max-w-[1300px] mx-auto space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div
+            className="rounded-xl border bg-surface-card p-3"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
             <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Conectividad</p>
             <div className="flex items-center gap-2">
               {status?.bot_connected ? (
@@ -184,19 +245,40 @@ export default function TelegramMonitor() {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Chats activos</p>
-            <p className="font-mono text-2xl font-bold text-text-primary">{status?.active_chats ?? 0}</p>
+          <div
+            className="rounded-xl border bg-surface-card p-3"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">
+              Chats activos
+            </p>
+            <p className="font-mono text-2xl font-bold text-text-primary">
+              {status?.active_chats ?? 0}
+            </p>
           </div>
 
-          <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Sesiones totales</p>
-            <p className="font-mono text-2xl font-bold text-text-primary">{status?.total_sessions ?? 0}</p>
+          <div
+            className="rounded-xl border bg-surface-card p-3"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">
+              Sesiones totales
+            </p>
+            <p className="font-mono text-2xl font-bold text-text-primary">
+              {status?.total_sessions ?? 0}
+            </p>
           </div>
 
-          <div className="rounded-xl border bg-surface-card p-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">Errores recientes</p>
-            <p className="font-mono text-2xl font-bold text-[#F85149]">{status?.recent_errors ?? 0}</p>
+          <div
+            className="rounded-xl border bg-surface-card p-3"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <p className="text-xs uppercase tracking-[0.12em] text-text-muted mb-1">
+              Errores recientes
+            </p>
+            <p className="font-mono text-2xl font-bold text-[#F85149]">
+              {status?.recent_errors ?? 0}
+            </p>
           </div>
         </div>
 
@@ -211,14 +293,24 @@ export default function TelegramMonitor() {
             <div className="flex items-center gap-3">
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: 'var(--accent-primary)18', border: '1px solid var(--accent-primary)30' }}
+                style={{
+                  background: 'var(--accent-primary)18',
+                  border: '1px solid var(--accent-primary)30',
+                }}
               >
-                <Wrench className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} strokeWidth={1.6} />
+                <Wrench
+                  className="w-4 h-4"
+                  style={{ color: 'var(--accent-primary)' }}
+                  strokeWidth={1.6}
+                />
               </div>
               <div>
-                <h3 className="font-mono text-sm font-semibold text-text-primary">Actividad y Herramientas</h3>
+                <h3 className="font-mono text-sm font-semibold text-text-primary">
+                  Actividad y Herramientas
+                </h3>
                 <p className="text-[11px] text-text-muted">
-                  Última actividad: {status?.last_activity ? timeAgo(status.last_activity) : 'Nunca'}
+                  Última actividad:{' '}
+                  {status?.last_activity ? timeAgo(status.last_activity) : 'Nunca'}
                 </p>
               </div>
             </div>
@@ -230,7 +322,9 @@ export default function TelegramMonitor() {
                   style={{ borderColor: 'var(--border-subtle)' }}
                 >
                   <p className="text-[11px] text-text-muted">{evt}</p>
-                  <p className="text-xs font-semibold text-text-primary">{eventCounters[evt] || 0}</p>
+                  <p className="text-xs font-semibold text-text-primary">
+                    {eventCounters[evt] || 0}
+                  </p>
                 </div>
               ))}
             </div>
@@ -295,7 +389,9 @@ export default function TelegramMonitor() {
             {loading ? (
               <p className="text-sm text-text-muted">Cargando actividad de Telegram...</p>
             ) : filteredActivity.length === 0 ? (
-              <p className="text-sm text-text-muted">No hay actividad para los filtros seleccionados.</p>
+              <p className="text-sm text-text-muted">
+                No hay actividad para los filtros seleccionados.
+              </p>
             ) : (
               <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
                 {filteredActivity.map((item) => {
@@ -304,7 +400,10 @@ export default function TelegramMonitor() {
                     <div
                       key={item.id}
                       className="rounded-xl border px-3 py-2.5 flex items-start justify-between gap-3"
-                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-elevated)' }}
+                      style={{
+                        borderColor: 'var(--border-subtle)',
+                        background: 'var(--surface-elevated)',
+                      }}
                     >
                       <div className="flex items-start gap-2 min-w-0">
                         <Icon
@@ -323,7 +422,8 @@ export default function TelegramMonitor() {
                             {item.content_preview ? ` — ${item.content_preview}` : ''}
                           </p>
                           <p className="text-xs text-text-muted mt-0.5">
-                            {timeAgo(item.created_at)} · {item.direction || 'n/a'} · source: {item.source || 'telegram'}
+                            {timeAgo(item.created_at)} · {item.direction || 'n/a'} · source:{' '}
+                            {item.source || 'telegram'}
                           </p>
                         </div>
                       </div>
@@ -331,7 +431,10 @@ export default function TelegramMonitor() {
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
                         <span
                           className="text-[11px] px-1.5 py-0.5 rounded-full border"
-                          style={{ borderColor: 'var(--border-strong)', color: 'var(--text-secondary)' }}
+                          style={{
+                            borderColor: 'var(--border-strong)',
+                            color: 'var(--text-secondary)',
+                          }}
                         >
                           {item.inferred_tool_type}
                         </span>
@@ -339,7 +442,9 @@ export default function TelegramMonitor() {
                           className="text-[11px] px-1.5 py-0.5 rounded-full border"
                           style={{
                             borderColor:
-                              item.status === 'error' ? 'rgba(248, 81, 73, 0.35)' : 'rgba(63, 185, 80, 0.35)',
+                              item.status === 'error'
+                                ? 'rgba(248, 81, 73, 0.35)'
+                                : 'rgba(63, 185, 80, 0.35)',
                             color: item.status === 'error' ? '#F85149' : '#3FB950',
                           }}
                         >

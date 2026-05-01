@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Migration: Agent Observability V2 — Database Foundation
- * 
+ *
  * Applies all schema changes for Phase 1:
  * - agent_traces table + FTS5 + triggers
  * - agent_session_usage table
@@ -13,10 +13,11 @@
  */
 
 const Database = require('better-sqlite3');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
+const { resolveDbPath } = require('../src/lib/db/pathResolver');
 
-const DB_PATH = path.join(process.cwd(), 'data', 'devhub.db');
+const DB_PATH = resolveDbPath({ moduleDir: __dirname });
 
 function migrate() {
   console.log('🔧 Starting migration: agent-observability-v2 (Phase 1)\n');
@@ -101,7 +102,7 @@ function migrate() {
         updated_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (session_id) REFERENCES agent_hub_sessions(id) ON DELETE CASCADE
       );
-      CREATE INDEX IF NOT EXISTS idx_usage_session ON agent_session_usage(session_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_session_unique ON agent_session_usage(session_id);
     `);
     console.log('    OK agent_session_usage created');
 
@@ -126,10 +127,10 @@ function migrate() {
     // T-05: ALTER TABLE agent_hub_sessions
     console.log('  -> Adding columns to agent_hub_sessions...');
     const sessionAlters = [
-      "ALTER TABLE agent_hub_sessions ADD COLUMN telegram_chat_id TEXT",
-      "ALTER TABLE agent_hub_sessions ADD COLUMN directory TEXT",
+      'ALTER TABLE agent_hub_sessions ADD COLUMN telegram_chat_id TEXT',
+      'ALTER TABLE agent_hub_sessions ADD COLUMN directory TEXT',
       "ALTER TABLE agent_hub_sessions ADD COLUMN status TEXT DEFAULT 'active'",
-      "ALTER TABLE agent_hub_sessions ADD COLUMN opencode_session_id TEXT",
+      'ALTER TABLE agent_hub_sessions ADD COLUMN opencode_session_id TEXT',
     ];
     for (const stmt of sessionAlters) {
       try {
@@ -149,8 +150,8 @@ function migrate() {
     console.log('  -> Adding columns to agent_hub_messages...');
     const messageAlters = [
       "ALTER TABLE agent_hub_messages ADD COLUMN source TEXT DEFAULT 'web'",
-      "ALTER TABLE agent_hub_messages ADD COLUMN tool_call_id TEXT",
-      "ALTER TABLE agent_hub_messages ADD COLUMN tool_name TEXT",
+      'ALTER TABLE agent_hub_messages ADD COLUMN tool_call_id TEXT',
+      'ALTER TABLE agent_hub_messages ADD COLUMN tool_name TEXT',
     ];
     for (const stmt of messageAlters) {
       try {
@@ -168,32 +169,44 @@ function migrate() {
 
     // Verification
     console.log('\nVerification:');
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
-    const tableNames = tables.map(t => t.name);
-    
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all();
+    const tableNames = tables.map((t) => t.name);
+
     const expectedTables = [
       'agent_traces',
       'agent_traces_fts',
       'agent_session_usage',
       'telegram_session_map',
     ];
-    
+
     for (const t of expectedTables) {
       const exists = tableNames.includes(t);
       console.log('  ' + (exists ? 'OK' : 'FAIL') + ' Table: ' + t);
     }
 
     // Check new columns
-    const sessionCols = db.prepare("PRAGMA table_info(agent_hub_sessions)").all();
-    const sessionColNames = sessionCols.map(c => c.name);
-    ['telegram_chat_id', 'directory', 'status', 'opencode_session_id'].forEach(col => {
-      console.log('  ' + (sessionColNames.includes(col) ? 'OK' : 'FAIL') + ' Column: agent_hub_sessions.' + col);
+    const sessionCols = db.prepare('PRAGMA table_info(agent_hub_sessions)').all();
+    const sessionColNames = sessionCols.map((c) => c.name);
+    ['telegram_chat_id', 'directory', 'status', 'opencode_session_id'].forEach((col) => {
+      console.log(
+        '  ' +
+          (sessionColNames.includes(col) ? 'OK' : 'FAIL') +
+          ' Column: agent_hub_sessions.' +
+          col
+      );
     });
 
-    const messageCols = db.prepare("PRAGMA table_info(agent_hub_messages)").all();
-    const messageColNames = messageCols.map(c => c.name);
-    ['source', 'tool_call_id', 'tool_name'].forEach(col => {
-      console.log('  ' + (messageColNames.includes(col) ? 'OK' : 'FAIL') + ' Column: agent_hub_messages.' + col);
+    const messageCols = db.prepare('PRAGMA table_info(agent_hub_messages)').all();
+    const messageColNames = messageCols.map((c) => c.name);
+    ['source', 'tool_call_id', 'tool_name'].forEach((col) => {
+      console.log(
+        '  ' +
+          (messageColNames.includes(col) ? 'OK' : 'FAIL') +
+          ' Column: agent_hub_messages.' +
+          col
+      );
     });
 
     console.log('\nMigration completed successfully!');

@@ -1,13 +1,11 @@
 /**
- * useAgentRegistryPolling — Polls agent_registry + live terminal sessions + OpenCode sessions every 5s.
+ * useAgentRegistryPolling — Polls agent_registry + live terminal sessions every 5s.
  *
  * Sources of truth (merged):
  * 1. agent_registry (SQLite) — agents launched from the app
  * 2. /api/terminal/sessions — live PTY processes (with opencodeSessionId if detected)
- * 3. /api/opencode/sessions — OpenCode session list with isActive flag
- *
  * Active agents: status active + heartbeat fresh OR PTY session with opencode running.
- * Inactive agents: everything else (shown in History tab with Resume button).
+ * Inactive agents are no longer synthesized here; resumable history now comes from the shared catalog.
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createClient } from '@/lib/db/localClient';
@@ -15,6 +13,17 @@ import { AGENT_HEARTBEAT_STALE_MS } from '@/lib/agentRegistryTelemetry';
 import { getAgentRegistryLiveSnapshot } from '@/lib/agentRegistryLive';
 
 const POLL_INTERVAL_MS = 5000;
+
+function dedupeBy(items, getKey) {
+  const seen = new Set();
+  return (items || []).filter((item, index) => {
+    const rawKey = getKey(item, index);
+    const key = rawKey == null || rawKey === '' ? `__index_${index}` : String(rawKey);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export default function useAgentRegistryPolling(projectId) {
   const [agents, setAgents] = useState([]);
@@ -61,19 +70,7 @@ export default function useAgentRegistryPolling(projectId) {
         // Terminal sessions may not be available — continue without them
       }
 
-      // ── Source 3: OpenCode sessions ─────────────────────────────────────────
-      let opencodeSessions = [];
-      try {
-        const res = await fetch('/api/opencode/sessions', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          opencodeSessions = Array.isArray(data) ? data : data?.sessions || [];
-        }
-      } catch {
-        // OpenCode may not be available
-      }
-
-      // ── Source 4: localStorage agent runs ──────────────────────────────────
+      // ── Source 3: localStorage agent runs ──────────────────────────────────
       const agentRuns = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
 
       // ── Build enriched registry agent list ──────────────────────────────────
@@ -93,46 +90,7 @@ export default function useAgentRegistryPolling(projectId) {
         }
       });
 
-      // ── Synthesize OpenCode sessions as virtual agents ────────────────────────
-      // Only create virtual entries for sessions NOT already covered by a registry entry
-      const existingOCSessionIds = new Set(
-        allAgents.map((a) => a._opencodeSessionId).filter(Boolean)
-      );
-
-      // Local override: sessions the user explicitly terminated via the "End" button
-      // Stored as { sessionId: timestamp } in localStorage
-      const terminatedSessions = JSON.parse(localStorage.getItem('devhub_oc_terminated') || '{}');
-
-      const virtualAgents = opencodeSessions
-        .filter((s) => !existingOCSessionIds.has(s.id))
-        .map((s) => {
-          // If user manually terminated this session, force isActive=false regardless of PTY state
-          const wasTerminated = Boolean(terminatedSessions[s.id]);
-          const effectivelyActive = s.isActive && !wasTerminated;
-          return {
-            agent_id: `oc-${s.id}`,
-            nombre: 'opencode',
-            modelo_llm: 'N/A',
-            status: effectivelyActive ? 'running' : 'idle',
-            last_heartbeat: effectivelyActive
-              ? new Date().toISOString()
-              : new Date(s.updated).toISOString(),
-            current_task_id: s.id,
-            // Virtual-specific metadata
-            _isOpenCodeSession: true,
-            _opencodeSessionId: s.id,
-            _displayName: s.title || `Session ${s.id.slice(0, 8)}`,
-            _selectedAgent: 'opencode',
-            _launchedAt: effectivelyActive ? Date.now() : null,
-            _activePanelId: effectivelyActive ? (s.activePanelId || null) : null,
-            _sessionDirectory: s.directory || null,
-            _sessionUpdated: s.updated,
-            _wasTerminated: wasTerminated,
-          };
-        });
-
-
-      const combinedAgents = [...allAgents, ...virtualAgents];
+      const combinedAgents = dedupeBy(allAgents, (agent) => agent?.agent_id);
 
       // ── Auto-cleanup stale registry agents ──────────────────────────────────
       const staleAgents = allAgents.filter((agent) => {
@@ -164,17 +122,7 @@ export default function useAgentRegistryPolling(projectId) {
         agentRuns,
       });
 
-      // Active = registry actives + virtual OC sessions with isActive=true
-      const activeOC = virtualAgents.filter((a) => a.status === 'running');
-      const activeAll = [...snapshot.activeAgents, ...activeOC];
-
-      // History = ONLY inactive OpenCode sessions (resumable, meaningful)
-      // Registry agents (sdd-orchestrator, etc.) are NOT shown in History —
-      // they accumulate over time and there's nothing to "resume" on them.
-      const activeIds = new Set(activeAll.map((a) => a.agent_id));
-      const inactiveAll = virtualAgents.filter(
-        (a) => a._isOpenCodeSession && !activeIds.has(a.agent_id)
-      );
+      const activeAll = dedupeBy(snapshot.activeAgents, (agent) => agent?.agent_id);
 
       // ── Auto-purge old registry entries (> 7 days) ────────────────────────────
       // Prevents the registry from accumulating stale sdd-orchestrator entries indefinitely.
@@ -195,7 +143,7 @@ export default function useAgentRegistryPolling(projectId) {
 
       setAgents(combinedAgents);
       setActiveAgents(activeAll);
-      setInactiveAgents(inactiveAll);
+      setInactiveAgents([]);
 
       setLastUpdated(new Date());
       setError(null);

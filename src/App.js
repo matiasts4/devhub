@@ -20,7 +20,6 @@ import Roadmap from './views/Roadmap';
 import Historial from './views/Historial';
 import Conexiones from './views/Conexiones';
 import Ajustes from './views/Ajustes';
-import AgentHub from './views/AgentHub';
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
 import { createClient } from '@/lib/db/localClient';
@@ -45,7 +44,6 @@ const PAGE_LABELS = {
   historial: 'historial',
   conexiones: 'conexiones',
   ajustes: 'ajustes',
-  agenthub: 'agent hub',
   swarm: 'swarm control',
   telegram: 'telegram monitor',
   planning: 'planning',
@@ -59,7 +57,7 @@ function WorkspaceLayout() {
     const segments = location.pathname.split('/').filter(Boolean);
     return segments[segments.length - 1] || 'dashboard';
   }, [location.pathname]);
-  const shouldShowGlobalHeader = !isTerminalRoute && !['dashboard', 'tareas'].includes(currentPage);
+  const shouldShowGlobalHeader = !isTerminalRoute;
 
   const [collapsed, setCollapsed] = useState(() => {
     if (!projectId) return false;
@@ -293,7 +291,6 @@ function App() {
             <Route path="historial" element={<Historial />} />
             <Route path="conexiones" element={<Conexiones />} />
             <Route path="ajustes" element={<Ajustes />} />
-            <Route path="agenthub" element={<AgentHub />} />
             <Route path="swarm" element={<SwarmControl />} />
             <Route path="telegram" element={<TelegramMonitor />} />
 

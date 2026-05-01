@@ -76,8 +76,17 @@ export default function TitleBar({
 
   return (
     <div
-      className={`relative flex items-center w-full select-none shrink-0 pr-[100px] ${className}`}
-      style={{ height: 40, minHeight: 40 }}
+      className={`relative flex items-center w-full select-none shrink-0 pr-[100px] border-b backdrop-blur-xl ${className}`}
+      style={{
+        height: 46,
+        minHeight: 46,
+        borderBottomColor: 'color-mix(in srgb, var(--border-subtle) 92%, transparent)',
+        background:
+          'linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.028) 100%), linear-gradient(180deg, color-mix(in srgb, var(--surface-app) 90%, black), color-mix(in srgb, var(--surface-card) 82%, black))',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+      }}
+      data-tauri-drag-region
+      onDoubleClick={handleToggleMaximize}
     >
       {/* ── Left: App Icon + Menu ── */}
       <div
@@ -97,7 +106,7 @@ export default function TitleBar({
                 {menuItems.map((item) => (
                   <button
                     key={item}
-                    className="px-2 py-1 text-[11px] text-gray-400 hover:text-white hover:bg-white/8 rounded transition-colors"
+                    className="px-2.5 py-1.5 text-[11px] text-gray-400 hover:text-white hover:bg-white/8 rounded-full transition-colors"
                     style={{ WebkitAppRegion: 'no-drag' }}
                   >
                     {item}

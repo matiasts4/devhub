@@ -16,6 +16,12 @@ function testId(prefix, suffix = 1) {
   return `test-${prefix}-${suffix}`;
 }
 
+let timestampCounter = 0;
+
+function nextTimestamp() {
+  return new Date(Date.now() + timestampCounter++).toISOString();
+}
+
 /**
  * Seed a test project into the database.
  *
@@ -35,18 +41,49 @@ function seedProject(db, options = {}) {
     description = 'A project created for testing purposes',
     status = 'active',
     userId = 'test-user-1',
+    progress = 0,
+    color = '#58A6FF',
+    planning_prompt = null,
+    planning_status = 'none',
+    documentation_policy = null,
   } = options;
+
+  const createdAt = nextTimestamp();
 
   // Ensure projects table exists
   try {
     db.prepare(
-      `INSERT OR IGNORE INTO projects (id, name, description, status, user_id, created_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now'))`
-    ).run(id, name, description, status, userId);
+      `INSERT OR IGNORE INTO projects (
+         id, name, description, status, user_id, progress, color, planning_prompt, planning_status, documentation_policy, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      name,
+      description,
+      status,
+      userId,
+      progress,
+      color,
+      planning_prompt,
+      planning_status,
+      documentation_policy,
+      createdAt,
+      createdAt
+    );
   } catch (e) {
     if (!e.message.includes('no such table')) throw e;
-    // Table doesn't exist — skip silently (schema may not include projects)
-    return { id, name, description, status, user_id: userId };
+    return {
+      id,
+      name,
+      description,
+      status,
+      user_id: userId,
+      progress,
+      color,
+      planning_prompt,
+      planning_status,
+      documentation_policy,
+    };
   }
 
   return db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
@@ -72,16 +109,50 @@ function seedTask(db, projectId, options = {}) {
     description = 'A task created for testing purposes',
     status = 'pending',
     priority = 'medium',
+    due_date = null,
+    milestone_id = null,
+    assigned_to = null,
+    business_value = 0,
+    user_id = 'test-user-1',
   } = options;
+
+  const createdAt = nextTimestamp();
 
   try {
     db.prepare(
-      `INSERT OR IGNORE INTO tasks (id, project_id, title, description, status, priority, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
-    ).run(id, projectId, title, description, status, priority);
+      `INSERT OR IGNORE INTO tasks (
+         id, project_id, user_id, title, description, status, priority, due_date, milestone_id, assigned_to, business_value, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      projectId,
+      user_id,
+      title,
+      description,
+      status,
+      priority,
+      due_date,
+      milestone_id,
+      assigned_to,
+      business_value,
+      createdAt,
+      createdAt
+    );
   } catch (e) {
     if (!e.message.includes('no such table')) throw e;
-    return { id, project_id: projectId, title, description, status, priority };
+    return {
+      id,
+      project_id: projectId,
+      user_id,
+      title,
+      description,
+      status,
+      priority,
+      due_date,
+      milestone_id,
+      assigned_to,
+      business_value,
+    };
   }
 
   return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
@@ -106,17 +177,43 @@ function seedMilestone(db, projectId, options = {}) {
     title = 'Test Milestone',
     description = 'A milestone created for testing purposes',
     status = 'active',
-    dueDate = null,
+    dueDate,
+    due_date = dueDate ?? null,
+    assigned_to = null,
+    user_id = 'test-user-1',
   } = options;
+
+  const createdAt = nextTimestamp();
 
   try {
     db.prepare(
-      `INSERT OR IGNORE INTO milestones (id, project_id, title, description, status, due_date, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
-    ).run(id, projectId, title, description, status, dueDate);
+      `INSERT OR IGNORE INTO milestones (
+         id, project_id, user_id, title, description, status, due_date, assigned_to, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      projectId,
+      user_id,
+      title,
+      description,
+      status,
+      due_date,
+      assigned_to,
+      createdAt,
+      createdAt
+    );
   } catch (e) {
     if (!e.message.includes('no such table')) throw e;
-    return { id, project_id: projectId, title, description, status, due_date: dueDate };
+    return {
+      id,
+      project_id: projectId,
+      user_id,
+      title,
+      description,
+      status,
+      due_date,
+      assigned_to,
+    };
   }
 
   return db.prepare('SELECT * FROM milestones WHERE id = ?').get(id);

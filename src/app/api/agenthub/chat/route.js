@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getCopilotToken } from '@/lib/copilot-token';
+import { upsertSessionUsage } from '@/lib/db/localDb.js';
+import { resolveContextUsage } from '@/lib/agenthub/contextUsage';
 import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
@@ -143,6 +145,110 @@ async function loadConfig() {
   }
 }
 
+function firstNumericValue(...values) {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+export function normalizeUsageTelemetry(rawUsage) {
+  if (!rawUsage || typeof rawUsage !== 'object') return null;
+
+  const prompt_tokens = firstNumericValue(
+    rawUsage.prompt_tokens,
+    rawUsage.input_tokens,
+    rawUsage.input,
+    rawUsage.prompt,
+    rawUsage.promptTokens
+  );
+
+  const completion_tokens = firstNumericValue(
+    rawUsage.completion_tokens,
+    rawUsage.output_tokens,
+    rawUsage.output,
+    rawUsage.completion,
+    rawUsage.completionTokens
+  );
+
+  const total_tokens = firstNumericValue(
+    rawUsage.total_tokens,
+    rawUsage.total,
+    prompt_tokens !== null || completion_tokens !== null
+      ? (prompt_tokens || 0) + (completion_tokens || 0)
+      : null
+  );
+
+  const accumulated_total = firstNumericValue(
+    rawUsage.accumulated_total,
+    rawUsage.accumulated,
+    rawUsage.session_total_tokens,
+    rawUsage.cumulative_total_tokens
+  );
+
+  if (prompt_tokens === null && completion_tokens === null && total_tokens === null) {
+    return null;
+  }
+
+  return {
+    prompt_tokens: prompt_tokens || 0,
+    completion_tokens: completion_tokens || 0,
+    total_tokens: total_tokens || 0,
+    ...(accumulated_total !== null ? { accumulated_total } : {}),
+  };
+}
+
+function buildUsageEvent(rawUsage, options = {}) {
+  const usage = normalizeUsageTelemetry(rawUsage);
+  if (!usage) return null;
+
+  const resolvedUsage = resolveContextUsage(
+    {
+      ...usage,
+      total_tokens: usage.accumulated_total ?? usage.total_tokens,
+    },
+    options
+  );
+
+  return {
+    type: 'usage',
+    usage: resolvedUsage,
+    ...resolvedUsage,
+  };
+}
+
+function persistSessionUsageSnapshot(sessionId, rawUsage, options = {}) {
+  if (!sessionId) return;
+
+  const usage = normalizeUsageTelemetry(rawUsage);
+  if (!usage) return;
+
+  const resolvedUsage = resolveContextUsage(
+    {
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+      total_tokens: usage.accumulated_total ?? usage.total_tokens,
+    },
+    options
+  );
+
+  try {
+    upsertSessionUsage({
+      session_id: sessionId,
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+      total_tokens: resolvedUsage.total_tokens,
+      context_window_size: resolvedUsage.context_window_size,
+      context_utilization:
+        resolvedUsage.context_window_size > 0
+          ? resolvedUsage.total_tokens / resolvedUsage.context_window_size
+          : 0,
+    });
+  } catch (error) {
+    console.warn('Failed to persist session usage:', error.message);
+  }
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -273,11 +379,19 @@ export async function POST(req) {
                           )
                         );
                       } else if (event.type === 'step_finish' && event.part?.tokens) {
-                        controller.enqueue(
-                          encoder.encode(
-                            JSON.stringify({ type: 'usage', usage: event.part.tokens }) + '\n'
-                          )
-                        );
+                        const usageEvent = buildUsageEvent(event.part.tokens, {
+                          provider: activeProvider,
+                          displayModel,
+                          transportModel: model,
+                        });
+                        if (usageEvent) {
+                          persistSessionUsageSnapshot(session_id, event.part.tokens, {
+                            provider: activeProvider,
+                            displayModel,
+                            transportModel: model,
+                          });
+                          controller.enqueue(encoder.encode(JSON.stringify(usageEvent) + '\n'));
+                        }
                       } else if (event.type === 'error') {
                         errorCaptured =
                           event.error?.data?.message ||
@@ -593,9 +707,19 @@ Proyecto: ${projectName || project_id || 'El Proyecto Actual'}`;
           for await (const chunk of response) {
             // chunk.usage only arrives at the end of the stream if include_usage: true is set
             if (chunk.usage) {
-              controller.enqueue(
-                encoder.encode(JSON.stringify({ type: 'usage', usage: chunk.usage }) + '\n')
-              );
+              const usageEvent = buildUsageEvent(chunk.usage, {
+                provider: activeProvider,
+                displayModel,
+                transportModel: model,
+              });
+              if (usageEvent) {
+                persistSessionUsageSnapshot(session_id, chunk.usage, {
+                  provider: activeProvider,
+                  displayModel,
+                  transportModel: model,
+                });
+                controller.enqueue(encoder.encode(JSON.stringify(usageEvent) + '\n'));
+              }
             }
 
             const content = chunk.choices?.[0]?.delta?.content || '';

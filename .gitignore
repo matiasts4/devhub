@@ -89,3 +89,15 @@ tmp/
 opencode/
 .opencode/
 data/logs/opencode_*.log
+# Git hygiene additions
+.hermes/
+.codex/
+.impeccable.md
+.verify-coverage/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/logs/
+graphify-out/
+data/audit-trails/
+.codex

@@ -8,10 +8,10 @@
  * - DELETE → 405 (method not allowed)
  */
 
-const { ApiTestHarness } = require('./harness');
+const { ApiTestHarness, getAgentHubBaseUrl } = require('./harness');
 const { seedSession, seedProject } = require('../fixtures');
 
-const BASE_URL = process.env.AGENTHUB_BASE_URL || 'http://localhost:3000';
+const BASE_URL = getAgentHubBaseUrl();
 
 async function serverReachable() {
   try {

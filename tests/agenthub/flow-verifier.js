@@ -19,6 +19,7 @@
  */
 
 const { acquire, release, forceRelease } = require('../../lib/test-locks');
+const { getAgentHubBaseUrl } = require('./api/harness');
 
 class FlowVerifier {
   /**
@@ -30,7 +31,7 @@ class FlowVerifier {
    */
   constructor(harness, options = {}) {
     this.harness = harness;
-    this.baseUrl = options.baseUrl || process.env.AGENTHUB_BASE_URL || 'http://localhost:3000';
+    this.baseUrl = options.baseUrl || getAgentHubBaseUrl();
     this.defaultTimeout = options.defaultTimeout || 30000;
     this.flowTimeout = options.flowTimeout || 300000;
     this._flowLockId = null;
@@ -137,11 +138,15 @@ class FlowVerifier {
     const stepStart = Date.now();
     const timeout = step.timeout || this.defaultTimeout;
     const name = step.name || `step-${index}`;
+    let timeoutId;
 
     try {
       let result;
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(`Step "${name}" timed out after ${timeout}ms`)), timeout);
+        timeoutId = setTimeout(
+          () => reject(new Error(`Step "${name}" timed out after ${timeout}ms`)),
+          timeout
+        );
       });
 
       switch (step.action) {
@@ -190,6 +195,8 @@ class FlowVerifier {
         duration: Date.now() - stepStart,
         error: err.message,
       };
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -266,9 +273,10 @@ class FlowVerifier {
       case 'db.rowCount': {
         const table = this._interpolate(step.table);
         const where = this._interpolateObj(step.where || {});
-        const whereSql = Object.keys(where)
+        const whereClauses = Object.keys(where)
           .map((k) => `${k} = ?`)
           .join(' AND ');
+        const whereSql = whereClauses ? `WHERE ${whereClauses}` : '';
         const values = Object.values(where);
         const { count } = db
           .prepare(`SELECT COUNT(*) as count FROM ${table} ${whereSql}`)

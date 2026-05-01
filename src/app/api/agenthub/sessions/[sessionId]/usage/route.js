@@ -1,18 +1,25 @@
 import { NextResponse } from 'next/server';
-import { getSessionUsage } from '@/lib/db/localDb.js';
+import { getSessionUsage, tables } from '@/lib/db/localDb.js';
+import { resolveContextUsage } from '@/lib/agenthub/contextUsage';
 
 export async function GET(req, { params }) {
   try {
     const { sessionId } = await params;
     const usage = getSessionUsage(sessionId);
+    const session = tables.agent_hub_sessions.single({ where: [['id', '=', sessionId]] });
+    const resolvedUsage = resolveContextUsage(usage || {}, { model: session?.agent_model || null });
 
     if (!usage) {
       return NextResponse.json(
         {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0,
-          context_utilization: 0,
+          prompt_tokens: resolvedUsage.prompt_tokens,
+          completion_tokens: resolvedUsage.completion_tokens,
+          total_tokens: resolvedUsage.total_tokens,
+          context_window_size: resolvedUsage.context_window_size,
+          context_utilization: resolvedUsage.context_utilization,
+          current_context_tokens: resolvedUsage.current_context_tokens,
+          context_tone: resolvedUsage.context_tone,
+          model: resolvedUsage.model,
           tool_calls_count: 0,
           total_duration_ms: 0,
         },
@@ -21,10 +28,14 @@ export async function GET(req, { params }) {
     }
 
     return NextResponse.json({
-      prompt_tokens: usage.prompt_tokens || 0,
-      completion_tokens: usage.completion_tokens || 0,
-      total_tokens: usage.total_tokens || 0,
-      context_utilization: usage.context_utilization || 0,
+      prompt_tokens: resolvedUsage.prompt_tokens,
+      completion_tokens: resolvedUsage.completion_tokens,
+      total_tokens: resolvedUsage.total_tokens,
+      context_window_size: resolvedUsage.context_window_size,
+      context_utilization: resolvedUsage.context_utilization,
+      current_context_tokens: resolvedUsage.current_context_tokens,
+      context_tone: resolvedUsage.context_tone,
+      model: resolvedUsage.model,
       tool_calls_count: usage.tool_calls_count || 0,
       total_duration_ms: usage.total_duration_ms || 0,
     });

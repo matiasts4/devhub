@@ -3,20 +3,9 @@
  */
 
 const Database = require('better-sqlite3');
-const path = require('path');
 const fs = require('fs');
-
-function resolveDbPath() {
-  const candidates = [
-    path.join(process.cwd(), 'data', 'devhub.db'),
-    path.join(__dirname, '..', '..', '..', 'data', 'devhub.db'),
-    '/home/matias/devhub/data/devhub.db',
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return candidates[0];
-}
+const path = require('path');
+const { resolveDbPath } = require('./pathResolver');
 
 const DB_PATH = resolveDbPath();
 let _db = null;
@@ -161,7 +150,7 @@ function ensureRuntimeSchema(db) {
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (session_id) REFERENCES agent_hub_sessions(id) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_usage_session ON agent_session_usage(session_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_session_unique ON agent_session_usage(session_id);
 
     -- Telegram session mapping
     CREATE TABLE IF NOT EXISTS telegram_session_map (
@@ -243,6 +232,11 @@ function ensureRuntimeSchema(db) {
     `CREATE INDEX IF NOT EXISTS idx_agent_hub_sessions_parent ON agent_hub_sessions(parent_id)`
   );
 
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_session_unique
+      ON agent_session_usage(session_id);
+  `);
+
   // Index on parent_id — must run AFTER ALTER TABLE adds the column
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_agent_hub_sessions_parent ON agent_hub_sessions(parent_id)`
@@ -314,6 +308,60 @@ function buildWhere(where) {
   return { clauses, values };
 }
 
+function tableExists(db, tableName) {
+  return Boolean(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName)
+  );
+}
+
+function tableHasColumn(db, tableName, columnName) {
+  if (!tableExists(db, tableName)) return false;
+  return db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all()
+    .some((column) => column.name === columnName);
+}
+
+function deleteByProjectId(db, tableName, projectId) {
+  if (!tableHasColumn(db, tableName, 'project_id')) return;
+  db.prepare(`DELETE FROM ${tableName} WHERE project_id = ?`).run(projectId);
+}
+
+function deleteByValues(db, tableName, columnName, values) {
+  if (!values || values.length === 0 || !tableHasColumn(db, tableName, columnName)) return;
+  const placeholders = values.map(() => '?').join(', ');
+  db.prepare(`DELETE FROM ${tableName} WHERE ${columnName} IN (${placeholders})`).run(...values);
+}
+
+function deleteProjectCascadeUnsafe(db, projectId) {
+  if (!projectId) return { changes: 0 };
+
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return { changes: 0 };
+
+  const taskIds = tableHasColumn(db, 'tasks', 'project_id')
+    ? db
+        .prepare('SELECT id FROM tasks WHERE project_id = ?')
+        .all(projectId)
+        .map((row) => row.id)
+    : [];
+
+  deleteByValues(db, 'task_dependencies', 'task_id', taskIds);
+  deleteByValues(db, 'task_dependencies', 'depends_on', taskIds);
+  deleteByValues(db, 'task_comments', 'task_id', taskIds);
+
+  deleteByProjectId(db, 'tasks', projectId);
+  deleteByProjectId(db, 'milestones', projectId);
+  deleteByProjectId(db, 'agent_registry', projectId);
+  deleteByProjectId(db, 'ai_interactions', projectId);
+  deleteByProjectId(db, 'project_files', projectId);
+  deleteByProjectId(db, 'agent_memory', projectId);
+  deleteByProjectId(db, 'telegram_session_map', projectId);
+  deleteByProjectId(db, 'agent_hub_sessions', projectId);
+
+  return db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+}
+
 function makeTableOps(tableName, idCol = 'id') {
   return {
     select(options = {}) {
@@ -330,10 +378,16 @@ function makeTableOps(tableName, idCol = 'id') {
       const db = getDb();
       const cols = Object.keys(data);
       const vals = cols.map((k) => data[k] ?? null);
-      db.prepare(
-        `INSERT INTO ${tableName} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
-      ).run(...vals);
-      return db.prepare(`SELECT * FROM ${tableName} WHERE ${idCol} = ?`).get(data[idCol]);
+      const info = db
+        .prepare(
+          `INSERT INTO ${tableName} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+        )
+        .run(...vals);
+      // If data includes the PK use it; otherwise fall back to lastInsertRowid
+      if (data[idCol] !== undefined && data[idCol] !== null) {
+        return db.prepare(`SELECT * FROM ${tableName} WHERE ${idCol} = ?`).get(data[idCol]);
+      }
+      return db.prepare(`SELECT * FROM ${tableName} WHERE rowid = ?`).get(info.lastInsertRowid);
     },
     update(data, where) {
       const db = getDb();
@@ -357,8 +411,32 @@ function makeTableOps(tableName, idCol = 'id') {
   };
 }
 
+const projectTableOps = makeTableOps('projects', 'id');
+
 const tables = {
-  projects: makeTableOps('projects', 'id'),
+  projects: {
+    ...projectTableOps,
+    delete(where) {
+      const db = getDb();
+      const { clauses, values } = buildWhere(where);
+      const projectIds = db
+        .prepare(`SELECT id FROM projects WHERE ${clauses.join(' AND ')}`)
+        .all(...values)
+        .map((row) => row.id);
+
+      if (projectIds.length === 0) return { changes: 0 };
+
+      const deleteProjectsTxn = db.transaction((ids) => {
+        let totalChanges = 0;
+        for (const projectId of ids) {
+          totalChanges += deleteProjectCascadeUnsafe(db, projectId).changes || 0;
+        }
+        return { changes: totalChanges };
+      });
+
+      return deleteProjectsTxn(projectIds);
+    },
+  },
   tasks: makeTableOps('tasks', 'id'),
   milestones: makeTableOps('milestones', 'id'),
   project_files: makeTableOps('project_files', 'id'),
@@ -693,12 +771,14 @@ function getTelegramSession(chatId) {
 
 function createTelegramSession(chatId, sessionId, projectId) {
   const db = getDb();
-  // Deactivate any existing active session for this chat
-  db.prepare('UPDATE telegram_session_map SET active = 0 WHERE telegram_chat_id = ?').run(chatId);
-
   const stmt = db.prepare(`
     INSERT INTO telegram_session_map (telegram_chat_id, session_id, project_id, active)
     VALUES (?, ?, ?, 1)
+    ON CONFLICT(telegram_chat_id) DO UPDATE SET
+      session_id = excluded.session_id,
+      project_id = excluded.project_id,
+      active = 1,
+      updated_at = datetime('now')
   `);
   return stmt.run(chatId, sessionId, projectId || null);
 }

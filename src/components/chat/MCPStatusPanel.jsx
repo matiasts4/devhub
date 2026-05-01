@@ -9,6 +9,11 @@ import {
   XCircle,
   AlertCircle,
 } from 'lucide-react';
+import {
+  formatFreshnessLabel,
+  getAuthorityLabel,
+  getHealthStatusLabel,
+} from '@/lib/operations/presenters';
 
 const statusConfig = {
   connected: {
@@ -30,6 +35,12 @@ function ServerCard({ server }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = statusConfig[server.status] || statusConfig.disconnected;
   const StatusIcon = cfg.icon;
+  const authorityLabel = getAuthorityLabel(server.authority);
+  const freshnessLabel = server.freshness_ms
+    ? formatFreshnessLabel(server.freshness_ms)
+    : server.freshness
+      ? getHealthStatusLabel(server.freshness)
+      : null;
 
   return (
     <div
@@ -54,7 +65,24 @@ function ServerCard({ server }) {
           >
             {server.name}
           </span>
-          <span className={`text-[10px] ${cfg.color} font-medium`}>{cfg.label}</span>
+          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+            <span className={`text-[10px] ${cfg.color} font-medium`}>{cfg.label}</span>
+            {server.authority ? (
+              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                {authorityLabel}
+              </span>
+            ) : null}
+            {freshnessLabel ? (
+              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                {freshnessLabel}
+              </span>
+            ) : null}
+          </div>
+          {server.status_reason ? (
+            <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {server.status_reason}
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>

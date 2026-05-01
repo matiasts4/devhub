@@ -8,9 +8,9 @@
  * - Validation errors → 400
  */
 
-const { ApiTestHarness } = require('./harness');
+const { ApiTestHarness, getAgentHubBaseUrl } = require('./harness');
 
-const BASE_URL = process.env.AGENTHUB_BASE_URL || 'http://localhost:3000';
+const BASE_URL = getAgentHubBaseUrl();
 
 async function serverReachable() {
   try {

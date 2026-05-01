@@ -16,6 +16,85 @@ const opencode = require('./opencode');
 
 const DEFAULT_PROJECT_ID = process.env.DEFAULT_PROJECT_ID || null;
 const DEFAULT_DIRECTORY = process.env.DEFAULT_DIRECTORY || process.cwd();
+const TERMINAL_SESSION_STATUSES = new Set([
+  'completed',
+  'aborted',
+  'error',
+  'failed',
+  'cancelled',
+  'canceled',
+]);
+
+const NO_ACTIVE_PROJECT_ERROR =
+  'No active project available. Use /project list and /project switch <name>.';
+
+function normalizeOpenCodeSessionId(opencodeSessionId) {
+  if (typeof opencodeSessionId !== 'string') return null;
+
+  const normalized = opencodeSessionId.trim();
+  if (!normalized) return null;
+
+  const lower = normalized.toLowerCase();
+  if (lower === 'null' || lower === 'undefined') return null;
+
+  return normalized;
+}
+
+function hasReusableOpenCodeSessionId(opencodeSessionId) {
+  const normalized = normalizeOpenCodeSessionId(opencodeSessionId);
+  if (!normalized) return false;
+
+  return /^[a-zA-Z0-9._-]+$/.test(normalized);
+}
+
+function isTerminalSessionStatus(status) {
+  if (!status) return false;
+  return TERMINAL_SESSION_STATUSES.has(String(status).toLowerCase());
+}
+
+function canReuseSession(session) {
+  return (
+    !!session &&
+    !isTerminalSessionStatus(session.status) &&
+    hasReusableOpenCodeSessionId(session.opencode_session_id)
+  );
+}
+
+function isUsableProject(project) {
+  return !!project && !!project.id && String(project.status || 'active').toLowerCase() === 'active';
+}
+
+function resolveProjectRecord({ explicitProjectId, mappedProjectId }) {
+  const candidates = [explicitProjectId, mappedProjectId, DEFAULT_PROJECT_ID];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const project = db.findProject(candidate);
+    if (isUsableProject(project)) {
+      return project;
+    }
+  }
+
+  const activeProjects = db.getActiveProjects();
+  if (Array.isArray(activeProjects) && activeProjects.length > 0) {
+    return activeProjects[0];
+  }
+
+  throw new Error(NO_ACTIVE_PROJECT_ERROR);
+}
+
+function resolveSessionProjectContext({ projectId, mappedProjectId, directory }) {
+  const project = resolveProjectRecord({
+    explicitProjectId: projectId,
+    mappedProjectId: mappedProjectId || null,
+  });
+
+  return {
+    project,
+    projectId: project.id,
+    directory: directory || project.directory || DEFAULT_DIRECTORY,
+  };
+}
 
 /**
  * Resolve the active session for a Telegram chat.
@@ -28,8 +107,6 @@ const DEFAULT_DIRECTORY = process.env.DEFAULT_DIRECTORY || process.cwd();
  */
 async function resolveSession(chatId, projectId, directory) {
   const chatIdStr = String(chatId);
-  const projId = projectId || DEFAULT_PROJECT_ID;
-  const dir = directory || DEFAULT_DIRECTORY;
 
   // 1. Check if there's an active session mapping
   const existing = db.getTelegramSession(chatIdStr);
@@ -37,18 +114,34 @@ async function resolveSession(chatId, projectId, directory) {
   if (existing) {
     // 2. Verify the session still exists and is active
     const session = db.getSession(existing.session_id);
-    if (session && session.status !== 'completed') {
+    if (canReuseSession(session)) {
       logger.debug(`Reusing active session ${session.id} for chat ${chatIdStr}`);
       return {
         session,
         isNew: false,
-        opencodeSessionId: session.opencode_session_id,
+        opencodeSessionId: normalizeOpenCodeSessionId(session.opencode_session_id),
       };
     }
 
-    // Session is completed — deactivate the mapping
-    db.updateSessionStatus(existing.session_id, 'completed');
+    if (!session) {
+      logger.warn(`Mapped session ${existing.session_id} for chat ${chatIdStr} no longer exists`);
+    } else if (!isTerminalSessionStatus(session.status)) {
+      logger.warn(
+        `Discarding session ${session.id} for chat ${chatIdStr}: invalid state for reuse (status=${session.status}, opencodeSessionId=${session.opencode_session_id || 'missing'})`
+      );
+      db.updateSessionStatus(session.id, 'aborted');
+    } else {
+      logger.warn(
+        `Discarding terminal session ${session.id} for chat ${chatIdStr} (status=${session.status})`
+      );
+    }
   }
+
+  const { projectId: projId, directory: dir } = resolveSessionProjectContext({
+    projectId,
+    mappedProjectId: existing?.project_id || null,
+    directory,
+  });
 
   // 3. Create a new session
   logger.info(`Creating new session for chat ${chatIdStr}, project ${projId || 'none'}`);
@@ -72,11 +165,16 @@ async function resolveSession(chatId, projectId, directory) {
  */
 async function createSession(chatId, projectId, directory, title) {
   const chatIdStr = String(chatId);
-  const dir = directory || DEFAULT_DIRECTORY;
+  const resolvedContext = resolveSessionProjectContext({
+    projectId,
+    directory,
+  });
+  const projId = resolvedContext.projectId;
+  const dir = resolvedContext.directory;
 
   // 1. Create AgentHub session in SQLite
   const session = db.createSession({
-    project_id: projectId || null,
+    project_id: projId,
     title: title || `Telegram ${new Date().toLocaleString()}`,
     telegram_chat_id: chatIdStr,
     directory: dir,
@@ -90,7 +188,7 @@ async function createSession(chatId, projectId, directory, title) {
   db.updateSessionOpenCodeId(session.id, ocSession.id);
 
   // 4. Create telegram_session_map
-  db.createTelegramSession(chatIdStr, session.id, projectId);
+  db.createTelegramSession(chatIdStr, session.id, projId);
 
   logger.info(`Session created: ${session.id} (OpenCode: ${ocSession.id}) for chat ${chatIdStr}`);
 
@@ -145,7 +243,7 @@ function getActiveSession(chatId) {
   if (!mapping) return null;
 
   const session = db.getSession(mapping.session_id);
-  if (!session) return null;
+  if (!canReuseSession(session)) return null;
 
   const usage = db.getUsage(session.id);
 
@@ -218,4 +316,12 @@ module.exports = {
   switchSession,
   getActiveSession,
   switchProject,
+  __private__: {
+    normalizeOpenCodeSessionId,
+    hasReusableOpenCodeSessionId,
+    isTerminalSessionStatus,
+    canReuseSession,
+    resolveProjectRecord,
+    resolveSessionProjectContext,
+  },
 };

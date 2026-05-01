@@ -10,46 +10,96 @@ const { assertDbRow, assertDbFieldValue } = require('../assertions');
 
 describe('Telegram Agent Control Commands', () => {
   let harness;
+  let originalMultiTurn;
+  let pauseAgent;
+  let resumeAgent;
 
   beforeEach(async () => {
+    originalMultiTurn = process.env.TELEGRAM_MULTI_TURN;
+    process.env.TELEGRAM_MULTI_TURN = 'false';
+
     harness = new TelegramTestHarness({ lockOwner: 'telegram-agent-control' });
     await harness.setup();
     seedSwarmConfig(harness.db, 'max_concurrent', '5');
+
+    pauseAgent = jest.fn();
+    resumeAgent = jest.fn();
+
+    harness.mockService('db', {
+      getAgents: () => [],
+      pauseAgent,
+      resumeAgent,
+      getProjectByName: () => null,
+      getNextTask: () => null,
+    });
+
+    harness.mockService('api', {
+      health: () => Promise.resolve(true),
+      getProfiles: () => Promise.resolve([{ name: 'default' }]),
+      launchAgent: () => Promise.resolve({ sessionId: 'test-spawn-session' }),
+      executeAgent: () => Promise.resolve({ ok: true }),
+      buildPrompt: () => Promise.resolve({ prompt: 'Mock prompt' }),
+    });
   });
 
   afterEach(async () => {
+    harness.restoreService('api');
+    harness.restoreService('db');
     await harness.teardown();
+
+    if (originalMultiTurn === undefined) {
+      delete process.env.TELEGRAM_MULTI_TURN;
+    } else {
+      process.env.TELEGRAM_MULTI_TURN = originalMultiTurn;
+    }
   });
 
   describe('/pausar', () => {
-    test('changes session status to paused', async () => {
-      seedSession(harness.db, { id: 'test-session-pause', status: 'active' });
+    test('changes agent status to paused', async () => {
+      harness.mockService('db', {
+        getAgents: () => [{ agent_id: 'agent-1', nombre: 'Agent Uno', status: 'working' }],
+        pauseAgent,
+        resumeAgent,
+        getProjectByName: () => null,
+        getNextTask: () => null,
+      });
 
       const ctx = harness.createMockCtx();
-      await harness.executeCommand('pausar', ctx);
+      await harness.executeCommand('pausar', ctx, 'agent-1');
 
       const replies = harness.getReplies();
-      expect(replies.length).toBeGreaterThanOrEqual(1);
+      expect(pauseAgent).toHaveBeenCalledWith('agent-1');
+      expect(replies).toHaveLength(1);
+      expect(replies[0].text).toContain('pausado correctamente');
     });
 
-    test('shows error when no active session', async () => {
+    test('shows success when there are no active agents', async () => {
       const ctx = harness.createMockCtx();
       await harness.executeCommand('pausar', ctx);
 
       const replies = harness.getReplies();
-      expect(replies.length).toBeGreaterThanOrEqual(1);
+      expect(replies).toHaveLength(1);
+      expect(replies[0].text).toContain('No hay agentes activos para pausar');
     });
   });
 
   describe('/reanudar', () => {
     test('resumes paused session', async () => {
-      seedSession(harness.db, { id: 'test-session-resume', status: 'paused' });
+      harness.mockService('db', {
+        getAgents: () => [{ agent_id: 'agent-2', nombre: 'Agent Dos', status: 'paused' }],
+        pauseAgent,
+        resumeAgent,
+        getProjectByName: () => null,
+        getNextTask: () => null,
+      });
 
       const ctx = harness.createMockCtx();
-      await harness.executeCommand('reanudar', ctx);
+      await harness.executeCommand('reanudar', ctx, 'agent-2');
 
       const replies = harness.getReplies();
-      expect(replies.length).toBeGreaterThanOrEqual(1);
+      expect(resumeAgent).toHaveBeenCalledWith('agent-2');
+      expect(replies).toHaveLength(1);
+      expect(replies[0].text).toContain('reanudado correctamente');
     });
   });
 
@@ -64,26 +114,21 @@ describe('Telegram Agent Control Commands', () => {
     });
 
     test('launches agent with task description', async () => {
-      // Mock the api service to not actually call Next.js
-      harness.mockService('api', {
-        health: () => Promise.resolve(true),
-        getProfiles: () => Promise.resolve([{ name: 'default' }]),
-        launchAgent: () => Promise.resolve({ sessionId: 'test-spawn-session' }),
-      });
-
       const ctx = harness.createMockCtx();
       await harness.executeCommand('spawn', ctx, 'Implementar auth JWT');
 
       const replies = harness.getReplies();
       expect(replies.length).toBe(1);
       expect(replies[0].text).toContain('Implementar auth JWT');
-
-      harness.restoreService('api');
     });
 
     test('shows error when Next.js is down', async () => {
       harness.mockService('api', {
         health: () => Promise.reject(new Error('Server down')),
+        getProfiles: () => Promise.resolve([{ name: 'default' }]),
+        launchAgent: () => Promise.resolve({ sessionId: 'unused' }),
+        executeAgent: () => Promise.resolve({ ok: true }),
+        buildPrompt: () => Promise.resolve({ prompt: 'unused' }),
       });
 
       const ctx = harness.createMockCtx();
@@ -91,21 +136,18 @@ describe('Telegram Agent Control Commands', () => {
 
       const replies = harness.getReplies();
       expect(replies.length).toBe(1);
-      expect(replies[0].text).toContain('Next.js');
-
-      harness.restoreService('api');
+      expect(replies[0].text).toContain('corriendo');
     });
   });
 
   describe('/continuar', () => {
-    test('continues paused session', async () => {
-      seedSession(harness.db, { id: 'test-session-continue', status: 'paused' });
-
+    test('shows usage when project argument is missing', async () => {
       const ctx = harness.createMockCtx();
       await harness.executeCommand('continuar', ctx);
 
       const replies = harness.getReplies();
-      expect(replies.length).toBeGreaterThanOrEqual(1);
+      expect(replies).toHaveLength(1);
+      expect(replies[0].text).toContain('Uso: /continuar');
     });
   });
 });

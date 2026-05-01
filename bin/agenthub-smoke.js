@@ -8,11 +8,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const Database = require('better-sqlite3');
+const { resolveDbPath } = require('../src/lib/db/pathResolver');
 
 const ROOT = path.resolve(__dirname, '..');
-const DEFAULT_BASE_URL = process.env.AGENTHUB_BASE_URL || 'http://127.0.0.1:3000';
+const DEFAULT_BASE_URL = process.env.AGENTHUB_BASE_URL || 'http://127.0.0.1:3400';
 const DEFAULT_FIRST_TRACE_SLA_MS = Number(process.env.AGENTHUB_SMOKE_FIRST_TRACE_SLA_MS || 5000);
 const DEFAULT_COMPLETION_SLA_MS = Number(process.env.AGENTHUB_SMOKE_COMPLETION_SLA_MS || 90000);
 const DEFAULT_ABORT_SLA_MS = Number(process.env.AGENTHUB_SMOKE_ABORT_SLA_MS || 5000);
@@ -77,24 +77,12 @@ async function waitFor(checkFn, { timeoutMs, pollMs, label }) {
   return { ok: false, result: last, durationMs: Date.now() - started, label };
 }
 
-function getDbPath(port) {
-  if (process.env.AGENTHUB_DB_PATH) return process.env.AGENTHUB_DB_PATH;
-  const cwd = getCwd(port);
-  const base = cwd;
-  const db = path.join(base, 'data', 'devhub.db');
-  if (fs.existsSync(db)) return db;
-
-  const alt =
-    port === '3000'
-      ? path.join(ROOT, 'data', 'devhub.db')
-      : path.join(os.homedir(), '.devhub', 'standalone', 'data', 'devhub.db');
-  if (fs.existsSync(alt)) return alt;
-
-  return null;
+function getDbPath() {
+  return process.env.AGENTHUB_DB_PATH || resolveDbPath({ moduleDir: ROOT });
 }
 
 function getCwd(port) {
-  return port === '3000' ? path.join(os.homedir(), '.devhub', 'standalone') : ROOT;
+  return port === '3400' ? path.join(os.homedir(), '.devhub', 'standalone') : ROOT;
 }
 
 function getLatestAuditTrail(port) {

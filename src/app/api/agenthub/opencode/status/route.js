@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import processManager from '@/lib/swarm/processManager';
 import swarmQueue from '@/lib/swarm/queue';
 import { getSwarmConfig, getActiveAgentCount } from '@/lib/db/localDb.js';
+import { buildProcessHealthSource } from '@/lib/operations/health';
 
 export const runtime = 'nodejs';
 
@@ -17,6 +18,15 @@ export async function GET() {
     const maxConcurrent = parseInt(config.max_concurrent, 10) || 5;
     const activeCount = getActiveAgentCount();
     const queueStatus = swarmQueue.getStatus();
+    const observedAt = new Date().toISOString();
+    const processHealth = buildProcessHealthSource(
+      {
+        ...pmStatus,
+        uptime: pmStatus.processInfo?.uptime || null,
+        memoryRss: pmStatus.processInfo?.memoryMB ? pmStatus.processInfo.memoryMB * 1024 * 1024 : null,
+      },
+      { now: observedAt }
+    );
 
     return NextResponse.json({
       process: {
@@ -28,8 +38,13 @@ export async function GET() {
         memoryRss: pmStatus.processInfo?.memoryMB
           ? pmStatus.processInfo.memoryMB * 1024 * 1024
           : null,
-        status: pmStatus.running ? 'healthy' : 'stopped',
+        status: pmStatus.running ? 'healthy' : 'offline',
+        authority: processHealth.authority,
+        freshness: 'current',
+        observed_at: observedAt,
+        status_reason: processHealth.status_reason,
       },
+      process_health: processHealth,
       concurrency: {
         active: activeCount,
         activeSessions: activeCount,
@@ -40,6 +55,7 @@ export async function GET() {
       queue: {
         length: queueStatus.length,
         estimatedWaitMs: queueStatus.length > 0 ? queueStatus.items[0]?.estimatedWaitMs || 0 : 0,
+        items: queueStatus.items || [],
       },
     });
   } catch (err) {

@@ -111,15 +111,78 @@ class McpTestHarness extends TestHarness {
   }
 
   _registerProjectTools() {
+    const projectSelectFields =
+      'id, name, description, color, status, progress, planning_prompt, planning_status, documentation_policy, created_at, updated_at';
+
     // list_projects
     this._tools.set('list_projects', async ({ status } = {}) => {
       let query = this._qb('projects')
-        .select('id, name, status, progress')
+        .select('id, name, status, progress, color')
         .order('created_at', { ascending: false });
       if (status && status !== 'all') query = query.eq('status', status);
       const { data, error } = await query;
       if (error) return this._err(error.message);
+      return this._ok({ total: data.length, projects: data });
+    });
+
+    this._tools.set('get_project', async ({ project_id }) => {
+      const [projRes, tasksRes, msRes] = await Promise.all([
+        this._qb('projects').select(projectSelectFields).eq('id', project_id).single(),
+        this._qb('tasks')
+          .select('*')
+          .eq('project_id', project_id)
+          .order('created_at', { ascending: false }),
+        this._qb('milestones')
+          .select('*')
+          .eq('project_id', project_id)
+          .order('due_date', { ascending: true }),
+      ]);
+
+      if (projRes.error) return this._err(projRes.error.message);
+      if (!projRes.data) return this._err('Project not found');
+
+      const tasks = tasksRes.data || [];
+      const milestones = msRes.data || [];
+
+      return this._ok({
+        project: projRes.data,
+        tasks: tasks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+        })),
+        milestones: milestones.map((m) => ({
+          id: m.id,
+          title: m.title,
+          status: m.status,
+          due_date: m.due_date,
+        })),
+        summary: {
+          total_tasks: tasks.length,
+          completed_tasks: tasks.filter((t) => t.status === 'completed').length,
+          in_progress: tasks.filter((t) => t.status === 'in_progress').length,
+          blocked: tasks.filter((t) => t.status === 'blocked').length,
+          milestones_done: milestones.filter((m) => m.status === 'completed').length,
+        },
+      });
+    });
+
+    this._tools.set('update_project', async ({ project_id, ...updates }) => {
+      const fields = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+      if (Object.keys(fields).length === 0) {
+        return this._err('No se proporcionaron campos para actualizar');
+      }
+
+      const { data, error } = await this._qb('projects')
+        .update(fields)
+        .eq('id', project_id)
+        .select()
+        .single();
+
+      if (error) return this._err(error.message);
       if (!data) return this._err('Project not found');
+
       return this._ok({ updated: true, project: data });
     });
   }
@@ -204,6 +267,65 @@ class McpTestHarness extends TestHarness {
         .select()
         .single();
       if (error) return this._err(error.message);
+      if (!data) return this._err('Task not found');
+      return this._ok({ created: true, comment: data });
+    });
+  }
+
+  _registerMilestoneTools() {
+    this._tools.set('list_milestones', async ({ project_id, status = 'all' } = {}) => {
+      let query = this._qb('milestones')
+        .select(
+          'id, project_id, title, description, status, due_date, assigned_to, created_at, updated_at'
+        )
+        .eq('project_id', project_id)
+        .order('due_date', { ascending: true, nullsFirst: false });
+
+      if (status && status !== 'all') {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+      if (error) return this._err(error.message);
+      return this._ok({ total: data.length, milestones: data });
+    });
+
+    this._tools.set(
+      'create_milestone',
+      async ({
+        project_id,
+        user_id,
+        title,
+        description,
+        status = 'planned',
+        due_date,
+        assigned_to,
+      }) => {
+        const payload = {
+          id: `ms-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          project_id,
+          user_id,
+          title,
+          description: description || null,
+          status,
+          due_date: due_date || null,
+          assigned_to: assigned_to || null,
+        };
+
+        const { data, error } = await this._qb('milestones').insert(payload).select().single();
+        if (error) return this._err(error.message);
+        return this._ok({ created: true, milestone: data });
+      }
+    );
+
+    this._tools.set('update_milestone', async ({ milestone_id, ...rest }) => {
+      const updates = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+      const { data, error } = await this._qb('milestones')
+        .update(updates)
+        .eq('id', milestone_id)
+        .select()
+        .single();
+      if (error) return this._err(error.message);
       if (!data) return this._err('Milestone not found');
       return this._ok({ updated: true, milestone: data });
     });
@@ -212,22 +334,24 @@ class McpTestHarness extends TestHarness {
   _registerSwarmTools() {
     // register_agent
     this._tools.set('register_agent', async ({ agent_id, project_id, nombre, modelo_llm }) => {
+      const payload = {
+        agent_id,
+        project_id,
+        nombre,
+        status: 'idle',
+        last_heartbeat: new Date().toISOString(),
+      };
+
+      if (modelo_llm !== undefined) {
+        payload.modelo_llm = modelo_llm;
+      }
+
       const { data, error } = await this._qb('agent_registry')
-        .upsert(
-          {
-            agent_id,
-            project_id,
-            nombre,
-            modelo_llm,
-            status: 'idle',
-            last_heartbeat: new Date().toISOString(),
-          },
-          { onConflict: 'agent_id' }
-        )
+        .upsert(payload, { onConflict: 'agent_id' })
         .select()
         .single();
       if (error) return this._err(error.message);
-      return this._ok({ success: true, agent: data });
+      return this._ok({ success: true, agent: this._normalizeAgentRecord(data) });
     });
 
     // heartbeat_agent
@@ -239,7 +363,7 @@ class McpTestHarness extends TestHarness {
         .single();
       if (error) return this._err(error.message);
       if (!data) return this._err(`Agente ${agent_id} no encontrado en registry.`);
-      return this._ok({ success: true, agent: data });
+      return this._ok({ success: true, agent: this._normalizeAgentRecord(data) });
     });
 
     // unregister_agent
@@ -272,12 +396,46 @@ class McpTestHarness extends TestHarness {
         .select()
         .single();
       if (error) return this._err(error.message);
-      return this._ok({ success: true, message: 'Estado actualizado en la UI', agent: data });
+      if (!data) return this._err(`Agente ${agent_id} no encontrado en registry.`);
+      return this._ok({
+        success: true,
+        message: 'Estado actualizado en la UI',
+        agent: this._normalizeAgentRecord(data),
+      });
     });
   }
 
   _registerDocOpsTools() {
-    const TOPIC_KEY_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*){1,3}$/;
+    const documentationPolicyMap = {
+      archive_only: {
+        mode: 'archive-first',
+        summary: 'archive_only: Archivar primero antes de editar el canonico.',
+        requires_user_clarification: false,
+        extraConstraint: 'Archivar primero y documentar el cambio de forma incremental.',
+      },
+      shared_legacy: {
+        mode: 'legacy-preserve',
+        summary: 'shared_legacy: preservar compatibilidad y explicitar transiciones.',
+        requires_user_clarification: false,
+        extraConstraint: 'Preservar compatibilidad legacy mientras migrás al contrato canónico.',
+      },
+      personal: {
+        mode: 'personal-default',
+        summary: 'personal: policy local por defecto para trabajo individual.',
+        requires_user_clarification: false,
+        extraConstraint: 'Mantener el cambio acotado y sin scope creep.',
+      },
+      unknown: {
+        mode: 'unknown',
+        summary: 'unknown: falta política documental explícita.',
+        requires_user_clarification: true,
+        extraConstraint: 'Si falta policy, pedile aclaración antes de alterar el canonico.',
+      },
+    };
+
+    const resolveDocumentationPolicy = (value) => this._resolveDocumentationPolicy(value);
+
+    const TOPIC_KEY_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,23})(?:\/[a-z0-9](?:[a-z0-9-]{0,23})){1,3}$/;
 
     const normalizeTopicKey = (value) =>
       String(value || '')
@@ -327,7 +485,7 @@ class McpTestHarness extends TestHarness {
 
         const [projectRes, tasksRes, milestonesRes, memoryRes] = await Promise.all([
           this._qb('projects')
-            .select('id, name, description, planning_prompt, planning_status')
+            .select('id, name, description, planning_prompt, planning_status, documentation_policy')
             .eq('id', project_id)
             .single(),
           this._qb('tasks')
@@ -348,6 +506,7 @@ class McpTestHarness extends TestHarness {
         ]);
 
         if (projectRes.error) return this._err(projectRes.error.message);
+        if (!projectRes.data) return this._err('Project not found');
 
         const evidence = [];
 
@@ -394,6 +553,8 @@ class McpTestHarness extends TestHarness {
           projectRes.data.description?.slice(0, 220) ||
           'Sin resumen canonico disponible';
 
+        const policy = resolveDocumentationPolicy(projectRes.data.documentation_policy);
+
         const contextPack = {
           objective,
           project_id,
@@ -403,7 +564,11 @@ class McpTestHarness extends TestHarness {
             'No reemplazar canonico sin validacion posterior',
             'No inyectar contexto completo por defecto',
             'Priorizar evidencia reciente y relevante',
+            policy.documentation_policy_metadata.extraConstraint,
           ],
+          documentation_policy: policy.documentation_policy,
+          documentation_policy_summary: policy.documentation_policy_summary,
+          documentation_policy_metadata: policy.documentation_policy_metadata,
           retrieved_evidence: boundedEvidence,
           open_questions:
             boundedEvidence.length === 0
@@ -442,7 +607,7 @@ class McpTestHarness extends TestHarness {
           .order('created_at', { ascending: false }),
         this._qb('tasks').select('project_id, status, priority, due_date'),
         this._qb('milestones')
-          .select('project_id, title, status, due_date')
+          .select('id, project_id, title, status, due_date')
           .order('due_date', { ascending: true }),
       ]);
 
@@ -476,7 +641,9 @@ class McpTestHarness extends TestHarness {
     this._tools.set('get_project_context', async ({ project_id }) => {
       const [projRes, filesRes] = await Promise.all([
         this._qb('projects')
-          .select('id, name, description, planning_prompt, planning_status, created_at')
+          .select(
+            'id, name, description, planning_prompt, planning_status, documentation_policy, created_at'
+          )
           .eq('id', project_id)
           .single(),
         this._qb('project_files')
@@ -486,6 +653,7 @@ class McpTestHarness extends TestHarness {
       ]);
       if (projRes.error) return this._err(projRes.error.message);
       if (!projRes.data) return this._err('Project not found');
+      const policy = this._resolveDocumentationPolicy(projRes.data.documentation_policy);
       const files = filesRes.data || [];
       const totalChars = files.reduce(
         (acc, f) => acc + (f.size_chars || f.content?.length || 0),
@@ -498,6 +666,9 @@ class McpTestHarness extends TestHarness {
           description: projRes.data.description,
           planning_prompt: projRes.data.planning_prompt,
           planning_status: projRes.data.planning_status,
+          documentation_policy: policy.documentation_policy,
+          documentation_policy_summary: policy.documentation_policy_summary,
+          documentation_policy_metadata: policy.documentation_policy_metadata,
           created_at: projRes.data.created_at,
         },
         files: files.map((f) => ({
@@ -512,6 +683,7 @@ class McpTestHarness extends TestHarness {
           total_chars: totalChars,
           has_planning_prompt: !!projRes.data.planning_prompt,
           planning_status: projRes.data.planning_status,
+          documentation_policy: policy.documentation_policy,
         },
       });
     });
@@ -519,12 +691,6 @@ class McpTestHarness extends TestHarness {
     // get_next_task
     this._tools.set('get_next_task', async ({ project_id, agent_id }) => {
       try {
-        // 1. Check if agent has active task
-        const { data: activeTask } = await this._qb('tasks')
-          .select('*')
-          .eq('status', 'in_progress')
-          .limit(1);
-
         // 2. Get pending tasks
         const { data: tasks, error: tasksErr } = await this._qb('tasks')
           .select('*')
@@ -536,6 +702,7 @@ class McpTestHarness extends TestHarness {
 
         // 3. Evaluate dependencies
         const taskIds = tasks.map((t) => t.id);
+        const pendingTaskIds = new Set(taskIds);
         const { data: deps } = await this._qb('task_dependencies')
           .select('*')
           .in('task_id', taskIds);
@@ -557,8 +724,13 @@ class McpTestHarness extends TestHarness {
           );
           if (isBlocked) continue;
 
+          const blocksOtherPendingTasks = (deps || []).some(
+            (d) => d.depends_on === task.id && d.tipo === 'blocks' && pendingTaskIds.has(d.task_id)
+          );
+          if (blocksOtherPendingTasks) continue;
+
           const urgencia = priorityMap[task.priority] || 2;
-          const valor_negocio = task.business_value || 5;
+          const valor_negocio = Number.isFinite(task.business_value) ? task.business_value : 5;
           const { count: depsUnlock } = await this._qb('task_dependencies')
             .select('*', { count: 'exact', head: true })
             .eq('depends_on', task.id);
@@ -608,6 +780,54 @@ class McpTestHarness extends TestHarness {
         message: 'Planning marcado como completado. El workspace esta listo.',
       });
     });
+  }
+
+  _resolveDocumentationPolicy(value) {
+    const documentationPolicyMap = {
+      archive_only: {
+        mode: 'archive-first',
+        summary: 'archive_only: Archivar primero antes de editar el canonico.',
+        requires_user_clarification: false,
+        extraConstraint: 'Archivar primero y documentar el cambio de forma incremental.',
+      },
+      shared_legacy: {
+        mode: 'legacy-preserve',
+        summary: 'shared_legacy: preservar compatibilidad y explicitar transiciones.',
+        requires_user_clarification: false,
+        extraConstraint: 'Preservar compatibilidad legacy mientras migrás al contrato canónico.',
+      },
+      personal: {
+        mode: 'personal-default',
+        summary: 'personal: policy local por defecto para trabajo individual.',
+        requires_user_clarification: false,
+        extraConstraint: 'Mantener el cambio acotado y sin scope creep.',
+      },
+      unknown: {
+        mode: 'unknown',
+        summary: 'unknown: falta política documental explícita.',
+        requires_user_clarification: true,
+        extraConstraint: 'Si falta policy, pedile aclaración antes de alterar el canonico.',
+      },
+    };
+
+    const key = value || 'unknown';
+    const metadata = documentationPolicyMap[key] || documentationPolicyMap.unknown;
+
+    return {
+      documentation_policy: key,
+      documentation_policy_metadata: metadata,
+      documentation_policy_summary: metadata.summary,
+    };
+  }
+
+  _normalizeAgentRecord(record) {
+    if (!record) return record;
+
+    const normalized = { ...record };
+    if (normalized.modelo_llm == null) {
+      delete normalized.modelo_llm;
+    }
+    return normalized;
   }
 
   // ─── LocalQueryBuilder (mirrors server.js) ──────────────────────────

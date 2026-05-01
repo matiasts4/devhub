@@ -1,5 +1,6 @@
 import './globals.css';
 import { Providers } from './providers';
+import { ClientErrorLogger } from '@/components/ClientErrorLogger';
 
 export const metadata = {
   title: 'DevHub – Gestión Personal',
@@ -29,6 +30,7 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body>
+        <ClientErrorLogger />
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -16,6 +16,8 @@
     "shell:allow-spawn",
     "shell:allow-kill",
     "shell:allow-open",
+    "dialog:allow-open",
+    "notification:default",
     "log:default"
   ]
 }

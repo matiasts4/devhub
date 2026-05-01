@@ -16,6 +16,12 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const {
+  buildServerMessage,
+  detectOpenCodeSessionId,
+  getTransportMode,
+  parseClientMessage,
+} = require('./sessionTransport');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
 const DEVHUB_DIR = path.join(os.homedir(), '.devhub');
@@ -49,6 +55,19 @@ process.on('SIGINT', cleanup);
 // Clave: sessionId → { ptyProcess, history: string[], clients: Set<WebSocket> }
 const sessions = new Map();
 
+function sendToClient(ws, payload) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  try {
+    ws.send(buildServerMessage(ws.__devhubTransport || 'raw', payload));
+  } catch (_) {}
+}
+
+function broadcastSessionPayload(session, payload) {
+  for (const ws of session.clients) {
+    sendToClient(ws, payload);
+  }
+}
+
 function getOrCreateSession(sessionId, cwd) {
   if (sessions.has(sessionId)) {
     return sessions.get(sessionId);
@@ -69,6 +88,7 @@ function getOrCreateSession(sessionId, cwd) {
     clients: new Set(),
     cwd: cwd || os.homedir(),
     createdAt: Date.now(),
+    opencodeSessionId: null,
   };
 
   // Capturar output del PTY y enviarlo a todos los clientes conectados
@@ -81,15 +101,26 @@ function getOrCreateSession(sessionId, cwd) {
     }
 
     // Enviar a todos los clientes activos
-    for (const ws of session.clients) {
-      if (ws.readyState === WebSocket.OPEN) {
-        try { ws.send(data); } catch (_) {}
-      }
+    const detectedSessionId = detectOpenCodeSessionId(data);
+    if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
+      session.opencodeSessionId = detectedSessionId;
+      broadcastSessionPayload(session, {
+        type: 'opencode-session-detected',
+        sessionId: detectedSessionId,
+      });
     }
+
+    broadcastSessionPayload(session, { type: 'output', data });
   });
 
   ptyProcess.on('exit', () => {
     console.log(`[Sidecar] Session ${sessionId} exited.`);
+    broadcastSessionPayload(session, { type: 'exit', exitCode: 0, signal: null });
+    for (const client of session.clients) {
+      try {
+        client.close();
+      } catch (_) {}
+    }
     sessions.delete(sessionId);
   });
 
@@ -123,6 +154,29 @@ app.get('/sessions', (_req, res) => {
   res.json({ sessions: list });
 });
 
+app.delete('/sessions/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  for (const client of session.clients) {
+    try {
+      client.close();
+    } catch (_) {}
+  }
+
+  try {
+    session.ptyProcess.kill();
+  } catch (_) {}
+
+  sessions.delete(sessionId);
+  console.log(`[Sidecar] Session ${sessionId} terminada por cierre explícito.`);
+  return res.json({ success: true, sessionId });
+});
+
 // Endpoint de shutdown graceful — llamado por Tauri al cerrar la app
 app.post('/shutdown', (_req, res) => {
   console.log('[Sidecar] Recibida señal de shutdown graceful...');
@@ -149,34 +203,49 @@ wss.on('connection', (ws, req) => {
   const urlParams = new URL(req.url || '/', `http://localhost:${PORT}`).searchParams;
   const sessionId = urlParams.get('sessionId') || 'default';
   const cwd       = urlParams.get('cwd') || os.homedir();
+  ws.__devhubTransport = getTransportMode(req.url || '/');
 
   const session = getOrCreateSession(sessionId, cwd);
   session.clients.add(ws);
 
-  console.log(`[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes)`);
+  console.log(`[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport})`);
 
   // Replay del historial al reconectar
   if (session.history.length > 0) {
     const replay = session.history.join('');
-    try { ws.send(replay); } catch (_) {}
+    sendToClient(ws, { type: 'output', data: replay });
+  }
+
+  if (session.opencodeSessionId) {
+    sendToClient(ws, {
+      type: 'opencode-session-detected',
+      sessionId: session.opencodeSessionId,
+    });
   }
 
   ws.on('message', (msg) => {
-    const msgStr = typeof msg === 'string' ? msg : msg.toString();
-    
-    // Comandos de control (JSON)
-    if (msgStr.startsWith('{')) {
-      try {
-        const cmd = JSON.parse(msgStr);
-        if (cmd.type === 'resize' && cmd.cols && cmd.rows) {
-          session.ptyProcess.resize(cmd.cols, cmd.rows);
-        }
-        return;
-      } catch (_) { /* no es JSON, tratar como input */ }
+    const payload = parseClientMessage(msg, ws.__devhubTransport || 'raw');
+
+    if (payload.type === 'resize' && payload.cols && payload.rows) {
+      session.ptyProcess.resize(payload.cols, payload.rows);
+      return;
+    }
+
+    if (payload.type !== 'input') {
+      return;
+    }
+
+    const detectedSessionId = detectOpenCodeSessionId(payload.data);
+    if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
+      session.opencodeSessionId = detectedSessionId;
+      broadcastSessionPayload(session, {
+        type: 'opencode-session-detected',
+        sessionId: detectedSessionId,
+      });
     }
 
     // Input de teclado al PTY
-    try { session.ptyProcess.write(msgStr); } catch (_) {}
+    try { session.ptyProcess.write(payload.data); } catch (_) {}
   });
 
   ws.on('close', () => {

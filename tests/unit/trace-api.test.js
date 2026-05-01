@@ -482,31 +482,10 @@ const tests = [
   },
 ];
 
-// ── Test runner ─────────────────────────────────────────────────────────────
-
-async function runTests() {
-  let passed = 0;
-  let failed = 0;
-
-  console.log('Running trace-api tests...\n');
-
-  for (const test of tests) {
-    try {
-      await test.run();
-      console.log(`  ✅ ${test.name}`);
-      passed++;
-    } catch (err) {
-      console.log(`  ❌ ${test.name}`);
-      console.log(`     Error: ${err.message}`);
-      failed++;
-    }
+describe('trace-api helpers', () => {
+  for (const scenario of tests) {
+    test(scenario.name, async () => {
+      await scenario.run();
+    });
   }
-
-  console.log(`\n${passed}/${tests.length} tests passed`);
-  if (failed > 0) {
-    console.log(`${failed} test(s) failed`);
-    process.exit(1);
-  }
-}
-
-runTests();
+});

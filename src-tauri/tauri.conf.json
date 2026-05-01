@@ -1,26 +1,28 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "DevHub",
-  "version": "0.1.0",
-  "identifier": "com.devhub.app",
+  "version": "0.1.1",
+  "identifier": "com.devhub.desktop",
   "build": {
-    "frontendDist": "http://localhost:3000",
-    "devUrl": "http://localhost:3000",
+    "frontendDist": "http://127.0.0.1:3400",
+    "devUrl": "http://localhost:3100",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "title": "DevHub — Autonomous Dev Workspace",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 1024,
-        "minHeight": 700,
+        "width": 1680,
+        "height": 1040,
+        "minWidth": 1200,
+        "minHeight": 760,
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "center": true
       }
     ],
@@ -30,6 +32,7 @@
   },
   "bundle": {
     "active": true,
+    "category": "DeveloperTool",
     "targets": ["deb", "appimage", "rpm"],
     "icon": [
       "icons/32x32.png",

@@ -244,7 +244,7 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center px-4"
+      className="fixed inset-x-0 bottom-0 top-[46px] z-40 flex items-center justify-center px-4"
       style={{ background: 'rgba(0,0,0,0.45)' }}
     >
       <div
@@ -474,12 +474,10 @@ export default function Ajustes() {
 
   async function deleteProject() {
     setDeleting(true);
-    await db.from('tasks').delete().eq('project_id', project?.id);
-    await db.from('milestones').delete().eq('project_id', project?.id);
     const { error } = await db.from('projects').delete().eq('id', project?.id);
     setDeleting(false);
     if (error) {
-      toast.error('Error al eliminar');
+      toast.error(error.message || 'Error al eliminar');
       return;
     }
     toast.success('Proyecto eliminado');

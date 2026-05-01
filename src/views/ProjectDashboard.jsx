@@ -15,7 +15,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import PageHeader from '@/components/PageHeader';
+import { Button } from '@/components/ui/button';
 
 export default function ProjectDashboard() {
   const { project } = useOutletContext() || {};
@@ -110,21 +110,19 @@ export default function ProjectDashboard() {
       className="h-full flex flex-col"
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
-      {/* Integrated Page Header */}
-      <PageHeader project={project} pageName="dashboard">
-        <button
-          onClick={() => navigate(`/project/${project?.id}/tareas`)}
-          className="flex items-center gap-2 font-medium px-3 py-1.5 rounded-lg text-xs transition-colors active:scale-95 cursor-pointer"
-          style={{ background: 'var(--success)', color: 'white' }}
-        >
-          <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-          Nueva Tarea
-        </button>
-      </PageHeader>
-
       {/* Page Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-6 pt-6 pb-6 w-full max-w-[1280px] mx-auto">
+        <div className="mb-6 flex items-center justify-end">
+          <Button
+            onClick={() => navigate(`/project/${project?.id}/tareas`)}
+            variant="devhubPrimary"
+            size="toolbar"
+          >
+            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+            Nueva Tarea
+          </Button>
+        </div>
         {/* Breadcrumb */}
         <div
           className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"

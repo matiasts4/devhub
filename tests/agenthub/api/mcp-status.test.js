@@ -4,9 +4,9 @@
  * Tests the MCP server status endpoint.
  */
 
-const { ApiTestHarness } = require('./harness');
+const { ApiTestHarness, getAgentHubBaseUrl } = require('./harness');
 
-const BASE_URL = process.env.AGENTHUB_BASE_URL || 'http://localhost:3000';
+const BASE_URL = getAgentHubBaseUrl();
 
 describe('GET /api/agenthub/mcp/status', () => {
   let harness;

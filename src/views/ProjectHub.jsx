@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import TitleBar from '@/components/TitleBar';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   Plus,
   Search,
@@ -54,9 +56,17 @@ const STATUS_CONFIG = {
 
 const ACCENT_COLORS = ['#58A6FF', '#3FB950', '#F778BA', '#D2A8FF', '#E3B341', '#FF7B72'];
 
+const modalFieldClass =
+  'w-full rounded-xl border border-white/[0.08] bg-[rgba(7,10,14,0.78)] px-3.5 py-2.5 text-sm text-white placeholder-[#5b6574] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-[border-color,background-color,box-shadow] focus:outline-none focus:border-[color:color-mix(in_srgb,var(--accent-primary)_36%,transparent)] focus:bg-[rgba(10,14,20,0.92)]';
+
+const modalLabelClass = 'mb-1.5 block text-[11px] font-medium text-text-muted';
+
 export default function ProjectHub() {
   const navigate = useNavigate();
   const db = createClient();
+
+  // Detectar contexto Tauri (el plugin de diálogo solo funciona en desktop)
+  const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +149,12 @@ export default function ProjectHub() {
   }
 
   async function handleSelectFolder() {
+    // Detectar si estamos en contexto Tauri
+    const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
+    if (!isTauri) {
+      // En web no hay acceso al filesystem nativo — el usuario escribe la ruta manualmente
+      return;
+    }
     try {
       const selected = await openDialog({
         directory: true,
@@ -149,7 +165,8 @@ export default function ProjectHub() {
         setNewProject((p) => ({ ...p, local_path: selected }));
       }
     } catch (err) {
-      console.warn('No se pudo abrir el selector, ¿estás en web?', err);
+      console.warn('No se pudo abrir el selector de carpetas:', err);
+      toast.error('No se pudo abrir el selector de carpetas');
     }
   }
 
@@ -200,7 +217,9 @@ export default function ProjectHub() {
       });
       setPendingFiles([]);
       setEnablePlanning(true);
-      navigate(enablePlanning ? `/project/${data.id}/agenthub?plan=1` : `/project/${data.id}/dashboard`);
+      navigate(
+        enablePlanning ? `/project/${data.id}/agenthub?plan=1` : `/project/${data.id}/dashboard`
+      );
     }
   }
 
@@ -237,7 +256,7 @@ export default function ProjectHub() {
       {/* Compact TitleBar — VS Code / Antigravity style */}
       <TitleBar
         title="DevHub"
-        className="bg-[#0d0f14] border-b border-[rgba(255,255,255,0.06)] shrink-0"
+        className="shrink-0"
         leftSlot={
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-[#58A6FF]/15 border border-[#58A6FF]/25 flex items-center justify-center">
@@ -262,13 +281,14 @@ export default function ProjectHub() {
                 className="bg-surface-card border border-borders-subtle rounded-lg pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder-[#484F58] focus:outline-none focus:border-[var(--accent-primary)] w-52 transition-all"
               />
             </div>
-            <button
+            <Button
               onClick={() => setShowNewModal(true)}
-              className="flex items-center gap-2 bg-success text-white font-medium px-4 py-1.5 rounded-lg text-xs hover:bg-success transition-colors active:scale-95 cursor-pointer"
+              variant="devhubPrimary"
+              size="toolbar"
             >
               <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
               Nuevo Proyecto
-            </button>
+            </Button>
           </div>
         }
       />
@@ -456,28 +476,31 @@ export default function ProjectHub() {
       </div>
 
       {showNewModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-card border border-borders-strong rounded-2xl p-6 w-full max-w-xl shadow-2xl fade-in-up max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center bg-black/72 backdrop-blur-md p-4">
+          <div className="fade-in-up max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[28px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(11,14,18,0.96),rgba(10,13,17,0.92))] p-6 shadow-[0_32px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.05)]">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#D2A8FF]/10 border border-[#D2A8FF]/20 flex items-center justify-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D2A8FF]/18 bg-[linear-gradient(180deg,rgba(210,168,255,0.14),rgba(255,255,255,0.03))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                   <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />
                 </div>
                 <h2 className="font-mono font-bold text-text-primary">Nuevo Proyecto</h2>
               </div>
-              <button
+              <Button
+                type="button"
                 onClick={() => {
                   setShowNewModal(false);
                   setPendingFiles([]);
                 }}
-                className="text-text-muted hover:text-white transition-colors cursor-pointer"
+                variant="devhubGhost"
+                size="icon"
+                className="h-8 w-8 rounded-full border-white/10"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </Button>
             </div>
 
             <form onSubmit={createProject} className="space-y-4">
-              <div className="rounded-xl border border-[#D2A8FF]/20 bg-[#D2A8FF]/5 p-4 text-xs text-text-muted">
+              <div className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(180deg,rgba(210,168,255,0.09),rgba(255,255,255,0.02))] p-4 text-[11px] leading-relaxed text-text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
                 Definí la clasificación y la política de documentación antes de arrancar el
                 planning. Ese gate decide cómo se guarda el contexto y qué documentos deja generar
                 DevHub antes de empezar a planificar.
@@ -485,7 +508,7 @@ export default function ProjectHub() {
 
               {/* Nombre */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                <label className={modalLabelClass}>
                   Nombre del proyecto *
                 </label>
                 <input
@@ -494,13 +517,13 @@ export default function ProjectHub() {
                   value={newProject.name}
                   onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Mi proyecto increíble"
-                  className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors cursor-pointer"
+                  className={modalFieldClass}
                 />
               </div>
 
               {/* Ruta Local */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                <label className={modalLabelClass}>
                   Directorio / Ruta Local
                 </label>
                 <div className="flex gap-2">
@@ -509,22 +532,29 @@ export default function ProjectHub() {
                     value={newProject.local_path}
                     onChange={(e) => setNewProject((p) => ({ ...p, local_path: e.target.value }))}
                     placeholder="/home/usuario/proyectos/mi-proyecto"
-                    className="flex-1 bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors cursor-pointer"
+                    className={`flex-1 ${modalFieldClass}`}
                   />
-                  <button
+                  <Button
                     type="button"
                     onClick={handleSelectFolder}
-                    className="flex items-center justify-center p-2.5 bg-surface-elevated border border-borders-strong rounded-lg text-text-muted hover:text-white hover:bg-surface-active hover:border-text-muted transition-colors tooltip-trigger cursor-pointer"
-                    title="Explorar carpetas"
+                    disabled={!isTauri}
+                    variant="devhubGlass"
+                    size="icon"
+                    className="h-[42px] w-[42px] rounded-xl border-white/[0.08] p-0 text-[var(--text-muted)]"
+                    title={
+                      isTauri
+                        ? 'Explorar carpetas'
+                        : 'Solo disponible en la app de escritorio — escribí la ruta manualmente'
+                    }
                   >
                     <FolderOpen className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Descripción corta */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                <label className={modalLabelClass}>
                   Descripción breve
                 </label>
                 <input
@@ -532,13 +562,13 @@ export default function ProjectHub() {
                   value={newProject.description}
                   onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                   placeholder="¿Qué hace este proyecto en una frase?"
-                  className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors cursor-pointer"
+                  className={modalFieldClass}
                 />
               </div>
 
               {/* Color */}
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                <label className={modalLabelClass}>
                   Color de acento
                 </label>
                 <div className="flex items-center gap-3">
@@ -559,7 +589,7 @@ export default function ProjectHub() {
               </div>
 
               {/* Toggle Planning IA */}
-              <div className="border border-[#D2A8FF]/20 rounded-xl p-4 bg-[#D2A8FF]/4">
+              <div className="rounded-2xl border border-[#D2A8FF]/16 bg-[linear-gradient(180deg,rgba(210,168,255,0.08),rgba(255,255,255,0.02))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
                     <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />
@@ -567,24 +597,17 @@ export default function ProjectHub() {
                       Planning IA automático
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setEnablePlanning(!enablePlanning)}
-                    className={`relative w-10 h-5 rounded-full transition-all duration-200 ${
-                      enablePlanning ? 'bg-[#D2A8FF]' : 'bg-surface-elevated'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                        enablePlanning ? 'translate-x-5' : 'translate-x-0.5'
-                      }`}
-                    />
-                  </button>
+                  <Switch
+                    checked={enablePlanning}
+                    onCheckedChange={setEnablePlanning}
+                    aria-label="Activar planning IA automático"
+                    className="data-[state=checked]:border-[#D2A8FF]/35 data-[state=checked]:bg-[linear-gradient(135deg,rgba(210,168,255,0.96),rgba(188,139,255,0.9))]"
+                  />
                 </div>
 
                 <div className="space-y-3">
                   <div>
-                    <p className="text-xs text-text-muted mb-1.5">Tipo de proyecto</p>
+                    <p className={modalLabelClass}>Tipo de proyecto</p>
                     <div className="grid grid-cols-3 gap-1.5">
                       {PROJECT_TYPE_OPTIONS.map(({ value, label }) => {
                         const spec = PROJECT_TYPES_MODAL.find((item) => item.key === value);
@@ -596,11 +619,18 @@ export default function ProjectHub() {
                             key={value}
                             type="button"
                             onClick={() => setNewProject((p) => ({ ...p, project_type: value }))}
-                            className="flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all"
+                            className="flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all"
                             style={
                               sel
-                                ? { background: `${color}15`, borderColor: `${color}45` }
-                                : { borderColor: 'var(--border-subtle)' }
+                                ? {
+                                    background: `${color}14`,
+                                    borderColor: `${color}42`,
+                                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+                                  }
+                                : {
+                                    background: 'rgba(255,255,255,0.018)',
+                                    borderColor: 'rgba(255,255,255,0.05)',
+                                  }
                             }
                           >
                             <Icon
@@ -621,7 +651,7 @@ export default function ProjectHub() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-text-muted mb-1.5">
+                    <label className={modalLabelClass}>
                       Política de documentación (gate previo)
                     </label>
                     <div className="grid gap-2">
@@ -634,16 +664,20 @@ export default function ProjectHub() {
                             onClick={() =>
                               setNewProject((p) => ({ ...p, documentation_policy: value }))
                             }
-                            className="text-left rounded-lg border px-3 py-2.5 transition-all"
+                            className="rounded-xl border px-3 py-2.5 text-left transition-all"
                             style={
                               sel
                                 ? {
                                     background:
-                                      'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                                      'color-mix(in srgb, var(--accent-primary) 9%, rgba(255,255,255,0.02))',
                                     borderColor:
-                                      'color-mix(in srgb, var(--accent-primary) 30%, transparent)',
+                                      'color-mix(in srgb, var(--accent-primary) 28%, transparent)',
+                                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
                                   }
-                                : { borderColor: 'var(--border-subtle)' }
+                                : {
+                                    background: 'rgba(255,255,255,0.018)',
+                                    borderColor: 'rgba(255,255,255,0.05)',
+                                  }
                             }
                           >
                             <div className="flex items-center justify-between gap-3">
@@ -673,7 +707,7 @@ export default function ProjectHub() {
                     }
                     rows={3}
                     placeholder="Describe tu proyecto: qué construirás, contexto, recursos, plazos, requerimientos específicos..."
-                    className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-xs text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 transition-colors resize-none font-mono cursor-pointer"
+                    className={`${modalFieldClass} resize-none font-mono text-xs`}
                   />
 
                   {enablePlanning && (
@@ -756,20 +790,22 @@ export default function ProjectHub() {
               </div>
 
               <div className="flex gap-3 pt-1">
-                <button
+                <Button
                   type="button"
                   onClick={() => {
                     setShowNewModal(false);
                     setPendingFiles([]);
                   }}
-                  className="flex-1 py-2.5 rounded-lg border border-borders-strong text-text-muted text-sm hover:text-white hover:bg-surface-elevated transition-all"
+                  variant="devhubGlass"
+                  className="h-10 flex-1 rounded-xl border-white/[0.08] text-sm"
                 >
                   Cancelar
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   disabled={creating}
-                  className="flex-1 py-2.5 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold hover:from-blue-400 hover:to-indigo-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  variant="devhubPrimary"
+                  className="h-10 flex-1 rounded-xl text-sm font-semibold"
                 >
                   {creating ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -781,7 +817,7 @@ export default function ProjectHub() {
                     : enablePlanning
                       ? 'Crear e ir a Planning'
                       : 'Crear Proyecto'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

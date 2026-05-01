@@ -1,6 +1,11 @@
-# Playwright configuration for DevHub E2E tests
+// Playwright configuration for DevHub E2E tests
 
 import { defineConfig, devices } from '@playwright/test';
+
+const DEFAULT_BASE_URL = 'http://localhost:3100';
+const resolvedBaseUrl = process.env.BASE_URL || DEFAULT_BASE_URL;
+const resolvedPort = new URL(resolvedBaseUrl).port || '80';
+const webServerCommand = `next dev --port ${resolvedPort}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -13,7 +18,7 @@ export default defineConfig({
     ['json', { outputFile: 'test-results/results.json' }],
   ],
   use: {
-    baseURL: process.env.BASE_URL || 'http://localhost:3000',
+    baseURL: resolvedBaseUrl,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -25,8 +30,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
+    command: webServerCommand,
+    url: resolvedBaseUrl,
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

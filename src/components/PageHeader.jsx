@@ -64,16 +64,22 @@ export default function PageHeader({
 
   return (
     <div
-      className={`flex items-center h-[40px] bg-[#0a0a0a] border-b border-[rgba(255,255,255,0.04)] px-3 shrink-0 ${className}`}
+      className={`flex items-center h-[46px] border-b px-3 shrink-0 backdrop-blur-xl ${className}`}
       data-tauri-drag-region
       onDoubleClick={handleWinToggleMaximize}
+      style={{
+        borderBottomColor: 'color-mix(in srgb, var(--border-subtle) 92%, transparent)',
+        background:
+          'linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.028) 100%), linear-gradient(180deg, color-mix(in srgb, var(--surface-app) 90%, black), color-mix(in srgb, var(--surface-card) 82%, black))',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+      }}
     >
       {/* Left: App Icon + Project Name */}
-      <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' }}>
-        <div className="w-6 h-6 rounded-full overflow-hidden bg-[#58A6FF]/10 border border-[#58A6FF]/20 flex items-center justify-center shadow-sm">
+      <div className="flex items-center gap-3 min-w-0" style={{ WebkitAppRegion: 'no-drag' }}>
+        <div className="w-7 h-7 rounded-full overflow-hidden border flex items-center justify-center shadow-sm">
           <img src="/logo.png" alt="DevHub logo" className="w-full h-full object-cover" />
         </div>
-        <span className="font-semibold text-text-primary text-[12px] tracking-wide opacity-90">
+        <span className="font-semibold text-text-primary text-[12px] tracking-[0.02em] opacity-90 truncate">
           DevHub <span className="opacity-40 font-normal mx-2">/</span> {project?.name || ''}
         </span>
       </div>
@@ -90,19 +96,21 @@ export default function PageHeader({
       <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' }}>
         <NotificationCenter projectId={project?.id} variant="topbar" />
         <div
-          className="text-[11px] px-3 py-1 rounded-full border shadow-sm flex items-center gap-2"
+          className="text-[11px] px-3 py-1.5 rounded-full border shadow-sm flex items-center gap-2"
           style={{
-            borderColor: 'var(--border-subtle)',
-            background: 'rgba(255,255,255,0.03)',
-            color: 'var(--text-muted)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            background:
+              'linear-gradient(135deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0.03) 100%)',
+            color: 'var(--text-secondary)',
+            backdropFilter: 'blur(12px)',
           }}
         >
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500/80 shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+          <div className="w-1.5 h-1.5 rounded-full bg-amber-400/90 shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
           {pageName}
         </div>
 
         {/* Window Controls - Circular macOS style */}
-        <div className="flex items-center gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.04)]">
+          <div className="flex items-center gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]">
           <button
             onClick={handleWinMinimize}
             className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"

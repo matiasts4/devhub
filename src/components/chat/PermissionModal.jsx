@@ -65,7 +65,7 @@ export default function PermissionModal({ isOpen, onClose, onApprove, onReject, 
   const isUrgent = timeLeft <= 10;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div
         style={{
           background: 'var(--surface-muted)',

@@ -7,12 +7,12 @@
  * - Verify swarm_config table changes
  */
 
-const { ApiTestHarness } = require('./harness');
+const { ApiTestHarness, getAgentHubBaseUrl } = require('./harness');
 const { createMockDb } = require('../mocks');
 const { seedSwarmConfig } = require('../fixtures');
 const { assertDbRow } = require('../assertions');
 
-const BASE_URL = process.env.AGENTHUB_BASE_URL || 'http://localhost:3000';
+const BASE_URL = getAgentHubBaseUrl();
 
 describe('GET /api/agenthub/config', () => {
   let harness;
