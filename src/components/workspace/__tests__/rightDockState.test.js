@@ -6,10 +6,13 @@ describe('rightDockState normalizeBrowserUrl', () => {
     expect(normalizeBrowserUrl('workspace-node.local:4173')).toBe('http://workspace-node.local:4173/');
   });
 
-  test('falls back to DuckDuckGo search for malformed explicit URLs with free-text whitespace', () => {
-    expect(normalizeBrowserUrl('http://bad host:3000')).toBe(
-      'https://duckduckgo.com/?q=http%3A%2F%2Fbad%20host%3A3000'
-    );
+  test('defaults plain public domains to https', () => {
+    expect(normalizeBrowserUrl('arxonlabs.com')).toBe('https://arxonlabs.com/');
+    expect(normalizeBrowserUrl('www.arxonlabs.com/docs')).toBe('https://www.arxonlabs.com/docs');
+  });
+
+  test('rejects malformed explicit URLs with free-text whitespace', () => {
+    expect(normalizeBrowserUrl('http://bad host:3000')).toBe('');
   });
 
   test('rejects malformed explicit hostnames that are not valid searchable free text', () => {

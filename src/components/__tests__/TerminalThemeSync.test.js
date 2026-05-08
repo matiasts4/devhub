@@ -59,6 +59,12 @@ describe('buildXtermTheme()', () => {
     expect(theme.background).toBe('#1a1a1a');
   });
 
+  test('background falls back to --surface-app when --terminal-bg is missing', () => {
+    const getVar = makeGetVar({ '--terminal-bg': '', '--surface-app': '#10151c' });
+    const theme = buildXtermTheme(getVar);
+    expect(theme.background).toBe('#10151c');
+  });
+
   test('foreground maps to --terminal-fg', () => {
     const getVar = makeGetVar({ '--terminal-fg': '#eeeeee' });
     const theme = buildXtermTheme(getVar);

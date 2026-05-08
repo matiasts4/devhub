@@ -1,5 +1,8 @@
 const {
+  buildHistoryReplay,
   buildServerMessage,
+  filterTerminalOutputForSession,
+  updateSessionModeFromInput,
   detectOpenCodeSessionId,
   getTransportMode,
   parseClientMessage,
@@ -39,5 +42,36 @@ describe('sidecar session transport contract', () => {
     expect(detectOpenCodeSessionId('opencode --session ses_abc123\r')).toBe('ses_abc123');
     expect(detectOpenCodeSessionId('Attached to ses_abc123 successfully')).toBe('ses_abc123');
     expect(detectOpenCodeSessionId('plain shell output')).toBeNull();
+  });
+
+  test('filters shell terminal response noise for shell sessions only', () => {
+    const session = { mode: 'shell', historyEnabled: true };
+    const noisy = 'prompt\u001b[?1;2c\u001b[>0;276;0c ok';
+
+    expect(filterTerminalOutputForSession(session, noisy)).toBe('prompt ok');
+    expect(filterTerminalOutputForSession({ mode: 'tui', historyEnabled: false }, noisy)).toBe(noisy);
+  });
+
+  test('builds replay without stripped terminal responses for shell sessions', () => {
+    const session = { mode: 'shell', historyEnabled: true, history: ['a', '\u001b[?1;2c', 'b', '\u001b[>0;276;0c'] };
+
+    expect(buildHistoryReplay(session)).toBe('ab');
+    expect(buildHistoryReplay({ mode: 'tui', historyEnabled: false, history: ['raw', '\u001b[?1;2c'] })).toBe('');
+  });
+
+  test('switches to tui mode conservatively for opencode and hermes commands', () => {
+    const shellSession = { mode: 'shell', historyEnabled: true, history: ['shell'], pendingInput: '' };
+    updateSessionModeFromInput(shellSession, 'opencode --session ses_123\r');
+
+    expect(shellSession.mode).toBe('tui');
+    expect(shellSession.historyEnabled).toBe(false);
+    expect(shellSession.history).toEqual([]);
+
+    const untouchedSession = { mode: 'shell', historyEnabled: true, history: ['shell'], pendingInput: '' };
+    updateSessionModeFromInput(untouchedSession, 'echo opencode-docs\r');
+
+    expect(untouchedSession.mode).toBe('shell');
+    expect(untouchedSession.historyEnabled).toBe(true);
+    expect(untouchedSession.history).toEqual(['shell']);
   });
 });

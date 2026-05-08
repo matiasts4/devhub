@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { NextResponse } from 'next/server';
+import { buildPreviewProxyDiagnostic } from '@/lib/browserPreviewDiagnostics';
 
 let cachedOverlaySource = null;
 function getOverlaySource() {
@@ -19,11 +20,12 @@ function getOverlaySource() {
 const VISUAL_EDIT_PROXY_LOG_PREFIX = '[devhub][preview-proxy]';
 
 function proxyLog(level, event, details = {}) {
+  const payload = buildPreviewProxyDiagnostic(event, details).details;
   if (level === 'error') {
-    console.error(`${VISUAL_EDIT_PROXY_LOG_PREFIX} ${event}`, details);
+    console.error(`${VISUAL_EDIT_PROXY_LOG_PREFIX} ${event}`, payload);
     return;
   }
-  console.warn(`${VISUAL_EDIT_PROXY_LOG_PREFIX} ${event}`, details);
+  console.warn(`${VISUAL_EDIT_PROXY_LOG_PREFIX} ${event}`, payload);
 }
 
 function parseTargetMeta(targetUrl) {

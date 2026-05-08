@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getWorkspaceAnimProps } from './terminal/workspaceAnimProps';
 import {
@@ -41,13 +41,20 @@ import { formatDistanceToNow } from 'date-fns';
 import AgentRoomSidebar from './AgentRoomSidebar';
 import { findAgentWorkspaceAndPanel } from '@/lib/agentRegistryLive';
 import WorkspaceRightDock from './workspace/WorkspaceRightDock';
+import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
 import {
   DEFAULT_RIGHT_DOCK_STATE,
+  MIN_RIGHT_DOCK_SIZE,
   readRightDockState,
   sanitizeRightDockState,
   writeRightDockState,
 } from './workspace/rightDockState';
+import {
+  buildBrowserWindowLabel,
+  readBrowserWindowStates,
+  writeBrowserWindowStates,
+} from './workspace/browserWindowState';
 import {
   getAdjacentWorkspaceId,
   resolveTerminalShortcutAction,
@@ -64,6 +71,12 @@ const createPanel = (id, initialCommand = null, panelCwd = null) => ({
 const createColumn = (colId, panelId, initialCommand = null, panelCwd = null) => ({
   id: colId,
   panels: [createPanel(panelId, initialCommand, panelCwd)],
+});
+const createWindow = (id, name, columns, activePanelId = null) => ({
+  id,
+  name,
+  columns,
+  activePanelId,
 });
 
 function createDefaultWorkspaceState() {
@@ -242,24 +255,75 @@ function buildUniqueRenderKey(scope, id, index, countsMap) {
   return `${base}-${index}-${used}`;
 }
 
-function renderWorkspacePanel(panel, { activePanelId, activeWsId, cwd, wsId, setActivePanelIds }) {
+function renderWorkspacePanel(
+  panel,
+  {
+    activePanelId,
+    activeWsId,
+    cwd,
+    wsId,
+    setActivePanelIds,
+    onClosePanel,
+    onSplitRight,
+    onSplitDown,
+  }
+) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
 
   return (
     <div
       key={panel.id}
       data-testid={`panel-slot-${panel.id}`}
-      className={`h-full w-full min-h-0 min-w-0 overflow-hidden rounded-lg border ${
+      className={`group relative h-full w-full min-h-0 min-w-0 overflow-hidden rounded-lg border ${
         isActive
           ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
           : 'border-transparent'
       }`}
       onMouseDown={() => setActivePanelIds((prev) => ({ ...prev, [wsId]: panel.id }))}
     >
+      <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1 rounded-md border border-white/10 bg-[#111827]/85 px-1 py-0.5 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
+        <button
+          type="button"
+          className="h-5 w-5 inline-flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10"
+          title="Dividir a la derecha"
+          aria-label="Dividir a la derecha"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSplitRight?.();
+          }}
+        >
+          <SplitSquareVertical className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          className="h-5 w-5 inline-flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10"
+          title="Dividir hacia abajo"
+          aria-label="Dividir hacia abajo"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSplitDown?.();
+          }}
+        >
+          <SplitSquareHorizontal className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          className="h-5 w-5 inline-flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#ff7b72] hover:bg-white/10"
+          title="Cerrar terminal"
+          aria-label="Cerrar terminal"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClosePanel?.();
+          }}
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
       <TerminalTTY
         id={panel.id}
         cwd={panel.cwd || cwd}
         hideTitleBar={true}
+        showQuickCopyButton={false}
         autoFocus={isActive}
         initialCommand={panel.initialCommand}
       />
@@ -283,9 +347,122 @@ function resolveWorkspacePanelId(workspace, savedPanelId) {
   return savedPanelId && panelIds.includes(savedPanelId) ? savedPanelId : panelIds[0];
 }
 
+function normalizeWorkspaceWindows(rawWorkspaceWindows, rawActiveWindowIds, workspaces, activePanelIds) {
+  const usedWindowIds = new Set();
+  let windowCounter = 1;
+
+  const nextWindowId = (preferredId) => {
+    const normalizedPreferred = typeof preferredId === 'string' ? preferredId.trim() : '';
+    const preferredMatch = /^v(\d+)$/i.exec(normalizedPreferred);
+
+    if (preferredMatch && !usedWindowIds.has(normalizedPreferred)) {
+      usedWindowIds.add(normalizedPreferred);
+      windowCounter = Math.max(windowCounter, Number(preferredMatch[1]) + 1);
+      return normalizedPreferred;
+    }
+
+    let candidate = `v${windowCounter}`;
+    while (usedWindowIds.has(candidate)) {
+      windowCounter += 1;
+      candidate = `v${windowCounter}`;
+    }
+
+    usedWindowIds.add(candidate);
+    windowCounter += 1;
+    return candidate;
+  };
+
+  const nextWorkspaceWindows = {};
+  const nextActiveWindowIds = {};
+
+  workspaces.forEach((ws, wsIndex) => {
+    const existingWindows =
+      Array.isArray(rawWorkspaceWindows?.[ws.id]) && rawWorkspaceWindows[ws.id].length > 0
+        ? rawWorkspaceWindows[ws.id]
+        : null;
+
+    if (existingWindows) {
+      const normalizedWindows = existingWindows.map((win, index) => {
+        const columns = Array.isArray(win?.columns) && win.columns.length > 0 ? win.columns : ws.columns;
+        const panelIds = columns.flatMap((col) => col.panels || []).map((panel) => panel.id);
+        const fallbackPanelId = panelIds[0] || activePanelIds[ws.id] || null;
+        const activePanelId =
+          typeof win?.activePanelId === 'string' && panelIds.includes(win.activePanelId)
+            ? win.activePanelId
+            : fallbackPanelId;
+
+        return createWindow(
+          nextWindowId(win?.id),
+          typeof win?.name === 'string' && win.name.trim() ? win.name.trim() : `V${index + 1}`,
+          columns,
+          activePanelId
+        );
+      });
+
+      nextWorkspaceWindows[ws.id] = normalizedWindows;
+
+      const requestedActiveWindowId = rawActiveWindowIds?.[ws.id];
+      const activeWindow =
+        normalizedWindows.find((win, index) => existingWindows[index]?.id === requestedActiveWindowId)
+        || normalizedWindows[0];
+
+      nextActiveWindowIds[ws.id] = activeWindow?.id || normalizedWindows[0]?.id || null;
+
+      if (activeWindow?.columns?.length) {
+        ws.columns = activeWindow.columns;
+        activePanelIds[ws.id] =
+          activeWindow.activePanelId ||
+          activeWindow.columns.flatMap((col) => col.panels || [])[0]?.id ||
+          activePanelIds[ws.id];
+      }
+
+      return;
+    }
+
+    const windowId = nextWindowId();
+    const activePanelId = activePanelIds[ws.id] || ws.columns[0]?.panels?.[0]?.id || null;
+    nextWorkspaceWindows[ws.id] = [createWindow(windowId, `V${wsIndex + 1}`, ws.columns, activePanelId)];
+    nextActiveWindowIds[ws.id] = windowId;
+  });
+
+  return {
+    workspaceWindows: nextWorkspaceWindows,
+    activeWindowIds: nextActiveWindowIds,
+    windowCounter,
+  };
+}
+
+export function resolveRightDockLayerStyle({
+  isFullscreenBrowser,
+  size,
+  measuredBounds,
+}) {
+  if (isFullscreenBrowser) {
+    return { top: 0, right: 0, bottom: 0, left: 0, width: '100%' };
+  }
+
+  if (measuredBounds) {
+    return {
+      top: 0,
+      right: measuredBounds.right,
+      bottom: 0,
+      left: measuredBounds.left,
+      width: 'auto',
+    };
+  }
+
+  return { top: 0, right: 0, bottom: 0, left: 'auto', width: `${size}%` };
+}
+
 export default function TerminalWorkspacesManager({ cwd, isVisible, projectId }) {
   const managerRootRef = useRef(null);
+  const panelSubtabsBarRef = useRef(null);
+  const workspaceGridAreaRef = useRef(null);
+  const rightDockPlaceholderRef = useRef(null);
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
+  const terminalStateStorageKey = projectId
+    ? `devhub_terminal_state:${projectId}`
+    : 'devhub_terminal_state';
   const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [reopenActionError, setReopenActionError] = useState(null);
   const [workspaces, setWorkspaces] = useState(() => createDefaultWorkspaceState().workspaces);
@@ -298,7 +475,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [draggedWsId, setDraggedWsId] = useState(null);
   const [dragOverWsId, setDragOverWsId] = useState(null);
   const [gridCommand, setGridCommand] = useState('opencode');
-  const [rightDockStates, setRightDockStates] = useState(() => ({}));
+  const [rightDockState, setRightDockState] = useState(() => ({ ...DEFAULT_RIGHT_DOCK_STATE }));
+  const [rightDockMeasuredBounds, setRightDockMeasuredBounds] = useState(null);
+  const [hasMountedRightDock, setHasMountedRightDock] = useState(false);
+  const [isDraggingDock, setIsDraggingDock] = useState(false);
+  const [dockWorkspaceId, setDockWorkspaceId] = useState(() => createDefaultWorkspaceState().activeWsId);
+  const [browserWindowStates, setBrowserWindowStates] = useState(() => ({}));
+  const [workspaceWindows, setWorkspaceWindows] = useState(() => ({}));
+  const [activeWindowIds, setActiveWindowIds] = useState(() => ({}));
+  const [showWorkspacePathChip, setShowWorkspacePathChip] = useState(true);
   const {
     status: resumableStatus,
     sessions: resumableSessions,
@@ -329,6 +514,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const wsCounterRef = useRef(1);
   const panelCounterRef = useRef(1);
   const colCounterRef = useRef(1);
+  const windowCounterRef = useRef(1);
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
@@ -359,7 +545,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   // --- LocalStorage Persistence ---
   useEffect(() => {
     try {
-      const savedState = storage?.getItem('devhub_terminal_state');
+      const savedState =
+        storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
       if (savedState) {
         const parsed = JSON.parse(savedState);
         if (parsed.workspaces && parsed.workspaces.length > 0) {
@@ -372,6 +559,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           setWorkspaces(normalizedState.workspaces);
           setActiveWsId(normalizedState.activeWsId);
           setActivePanelIds(normalizedState.activePanelIds);
+
+          const normalizedWindows = normalizeWorkspaceWindows(
+            parsed.workspaceWindows || {},
+            parsed.activeWindowIds || {},
+            normalizedState.workspaces,
+            normalizedState.activePanelIds
+          );
+
+          setWorkspaceWindows(normalizedWindows.workspaceWindows);
+          setActiveWindowIds(normalizedWindows.activeWindowIds);
+          windowCounterRef.current = Math.max(windowCounterRef.current, normalizedWindows.windowCounter);
 
           const nextCounters = syncWorkspaceCountersMonotonic(normalizedState.workspaces, {
             workspace: wsCounterRef.current,
@@ -387,13 +585,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     } catch (e) {
       console.error('Failed to load terminal state:', e);
     }
-    // Load the initial workspace's dock state from storage
-    setRightDockStates((prev) => ({
-      ...prev,
-      [activeWsId]: readRightDockState(storage, projectId, activeWsId),
-    }));
+    const initialDockWorkspaceId =
+      (typeof activeWsIdRef.current === 'string' && activeWsIdRef.current) ||
+      createDefaultWorkspaceState().activeWsId;
+    setDockWorkspaceId(initialDockWorkspaceId);
+    setRightDockState(readRightDockState(storage, projectId, initialDockWorkspaceId));
+    setBrowserWindowStates(readBrowserWindowStates(storage, projectId));
     setIsClientLoaded(true);
-  }, [projectId, storage]);
+  }, [projectId, storage, terminalStateStorageKey]);
 
   useEffect(() => {
     if (isClientLoaded) {
@@ -409,31 +608,76 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         })),
       }));
       storage?.setItem(
-        'devhub_terminal_state',
+        terminalStateStorageKey,
         JSON.stringify({
           workspaces: cleanWorkspaces,
           activeWsId,
           activePanelIds,
+          workspaceWindows,
+          activeWindowIds,
         })
       );
     }
-  }, [workspaces, activeWsId, activePanelIds, isClientLoaded, storage]);
+  }, [
+    workspaces,
+    activeWsId,
+    activePanelIds,
+    workspaceWindows,
+    activeWindowIds,
+    isClientLoaded,
+    storage,
+    terminalStateStorageKey,
+  ]);
 
-  // Load dock state lazily when switching to a workspace for the first time
+  // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
-    if (!isClientLoaded || !activeWsId) return;
-    setRightDockStates((prev) => {
-      if (prev[activeWsId]) return prev; // already loaded
-      return { ...prev, [activeWsId]: readRightDockState(storage, projectId, activeWsId) };
-    });
-  }, [isClientLoaded, activeWsId, projectId, storage]);
+    if (!isClientLoaded || !dockWorkspaceId) return;
+    writeRightDockState(storage, projectId, dockWorkspaceId, rightDockState);
+  }, [dockWorkspaceId, isClientLoaded, projectId, rightDockState, storage]);
 
-  // Persist each workspace's dock state when it changes
   useEffect(() => {
-    if (!isClientLoaded || !activeWsId) return;
-    const state = rightDockStates[activeWsId];
-    if (state) writeRightDockState(storage, projectId, activeWsId, state);
-  }, [isClientLoaded, projectId, activeWsId, rightDockStates, storage]);
+    if (!isClientLoaded) return;
+    writeBrowserWindowStates(storage, projectId, browserWindowStates);
+  }, [browserWindowStates, isClientLoaded, projectId, storage]);
+
+  useEffect(() => {
+    if (!isClientLoaded || !activeWsId || activeWsId === dockWorkspaceId) return;
+    setDockWorkspaceId(activeWsId);
+    setRightDockState(readRightDockState(storage, projectId, activeWsId));
+  }, [activeWsId, dockWorkspaceId, isClientLoaded, projectId, storage]);
+
+  useEffect(() => {
+    if (rightDockState.visible && rightDockState.activeTab === 'editor') {
+      setHasMountedRightDock(true);
+    }
+  }, [rightDockState.activeTab, rightDockState.visible]);
+
+  useEffect(() => {
+    if (!isDraggingDock) return undefined;
+
+    const stopDockDrag = () => setIsDraggingDock(false);
+
+    window.addEventListener('mouseup', stopDockDrag);
+    window.addEventListener('pointerup', stopDockDrag);
+    window.addEventListener('dragend', stopDockDrag);
+    window.addEventListener('blur', stopDockDrag);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        stopDockDrag();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('mouseup', stopDockDrag);
+      window.removeEventListener('pointerup', stopDockDrag);
+      window.removeEventListener('dragend', stopDockDrag);
+      window.removeEventListener('blur', stopDockDrag);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isDraggingDock]);
 
   useEffect(() => {
     if (!workspaces.length) return;
@@ -449,24 +693,280 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     panelCounterRef.current = nextCounters.panel;
   }, [workspaces]);
 
+  useEffect(() => {
+    if (!workspaces.length) return;
+
+    setWorkspaceWindows((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      workspaces.forEach((ws) => {
+        const existing = Array.isArray(next[ws.id]) ? next[ws.id] : [];
+        if (existing.length === 0) {
+          windowCounterRef.current += 1;
+          const windowId = `v${windowCounterRef.current}`;
+          const panelId = activePanelIds[ws.id] || ws.columns?.[0]?.panels?.[0]?.id || null;
+          next[ws.id] = [createWindow(windowId, 'V1', ws.columns, panelId)];
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+
+    setActiveWindowIds((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      workspaces.forEach((ws) => {
+        const windows = workspaceWindows[ws.id] || [];
+        const candidate = prev[ws.id];
+        if (!candidate || !windows.some((w) => w.id === candidate)) {
+          const firstId = windows[0]?.id;
+          if (firstId) {
+            next[ws.id] = firstId;
+            changed = true;
+          }
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [workspaces, workspaceWindows, activePanelIds]);
+
+  useEffect(() => {
+    const maxWindowId = Object.values(workspaceWindows || {})
+      .flat()
+      .reduce((maxValue, windowView) => {
+        const match = /^v(\d+)$/i.exec(String(windowView?.id || ''));
+        if (!match) return maxValue;
+        return Math.max(maxValue, Number(match[1]));
+      }, 1);
+
+    windowCounterRef.current = Math.max(windowCounterRef.current, maxWindowId);
+  }, [workspaceWindows]);
+
+  useEffect(() => {
+    const barElement = panelSubtabsBarRef.current;
+    if (!barElement) return;
+
+    const activeViewCount = Math.max(1, (workspaceWindows?.[activeWsId] || []).length);
+    const updatePathVisibility = (width) => {
+      const minWidthForPathChip = 620 + Math.min(activeViewCount, 4) * 72;
+      setShowWorkspacePathChip(width >= minWidthForPathChip);
+    };
+
+    updatePathVisibility(barElement.getBoundingClientRect?.().width || window.innerWidth || 0);
+
+    if (typeof ResizeObserver !== 'function') {
+      const handleWindowResize = () => {
+        updatePathVisibility(barElement.getBoundingClientRect?.().width || window.innerWidth || 0);
+      };
+
+      window.addEventListener('resize', handleWindowResize);
+      return () => window.removeEventListener('resize', handleWindowResize);
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries?.[0]?.contentRect?.width || 0;
+      updatePathVisibility(width);
+    });
+
+    observer.observe(barElement);
+    return () => observer.disconnect();
+  }, [activeWsId, rightDockState.maximized, rightDockState.visible, workspaceWindows]);
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
+  const activeBrowserWindowState = browserWindowStates?.[activeWsId] || null;
+  const isFullscreenBrowser = rightDockState.visible && rightDockState.maximized && rightDockState.maximizedView === 'browser';
+  const hideRightDockPanel = rightDockState.maximized && rightDockState.maximizedView === 'window';
+  const rightDockLayerStyle = resolveRightDockLayerStyle({
+    isFullscreenBrowser,
+    size: rightDockState.size,
+    measuredBounds: rightDockMeasuredBounds,
+  });
+
+  const syncRightDockMeasuredBounds = useCallback(() => {
+    if (isFullscreenBrowser || !rightDockState.visible || rightDockState.maximized || hideRightDockPanel) {
+      setRightDockMeasuredBounds(null);
+      return;
+    }
+
+    const containerElement = workspaceGridAreaRef.current;
+    const placeholderElement = rightDockPlaceholderRef.current;
+    if (!containerElement || !placeholderElement) {
+      setRightDockMeasuredBounds(null);
+      return;
+    }
+
+    const containerRect = containerElement.getBoundingClientRect?.();
+    const placeholderRect = placeholderElement.getBoundingClientRect?.();
+
+    if (!containerRect || !placeholderRect || containerRect.width <= 0 || placeholderRect.width <= 0) {
+      return;
+    }
+
+    const nextBounds = {
+      left: Math.max(0, placeholderRect.left - containerRect.left),
+      right: Math.max(0, containerRect.right - placeholderRect.right),
+    };
+
+    setRightDockMeasuredBounds((prev) => {
+      if (prev && prev.left === nextBounds.left && prev.right === nextBounds.right) {
+        return prev;
+      }
+      return nextBounds;
+    });
+  }, [hideRightDockPanel, isFullscreenBrowser, rightDockState.maximized, rightDockState.visible]);
+
+  useLayoutEffect(() => {
+    syncRightDockMeasuredBounds();
+  }, [syncRightDockMeasuredBounds, rightDockState.size, activeWsId, isVisible]);
+
+  useEffect(() => {
+    if (isFullscreenBrowser || !rightDockState.visible || rightDockState.maximized || hideRightDockPanel) {
+      return undefined;
+    }
+
+    const containerElement = workspaceGridAreaRef.current;
+    const placeholderElement = rightDockPlaceholderRef.current;
+    if (!containerElement || !placeholderElement) {
+      return undefined;
+    }
+
+    if (typeof ResizeObserver !== 'function') {
+      window.addEventListener('resize', syncRightDockMeasuredBounds);
+      return () => window.removeEventListener('resize', syncRightDockMeasuredBounds);
+    }
+
+    const observer = new ResizeObserver(() => {
+      syncRightDockMeasuredBounds();
+    });
+
+    observer.observe(containerElement);
+    observer.observe(placeholderElement);
+    return () => observer.disconnect();
+  }, [hideRightDockPanel, isFullscreenBrowser, rightDockState.maximized, rightDockState.visible, syncRightDockMeasuredBounds]);
 
   workspacesRef.current = workspaces;
   activeWsIdRef.current = activeWsId;
   activePanelIdsRef.current = activePanelIds;
 
-  // Derive the active workspace's dock state (falls back to default for new workspaces)
-  const rightDockState = rightDockStates[activeWsId] ?? { ...DEFAULT_RIGHT_DOCK_STATE };
-
   const updateRightDockState = useCallback((nextValue) => {
-    setRightDockStates((prev) => {
-      const currentState = prev[activeWsId] ?? { ...DEFAULT_RIGHT_DOCK_STATE };
+    setRightDockState((prev) => {
+      const currentState = prev ?? { ...DEFAULT_RIGHT_DOCK_STATE };
       const resolvedState =
         typeof nextValue === 'function' ? nextValue(currentState) : { ...currentState, ...nextValue };
-      return { ...prev, [activeWsId]: sanitizeRightDockState(resolvedState) };
+      return sanitizeRightDockState(resolvedState);
     });
-  }, [activeWsId]);
+  }, []);
+
+  const updateBrowserWindowState = useCallback((wsId, nextValue) => {
+    if (!wsId) return;
+    setBrowserWindowStates((prev) => {
+      const currentState = prev?.[wsId] || {};
+      const resolvedState =
+        typeof nextValue === 'function' ? nextValue(currentState) : { ...currentState, ...nextValue };
+      return {
+        ...prev,
+        [wsId]: resolvedState,
+      };
+    });
+  }, []);
+
+  const closeWorkspaceBrowserWindow = useCallback(async (wsId) => {
+    if (!wsId) return;
+
+    const browserState = browserWindowStates?.[wsId];
+    const label = browserState?.label || buildBrowserWindowLabel(projectId, wsId);
+
+    try {
+      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const existingWindow = await WebviewWindow.getByLabel(label);
+        await existingWindow?.close().catch(() => {});
+      }
+    } catch {
+      // Ignore Tauri close failures so state can still be cleaned up locally.
+    } finally {
+      updateBrowserWindowState(wsId, {
+        open: false,
+        label,
+        url: '',
+        updatedAt: Date.now(),
+      });
+    }
+  }, [browserWindowStates, projectId, updateBrowserWindowState]);
+
+  useEffect(() => {
+    if (!isClientLoaded || typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return;
+
+    let cancelled = false;
+
+    async function reconcileBrowserWindows() {
+      try {
+        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const entries = await Promise.all(
+          Object.entries(browserWindowStates || {}).map(async ([wsId, state]) => {
+            const label = state?.label || buildBrowserWindowLabel(projectId, wsId);
+            const existingWindow = await WebviewWindow.getByLabel(label);
+
+            if (existingWindow) {
+              existingWindow.once('tauri://destroyed', () => {
+                updateBrowserWindowState(wsId, {
+                  open: false,
+                  label,
+                  url: '',
+                  updatedAt: Date.now(),
+                });
+              });
+            }
+
+            return [
+              wsId,
+              {
+                ...state,
+                label,
+                open: Boolean(existingWindow),
+                url: existingWindow ? state?.url || '' : '',
+                updatedAt: Date.now(),
+              },
+            ];
+          })
+        );
+
+        if (cancelled || entries.length === 0) return;
+
+        setBrowserWindowStates((prev) => {
+          let changed = false;
+          const next = { ...prev };
+
+          entries.forEach(([wsId, state]) => {
+            const previous = prev?.[wsId] || {};
+            if (
+              previous.open !== state.open
+              || previous.label !== state.label
+              || previous.url !== state.url
+            ) {
+              changed = true;
+            }
+            next[wsId] = state;
+          });
+
+          return changed ? next : prev;
+        });
+      } catch {
+        // Ignore reconciliation errors outside desktop contexts.
+      }
+    }
+
+    reconcileBrowserWindows();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [browserWindowStates, isClientLoaded, projectId, updateBrowserWindowState]);
 
   const handleRightDockVisibilityToggle = useCallback(() => {
     updateRightDockState((currentState) => ({
@@ -481,6 +981,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         ...currentState,
         visible: true,
         activeTab: tab,
+        maximizedView: tab === 'editor' ? 'editor' : 'browser',
       }));
     },
     [updateRightDockState]
@@ -509,6 +1010,111 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return columns.flatMap((col) => col.panels.map((p) => p.id));
   };
 
+  const syncActiveWindowSnapshot = useCallback((wsId, columns, nextActivePanelId = null) => {
+    setWorkspaceWindows((prev) => {
+      const windows = prev[wsId] || [];
+      const activeWindowId = activeWindowIds[wsId];
+      if (!activeWindowId || windows.length === 0) return prev;
+
+      return {
+        ...prev,
+        [wsId]: windows.map((win) => {
+          if (win.id !== activeWindowId) return win;
+          return {
+            ...win,
+            columns,
+            activePanelId:
+              nextActivePanelId ||
+              win.activePanelId ||
+              columns.flatMap((col) => col.panels || [])[0]?.id ||
+              null,
+          };
+        }),
+      };
+    });
+  }, [activeWindowIds]);
+
+  const addWindowToWorkspace = useCallback((wsId) => {
+    panelCounterRef.current += 1;
+    colCounterRef.current += 1;
+    windowCounterRef.current += 1;
+
+    const newPanelId = `p${panelCounterRef.current}`;
+    const newColId = `c${colCounterRef.current}`;
+    const newWindowId = `v${windowCounterRef.current}`;
+    const newColumns = [createColumn(newColId, newPanelId)];
+
+    setWorkspaceWindows((prev) => {
+      const existing = prev[wsId] || [];
+      return {
+        ...prev,
+        [wsId]: [
+          ...existing,
+          createWindow(newWindowId, `V${existing.length + 1}`, newColumns, newPanelId),
+        ],
+      };
+    });
+
+    setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
+    setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
+
+    setWorkspaces((prev) =>
+      prev.map((ws) => (ws.id === wsId ? { ...ws, columns: newColumns } : ws))
+    );
+  }, []);
+
+  const switchWindowInWorkspace = useCallback((wsId, windowId) => {
+    const windows = workspaceWindows[wsId] || [];
+    const nextWindow = windows.find((win) => win.id === windowId);
+    if (!nextWindow) return;
+
+    const nextPanelId =
+      nextWindow.activePanelId ||
+      nextWindow.columns?.flatMap((col) => col.panels || [])[0]?.id ||
+      null;
+
+    setActiveWindowIds((prev) => ({ ...prev, [wsId]: windowId }));
+    if (nextPanelId) {
+      setActivePanelIds((prev) => ({ ...prev, [wsId]: nextPanelId }));
+    }
+
+    setWorkspaces((prev) =>
+      prev.map((ws) => (ws.id === wsId ? { ...ws, columns: nextWindow.columns || ws.columns } : ws))
+    );
+  }, [workspaceWindows]);
+
+  const removeWindowFromWorkspace = useCallback(async (wsId, windowId) => {
+    const windows = workspaceWindows[wsId] || [];
+    if (windows.length <= 1) return;
+
+    const targetWindow = windows.find((win) => win.id === windowId);
+    if (targetWindow?.columns?.length) {
+      await closeTerminalSessions(getAllPanelIds(targetWindow.columns));
+    }
+
+    const nextWindows = windows.filter((win) => win.id !== windowId);
+    const nextActiveWindowId =
+      activeWindowIds[wsId] === windowId ? nextWindows[0]?.id : activeWindowIds[wsId];
+    const nextActiveWindow = nextWindows.find((win) => win.id === nextActiveWindowId) || nextWindows[0];
+    const nextPanelId =
+      nextActiveWindow?.activePanelId ||
+      nextActiveWindow?.columns?.flatMap((col) => col.panels || [])[0]?.id ||
+      null;
+
+    setWorkspaceWindows((prev) => ({ ...prev, [wsId]: nextWindows }));
+    setActiveWindowIds((prev) => ({ ...prev, [wsId]: nextActiveWindowId }));
+
+    if (nextPanelId) {
+      setActivePanelIds((prev) => ({ ...prev, [wsId]: nextPanelId }));
+    }
+
+    if (nextActiveWindow?.columns) {
+      setWorkspaces((prev) =>
+        prev.map((ws) => (ws.id === wsId ? { ...ws, columns: nextActiveWindow.columns } : ws))
+      );
+    }
+  }, [workspaceWindows, activeWindowIds]);
+
   const addWorkspace = () => {
     wsCounterRef.current += 1;
     panelCounterRef.current += 1;
@@ -517,17 +1123,25 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const newWsId = `ws${wsCounterRef.current}`;
     const newPanelId = `p${panelCounterRef.current}`;
     const newColId = `c${colCounterRef.current}`;
+    windowCounterRef.current += 1;
+    const newWindowId = `v${windowCounterRef.current}`;
+    const newColumns = [createColumn(newColId, newPanelId)];
 
     setWorkspaces((prev) => [
       ...prev,
       {
         id: newWsId,
         name: `Workspace ${wsCounterRef.current}`,
-        columns: [createColumn(newColId, newPanelId)],
+        columns: newColumns,
       },
     ]);
     setActiveWsId(newWsId);
     setActivePanelIds((prev) => ({ ...prev, [newWsId]: newPanelId }));
+    setWorkspaceWindows((prev) => ({
+      ...prev,
+      [newWsId]: [createWindow(newWindowId, 'V1', newColumns, newPanelId)],
+    }));
+    setActiveWindowIds((prev) => ({ ...prev, [newWsId]: newWindowId }));
   };
 
   const removeWorkspace = async (e, idToRemove) => {
@@ -536,6 +1150,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     if (!workspaceToRemove || workspaces.length <= 1) return;
 
     await closeTerminalSessions(getAllPanelIds(workspaceToRemove.columns));
+    await closeWorkspaceBrowserWindow(idToRemove);
 
     setWorkspaces((prev) => {
       const newWs = prev.filter((w) => w.id !== idToRemove);
@@ -546,6 +1161,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return newWs;
     });
     setActivePanelIds((prev) => {
+      const next = { ...prev };
+      delete next[idToRemove];
+      return next;
+    });
+    setWorkspaceWindows((prev) => {
+      const next = { ...prev };
+      delete next[idToRemove];
+      return next;
+    });
+    setActiveWindowIds((prev) => {
+      const next = { ...prev };
+      delete next[idToRemove];
+      return next;
+    });
+    setBrowserWindowStates((prev) => {
       const next = { ...prev };
       delete next[idToRemove];
       return next;
@@ -612,6 +1242,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       panelCounterRef.current += 1;
       const newPanelId = `p${panelCounterRef.current}`;
 
+      let nextColumnsSnapshot = null;
       setWorkspaces((prev) =>
         prev.map((ws) => {
           if (ws.id !== activeWsId) return ws;
@@ -639,15 +1270,165 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             newColumns[colIndex] = { ...newColumns[colIndex], panels: newPanels };
           }
 
+          nextColumnsSnapshot = newColumns;
+
           return { ...ws, columns: newColumns };
         })
       );
 
       setActivePanelIds((prev) => ({ ...prev, [activeWsId]: newPanelId }));
+      if (nextColumnsSnapshot) {
+        syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, newPanelId);
+      }
       return newPanelId;
     },
-    [activeWorkspace, activeWsId, activePanelId]
+    [activeWorkspace, activeWsId, activePanelId, syncActiveWindowSnapshot]
   );
+
+  const renderWorkspaceWindowBar = useCallback((ws, wsDockState, updateWsDockState) => {
+    const viewTabs = workspaceWindows[ws.id] || [];
+    const splitRightLabel = 'Dividir a la derecha';
+    const splitDownLabel = 'Dividir hacia abajo';
+    const isFullscreenMode = wsDockState.maximized === true;
+    const isBrowserFullscreen = isFullscreenMode && wsDockState.maximizedView === 'browser';
+    const activeWindowId = activeWindowIds[ws.id] || viewTabs[0]?.id;
+
+    return (
+        <div
+          ref={activeWsId === ws.id ? panelSubtabsBarRef : null}
+          data-testid="panel-subtabs-bar"
+          className="h-11 flex items-center justify-between px-3 shrink-0 border-b border-[rgba(var(--accent-rgb,88,166,255),0.22)] bg-[var(--surface-card)] select-none"
+        >
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden pr-2">
+          {viewTabs.map((view, idx) => {
+            const isActive = !isBrowserFullscreen && view.id === activeWindowId;
+            return (
+              <button
+                key={view.id}
+                data-testid={`panel-tab-p${idx + 1}`}
+                onClick={() => {
+                  switchWindowInWorkspace(ws.id, view.id);
+                  if (isFullscreenMode) {
+                    updateWsDockState({
+                      visible: true,
+                      maximized: true,
+                      maximizedView: 'window',
+                    });
+                  }
+                }}
+                className={`group h-7 shrink-0 px-3.5 rounded-xl text-[13px] font-mono font-semibold border flex items-center gap-2 transition-colors ${
+                  isActive
+                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
+                    : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
+                }`}
+                title={`Vista V${idx + 1}`}
+              >
+                V{idx + 1}
+                {viewTabs.length > 1 ? (
+                  <span
+                    role="button"
+                    aria-label={`Cerrar V${idx + 1}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeWindowFromWorkspace(ws.id, view.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-4 h-4 rounded-md hover:bg-white/15 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+          {isFullscreenMode ? (
+            <button
+              type="button"
+              data-testid="panel-tab-browser"
+              onClick={() => {
+                updateWsDockState({
+                  visible: true,
+                  activeTab: 'browser',
+                  maximized: true,
+                  maximizedView: 'browser',
+                });
+              }}
+              className={`h-7 shrink-0 px-3.5 rounded-xl text-[13px] font-mono font-semibold border flex items-center gap-2 transition-colors ${
+                isBrowserFullscreen
+                  ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
+                  : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
+              }`}
+              title="Vista Browser"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              Browser
+            </button>
+          ) : null}
+          <button
+            data-testid="panel-subtabs-add"
+            onClick={() => addWindowToWorkspace(ws.id)}
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg transition-colors text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]"
+            title="Nueva vista"
+            aria-label="Agregar vista"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          {!isFullscreenMode ? (
+            <>
+              <button
+                type="button"
+                data-testid="panel-subtabs-split-right"
+                onClick={() => handleSplit('horizontal', activePanelId)}
+                className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                title={splitRightLabel}
+                aria-label={splitRightLabel}
+              >
+                <SplitSquareVertical className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                data-testid="panel-subtabs-split-down"
+                onClick={() => handleSplit('vertical', activePanelId)}
+                className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                title={splitDownLabel}
+                aria-label={splitDownLabel}
+              >
+                <SplitSquareHorizontal className="w-3.5 h-3.5" />
+              </button>
+            </>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 min-w-0 items-center justify-end gap-2 overflow-hidden">
+          {cwd && showWorkspacePathChip ? (
+            <span
+              data-testid="panel-subtabs-cwd-chip"
+              className="inline-flex shrink-0 items-center gap-2 px-3 py-1 rounded-xl text-[12px] font-mono border"
+              style={{
+                color: 'var(--accent-primary)',
+                borderColor: 'rgba(var(--accent-rgb,88,166,255),0.35)',
+                background: 'rgba(var(--accent-rgb,88,166,255),0.08)',
+                maxWidth: '220px',
+              }}
+              title={cwd}
+            >
+              <Folder className="w-3 h-3" />
+              <span className="truncate">{shortPath(cwd)}</span>
+            </span>
+          ) : null}
+        </div>
+      </div>
+    );
+  }, [
+    workspaceWindows,
+    activeWindowIds,
+    activeWsId,
+    cwd,
+    showWorkspacePathChip,
+    switchWindowInWorkspace,
+    removeWindowFromWorkspace,
+    addWindowToWorkspace,
+    handleSplit,
+    activePanelId,
+  ]);
 
   const launchPanelWithCommand = useCallback(
     (command, panelCwd = null) => {
@@ -758,6 +1539,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       await closeTerminalSessions([targetId]);
 
+      let nextColumnsSnapshot = null;
       setWorkspaces((prev) =>
         prev.map((ws) => {
           if (ws.id !== activeWsId) return ws;
@@ -768,6 +1550,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               panels: col.panels.filter((p) => p.id !== targetId),
             }))
             .filter((col) => col.panels.length > 0); // Eliminar columnas vacías
+
+          nextColumnsSnapshot = newColumns;
 
           return { ...ws, columns: newColumns };
         })
@@ -782,6 +1566,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           }
           return prev;
         });
+      }
+
+      if (nextColumnsSnapshot) {
+        const fallbackPanel = nextColumnsSnapshot.flatMap((col) => col.panels || [])[0]?.id || null;
+        syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, fallbackPanel);
       }
 
       // When a panel closes, mark any associated OC session as terminated
@@ -810,7 +1599,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         // Non-critical
       }
     },
-    [activeWorkspace, activeWsId, activePanelId, projectId]
+    [activeWorkspace, activeWsId, activePanelId, projectId, syncActiveWindowSnapshot]
   );
 
   const failPendingReopen = useCallback((panelId, fallbackMessage = 'Session is no longer available to resume.') => {
@@ -1089,7 +1878,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const workspaceTabKeyCounts = new Map();
   const workspaceGridKeyCounts = new Map();
-
+  const activeWorkspacePanelCount = activeWorkspace ? getAllPanelIds(activeWorkspace.columns).length : 0;
   return (
     <motion.div
       ref={managerRootRef}
@@ -1107,6 +1896,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             const totalPanels = getAllPanelIds(ws.columns).length;
             const workspaceTabKey = buildUniqueRenderKey('workspace-tab', ws.id, wsIndex, workspaceTabKeyCounts);
             const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
+            const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
             return (
               <div
                 key={workspaceTabKey}
@@ -1165,6 +1955,28 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   <span className="text-[12px] font-semibold truncate">
                     {workspaceTabLabel}
                   </span>
+                  {hasOpenBrowserWindow ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
+                      <span
+                        className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
+                        data-testid={`workspace-browser-indicator-${ws.id}`}
+                        title="Dedicated browser window open"
+                      />
+                      <button
+                        type="button"
+                        data-testid={`workspace-browser-close-${ws.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          closeWorkspaceBrowserWindow(ws.id);
+                        }}
+                        className="inline-flex items-center justify-center rounded text-emerald-100/80 transition-colors hover:text-white"
+                        title="Cerrar browser dedicado de este workspace"
+                        aria-label="Cerrar browser dedicado de este workspace"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ) : null}
                   <span
                     className="text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
                     style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)' }}
@@ -1184,8 +1996,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             );
           })}
           <button
+            type="button"
             onClick={addWorkspace}
             className="inline-flex items-center justify-center w-10 h-10 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] rounded-xl border border-transparent hover:border-[var(--border-subtle)] transition-all ml-0.5 shrink-0"
+            title="Nuevo workspace"
+            aria-label="Nuevo workspace"
+            data-testid="workspace-add-button"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -1289,20 +2105,41 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1"
               data-testid="right-dock-toolbar-switch"
             >
-              <button
-                type="button"
-                data-testid="right-dock-tab-browser"
-                onClick={() => handleRightDockTabSelect('browser')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
-                  rightDockState.activeTab === 'browser' && rightDockState.visible
-                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.24)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]'
-                }`}
-                title="Show browser dock"
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Browser</span>
-              </button>
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  data-testid="right-dock-tab-browser"
+                  onClick={() => handleRightDockTabSelect('browser')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
+                    rightDockState.activeTab === 'browser' && rightDockState.visible
+                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.24)]'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]'
+                  }`}
+                  title="Show browser dock"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Browser</span>
+                  {activeBrowserWindowState?.open ? (
+                    <span
+                      className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.65)]"
+                      data-testid="right-dock-tab-browser-indicator"
+                      title="Ventana browser activa en segundo plano"
+                    />
+                  ) : null}
+                </button>
+                {activeBrowserWindowState?.open ? (
+                  <button
+                    type="button"
+                    data-testid="workspace-browser-window-close"
+                    onClick={() => closeWorkspaceBrowserWindow(activeWsId)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-emerald-100 transition-all hover:bg-emerald-400/14"
+                    title="Cerrar la ventana browser dedicada de este workspace"
+                    aria-label="Cerrar la ventana browser dedicada de este workspace"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ) : null}
+              </div>
               <button
                 type="button"
                 data-testid="right-dock-tab-editor"
@@ -1322,7 +2159,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               <button
                 type="button"
                 data-testid="workspace-right-dock-maximize"
-                onClick={() => updateRightDockState({ maximized: !rightDockState.maximized, visible: true })}
+                onClick={() => updateRightDockState((currentState) => ({
+                  ...currentState,
+                  visible: true,
+                  maximized: !currentState.maximized,
+                  maximizedView: currentState.maximized
+                    ? currentState.maximizedView || 'browser'
+                    : (currentState.activeTab === 'editor' ? 'editor' : 'browser'),
+                }))}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition-all hover:border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-primary)]"
                 title={rightDockState.maximized ? 'Restaurar dock' : 'Maximizar dock'}
                 aria-label={rightDockState.maximized ? 'Restaurar dock' : 'Maximizar dock'}
@@ -1531,19 +2375,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         )}
 
         {/* Terminal Grid */}
-        <div className="flex-1 relative min-w-0">
+        <div ref={workspaceGridAreaRef} className="flex-1 relative min-w-0">
           {workspaces.map((ws, wsIndex) => {
             const workspaceGridKey = buildUniqueRenderKey('workspace-grid', ws.id, wsIndex, workspaceGridKeyCounts);
-            // Per-workspace dock state — each workspace remembers its own browser/editor state
-            const wsDockState = rightDockStates[ws.id] ?? { ...DEFAULT_RIGHT_DOCK_STATE };
-            const updateWsDockState = (nextValue) => {
-              setRightDockStates((prev) => {
-                const currentState = prev[ws.id] ?? { ...DEFAULT_RIGHT_DOCK_STATE };
-                const resolvedState =
-                  typeof nextValue === 'function' ? nextValue(currentState) : { ...currentState, ...nextValue };
-                return { ...prev, [ws.id]: sanitizeRightDockState(resolvedState) };
-              });
-            };
+            const wsDockState = rightDockState;
+            const updateWsDockState = updateRightDockState;
             return (
             <div
               key={workspaceGridKey}
@@ -1553,146 +2389,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 zIndex: activeWsId === ws.id ? 10 : 0,
               }}
             >
-              {wsDockState.visible && wsDockState.maximized ? (
-                <div className="h-full w-full rounded-xl overflow-hidden border border-[var(--border-subtle)]">
-                  <WorkspaceRightDock
-                    project={{ id: projectId, local_path: cwd }}
-                    dockState={wsDockState}
-                    onDockStateChange={updateWsDockState}
-                  />
-                </div>
-              ) : (
-              <PanelGroup direction="horizontal" className="w-full h-full">
+              <PanelGroup
+                direction="horizontal"
+                className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
+                aria-hidden={isFullscreenBrowser}
+              >
                 <Panel key={`${ws.id}-terminal-grid`} minSize={18} className="flex flex-col bg-[#0c1018] rounded-xl overflow-hidden border border-[var(--border-subtle)]">
-                  {/* Panel tab bar — P1/P2/P3 tabs + path of active terminal */}
-                  {(() => {
-                    const allPanels = ws.columns.flatMap((col) => col.panels);
-                    const activePanel = allPanels.find((p) => p.id === activePanelId) || allPanels[0];
-                    const canAdd = allPanels.length < 3;
-                    const splitLimitReason = 'Máximo 3 terminales alcanzado';
-                    const splitRightLabel = `Split Right (${TERMINAL_WORKSPACE_SHORTCUTS.splitRight})`;
-                    const splitDownLabel = `Split Down (${TERMINAL_WORKSPACE_SHORTCUTS.splitDown})`;
-                    return (
-                      <div
-                        data-testid="panel-subtabs-bar"
-                        className="h-[52px] flex items-center justify-between px-4 shrink-0 border-b border-[rgba(var(--accent-rgb,88,166,255),0.22)] bg-[var(--surface-card)] select-none"
-                      >
-                        {/* Left: P1/P2/P3 tabs + add button */}
-                        <div className="flex items-center gap-2 min-w-0">
-                          {allPanels.slice(0, 3).map((panel, idx) => {
-                            const isActive = panel.id === activePanelId && activeWsId === ws.id;
-                            return (
-                              <button
-                                key={panel.id}
-                                data-testid={`panel-tab-p${idx + 1}`}
-                                onClick={() =>
-                                  setActivePanelIds((prev) => ({ ...prev, [ws.id]: panel.id }))
-                                }
-                                className={`group h-9 px-4 rounded-xl text-[13px] font-mono font-semibold border flex items-center gap-2 transition-all ${
-                                  isActive
-                                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
-                                    : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
-                                }`}
-                                title={`Terminal P${idx + 1}`}
-                              >
-                                P{idx + 1}
-                                {allPanels.length > 1 && (
-                                  <span
-                                    role="button"
-                                    aria-label={`Cerrar P${idx + 1}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleClosePanel(panel.id);
-                                    }}
-                                    className="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-4 h-4 rounded-md hover:bg-white/15 transition-opacity"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                          <button
-                            data-testid="panel-subtabs-add"
-                            onClick={() => canAdd && handleSplit('horizontal', activePanelId)}
-                            disabled={!canAdd}
-                            className={`h-9 w-9 flex items-center justify-center rounded-xl transition-all ${
-                              canAdd
-                                ? 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]'
-                                : 'text-[var(--text-muted)] opacity-25 cursor-not-allowed border border-transparent'
-                            }`}
-                            title={canAdd ? 'Nueva terminal' : 'Máx 3'}
-                            aria-label={canAdd ? 'Agregar terminal' : 'Máximo 3 terminales alcanzado'}
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            data-testid="panel-subtabs-split-right"
-                            onClick={() => canAdd && handleSplit('horizontal', activePanelId)}
-                            disabled={!canAdd}
-                            className={`h-9 inline-flex items-center gap-1.5 px-3 rounded-xl transition-all border ${
-                              canAdd
-                                ? 'text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]'
-                                : 'text-[var(--text-muted)] opacity-25 cursor-not-allowed border-[var(--border-subtle)]'
-                            }`}
-                            title={canAdd ? splitRightLabel : `${splitLimitReason} — ${splitRightLabel}`}
-                            aria-label={canAdd ? splitRightLabel : `${splitLimitReason} — Split Right`}
-                          >
-                            <SplitSquareVertical className="w-3.5 h-3.5" />
-                            <span>Split Right</span>
-                          </button>
-                          <button
-                            type="button"
-                            data-testid="panel-subtabs-split-down"
-                            onClick={() => canAdd && handleSplit('vertical', activePanelId)}
-                            disabled={!canAdd}
-                            className={`h-9 inline-flex items-center gap-1.5 px-3 rounded-xl transition-all border ${
-                              canAdd
-                                ? 'text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]'
-                                : 'text-[var(--text-muted)] opacity-25 cursor-not-allowed border-[var(--border-subtle)]'
-                            }`}
-                            title={canAdd ? splitDownLabel : `${splitLimitReason} — ${splitDownLabel}`}
-                            aria-label={canAdd ? splitDownLabel : `${splitLimitReason} — Split Down`}
-                          >
-                            <SplitSquareHorizontal className="w-3.5 h-3.5" />
-                            <span>Split Down</span>
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            data-testid="panel-subtabs-shortcuts-hint"
-                            className="hidden lg:inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-medium border"
-                            style={{
-                              color: 'var(--text-muted)',
-                              borderColor: 'var(--border-subtle)',
-                              background: 'rgba(255,255,255,0.03)',
-                            }}
-                            title={`Workspace ${TERMINAL_WORKSPACE_SHORTCUTS.previousWorkspace} / ${TERMINAL_WORKSPACE_SHORTCUTS.nextWorkspace}`}
-                          >
-                            <span>{TERMINAL_WORKSPACE_SHORTCUTS.previousWorkspace}</span>
-                            <span>/</span>
-                            <span>{TERMINAL_WORKSPACE_SHORTCUTS.nextWorkspace}</span>
-                          </span>
-                          {/* Right: project root path (initial cwd) */}
-                          {activePanel && cwd && (
-                            <span
-                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-mono border"
-                              style={{
-                                color: 'var(--accent-primary)',
-                                borderColor: 'rgba(var(--accent-rgb,88,166,255),0.35)',
-                                background: 'rgba(var(--accent-rgb,88,166,255),0.08)',
-                              }}
-                              title={cwd}
-                            >
-                              <Folder className="w-3 h-3" />
-                              {shortPath(cwd)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
 
                   {/* Terminal bodies — preserve real split geometry */}
                   <div className="flex-1 relative overflow-hidden min-h-0">
@@ -1721,6 +2424,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                         cwd,
                                         wsId: ws.id,
                                         setActivePanelIds,
+                                        onClosePanel: () => handleClosePanel(panel.id),
+                                        onSplitRight: () => handleSplit('horizontal', panel.id),
+                                        onSplitDown: () => handleSplit('vertical', panel.id),
                                       })}
                                     </Panel>
                                     {panelIndex < column.panels.length - 1 ? (
@@ -1739,6 +2445,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                   cwd,
                                   wsId: ws.id,
                                   setActivePanelIds,
+                                  onClosePanel: () => handleClosePanel(column.panels[0].id),
+                                  onSplitRight: () => handleSplit('horizontal', column.panels[0].id),
+                                  onSplitDown: () => handleSplit('vertical', column.panels[0].id),
                                 })}
                               </div>
                             )}
@@ -1758,35 +2467,73 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   <PanelResizeHandle
                     key={`${ws.id}-right-dock-resize`}
                     className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
+                    data-testid="workspace-right-dock-resize-handle"
+                    onDragging={setIsDraggingDock}
                   >
                     <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
                     <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
                   </PanelResizeHandle>
                 ) : null}
-                {wsDockState.visible ? (
+                {wsDockState.visible && !wsDockState.maximized && !hideRightDockPanel ? (
                   <Panel
                     key={`${ws.id}-right-dock-panel`}
-                    minSize={wsDockState.maximized ? 100 : 30}
+                    minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
                     maxSize={100}
                     defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
                     onResize={(size) => {
                       if (!wsDockState.maximized) updateWsDockState({ size });
                     }}
-                    className="flex flex-col"
+                    className="pointer-events-none flex flex-col"
                     data-testid="workspace-right-dock-panel"
                   >
-                    <WorkspaceRightDock
-                      project={{ id: projectId, local_path: cwd }}
-                      dockState={wsDockState}
-                      onDockStateChange={updateWsDockState}
+                    <div
+                      ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
+                      data-testid="workspace-right-dock-placeholder"
+                      className="h-full w-full pointer-events-none"
                     />
                   </Panel>
                 ) : null}
               </PanelGroup>
-              )}
+
             </div>
             );
           })}
+          {(rightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
+            <div
+              data-testid="workspace-right-dock-layer"
+              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${(!rightDockState.visible || hideRightDockPanel) ? 'hidden' : 'flex flex-col'}`}
+              style={rightDockLayerStyle}
+            >
+              <WorkspaceRightDock
+                project={{ id: projectId, local_path: cwd }}
+                workspaceId={activeWorkspace.id}
+                dockState={rightDockState}
+                onDockStateChange={updateRightDockState}
+                browserWindowState={browserWindowStates?.[activeWorkspace.id] || null}
+                onBrowserWindowStateChange={updateBrowserWindowState}
+                workspaceWindows={workspaceWindows?.[activeWorkspace.id] || []}
+                activeWorkspaceWindowId={activeWindowIds?.[activeWorkspace.id] || null}
+                onWorkspaceWindowSelect={(windowId) => {
+                  switchWindowInWorkspace(activeWorkspace.id, windowId);
+                  if (rightDockState.maximized) {
+                    updateRightDockState({
+                      visible: true,
+                      maximized: true,
+                      maximizedView: 'window',
+                    });
+                  }
+                }}
+                onWorkspaceWindowAdd={() => addWindowToWorkspace(activeWorkspace.id)}
+                onWorkspaceWindowRemove={(windowId) => removeWindowFromWorkspace(activeWorkspace.id, windowId)}
+              />
+              {isDraggingDock ? (
+                <div
+                  data-testid="workspace-right-dock-drag-overlay"
+                  className="pointer-events-none absolute inset-0 z-50 cursor-col-resize"
+                />
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </motion.div>

@@ -1,4 +1,6 @@
 const React = require('react');
+const { createRoot } = require('react-dom/client');
+const { flushSync } = require('react-dom');
 const {
   cleanupMountedRoots,
   click,
@@ -11,6 +13,7 @@ const {
 } = require('@/test-support/resumableSessionFixtures');
 
 const mockUseAgentRegistryPolling = jest.fn();
+const mockAgentCard = jest.fn();
 
 jest.mock('@/hooks/useAgentRegistryPolling', () => ({
   __esModule: true,
@@ -27,8 +30,10 @@ jest.mock('lucide-react', () => {
 
 jest.mock('../AgentCard', () => ({
   __esModule: true,
-  default: ({ agent, onClick }) => {
+  default: (props) => {
     const React = require('react');
+    const { agent, onClick, elapsedMs } = props;
+    mockAgentCard(props);
     return React.createElement(
       'button',
       {
@@ -36,7 +41,8 @@ jest.mock('../AgentCard', () => ({
         'data-testid': `agent-card-${agent.agent_id}`,
         onClick: () => onClick?.(agent),
       },
-      agent._displayName || agent.nombre || agent.agent_id
+      React.createElement('span', null, agent._displayName || agent.nombre || agent.agent_id),
+      React.createElement('span', { 'data-testid': `agent-elapsed-${agent.agent_id}` }, String(elapsedMs ?? ''))
     );
   },
 }));
@@ -81,6 +87,7 @@ describe('AgentRoomSidebar history behavior', () => {
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    mockAgentCard.mockClear();
     mockUseAgentRegistryPolling.mockReturnValue({
       activeAgents: [],
       inactiveAgents: [],
@@ -153,5 +160,77 @@ describe('AgentRoomSidebar history behavior', () => {
     await click(Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent.includes('History')));
 
     expect(view.container.textContent).toContain('OpenCode session listing timed out.');
+  });
+
+  test('opts into visibility-aware agent polling', async () => {
+    await renderSidebar();
+
+    expect(mockUseAgentRegistryPolling).toHaveBeenCalledWith('project-1', { visibilityAware: true });
+  });
+
+  test('refreshes elapsed time on coarse buckets instead of every second', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-05-03T00:00:00.000Z'));
+
+    mockUseAgentRegistryPolling.mockReturnValue({
+      activeAgents: [
+        {
+          agent_id: 'agent-live',
+          nombre: 'Hermes',
+          _displayName: 'Live agent',
+          _launchedAt: Date.now() - 65_000,
+        },
+      ],
+      inactiveAgents: [],
+      loading: false,
+      error: null,
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    mountedRoots.push({ root, container });
+
+    flushSync(() => {
+      root.render(
+        React.createElement(AgentRoomSidebar, {
+          projectId: 'project-1',
+          onAgentClick: jest.fn(),
+          onReopenSession: jest.fn(),
+          onTerminateAgent: jest.fn(),
+          onMaximizeToggle: jest.fn(),
+          isMaximized: false,
+          workspaces: [],
+          activePanelIds: {},
+          isVisible: true,
+          onToggleVisibility: jest.fn(),
+          resumableSessions: [],
+          resumableStatus: 'empty',
+          resumableError: null,
+        })
+      );
+    });
+
+    const view = { container };
+    expect(view.container.querySelector('[data-testid="agent-elapsed-agent-live"]')?.textContent).toBe('65000');
+    expect(mockAgentCard).toHaveBeenCalledTimes(1);
+
+    flushSync(() => {
+      jest.advanceTimersByTime(5_000);
+    });
+    await Promise.resolve();
+
+    expect(view.container.querySelector('[data-testid="agent-elapsed-agent-live"]')?.textContent).toBe('65000');
+    expect(mockAgentCard).toHaveBeenCalledTimes(1);
+
+    flushSync(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    await Promise.resolve();
+
+    expect(view.container.querySelector('[data-testid="agent-elapsed-agent-live"]')?.textContent).toBe('80000');
+    expect(mockAgentCard).toHaveBeenCalledTimes(2);
+
+    jest.useRealTimers();
   });
 });

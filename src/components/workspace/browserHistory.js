@@ -7,10 +7,7 @@ function clamp(value, min, max) {
 function commitBrowserNavigation(currentState, nextUrl) {
   const normalizedUrl = normalizeBrowserUrl(nextUrl);
   if (!normalizedUrl) {
-    return {
-      ...currentState,
-      browserUrl: String(nextUrl || '').trim(),
-    };
+    return currentState;
   }
 
   const history = Array.isArray(currentState?.browserHistory)

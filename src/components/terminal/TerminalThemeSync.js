@@ -17,8 +17,10 @@ let cachedTheme = null;
  * @returns {object} xterm-compatible ITheme object
  */
 export function buildXtermTheme(getVar) {
+  const surfaceApp = getVar('--surface-app');
+
   return {
-    background: getVar('--terminal-bg') || 'transparent',
+    background: getVar('--terminal-bg') || surfaceApp || '#0D1117',
     foreground: getVar('--terminal-fg') || '#F0F6FC',
     // cursor maps to --accent-primary for theme consistency
     cursor: getVar('--accent-primary') || '#58A6FF',

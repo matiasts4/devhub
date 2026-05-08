@@ -91,6 +91,47 @@ fn cleanup_zombie_ports() {
     thread::sleep(Duration::from_millis(300));
 }
 
+fn find_devhub_pid_on_port(port: u16) -> Option<u32> {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let output = std::process::Command::new("ss")
+        .args(["-tlnp", &format!("sport = :{}", port)])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.is_empty() {
+        return None;
+    }
+
+    for pid_str in stdout.split("pid=") {
+        let Some(pid_part) = pid_str.split(',').next() else { continue };
+        let Ok(pid) = pid_part.parse::<u32>() else { continue };
+        if pid == 0 {
+            continue;
+        }
+
+        if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
+            let name = process.name().to_string_lossy().to_lowercase();
+            let cmdline: String = process.cmd().iter()
+                .map(|s| s.to_string_lossy().to_lowercase())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let is_devhub_process =
+                (name.contains("node") || name.contains("bun"))
+                && (cmdline.contains("devhub") || cmdline.contains("next") || cmdline.contains("sidecar"));
+
+            if is_devhub_process {
+                return Some(pid);
+            }
+        }
+    }
+
+    None
+}
+
 fn get_devhub_dir() -> PathBuf {
     let p = dirs::home_dir().unwrap().join(".devhub");
     if !p.exists() {
@@ -178,6 +219,12 @@ fn get_installed_build_id() -> Option<u64> {
 fn check_existing_sidecar() -> Option<u32> {
     let pid_file = get_sidecar_pid_file();
     if !pid_file.exists() {
+        if let Some(pid) = find_devhub_pid_on_port(4000) {
+            let _ = fs::write(&pid_file, pid.to_string());
+            let _ = fs::write(get_sidecar_port_file(), "4000");
+            println!("[DevHub] Sidecar adoptado por puerto 4000 con PID {}.", pid);
+            return Some(pid);
+        }
         return None;
     }
     if let Ok(content) = fs::read_to_string(&pid_file) {
@@ -197,6 +244,9 @@ fn check_existing_sidecar() -> Option<u32> {
                         return None;
                     }
                 }
+                if !get_sidecar_port_file().exists() {
+                    let _ = fs::write(get_sidecar_port_file(), "4000");
+                }
                 println!("[DevHub] Sidecar ya activo con PID {} (build-id OK).", pid);
                 return Some(pid);
             }
@@ -204,6 +254,12 @@ fn check_existing_sidecar() -> Option<u32> {
     }
     // PID file obsoleto — limpiarlo
     let _ = fs::remove_file(&pid_file);
+    if let Some(pid) = find_devhub_pid_on_port(4000) {
+        let _ = fs::write(&pid_file, pid.to_string());
+        let _ = fs::write(get_sidecar_port_file(), "4000");
+        println!("[DevHub] Sidecar readoptado por puerto 4000 con PID {}.", pid);
+        return Some(pid);
+    }
     None
 }
 

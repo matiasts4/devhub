@@ -1,3 +1,5 @@
+const SHELL_TERMINAL_RESPONSE_RE = /(?:\x1b\[\?(?:\d+;)*\d+[cnR]|\x1b\[>(?:\d+;)*\d+c|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+
 function getTransportMode(requestUrl = '/') {
   const pathname = new URL(requestUrl, 'http://localhost').pathname;
   return pathname === '/tty' ? 'json' : 'raw';
@@ -51,9 +53,64 @@ function detectOpenCodeSessionId(text) {
   return outputMatch?.[0] || null;
 }
 
+function stripShellTerminalResponseNoise(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
+}
+
+function filterTerminalOutputForSession(session, chunk) {
+  if (session?.mode !== 'shell') return chunk;
+  return stripShellTerminalResponseNoise(chunk);
+}
+
+function buildHistoryReplay(session) {
+  if (!session?.historyEnabled || !Array.isArray(session.history) || session.history.length === 0) {
+    return '';
+  }
+
+  return filterTerminalOutputForSession(session, session.history.join(''));
+}
+
+function switchSessionToTuiMode(session) {
+  if (!session) return;
+  session.mode = 'tui';
+  session.historyEnabled = false;
+  session.history = [];
+}
+
+function updateSessionModeFromInput(session, input) {
+  if (!session || !input || typeof input !== 'string') return;
+
+  if (/^[\x00-\x20]*opencode\b/i.test(input)) {
+    switchSessionToTuiMode(session);
+    return;
+  }
+
+  if (/^[\x00-\x20]*hermes\b/i.test(input)) {
+    switchSessionToTuiMode(session);
+    return;
+  }
+
+  session.pendingInput = `${session.pendingInput || ''}${input}`;
+  const lines = session.pendingInput.split(/\r\n|\n|\r/);
+  session.pendingInput = lines.pop() || '';
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^\s*opencode\b/i.test(trimmed) || /^\s*hermes\b/i.test(trimmed)) {
+      switchSessionToTuiMode(session);
+      return;
+    }
+  }
+}
+
 module.exports = {
+  buildHistoryReplay,
   buildServerMessage,
+  filterTerminalOutputForSession,
   detectOpenCodeSessionId,
   getTransportMode,
   parseClientMessage,
+  stripShellTerminalResponseNoise,
+  updateSessionModeFromInput,
 };

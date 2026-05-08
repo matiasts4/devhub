@@ -14,6 +14,8 @@ import useAgentRegistryPolling from '@/hooks/useAgentRegistryPolling';
 import AgentCard from './AgentCard';
 import AgentLaunchDropdown from './AgentLaunchDropdown';
 
+const ELAPSED_REFRESH_BUCKET_MS = 15000;
+
 export function shouldShowQueueBadge(queueLength) {
   return Number(queueLength) > 0;
 }
@@ -64,14 +66,16 @@ export default function AgentRoomSidebar({
   resumableStatus = 'empty',
   resumableError = null,
 }) {
-  const { activeAgents, loading, error } = useAgentRegistryPolling(projectId);
+  const { activeAgents, loading, error } = useAgentRegistryPolling(projectId, { visibilityAware: true });
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [activeTab, setActiveTab] = useState('activity'); // 'activity' | 'history'
-  const [, setTick] = useState(0);
+  const [, setElapsedBucket] = useState(() => Math.floor(Date.now() / ELAPSED_REFRESH_BUCKET_MS));
 
-  // Re-render every second so elapsed times update in real-time
+  // Re-render on coarse buckets so elapsed labels stay fresh without 1s churn.
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    const interval = setInterval(() => {
+      setElapsedBucket(Math.floor(Date.now() / ELAPSED_REFRESH_BUCKET_MS));
+    }, ELAPSED_REFRESH_BUCKET_MS);
     return () => clearInterval(interval);
   }, []);
 

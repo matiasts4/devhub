@@ -195,3 +195,100 @@ describe('ttyServer — getTTYSessionsSnapshot includes cwd and restored', () =>
     expect(entry.restored).toBe(true);
   });
 });
+
+describe('ttyServer — shell history hygiene', () => {
+  function createMockSocket() {
+    return {
+      OPEN: 1,
+      readyState: 1,
+      send: jest.fn(),
+      close: jest.fn(),
+      on: jest.fn(),
+    };
+  }
+
+  it('preserves normal shell output in history and broadcast', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    createSession({ id: 'shell-clean', cwd: '/home/user', shell: '/bin/zsh' });
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('shell-clean');
+    const socket = createMockSocket();
+    session.sockets.add(socket);
+
+    const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
+    onDataHandler('prompt$ ls\r\nfile-a\r\n');
+
+    expect(session.history).toBe('prompt$ ls\r\nfile-a\r\n');
+    expect(socket.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'output', data: 'prompt$ ls\r\nfile-a\r\n' })
+    );
+  });
+
+  it('filters terminal response noise from shell-mode broadcast and history', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    createSession({ id: 'shell-noise', cwd: '/home/user', shell: '/bin/zsh' });
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('shell-noise');
+    const socket = createMockSocket();
+    session.sockets.add(socket);
+
+    const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
+    onDataHandler('prompt$ ');
+    onDataHandler('\u001b[?1;2c');
+    onDataHandler('\u001b[>0;276;0c');
+    onDataHandler('\u001b[12;34R');
+    onDataHandler('echo ok\r\nok\r\n');
+
+    expect(session.history).toBe('prompt$ echo ok\r\nok\r\n');
+    expect(socket.send).toHaveBeenNthCalledWith(
+      1,
+      JSON.stringify({ type: 'output', data: 'prompt$ ' })
+    );
+    expect(socket.send).toHaveBeenNthCalledWith(
+      2,
+      JSON.stringify({ type: 'output', data: 'echo ok\r\nok\r\n' })
+    );
+    expect(socket.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not replay stored terminal response noise on existing shell-session reconnect', async () => {
+    const { ensureTTYServer } = await import('./ttyServer.js');
+
+    await ensureTTYServer();
+
+    const connectionHandler = mockWssOn.mock.calls.find(([eventName]) => eventName === 'connection')?.[1];
+    expect(connectionHandler).toBeInstanceOf(Function);
+
+    const firstSocket = createMockSocket();
+    firstSocket.on = jest.fn((event, handler) => {
+      firstSocket[`__${event}`] = handler;
+    });
+
+    connectionHandler(firstSocket, { url: '/terminal?id=replay-shell&cwd=%2Fhome%2Fuser' });
+
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('replay-shell');
+    const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
+    onDataHandler('prompt$ ');
+    onDataHandler('\u001b[?1;2c');
+    onDataHandler('pwd\r\n/home/user\r\n');
+
+    firstSocket.send.mockClear();
+
+    const reconnectSocket = createMockSocket();
+    reconnectSocket.on = jest.fn((event, handler) => {
+      reconnectSocket[`__${event}`] = handler;
+    });
+
+    connectionHandler(reconnectSocket, { url: '/terminal?id=replay-shell&cwd=%2Fhome%2Fuser' });
+
+    expect(reconnectSocket.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'output', data: 'prompt$ pwd\r\n/home/user\r\n' })
+    );
+    expect(reconnectSocket.send).not.toHaveBeenCalledWith(
+      JSON.stringify({ type: 'output', data: expect.stringContaining('[?1;2c') })
+    );
+  });
+});

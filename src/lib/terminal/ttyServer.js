@@ -388,6 +388,17 @@ function _debouncedSave(sessions, session) {
 }
 
 const OPENCODE_OUTPUT_SESSION_RE = /\bses_([a-zA-Z0-9_]+)\b/;
+const SHELL_TERMINAL_RESPONSE_RE = /(?:\x1b\[\?(?:\d+;)*\d+[cnR]|\x1b\[>(?:\d+;)*\d+c|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+
+function stripShellTerminalResponseNoise(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
+}
+
+function sanitizeHistoryReplay(session, history) {
+  if (!session?.historyEnabled || session?.mode !== 'shell') return history;
+  return stripShellTerminalResponseNoise(history);
+}
 
 function handleSessionOutput(sessions, session, chunk) {
   session.lastSeenAt = new Date().toISOString();
@@ -402,6 +413,10 @@ function handleSessionOutput(sessions, session, chunk) {
     );
     filtered = filtered.replace(/zsh: corrupt history file[^\n]*\n?/g, '');
 
+    if (session.mode === 'shell') {
+      filtered = stripShellTerminalResponseNoise(filtered);
+    }
+
     if (!session.opencodeSessionId && session.mode === 'tui') {
       const outputMatch = filtered.match(OPENCODE_OUTPUT_SESSION_RE);
       if (outputMatch) {
@@ -410,6 +425,10 @@ function handleSessionOutput(sessions, session, chunk) {
         broadcastOpenCodeSessionDetected(session, detectedId);
       }
     }
+  }
+
+  if (typeof filtered === 'string' && filtered.length === 0) {
+    return;
   }
 
   if (session.historyEnabled) {
@@ -589,7 +608,12 @@ export async function ensureTTYServer() {
       session.sockets.add(socket);
       session.lastActivityAt = Date.now();
       if (session.historyEnabled && session.history && socket.readyState === socket.OPEN) {
-        socket.send(JSON.stringify({ type: 'output', data: session.history }));
+        socket.send(
+          JSON.stringify({
+            type: 'output',
+            data: sanitizeHistoryReplay(session, session.history),
+          })
+        );
       }
 
       // For full-screen TUI apps (OpenCode/Vim/Nano style), replaying stale history

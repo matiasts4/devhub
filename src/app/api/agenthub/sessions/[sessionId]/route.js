@@ -36,7 +36,7 @@ export async function PATCH(req, { params }) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const updated = tables.agent_hub_sessions.update(sessionId, updates);
+    const updated = tables.agent_hub_sessions.update(updates, [['id', '=', sessionId]]);
     return NextResponse.json(updated);
   } catch (err) {
     console.error('Error updating session:', err);

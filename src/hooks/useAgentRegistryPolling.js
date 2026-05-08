@@ -13,6 +13,7 @@ import { AGENT_HEARTBEAT_STALE_MS } from '@/lib/agentRegistryTelemetry';
 import { getAgentRegistryLiveSnapshot } from '@/lib/agentRegistryLive';
 
 const POLL_INTERVAL_MS = 5000;
+const HIDDEN_POLL_INTERVAL_MS = 15000;
 
 function dedupeBy(items, getKey) {
   const seen = new Set();
@@ -25,7 +26,7 @@ function dedupeBy(items, getKey) {
   });
 }
 
-export default function useAgentRegistryPolling(projectId) {
+export default function useAgentRegistryPolling(projectId, options = {}) {
   const [agents, setAgents] = useState([]);
   const [activeAgents, setActiveAgents] = useState([]);
   const [inactiveAgents, setInactiveAgents] = useState([]);
@@ -33,7 +34,20 @@ export default function useAgentRegistryPolling(projectId) {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const intervalRef = useRef(null);
+  const timeoutRef = useRef(null);
   const db = useMemo(() => createClient(), []);
+  const visibilityAware = options?.visibilityAware === true;
+
+  const clearPollingTimer = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
 
   const fetchAgents = useCallback(async () => {
     if (!projectId) return;
@@ -158,12 +172,37 @@ export default function useAgentRegistryPolling(projectId) {
   }, [projectId, db]);
 
   useEffect(() => {
-    fetchAgents();
-    intervalRef.current = setInterval(fetchAgents, POLL_INTERVAL_MS);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+    clearPollingTimer();
+
+    const hidden = visibilityAware && typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    if (!hidden) {
+      fetchAgents();
+      intervalRef.current = setInterval(fetchAgents, POLL_INTERVAL_MS);
+    } else {
+      timeoutRef.current = setTimeout(fetchAgents, HIDDEN_POLL_INTERVAL_MS);
+    }
+
+    if (!visibilityAware || typeof document === 'undefined') {
+      return () => clearPollingTimer();
+    }
+
+    const handleVisibilityChange = () => {
+      clearPollingTimer();
+      if (document.visibilityState === 'hidden') {
+        timeoutRef.current = setTimeout(fetchAgents, HIDDEN_POLL_INTERVAL_MS);
+        return;
+      }
+
+      fetchAgents();
+      intervalRef.current = setInterval(fetchAgents, POLL_INTERVAL_MS);
     };
-  }, [fetchAgents]);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearPollingTimer();
+    };
+  }, [clearPollingTimer, fetchAgents, visibilityAware]);
 
   return {
     agents,

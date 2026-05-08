@@ -150,6 +150,22 @@ async function click(element) {
   await flushEffects();
 }
 
+async function changeInput(element, value) {
+  if (!element) throw new Error('Missing input element');
+  const prototype = element.ownerDocument?.defaultView?.HTMLInputElement?.prototype;
+  const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+  flushSync(() => {
+    valueSetter?.call(element, value);
+    element.dispatchEvent(new window.Event('input', { bubbles: true }));
+    element.dispatchEvent(new window.Event('change', { bubbles: true }));
+  });
+
+  await flushEffects();
+
+  await flushEffects();
+}
+
 async function waitForElement(getElement, attempts = 5) {
   for (let index = 0; index < attempts; index += 1) {
     const element = getElement();
@@ -189,6 +205,21 @@ describe('FileExplorerEditorPane', () => {
             tree: [
               { name: 'paper.tex', path: 'paper.tex', type: 'file' },
               { name: 'README.md', path: 'README.md', type: 'file' },
+              {
+                name: 'src',
+                path: 'src',
+                type: 'directory',
+                children: [
+                  {
+                    name: 'components',
+                    path: 'src/components',
+                    type: 'directory',
+                    children: [
+                      { name: 'TerminalDock.jsx', path: 'src/components/TerminalDock.jsx', type: 'file' },
+                    ],
+                  },
+                ],
+              },
             ],
           }),
         });
@@ -208,6 +239,15 @@ describe('FileExplorerEditorPane', () => {
           ok: true,
           json: async () => ({
             content: '# Hola mundo',
+          }),
+        });
+      }
+
+      if (String(url).startsWith('/api/fs/read?path=src%2Fcomponents%2FTerminalDock.jsx')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            content: 'export default function TerminalDock() { return null; }',
           }),
         });
       }
@@ -243,7 +283,7 @@ describe('FileExplorerEditorPane', () => {
 
     const latexNode = await waitForElement(() => view.container.querySelector('[data-path="paper.tex"]'));
     await click(latexNode);
-    await flushEffects();
+    await waitForElement(() => queryLatexSurface(view.container));
 
     expect(queryLatexSurface(view.container)).not.toBeNull();
     expect(view.container.querySelector('[data-testid="monaco-editor"]')).toBeNull();
@@ -282,5 +322,73 @@ describe('FileExplorerEditorPane', () => {
 
     const expandedPrefs = JSON.parse(window.localStorage.getItem('devhub_ui_prefs_project-2'));
     expect(expandedPrefs.editorFileTreeCollapsed).toBe(false);
+  });
+
+  test('filters the loaded tree in memory, keeps ancestor folders visible, and opens nested matches', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-3', local_path: '/workspace/devhub' },
+        workspaceId: 'ws1',
+      })
+    );
+
+    await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+
+    const treeFetchCallsBeforeSearch = global.fetch.mock.calls.filter(([url]) =>
+      String(url).startsWith('/api/fs/tree')
+    ).length;
+
+    await changeInput(view.container.querySelector('[data-testid="editor-tree-search-input"]'), 'terminaldock');
+
+    expect(view.container.textContent).toContain('src');
+    expect(view.container.textContent).toContain('components');
+    expect(view.container.textContent).toContain('TerminalDock.jsx');
+    expect(view.container.textContent).not.toContain('README.md');
+    expect(global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/fs/tree'))).toHaveLength(
+      treeFetchCallsBeforeSearch
+    );
+
+    await click(view.container.querySelector('[data-path="src/components/TerminalDock.jsx"]'));
+    expect(view.container.querySelector('[data-testid="monaco-editor"]')?.textContent).toContain(
+      'TerminalDock'
+    );
+    expect(view.container.querySelector('[data-testid="editor-current-file"]')).toBeNull();
+  });
+
+  test('keeps a compact header with only title and refresh action', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-5', local_path: '/workspace/devhub' },
+        workspaceId: 'ws1',
+      })
+    );
+
+    await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+
+    expect(view.container.textContent).toContain('Workspace files');
+    expect(view.container.querySelector('[data-testid="editor-pane-subtitle"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="editor-current-directory"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="editor-current-file"]')).toBeNull();
+    expect(view.container.querySelector('[aria-label="Recargar árbol de archivos"]')).not.toBeNull();
+  });
+
+  test('renders explicit folder toggles and shows an empty-search message when nothing matches', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-4', local_path: '/workspace/devhub' },
+        workspaceId: 'ws1',
+      })
+    );
+
+    await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+
+    const srcToggle = view.container.querySelector('[data-testid="tree-toggle-src"]');
+    expect(srcToggle).not.toBeNull();
+    expect(srcToggle?.getAttribute('aria-label')).toContain('src');
+
+    await changeInput(view.container.querySelector('[data-testid="editor-tree-search-input"]'), 'missing-file');
+
+    expect(view.container.querySelector('[data-testid="editor-tree-empty-search"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('missing-file');
   });
 });

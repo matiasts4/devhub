@@ -392,6 +392,51 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     expect(restoredTerminal?.getAttribute('data-command')).toBe('opencode --session oc-reboot-1');
   });
 
+  test('keeps restored OpenCode command persisted after process exit instead of removing the panel', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [
+                  {
+                    id: 'p1',
+                    cwd: '/workspace/devhub',
+                    initialCommand: 'opencode --session oc-reboot-1',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: 'p1' },
+      })
+    );
+
+    const view = await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:terminal-exit', {
+        detail: {
+          id: 'p1',
+          initialCommand: 'opencode --session oc-reboot-1',
+        },
+      })
+    );
+    await flushEffects();
+
+    const restoredTerminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    expect(restoredTerminal).not.toBeNull();
+    expect(restoredTerminal?.getAttribute('data-command')).toBe('opencode --session oc-reboot-1');
+    expect(view.container.textContent).not.toContain('Session is no longer available to resume.');
+  });
+
   test('does not advertise Hermes as reboot-safe resumable history when catalog has no durable sessions', async () => {
     window.localStorage.setItem(
       'devhub_terminal_state',

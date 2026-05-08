@@ -142,4 +142,21 @@ describe('useAgentRegistryPolling', () => {
     expect(fetchSpy).toHaveBeenCalledWith('/api/terminal/sessions', { cache: 'no-store' });
     expect(intervalSpy).toHaveBeenCalled();
   });
+
+  test('can opt into visibility-aware backoff without changing the default polling contract', async () => {
+    const Hook = ({ projectId }) => {
+      const result = useAgentRegistryPolling(projectId, { visibilityAware: true });
+      return React.createElement('div', { 'data-testid': 'loading' }, String(result.loading));
+    };
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+
+    await renderIntoDom(React.createElement(Hook, { projectId: 'project-1' }), mountedRoots);
+
+    expect(intervalSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

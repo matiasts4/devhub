@@ -514,14 +514,23 @@ code {
 }
 
 .devhub-xterm-container .xterm-viewport {
-  overflow-y: hidden !important;
-  background-color: transparent !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  background-color: var(--surface-app) !important;
+  scrollbar-gutter: stable;
 }
 
 .devhub-xterm-container {
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+.devhub-xterm-container .xterm,
+.devhub-xterm-container .xterm-screen,
+.devhub-xterm-container .xterm-screen canvas,
+.devhub-xterm-container .xterm-viewport {
+  background-color: var(--surface-app) !important;
 }
 
 /* Allow text selection in xterm.js */

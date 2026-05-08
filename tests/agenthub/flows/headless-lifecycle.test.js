@@ -92,7 +92,7 @@ describe('Flow: Headless Agent Lifecycle', () => {
           method: 'POST',
           path: '/api/agenthub/headless',
           body: {}, // Missing required fields
-          assert: { status: 400 },
+          assert: { status: 200 },
         },
         {
           name: 'should-not-run',
@@ -103,8 +103,7 @@ describe('Flow: Headless Agent Lifecycle', () => {
       ],
     });
 
-    // First step expects 400 — if server returns 200, it fails the assertion
-    // Either way, the flow should not run step 2
+    // First step assertion is intentionally wrong so the flow aborts before step 2.
     const shouldNotRun = result.steps.find((s) => s.name === 'should-not-run');
     expect(shouldNotRun).toBeUndefined();
   });

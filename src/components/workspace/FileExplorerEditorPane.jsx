@@ -8,6 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import {
   AlertTriangle,
   Braces,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   File,
@@ -26,6 +27,12 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
 import { InlineCode, BlockCode } from '@/components/chat/CodeBlock';
 import LatexDocumentPreview from './LatexDocumentPreview';
+import {
+  DEFAULT_EDITOR_PANE_CONTENT,
+  DEFAULT_EDITOR_PANE_STATE,
+  readEditorPaneState,
+  writeEditorPaneState,
+} from './editorPaneState';
 import 'highlight.js/styles/github-dark.css';
 
 const DOCUMENT_VIEW_MODES = {
@@ -86,6 +93,53 @@ function getFileIconMeta(node) {
   return { Icon: File, color: '#8B949E' };
 }
 
+function normalizePathSegments(path) {
+  return String(path || '')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function buildForcedExpandedPaths(nodes, collector = new Set()) {
+  nodes.forEach((node) => {
+    if (node.type === 'directory') {
+      collector.add(node.path);
+      buildForcedExpandedPaths(node.children || [], collector);
+    }
+  });
+
+  return collector;
+}
+
+function filterTreeNodes(nodes, query) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  if (!normalizedQuery) return nodes;
+
+  return nodes.reduce((result, node) => {
+    const matchesSelf = `${node.name} ${node.path}`.toLowerCase().includes(normalizedQuery);
+
+    if (node.type === 'directory') {
+      const filteredChildren = filterTreeNodes(node.children || [], normalizedQuery);
+      if (matchesSelf) {
+        result.push(node);
+        return result;
+      }
+
+      if (filteredChildren.length > 0) {
+        result.push({ ...node, children: filteredChildren });
+      }
+
+      return result;
+    }
+
+    if (matchesSelf) {
+      result.push(node);
+    }
+
+    return result;
+  }, []);
+}
+
 function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
   const isDir = node.type === 'directory';
   const isExpanded = isDir && expanded.has(node.path);
@@ -98,14 +152,33 @@ function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
       <div
         data-path={node.path}
         data-node-type={node.type}
-        className={`group flex items-center py-1 px-2 cursor-pointer text-sm select-none transition-colors ${isSelected ? 'bg-surface-elevated text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
+        className={`group flex items-center py-1 px-2 text-sm select-none transition-colors ${isSelected ? 'bg-surface-elevated text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
         style={{ paddingLeft: `${indent + 8}px` }}
         onClick={() => {
-          if (isDir) onToggle(node.path);
-          else onSelect(node.path);
+          if (!isDir) onSelect(node.path);
         }}
       >
-        <div className="w-4 h-4 mr-1.5 flex items-center justify-center text-text-muted group-hover:text-text-secondary">
+        <div className="mr-1.5 flex h-5 w-5 items-center justify-center text-text-muted group-hover:text-text-secondary">
+          {isDir ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggle(node.path);
+              }}
+              data-testid={`tree-toggle-${node.path.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
+              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-transparent text-text-muted transition-colors hover:border-borders-subtle hover:bg-surface-elevated hover:text-text-primary"
+            >
+              {isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5" strokeWidth={1.8} />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
+              )}
+            </button>
+          ) : null}
+        </div>
+        <div className="mr-1.5 flex h-4 w-4 items-center justify-center text-text-muted group-hover:text-text-secondary">
           {isDir ? (
             isExpanded ? (
               <FolderOpen className="w-3.5 h-3.5" style={{ color: '#58A6FF' }} />
@@ -116,7 +189,16 @@ function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
             <FileIcon className="w-3.5 h-3.5" style={{ color }} />
           )}
         </div>
-        <span className="truncate">{node.name}</span>
+        <button
+          type="button"
+          className={`min-w-0 flex-1 truncate text-left ${isDir ? 'cursor-default' : 'cursor-pointer'}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!isDir) onSelect(node.path);
+          }}
+        >
+          {node.name}
+        </button>
       </div>
 
       {isDir && isExpanded && node.children && (
@@ -138,20 +220,21 @@ function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
   );
 }
 
-export default function FileExplorerEditorPane({ project, embedded = false }) {
+export default function FileExplorerEditorPane({ project, workspaceId = 'default', embedded = false, onContextChange }) {
   const explorerPanelRef = useRef(null);
+  const workspaceSnapshotsRef = useRef(new Map());
   const [tree, setTree] = useState([]);
   const [treeLoading, setTreeLoading] = useState(true);
   const [treeError, setTreeError] = useState('');
-  const [expanded, setExpanded] = useState(new Set(['src']));
-  const [uiPrefsReady, setUiPrefsReady] = useState(false);
-  const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
-  const [selectedPath, setSelectedPath] = useState('');
-  const [content, setContent] = useState('// Selecciona un archivo del árbol para verlo aquí.');
+  const [expanded, setExpanded] = useState(new Set(DEFAULT_EDITOR_PANE_STATE.expandedPaths));
+  const [isTreeCollapsed, setIsTreeCollapsed] = useState(DEFAULT_EDITOR_PANE_STATE.isTreeCollapsed);
+  const [selectedPath, setSelectedPath] = useState(DEFAULT_EDITOR_PANE_STATE.selectedPath);
+  const [content, setContent] = useState(DEFAULT_EDITOR_PANE_CONTENT);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState('');
   const [markdownViewMode, setMarkdownViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
   const [latexViewMode, setLatexViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
+  const [searchQuery, setSearchQuery] = useState(DEFAULT_EDITOR_PANE_STATE.searchQuery);
 
   const language = useMemo(() => detectLanguage(selectedPath || ''), [selectedPath]);
   const isMarkdown = useMemo(
@@ -164,14 +247,26 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
   );
   const activeDocumentViewMode = isMarkdown ? markdownViewMode : latexViewMode;
   const showPreviewToggle = (isMarkdown || isLatex) && !fileLoading && !fileError;
+  const storage = typeof window !== 'undefined' ? window.localStorage : null;
+  const workspaceStateKey = `${project?.id || 'global'}:${workspaceId || 'default'}`;
+  const filteredTree = useMemo(() => filterTreeNodes(tree, searchQuery), [tree, searchQuery]);
+  const forcedExpandedPaths = useMemo(
+    () => (searchQuery.trim() ? buildForcedExpandedPaths(filteredTree) : new Set()),
+    [filteredTree, searchQuery]
+  );
+  const visibleExpandedPaths = useMemo(() => {
+    if (!searchQuery.trim()) return expanded;
+    return new Set([...expanded, ...forcedExpandedPaths]);
+  }, [expanded, forcedExpandedPaths, searchQuery]);
+  const currentFileBreadcrumb = useMemo(() => normalizePathSegments(selectedPath), [selectedPath]);
 
-  const persistTreeCollapsedPref = useCallback(
+  const persistLegacyTreeCollapsedPref = useCallback(
     (nextValue) => {
-      if (project?.id && uiPrefsReady) {
+      if (project?.id) {
         saveUIPref(project.id, 'editorFileTreeCollapsed', nextValue);
       }
     },
-    [project?.id, uiPrefsReady]
+    [project?.id]
   );
 
   const loadTree = useCallback(async () => {
@@ -227,32 +322,66 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
   );
 
   useEffect(() => {
-    if (!project?.id) return;
+    const inMemorySnapshot = workspaceSnapshotsRef.current.get(workspaceStateKey);
+    const persistedSnapshot = readEditorPaneState(storage, project?.id, workspaceId);
+    const legacyPrefs = project?.id ? getUIPrefs(project.id) : {};
+    const nextState = {
+      ...persistedSnapshot,
+      ...(inMemorySnapshot || {}),
+      expandedPaths:
+        (inMemorySnapshot?.expandedPaths && inMemorySnapshot.expandedPaths.length > 0)
+          ? inMemorySnapshot.expandedPaths
+          : (hasUIPref(project?.id, 'editorExpandedPaths') ? legacyPrefs.editorExpandedPaths : persistedSnapshot.expandedPaths),
+      isTreeCollapsed:
+        typeof inMemorySnapshot?.isTreeCollapsed === 'boolean'
+          ? inMemorySnapshot.isTreeCollapsed
+          : Boolean(legacyPrefs.editorFileTreeCollapsed ?? persistedSnapshot.isTreeCollapsed),
+      markdownViewMode:
+        inMemorySnapshot?.markdownViewMode ||
+        (legacyPrefs.editorMarkdownViewMode === DOCUMENT_VIEW_MODES.RAW ? DOCUMENT_VIEW_MODES.RAW : persistedSnapshot.markdownViewMode),
+      latexViewMode:
+        inMemorySnapshot?.latexViewMode ||
+        (legacyPrefs.editorLatexViewMode === DOCUMENT_VIEW_MODES.RAW ? DOCUMENT_VIEW_MODES.RAW : persistedSnapshot.latexViewMode),
+    };
 
-    const prefs = getUIPrefs(project.id);
-    setUiPrefsReady(false);
-    setExpanded(
-      hasUIPref(project.id, 'editorExpandedPaths')
-        ? new Set(prefs.editorExpandedPaths || [])
-        : new Set(['src'])
-    );
-    setIsTreeCollapsed(Boolean(prefs.editorFileTreeCollapsed));
-    setMarkdownViewMode(
-      prefs.editorMarkdownViewMode === DOCUMENT_VIEW_MODES.RAW
-        ? DOCUMENT_VIEW_MODES.RAW
-        : DOCUMENT_VIEW_MODES.PREVIEW
-    );
-    setLatexViewMode(
-      prefs.editorLatexViewMode === DOCUMENT_VIEW_MODES.RAW
-        ? DOCUMENT_VIEW_MODES.RAW
-        : DOCUMENT_VIEW_MODES.PREVIEW
-    );
-    setUiPrefsReady(true);
-  }, [project?.id]);
+    setExpanded(new Set(nextState.expandedPaths || DEFAULT_EDITOR_PANE_STATE.expandedPaths));
+    setIsTreeCollapsed(Boolean(nextState.isTreeCollapsed));
+    setSelectedPath(nextState.selectedPath || '');
+    setContent(inMemorySnapshot?.content || DEFAULT_EDITOR_PANE_CONTENT);
+    setFileError(inMemorySnapshot?.fileError || '');
+    setFileLoading(false);
+    setSearchQuery(nextState.searchQuery || '');
+    setMarkdownViewMode(nextState.markdownViewMode || DOCUMENT_VIEW_MODES.PREVIEW);
+    setLatexViewMode(nextState.latexViewMode || DOCUMENT_VIEW_MODES.PREVIEW);
+  }, [project?.id, storage, workspaceId, workspaceStateKey]);
 
   useEffect(() => {
     loadTree();
   }, [loadTree]);
+
+  useEffect(() => {
+    const snapshot = {
+      expandedPaths: Array.from(expanded),
+      isTreeCollapsed,
+      selectedPath,
+      searchQuery,
+      markdownViewMode,
+      latexViewMode,
+      content,
+      fileError,
+    };
+
+    workspaceSnapshotsRef.current.set(workspaceStateKey, snapshot);
+    writeEditorPaneState(storage, project?.id, workspaceId, snapshot);
+  }, [content, expanded, fileError, isTreeCollapsed, markdownViewMode, latexViewMode, project?.id, searchQuery, selectedPath, storage, workspaceId, workspaceStateKey]);
+
+  useEffect(() => {
+    onContextChange?.({
+      projectPath: project?.local_path || '',
+      currentFilePath: selectedPath || '',
+      breadcrumb: currentFileBreadcrumb,
+    });
+  }, [currentFileBreadcrumb, onContextChange, project?.local_path, selectedPath]);
 
   const toggleNode = useCallback(
     (path) => {
@@ -261,14 +390,14 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
         if (next.has(path)) next.delete(path);
         else next.add(path);
 
-        if (project?.id && uiPrefsReady) {
+        if (project?.id) {
           saveUIPref(project.id, 'editorExpandedPaths', Array.from(next));
         }
 
         return next;
       });
     },
-    [project?.id, uiPrefsReady]
+    [project?.id]
   );
 
   const handleDocumentViewModeChange = useCallback(
@@ -302,21 +431,22 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
   const handleTreeToggle = useCallback(() => {
     const nextValue = !isTreeCollapsed;
     setIsTreeCollapsed(nextValue);
-    persistTreeCollapsedPref(nextValue);
-  }, [isTreeCollapsed, persistTreeCollapsedPref]);
+    persistLegacyTreeCollapsedPref(nextValue);
+  }, [isTreeCollapsed, persistLegacyTreeCollapsedPref]);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+  }, []);
 
   return (
     <div
       data-testid="shared-editor-pane"
       className={`flex flex-col min-h-0 ${embedded ? 'h-full bg-[linear-gradient(180deg,#0b1320_0%,#08101a_100%)]' : 'flex-1'}`}
     >
-      <div className="px-4 py-3 border-b border-borders-subtle bg-[color-mix(in_srgb,var(--surface-app)_90%,#050914)] flex items-center justify-between gap-3">
+      <div className="px-4 py-2 border-b border-borders-subtle bg-[color-mix(in_srgb,var(--surface-app)_90%,#050914)] flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted font-semibold">
             Workspace files
-          </p>
-          <p className="mt-1 text-xs text-text-secondary truncate" data-testid="editor-pane-subtitle">
-            Explore project context without leaving the terminal layout.
           </p>
         </div>
         <button
@@ -341,11 +471,11 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
             collapsedSize={0}
             onCollapse={() => {
               setIsTreeCollapsed(true);
-              persistTreeCollapsedPref(true);
+              persistLegacyTreeCollapsedPref(true);
             }}
             onExpand={() => {
               setIsTreeCollapsed(false);
-              persistTreeCollapsedPref(false);
+              persistLegacyTreeCollapsedPref(false);
             }}
           >
             {!isTreeCollapsed ? (
@@ -353,6 +483,30 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
                 className="h-full border-r border-borders-subtle bg-surface-app flex flex-col"
                 data-testid="editor-tree-panel"
               >
+                <div className="border-b border-borders-subtle px-2 py-2">
+                  <div className="flex items-center gap-2 rounded-lg border border-borders-subtle bg-surface-elevated px-2.5 py-2">
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onInput={(event) => setSearchQuery(event.currentTarget.value)}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder="Search files or paths"
+                      className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
+                      data-testid="editor-tree-search-input"
+                      aria-label="Search files"
+                    />
+                    {searchQuery ? (
+                      <button
+                        type="button"
+                        onClick={clearSearch}
+                        className="inline-flex h-5 items-center rounded-md px-1.5 text-[11px] text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+                        aria-label="Clear file search"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <div className="flex-1 overflow-y-auto p-2">
                   {treeLoading ? (
                     <div className="p-2 space-y-2">
@@ -369,15 +523,26 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
                     <div className="text-xs text-danger p-2 rounded-md border border-[#F778BA33] bg-[#F778BA11]">
                       {treeError}
                     </div>
+                  ) : filteredTree.length === 0 ? (
+                    searchQuery.trim() ? (
+                      <div
+                        className="rounded-md border border-borders-subtle bg-surface-elevated px-3 py-2 text-xs text-text-muted"
+                        data-testid="editor-tree-empty-search"
+                      >
+                        No files match “{searchQuery.trim()}”.
+                      </div>
+                    ) : (
+                      <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
+                    )
                   ) : tree.length === 0 ? (
                     <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
                   ) : (
-                    tree.map((node) => (
+                    filteredTree.map((node) => (
                       <TreeNode
                         key={node.path}
                         node={node}
                         level={0}
-                        expanded={expanded}
+                        expanded={visibleExpandedPaths}
                         onToggle={toggleNode}
                         onSelect={loadFile}
                         selectedPath={selectedPath}
@@ -411,9 +576,18 @@ export default function FileExplorerEditorPane({ project, embedded = false }) {
                       <ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.8} />
                     )}
                   </button>
-                  <p className="text-xs text-text-muted truncate min-w-0 flex-1">
-                    {selectedPath || 'Ningún archivo seleccionado'}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-medium text-text-primary" title={selectedPath || 'Ningún archivo seleccionado'}>
+                      {selectedPath || 'Ningún archivo seleccionado'}
+                    </p>
+                    <p
+                      className="truncate text-[10px] uppercase tracking-[0.14em] text-text-muted"
+                      title={currentFileBreadcrumb.join(' / ') || project?.local_path || ''}
+                      data-testid="editor-current-breadcrumb"
+                    >
+                      {currentFileBreadcrumb.length > 0 ? currentFileBreadcrumb.join(' / ') : (project?.local_path || 'Workspace context')}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {showPreviewToggle && (

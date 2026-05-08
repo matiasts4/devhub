@@ -2,8 +2,8 @@ export const TERMINAL_WORKSPACE_SHORTCUTS = {
   splitDown: 'Ctrl+Shift+D',
   splitRight: 'Ctrl+Shift+R',
   closePanel: 'Ctrl+Shift+W',
-  previousWorkspace: 'Ctrl+Alt+ArrowLeft',
-  nextWorkspace: 'Ctrl+Alt+ArrowRight',
+  previousWorkspace: 'Ctrl+Shift+PageUp',
+  nextWorkspace: 'Ctrl+Shift+PageDown',
 };
 
 function isEditableElement(element) {
@@ -23,11 +23,8 @@ export function resolveTerminalShortcutAction(event) {
     if (normalizedKey === 'd') return 'splitDown';
     if (normalizedKey === 'r') return 'splitRight';
     if (normalizedKey === 'w') return 'closePanel';
-  }
-
-  if (event.altKey && !event.shiftKey) {
-    if (normalizedKey === 'ArrowLeft') return 'previousWorkspace';
-    if (normalizedKey === 'ArrowRight') return 'nextWorkspace';
+    if (normalizedKey === 'PageUp') return 'previousWorkspace';
+    if (normalizedKey === 'PageDown') return 'nextWorkspace';
   }
 
   return null;

@@ -2,105 +2,99 @@
 
 ## Purpose
 
-Define resumable agent-session reopen after app relaunch or machine reboot. MVP MUST cover OpenCode-managed sessions, not generic shell resurrection, PTY replay, or TUI framebuffer recovery.
+Define durable agent-session reopen after app relaunch or machine reboot. MVP MUST cover OpenCode-managed session resume, not generic shell resurrection, PTY replay, or TUI framebuffer recovery.
 
 ## Non-Goals
 
-- Generic shell or scrollback restore after reboot
-- Treating `hermes` relaunch in the same cwd as durable resume
-- Promising Hermes durable restore before CLI list/resume support is verified
-- Making Codex/Cloud-like providers first-class resumable providers in MVP
+- Generic shell, PTY, or scrollback restore after reboot
+- Treating plain `hermes` relaunch in the same cwd as durable resume
+- Promising Hermes, Codex, or Cloud durable restore before CLI list-and-resume support is verified
 
 ## Requirements
 
-### Requirement: OpenCode Session Listing Has Bounded Reopen States
+### Requirement: Reopen Listing Has Bounded Durable States
 
-The system MUST populate the topbar Reopen OpenCode section from `/api/opencode/sessions`. OpenCode listing MUST resolve to `success`, `empty`, or `error` within 10 seconds and MUST NOT leave the UI in an indefinite loading state.
+The system MUST populate Reopen and resumable history from provider-specific durable session catalogs. Each durable provider lookup MUST resolve to `success`, `empty`, or `error` within 10 seconds and MUST NOT leave the UI in an indefinite loading state.
 
-#### Scenario: OpenCode sessions load successfully
+#### Scenario: Durable sessions load successfully
 
-- GIVEN the user opens Reopen and OpenCode CLI returns sessions in time
-- WHEN `/api/opencode/sessions` responds for the current project filter
-- THEN the menu MUST render resumable OpenCode sessions
-- AND loading MUST clear without showing an error state
+- GIVEN a verified durable provider returns sessions in time
+- WHEN DevHub refreshes Reopen or resumable history
+- THEN resumable sessions MUST render for that provider
+- AND loading MUST clear without an error state
 
-#### Scenario: OpenCode listing times out or fails
+#### Scenario: Durable lookup times out or fails
 
-- GIVEN the OpenCode session list call hangs or errors
+- GIVEN a durable provider lookup hangs or errors
 - WHEN 10 seconds elapse or the failure is received
-- THEN the loading state MUST end in an explicit error state with retry
-- AND the Reopen menu MUST NOT keep spinning indefinitely
+- THEN DevHub MUST show an explicit error state with retry
+- AND the UI MUST NOT keep spinning indefinitely
 
-### Requirement: OpenCode Resume Is the Required MVP Restore Path
+### Requirement: OpenCode Is the Required MVP Durable Provider
 
-The system MUST reopen a selected OpenCode session by launching exactly one panel with `opencode --session <id>`. If the OpenCode CLI still lists a session after relaunch or reboot, DevHub MUST treat that session as resumable even when the original PTY is gone. The UI MUST describe this as session resume, not shell continuity.
+OpenCode MUST be supported as the MVP durable provider. DevHub MUST reopen a selected OpenCode session by launching exactly one panel with `opencode --session <id>`. If OpenCode still lists a session after relaunch or reboot, DevHub MUST treat that session as resumable even when the original PTY is gone.
 
-#### Scenario: User resumes an OpenCode session after reboot
+#### Scenario: User manually reopens an OpenCode session after reboot
 
-- GIVEN a previously used OpenCode session still appears in the CLI session list after reboot
+- GIVEN OpenCode still lists a prior session after reboot
 - WHEN the user selects Reopen for that session
-- THEN DevHub MUST start exactly one new panel with `opencode --session <id>`
-- AND the resumed target MUST be that saved OpenCode session
+- THEN DevHub MUST launch exactly one panel with `opencode --session <id>`
+- AND the resumed target MUST be that listed OpenCode session
 
-#### Scenario: Listed session becomes invalid before reopen
+#### Scenario: Listed OpenCode session becomes invalid
 
-- GIVEN a session was listed but the resume command later fails or becomes unavailable
+- GIVEN a session was listed but resume later fails
 - WHEN the user tries to reopen it
 - THEN DevHub MUST show a deterministic failure state
-- AND it MUST NOT silently open an unrelated blank substitute session
+- AND it MUST NOT open an unrelated blank substitute session
 
-### Requirement: Reopen and History Show Only Verified Resumable Providers
+### Requirement: Startup Auto-Resume Uses Persisted Durable Resume Data
 
-The topbar Reopen UX and Agent Room resumable history MUST surface durable sessions only for providers with verified list-and-resume support. OpenCode is REQUIRED for MVP. Empty, loading, and error states MUST be explicit and testable.
+On app open after relaunch or reboot, DevHub MUST auto-resume verified durable sessions from persisted durable commands or provider tokens. Startup resume MUST use those persisted durable resume inputs, not generic shell restoration. For MVP, OpenCode durable resume data is REQUIRED. DevHub MUST auto-launch each eligible durable session at most once during startup.
 
-#### Scenario: OpenCode appears in resumable history
+#### Scenario: Startup auto-resumes persisted OpenCode session
 
-- GIVEN OpenCode exposes resumable sessions for the current project
-- WHEN DevHub refreshes Reopen or Agent Room history
-- THEN OpenCode sessions MUST appear as resumable entries
-- AND current OpenCode virtual-history synthesis MAY remain the source for that history in MVP
+- GIVEN a saved workspace contains persisted OpenCode durable resume data
+- WHEN the app opens after relaunch or reboot
+- THEN DevHub MUST auto-launch one panel for that session using the persisted durable resume command or token
+- AND the behavior MUST represent session resume rather than generic shell restore
 
-#### Scenario: No resumable providers are available
+#### Scenario: Startup skips duplicate restored sessions
 
-- GIVEN no provider returns any verified resumable sessions
-- WHEN the user opens Reopen or resumable history
-- THEN the UI MUST show an empty state instead of stale entries
-- AND the UI MUST NOT imply that generic shell restore is supported
+- GIVEN a durable session was already restored into an existing panel during startup hydration
+- WHEN startup auto-resume evaluates persisted sessions
+- THEN DevHub MUST NOT launch a duplicate panel for the same durable session
+- AND already restored panels MUST remain the single restored instance
 
-### Requirement: Hermes Durable Restore Is Conditional and Deferred by Default
+### Requirement: Only Verified Durable Providers May Auto-Resume
 
-Hermes durable restore MUST remain deferred unless implementation verifies Hermes CLI support for both listing existing sessions and resuming a specific session. Without that verification, DevHub MUST NOT label Hermes as reboot-safe resume and MUST NOT treat plain `hermes` relaunch as restore. Live Hermes runtime detection MAY continue for non-durable active-session presence only. Codex/Cloud-like CLIs SHOULD remain extension points only.
+Reopen, resumable history, and startup auto-resume MUST surface durable sessions only for providers with verified CLI list-and-resume support. Hermes durable restore MUST remain unsupported and deferred unless that contract is verified. DevHub MUST NOT label plain `hermes` relaunch as reboot-safe restore. Codex and Cloud-like providers SHOULD remain extension points only.
 
 #### Scenario: Hermes support is not verified
 
-- GIVEN Hermes has no verified CLI list-and-resume contract during implementation
-- WHEN DevHub renders Reopen or resumable history
+- GIVEN Hermes has no verified CLI list-and-resume contract
+- WHEN DevHub renders resumable UX or runs startup auto-resume
 - THEN Hermes MUST be absent or clearly marked unsupported for durable resume
-- AND reboot-safe Hermes restore MUST remain out of MVP scope
+- AND Hermes MUST NOT auto-resume on app startup
 
-#### Scenario: Hermes support is verified later
+#### Scenario: A provider is verified later
 
-- GIVEN implementation verifies Hermes CLI list and resume behavior
-- WHEN Hermes sessions are shown as resumable
-- THEN DevHub MUST use that verified contract rather than cwd-only relaunch
-- AND Hermes MAY join the same resumable-provider model as OpenCode
+- GIVEN implementation verifies another provider's CLI list and resume behavior
+- WHEN that provider is surfaced as durable
+- THEN DevHub MUST use that verified contract for reopen and startup auto-resume
+- AND it MAY join the same durable-provider model as OpenCode
 
 ## Acceptance Criteria
 
-#### Scenario: Reopen never spins forever
+#### Scenario: Startup auto-resume is durable-command based
 
-- GIVEN `/api/opencode/sessions` stalls
-- WHEN the bounded wait limit is reached
-- THEN the user sees an error state within 10 seconds
+- GIVEN the machine rebooted and persisted OpenCode durable resume data exists
+- WHEN DevHub opens
+- THEN DevHub MUST resume through persisted durable command or token data
+- AND it MUST NOT claim generic shell restoration
 
-#### Scenario: OpenCode resume survives reboot semantics
+#### Scenario: Duplicate startup panels are forbidden
 
-- GIVEN the machine rebooted and OpenCode still lists a prior session
-- WHEN the user reopens it from DevHub
-- THEN DevHub resumes it with `opencode --session <id>`
-
-#### Scenario: Hermes false resume is forbidden
-
-- GIVEN Hermes CLI resume/list support is unverified
-- WHEN the user looks for durable reopen options
-- THEN DevHub MUST NOT present plain `hermes` relaunch as valid restore
+- GIVEN a durable session was already restored once during startup
+- WHEN startup reconciliation completes
+- THEN no second panel exists for that same restored durable session

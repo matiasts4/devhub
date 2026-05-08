@@ -17,10 +17,13 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const {
+  buildHistoryReplay,
   buildServerMessage,
   detectOpenCodeSessionId,
+  filterTerminalOutputForSession,
   getTransportMode,
   parseClientMessage,
+  updateSessionModeFromInput,
 } = require('./sessionTransport');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
@@ -34,22 +37,27 @@ if (!fs.existsSync(DEVHUB_DIR)) {
   fs.mkdirSync(DEVHUB_DIR, { recursive: true });
 }
 
-// ─── Escribir PID y Puerto al arrancar ────────────────────────────────────────
-fs.writeFileSync(PID_FILE, String(process.pid), 'utf8');
-fs.writeFileSync(PORT_FILE, String(PORT), 'utf8');
-console.log(`[Sidecar] PID ${process.pid} → ${PID_FILE}`);
-console.log(`[Sidecar] Port ${PORT} → ${PORT_FILE}`);
-
 // Limpiar archivos al salir (cualquier señal)
-function cleanup() {
+let isCleaningUp = false;
+
+function writeRuntimeFiles() {
+  fs.writeFileSync(PID_FILE, String(process.pid), 'utf8');
+  fs.writeFileSync(PORT_FILE, String(PORT), 'utf8');
+  console.log(`[Sidecar] PID ${process.pid} → ${PID_FILE}`);
+  console.log(`[Sidecar] Port ${PORT} → ${PORT_FILE}`);
+}
+
+function cleanup(exitCode = 0) {
+  if (isCleaningUp) return;
+  isCleaningUp = true;
   try { fs.unlinkSync(PID_FILE); } catch (_) {}
   try { fs.unlinkSync(PORT_FILE); } catch (_) {}
   console.log('[Sidecar] Archivos PID/port eliminados. Bye.');
-  process.exit(0);
+  process.exit(exitCode);
 }
 
-process.on('SIGTERM', cleanup);
-process.on('SIGINT', cleanup);
+process.on('SIGTERM', () => cleanup(0));
+process.on('SIGINT', () => cleanup(0));
 
 // ─── Sesiones PTY persistentes ────────────────────────────────────────────────
 // Clave: sessionId → { ptyProcess, history: string[], clients: Set<WebSocket> }
@@ -88,20 +96,31 @@ function getOrCreateSession(sessionId, cwd) {
     clients: new Set(),
     cwd: cwd || os.homedir(),
     createdAt: Date.now(),
+    mode: 'shell',
+    historyEnabled: true,
     opencodeSessionId: null,
+    pendingInput: '',
   };
 
   // Capturar output del PTY y enviarlo a todos los clientes conectados
   ptyProcess.on('data', (data) => {
+    const filteredData = filterTerminalOutputForSession(session, data);
+
+    if (typeof filteredData === 'string' && filteredData.length === 0) {
+      return;
+    }
+
     // Guardar en buffer (máx 10000 chars)
-    session.history.push(data);
+    if (session.historyEnabled) {
+      session.history.push(filteredData);
+    }
     const totalLen = session.history.reduce((acc, s) => acc + s.length, 0);
     while (session.history.length > 1 && totalLen > 10000) {
       session.history.shift();
     }
 
     // Enviar a todos los clientes activos
-    const detectedSessionId = detectOpenCodeSessionId(data);
+    const detectedSessionId = detectOpenCodeSessionId(filteredData);
     if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
       session.opencodeSessionId = detectedSessionId;
       broadcastSessionPayload(session, {
@@ -110,7 +129,7 @@ function getOrCreateSession(sessionId, cwd) {
       });
     }
 
-    broadcastSessionPayload(session, { type: 'output', data });
+    broadcastSessionPayload(session, { type: 'output', data: filteredData });
   });
 
   ptyProcess.on('exit', () => {
@@ -212,8 +231,10 @@ wss.on('connection', (ws, req) => {
 
   // Replay del historial al reconectar
   if (session.history.length > 0) {
-    const replay = session.history.join('');
-    sendToClient(ws, { type: 'output', data: replay });
+    const replay = buildHistoryReplay(session);
+    if (replay) {
+      sendToClient(ws, { type: 'output', data: replay });
+    }
   }
 
   if (session.opencodeSessionId) {
@@ -234,6 +255,8 @@ wss.on('connection', (ws, req) => {
     if (payload.type !== 'input') {
       return;
     }
+
+    updateSessionModeFromInput(session, payload.data);
 
     const detectedSessionId = detectOpenCodeSessionId(payload.data);
     if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
@@ -261,7 +284,13 @@ wss.on('connection', (ws, req) => {
 });
 
 // ─── Arrancar servidor ────────────────────────────────────────────────────────
+server.on('error', (error) => {
+  console.error('[Sidecar] Error de arranque del servidor:', error);
+  cleanup(1);
+});
+
 server.listen(PORT, '127.0.0.1', () => {
+  writeRuntimeFiles();
   console.log(`[Sidecar] ✅ Sidecar escuchando en http://127.0.0.1:${PORT}`);
   console.log(`[Sidecar]    PID: ${process.pid}`);
   console.log(`[Sidecar]    Shell: ${process.env.SHELL || 'bash'}`);

@@ -1,7 +1,8 @@
 const React = require('react');
-const { createRoot } = require('react-dom/client');
-const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
+
+let createRoot;
+let flushSync;
 
 let mockTasks = [];
 
@@ -99,6 +100,8 @@ describe('operational feedback component behavior', () => {
 
   beforeEach(() => {
     dom = installDom();
+    ({ createRoot } = require('react-dom/client'));
+    ({ flushSync } = require('react-dom'));
     mockTasks = [];
     mockCreateClient.mockClear();
     window.localStorage.clear();
@@ -121,13 +124,6 @@ describe('operational feedback component behavior', () => {
 
     global.fetch = originalFetch;
     dom.window.close();
-    delete global.window;
-    delete global.document;
-    delete global.navigator;
-    delete global.CustomEvent;
-    delete global.HTMLElement;
-    delete global.Node;
-    delete global.MouseEvent;
     jest.clearAllMocks();
   });
 

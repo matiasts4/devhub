@@ -21,7 +21,9 @@
 
 - [x] 3.1 REFACTOR: Extract reusable fixtures/helpers for OpenCode session payloads and resumable-session view models across route, adapter, hook, and component tests.
 - [x] 3.2 Add integration coverage proving topbar Reopen and Agent Room History render the same OpenCode resumable entries and recover from timeout/error retry flows.
-- [ ] 3.3 Add `tests/e2e/terminal-session-restore-post-reboot.spec.ts` for restart/reboot-style OpenCode resume and explicit unsupported-Hermes behavior. Browser execution still waits on local Playwright Chromium, while split-layout + installed-app sidecar regressions are fixed in targeted tests.
+- [ ] 3.3 RED: Sharpen `tests/e2e/terminal-session-restore-post-reboot.spec.ts` to drive real startup auto-resume after app open/reboot-style reload, assert exactly one resumed `opencode --session <id>` launch, and prove Hermes stays absent/unsupported in durable reopen UI.
+- [ ] 3.4 GREEN: Apply the smallest product/test-helper fixes in `src/components/TerminalWorkspacesManager.jsx`, `src/components/AgentRoomSidebar.jsx`, and related reopen helpers so startup auto-resume stays single-launch and unsupported Hermes behavior matches the sharpened browser flow.
+- [ ] 3.5 VERIFY: Run targeted Jest coverage plus `npx playwright test tests/e2e/terminal-session-restore-post-reboot.spec.ts` to confirm startup auto-resume, duplicate-launch protection, and unsupported-Hermes behavior end-to-end once local Chromium is available.
 
 ## Non-MVP Follow-up
 

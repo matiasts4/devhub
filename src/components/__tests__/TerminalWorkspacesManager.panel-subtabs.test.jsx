@@ -5,7 +5,7 @@
  * - Renders P1 active by default with a disabled '+' (no additional panels yet)
  * - Clicking a Px tab activates that panel
  * - '+' button adds a second panel; tab count grows to P2
- * - '+' is disabled (and reports aria-label) after reaching the max of 3 panels
+ * - '+' keeps adding panels (no hard max)
  * - '×' closes a panel (only visible when 2+ panels exist)
  */
 
@@ -213,6 +213,14 @@ function getSplitDownButton(container) {
   return container.querySelector('[data-testid="panel-subtabs-split-down"]');
 }
 
+function getVisibleWorkspaceShell(container) {
+  return (
+    Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
+      (node) => !String(node.className || '').includes('pointer-events-none')
+    ) || null
+  );
+}
+
 function defaultProps() {
   return { cwd: '/workspace/devhub', isVisible: true, projectId: 'proj-1' };
 }
@@ -241,7 +249,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     jest.clearAllMocks();
   });
 
-  test('renders sub-tabs bar with P1 active on initial load', async () => {
+  test('renders sub-tabs bar with V1 active on initial load', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -251,10 +259,10 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
 
     const p1 = getPanelTab(container, 'p1');
     expect(p1).not.toBeNull();
-    expect(p1.textContent).toContain('P1');
+    expect(p1.textContent).toContain('V1');
   });
 
-  test('+ button is enabled when only 1 panel exists', async () => {
+  test('+ button is enabled when only 1 view exists', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -262,10 +270,10 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     const addBtn = getAddButton(container);
     expect(addBtn).not.toBeNull();
     expect(addBtn.disabled).toBe(false);
-    expect(addBtn.getAttribute('aria-label')).toBe('Agregar terminal');
+    expect(addBtn.getAttribute('aria-label')).toBe('Agregar vista');
   });
 
-  test('clicking + adds a P2 tab', async () => {
+  test('clicking + adds a V2 tab', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -276,7 +284,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     expect(getPanelTab(container, 'p2')).not.toBeNull();
   });
 
-  test('P2 tab is focused after clicking +', async () => {
+  test('V2 tab is focused after clicking +', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -286,7 +294,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     expectAutoFocusedTerminal(container, 'p2');
   });
 
-  test('clicking P1 while P2 is active re-activates P1', async () => {
+  test('clicking V1 while V2 is active re-activates V1', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -299,7 +307,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     expectAutoFocusedTerminal(container, 'p1');
   });
 
-  test('+ button is disabled and shows max-reached label at 3 panels', async () => {
+  test('+ button stays enabled after creating 3 panels', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -308,40 +316,41 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     await click(getAddButton(container)); // → 3 panels
 
     const addBtn = getAddButton(container);
-    expect(addBtn.disabled).toBe(true);
-    expect(addBtn.getAttribute('aria-label')).toBe('Máximo 3 terminales alcanzado');
+    expect(addBtn.disabled).toBe(false);
+    expect(addBtn.getAttribute('aria-label')).toBe('Agregar vista');
   });
 
-  test('no 4th panel tab renders after reaching max', async () => {
+  test('allows rendering a 4th panel tab', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
     await click(getAddButton(container)); // → 2
     await click(getAddButton(container)); // → 3
+    await click(getAddButton(container)); // → 4
 
     expect(getPanelTab(container, 'p1')).not.toBeNull();
     expect(getPanelTab(container, 'p2')).not.toBeNull();
     expect(getPanelTab(container, 'p3')).not.toBeNull();
-    expect(getPanelTab(container, 'p4')).toBeNull();
+    expect(getPanelTab(container, 'p4')).not.toBeNull();
   });
 
-  test('close button is absent when only 1 panel exists', async () => {
+  test('close button is absent when only 1 view exists', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
     const p1 = getPanelTab(container, 'p1');
-    const closeBtn = p1.querySelector('[role="button"][aria-label="Cerrar P1"]');
+    const closeBtn = p1.querySelector('[role="button"][aria-label="Cerrar V1"]');
     expect(closeBtn).toBeNull();
   });
 
-  test('close button appears on tabs when 2+ panels exist', async () => {
+  test('close button appears on tabs when 2+ views exist', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
-    await click(getAddButton(container)); // → 2 panels
+    await click(getAddButton(container)); // → 2 views
 
     const p1 = getPanelTab(container, 'p1');
     const p2 = getPanelTab(container, 'p2');
@@ -349,7 +358,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     expect(p2.querySelector('[role="button"]')).not.toBeNull();
   });
 
-  test('renders visible split controls with accessible shortcut hints', async () => {
+  test('renders visible split controls without shortcut hint badges', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -358,18 +367,17 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     const splitDown = getSplitDownButton(container);
 
     expect(splitRight).not.toBeNull();
-    expect(splitRight.getAttribute('aria-label')).toContain('Split Right');
-    expect(splitRight.getAttribute('title')).toContain('Ctrl+Shift+R');
+    expect(splitRight.getAttribute('aria-label')).toContain('Dividir a la derecha');
+    expect(splitRight.getAttribute('title')).toContain('Dividir a la derecha');
+    expect(splitRight.textContent).toBe('');
 
     expect(splitDown).not.toBeNull();
-    expect(splitDown.getAttribute('aria-label')).toContain('Split Down');
-    expect(splitDown.getAttribute('title')).toContain('Ctrl+Shift+D');
+    expect(splitDown.getAttribute('aria-label')).toContain('Dividir hacia abajo');
+    expect(splitDown.getAttribute('title')).toContain('Dividir hacia abajo');
+    expect(splitDown.textContent).toBe('');
 
     const workspaceHint = container.querySelector('[data-testid="panel-subtabs-shortcuts-hint"]');
-    expect(workspaceHint).not.toBeNull();
-    expect(workspaceHint?.textContent).toContain('Ctrl+Alt+ArrowLeft');
-    expect(workspaceHint?.textContent).toContain('Ctrl+Alt+ArrowRight');
-    expect(workspaceHint?.getAttribute('title')).toContain('Workspace Ctrl+Alt+ArrowLeft / Ctrl+Alt+ArrowRight');
+    expect(workspaceHint).toBeNull();
   });
 
   test('clicking Split Right creates a new column and activates the new panel', async () => {
@@ -401,7 +409,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     expectAutoFocusedTerminal(container, 'p2');
   });
 
-  test('split controls disable with a limit reason after reaching the max panel count', async () => {
+  test('split controls remain enabled after creating multiple views and can keep splitting in the active view', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
@@ -412,31 +420,32 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     const splitRight = getSplitRightButton(container);
     const splitDown = getSplitDownButton(container);
 
-    expect(splitRight.disabled).toBe(true);
-    expect(splitRight.getAttribute('aria-label')).toContain('Máximo 3 terminales alcanzado');
-    expect(splitDown.disabled).toBe(true);
-    expect(splitDown.getAttribute('title')).toContain('Máximo 3 terminales alcanzado');
+    expect(splitRight.disabled).toBe(false);
+    expect(splitDown.disabled).toBe(false);
 
     await click(splitRight);
     await click(splitDown);
 
-    expect(container.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(3);
+    const visibleShell = getVisibleWorkspaceShell(container);
+    expect(visibleShell?.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(3);
     expect(getPanelTab(container, 'p4')).toBeNull();
+    expect(getPanelTab(container, 'p5')).toBeNull();
   });
 
-  test('closing P2 removes its tab and leaves P1 active', async () => {
+  test('closing V2 removes its tab and leaves V1 active', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
-    await click(getAddButton(container)); // → 2 panels
+    await click(getAddButton(container)); // → 2 views
 
-    // Close P2 via its × button
+    // Close V2 via its × button
     const p2 = getPanelTab(container, 'p2');
     const closeP2 = p2.querySelector('[role="button"]');
     await click(closeP2);
 
     expect(getPanelTab(container, 'p2')).toBeNull();
     expect(getPanelTab(container, 'p1')).not.toBeNull();
+    expectAutoFocusedTerminal(container, 'p1');
   });
 });

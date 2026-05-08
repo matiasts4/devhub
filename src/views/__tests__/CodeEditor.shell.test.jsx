@@ -4,9 +4,7 @@ const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
 const mockUseOutletContext = jest.fn();
-const mockFileExplorerEditorPane = jest.fn(() =>
-  React.createElement('div', { 'data-testid': 'shared-editor-pane' }, 'shared editor pane')
-);
+const mockFileExplorerEditorPane = jest.fn();
 
 jest.mock('react-router-dom', () => ({
   useOutletContext: () => mockUseOutletContext(),
@@ -14,7 +12,20 @@ jest.mock('react-router-dom', () => ({
 
 jest.mock('@/components/workspace/FileExplorerEditorPane', () => ({
   __esModule: true,
-  default: (props) => mockFileExplorerEditorPane(props),
+  default: (props) => {
+    const React = require('react');
+    mockFileExplorerEditorPane(props);
+
+    React.useEffect(() => {
+      props.onContextChange?.({
+        projectPath: props.project?.local_path,
+        currentFilePath: 'src/components/TerminalDock.jsx',
+        breadcrumb: ['src', 'components', 'TerminalDock.jsx'],
+      });
+    }, [props]);
+
+    return React.createElement('div', { 'data-testid': 'shared-editor-pane' }, 'shared editor pane');
+  },
 }), { virtual: true });
 
 jest.mock('@monaco-editor/react', () => () => {
@@ -160,7 +171,22 @@ describe('CodeEditor route shell', () => {
       expect.objectContaining({
         project: { id: 'project-1', name: 'DevHub', local_path: '/workspace/devhub' },
         embedded: false,
+        onContextChange: expect.any(Function),
       })
     );
+  });
+
+  test('shows project path and current file context in the standalone shell header', async () => {
+    const view = await renderIntoDom(React.createElement(CodeEditor));
+
+    expect(view.container.textContent).toContain('/workspace/devhub');
+    expect(view.container.querySelector('[data-testid="code-editor-current-file"]')?.textContent).toContain(
+      'src/components/TerminalDock.jsx'
+    );
+    expect(view.container.querySelector('[data-testid="code-editor-current-breadcrumb"]')?.textContent).toContain(
+      'src / components / TerminalDock.jsx'
+    );
+    expect(view.container.textContent).toContain('Editor de Código');
+    expect(view.container.textContent).toContain('DevHub');
   });
 });

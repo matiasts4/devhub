@@ -159,7 +159,30 @@ describe('GET /api/preview-proxy', () => {
       '[devhub][preview-proxy] proxy-navigation-escape-risk',
       expect.objectContaining({
         reason: 'cross-origin-navigation-target',
+        reasonCategory: 'proxy-escape-risk',
         target: expect.objectContaining({ href: 'http://localhost:3200/danger' }),
+      })
+    );
+  });
+
+  it('rejects non-localhost targets with a localhost-only diagnostic category', async () => {
+    const { GET } = await import('./route.js');
+    const request = {
+      url: 'https://devhub.test/api/preview-proxy?url=https%3A%2F%2Fexample.com%2Fapp',
+      nextUrl: new URL('https://devhub.test/api/preview-proxy?url=https%3A%2F%2Fexample.com%2Fapp'),
+      headers: buildHeaders({ host: 'devhub.test' }),
+    };
+
+    const response = await GET(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({ error: 'Invalid target URL. Only localhost targets are allowed.' });
+    expect(console.warn).toHaveBeenCalledWith(
+      '[devhub][preview-proxy] request-rejected',
+      expect.objectContaining({
+        reason: 'target-not-allowed',
+        reasonCategory: 'localhost-only-target',
       })
     );
   });

@@ -20,6 +20,7 @@
 - [x] 3.2 GREEN: Added integration coverage proving topbar Reopen and Agent Room History stay in sync through timeout/error retry recovery and invalidated-session failure cleanup.
 - [x] Regression fix: Restored real split rendering semantics from workspace `columns/panels` state so horizontal splits render side-by-side columns and vertical splits render stacked panels again.
 - [x] Regression fix: Aligned production sidecar terminal transport with the JSON tty contract expected by `TerminalTTY`, so installed-app reopen now reports OpenCode detection/exit events instead of leaving blank terminals.
+- [x] Regression fix: Added shell-only tty output hygiene so device/status response noise is stripped before shell history storage, broadcast, and reconnect replay.
 - [ ] 3.3 RED/GREEN partial: Playwright spec is executable through the correct DevHub port now, but true browser E2E remains blocked by missing local Chromium binaries.
 
 ### Files Changed
@@ -47,6 +48,8 @@
 | `tests/e2e/terminal-session-restore-post-reboot.spec.ts` | Created | Added targeted Playwright spec documenting intended reboot-style OpenCode resume and unsupported-Hermes assertions. |
 | `playwright.config.ts` | Modified | Aligned Playwright `baseURL`, `webServer.url`, and `webServer.command` with DevHub's actual dev port and `BASE_URL` override semantics. |
 | `tests/unit/playwright-config.test.js` | Created | Added strict-TDD unit coverage proving Playwright config targets the real DevHub port and stays aligned under URL overrides. |
+| `src/lib/terminal/ttyServer.js` | Modified | Stripped shell-mode DA/DSR-style terminal response noise before history persistence, socket broadcast, and reconnect replay, while leaving TUI passthrough intact. |
+| `src/lib/terminal/ttyServer.test.js` | Modified | Added strict-TDD regression coverage for preserved shell output, filtered terminal-response noise, and clean existing-session replay. |
 | `openspec/changes/terminal-session-restore-post-reboot/tasks.md` | Modified | Marked tasks 3.1 and 3.2 complete; left 3.3 open with documented blocker. |
 | `openspec/changes/terminal-session-restore-post-reboot/apply-progress.md` | Created | Persisted merged apply progress in canonical OpenSpec storage. |
 
@@ -69,12 +72,13 @@
 | 3.2 | `src/components/__tests__/TerminalWorkspacesManager.reopen.test.jsx` | Integration | ✅ 5/5 | ✅ Written first | ✅ Passed | ✅ retry parity + invalidated-session exit + reboot persistence + unsupported-Hermes substitute cases | ✅ Shared helper reuse |
 | 2.2 regression repair | `src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx`, `src/components/__tests__/TerminalWorkspacesManager.panel-subtabs.test.jsx`, `src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx`, `src/components/__tests__/TerminalWorkspacesManager.reopen.test.jsx` | Integration | ✅ 30/30 workspace safety-net | ✅ Split-layout RED written first | ✅ Passed | ✅ horizontal-column + vertical-stack persisted-state cases | ✅ Extracted `renderWorkspacePanel()` and restored geometry without changing workspace state shape |
 | 2.5 production sidecar repair | `src/app/api/terminal/session/route.test.js`, `tests/unit/sidecar-sessionTransport.test.js` | Unit + Integration | ✅ 7/7 route + tty safety-net | ✅ Route/helper RED written first | ✅ Passed | ✅ `/tty` contract + json input/exit/output + session-detect cases | ✅ Extracted reusable sidecar transport helper instead of ad-hoc socket branching |
+| tty shell replay hygiene | `src/lib/terminal/ttyServer.test.js` | Unit + Integration | ✅ 7/7 tty safety-net | ✅ Shell-noise RED written first | ✅ Passed | ✅ normal shell output + filtered DA/DSR chunks + clean reconnect replay | ✅ Extracted shell-only sanitizer + replay helper without touching TUI mode |
 | 3.3 | `tests/unit/playwright-config.test.js`, `tests/e2e/terminal-session-restore-post-reboot.spec.ts` | Unit + E2E | ✅ config safety net added before config edit | ✅ Unit RED written first for 3100/default + override alignment | ⚠️ Unit GREEN passed; E2E startup reached browser launch but browser binary missing | ✅ default-port + override-port cases in config tests, plus 2 Playwright spec cases listed/runnable by config | ✅ Config now derives URL/port from one base source |
 
 ### Test Summary
-- **Total tests written**: 20 additional assertions/spec assertions across this change, including 8 new split-layout + sidecar-transport assertions in this batch.
-- **Total tests passing**: 41 targeted Jest tests passing across the current change-scoped suites.
-- **Layers used**: Unit (14), Integration (27), E2E (1 spec file with 2 cases authored; execution reaches browser launch but is blocked by missing Chromium binary).
+- **Total tests written**: 23 additional assertions/spec assertions across this change, including 3 new tty hygiene assertions in this batch.
+- **Total tests passing**: 44 targeted Jest tests passing across the current change-scoped suites.
+- **Layers used**: Unit (17), Integration (27), E2E (1 spec file with 2 cases authored; execution reaches browser launch but is blocked by missing Chromium binary).
 - **Approval tests**: 1 existing baseline animation test suite used earlier to validate/refit pre-existing behavior.
 - **Pure functions created**: 3 new helpers/modules (`src/test-support/*`, Playwright config derivation constants, and `sidecar-backend/sessionTransport.js`).
 
@@ -85,6 +89,7 @@
 - Port/config mismatch is FIXED: Playwright now targets DevHub's actual Next dev port (`3100`) by default and stays aligned when `BASE_URL` is overridden.
 - Split regression root cause is FIXED: `handleSplit()` kept correct `columns/panels` state, but the render path flattened that state into one stacked single-view model; rendering now follows the real workspace geometry again.
 - Installed-app reopen contract is FIXED: production sidecar no longer uses the raw-only `/` websocket path for terminal sessions, and now emits structured `output`, `exit`, and `opencode-session-detected` events over `/tty` so client reopen logic can confirm success or fail deterministically.
+- Shell reconnect noise is FIXED: shell-mode PTY output now drops DA/DSR terminal-response fragments before they enter persisted history, so reconnect/tab-switch replay no longer prints artifacts like `1;2c0;276;0c...`.
 - Residual blocker is environment-only: `npx playwright test tests/e2e/terminal-session-restore-post-reboot.spec.ts` now gets past webServer startup and fails only because the local Chromium executable is missing (`npx playwright install`).
 - Targeted route tests still emit expected `console.error` noise for timeout/ENOENT branches, and right-dock safety-net tests still emit known visual-edit `console.warn` logs; behavior remains green.
 

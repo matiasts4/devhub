@@ -1,6 +1,6 @@
 const DEFAULT_BROWSER_URL = 'http://localhost:3200/';
 const DEFAULT_SEARCH_URL = 'https://duckduckgo.com/?q=';
-const MIN_RIGHT_DOCK_SIZE = 30;
+const MIN_RIGHT_DOCK_SIZE = 20;
 const MAX_RIGHT_DOCK_SIZE = 82;
 
 const DEFAULT_RIGHT_DOCK_STATE = {
@@ -8,6 +8,7 @@ const DEFAULT_RIGHT_DOCK_STATE = {
   activeTab: 'browser',
   editMode: false,
   maximized: false,
+  maximizedView: 'browser',
   size: 44,
   browserUrl: DEFAULT_BROWSER_URL,
   browserHistory: [DEFAULT_BROWSER_URL],
@@ -58,6 +59,23 @@ function shouldTreatAsSearchQuery(value) {
   return true;
 }
 
+function shouldDefaultToHttp(value) {
+  const normalized = String(value || '').trim().replace(/^\/\//, '');
+  if (!normalized) return false;
+
+  const hostnameCandidate = normalized.split('/')[0].split('?')[0].split('#')[0];
+  const hostname = hostnameCandidate.split(':')[0].toLowerCase();
+
+  if (!hostname) return false;
+  if (hostname === 'localhost') return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return true;
+  if (/^\[[0-9a-f:]+\]$/i.test(hostname)) return true;
+  if (hostname.endsWith('.local')) return true;
+  if (!hostname.includes('.')) return true;
+
+  return false;
+}
+
 function normalizeBrowserUrl(rawValue) {
   const value = String(rawValue || '').trim();
   if (!value) return '';
@@ -76,7 +94,7 @@ function normalizeBrowserUrl(rawValue) {
   const hasExplicitProtocol = /^(https?:\/\/|file:\/\/)/i.test(value);
   const withProtocol = hasExplicitProtocol
     ? value
-    : `http://${value.replace(/^\/\//, '')}`;
+    : `${shouldDefaultToHttp(value) ? 'http' : 'https'}://${value.replace(/^\/\//, '')}`;
 
   try {
     const parsed = new URL(withProtocol);
@@ -101,6 +119,9 @@ function sanitizeRightDockState(rawState = {}) {
   const activeTab = ['browser', 'editor'].includes(rawState.activeTab) ? rawState.activeTab : 'browser';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
+  const maximizedView = ['browser', 'editor', 'window'].includes(rawState.maximizedView)
+    ? rawState.maximizedView
+    : (activeTab === 'editor' ? 'editor' : 'browser');
   const rawSize = Number(rawState.size);
   const size = Number.isFinite(rawSize)
     ? clamp(rawSize, MIN_RIGHT_DOCK_SIZE, MAX_RIGHT_DOCK_SIZE)
@@ -131,6 +152,7 @@ function sanitizeRightDockState(rawState = {}) {
     activeTab,
     editMode,
     maximized,
+    maximizedView,
     size,
     browserUrl,
     browserHistory,

@@ -3,12 +3,20 @@
 import FileExplorerEditorPane from './FileExplorerEditorPane';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 
-export default function WorkspaceRightDock({ project, dockState, onDockStateChange }) {
-  let content = <WorkspaceBrowserPane dockState={dockState} onDockStateChange={onDockStateChange} />;
-
-  if (dockState.activeTab === 'editor') {
-    content = <FileExplorerEditorPane project={project} embedded={true} />;
-  }
+export default function WorkspaceRightDock({
+  project,
+  workspaceId,
+  dockState,
+  onDockStateChange,
+  browserWindowState,
+  onBrowserWindowStateChange,
+  workspaceWindows,
+  activeWorkspaceWindowId,
+  onWorkspaceWindowSelect,
+  onWorkspaceWindowAdd,
+  onWorkspaceWindowRemove,
+}) {
+  const isBrowserActive = dockState.activeTab !== 'editor';
 
   return (
     <section
@@ -16,7 +24,25 @@ export default function WorkspaceRightDock({ project, dockState, onDockStateChan
       data-testid="workspace-right-dock"
     >
       <div className="flex-1 min-h-0" data-testid="workspace-right-dock-shell">
-        {content}
+        <div className={isBrowserActive ? 'h-full min-h-0' : 'hidden'} aria-hidden={!isBrowserActive}>
+          <WorkspaceBrowserPane
+            projectId={project?.id}
+            workspaceId={workspaceId}
+            dockState={dockState}
+            onDockStateChange={onDockStateChange}
+            browserWindowState={browserWindowState}
+            onBrowserWindowStateChange={onBrowserWindowStateChange}
+            workspaceWindows={workspaceWindows}
+            activeWorkspaceWindowId={activeWorkspaceWindowId}
+            onWorkspaceWindowSelect={onWorkspaceWindowSelect}
+            onWorkspaceWindowAdd={onWorkspaceWindowAdd}
+            onWorkspaceWindowRemove={onWorkspaceWindowRemove}
+          />
+        </div>
+
+        <div className={isBrowserActive ? 'hidden' : 'h-full min-h-0'} aria-hidden={isBrowserActive}>
+          <FileExplorerEditorPane project={project} workspaceId={workspaceId} embedded={true} />
+        </div>
       </div>
     </section>
   );

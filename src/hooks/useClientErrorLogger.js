@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
+import { buildPreviewDiagnosticDedupeKey } from '@/lib/browserPreviewDiagnostics';
 
 const ENDPOINT = '/api/client-log';
 const DEVHUB_PREFIX = '[devhub]';
+const DIAGNOSTIC_DEDUPE_WINDOW_MS = 2000;
 
 function send(level, message, details, source) {
   // Fire-and-forget; never throw
@@ -32,6 +34,38 @@ function send(level, message, details, source) {
  */
 export function useClientErrorLogger() {
   useEffect(() => {
+    const recentDiagnostics = new Map();
+
+    function shouldSendDiagnostic(message, details, source) {
+      if (source) return true;
+      const payload = Array.isArray(details) ? details[0] : details;
+      const key = buildPreviewDiagnosticDedupeKey({
+        source: 'browser-preview',
+        event: message.replace(/^\[devhub\]\[(?:visual-edit|preview-proxy)\]\s*/, ''),
+        reason: payload?.reason || null,
+        reasonCategory: payload?.reasonCategory || null,
+        supportMode: payload?.supportMode || null,
+        details: payload || {},
+      });
+      if (!key || key === '{}') return true;
+
+      const now = Date.now();
+      const previousTs = recentDiagnostics.get(key);
+      recentDiagnostics.set(key, now);
+
+      if (previousTs && now - previousTs < DIAGNOSTIC_DEDUPE_WINDOW_MS) {
+        return false;
+      }
+
+      for (const [entryKey, entryTs] of recentDiagnostics.entries()) {
+        if (now - entryTs >= DIAGNOSTIC_DEDUPE_WINDOW_MS) {
+          recentDiagnostics.delete(entryKey);
+        }
+      }
+
+      return true;
+    }
+
     // ── console.warn / console.error interception ──────────────────────────
     const originalWarn = console.warn;
     const originalError = console.error;
@@ -45,6 +79,9 @@ export function useClientErrorLogger() {
         const details = args.length > 1 ? args.slice(1) : undefined;
         // Strip the source location suffix "(file.jsx:37:11)" injected by the browser
         const message = first.replace(/\s+\([^)]+:\d+:\d+\)$/, '');
+        if (!shouldSendDiagnostic(message, details?.length === 1 ? details[0] : details)) {
+          return;
+        }
         send(level, message, details?.length === 1 ? details[0] : details);
       } catch {
         // never let the interceptor crash the page

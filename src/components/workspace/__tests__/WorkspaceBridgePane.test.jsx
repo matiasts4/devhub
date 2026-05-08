@@ -463,6 +463,35 @@ describe('WorkspaceBridgePane', () => {
     });
   });
 
+  test('keeps same-origin selector readiness stable across repeated load events for the same location', async () => {
+    const view = await renderIntoDom(
+      React.createElement(WorkspaceBrowserPaneHarness, {
+        initialDockState: {
+          browserUrl: 'https://devhub.test/preview',
+          browserHistory: ['https://devhub.test/preview'],
+          browserHistoryIndex: 0,
+          editMode: true,
+        },
+      })
+    );
+
+    const iframe = view.container.querySelector('[data-testid="browser-iframe"]');
+    installSameOriginIframe(iframe);
+
+    await click(view.container.querySelector('[data-testid="bridge-inspect-toggle"]'));
+    iframe.dispatchEvent(new window.Event('load'));
+    await flushEffects();
+    iframe.dispatchEvent(new window.Event('load'));
+    await flushEffects();
+
+    expect(getDiagnostics(view.container)).toEqual({
+      supportMode: 'same-origin-dom',
+      supportReason: 'same-origin-access',
+      selectorState: 'armed',
+    });
+    expect(view.container.querySelector('[data-testid="bridge-unsupported-copy"]')).toBeNull();
+  });
+
   test('classifies localhost bridge previews as proxy-supported', async () => {
     const view = await renderIntoDom(
       React.createElement(WorkspaceBridgePane, {
@@ -479,6 +508,38 @@ describe('WorkspaceBridgePane', () => {
       supportMode: 'localhost-proxy',
       supportReason: 'proxy-active',
       selectorState: 'connecting',
+    });
+  });
+
+  test('keeps supported localhost proxy loads armed without re-sending protocol activation after DOM fallback is ready', async () => {
+    const view = await renderIntoDom(
+      React.createElement(WorkspaceBrowserPaneHarness, {
+        initialDockState: {
+          browserUrl: 'http://localhost:3200/products/bridgespace',
+          browserHistory: ['http://localhost:3200/products/bridgespace'],
+          browserHistoryIndex: 0,
+          editMode: true,
+        },
+      })
+    );
+
+    const iframe = view.container.querySelector('[data-testid="browser-iframe"]');
+    const runtime = installSameOriginIframe(iframe);
+
+    await click(view.container.querySelector('[data-testid="bridge-inspect-toggle"]'));
+    await flushEffects();
+    await flushEffects();
+
+    runtime.contentWindow.postMessage.mockClear();
+    iframe.dispatchEvent(new window.Event('load'));
+    await flushEffects();
+    await flushEffects();
+
+    expect(runtime.contentWindow.postMessage).not.toHaveBeenCalled();
+    expect(getDiagnostics(view.container)).toEqual({
+      supportMode: 'localhost-proxy',
+      supportReason: 'proxy-active',
+      selectorState: 'armed',
     });
   });
 
@@ -602,6 +663,71 @@ describe('WorkspaceBridgePane', () => {
     expect(view.container.querySelector('[data-testid="bridge-unsupported-copy"]')?.textContent).toContain(
       'did not respond to supported visual-edit activation'
     );
+    expect(view.container.querySelector('[data-testid="bridge-unsupported-copy"]')?.textContent).toContain(
+      'localhost previews through the DevHub proxy'
+    );
+    expect(view.container.querySelector('[data-testid="bridge-inspect-toggle"]')?.textContent).toContain('Inspect');
+    expect(getDiagnostics(view.container)).toEqual({
+      supportMode: 'unsupported',
+      supportReason: 'cross-origin-no-instrumentation',
+      selectorState: 'unsupported',
+    });
+  });
+
+  test('does not emit protocol activation commands for unsupported remote previews', async () => {
+    const view = await renderIntoDom(
+      React.createElement(WorkspaceBrowserPaneHarness, {
+        initialDockState: {
+          browserUrl: 'https://example.com',
+          browserHistory: ['https://example.com'],
+          browserHistoryIndex: 0,
+          editMode: true,
+        },
+      })
+    );
+
+    const iframe = view.container.querySelector('[data-testid="browser-iframe"]');
+    const runtime = installCrossOriginIframe(iframe);
+
+    await click(view.container.querySelector('[data-testid="bridge-inspect-toggle"]'));
+
+    expect(runtime.postMessage).not.toHaveBeenCalled();
+    expect(getDiagnostics(view.container)).toEqual({
+      supportMode: 'unsupported',
+      supportReason: 'cross-origin-no-instrumentation',
+      selectorState: 'unsupported',
+    });
+  });
+
+  test('does not crash when a cross-origin frame blocks protocol property access during inspect classification', async () => {
+    const view = await renderIntoDom(
+      React.createElement(WorkspaceBrowserPaneHarness, {
+        initialDockState: {
+          browserUrl: 'https://example.com',
+          browserHistory: ['https://example.com'],
+          browserHistoryIndex: 0,
+          editMode: true,
+        },
+      })
+    );
+
+    const iframe = view.container.querySelector('[data-testid="browser-iframe"]');
+    const { contentWindow } = installCrossOriginIframe(iframe, {
+      href: 'https://example.com/',
+    });
+
+    Object.defineProperty(contentWindow, '__DEVHUB_VISUAL_EDIT_PROTOCOL__', {
+      configurable: true,
+      get() {
+        throw new window.DOMException(
+          'Blocked a frame with origin "https://devhub.test" from accessing a cross-origin frame.',
+          'SecurityError'
+        );
+      },
+    });
+
+    await click(view.container.querySelector('[data-testid="bridge-inspect-toggle"]'));
+
     expect(view.container.querySelector('[data-testid="bridge-inspect-toggle"]')?.textContent).toContain('Inspect');
     expect(getDiagnostics(view.container)).toEqual({
       supportMode: 'unsupported',
