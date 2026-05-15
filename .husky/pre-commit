@@ -2,6 +2,15 @@
 # QA-06 — DevHub pre-commit hook
 # Corre lint-staged para aplicar ESLint + Prettier a archivos staged
 
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+  echo ""
+  echo "🚨 ERROR: commit directo a '$branch' bloqueado."
+  echo "Usá una rama task/<task-id>-<slug> antes de commitear."
+  exit 1
+fi
+
 npx lint-staged
 
 # QA-01 — Bloquear archivos de parche/deuda técnica
