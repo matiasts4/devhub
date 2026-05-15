@@ -3,6 +3,7 @@ Fecha de Modificación: 15 de mayo de 2026
 Changelog:
   - 2026-03-28 v1: [DOC-08 | Tarea 2.1] Redacción formal de los System Prompts Maestros para el Worker Agent y el QA Agent. Responsable: Controller Agent.
   - 2026-05-15 v2: Reescritura operativa. Git/files/tests pasan al ejecutor; DevHub MCP queda como control plane. Se adopta política canónica de ramas, commits, pushes, comentarios y merge gates.
+  - 2026-05-15 v3: Se formaliza el checkpoint gate antes de `completed`/`qa-ready`, `commit=none` sólo para análisis sin cambios y la regla de no hacer push automático.
 ---
 
 # 09 Prompts Maestros de Agentes (Worker & QA)
@@ -104,11 +105,11 @@ Ejemplos válidos:
 - chore(sw-2.1): checkpoint - branch strategy drafted
 - fix(sw-2.1): qa adjustments for protected-branch policy
 
-**REGLA 5 — PUSH FRECUENTE AL BRANCH DE TAREA**
+**REGLA 5 — PUSH EXPLÍCITO, NO AUTOMÁTICO**
 
-- Primer push: después del primer checkpoint útil.
-- Luego: en cada checkpoint importante y siempre antes de `blocked`, `handoff` o `qa-ready`.
-- Nunca esperes a un milestone completo para pushear.
+- Hacé push al branch de tarea sólo cuando haga falta publicar la rama para QA, PR, handoff o respaldo remoto pedido.
+- No hagas push automático “por las dudas”.
+- Nunca esperes a un milestone completo para recién publicar una rama si otro actor necesita verla.
 - Nunca hagas push directo a `main`/`master`.
 
 **REGLA 6 — BITÁCORA OPERATIVA OBLIGATORIA**
@@ -122,13 +123,20 @@ Registrá comentarios en DevHub con estos prefijos:
 
 Plantillas mínimas:
 
-[git:checkpoint] commit=<sha> summary="..." docs=[...] checks=[...]
+[git:checkpoint] commit=<sha|none> worktree=<clean|dirty-excluded> summary="..." docs=[...] checks=[...]
 [git:blocked] commit=<sha|none> reason="..." needed="..."
 [git:qa-ready] branch=<branch> head=<sha> docs=[...] checks=[...]
 
+Si `worktree=dirty-excluded`, agregá `excluded=[...]` y `reason="..."`.
+
 **REGLA 7 — CIERRE FORMAL**
 
-- Si dejaste el branch listo para revisión, hacé push final, registrá `[git:qa-ready]` y recién ahí actualizá la tarea a `completed` (o usá `release_task` con el outcome que defina el supervisor).
+- Antes de mover la tarea a `completed` o `qa-ready`, corré `git status --short`.
+- El working tree debe quedar limpio o explícitamente documentado como `dirty-excluded` en `[git:checkpoint]`.
+- Si tocaste archivos, tiene que existir al menos un commit final local y trazable.
+- `commit=none` sólo es válido para análisis/investigación sin cambios de archivos.
+- Registrá `[git:checkpoint]` con SHA, docs, checks y estado del working tree antes del cambio de estado.
+- Si hace falta dejar la rama lista para QA remoto, recién ahí publicala y registrá `[git:qa-ready]`.
 - No hagas el merge vos.
 
 ---
@@ -214,6 +222,8 @@ No agregás features nuevas. No mergeás sin aprobación humana explícita. No h
 - Los commits usan Conventional Commits.
 - Si el trabajo viene de DevHub, el `scope` incluye el `task-id`.
 - Los comentarios `[git:start]`, `[git:checkpoint]`, `[git:qa-ready]` son consistentes con el HEAD revisado.
+- Antes de aprobar `completed` o `qa-ready`, existe evidencia del checkpoint gate: `git status --short`, commit final local o `commit=none` bien justificado.
+- Si aparece `commit=none`, el caso corresponde realmente a análisis sin cambios de archivos.
 
 **CHECK 3 — ALCANCE**
 

@@ -12,6 +12,7 @@ Changelog:
   - 2026-05-15 v1: Política canónica de Git/versionado para agentes. Se separa DevHub MCP del runtime Git del ejecutor y se formalizan ramas, commits, pushes, comentarios y gates de merge.
   - 2026-05-15 v2: Aclarada la deprecación de tools Git dentro del DevHub MCP, la regla de commit mínimo por tarea/slice y la matriz de validación por tipo de cambio.
   - 2026-05-15 v3: Alineados hooks reales con la política canónica; `core.hooksPath` oficializado en Husky y `.githooks/*` marcado como legado inactivo.
+  - 2026-05-15 v4: Formalizado el checkpoint gate antes de `completed`/`qa-ready`, la excepción `commit=none` sólo para análisis sin cambios y la regla de no hacer push automático.
 ---
 
 # 24 Política de Git y Versionado para Agentes
@@ -99,7 +100,15 @@ Los archivos `.githooks/pre-commit` y `.githooks/pre-push` quedan como **legacy/
 
 El agente debe commitear cuando exista un **checkpoint coherente y revisable**. No por cada guardado de archivo.
 
-Regla mínima: toda tarea/slice que cambie archivos debe terminar con **al menos un commit final** antes de declararse `qa-ready`, `completed` o entregada al humano. Si no hubo commit porque era sólo análisis sin cambios, el reporte debe decir explícitamente `commit=none` y explicar por qué.
+Regla mínima: toda tarea/slice que cambie archivos debe terminar con **al menos un commit final local** antes de declararse `qa-ready`, `completed` o entregada al humano.
+
+### Checkpoint gate obligatorio antes de `completed` o `qa-ready`
+
+1. Ejecutar `git status --short`.
+2. Confirmar **working tree limpio** o documentar explícitamente en el comentario `[git:checkpoint]` qué paths quedan **intencionalmente excluidos** y por qué.
+3. Si la tarea cambió archivos, debe existir **al menos un commit final local y trazable**.
+4. Si no hubo cambios de archivos, el único caso válido es `commit=none` y debe aclarar que fue **análisis/investigación sin modificaciones**.
+5. Antes de actualizar la tarea a `completed` o `qa-ready`, registrar `[git:checkpoint]` con `commit=<sha|none>`, docs afectadas, checks ejecutados y estado del working tree.
 
 Hacer commit obligatoriamente:
 
@@ -168,13 +177,13 @@ Si el cambio altera comportamiento, contrato, flujo operativo o arquitectura, el
 
 ### Cuándo pushear
 
-El agente debe pushear al remoto del branch de tarea:
+El agente puede pushear al remoto del branch de tarea **solo cuando haga falta publicar la rama**. El push **no** forma parte del gate mínimo para marcar una tarea como `completed`.
 
-1. después del **primer checkpoint coherente** (para publicar la rama);
-2. después de cada checkpoint relevante;
-3. antes de quedar **blocked**;
-4. antes de un **handoff**;
-5. antes de declarar **qa-ready**.
+Razones válidas para push:
+
+1. publicar la rama para QA, PR, handoff o revisión remota;
+2. respaldo remoto pedido por un humano/supervisor;
+3. continuidad operativa cuando otro agente necesita leer esa rama publicada.
 
 ### Reglas
 
@@ -192,7 +201,8 @@ git push origin HEAD
 
 3. **Nunca** pushear directo a `main`/`master`.
 4. **Nunca** usar `--force` sin aprobación humana explícita.
-5. Un push no reemplaza un comentario operativo: ambos deben existir.
+5. **No hacer push automático** “por las dudas”. Si no existe instrucción explícita o necesidad operativa real, alcanza con el commit local + comentario `[git:checkpoint]`.
+6. Un push no reemplaza un comentario operativo: ambos deben existir.
 
 ### Regla de cadence
 
@@ -236,7 +246,15 @@ DevHub debe conservar la cronología mediante `add_task_comment`. Los comentario
 **Checkpoint**
 
 ```txt
-[git:checkpoint] commit=abc1234 summary="workspace metadata drafted" docs=[docs/24_Politica_Git_y_Versionado_Agentes.md] checks=[not run]
+[git:checkpoint] commit=abc1234 worktree=clean summary="workspace metadata drafted" docs=[docs/24_Politica_Git_y_Versionado_Agentes.md] checks=[not run]
+```
+
+Si el working tree quedó con cambios **intencionalmente excluidos**, el comentario debe agregar `worktree=dirty-excluded`, `excluded=[...]` y `reason="..."`.
+
+Si fue una tarea de análisis sin cambios de archivos:
+
+```txt
+[git:checkpoint] commit=none worktree=clean summary="analysis only" docs=[none] checks=[targeted-review] reason="sin cambios de archivos"
 ```
 
 **Bloqueo**
@@ -263,7 +281,7 @@ DevHub debe conservar la cronología mediante `add_task_comment`. Los comentario
 [git:merge] method=pr target=main result=merged approver=human
 ```
 
-Regla: el comentario debe permitir reconstruir **qué rama**, **qué commit**, **qué docs**, **qué checks** y **qué decisión** ocurrió.
+Regla: el comentario debe permitir reconstruir **qué rama**, **qué commit**, **qué docs**, **qué checks**, **qué estado tenía el working tree** y **qué decisión** ocurrió.
 
 ---
 

@@ -33,4 +33,7 @@ Recommended flow:
 - Never invent project/task IDs. Read them from DevHub MCP first.
 - Prefer idempotent bulk tools for generated plans.
 - Do not mark work completed unless it was verified.
+- Git gate before `completed`/`qa-ready`: run `git status --short`, require a local checkpoint commit if files changed, and leave a `[git:checkpoint]` comment with `commit=<sha|none>`, docs, checks, and working-tree status.
+- `commit=none` is valid only for analysis/investigation tasks with zero file changes.
+- Do not push automatically; push only when a human asks or when publishing the task branch is operationally necessary for QA/handoff.
 - Keep Engram and DevHub distinct: Engram is memory; DevHub is planning/execution state.

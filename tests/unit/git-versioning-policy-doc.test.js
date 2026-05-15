@@ -1,5 +1,3 @@
-/* global __dirname, describe, expect, require, test */
-
 const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -38,17 +36,44 @@ describe('git versioning policy documentation', () => {
     expect(doc).toContain('git_diff_review');
   });
 
-  test('policy defines commit/push cadence and validation levels by task type', () => {
+  test('policy defines checkpoint gate, non-automatic push, and validation levels by task type', () => {
     const doc = read('docs/24_Politica_Git_y_Versionado_Agentes.md');
 
-    expect(doc).toMatch(/al menos un commit final/i);
+    expect(doc).toMatch(/al menos un commit final local/i);
     expect(doc).toMatch(/No por cada guardado/i);
+    expect(doc).toMatch(/git status --short/i);
+    expect(doc).toMatch(/working tree limpio/i);
+    expect(doc).toMatch(/commit=none/i);
+    expect(doc).toMatch(/No hacer push automático/i);
     expect(doc).toContain('Matriz de validación mínima');
     expect(doc).toContain('docs-only');
     expect(doc).toContain('código normal');
     expect(doc).toContain('terminal/desktop/UI funcional');
     expect(doc).toContain('smoke manual');
-    expect(doc).toMatch(/pushear al remoto del branch de tarea/i);
+    expect(doc).toMatch(/solo cuando haga falta publicar la rama/i);
+  });
+
+  test('checkpoint gate is documented across prompts, repo guide, and MCP flow', () => {
+    const promptsDoc = read('docs/09_Prompts_Maestros_Agentes.md');
+    const repoGuide = read('AGENTS.md');
+    const agentFlow = read('devhub-mcp/AGENT-FLOW.md');
+
+    expect(promptsDoc).toContain('corré `git status --short`');
+    expect(promptsDoc).toContain(
+      '[git:checkpoint] commit=<sha|none> worktree=<clean|dirty-excluded>'
+    );
+    expect(promptsDoc).toContain('`commit=none` sólo es válido');
+    expect(promptsDoc).toContain('No hagas push automático');
+
+    expect(repoGuide).toContain('Git gate before `completed`/`qa-ready`');
+    expect(repoGuide).toContain('git status --short');
+    expect(repoGuide).toContain('`commit=none` is valid only');
+    expect(repoGuide).toContain('Do not push automatically');
+
+    expect(agentFlow).toContain('Git gate before `completed` or `qa-ready`');
+    expect(agentFlow).toContain('git status --short');
+    expect(agentFlow).toContain('commit=<sha|none>');
+    expect(agentFlow).toContain('Do not push automatically');
   });
 
   test('policy documents canonical hooks path and active Husky hooks', () => {

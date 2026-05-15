@@ -40,6 +40,24 @@ single-create calls when generating full plans.
 6. `update_task` when status changes.
 7. `unregister_agent` on clean shutdown.
 
+### Git gate before `completed` or `qa-ready`
+
+Before an agent marks a task `completed` or leaves it `qa-ready`, the executor
+must handle Git outside DevHub MCP and then record the evidence back in DevHub:
+
+1. Run `git status --short` in the repo.
+2. If files changed for the task, create at least one final local checkpoint
+   commit and capture its SHA.
+3. Add a `[git:checkpoint]` comment with `commit=<sha|none>`, touched docs,
+   checks executed, and working tree status (`clean` or `dirty-excluded`).
+4. `commit=none` is valid only for analysis/investigation tasks with zero file
+   changes.
+5. Do not push automatically. Push only when a human asks or when publishing
+   the task branch is operationally necessary for QA, PR, or handoff.
+
+Without that checkpoint evidence, the task should stay `in_progress`/`blocked`,
+not `completed`.
+
 ## Engram + DevHub MCP
 
 Use both systems together:
