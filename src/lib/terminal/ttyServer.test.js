@@ -142,6 +142,19 @@ describe('ttyServer — session create', () => {
     expect(calledMap).toBeInstanceOf(Map);
     expect(calledMap.has('term-new')).toBe(true);
   });
+
+  it('falls back to a safe cwd when the requested cwd does not exist', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    createSession({ id: 'term-safe-fallback', cwd: '/definitely/missing/devhub', shell: '/bin/zsh' });
+
+    const spawnCall = mockPtySpawn.mock.calls[0];
+    expect(spawnCall[2]?.cwd).toBe(process.cwd());
+    expect(spawnCall[2]?.env?.DEVHUB_PROJECT_DIR).toBe(process.cwd());
+
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    expect(sessions.get('term-safe-fallback')?.cwd).toBe(process.cwd());
+  });
 });
 
 describe('ttyServer — session close', () => {
@@ -184,14 +197,15 @@ describe('ttyServer — DEVHUB_MCP_CMD uses dynamic project-root path', () => {
 describe('ttyServer — getTTYSessionsSnapshot includes cwd and restored', () => {
   it('includes cwd and restored in snapshot entries', async () => {
     const { createSession, getTTYSessionsSnapshot } = await import('./ttyServer.js');
+    const existingCwd = process.cwd();
 
-    createSession({ id: 'snap-1', cwd: '/home/user/snap', shell: '/bin/zsh', restored: true });
+    createSession({ id: 'snap-1', cwd: existingCwd, shell: '/bin/zsh', restored: true });
 
     const snapshot = getTTYSessionsSnapshot();
     const entry = snapshot.find((s) => s.terminalId === 'snap-1');
 
     expect(entry).toBeDefined();
-    expect(entry.cwd).toBe('/home/user/snap');
+    expect(entry.cwd).toBe(existingCwd);
     expect(entry.restored).toBe(true);
   });
 });
@@ -290,5 +304,27 @@ describe('ttyServer — shell history hygiene', () => {
     expect(reconnectSocket.send).not.toHaveBeenCalledWith(
       JSON.stringify({ type: 'output', data: expect.stringContaining('[?1;2c') })
     );
+  });
+
+  it('falls back to a safe cwd for fresh websocket sessions with an invalid requested cwd', async () => {
+    const { ensureTTYServer } = await import('./ttyServer.js');
+
+    await ensureTTYServer();
+
+    const connectionHandler = mockWssOn.mock.calls.find(([eventName]) => eventName === 'connection')?.[1];
+    expect(connectionHandler).toBeInstanceOf(Function);
+
+    const socket = createMockSocket();
+    socket.on = jest.fn((event, handler) => {
+      socket[`__${event}`] = handler;
+    });
+
+    connectionHandler(socket, { url: '/terminal?id=invalid-cwd&cwd=%2Fdefinitely%2Fmissing%2Fdevhub' });
+
+    const spawnCall = mockPtySpawn.mock.calls[0];
+    expect(spawnCall[2]?.cwd).toBe(process.cwd());
+
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    expect(sessions.get('invalid-cwd')?.cwd).toBe(process.cwd());
   });
 });

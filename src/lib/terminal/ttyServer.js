@@ -3,7 +3,10 @@ import net from 'net';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import cwdGuard from './cwdGuard.js';
 import { saveSessions, loadSessions } from './sessionStore.js';
+
+const { resolveTerminalSpawnCwd } = cwdGuard;
 
 // ─── Diagnostic file logger ───────────────────────────────────────────────────
 // Writes to data/logs/terminal-debug.log (relative to project root / cwd).
@@ -279,16 +282,20 @@ function buildSessionSpawnConfig(cwd, terminalId) {
  */
 export function createSession({ id, cwd, shell, restored = false } = {}) {
   const sessions = getOrInitSessions();
-  const resolvedCwd = cwd || resolveHomeDirectory();
+  const requestedCwd = cwd || resolveHomeDirectory();
+  const cwdResolution = resolveTerminalSpawnCwd(requestedCwd, {
+    processCwd: process.cwd(),
+    homeDir: resolveHomeDirectory(),
+  });
+  const resolvedCwd = cwdResolution.effectiveCwd;
   const resolvedShell = shell || resolveShell();
-
-  const cwdExists = fs.existsSync(resolvedCwd);
   const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(resolvedCwd, id);
 
   ttyLog('createSession', `spawning PTY`, {
     id,
-    cwd: resolvedCwd,
-    cwdExists,
+    requestedCwd: cwdResolution.requestedCwd,
+    effectiveCwd: resolvedCwd,
+    usedFallback: cwdResolution.usedFallback,
     shell: resolvedShell,
     tmux: tmuxEnabled,
     spawnArgs,
@@ -519,15 +526,15 @@ export async function ensureTTYServer() {
   ttyLog('ensureTTYServer', `WSS ready`, { port, wsPath });
 
   wss.on('connection', (socket, request) => {
-    let cwd = resolveHomeDirectory();
+    let requestedCwd = resolveHomeDirectory();
     let terminalId = `term-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
     try {
       if (request?.url) {
         const dummyUrl = new URL(request.url, 'http://localhost');
-        const requestedCwd = dummyUrl.searchParams.get('cwd');
+        const wsRequestedCwd = dummyUrl.searchParams.get('cwd');
         const reqTermId = dummyUrl.searchParams.get('id');
-        if (requestedCwd) cwd = requestedCwd;
+        if (wsRequestedCwd) requestedCwd = wsRequestedCwd;
         if (reqTermId) terminalId = reqTermId;
       }
     } catch (e) {
@@ -535,19 +542,30 @@ export async function ensureTTYServer() {
       console.error('Error parsing WS URL:', e);
     }
 
-    ttyLog('WS_CONN', `new WebSocket connection`, { terminalId, cwd });
+    const cwdResolution = resolveTerminalSpawnCwd(requestedCwd, {
+      processCwd: process.cwd(),
+      homeDir: resolveHomeDirectory(),
+    });
+    const cwd = cwdResolution.effectiveCwd;
+
+    ttyLog('WS_CONN', `new WebSocket connection`, {
+      terminalId,
+      requestedCwd: cwdResolution.requestedCwd,
+      effectiveCwd: cwd,
+      usedFallback: cwdResolution.usedFallback,
+    });
 
     let session = terminalSessions.get(terminalId);
 
     if (!session) {
       const shell = resolveShell();
-      const cwdExists = fs.existsSync(cwd);
       const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(cwd, terminalId);
 
       ttyLog('WS_CONN', `creating new session`, {
         terminalId,
-        cwd,
-        cwdExists,
+        requestedCwd: cwdResolution.requestedCwd,
+        effectiveCwd: cwd,
+        usedFallback: cwdResolution.usedFallback,
         shell,
         tmux: tmuxEnabled,
         spawnArgs,

@@ -23,17 +23,32 @@ function cliLog(tag, msg, extra = {}) {
 
 /**
  * Pure function: returns Framer Motion animation props for the xterm container.
- * Fades in (opacity 0→1, 150ms ease-out) when connection is established.
+ * Fades in (opacity 0→1, 150ms ease-out) when the terminal viewport should be visible.
  *
- * @param {boolean} connected - whether the terminal is connected
+ * @param {boolean} visible - whether the terminal viewport should be visible
  * @returns {{ initial, animate, transition }} Framer Motion props
  */
-export function getXtermContainerAnimProps(connected) {
+export function getXtermContainerAnimProps(visible) {
   return {
     initial: { opacity: 0 },
-    animate: { opacity: connected ? 1 : 0 },
+    animate: { opacity: visible ? 1 : 0 },
     transition: { duration: 0.15, ease: 'easeOut' },
   };
+}
+
+export function shouldShowTerminalViewport(isInitializing, initError) {
+  return !isInitializing && !initError;
+}
+
+export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
+  if (isInitializing) return false;
+
+  return Boolean(
+    initError ||
+      connectionState === 'error' ||
+      connectionState === 'disconnected' ||
+      connectionState === 'terminated'
+  );
 }
 
 export function refreshTerminalViewport(term) {
@@ -91,10 +106,7 @@ export function shouldAutoReconnectTerminal(connectionState, autoFocus) {
 }
 
 export const TERMINAL_VIEWPORT_SHELL_STYLE = Object.freeze({
-  contain: 'layout paint size',
   isolation: 'isolate',
-  transform: 'translateZ(0)',
-  backfaceVisibility: 'hidden',
 });
 
 export default function TerminalTTY({
@@ -370,72 +382,93 @@ export default function TerminalTTY({
 
     async function initializeTerminal() {
       cliLog(`CLIENT:${id}`, 'initializeTerminal() start', { cwd, autoFocus });
-      const [{ Terminal }, { FitAddon }, { SearchAddon }] = await Promise.all([
-        import('xterm'),
-        import('xterm-addon-fit'),
-        import('xterm-addon-search'),
-      ]);
+      try {
+        const [{ Terminal }, { FitAddon }, { SearchAddon }] = await Promise.all([
+          import('xterm'),
+          import('xterm-addon-fit'),
+          import('xterm-addon-search'),
+        ]);
 
-      if (!mounted || !containerRef.current) {
-        cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted or no container (after import)');
-        return;
-      }
-
-      const ready = await waitForVisibleDimensions();
-      cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
-        ready,
-        width: containerRef.current?.getBoundingClientRect().width,
-        height: containerRef.current?.getBoundingClientRect().height,
-      });
-      if (!mounted || !containerRef.current) {
-        cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted after waitForVisibleDimensions');
-        setIsInitializing(false);
-        return;
-      }
-
-      const terminal = new Terminal({
-        cursorBlink: true,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
-        fontSize: 13,
-        lineHeight: 1.4,
-        allowTransparency: false,
-        theme: getTerminalTheme(),
-      });
-
-      const fitAddon = new FitAddon();
-      const searchAddon = new SearchAddon();
-      terminal.loadAddon(fitAddon);
-      terminal.loadAddon(searchAddon);
-      terminal.open(containerRef.current);
-
-      if (ready) {
-        fitAddon.fit();
-      }
-
-      terminal.onData((data) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          if (transportRef.current === 'raw') {
-            wsRef.current.send(data);
-          } else {
-            wsRef.current.send(JSON.stringify({ type: 'input', data }));
-          }
+        if (!mounted || !containerRef.current) {
+          cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted or no container (after import)');
+          return;
         }
-      });
 
-      resizeObserverRef.current = new ResizeObserver(() => {
+        const ready = await waitForVisibleDimensions();
+        cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
+          ready,
+          width: containerRef.current?.getBoundingClientRect().width,
+          height: containerRef.current?.getBoundingClientRect().height,
+        });
+        if (!mounted || !containerRef.current) {
+          cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted after waitForVisibleDimensions');
+          setIsInitializing(false);
+          return;
+        }
+
+        const terminal = new Terminal({
+          cursorBlink: true,
+          fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+          fontSize: 13,
+          lineHeight: 1.4,
+          allowTransparency: false,
+          theme: getTerminalTheme(),
+        });
+
+        const fitAddon = new FitAddon();
+        const searchAddon = new SearchAddon();
+        terminal.loadAddon(fitAddon);
+        terminal.loadAddon(searchAddon);
+        terminal.open(containerRef.current);
+
+        if (ready) {
+          fitAddon.fit();
+        }
+
+        terminal.onData((data) => {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            if (transportRef.current === 'raw') {
+              wsRef.current.send(data);
+            } else {
+              wsRef.current.send(JSON.stringify({ type: 'input', data }));
+            }
+          }
+        });
+
+        resizeObserverRef.current = new ResizeObserver(() => {
+          sendResize();
+        });
+        resizeObserverRef.current.observe(containerRef.current);
+
+        termRef.current = terminal;
+        fitRef.current = fitAddon;
+        searchRef.current = searchAddon;
+
+        setInitError(null);
+        setIsInitializing(false);
+        connect();
+
         sendResize();
-      });
-      resizeObserverRef.current.observe(containerRef.current);
+      } catch (error) {
+        console.error(`[TTY:${id}] initializeTerminal() failed:`, error);
+        cliLog(`CLIENT:${id}`, 'initializeTerminal() failed', { error: error?.message });
 
-      termRef.current = terminal;
-      fitRef.current = fitAddon;
-      searchRef.current = searchAddon;
+        if (!mounted) return;
 
-      setInitError(null);
-      setIsInitializing(false);
-      connect();
-
-      sendResize();
+        setInitError('No se pudo inicializar la terminal en esta ventana.');
+        setConnectionState('error');
+        setIsInitializing(false);
+        termRef.current?.dispose();
+        termRef.current = null;
+        fitRef.current = null;
+        searchRef.current = null;
+        resizeObserverRef.current?.disconnect();
+        resizeObserverRef.current = null;
+        wsRef.current?.close();
+        wsRef.current = null;
+        clearTimers();
+        return;
+      }
     }
 
     initializeTerminal();
@@ -623,6 +656,8 @@ export default function TerminalTTY({
   }, []);
 
   const isConnected = connectionState === 'connected';
+  const showTerminalViewport = shouldShowTerminalViewport(isInitializing, initError);
+  const showTerminalStatusOverlay = shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState);
   const statusLabel = isConnected
     ? 'Conectado'
     : connectionState === 'connecting'
@@ -696,7 +731,7 @@ export default function TerminalTTY({
         <motion.div
           ref={containerRef}
           className="devhub-xterm-container h-full w-full p-2.5"
-          {...getXtermContainerAnimProps(isConnected)}
+          {...getXtermContainerAnimProps(showTerminalViewport)}
         />
 
         {/* Restored session toast */}
@@ -721,7 +756,7 @@ export default function TerminalTTY({
         )}
 
         {/* Error/Disconnected overlay */}
-        {(initError || connectionState === 'error' || connectionState === 'disconnected') && !isInitializing && (
+        {showTerminalStatusOverlay && (
           <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
             <WifiOff className="w-8 h-8 text-red-400" />
             <span className="text-red-400 font-semibold">

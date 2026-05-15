@@ -7,6 +7,7 @@ jest.mock('next/server', () => ({
 const mockCloseSession = jest.fn();
 const mockExistsSync = jest.fn(() => false);
 const mockReadFileSync = jest.fn();
+const mockSpawn = jest.fn();
 
 jest.mock('@/lib/terminal/ttyServer', () => ({
   closeSession: mockCloseSession,
@@ -16,6 +17,10 @@ jest.mock('@/lib/terminal/ttyServer', () => ({
 jest.mock('fs', () => ({
   existsSync: (...args) => mockExistsSync(...args),
   readFileSync: (...args) => mockReadFileSync(...args),
+}));
+
+jest.mock('child_process', () => ({
+  spawn: (...args) => mockSpawn(...args),
 }));
 
 const { NextResponse } = require('next/server');
@@ -28,9 +33,11 @@ describe('GET /api/terminal/session', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.NODE_ENV = 'test';
+    delete process.env.DEVHUB_SIDECAR_PATH;
     global.fetch = jest.fn();
     mockExistsSync.mockReturnValue(false);
     mockReadFileSync.mockReset();
+    mockSpawn.mockReturnValue({ unref: jest.fn() });
     NextResponse.json.mockImplementation((body, init) => ({ body, status: init?.status || 200 }));
     ensureTTYServer.mockResolvedValue({ port: 3001, wsPath: '/terminals' });
   });
@@ -70,6 +77,63 @@ describe('GET /api/terminal/session', () => {
     });
     expect(response.body).toEqual({ port: 4000, wsPath: '/tty' });
     expect(ensureTTYServer).not.toHaveBeenCalled();
+  });
+
+  test('respawns the packaged sidecar when production health fails and standalone fallback is unavailable', async () => {
+    process.env.NODE_ENV = 'production';
+    ensureTTYServer.mockRejectedValue(new Error("Cannot find module 'node-pty'"));
+    mockExistsSync.mockImplementation((targetPath) => {
+      if (String(targetPath).endsWith('sidecar-port.txt')) return true;
+      if (String(targetPath).includes('sidecar-backend/server.js')) return true;
+      return false;
+    });
+    mockReadFileSync.mockReturnValue('4000');
+    global.fetch
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockResolvedValueOnce({ ok: true });
+
+    const { GET } = require('./route.js');
+    const request = {
+      nextUrl: new URL('http://localhost/api/terminal/session?cwd=%2Fworkspace%2Fdevhub'),
+    };
+
+    const response = await GET(request);
+
+    expect(ensureTTYServer).toHaveBeenCalledWith('/workspace/devhub');
+    expect(mockSpawn).toHaveBeenCalledWith(
+      process.execPath,
+      [expect.stringContaining('sidecar-backend/server.js')],
+      expect.objectContaining({
+        cwd: expect.stringContaining('sidecar-backend'),
+        detached: true,
+        stdio: 'ignore',
+        env: expect.objectContaining({
+          NODE_ENV: 'production',
+          SIDECAR_PORT: '4000',
+        }),
+      })
+    );
+    expect(response.body).toEqual({ port: 4000, wsPath: '/tty' });
+    expect(response.status).toBe(200);
+  });
+
+  test('keeps the production 503 when no sidecar recovery path exists', async () => {
+    process.env.NODE_ENV = 'production';
+    ensureTTYServer.mockRejectedValue(new Error("Cannot find module 'node-pty'"));
+    mockExistsSync.mockImplementation((targetPath) => String(targetPath).endsWith('sidecar-port.txt'));
+    mockReadFileSync.mockReturnValue('4000');
+    global.fetch.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const { GET } = require('./route.js');
+    const request = {
+      nextUrl: new URL('http://localhost/api/terminal/session?cwd=%2Fworkspace%2Fdevhub'),
+    };
+
+    const response = await GET(request);
+
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ error: 'Servidor terminal (sidecar) no encontrado' });
   });
 });
 

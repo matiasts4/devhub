@@ -16,6 +16,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const { resolveSidecarSessionCwd } = require('./sessionCwd');
 const {
   buildHistoryReplay,
   buildServerMessage,
@@ -81,12 +82,14 @@ function getOrCreateSession(sessionId, cwd) {
     return sessions.get(sessionId);
   }
 
+  const cwdResolution = resolveSidecarSessionCwd(cwd || os.homedir());
+  const effectiveCwd = cwdResolution.effectiveCwd;
   const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || 'bash');
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-256color',
     cols: 120,
     rows: 36,
-    cwd: cwd || os.homedir(),
+    cwd: effectiveCwd,
     env: { ...process.env, TERM: 'xterm-256color' },
   });
 
@@ -94,7 +97,7 @@ function getOrCreateSession(sessionId, cwd) {
     ptyProcess,
     history: [],     // Buffer de los últimos 5000 chars para replay al reconectar
     clients: new Set(),
-    cwd: cwd || os.homedir(),
+    cwd: effectiveCwd,
     createdAt: Date.now(),
     mode: 'shell',
     historyEnabled: true,
@@ -144,10 +147,15 @@ function getOrCreateSession(sessionId, cwd) {
   });
 
   sessions.set(sessionId, session);
-  console.log(`[Sidecar] Nueva sesión PTY: ${sessionId} (${shell}) en ${cwd || os.homedir()}`);
+  console.log('[Sidecar] Nueva sesión PTY', {
+    sessionId,
+    shell,
+    requestedCwd: cwdResolution.requestedCwd,
+    effectiveCwd,
+    usedFallback: cwdResolution.usedFallback,
+  });
   return session;
 }
-
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
