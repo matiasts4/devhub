@@ -10,7 +10,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --experimental-vm-modules node_modules/.bin/jest --passWithNoTests",
-    "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --coverage --passWithNoTests"
+    "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --coverage --passWithNoTests",
+    "mcp:smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.8.0",

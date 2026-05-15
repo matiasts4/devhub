@@ -190,6 +190,8 @@ Escribí `/` en el chat para abrir el menú de slash commands. Se puede filtrar 
 | `/sdd-verify`  | Valida que la implementación coincida con las specs |
 | `/sdd-archive` | Cierra el cambio y sincroniza specs delta           |
 
+> **Aclaración importante para Swarm Workspace:** estas slash commands representan **fases/workflows SDD** y capacidades reutilizables para workers. No equivalen al supervisor persistente del Swarm. El supervisor durable, con leases, claims, workspaces, runs/artifacts y recovery, pertenece al control plane de DevHub.
+
 ### Categoría: MCP
 
 | Comando   | Descripción                                   |
@@ -248,6 +250,19 @@ LLM recibe SYSTEM NOTIFICATION con resultado
        ▼
 LLM responde al usuario con resumen de lo ejecutado
 ```
+
+## Cómo encaja AgentHub con Swarm Workspace
+
+AgentHub puede disparar perfiles OpenCode y fases/workflows SDD como ejecuciones especializadas. Eso sirve para:
+
+- investigación (`sdd-explore`),
+- implementación (`sdd-apply`),
+- verificación (`sdd-verify`),
+- y otras capacidades skill-driven.
+
+Pero esos disparos siguen siendo **subagent/execution profile/package** o **skill/capability**. No son el supervisor persistente del Swarm.
+
+Si una corrida participa de Swarm Workspace, el source of truth operativo debe seguir siendo DevHub: task claim, runtime role, runtime state, workspace asignado, artifacts y recovery.
 
 ---
 

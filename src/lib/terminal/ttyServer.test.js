@@ -75,8 +75,24 @@ describe('ttyServer — restoreSessions', () => {
   it('calls loadSessions on startup and creates PTY sessions for restored entries', async () => {
     const freshTime = new Date().toISOString();
     mockLoadSessions.mockReturnValue([
-      { id: 'restored-1', cwd: '/home/user/project', shell: '/bin/zsh', title: null, createdAt: freshTime, lastSeenAt: freshTime, restored: true },
-      { id: 'restored-2', cwd: '/tmp', shell: '/bin/zsh', title: null, createdAt: freshTime, lastSeenAt: freshTime, restored: true },
+      {
+        id: 'restored-1',
+        cwd: '/home/user/project',
+        shell: '/bin/zsh',
+        title: null,
+        createdAt: freshTime,
+        lastSeenAt: freshTime,
+        restored: true,
+      },
+      {
+        id: 'restored-2',
+        cwd: '/tmp',
+        shell: '/bin/zsh',
+        title: null,
+        createdAt: freshTime,
+        lastSeenAt: freshTime,
+        restored: true,
+      },
     ]);
 
     const { restoreSessions } = await import('./ttyServer.js');
@@ -92,7 +108,15 @@ describe('ttyServer — restoreSessions', () => {
   it('restored sessions retain PTY output in history and broadcast it to attached sockets', async () => {
     const freshTime = new Date().toISOString();
     mockLoadSessions.mockReturnValue([
-      { id: 'restored-live', cwd: '/home/user/project', shell: '/bin/zsh', title: null, createdAt: freshTime, lastSeenAt: freshTime, restored: true },
+      {
+        id: 'restored-live',
+        cwd: '/home/user/project',
+        shell: '/bin/zsh',
+        title: null,
+        createdAt: freshTime,
+        lastSeenAt: freshTime,
+        restored: true,
+      },
     ]);
 
     const { restoreSessions } = await import('./ttyServer.js');
@@ -146,7 +170,11 @@ describe('ttyServer — session create', () => {
   it('falls back to a safe cwd when the requested cwd does not exist', async () => {
     const { createSession } = await import('./ttyServer.js');
 
-    createSession({ id: 'term-safe-fallback', cwd: '/definitely/missing/devhub', shell: '/bin/zsh' });
+    createSession({
+      id: 'term-safe-fallback',
+      cwd: '/definitely/missing/devhub',
+      shell: '/bin/zsh',
+    });
 
     const spawnCall = mockPtySpawn.mock.calls[0];
     expect(spawnCall[2]?.cwd).toBe(process.cwd());
@@ -207,6 +235,76 @@ describe('ttyServer — getTTYSessionsSnapshot includes cwd and restored', () =>
     expect(entry).toBeDefined();
     expect(entry.cwd).toBe(existingCwd);
     expect(entry.restored).toBe(true);
+  });
+});
+
+describe('ttyServer — TERM-01 diagnostics helpers', () => {
+  it('builds focused resize diagnostics for session recovery debugging', async () => {
+    const { buildTTYSessionDiagnosticSnapshot } = await import('./ttyServer.js');
+
+    const snapshot = buildTTYSessionDiagnosticSnapshot(
+      {
+        id: 'term-01',
+        mode: 'tui',
+        historyEnabled: false,
+        sockets: new Set([{}, {}]),
+        cwd: '/workspace/devhub',
+        opencodeSessionId: 'ses_123',
+      },
+      { reason: 'client-resize', cols: 132, rows: 40 }
+    );
+
+    expect(snapshot).toEqual({
+      terminalId: 'term-01',
+      mode: 'tui',
+      historyEnabled: false,
+      socketCount: 2,
+      cwd: '/workspace/devhub',
+      cols: 132,
+      rows: 40,
+      opencodeSessionId: 'ses_123',
+      hermesSessionId: null,
+      reason: 'client-resize',
+    });
+  });
+
+  it('suppresses duplicate diagnostics but keeps meaningful state changes', async () => {
+    const { buildTTYSessionDiagnosticSnapshot, shouldLogTTYSessionDiagnostic } =
+      await import('./ttyServer.js');
+
+    const previous = buildTTYSessionDiagnosticSnapshot(
+      {
+        id: 'term-01',
+        mode: 'shell',
+        historyEnabled: true,
+        sockets: new Set([{}]),
+        cwd: '/workspace/devhub',
+      },
+      { reason: 'client-resize', cols: 120, rows: 32 }
+    );
+    const duplicate = buildTTYSessionDiagnosticSnapshot(
+      {
+        id: 'term-01',
+        mode: 'shell',
+        historyEnabled: true,
+        sockets: new Set([{}]),
+        cwd: '/workspace/devhub',
+      },
+      { reason: 'client-resize', cols: 120, rows: 32 }
+    );
+    const changed = buildTTYSessionDiagnosticSnapshot(
+      {
+        id: 'term-01',
+        mode: 'tui',
+        historyEnabled: false,
+        sockets: new Set([{}]),
+        cwd: '/workspace/devhub',
+      },
+      { reason: 'tui-reattach', cols: 120, rows: 40 }
+    );
+
+    expect(shouldLogTTYSessionDiagnostic(previous, duplicate)).toBe(false);
+    expect(shouldLogTTYSessionDiagnostic(previous, changed)).toBe(true);
   });
 });
 
@@ -272,7 +370,9 @@ describe('ttyServer — shell history hygiene', () => {
 
     await ensureTTYServer();
 
-    const connectionHandler = mockWssOn.mock.calls.find(([eventName]) => eventName === 'connection')?.[1];
+    const connectionHandler = mockWssOn.mock.calls.find(
+      ([eventName]) => eventName === 'connection'
+    )?.[1];
     expect(connectionHandler).toBeInstanceOf(Function);
 
     const firstSocket = createMockSocket();
@@ -282,8 +382,6 @@ describe('ttyServer — shell history hygiene', () => {
 
     connectionHandler(firstSocket, { url: '/terminal?id=replay-shell&cwd=%2Fhome%2Fuser' });
 
-    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
-    const session = sessions.get('replay-shell');
     const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
     onDataHandler('prompt$ ');
     onDataHandler('\u001b[?1;2c');
@@ -311,7 +409,9 @@ describe('ttyServer — shell history hygiene', () => {
 
     await ensureTTYServer();
 
-    const connectionHandler = mockWssOn.mock.calls.find(([eventName]) => eventName === 'connection')?.[1];
+    const connectionHandler = mockWssOn.mock.calls.find(
+      ([eventName]) => eventName === 'connection'
+    )?.[1];
     expect(connectionHandler).toBeInstanceOf(Function);
 
     const socket = createMockSocket();
@@ -319,7 +419,9 @@ describe('ttyServer — shell history hygiene', () => {
       socket[`__${event}`] = handler;
     });
 
-    connectionHandler(socket, { url: '/terminal?id=invalid-cwd&cwd=%2Fdefinitely%2Fmissing%2Fdevhub' });
+    connectionHandler(socket, {
+      url: '/terminal?id=invalid-cwd&cwd=%2Fdefinitely%2Fmissing%2Fdevhub',
+    });
 
     const spawnCall = mockPtySpawn.mock.calls[0];
     expect(spawnCall[2]?.cwd).toBe(process.cwd());

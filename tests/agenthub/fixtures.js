@@ -112,6 +112,9 @@ function seedTask(db, projectId, options = {}) {
     due_date = null,
     milestone_id = null,
     assigned_to = null,
+    claimed_at = null,
+    lease_expires_at = null,
+    claim_token = null,
     business_value = 0,
     user_id = 'test-user-1',
   } = options;
@@ -121,8 +124,9 @@ function seedTask(db, projectId, options = {}) {
   try {
     db.prepare(
       `INSERT OR IGNORE INTO tasks (
-         id, project_id, user_id, title, description, status, priority, due_date, milestone_id, assigned_to, business_value, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         id, project_id, user_id, title, description, status, priority, due_date, milestone_id, assigned_to,
+         claimed_at, lease_expires_at, claim_token, business_value, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       projectId,
@@ -134,6 +138,9 @@ function seedTask(db, projectId, options = {}) {
       due_date,
       milestone_id,
       assigned_to,
+      claimed_at,
+      lease_expires_at,
+      claim_token,
       business_value,
       createdAt,
       createdAt
@@ -151,6 +158,9 @@ function seedTask(db, projectId, options = {}) {
       due_date,
       milestone_id,
       assigned_to,
+      claimed_at,
+      lease_expires_at,
+      claim_token,
       business_value,
     };
   }
@@ -356,7 +366,7 @@ function cleanupTestData(db) {
     try {
       const result = db.prepare(`DELETE FROM ${table} WHERE id LIKE 'test-%'`).run();
       results[table] = result.changes;
-    } catch (e) {
+    } catch {
       // Table might not exist
       results[table] = 0;
     }

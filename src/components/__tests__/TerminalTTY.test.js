@@ -11,11 +11,14 @@
  */
 
 const {
+  buildTerminalViewportDiagnosticPayload,
+  createTerminalViewportDiagnosticLogger,
   fitTerminalViewport,
   getXtermContainerAnimProps,
   refreshTerminalViewport,
   resolveTerminalConnectionCloseState,
   shouldShowTerminalStatusOverlay,
+  shouldLogTerminalViewportDiagnostic,
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
   stabilizeTerminalRenderer,
@@ -184,6 +187,145 @@ describe('fitTerminalViewport()', () => {
     expect(fitAddon.fit).not.toHaveBeenCalled();
     expect(term.refresh).not.toHaveBeenCalled();
     expect(socket.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildTerminalViewportDiagnosticPayload()', () => {
+  test('captures actionable viewport diagnostics for resize/repaint investigation', () => {
+    expect(
+      buildTerminalViewportDiagnosticPayload({
+        reason: 'focus-reactivate',
+        containerRect: { width: 1280, height: 720 },
+        term: { cols: 132, rows: 40 },
+        documentVisibilityState: 'visible',
+        connectionState: 'connected',
+        transport: 'json',
+        devicePixelRatio: 2,
+      })
+    ).toEqual({
+      reason: 'focus-reactivate',
+      width: 1280,
+      height: 720,
+      cols: 132,
+      rows: 40,
+      visibility: 'visible',
+      connectionState: 'connected',
+      transport: 'json',
+      dpr: 2,
+      zeroSized: false,
+    });
+  });
+
+  test('marks zero-sized containers so hidden-panel fits are easy to identify', () => {
+    expect(
+      buildTerminalViewportDiagnosticPayload({
+        reason: 'resize',
+        containerRect: { width: 0, height: 320 },
+        term: { cols: 80, rows: 24 },
+      })
+    ).toMatchObject({
+      width: 0,
+      height: 320,
+      zeroSized: true,
+    });
+  });
+});
+
+describe('shouldLogTerminalViewportDiagnostic()', () => {
+  test('skips duplicate viewport diagnostics for the same snapshot', () => {
+    const snapshot = buildTerminalViewportDiagnosticPayload({
+      reason: 'resize',
+      containerRect: { width: 1280, height: 720 },
+      term: { cols: 132, rows: 40 },
+      documentVisibilityState: 'visible',
+      connectionState: 'connected',
+    });
+
+    expect(shouldLogTerminalViewportDiagnostic(snapshot, snapshot)).toBe(false);
+  });
+
+  test('logs again when the actionable state changes', () => {
+    const previous = buildTerminalViewportDiagnosticPayload({
+      reason: 'resize',
+      containerRect: { width: 1280, height: 720 },
+      term: { cols: 132, rows: 40 },
+      documentVisibilityState: 'visible',
+      connectionState: 'connected',
+    });
+    const next = buildTerminalViewportDiagnosticPayload({
+      reason: 'visibility-reactivate',
+      containerRect: { width: 1280, height: 720 },
+      term: { cols: 132, rows: 50 },
+      documentVisibilityState: 'visible',
+      connectionState: 'connected',
+    });
+
+    expect(shouldLogTerminalViewportDiagnostic(previous, next)).toBe(true);
+  });
+});
+
+describe('createTerminalViewportDiagnosticLogger()', () => {
+  test('uses the latest connection state without recreating the logger callback', () => {
+    const connectionStateRef = { current: 'connecting' };
+    const cliLog = jest.fn();
+    const lastSnapshotRef = { current: null };
+
+    const logViewportDiagnostic = createTerminalViewportDiagnosticLogger({
+      id: 'term-01',
+      cliLog,
+      lastSnapshotRef,
+      getSnapshot: (reason) =>
+        buildTerminalViewportDiagnosticPayload({
+          reason,
+          containerRect: { width: 1280, height: 720 },
+          term: { cols: 132, rows: 40 },
+          documentVisibilityState: 'visible',
+          connectionState: connectionStateRef.current,
+          transport: 'json',
+        }),
+    });
+
+    logViewportDiagnostic('fit-resize');
+    connectionStateRef.current = 'connected';
+    logViewportDiagnostic('window-focus');
+
+    expect(cliLog).toHaveBeenNthCalledWith(
+      1,
+      'CLIENT:term-01',
+      'viewport diagnostic',
+      expect.objectContaining({ connectionState: 'connecting' })
+    );
+    expect(cliLog).toHaveBeenNthCalledWith(
+      2,
+      'CLIENT:term-01',
+      'viewport diagnostic',
+      expect.objectContaining({ connectionState: 'connected' })
+    );
+  });
+
+  test('deduplicates repeated snapshots while preserving the stable logger instance', () => {
+    const cliLog = jest.fn();
+    const lastSnapshotRef = { current: null };
+
+    const logViewportDiagnostic = createTerminalViewportDiagnosticLogger({
+      id: 'term-01',
+      cliLog,
+      lastSnapshotRef,
+      getSnapshot: (reason) =>
+        buildTerminalViewportDiagnosticPayload({
+          reason,
+          containerRect: { width: 1280, height: 720 },
+          term: { cols: 132, rows: 40 },
+          documentVisibilityState: 'visible',
+          connectionState: 'connected',
+          transport: 'json',
+        }),
+    });
+
+    logViewportDiagnostic('fit-resize');
+    logViewportDiagnostic('fit-resize');
+
+    expect(cliLog).toHaveBeenCalledTimes(1);
   });
 });
 

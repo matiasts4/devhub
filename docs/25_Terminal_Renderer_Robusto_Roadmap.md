@@ -1,6 +1,6 @@
 # Terminal renderer robusto — investigación y roadmap
 
-**Estado:** investigación/documentación, sin implementación activa.
+**Estado:** TERM-01 implementado como slice de evidence pack + hardening diagnóstico; roadmap abierto para fases siguientes.
 **Fecha:** 2026-05-15.
 **Motivo:** en la app instalada/desktop la terminal puede desfasarse visualmente: OpenCode queda casi invisible hasta hacer resize, aparecen artefactos horizontales, y paneles como editor/browser pueden romperse o quedar sin pintar. En dev se observa más estable que en la versión instalada.
 
@@ -44,15 +44,15 @@ Usar la rama experimental como **cantera de diseño**, no como merge directo.
 
 Condición no negociable: la terminal debe **verse y ajustarse dentro de la app**, en el panel de DevHub, sin abrir una ventana externa. Cualquier opción seria implica cambios grandes; por eso la evaluación debe quedar como tareas/spikes separados, con fallback.
 
-| Ranking | Opción | Encaje in-app | Riesgo | Veredicto |
-| --- | --- | --- | --- | --- |
-| 1 | `xterm.js` reforzado | ✅ Total, ya es la base actual | Bajo/medio | Mejor primer paso porque mantiene compatibilidad y fallback. No resuelve todo si el problema viene de WebKit/compositor, pero debe quedar robusto igual. |
-| 2 | GTK VTE Linux embebido | ✅ Bueno para Linux/Tauri si se logra insertar como widget/panel | Medio/alto | Mejor alternativa nativa inicial. VTE es un widget GTK de terminal real; encaja con Linux, pero requiere bridge Rust/GTK, lifecycle, bounds y evidencia visual same-window. |
-| 3 | `libghostty` / Ghostty embebido | ✅ Potencialmente, si se integra como librería y no como app externa | Alto | Muy prometedor para terminal moderna/GPU, pero debe tratarse como spike posterior: API, build, empaquetado y embedding real en Tauri deben probarse antes. |
-| 4 | WebGL/canvas renderer alternativo sobre xterm | ✅ Total | Medio | Puede ayudar si el fallo es de renderer, pero no cambia la arquitectura de fondo. Debe probarse como variante del baseline, no como reemplazo estructural. |
-| 5 | Terminal nativa por overlay/child-window | ⚠️ Parcial: puede “parecer” dentro, pero no pertenecer realmente al layout React | Alto | No recomendada salvo último recurso. Suele romper foco, z-index, resize, multi-monitor y docking. |
-| 6 | WezTerm/Alacritty/Kitty/terminal externa embebida por proceso | ❌ Malo para el requisito | Alto | Rechazada como dirección principal si abre o controla una ventana externa. Sólo serviría como herramienta externa/debug, no como panel DevHub. |
-| 7 | tmux/Zellij/sesión persistente sin cambiar renderer | ❌ No arregla visualización | Bajo | Útil para persistencia o recuperación de sesión, pero no corrige el bug de pintura del panel. Complemento, no renderer. |
+| Ranking | Opción                                                        | Encaje in-app                                                                    | Riesgo     | Veredicto                                                                                                                                                                   |
+| ------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | `xterm.js` reforzado                                          | ✅ Total, ya es la base actual                                                   | Bajo/medio | Mejor primer paso porque mantiene compatibilidad y fallback. No resuelve todo si el problema viene de WebKit/compositor, pero debe quedar robusto igual.                    |
+| 2       | GTK VTE Linux embebido                                        | ✅ Bueno para Linux/Tauri si se logra insertar como widget/panel                 | Medio/alto | Mejor alternativa nativa inicial. VTE es un widget GTK de terminal real; encaja con Linux, pero requiere bridge Rust/GTK, lifecycle, bounds y evidencia visual same-window. |
+| 3       | `libghostty` / Ghostty embebido                               | ✅ Potencialmente, si se integra como librería y no como app externa             | Alto       | Muy prometedor para terminal moderna/GPU, pero debe tratarse como spike posterior: API, build, empaquetado y embedding real en Tauri deben probarse antes.                  |
+| 4       | WebGL/canvas renderer alternativo sobre xterm                 | ✅ Total                                                                         | Medio      | Puede ayudar si el fallo es de renderer, pero no cambia la arquitectura de fondo. Debe probarse como variante del baseline, no como reemplazo estructural.                  |
+| 5       | Terminal nativa por overlay/child-window                      | ⚠️ Parcial: puede “parecer” dentro, pero no pertenecer realmente al layout React | Alto       | No recomendada salvo último recurso. Suele romper foco, z-index, resize, multi-monitor y docking.                                                                           |
+| 6       | WezTerm/Alacritty/Kitty/terminal externa embebida por proceso | ❌ Malo para el requisito                                                        | Alto       | Rechazada como dirección principal si abre o controla una ventana externa. Sólo serviría como herramienta externa/debug, no como panel DevHub.                              |
+| 7       | tmux/Zellij/sesión persistente sin cambiar renderer           | ❌ No arregla visualización                                                      | Bajo       | Útil para persistencia o recuperación de sesión, pero no corrige el bug de pintura del panel. Complemento, no renderer.                                                     |
 
 ### Lectura del ranking
 
@@ -63,7 +63,7 @@ Condición no negociable: la terminal debe **verse y ajustarse dentro de la app*
 
 Dirección recomendada por fases:
 
-### TERM-0 — Evidence pack antes de implementar
+### TERM-0 / TERM-01 — Evidence pack antes de implementar cambios de renderer
 
 Capturar pruebas reproducibles:
 
@@ -74,6 +74,13 @@ Capturar pruebas reproducibles:
 - versión exacta del build instalado.
 
 Criterio: no tocar arquitectura hasta poder reproducir el fallo en 2–3 casos mínimos.
+
+**Cierre TERM-01 (2026-05-15):**
+
+- se agrega `docs/26_TERM-01_Terminal_Renderer_Evidence_Pack.md` como protocolo reproducible y guía manual QA;
+- `xterm` queda reafirmado como baseline/fallback explícito;
+- `checkpoint/terminal-experiments-2026-05-14` queda documentada como material de referencia, no merge directo;
+- se agregan diagnósticos livianos cliente/servidor para resize, repaint, visibility/focus return y correlación cols/rows sin meter ruido excesivo.
 
 ### TERM-1 — Fortalecer xterm actual como baseline
 

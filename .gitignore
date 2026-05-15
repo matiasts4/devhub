@@ -57,6 +57,10 @@ yarn.lock
 
 # === MCP ===
 devhub-mcp/node_modules/
+devhub-mcp/coverage/
+devhub-mcp/data/*.db
+devhub-mcp/data/*.db-shm
+devhub-mcp/data/*.db-wal
 
 # === Sidecar backend ===
 sidecar-backend/node_modules/
@@ -101,3 +105,6 @@ data/logs/
 graphify-out/
 data/audit-trails/
 .codex
+
+# Research externals vendored locally, not tracked
+research/external/

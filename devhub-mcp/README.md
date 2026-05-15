@@ -48,6 +48,11 @@ Registrar el servidor en tu configuración MCP:
 
 ## Herramientas disponibles (23 total)
 
+Este catálogo es la superficie oficial actual del MCP. Las herramientas de
+filesystem, terminal, git y context packs no forman
+parte de este servidor todavía. Las operaciones bulk y la cola de ejecución sí
+están incluidas para planning/roadmap.
+
 ### Proyectos
 
 | Herramienta      | Descripción                                        |
@@ -55,27 +60,32 @@ Registrar el servidor en tu configuración MCP:
 | `list_projects`  | Lista todos los proyectos (filtro por estado)      |
 | `get_project`    | Detalles completos de un proyecto + tareas + hitos |
 | `update_project` | Actualiza nombre, estado, progreso, color          |
+| `create_project` | Crea un nuevo proyecto                             |
+| `delete_project` | Elimina un proyecto con confirmación explícita     |
 
 ### Tareas
 
-| Herramienta              | Descripción                                         |
-| ------------------------ | --------------------------------------------------- |
-| `list_tasks`             | Tareas de un proyecto (filtro por estado/prioridad) |
-| `create_task`            | Crea una nueva tarea                                |
-| `update_task`            | Cambia estado, prioridad, título de una tarea       |
-| `add_task_comment`       | Añade comentario a una tarea                        |
-| `delete_task`            | Elimina una tarea                                   |
-| `create_task_dependency` | Crea relación de bloqueo entre tareas               |
-| `get_task_dependencies`  | Devuelve dependencias de una tarea                  |
-| `get_next_task`          | Siguiente tarea priorizada para un agente           |
+| Herramienta           | Descripción                                         |
+| --------------------- | --------------------------------------------------- |
+| `list_tasks`          | Tareas de un proyecto (filtro por estado/prioridad) |
+| `create_task`         | Crea una nueva tarea                                |
+| `bulk_create_tasks`   | Crea múltiples tareas idempotentes para planning    |
+| `update_task`         | Cambia estado, prioridad, título de una tarea       |
+| `add_task_comment`    | Añade comentario a una tarea                        |
+| `get_next_task`       | Wrapper compatible que reclama la siguiente tarea   |
+| `get_execution_queue` | Cola scoreada de tareas disponibles                 |
+| `claim_next_task`     | Reclama la siguiente tarea con lease y token        |
+| `renew_task_lease`    | Renueva el lease activo de una tarea reclamada      |
+| `release_task`        | Libera el lease y aplica outcome operativo          |
 
 ### Hitos
 
-| Herramienta        | Descripción                       |
-| ------------------ | --------------------------------- |
-| `list_milestones`  | Hitos del roadmap                 |
-| `create_milestone` | Crea un nuevo hito                |
-| `update_milestone` | Actualiza estado/fecha de un hito |
+| Herramienta              | Descripción                       |
+| ------------------------ | --------------------------------- |
+| `list_milestones`        | Hitos del roadmap                 |
+| `create_milestone`       | Crea un nuevo hito                |
+| `bulk_create_milestones` | Crea múltiples hitos idempotentes |
+| `update_milestone`       | Actualiza estado/fecha de un hito |
 
 ### Dashboard
 
@@ -88,9 +98,6 @@ Registrar el servidor en tu configuración MCP:
 | Herramienta           | Descripción                                  |
 | --------------------- | -------------------------------------------- |
 | `get_project_context` | Lee contexto de planificación de un proyecto |
-| `mark_planning_done`  | Marca el planning como completado            |
-| `validate_topic_key`  | Valida topic_key para engram                 |
-| `build_context_pack`  | Construye Context Pack para documentación    |
 
 ### Swarm v2 (Agentes)
 
@@ -112,11 +119,20 @@ Registrar el servidor en tu configuración MCP:
 
 ---
 
+## Flujo recomendado para agentes
+
+- Ver `AGENT-FLOW.md` para cuándo usar DevHub MCP junto a Engram/Graphify.
+- Ver `AGENT-INSTRUCTIONS.md` para instrucciones copiables a agentes.
+- Ver `CLIENT-CONFIGS.md` para configurar OpenCode, Codex, VS Code/Windsurf y clientes compatibles.
+
+---
+
 ## Tests
 
 ```bash
 npm test
 npm run test:coverage
+npm run mcp:smoke
 ```
 
 ---

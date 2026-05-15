@@ -18,7 +18,6 @@
  */
 
 const { TestHarness } = require('../harness');
-const { applyTestSchema } = require('../../../lib/test-schema');
 
 class McpTestHarness extends TestHarness {
   constructor(options = {}) {
@@ -88,6 +87,7 @@ class McpTestHarness extends TestHarness {
         nombre TEXT NOT NULL,
         modelo_llm TEXT,
         status TEXT DEFAULT 'idle',
+        current_task_id TEXT,
         last_heartbeat TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
@@ -108,6 +108,237 @@ class McpTestHarness extends TestHarness {
     this._registerSwarmTools();
     this._registerDocOpsTools();
     this._registerDashboardTools();
+  }
+
+  _leaseNow() {
+    return Date.now();
+  }
+
+  _leaseExpiry(nowMs = this._leaseNow()) {
+    return new Date(nowMs + 120_000).toISOString();
+  }
+
+  _isActiveLease(task, nowMs = this._leaseNow()) {
+    if (!task) return false;
+    const expiresAt = task.lease_expires_at ? new Date(task.lease_expires_at).getTime() : NaN;
+    return (
+      task.status === 'in_progress' &&
+      !!task.assigned_to &&
+      !!task.claim_token &&
+      Number.isFinite(expiresAt) &&
+      expiresAt > nowMs
+    );
+  }
+
+  _needsLeaseCleanup(task, nowMs = this._leaseNow()) {
+    if (!task || task.status !== 'in_progress') return false;
+    return !this._isActiveLease(task, nowMs);
+  }
+
+  _releaseFields(outcome, nowMs = this._leaseNow()) {
+    const statusMap = {
+      completed: 'completed',
+      paused: 'pending',
+      abandoned: 'pending',
+      failed: 'blocked',
+    };
+    return {
+      status: statusMap[outcome],
+      assigned_to: null,
+      claimed_at: null,
+      lease_expires_at: null,
+      claim_token: null,
+      completed_at: outcome === 'completed' ? new Date(nowMs).toISOString() : null,
+      updated_at: new Date(nowMs).toISOString(),
+    };
+  }
+
+  _claimFields(agentId, nowMs = this._leaseNow()) {
+    return {
+      status: 'in_progress',
+      assigned_to: agentId,
+      claimed_at: new Date(nowMs).toISOString(),
+      lease_expires_at: this._leaseExpiry(nowMs),
+      claim_token: `claim-${nowMs}-${Math.random().toString(36).slice(2, 8)}`,
+      updated_at: new Date(nowMs).toISOString(),
+    };
+  }
+
+  _cleanupExpiredLeases(projectId = null, agentId = null, nowMs = this._leaseNow()) {
+    let sql = "SELECT * FROM tasks WHERE status = 'in_progress'";
+    const params = [];
+    if (projectId) {
+      sql += ' AND project_id = ?';
+      params.push(projectId);
+    }
+    if (agentId) {
+      sql += ' AND assigned_to = ?';
+      params.push(agentId);
+    }
+
+    const staleTasks = this.db
+      .prepare(sql)
+      .all(...params)
+      .filter((task) => this._needsLeaseCleanup(task, nowMs));
+
+    for (const task of staleTasks) {
+      const fields = this._releaseFields('abandoned', nowMs);
+      this.db
+        .prepare(
+          `UPDATE tasks
+         SET status = ?, assigned_to = NULL, claimed_at = NULL, lease_expires_at = NULL,
+             claim_token = NULL, completed_at = NULL, updated_at = ?
+         WHERE id = ?`
+        )
+        .run(fields.status, fields.updated_at, task.id);
+
+      if (task.assigned_to) {
+        const active = this._findActiveTask(task.project_id, task.assigned_to, nowMs);
+        this.db
+          .prepare(
+            `UPDATE agent_registry
+           SET current_task_id = ?, status = ?, updated_at = ?
+           WHERE agent_id = ?`
+          )
+          .run(
+            active?.id || null,
+            active ? 'working' : 'idle',
+            new Date(nowMs).toISOString(),
+            task.assigned_to
+          );
+      }
+    }
+
+    return staleTasks;
+  }
+
+  _findActiveTask(projectId, agentId, nowMs = this._leaseNow()) {
+    return this.db
+      .prepare(
+        "SELECT * FROM tasks WHERE project_id = ? AND assigned_to = ? AND status = 'in_progress' ORDER BY claimed_at DESC"
+      )
+      .all(projectId, agentId)
+      .find((task) => this._isActiveLease(task, nowMs));
+  }
+
+  _buildExecutionQueue(projectId, { limit = 20, includeBlocked = false } = {}) {
+    this._cleanupExpiredLeases(projectId, null);
+
+    const tasks = this.db
+      .prepare(
+        "SELECT * FROM tasks WHERE project_id = ? AND status = 'pending' ORDER BY created_at ASC"
+      )
+      .all(projectId);
+    const allTasks = this.db
+      .prepare('SELECT id, status FROM tasks WHERE project_id = ?')
+      .all(projectId);
+    const deps = this.db.prepare('SELECT * FROM task_dependencies').all();
+    const statusMap = Object.fromEntries(allTasks.map((task) => [task.id, task.status]));
+    const unlockCounts = deps.reduce((acc, dep) => {
+      acc[dep.depends_on] = (acc[dep.depends_on] || 0) + 1;
+      return acc;
+    }, {});
+    const priorityMap = { critical: 4, high: 3, medium: 2, low: 1 };
+
+    return tasks
+      .map((task) => {
+        const taskDeps = deps.filter((dep) => dep.task_id === task.id && dep.tipo === 'blocks');
+        const blockingDeps = taskDeps.filter((dep) => statusMap[dep.depends_on] !== 'completed');
+        const blocked = blockingDeps.length > 0;
+        const score =
+          (priorityMap[task.priority] || 2) * 0.4 +
+          Number(task.business_value ?? 5) * 0.3 +
+          Number(unlockCounts[task.id] || 0) * 0.2;
+        return {
+          ...task,
+          blocked,
+          blocking_dependencies: blockingDeps.map((dep) => dep.depends_on),
+          priority_score: blocked ? 0 : score,
+        };
+      })
+      .filter((task) => includeBlocked || !task.blocked)
+      .sort((a, b) => b.priority_score - a.priority_score)
+      .slice(0, limit);
+  }
+
+  _filterCompatibilityQueue(queue, deps, pendingTaskIds) {
+    const pendingIds = new Set(pendingTaskIds);
+    return queue.filter(
+      (task) =>
+        !deps.some(
+          (dep) =>
+            dep.depends_on === task.id && dep.tipo === 'blocks' && pendingIds.has(dep.task_id)
+        )
+    );
+  }
+
+  _claimNextTask(projectId, agentId, { compatibilityMode = false } = {}) {
+    const nowMs = this._leaseNow();
+    const timestamp = new Date(nowMs).toISOString();
+    this._cleanupExpiredLeases(projectId, null, nowMs);
+
+    const activeTask = this._findActiveTask(projectId, agentId, nowMs);
+    if (activeTask) {
+      this.db
+        .prepare(
+          `UPDATE agent_registry
+         SET status = 'working', current_task_id = ?, last_heartbeat = ?, updated_at = ?
+         WHERE agent_id = ?`
+        )
+        .run(activeTask.id, timestamp, timestamp, agentId);
+      return {
+        claimed: true,
+        reused: true,
+        task: activeTask,
+        message: 'El agente ya tiene una tarea activa.',
+      };
+    }
+
+    const queue = this._buildExecutionQueue(projectId, { limit: 20 });
+    const pendingTaskIds = this.db
+      .prepare("SELECT id FROM tasks WHERE project_id = ? AND status = 'pending'")
+      .all(projectId)
+      .map((task) => task.id);
+    const deps = this.db.prepare('SELECT * FROM task_dependencies').all();
+    const candidates = compatibilityMode
+      ? this._filterCompatibilityQueue(queue, deps, pendingTaskIds)
+      : queue;
+    for (const candidate of candidates) {
+      const fields = this._claimFields(agentId, nowMs);
+      const result = this.db
+        .prepare(
+          `UPDATE tasks
+         SET status = ?, assigned_to = ?, claimed_at = ?, lease_expires_at = ?, claim_token = ?, updated_at = ?
+         WHERE id = ? AND status = 'pending'`
+        )
+        .run(
+          fields.status,
+          fields.assigned_to,
+          fields.claimed_at,
+          fields.lease_expires_at,
+          fields.claim_token,
+          fields.updated_at,
+          candidate.id
+        );
+      if (result.changes !== 1) continue;
+
+      this.db
+        .prepare(
+          `UPDATE agent_registry
+         SET status = 'working', current_task_id = ?, last_heartbeat = ?, updated_at = ?
+         WHERE agent_id = ?`
+        )
+        .run(candidate.id, timestamp, timestamp, agentId);
+
+      return {
+        claimed: true,
+        reused: false,
+        task: this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(candidate.id),
+        message: 'Tarea reclamada.',
+      };
+    }
+
+    return { claimed: false, reused: false, task: null, message: 'Sin tareas disponibles' };
   }
 
   _registerProjectTools() {
@@ -334,6 +565,7 @@ class McpTestHarness extends TestHarness {
   _registerSwarmTools() {
     // register_agent
     this._tools.set('register_agent', async ({ agent_id, project_id, nombre, modelo_llm }) => {
+      this._cleanupExpiredLeases(project_id, agent_id);
       const payload = {
         agent_id,
         project_id,
@@ -356,8 +588,18 @@ class McpTestHarness extends TestHarness {
 
     // heartbeat_agent
     this._tools.set('heartbeat_agent', async ({ agent_id }) => {
+      this._cleanupExpiredLeases(null, agent_id);
+      const activeTask = this.db
+        .prepare("SELECT * FROM tasks WHERE assigned_to = ? AND status = 'in_progress'")
+        .all(agent_id)
+        .find((task) => this._isActiveLease(task));
+      const updateData = { last_heartbeat: new Date().toISOString() };
+      if (activeTask) {
+        updateData.status = 'working';
+        updateData.current_task_id = activeTask.id;
+      }
       const { data, error } = await this._qb('agent_registry')
-        .update({ last_heartbeat: new Date().toISOString() })
+        .update(updateData)
         .eq('agent_id', agent_id)
         .select()
         .single();
@@ -368,13 +610,27 @@ class McpTestHarness extends TestHarness {
 
     // unregister_agent
     this._tools.set('unregister_agent', async ({ agent_id }) => {
+      const ownedTasks = this.db
+        .prepare("SELECT * FROM tasks WHERE assigned_to = ? AND status = 'in_progress'")
+        .all(agent_id);
+      for (const task of ownedTasks) {
+        const fields = this._releaseFields('abandoned');
+        this.db
+          .prepare(
+            `UPDATE tasks
+           SET status = ?, assigned_to = NULL, claimed_at = NULL, lease_expires_at = NULL,
+               claim_token = NULL, completed_at = NULL, updated_at = ?
+           WHERE id = ?`
+          )
+          .run(fields.status, fields.updated_at, task.id);
+      }
       const { error } = await this._qb('agent_registry').delete().eq('agent_id', agent_id);
       if (error) return this._err(error.message);
       return this._ok({ success: true, message: `Agente ${agent_id} eliminado de registry.` });
     });
 
     // update_agent_status
-    this._tools.set('update_agent_status', async ({ agent_id, status, task_description }) => {
+    this._tools.set('update_agent_status', async ({ agent_id, status }) => {
       const statusMap = {
         working: 'working',
         running: 'working',
@@ -406,33 +662,6 @@ class McpTestHarness extends TestHarness {
   }
 
   _registerDocOpsTools() {
-    const documentationPolicyMap = {
-      archive_only: {
-        mode: 'archive-first',
-        summary: 'archive_only: Archivar primero antes de editar el canonico.',
-        requires_user_clarification: false,
-        extraConstraint: 'Archivar primero y documentar el cambio de forma incremental.',
-      },
-      shared_legacy: {
-        mode: 'legacy-preserve',
-        summary: 'shared_legacy: preservar compatibilidad y explicitar transiciones.',
-        requires_user_clarification: false,
-        extraConstraint: 'Preservar compatibilidad legacy mientras migrás al contrato canónico.',
-      },
-      personal: {
-        mode: 'personal-default',
-        summary: 'personal: policy local por defecto para trabajo individual.',
-        requires_user_clarification: false,
-        extraConstraint: 'Mantener el cambio acotado y sin scope creep.',
-      },
-      unknown: {
-        mode: 'unknown',
-        summary: 'unknown: falta política documental explícita.',
-        requires_user_clarification: true,
-        extraConstraint: 'Si falta policy, pedile aclaración antes de alterar el canonico.',
-      },
-    };
-
     const resolveDocumentationPolicy = (value) => this._resolveDocumentationPolicy(value);
 
     const TOPIC_KEY_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,23})(?:\/[a-z0-9](?:[a-z0-9-]{0,23})){1,3}$/;
@@ -637,6 +866,17 @@ class McpTestHarness extends TestHarness {
       });
     });
 
+    this._tools.set(
+      'get_execution_queue',
+      async ({ project_id, limit = 20, include_blocked = false }) => {
+        const queue = this._buildExecutionQueue(project_id, {
+          limit,
+          includeBlocked: include_blocked,
+        });
+        return this._ok({ total: queue.length, queue });
+      }
+    );
+
     // get_project_context
     this._tools.set('get_project_context', async ({ project_id }) => {
       const [projRes, filesRes] = await Promise.all([
@@ -691,78 +931,108 @@ class McpTestHarness extends TestHarness {
     // get_next_task
     this._tools.set('get_next_task', async ({ project_id, agent_id }) => {
       try {
-        // 2. Get pending tasks
-        const { data: tasks, error: tasksErr } = await this._qb('tasks')
-          .select('*')
-          .eq('project_id', project_id)
-          .eq('status', 'pending');
-        if (tasksErr) return this._err(tasksErr.message);
-        if (!tasks || tasks.length === 0)
-          return this._ok({ task: null, message: 'Sin tareas pendientes' });
-
-        // 3. Evaluate dependencies
-        const taskIds = tasks.map((t) => t.id);
-        const pendingTaskIds = new Set(taskIds);
-        const { data: deps } = await this._qb('task_dependencies')
-          .select('*')
-          .in('task_id', taskIds);
-
-        const { data: allTasksForDeps } = await this._qb('tasks')
-          .select('id, status')
-          .eq('project_id', project_id);
-
-        const statusMap = Object.fromEntries((allTasksForDeps || []).map((t) => [t.id, t.status]));
-        const priorityMap = { critical: 4, high: 3, medium: 2, low: 1 };
-
-        let bestTask = null;
-        let maxScore = -1;
-
-        for (const task of tasks) {
-          const taskDeps = deps?.filter((d) => d.task_id === task.id) || [];
-          const isBlocked = taskDeps.some(
-            (d) => d.tipo === 'blocks' && statusMap[d.depends_on] !== 'completed'
-          );
-          if (isBlocked) continue;
-
-          const blocksOtherPendingTasks = (deps || []).some(
-            (d) => d.depends_on === task.id && d.tipo === 'blocks' && pendingTaskIds.has(d.task_id)
-          );
-          if (blocksOtherPendingTasks) continue;
-
-          const urgencia = priorityMap[task.priority] || 2;
-          const valor_negocio = Number.isFinite(task.business_value) ? task.business_value : 5;
-          const { count: depsUnlock } = await this._qb('task_dependencies')
-            .select('*', { count: 'exact', head: true })
-            .eq('depends_on', task.id);
-
-          let score = urgencia * 0.4 + valor_negocio * 0.3 + (depsUnlock || 0) * 0.2;
-
-          if (score > maxScore) {
-            maxScore = score;
-            bestTask = task;
+        const claimed = this._claimNextTask(project_id, agent_id, { compatibilityMode: true });
+        if (!claimed.claimed) {
+          const nextPending = this._buildExecutionQueue(project_id, {
+            limit: 1,
+            includeBlocked: true,
+          })[0];
+          if (nextPending) {
+            return this._ok({
+              task: null,
+              message: 'Todas las tareas pendientes estan bloqueadas.',
+            });
           }
+          return this._ok({ task: null, message: 'Sin tareas pendientes' });
         }
 
-        if (!bestTask)
-          return this._ok({ task: null, message: 'Todas las tareas pendientes estan bloqueadas.' });
-
-        // Update to in_progress
-        await this._qb('tasks').update({ status: 'in_progress' }).eq('id', bestTask.id);
-        bestTask.status = 'in_progress';
-
-        return this._ok({
-          task: {
-            id: bestTask.id,
-            title: bestTask.title,
-            description: bestTask.description,
-            priority: bestTask.priority,
-            status: bestTask.status,
-          },
-          message: 'Tarea asignada al agente.',
-        });
+        return this._ok({ task: claimed.task, message: 'Tarea asignada al agente.' });
       } catch (e) {
         return this._err(e.message);
       }
+    });
+
+    this._tools.set('claim_next_task', async ({ project_id, agent_id }) => {
+      try {
+        return this._ok(this._claimNextTask(project_id, agent_id));
+      } catch (e) {
+        return this._err(e.message);
+      }
+    });
+
+    this._tools.set('renew_task_lease', async ({ task_id, agent_id, claim_token }) => {
+      const nowMs = this._leaseNow();
+      this._cleanupExpiredLeases(null, agent_id, nowMs);
+      const task = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(task_id);
+      if (!task) return this._err('Task not found');
+      if (
+        !this._isActiveLease(task, nowMs) ||
+        task.assigned_to !== agent_id ||
+        task.claim_token !== claim_token
+      ) {
+        return this._err('Lease inválido o expirado para renovar la tarea.');
+      }
+      const leaseExpiresAt = this._leaseExpiry(nowMs);
+      this.db
+        .prepare('UPDATE tasks SET lease_expires_at = ?, updated_at = ? WHERE id = ?')
+        .run(leaseExpiresAt, new Date(nowMs).toISOString(), task_id);
+      this.db
+        .prepare(
+          'UPDATE agent_registry SET last_heartbeat = ?, current_task_id = ?, status = ?, updated_at = ? WHERE agent_id = ?'
+        )
+        .run(
+          new Date(nowMs).toISOString(),
+          task_id,
+          'working',
+          new Date(nowMs).toISOString(),
+          agent_id
+        );
+      return this._ok({
+        renewed: true,
+        task: this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(task_id),
+        message: 'Lease renovado.',
+      });
+    });
+
+    this._tools.set('release_task', async ({ task_id, agent_id, claim_token, outcome }) => {
+      const task = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(task_id);
+      if (!task) return this._err('Task not found');
+      if (
+        task.assigned_to !== agent_id ||
+        task.claim_token !== claim_token ||
+        task.status !== 'in_progress'
+      ) {
+        return this._err('Lease inválido o ownership inconsistente para liberar la tarea.');
+      }
+
+      const fields = this._releaseFields(outcome);
+      this.db
+        .prepare(
+          `UPDATE tasks
+         SET status = ?, assigned_to = NULL, claimed_at = NULL, lease_expires_at = NULL,
+             claim_token = NULL, completed_at = ?, updated_at = ?
+         WHERE id = ?`
+        )
+        .run(fields.status, fields.completed_at, fields.updated_at, task_id);
+
+      const remaining = this._findActiveTask(task.project_id, agent_id);
+      this.db
+        .prepare(
+          'UPDATE agent_registry SET current_task_id = ?, status = ?, last_heartbeat = ?, updated_at = ? WHERE agent_id = ?'
+        )
+        .run(
+          remaining?.id || null,
+          remaining ? 'working' : 'idle',
+          new Date().toISOString(),
+          new Date().toISOString(),
+          agent_id
+        );
+
+      return this._ok({
+        released: true,
+        task: this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(task_id),
+        message: 'Tarea liberada.',
+      });
     });
 
     // mark_planning_done

@@ -6,6 +6,8 @@ Definir un modelo estable para que la documentacion del proyecto evolucione con 
 
 Este documento formaliza el Camino A (implementacion incremental sobre DevHub actual).
 
+> **Boundary vigente (2026-05-15):** DevHub MCP es control plane de proyectos/tareas/cola/agentes. Git, filesystem, terminal, tests y PRs pertenecen a la capability del ejecutor. La cronologia operativa debe preservarse con comments/artifacts, no mezclando Git dentro del MCP general.
+
 ## Problema que resolvemos
 
 - La documentacion tiende a duplicarse o reescribirse sin lineage explicito.
@@ -49,21 +51,22 @@ Fuente: devhub-mcp/server.js
 
 ### Ya disponible
 
-- Proyectos: list_projects, get_project, update_project
-- Tareas: list_tasks, create_task, update_task, delete_task, add_task_comment
-- Dependencias: create_task_dependency, get_task_dependencies, get_next_task
-- Hitos: list_milestones, create_milestone, update_milestone
+- Proyectos: create_project, list_projects, get_project, update_project, delete_project
+- Tareas: create_task, bulk_create_tasks, list_tasks, update_task, add_task_comment
+- Cola/leases: get_next_task, get_execution_queue, claim_next_task, renew_task_lease, release_task
+- Hitos: create_milestone, bulk_create_milestones, list_milestones, update_milestone
 - Dashboard: get_dashboard
-- Planning: get_project_context, mark_planning_done
+- Planning: get_project_context, update_project(planning_status)
 - Swarm: register_agent, heartbeat_agent, unregister_agent, update_agent_status
-- Memoria: save_memory, recall_memory, recall_memory_semantic
-- Git/Files: git_branch, git_commit, git_diff_review, explore_files, read_file, write_file, mkdir_p
+- Memoria durable: Engram (fuera de DevHub MCP)
+- Git/Files/Terminal: capability del ejecutor (fuera de DevHub MCP)
 
 ### Gap funcional para DocOps largo plazo
 
 - No hay entidad explicita de documento canonico por tema.
 - No hay relacion de reemplazo entre versiones documentales.
 - No hay tools MCP dedicadas a ciclo de vida documental.
+- La cronologia Git/documental todavia depende de comments, artifacts y disciplina del ejecutor mientras Swarm Workspace formaliza workspaces, runs y evidence packs.
 
 ### Telemetria operativa viva
 

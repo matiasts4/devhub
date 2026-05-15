@@ -2,6 +2,7 @@
  * Integration tests for MCP Milestone and Dashboard tools:
  *   - list_milestones
  *   - create_milestone
+ *   - bulk_create_milestones
  *   - update_milestone
  *   - get_dashboard
  */
@@ -95,6 +96,33 @@ describe('MCP Milestone & Dashboard Tools', () => {
       });
       const text = result.raw || JSON.stringify(result);
       expect(text).toMatch(/ERROR|error|required|invalid/i);
+    });
+  });
+
+  describe('bulk_create_milestones', () => {
+    it('creates multiple milestones idempotently and skips duplicate titles', async () => {
+      if (!projectId) return;
+      const first = await harness.callTool('bulk_create_milestones', {
+        project_id: projectId,
+        user_id: userId,
+        milestones: [
+          { title: 'Bulk Milestone A', status: 'planned' },
+          { title: 'Bulk Milestone B', status: 'in_progress' },
+        ],
+      });
+      expect(first.created_count).toBe(2);
+
+      const second = await harness.callTool('bulk_create_milestones', {
+        project_id: projectId,
+        user_id: userId,
+        milestones: [
+          { title: 'Bulk Milestone A', status: 'planned' },
+          { title: 'Bulk Milestone C', status: 'planned' },
+        ],
+      });
+      expect(second.created_count).toBe(1);
+      expect(second.skipped_count).toBe(1);
+      expect(second.skipped[0].reason).toBe('duplicate-title');
     });
   });
 

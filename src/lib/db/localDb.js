@@ -191,6 +191,9 @@ function ensureRuntimeSchema(db) {
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
   const alterStatements = [
     "ALTER TABLE projects ADD COLUMN documentation_policy TEXT DEFAULT 'personal'",
+    'ALTER TABLE tasks ADD COLUMN claimed_at TEXT',
+    'ALTER TABLE tasks ADD COLUMN lease_expires_at TEXT',
+    'ALTER TABLE tasks ADD COLUMN claim_token TEXT',
     'ALTER TABLE agent_hub_sessions ADD COLUMN telegram_chat_id TEXT',
     'ALTER TABLE agent_hub_sessions ADD COLUMN directory TEXT',
     "ALTER TABLE agent_hub_sessions ADD COLUMN status TEXT DEFAULT 'active'",
@@ -211,7 +214,7 @@ function ensureRuntimeSchema(db) {
       db.exec(stmt);
     } catch (e) {
       // Ignore "duplicate column" errors — column already exists
-      if (!e.message.includes('duplicate column name')) {
+      if (!e.message.includes('duplicate column name') && !e.message.includes('no such table')) {
         throw e;
       }
     }
@@ -231,6 +234,18 @@ function ensureRuntimeSchema(db) {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_agent_hub_sessions_parent ON agent_hub_sessions(parent_id)`
   );
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_lease_expires ON tasks(lease_expires_at)`);
+  } catch (e) {
+    if (!e.message.includes('no such table')) throw e;
+  }
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_claim_token ON tasks(claim_token)`);
+  } catch (e) {
+    if (!e.message.includes('no such table')) throw e;
+  }
 
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_session_unique

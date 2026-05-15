@@ -3,6 +3,31 @@ import globals from 'globals';
 import pluginReact from 'eslint-plugin-react';
 import pluginReactHooks from 'eslint-plugin-react-hooks';
 
+const browserAppFiles = ['src/**/*.{js,jsx,ts,tsx}'];
+const browserAppIgnores = [
+  'src/app/api/**',
+  'src/lib/db/**/*.js',
+  'src/lib/terminal/**/*.js',
+  'src/test-support/**/*.js',
+  'src/**/*.test.js',
+  'src/**/*.spec.js',
+  'src/**/__tests__/**',
+];
+
+const nodeEsmFiles = ['src/app/api/**/*.js', 'src/lib/terminal/**/*.js'];
+
+const commonJsAndJestFiles = [
+  'jest.config.js',
+  'lib/**/*.js',
+  'scripts/**/*.cjs',
+  'tests/**/*.js',
+  'src/lib/db/**/*.js',
+  'src/test-support/**/*.js',
+  'src/**/*.test.js',
+  'src/**/*.spec.js',
+  'src/**/__tests__/**/*.js',
+];
+
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   // Base recommended rules
@@ -10,7 +35,8 @@ export default [
 
   // React files (JSX/TSX)
   {
-    files: ['src/**/*.{js,jsx,ts,tsx}'],
+    files: browserAppFiles,
+    ignores: browserAppIgnores,
     languageOptions: {
       globals: {
         ...globals.browser,
@@ -44,6 +70,32 @@ export default [
     },
     settings: {
       react: { version: 'detect' },
+    },
+  },
+
+  // Node ESM files inside src/
+  {
+    files: nodeEsmFiles,
+    ignores: ['src/**/*.test.js', 'src/**/*.spec.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.es2020,
+      },
+    },
+  },
+
+  // CommonJS + Jest runtime files
+  {
+    files: commonJsAndJestFiles,
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+        ...globals.es2020,
+      },
     },
   },
 

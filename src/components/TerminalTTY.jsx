@@ -45,14 +45,19 @@ export function shouldShowTerminalStatusOverlay(isInitializing, initError, conne
 
   return Boolean(
     initError ||
-      connectionState === 'error' ||
-      connectionState === 'disconnected' ||
-      connectionState === 'terminated'
+    connectionState === 'error' ||
+    connectionState === 'disconnected' ||
+    connectionState === 'terminated'
   );
 }
 
 export function refreshTerminalViewport(term) {
-  if (!term || typeof term.refresh !== 'function' || !Number.isInteger(term.rows) || term.rows <= 0) {
+  if (
+    !term ||
+    typeof term.refresh !== 'function' ||
+    !Number.isInteger(term.rows) ||
+    term.rows <= 0
+  ) {
     return false;
   }
 
@@ -70,7 +75,13 @@ export function stabilizeTerminalRenderer(term) {
   return refreshTerminalViewport(term);
 }
 
-export function fitTerminalViewport({ container, fitAddon, term, socket, websocketOpenState = WebSocket.OPEN }) {
+export function fitTerminalViewport({
+  container,
+  fitAddon,
+  term,
+  socket,
+  websocketOpenState = WebSocket.OPEN,
+}) {
   if (!container || !fitAddon || !term) return false;
 
   const rect = container.getBoundingClientRect();
@@ -90,6 +101,57 @@ export function fitTerminalViewport({ container, fitAddon, term, socket, websock
   }
 
   return true;
+}
+
+export function buildTerminalViewportDiagnosticPayload({
+  reason,
+  containerRect,
+  term,
+  documentVisibilityState,
+  connectionState,
+  transport,
+  devicePixelRatio,
+}) {
+  const width = Number(containerRect?.width ?? 0);
+  const height = Number(containerRect?.height ?? 0);
+
+  return {
+    reason,
+    width,
+    height,
+    cols: Number(term?.cols ?? 0),
+    rows: Number(term?.rows ?? 0),
+    visibility: documentVisibilityState || 'unknown',
+    connectionState: connectionState || 'unknown',
+    transport: transport || 'unknown',
+    dpr: Number(devicePixelRatio ?? 1),
+    zeroSized: width <= 0 || height <= 0,
+  };
+}
+
+export function shouldLogTerminalViewportDiagnostic(previousSnapshot, nextSnapshot) {
+  if (!nextSnapshot) return false;
+  if (!previousSnapshot) return true;
+
+  return JSON.stringify(previousSnapshot) !== JSON.stringify(nextSnapshot);
+}
+
+export function createTerminalViewportDiagnosticLogger({
+  id,
+  cliLog: logFn,
+  lastSnapshotRef,
+  getSnapshot,
+}) {
+  return (reason) => {
+    const snapshot = getSnapshot(reason);
+
+    if (!shouldLogTerminalViewportDiagnostic(lastSnapshotRef.current, snapshot)) {
+      return;
+    }
+
+    lastSnapshotRef.current = snapshot;
+    logFn(`CLIENT:${id}`, 'viewport diagnostic', snapshot);
+  };
 }
 
 export function resolveTerminalConnectionCloseState(previousState, didReceiveProcessExit) {
@@ -126,6 +188,8 @@ export default function TerminalTTY({
   const wsRef = useRef(null);
   const searchRef = useRef(null);
   const transportRef = useRef('json');
+  const lastViewportDiagnosticRef = useRef(null);
+  const connectionStateRef = useRef('idle');
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
@@ -151,6 +215,30 @@ export default function TerminalTTY({
     }
   }, []);
 
+  useEffect(() => {
+    connectionStateRef.current = connectionState;
+  }, [connectionState]);
+
+  const logViewportDiagnostic = useCallback(
+    createTerminalViewportDiagnosticLogger({
+      id,
+      cliLog,
+      lastSnapshotRef: lastViewportDiagnosticRef,
+      getSnapshot: (reason) =>
+        buildTerminalViewportDiagnosticPayload({
+          reason,
+          containerRect: containerRef.current?.getBoundingClientRect?.(),
+          term: termRef.current,
+          documentVisibilityState:
+            typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+          connectionState: connectionStateRef.current,
+          transport: transportRef.current,
+          devicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio : 1,
+        }),
+    }),
+    [id]
+  );
+
   const waitForVisibleDimensions = useCallback(async () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const container = containerRef.current;
@@ -173,13 +261,15 @@ export default function TerminalTTY({
   }, []);
 
   const fitAndResize = useCallback(() => {
-    fitTerminalViewport({
+    const fitWorked = fitTerminalViewport({
       container: containerRef.current,
       fitAddon: fitRef.current,
       term: termRef.current,
       socket: wsRef.current,
     });
-  }, []);
+
+    logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
+  }, [logViewportDiagnostic]);
 
   const sendResize = useCallback(() => {
     if (!termRef.current || !fitRef.current) return;
@@ -190,6 +280,7 @@ export default function TerminalTTY({
   }, [fitAndResize, clearTimers]);
 
   const reactivateTerminalViewport = useCallback(() => {
+    logViewportDiagnostic('reactivate-start');
     const repaint = () => {
       stabilizeTerminalRenderer(termRef.current);
     };
@@ -207,9 +298,10 @@ export default function TerminalTTY({
       timeoutRef.current = setTimeout(() => {
         sendResize();
         repaint();
+        logViewportDiagnostic('reactivate-settled');
       }, 120);
     });
-  }, [autoFocus, sendResize]);
+  }, [autoFocus, logViewportDiagnostic, sendResize]);
 
   const connect = useCallback(async () => {
     setConnectionState('connecting');
@@ -245,7 +337,10 @@ export default function TerminalTTY({
       if (!sessionResponse.ok) {
         const errText = await sessionResponse.text().catch(() => '');
         console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
-        cliLog(`CLIENT:${id}`, 'session API FAILED', { status: sessionResponse.status, body: errText });
+        cliLog(`CLIENT:${id}`, 'session API FAILED', {
+          status: sessionResponse.status,
+          body: errText,
+        });
         throw new Error(`No se pudo crear la sesión de terminal (${sessionResponse.status}).`);
       }
 
@@ -315,7 +410,9 @@ export default function TerminalTTY({
             processExitedRef.current = true;
             cliLog(`CLIENT:${id}`, 'received exit from server');
             setConnectionState('terminated');
-            termRef.current?.writeln('\r\n\x1b[33m[Sesión finalizada. Reconectá para iniciar una nueva shell.]\x1b[0m');
+            termRef.current?.writeln(
+              '\r\n\x1b[33m[Sesión finalizada. Reconectá para iniciar una nueva shell.]\x1b[0m'
+            );
             window.dispatchEvent(
               new CustomEvent('devhub:terminal-exit', {
                 detail: { id, initialCommand },
@@ -359,8 +456,14 @@ export default function TerminalTTY({
       socket.onclose = (event) => {
         clearTimeout(connectionTimeout);
         console.log(`[TTY:${id}] WebSocket closed: code=${event.code}, reason=${event.reason}`);
-        cliLog(`CLIENT:${id}`, 'WS onclose', { code: event.code, reason: event.reason, wasClean: event.wasClean });
-        setConnectionState((prev) => resolveTerminalConnectionCloseState(prev, processExitedRef.current));
+        cliLog(`CLIENT:${id}`, 'WS onclose', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+        });
+        setConnectionState((prev) =>
+          resolveTerminalConnectionCloseState(prev, processExitedRef.current)
+        );
       };
     } catch (error) {
       console.error(`[TTY:${id}] Connection failed:`, error);
@@ -390,7 +493,10 @@ export default function TerminalTTY({
         ]);
 
         if (!mounted || !containerRef.current) {
-          cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted or no container (after import)');
+          cliLog(
+            `CLIENT:${id}`,
+            'initializeTerminal() aborted — unmounted or no container (after import)'
+          );
           return;
         }
 
@@ -401,7 +507,10 @@ export default function TerminalTTY({
           height: containerRef.current?.getBoundingClientRect().height,
         });
         if (!mounted || !containerRef.current) {
-          cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — unmounted after waitForVisibleDimensions');
+          cliLog(
+            `CLIENT:${id}`,
+            'initializeTerminal() aborted — unmounted after waitForVisibleDimensions'
+          );
           setIsInitializing(false);
           return;
         }
@@ -421,6 +530,8 @@ export default function TerminalTTY({
         terminal.loadAddon(searchAddon);
         terminal.open(containerRef.current);
 
+        logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
+
         if (ready) {
           fitAddon.fit();
         }
@@ -436,6 +547,7 @@ export default function TerminalTTY({
         });
 
         resizeObserverRef.current = new ResizeObserver(() => {
+          logViewportDiagnostic('resize-observer');
           sendResize();
         });
         resizeObserverRef.current.observe(containerRef.current);
@@ -493,7 +605,14 @@ export default function TerminalTTY({
       fitRef.current = null;
       searchRef.current = null;
     };
-  }, [connect, sendResize, fitAndResize, clearTimers, waitForVisibleDimensions]);
+  }, [
+    connect,
+    sendResize,
+    fitAndResize,
+    clearTimers,
+    logViewportDiagnostic,
+    waitForVisibleDimensions,
+  ]);
 
   useEffect(() => {
     const handleSearch = (event) => {
@@ -570,13 +689,23 @@ export default function TerminalTTY({
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
+        logViewportDiagnostic('visibility-visible');
         reactivateTerminalViewport();
       }
     };
 
-    const handleWindowResize = () => sendResize();
-    const handleWindowFocus = () => reactivateTerminalViewport();
-    const handlePageShow = () => reactivateTerminalViewport();
+    const handleWindowResize = () => {
+      logViewportDiagnostic('window-resize');
+      sendResize();
+    };
+    const handleWindowFocus = () => {
+      logViewportDiagnostic('window-focus');
+      reactivateTerminalViewport();
+    };
+    const handlePageShow = () => {
+      logViewportDiagnostic('pageshow');
+      reactivateTerminalViewport();
+    };
 
     window.addEventListener('resize', handleWindowResize);
     window.addEventListener('focus', handleWindowFocus);
@@ -589,7 +718,7 @@ export default function TerminalTTY({
       window.removeEventListener('pageshow', handlePageShow);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [reactivateTerminalViewport, sendResize]);
+  }, [logViewportDiagnostic, reactivateTerminalViewport, sendResize]);
 
   // ── Custom context menu for terminal ────────────────────────────────────────
   const handleContextMenu = useCallback((e) => {
@@ -657,14 +786,18 @@ export default function TerminalTTY({
 
   const isConnected = connectionState === 'connected';
   const showTerminalViewport = shouldShowTerminalViewport(isInitializing, initError);
-  const showTerminalStatusOverlay = shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState);
+  const showTerminalStatusOverlay = shouldShowTerminalStatusOverlay(
+    isInitializing,
+    initError,
+    connectionState
+  );
   const statusLabel = isConnected
     ? 'Conectado'
     : connectionState === 'connecting'
       ? 'Conectando...'
       : connectionState === 'terminated'
         ? 'Finalizada'
-      : 'Desconectado';
+        : 'Desconectado';
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative">
@@ -736,7 +869,8 @@ export default function TerminalTTY({
 
         {/* Restored session toast */}
         {restoredToast && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-md border text-xs font-mono pointer-events-none"
+          <div
+            className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-md border text-xs font-mono pointer-events-none"
             style={{
               background: 'color-mix(in oklch, var(--accent-primary) 15%, var(--surface-elevated))',
               borderColor: 'var(--accent-primary)',
@@ -766,15 +900,15 @@ export default function TerminalTTY({
                   ? 'Error de conexión'
                   : connectionState === 'terminated'
                     ? 'Sesión finalizada'
-                  : 'Desconectado'}
+                    : 'Desconectado'}
             </span>
             <span className="text-gray-500 text-center max-w-xs">
               {initError ||
                 (connectionState === 'error'
-                ? 'No se pudo conectar al servidor de terminal. Verificá que el servidor esté corriendo.'
-                : connectionState === 'terminated'
-                  ? 'La sesión terminó. Reconectá para iniciar una shell nueva sin relanzar el comando inicial.'
-                  : 'La conexión con la terminal se perdió.')}
+                  ? 'No se pudo conectar al servidor de terminal. Verificá que el servidor esté corriendo.'
+                  : connectionState === 'terminated'
+                    ? 'La sesión terminó. Reconectá para iniciar una shell nueva sin relanzar el comando inicial.'
+                    : 'La conexión con la terminal se perdió.')}
             </span>
             <button
               onClick={reconnect}

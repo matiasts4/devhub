@@ -5,9 +5,6 @@
  *   - update_agent_status
  *   - unregister_agent
  *   - get_project_context
- *   - mark_planning_done
- *   - validate_topic_key
- *   - build_context_pack
  */
 
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
@@ -142,70 +139,6 @@ describe('MCP Swarm & Planning Tools', () => {
       });
       const text = result.raw || JSON.stringify(result);
       expect(text).toMatch(/ERROR|error|invalid/i);
-    });
-  });
-
-  describe('mark_planning_done', () => {
-    it('marks planning as completed', async () => {
-      if (!projectId) return;
-      const result = await harness.callTool('mark_planning_done', { project_id: projectId });
-      expect(result.success).toBe(true);
-      expect(result.project.planning_status).toBe('completed');
-    });
-  });
-
-  describe('validate_topic_key', () => {
-    it('validates a correct topic key', async () => {
-      const result = await harness.callTool('validate_topic_key', {
-        topic_key: 'architecture/auth-model',
-      });
-      expect(result.valid).toBe(true);
-      expect(result.normalized_topic_key).toBe('architecture/auth-model');
-    });
-
-    it('rejects an invalid topic key', async () => {
-      const result = await harness.callTool('validate_topic_key', {
-        topic_key: 'INVALID KEY!!!',
-      });
-      expect(result.valid).toBe(false);
-      expect(result).toHaveProperty('reason');
-    });
-
-    it('normalizes a topic key with spaces', async () => {
-      const result = await harness.callTool('validate_topic_key', {
-        topic_key: 'Architecture / Auth Model',
-      });
-      expect(result.normalized_topic_key).toBe('architecture-/-auth-model');
-    });
-  });
-
-  describe('build_context_pack', () => {
-    it('builds a context pack for a valid topic', async () => {
-      if (!projectId) return;
-      const result = await harness.callTool('build_context_pack', {
-        project_id: projectId,
-        objective: 'Documentar la arquitectura de autenticación',
-        topic_key: 'architecture/auth-model',
-        max_evidence: 5,
-        max_tokens_context: 2000,
-      });
-      expect(result.success).toBe(true);
-      expect(result.context_pack).toHaveProperty('objective');
-      expect(result.context_pack).toHaveProperty('topic_key');
-      expect(result.context_pack).toHaveProperty('retrieved_evidence');
-      expect(result.context_pack).toHaveProperty('budget');
-      expect(Array.isArray(result.context_pack.retrieved_evidence)).toBe(true);
-    });
-
-    it('errors on invalid topic_key', async () => {
-      if (!projectId) return;
-      const result = await harness.callTool('build_context_pack', {
-        project_id: projectId,
-        objective: 'Documentar la arquitectura de autenticación del sistema',
-        topic_key: 'INVALID!!!',
-      });
-      const text = result.raw || JSON.stringify(result);
-      expect(text).toMatch(/ERROR|error|invalid|topic_key/i);
     });
   });
 });

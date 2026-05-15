@@ -137,6 +137,38 @@ function parseClientMessage(rawMessage) {
   }
 }
 
+export function buildTTYSessionDiagnosticSnapshot(session, { reason, cols, rows } = {}) {
+  return {
+    terminalId: session?.id || 'unknown',
+    mode: session?.mode || 'shell',
+    historyEnabled: Boolean(session?.historyEnabled),
+    socketCount: session?.sockets?.size || 0,
+    cwd: session?.cwd || null,
+    cols: Number(cols ?? 0),
+    rows: Number(rows ?? 0),
+    opencodeSessionId: session?.opencodeSessionId || null,
+    hermesSessionId: session?.hermesSessionId || null,
+    reason: reason || 'unknown',
+  };
+}
+
+export function shouldLogTTYSessionDiagnostic(previousSnapshot, nextSnapshot) {
+  if (!nextSnapshot) return false;
+  if (!previousSnapshot) return true;
+
+  return JSON.stringify(previousSnapshot) !== JSON.stringify(nextSnapshot);
+}
+
+function maybeLogTTYSessionDiagnostic(session, previousSnapshot, nextSnapshot) {
+  if (!shouldLogTTYSessionDiagnostic(previousSnapshot, nextSnapshot)) {
+    return previousSnapshot;
+  }
+
+  ttyLog('TTY_DIAG', 'session diagnostic', nextSnapshot);
+  session._lastDiagnosticSnapshot = nextSnapshot;
+  return nextSnapshot;
+}
+
 function broadcastOpenCodeSessionDetected(session, sessionId) {
   for (const s of session.sockets) {
     if (s.readyState === s.OPEN) {
@@ -334,6 +366,7 @@ export function createSession({ id, cwd, shell, restored = false } = {}) {
     restored,
     id,
     _saveDebounceTimer: null,
+    _lastDiagnosticSnapshot: null,
   };
 
   sessions.set(id, session);
@@ -395,7 +428,9 @@ function _debouncedSave(sessions, session) {
 }
 
 const OPENCODE_OUTPUT_SESSION_RE = /\bses_([a-zA-Z0-9_]+)\b/;
-const SHELL_TERMINAL_RESPONSE_RE = /(?:\x1b\[\?(?:\d+;)*\d+[cnR]|\x1b\[>(?:\d+;)*\d+c|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+// eslint-disable-next-line no-control-regex -- ANSI escape sequences must be matched literally.
+const SHELL_TERMINAL_RESPONSE_RE =
+  /(?:\x1b\[\?(?:\d+;)*\d+[cnR]|\x1b\[>(?:\d+;)*\d+c|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
 
 function stripShellTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
@@ -604,6 +639,7 @@ export async function ensureTTYServer() {
         title: null,
         restored: false,
         _saveDebounceTimer: null,
+        _lastDiagnosticSnapshot: null,
       };
 
       terminalSessions.set(terminalId, session);
@@ -670,6 +706,13 @@ export async function ensureTTYServer() {
         message.cols > 0 &&
         message.rows > 0
       ) {
+        const diagnosticSnapshot = buildTTYSessionDiagnosticSnapshot(session, {
+          reason: 'client-resize',
+          cols: message.cols,
+          rows: message.rows,
+        });
+        maybeLogTTYSessionDiagnostic(session, session._lastDiagnosticSnapshot, diagnosticSnapshot);
+
         try {
           session.pty.resize(message.cols, message.rows);
         } catch (err) {
@@ -746,7 +789,6 @@ export function getActiveOpenCodeSessionIds() {
   if (!sessions || typeof sessions.values !== 'function') return {};
 
   const OPENCODE_SESSION_RE = /opencode\s+(?:--session\s+|session\s+resume\s+)(ses_[\w]+)/i;
-  const OPENCODE_ACTIVE_RE = /opencode/i;
 
   const result = {};
 

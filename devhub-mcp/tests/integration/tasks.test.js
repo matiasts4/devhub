@@ -2,12 +2,12 @@
  * Integration tests for MCP Task tools:
  *   - list_tasks
  *   - create_task
+ *   - bulk_create_tasks
  *   - update_task
- *   - delete_task
  *   - add_task_comment
- *   - create_task_dependency
- *   - get_task_dependencies
  *   - get_next_task
+ *   - get_execution_queue
+ *   - claim_next_task
  */
 
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
@@ -18,7 +18,6 @@ describe('MCP Task Tools', () => {
   let projectId;
   let userId;
   let createdTaskId;
-  let milestoneId;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -113,6 +112,33 @@ describe('MCP Task Tools', () => {
     });
   });
 
+  describe('bulk_create_tasks', () => {
+    it('creates multiple tasks idempotently and skips duplicate titles', async () => {
+      if (!projectId) return;
+      const first = await harness.callTool('bulk_create_tasks', {
+        project_id: projectId,
+        user_id: userId,
+        tasks: [
+          { title: 'Bulk Task A', priority: 'high', business_value: 8 },
+          { title: 'Bulk Task B', priority: 'low', business_value: 2 },
+        ],
+      });
+      expect(first.created_count).toBe(2);
+
+      const second = await harness.callTool('bulk_create_tasks', {
+        project_id: projectId,
+        user_id: userId,
+        tasks: [
+          { title: 'Bulk Task A', priority: 'critical' },
+          { title: 'Bulk Task C', priority: 'medium' },
+        ],
+      });
+      expect(second.created_count).toBe(1);
+      expect(second.skipped_count).toBe(1);
+      expect(second.skipped[0].reason).toBe('duplicate-title');
+    });
+  });
+
   describe('update_task', () => {
     it('updates task status', async () => {
       if (!createdTaskId) {
@@ -153,48 +179,8 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('create_task_dependency / get_task_dependencies', () => {
-    let taskA, taskB;
-
-    beforeAll(async () => {
-      if (!projectId) return;
-      const a = await harness.callTool('create_task', {
-        project_id: projectId,
-        user_id: userId,
-        title: 'Task A (dependency)',
-      });
-      const b = await harness.callTool('create_task', {
-        project_id: projectId,
-        user_id: userId,
-        title: 'Task B (depends on A)',
-      });
-      taskA = a.task.id;
-      taskB = b.task.id;
-    });
-
-    it('creates a dependency between tasks', async () => {
-      if (!taskA || !taskB) return;
-      const result = await harness.callTool('create_task_dependency', {
-        task_id: taskB,
-        depends_on: taskA,
-        tipo: 'blocks',
-      });
-      expect(result.created).toBe(true);
-      expect(result.dependency.task_id).toBe(taskB);
-      expect(result.dependency.depends_on).toBe(taskA);
-    });
-
-    it('returns dependencies for a task', async () => {
-      if (!taskA || !taskB) return;
-      const result = await harness.callTool('get_task_dependencies', { task_id: taskB });
-      expect(result).toHaveProperty('blocking');
-      expect(result).toHaveProperty('blocked_by');
-      expect(result.blocking.some((d) => d.depends_on === taskA)).toBe(true);
-    });
-  });
-
   describe('get_next_task', () => {
-    it('returns next prioritized task or null message', async () => {
+    it('returns a tokenized lease or null message', async () => {
       if (!projectId) return;
       const result = await harness.callTool('get_next_task', {
         project_id: projectId,
@@ -206,16 +192,78 @@ describe('MCP Task Tools', () => {
         expect(result.task).toHaveProperty('id');
         expect(result.task).toHaveProperty('title');
         expect(result.task.status).toBe('in_progress');
+        expect(result.task.assigned_to).toBe('test-agent');
+        expect(result.task).toHaveProperty('claim_token');
+        expect(result.task).toHaveProperty('claimed_at');
+        expect(result.task).toHaveProperty('lease_expires_at');
       }
     });
   });
 
-  describe('delete_task', () => {
-    it('deletes a task', async () => {
-      if (!createdTaskId) return;
-      const result = await harness.callTool('delete_task', { task_id: createdTaskId });
-      expect(result.deleted).toBe(true);
-      expect(result.task_id).toBe(createdTaskId);
+  describe('get_execution_queue / claim_next_task', () => {
+    it('returns a scored pending-task queue', async () => {
+      if (!projectId) return;
+      const result = await harness.callTool('get_execution_queue', {
+        project_id: projectId,
+        limit: 5,
+      });
+      expect(result).toHaveProperty('queue');
+      expect(Array.isArray(result.queue)).toBe(true);
+      if (result.queue.length > 0) {
+        expect(result.queue[0]).toHaveProperty('priority_score');
+        expect(result.queue[0].status).toBe('pending');
+      }
+    });
+
+    it('claims the next available task for an agent', async () => {
+      if (!projectId) return;
+      const result = await harness.callTool('claim_next_task', {
+        project_id: projectId,
+        agent_id: 'test-agent-claim',
+      });
+      expect(result).toHaveProperty('claimed');
+      if (result.claimed) {
+        expect(result.task.status).toBe('in_progress');
+        expect(result.task.assigned_to).toBe('test-agent-claim');
+        expect(result.task).toHaveProperty('claim_token');
+        expect(result.task).toHaveProperty('lease_expires_at');
+      }
+    });
+
+    it('renews and releases a claimed lease', async () => {
+      if (!projectId) return;
+
+      const claimed = await harness.callTool('claim_next_task', {
+        project_id: projectId,
+        agent_id: 'test-agent-renew',
+      });
+
+      if (!claimed.claimed || !claimed.task?.claim_token) {
+        expect(claimed).toHaveProperty('message');
+        return;
+      }
+
+      const renewed = await harness.callTool('renew_task_lease', {
+        task_id: claimed.task.id,
+        agent_id: 'test-agent-renew',
+        claim_token: claimed.task.claim_token,
+      });
+
+      expect(renewed.renewed).toBe(true);
+      expect(new Date(renewed.task.lease_expires_at).getTime()).toBeGreaterThanOrEqual(
+        new Date(claimed.task.lease_expires_at).getTime()
+      );
+
+      const released = await harness.callTool('release_task', {
+        task_id: claimed.task.id,
+        agent_id: 'test-agent-renew',
+        claim_token: claimed.task.claim_token,
+        outcome: 'paused',
+      });
+
+      expect(released.released).toBe(true);
+      expect(released.task.status).toBe('pending');
+      expect(released.task.claim_token).toBeNull();
     });
   });
 });
