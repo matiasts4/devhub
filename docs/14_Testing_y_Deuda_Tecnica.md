@@ -134,7 +134,7 @@ devhub-mcp/
     create_task.test.js       — Happy path, error handling, inputs inválidos
     create_milestone.test.js  — Status válidos, validaciones de campos
     get_next_task.test.js     — Scoring algorithm, selección por prioridad
-    git_operations.test.js    — git_branch (inyección), git_commit, git_diff_review
+    git_operations.test.js    — suite histórica/legacy sobre `git_branch`, `git_commit`, `git_diff_review` (ya no canónica para el DevHub MCP general)
 ```
 
 **Cobertura de tests:**
