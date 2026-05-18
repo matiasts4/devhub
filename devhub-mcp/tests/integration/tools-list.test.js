@@ -1,7 +1,7 @@
 /**
  * Integration test for the official MCP tool catalog.
  *
- * This is intentionally strict: the 25 tools below are the current supported
+ * This is intentionally strict: the workspace tools included below are the current supported
  * DevHub MCP surface. If the product adds/removes tools, update this snapshot
  * together with README/docs so clients do not drift from the real server.
  */
@@ -33,6 +33,7 @@ describe('MCP Tool Catalog', () => {
         'claim_next_task',
         'create_milestone',
         'create_project',
+        'create_agent_workspace',
         'create_task',
         'delete_project',
         'get_dashboard',
@@ -40,15 +41,20 @@ describe('MCP Tool Catalog', () => {
         'get_next_task',
         'get_project',
         'get_project_context',
+        'get_agent_workspace',
         'heartbeat_agent',
         'list_milestones',
         'list_projects',
         'list_tasks',
+        'list_agent_workspaces',
+        'prepare_agent_workspace',
         'release_task',
         'register_agent',
         'renew_task_lease',
         'unregister_agent',
         'update_agent_status',
+        'report_agent_workspace',
+        'update_agent_workspace',
         'update_milestone',
         'update_project',
         'update_task',

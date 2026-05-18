@@ -19,6 +19,15 @@ El Servidor MCP (`devhub-mcp/server.js`) funciona como el **control plane operac
 
 > **Boundary vigente:** Git, filesystem, terminal, tests y PRs **no** viven en el DevHub MCP general. Esas operaciones pertenecen a la capability/skill del ejecutor (OpenCode, Hermes, editor, runner, etc.).
 
+### Contracto `agent_workspaces` (SW-2.1)
+
+- `agent_workspaces` pasa a ser la reserva durable para branch/worktree lifecycle.
+- DevHub **solo** guarda identidad, baseline, status, `observed_*`, `last_error`, `recovery_reason` y `evidence_ref`.
+- El baseline seguro queda congelado en `base_commit=f814998dd05cb491caf8637bf570dbd74b539090`.
+- `observed_dirty='dirty-excluded'` se preserva textual como realidad observada; DevHub NO lo normaliza a `clean`.
+- `workspace_path` es lógico (`workspace://...`); `worktree_path` lo reporta el ejecutor cuando exista.
+- Branch/worktree/merge/delete siguen fuera del MCP general: el ejecutor prepara, DevHub observa.
+
 El alcance del Servidor MCP se divide en **cinco grandes módulos**:
 
 1. **Gestión de Proyectos:** CRUD y estado general del proyecto. ✅
@@ -39,7 +48,9 @@ Esta tabla resume el catálogo real del DevHub MCP. La surface general de Git/fi
 | `get_project`            | Proyectos      | Detalles completos + tareas + hitos                         |
 | `update_project`         | Proyectos      | Actualiza nombre, estado, progreso, color y planning_status |
 | `create_project`         | Proyectos      | Crea un nuevo proyecto                                      |
+| `create_agent_workspace` | Workspaces     | Reserva un workspace `planned` sin ejecutar git/worktree    |
 | `delete_project`         | Proyectos      | Elimina un proyecto con confirmación explícita              |
+| `get_agent_workspace`    | Workspaces     | Lee un workspace puntual por `workspace_id`                 |
 | `list_tasks`             | Tareas         | Tareas de un proyecto (filtro estado/prioridad)             |
 | `create_task`            | Tareas         | Crea nueva tarea con milestone_id opcional                  |
 | `bulk_create_tasks`      | Tareas         | Crea tareas en lote de forma idempotente                    |
@@ -56,10 +67,13 @@ Esta tabla resume el catálogo real del DevHub MCP. La surface general de Git/fi
 | `update_milestone`       | Hitos          | Actualiza estado/fecha/asignación de hito                   |
 | `get_dashboard`          | Global         | Resumen global de todos los proyectos                       |
 | `get_project_context`    | Planning IA ⭐ | Lee planning_prompt + todos los project_files               |
+| `list_agent_workspaces`  | Workspaces     | Lista workspaces y estados lifecycle del control plane      |
 | `register_agent`         | Swarm          | Registra o actualiza un agente Worker                       |
 | `heartbeat_agent`        | Swarm          | Renueva señal de vida de un agente                          |
+| `report_agent_workspace` | Workspaces     | Registra observed state devuelto por el ejecutor            |
 | `unregister_agent`       | Swarm          | Elimina un agente del registry                              |
 | `update_agent_status`    | Swarm          | Actualiza estado visible del agente                         |
+| `update_agent_workspace` | Workspaces     | Ajusta lifecycle metadata sin ejecutar side effects git     |
 
 ---
 

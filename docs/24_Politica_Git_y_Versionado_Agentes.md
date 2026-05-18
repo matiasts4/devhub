@@ -13,6 +13,7 @@ Changelog:
   - 2026-05-15 v2: Aclarada la deprecación de tools Git dentro del DevHub MCP, la regla de commit mínimo por tarea/slice y la matriz de validación por tipo de cambio.
   - 2026-05-15 v3: Alineados hooks reales con la política canónica; `core.hooksPath` oficializado en Husky y `.githooks/*` marcado como legado inactivo.
   - 2026-05-15 v4: Formalizado el checkpoint gate antes de `completed`/`qa-ready`, la excepción `commit=none` sólo para análisis sin cambios y la regla de no hacer push automático.
+  - 2026-05-18 v5: Alineada con SW-2.1A: baseline congelado, `dirty-excluded` explícito y cleanup intent modelado vía `agent_workspaces` sin Git en MCP.
 ---
 
 # 24 Política de Git y Versionado para Agentes
@@ -41,6 +42,13 @@ Decisiones confirmadas:
 | **Executor skill/capability** | Código, filesystem, Git, tests, diffs, PRs, SSH/GitHub auth               | `git switch`, `git commit`, `git push`, `gh pr create`, lectura/escritura de archivos   |
 
 Regla: si la operación modifica Git o toca archivos del repo, pertenece al **ejecutor**. Si modifica estado operativo del proyecto/tarea/agente, pertenece a **DevHub MCP**.
+
+### Freeze SW-2.1A para workspaces
+
+- Baseline seguro de workspaces: `f814998dd05cb491caf8637bf570dbd74b539090`.
+- Si el ejecutor observa árbol compartido no limpio, DevHub debe registrar `observed_dirty='dirty-excluded'` y **nunca normalizarlo**.
+- `cleanup_pending` representa solicitud de teardown al ejecutor; DevHub mantiene control plane only.
+- `agent_workspaces` guarda reserva/lifecycle/evidence; Git real sigue fuera del MCP general.
 
 ---
 
@@ -347,6 +355,8 @@ Hasta que eso exista completo, la combinación correcta es:
 ```txt
 executor skill/capability para Git + DevHub comments/tasks para chronology y control plane
 ```
+
+El freeze actual agrega una regla más: `agent_workspaces` concentra baseline, naming reservado, `cleanup_pending`, `orphaned` y `evidence_ref`; el ejecutor aplica branch/worktree/merge/delete y luego reporta metadata.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
-Fecha de Modificación: 14 de mayo de 2026
-Estado: INTENCIÓN / ROADMAP — no implementado todavía
+Fecha de Modificación: 18 de mayo de 2026
+Estado: PARCIAL — SW-2.1A congelado para control plane de workspaces
 Owner: DevHub
 Relacionado:
   - docs/08_Enjambre_Agentes_y_Orquestacion.md
@@ -33,6 +33,16 @@ DevHub Swarm = ejecución multi-agente controlada, auditable y visible en UI
 ```
 
 La meta NO es copiar Hermes Workspace 1:1. La meta es que DevHub se convierta en el **hub de planificación + ejecución + seguimiento** para múltiples agentes y clientes como HermesAgent, OpenCode, Codex, IDEs y otros.
+
+### Freeze vigente de SW-2.1A
+
+- `agent_workspaces` ya existe como **control plane durable** para identidad, lifecycle y estado observado.
+- Baseline seguro congelado: `f814998dd05cb491caf8637bf570dbd74b539090`.
+- `observed_dirty='dirty-excluded'` se preserva textual como realidad observada y NO se normaliza a `clean`.
+- `cleanup_pending` significa **intención de cleanup**, nunca ejecución Git/worktree dentro de DevHub.
+- `devhub_agent_runs` sigue observer-only; no puede convertirse en ownership truth del workspace.
+- `SW-2.2 sigue bloqueado` hasta consumir este contrato congelado sin reabrir lifecycle ni ownership.
+- `SW-3.1 puede consumir `evidence_ref`` como hook opaco ya congelado, sin redefinir lifecycle.
 
 ## Capas canónicas de Swarm Workspace
 
@@ -324,6 +334,14 @@ Resultado esperado:
 - Cada agente trabaja aislado.
 - DevHub sabe dónde está el trabajo.
 - La UI puede abrir/ver el workspace asociado.
+
+### Estado real después de SW-2.1A
+
+- La reserva durable vive en `agent_workspaces` con estados `planned`, `provisioning`, `ready`, `active`, `paused`, `conflicted`, `cleanup_pending`, `completed`, `failed`, `orphaned`.
+- `workspace_path` es lógico (`workspace://...`); `worktree_path` lo reporta el ejecutor.
+- Las colisiones por `branch_name`, `worktree_path` o ownership activo deben terminar en `conflicted` con `last_error` explícito.
+- Las pérdidas de ownership deben terminar en `orphaned` preservando el último estado observado.
+- El paso `cleanup_pending -> completed|failed` debe preservar metadata histórica, no reciclar filas terminales.
 
 ---
 

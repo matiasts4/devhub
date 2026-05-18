@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/localDb';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { getDb, prepareAgentWorkspaceLease } from '@/lib/db/localDb';
 
-const execAsync = promisify(exec);
+const FROZEN_BASE_COMMIT = 'f814998dd05cb491caf8637bf570dbd74b539090';
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { task_id, agent_id, llm_provider, llm_model } = body;
+    const { task_id, agent_id } = body;
 
     if (!task_id || !agent_id) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -37,14 +35,24 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
-    // 4. Create git branch
-    const branchName = `agent/${agent_id}/${task_id.split('-')[0]}`;
-    await execAsync(`git checkout -b ${branchName} || true`).catch(console.error);
+    const prepared = prepareAgentWorkspaceLease(
+      db,
+      {
+        task_id,
+        agent_id,
+        requested_base_ref: FROZEN_BASE_COMMIT,
+        correlation_id: `execute-${task_id}-${agent_id}`,
+      },
+      {
+        acceptedAt: new Date().toISOString(),
+      }
+    );
 
     return NextResponse.json({
       success: true,
-      message: `Execution started on branch ${branchName}`,
-      branch: branchName,
+      message: 'Workspace preparation requested; executor must provision workspace outside DevHub.',
+      workspace_id: prepared.ack.workspace_id,
+      correlation_id: prepared.ack.correlation_id,
       agent_id: agent_id,
       task_id: task_id,
     });

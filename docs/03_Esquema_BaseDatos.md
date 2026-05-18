@@ -1,8 +1,9 @@
 ---
-Fecha de Modificación: 28 de marzo de 2026
+Fecha de Modificación: 18 de mayo de 2026
 Changelog:
   - 2026-03-27 v1: Documento creado con el esquema inicial de Supabase.
   - 2026-03-28 v2: Añadida columna `milestone_id` en `tasks`, campos `planning_prompt` y `planning_status` en `projects`, nueva tabla `project_files`. Actualizada sección de Tablas Futuras.
+  - 2026-05-18 v3: Documentado `agent_workspaces` como control plane durable de SW-2.1A y aclarado el rol observer-only de runtime mirrors.
 ---
 
 # 03 Esquema de Base de Datos
@@ -115,6 +116,45 @@ Archivos de contexto subidos por el usuario para la Planning IA.
 
 ---
 
+### `agent_workspaces` ⭐ SW-2.1A
+
+Reserva durable de workspaces de agentes. DevHub guarda lifecycle, metadata observada y evidence hook; el ejecutor sigue siendo dueño de Git/worktree real.
+
+| Columna                | Tipo      | Default                                    | Descripción                                                                                                                |
+| ---------------------- | --------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `id`                   | TEXT (PK) | —                                          | `workspace_id` estable y único                                                                                             |
+| `project_id`           | UUID/TEXT | —                                          | Proyecto padre                                                                                                             |
+| `agent_id`             | TEXT      | —                                          | Agente dueño de la reserva                                                                                                 |
+| `current_task_id`      | TEXT      | NULL                                       | Tarea activa asociada                                                                                                      |
+| `run_id_or_session_id` | TEXT      | NULL                                       | Correlación runtime opcional                                                                                               |
+| `repo_root`            | TEXT      | —                                          | Repo lógico asociado                                                                                                       |
+| `workspace_path`       | TEXT      | —                                          | Identificador lógico `workspace://...`                                                                                     |
+| `worktree_path`        | TEXT      | NULL                                       | Path físico reportado por el ejecutor                                                                                      |
+| `base_branch`          | TEXT      | —                                          | Rama base explícita                                                                                                        |
+| `base_commit`          | TEXT      | `f814998dd05cb491caf8637bf570dbd74b539090` | Baseline seguro congelado                                                                                                  |
+| `branch_name`          | TEXT      | NULL                                       | Nombre reservado de branch                                                                                                 |
+| `status`               | TEXT      | `planned`                                  | `planned`, `provisioning`, `ready`, `active`, `paused`, `conflicted`, `cleanup_pending`, `completed`, `failed`, `orphaned` |
+| `observed_branch`      | TEXT      | NULL                                       | Rama observada por el ejecutor                                                                                             |
+| `observed_head`        | TEXT      | NULL                                       | Commit/head observado                                                                                                      |
+| `observed_dirty`       | TEXT      | NULL                                       | `clean`, `dirty`, `dirty-excluded`; se preserva textual                                                                    |
+| `last_error`           | TEXT      | NULL                                       | Último error o drift detectado                                                                                             |
+| `recovery_reason`      | TEXT      | NULL                                       | Motivo explícito de pausa/orfandad/recuperación                                                                            |
+| `evidence_ref`         | TEXT      | NULL                                       | Hook opaco congelado para SW-3.1                                                                                           |
+| `claimed_at`           | TEXT      | NULL                                       | Timestamp operativo                                                                                                        |
+| `started_at`           | TEXT      | NULL                                       | Inicio real de trabajo                                                                                                     |
+| `updated_at`           | TEXT      | NOW()                                      | Última actualización                                                                                                       |
+| `completed_at`         | TEXT      | NULL                                       | Fin terminal                                                                                                               |
+| `created_at`           | TEXT      | NOW()                                      | Creación                                                                                                                   |
+
+Reglas clave:
+
+- `ready` y `active` requieren `branch_name`, `worktree_path`, `observed_branch` y `observed_head`.
+- Las filas terminales (`completed`, `failed`) son inmutables y no se reutilizan.
+- Existen locks activos por `branch_name`, `worktree_path` y `(agent_id,current_task_id)` en estados no terminales.
+- `cleanup_pending` modela intención de teardown; no implica ejecución Git dentro de DevHub.
+
+---
+
 ### `ai_interactions`
 
 Historial de conversaciones con agentes IA (referenciado en CentroIA.jsx).
@@ -144,6 +184,7 @@ auth.users
   projects (1:N)
     ├── milestones (1:N)
     ├── tasks (1:N) ──── milestone_id → milestones (N:1, nullable)
+    ├── agent_workspaces (1:N)  ⭐ control plane workspace lifecycle
     ├── project_files (1:N)  ⭐ nueva
     └── ai_interactions (1:N)
 ```
@@ -152,7 +193,11 @@ auth.users
 
 ## Tablas Futuras
 
-| Tabla                   | Propósito                                    |
-| ----------------------- | -------------------------------------------- |
-| `mcp_connections`       | Configuraciones de MCPs por usuario/proyecto |
-| `scaffolding_templates` | Plantillas de scaffolding guardadas          |
+| Tabla                   | Propósito                                     |
+| ----------------------- | --------------------------------------------- |
+| `agent_runs`            | Evidencia durable por ejecución (SW-3.1)      |
+| `agent_artifacts`       | Bitácora append-only y artifacts de ejecución |
+| `mcp_connections`       | Configuraciones de MCPs por usuario/proyecto  |
+| `scaffolding_templates` | Plantillas de scaffolding guardadas           |
+
+> `devhub_agent_runs` NO es tabla durable del esquema canónico. Sigue siendo runtime/UI mirror observer-only hasta que SW-3.1 formalice `agent_runs`.

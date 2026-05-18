@@ -1,16 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db/localDb';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { task_id, result, reasons, branch_name } = body;
+    const { task_id, result, reasons, workspace_id, evidence_ref } = body;
 
-    if (!task_id || !result || !branch_name) {
+    if (!task_id || !result) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -24,22 +20,32 @@ export async function POST(request) {
     }
 
     if (result === 'approved') {
-      // Approve and trigger merge
-      await execAsync(
-        `git checkout main && git merge ${branch_name} && git branch -d ${branch_name}`
-      ).catch(console.error);
-
       db.tables.tasks.update(
         { status: 'completed', last_qa_feedback: reasons?.join('\n') || 'Approved' },
         [['id', '=', task_id]]
       );
+
+      if (workspace_id) {
+        db.tables.agent_workspaces.update(
+          {
+            status: 'cleanup_pending',
+            last_error: null,
+            recovery_reason: null,
+            evidence_ref: evidence_ref || `qa://${task_id}/approved`,
+          },
+          [['id', '=', workspace_id]]
+        );
+      }
 
       // Liberar agente
       db.tables.agent_registry.update({ current_task_id: null, status: 'idle' }, [
         ['current_task_id', '=', task_id],
       ]);
 
-      return NextResponse.json({ success: true, message: 'Task approved and merged.' });
+      return NextResponse.json({
+        success: true,
+        message: 'Task approved; cleanup intent recorded for executor handoff.',
+      });
     } else {
       // Rejected
       const newRetries = (task.retry_count || 0) + 1;
@@ -55,12 +61,36 @@ export async function POST(request) {
         db.tables.agent_registry.update({ current_task_id: null, status: 'idle' }, [
           ['current_task_id', '=', task_id],
         ]);
+
+        if (workspace_id) {
+          db.tables.agent_workspaces.update(
+            {
+              status: 'cleanup_pending',
+              last_error: feedback,
+              recovery_reason: 'qa-blocked',
+              evidence_ref: evidence_ref || `qa://${task_id}/blocked`,
+            },
+            [['id', '=', workspace_id]]
+          );
+        }
         return NextResponse.json({ success: true, message: 'Task blocked after 3 retries.' });
       } else {
         // Retry
         db.tables.tasks.update({ retry_count: newRetries, last_qa_feedback: feedback }, [
           ['id', '=', task_id],
         ]);
+
+        if (workspace_id) {
+          db.tables.agent_workspaces.update(
+            {
+              status: 'paused',
+              last_error: feedback,
+              recovery_reason: 'qa-rejected',
+              evidence_ref: evidence_ref || `qa://${task_id}/rejected/${newRetries}`,
+            },
+            [['id', '=', workspace_id]]
+          );
+        }
 
         return NextResponse.json({ success: true, message: 'Task rejected. Sent back for retry.' });
       }

@@ -10,6 +10,18 @@ const { resolveDbPath } = require('./pathResolver');
 const DB_PATH = resolveDbPath();
 let _db = null;
 
+const AGENT_WORKSPACE_TERMINAL_STATUSES = ['completed', 'failed'];
+const AGENT_WORKSPACE_BASE_COMMIT = 'f814998dd05cb491caf8637bf570dbd74b539090';
+const AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES = [
+  'planned',
+  'provisioning',
+  'ready',
+  'active',
+  'paused',
+  'cleanup_pending',
+  'orphaned',
+];
+
 function ensureRuntimeSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -186,6 +198,75 @@ function ensureRuntimeSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_swarm_processes_status ON swarm_processes(status);
     CREATE INDEX IF NOT EXISTS idx_swarm_processes_pid ON swarm_processes(pid);
+
+    CREATE TABLE IF NOT EXISTS agent_workspaces (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      current_task_id TEXT,
+      run_id_or_session_id TEXT,
+      repo_root TEXT NOT NULL,
+      workspace_path TEXT NOT NULL,
+      worktree_path TEXT,
+      base_branch TEXT NOT NULL,
+      base_commit TEXT NOT NULL DEFAULT '${AGENT_WORKSPACE_BASE_COMMIT}',
+      branch_name TEXT,
+      status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN (
+        'planned',
+        'provisioning',
+        'ready',
+        'active',
+        'paused',
+        'conflicted',
+        'cleanup_pending',
+        'completed',
+        'failed',
+        'orphaned'
+      )),
+      observed_branch TEXT,
+      observed_head TEXT,
+      observed_dirty TEXT CHECK(observed_dirty IN ('clean', 'dirty', 'dirty-excluded') OR observed_dirty IS NULL),
+      last_error TEXT,
+      last_error_class TEXT,
+      recovery_reason TEXT,
+      evidence_ref TEXT,
+      reservation_token TEXT,
+      correlation_id TEXT,
+      accepted_at TEXT,
+      claimed_at TEXT,
+      started_at TEXT,
+      updated_at TEXT DEFAULT (datetime('now')),
+      completed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      CHECK(
+        status NOT IN ('ready', 'active') OR (
+          branch_name IS NOT NULL AND
+          worktree_path IS NOT NULL AND
+          observed_branch IS NOT NULL AND
+          observed_head IS NOT NULL
+        )
+      )
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_workspaces_project ON agent_workspaces(project_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_workspaces_agent ON agent_workspaces(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_workspaces_status ON agent_workspaces(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_workspaces_task ON agent_workspaces(current_task_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workspaces_active_branch
+      ON agent_workspaces(branch_name)
+      WHERE branch_name IS NOT NULL AND status IN ('planned', 'provisioning', 'ready', 'active', 'paused', 'cleanup_pending', 'orphaned');
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workspaces_active_worktree
+      ON agent_workspaces(worktree_path)
+      WHERE worktree_path IS NOT NULL AND status IN ('planned', 'provisioning', 'ready', 'active', 'paused', 'cleanup_pending', 'orphaned');
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workspaces_active_owner
+      ON agent_workspaces(agent_id, current_task_id)
+      WHERE current_task_id IS NOT NULL AND status IN ('planned', 'provisioning', 'ready', 'active', 'paused', 'cleanup_pending', 'orphaned');
+    CREATE TRIGGER IF NOT EXISTS agent_workspaces_terminal_immutable
+    BEFORE UPDATE ON agent_workspaces
+    FOR EACH ROW
+    WHEN OLD.status IN ('completed', 'failed')
+    BEGIN
+      SELECT RAISE(ABORT, 'agent_workspaces_terminal_immutable');
+    END;
   `);
 
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
@@ -208,6 +289,10 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE agent_hub_sessions ADD COLUMN custom_name TEXT',
     "ALTER TABLE agent_hub_sessions ADD COLUMN visibility TEXT DEFAULT 'visible'",
     'ALTER TABLE agent_hub_sessions ADD COLUMN error_message TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN last_error_class TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN reservation_token TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN correlation_id TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN accepted_at TEXT',
   ];
   for (const stmt of alterStatements) {
     try {
@@ -256,6 +341,34 @@ function ensureRuntimeSchema(db) {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_agent_hub_sessions_parent ON agent_hub_sessions(parent_id)`
   );
+
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workspaces_active_branch
+      ON agent_workspaces(branch_name)
+      WHERE branch_name IS NOT NULL AND status IN (${AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES.map((status) => `'${status}'`).join(', ')})`
+  );
+
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workspaces_active_worktree
+      ON agent_workspaces(worktree_path)
+      WHERE worktree_path IS NOT NULL AND status IN (${AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES.map((status) => `'${status}'`).join(', ')})`
+  );
+
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workspaces_active_owner
+      ON agent_workspaces(agent_id, current_task_id)
+      WHERE current_task_id IS NOT NULL AND status IN (${AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES.map((status) => `'${status}'`).join(', ')})`
+  );
+
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS agent_workspaces_terminal_immutable
+    BEFORE UPDATE ON agent_workspaces
+    FOR EACH ROW
+    WHEN OLD.status IN (${AGENT_WORKSPACE_TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ')})
+    BEGIN
+      SELECT RAISE(ABORT, 'agent_workspaces_terminal_immutable');
+    END;
+  `);
 }
 
 function getDb() {
@@ -335,6 +448,179 @@ function tableHasColumn(db, tableName, columnName) {
     .prepare(`PRAGMA table_info(${tableName})`)
     .all()
     .some((column) => column.name === columnName);
+}
+
+function buildWorkspaceIntentId(taskId, agentId) {
+  return `workspace-${taskId}-${agentId}`;
+}
+
+function validatePrepareAgentWorkspaceIdentity({
+  workspace_id,
+  task_id,
+  agent_id,
+  correlation_id,
+}) {
+  const hasWorkspaceId = Boolean(workspace_id);
+  const hasTaskIdentity = Boolean(task_id || agent_id);
+  const hasCompleteTaskIdentity = Boolean(task_id && agent_id);
+
+  if (!correlation_id) {
+    throw new Error('correlation_id es requerido.');
+  }
+
+  if (!hasWorkspaceId && hasTaskIdentity && !hasCompleteTaskIdentity) {
+    throw new Error('task_id y agent_id deben enviarse juntos.');
+  }
+
+  if (!hasWorkspaceId && !hasCompleteTaskIdentity) {
+    throw new Error('Se requiere exactamente una identidad: workspace_id o task_id + agent_id.');
+  }
+
+  if (hasWorkspaceId && hasTaskIdentity) {
+    throw new Error('workspace_id no puede combinarse con task_id o agent_id.');
+  }
+}
+
+function resolvePreparationProjectId(db, taskId) {
+  if (!taskId || !tableExists(db, 'tasks')) return 'control-plane-pending';
+  const task = db.prepare('SELECT project_id FROM tasks WHERE id = ? LIMIT 1').get(taskId);
+  return task?.project_id || 'control-plane-pending';
+}
+
+function buildPrepareAgentWorkspaceAck(workspace) {
+  return {
+    workspace_id: workspace.id,
+    task_id: workspace.current_task_id,
+    agent_id: workspace.agent_id,
+    requested_base_ref: workspace.base_commit,
+    reservation_token: workspace.reservation_token,
+    correlation_id: workspace.correlation_id,
+    status: workspace.status,
+    accepted_at: workspace.accepted_at || workspace.updated_at || workspace.created_at || null,
+  };
+}
+
+function prepareAgentWorkspaceLease(db, input = {}, options = {}) {
+  if (!db) throw new Error('Database handle requerido para prepareAgentWorkspaceLease.');
+
+  validatePrepareAgentWorkspaceIdentity(input);
+
+  const timestamp = options.acceptedAt || new Date().toISOString();
+  const requestedBaseRef = input.requested_base_ref || AGENT_WORKSPACE_BASE_COMMIT;
+  const repoRoot = options.repoRoot || process.cwd();
+  const baseBranch = options.baseBranch || 'main';
+
+  let workspace = null;
+  let workspaceId = input.workspace_id || null;
+  let taskId = input.task_id || null;
+  let agentId = input.agent_id || null;
+
+  if (workspaceId) {
+    workspace = db.prepare('SELECT * FROM agent_workspaces WHERE id = ? LIMIT 1').get(workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace ${workspaceId} no encontrado.`);
+    }
+    taskId = workspace.current_task_id;
+    agentId = workspace.agent_id;
+  } else {
+    workspace = db
+      .prepare(
+        'SELECT * FROM agent_workspaces WHERE current_task_id = ? AND agent_id = ? ORDER BY created_at DESC LIMIT 1'
+      )
+      .get(taskId, agentId);
+    workspaceId = workspace?.id || buildWorkspaceIntentId(taskId, agentId);
+  }
+
+  if (workspace && workspace.correlation_id === input.correlation_id) {
+    return {
+      created: false,
+      reused: true,
+      workspace,
+      ack: buildPrepareAgentWorkspaceAck(workspace),
+    };
+  }
+
+  const reservationToken =
+    input.reservation_token || workspace?.reservation_token || `rsv-${crypto.randomUUID()}`;
+  const projectId = workspace?.project_id || resolvePreparationProjectId(db, taskId);
+  const workspacePath =
+    workspace?.workspace_path || input.workspace_path || `workspace://${projectId}/${workspaceId}`;
+  const acceptedAt = timestamp;
+
+  if (!workspace) {
+    const row = {
+      id: workspaceId,
+      project_id: projectId,
+      agent_id: agentId,
+      current_task_id: taskId,
+      run_id_or_session_id: null,
+      repo_root: repoRoot,
+      workspace_path: workspacePath,
+      worktree_path: null,
+      base_branch: baseBranch,
+      base_commit: requestedBaseRef,
+      branch_name: null,
+      status: 'provisioning',
+      observed_branch: null,
+      observed_head: null,
+      observed_dirty: null,
+      last_error: null,
+      last_error_class: null,
+      recovery_reason: null,
+      evidence_ref: null,
+      reservation_token: reservationToken,
+      correlation_id: input.correlation_id,
+      accepted_at: acceptedAt,
+      claimed_at: null,
+      started_at: null,
+      updated_at: timestamp,
+      completed_at: null,
+    };
+
+    const keys = Object.keys(row);
+    db.prepare(
+      `INSERT INTO agent_workspaces (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+    ).run(...keys.map((key) => row[key] ?? null));
+
+    const created = db
+      .prepare('SELECT * FROM agent_workspaces WHERE id = ? LIMIT 1')
+      .get(workspaceId);
+    return {
+      created: true,
+      reused: false,
+      workspace: created,
+      ack: buildPrepareAgentWorkspaceAck(created),
+    };
+  }
+
+  const updates = {
+    base_commit: requestedBaseRef,
+    status: AGENT_WORKSPACE_TERMINAL_STATUSES.includes(workspace.status)
+      ? workspace.status
+      : 'provisioning',
+    last_error: null,
+    last_error_class: null,
+    recovery_reason: null,
+    reservation_token: reservationToken,
+    correlation_id: input.correlation_id,
+    accepted_at: acceptedAt,
+    updated_at: timestamp,
+  };
+
+  const keys = Object.keys(updates);
+  db.prepare(
+    `UPDATE agent_workspaces SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`
+  ).run(...keys.map((key) => updates[key] ?? null), workspaceId);
+
+  const updated = db
+    .prepare('SELECT * FROM agent_workspaces WHERE id = ? LIMIT 1')
+    .get(workspaceId);
+  return {
+    created: false,
+    reused: false,
+    workspace: updated,
+    ack: buildPrepareAgentWorkspaceAck(updated),
+  };
 }
 
 function deleteByProjectId(db, tableName, projectId) {
@@ -454,6 +740,7 @@ const tables = {
   },
   tasks: makeTableOps('tasks', 'id'),
   milestones: makeTableOps('milestones', 'id'),
+  agent_workspaces: makeTableOps('agent_workspaces', 'id'),
   project_files: makeTableOps('project_files', 'id'),
   agent_registry: makeTableOps('agent_registry', 'agent_id'),
   mcp_connections: makeTableOps('mcp_connections', 'id'),
@@ -1159,9 +1446,13 @@ function getSiblingSessions(sessionId) {
 }
 
 module.exports = {
+  AGENT_WORKSPACE_BASE_COMMIT,
   getDb,
   closeDb,
   ensureRuntimeSchema,
+  buildPrepareAgentWorkspaceAck,
+  buildWorkspaceIntentId,
+  prepareAgentWorkspaceLease,
   tables,
   from(table) {
     return new LocalQuery(table);

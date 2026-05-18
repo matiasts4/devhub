@@ -1,6 +1,6 @@
 # AgentHub — Centro de Inteligencia Artificial
 
-> **Revisado:** Abril 2026 — basado en `src/views/AgentHub.jsx`, `src/components/chat/MCPStatusPanel.jsx`, `src/lib/slashSkills.js` y `devhub-mcp/server.js`
+> **Revisado:** Mayo 2026 — basado en `src/views/AgentHub.jsx`, `src/components/chat/MCPStatusPanel.jsx`, `src/lib/slashSkills.js` y `devhub-mcp/server.js`
 
 ---
 
@@ -24,7 +24,7 @@ AgentHub es la interfaz de chat con IA integrada en cada proyecto de DevHub. No 
 │     conversación         │           filtros y búsqueda             │
 │   · Mensajes del LLM     │                                          │
 │   · Cards de sub-agentes │   MCPStatusPanel                         │
-│     con sus trazas       │   GeminiQuotasPanel                      │
+│     con sus trazas       │                                          │
 │                          │                                          │
 ├──────────────────────────┴──────────────────────────────────────────┤
 │  AgentStatusBar: agente · modelo · toolcalls · tiempo · tokens     │
@@ -52,7 +52,7 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Permite al agente gest
 
 **Endpoint interno:** `POST /api/mcp/devhub`
 
-#### Herramientas disponibles (16 tools)
+#### Herramientas disponibles (21+ tools)
 
 **Proyectos**
 | Tool | Descripción |
@@ -86,6 +86,22 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Permite al agente gest
 | `heartbeat_agent` | Renueva señal de vida (cada ~1 min para no marcarse como error) |
 | `unregister_agent` | Desvincula un agente del registry |
 | `update_agent_status` | Actualiza estado visual: `working`, `thinking`, `completed`, `error`... |
+
+**Workspaces (SW-2.1A)**
+| Tool | Descripción |
+|------|-------------|
+| `create_agent_workspace` | Reserva un workspace `planned` en el control plane |
+| `list_agent_workspaces` | Lista workspaces y lifecycle del proyecto |
+| `get_agent_workspace` | Lee un workspace puntual por `workspace_id` |
+| `update_agent_workspace` | Ajusta lifecycle metadata sin ejecutar Git |
+| `report_agent_workspace` | Registra estado observado devuelto por el ejecutor |
+
+Notas de contrato:
+
+- AgentHub puede leer y mostrar `agent_workspaces`, pero no usa esos tools para ejecutar branch/worktree directamente.
+- `cleanup_pending` significa cleanup intent; el ejecutor hace la mutación Git/worktree real.
+- `devhub_agent_runs` sigue siendo observer-only para UI/runtime; no reemplaza el ownership durable del workspace.
+- Baseline congelado: `f814998dd05cb491caf8637bf570dbd74b539090`; `observed_dirty='dirty-excluded'` se conserva textual.
 
 **Sintaxis en el prompt del LLM:**
 
@@ -157,19 +173,6 @@ El botón **MCP** en el header del chat abre el `MCPStatusPanel`, que muestra:
 - Expandiendo cada servidor: la lista completa de tools con nombre y descripción
 
 Para refrescar el estado: botón **↺** en el panel, o automáticamente al cargar AgentHub (fetch a `/api/agenthub/mcp/status`).
-
----
-
-## Panel GeminiQuotasPanel — estado de cuotas
-
-Muestra el estado de los perfiles de Gemini configurados en `~/.gemini-profiles`:
-
-- Nombre del perfil (Principal si es el default)
-- Estado: ✅ Disponible / ❌ Agotado / ⚠️ Error
-- Barra de progreso de uso (%)
-- Tiempo hasta el reset del rate limit
-
-Útil cuando trabajás con múltiples cuentas Gemini para saber cuál está disponible antes de enviar.
 
 ---
 
@@ -262,7 +265,9 @@ AgentHub puede disparar perfiles OpenCode y fases/workflows SDD como ejecuciones
 
 Pero esos disparos siguen siendo **subagent/execution profile/package** o **skill/capability**. No son el supervisor persistente del Swarm.
 
-Si una corrida participa de Swarm Workspace, el source of truth operativo debe seguir siendo DevHub: task claim, runtime role, runtime state, workspace asignado, artifacts y recovery.
+Si una corrida participa de Swarm Workspace, el source of truth operativo debe seguir siendo DevHub: task claim, runtime role, runtime state, `agent_workspaces`, artifacts y recovery. Los mapas runtime como `devhub_agent_runs` son observer-only.
+
+Cuando el estado de QA o ejecución indique `cleanup intent`, AgentHub debe interpretarlo como transición a `cleanup_pending` reportada por DevHub, no como evidencia de que DevHub haya corrido Git.
 
 ---
 

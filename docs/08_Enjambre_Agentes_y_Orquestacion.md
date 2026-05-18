@@ -1,9 +1,10 @@
 ---
-Fecha de Modificación: 15 de mayo de 2026
+Fecha de Modificación: 18 de mayo de 2026
 Estado: PARCIAL / FUNDACIONAL
 Changelog:
   - 2026-03-28 v1: Fundación de la Arquitectura Inteligente de Enjambre (Swarm) para prevención de degradación documental y manejo de colisiones por IA.
   - 2026-05-15 v2: Alineación con la separación actual entre DevHub MCP (control plane) y Git del ejecutor. Se deriva la política operativa al doc 24 y se reclasifican referencias Git-MCP como históricas.
+  - 2026-05-18 v3: Alineado con SW-2.1A: `agent_workspaces` ya congela lifecycle básico y `devhub_agent_runs` queda observer-only.
 ---
 
 # 08 Orquestación de Enjambre (Ai Swarm) y Memoria Git
@@ -67,9 +68,16 @@ Evitar colisiones entre agentes sigue requiriendo aislamiento transaccional.
 
 Reglas vigentes:
 
-- **Git + comentarios/artifacts en DevHub** son la fuente de verdad operativa hasta que Swarm Workspace formalice `agent_workspaces`, runs y supervisor loop.
-- Si dos agentes trabajan en paralelo, deben hacerlo en **ramas/task branches distintas** y, cuando exista, en workspaces aislados.
+- **Git + comentarios/artifacts en DevHub** son la fuente de verdad operativa, pero el ownership durable del workspace ahora vive en `agent_workspaces`.
+- Si dos agentes trabajan en paralelo, deben hacerlo en **ramas/task branches distintas** y en workspaces aislados reservados por `agent_workspaces`.
 - La bitácora cronológica vive en `add_task_comment`, no en mensajes efímeros.
+
+Freeze actual de SW-2.1A:
+
+- `agent_workspaces` es el registro canónico para `workspace_id`, baseline, lifecycle, `observed_*`, `last_error`, `recovery_reason` y `evidence_ref`.
+- `cleanup_pending` significa cleanup solicitado al ejecutor; DevHub no hace branch/worktree/merge/delete.
+- `observed_dirty='dirty-excluded'` debe preservarse textual; no se puede reinterpretar como limpio.
+- `devhub_agent_runs` y otros mirrors runtime/UI quedan **observer-only** y no pueden usarse como ownership truth.
 
 > **Estado real del repo:**
 > El proyecto incluye `.githooks/pre-commit` y `.githooks/pre-push` para bloquear commits/pushes directos a `main`/`master`. La activación efectiva del `hooksPath` debe verificarse en cada entorno de ejecución; no debe asumirse por documentación solamente.

@@ -628,6 +628,464 @@ function estimateTokensFromText(text) {
 }
 
 const TASK_PRIORITY_SCORE = { critical: 4, high: 3, medium: 2, low: 1 };
+const AGENT_WORKSPACE_STATUSES = [
+  'planned',
+  'provisioning',
+  'ready',
+  'active',
+  'paused',
+  'conflicted',
+  'cleanup_pending',
+  'completed',
+  'failed',
+  'orphaned',
+];
+const AGENT_WORKSPACE_TERMINAL = new Set(['completed', 'failed']);
+const AGENT_WORKSPACE_LOCKED = new Set([
+  'planned',
+  'provisioning',
+  'ready',
+  'active',
+  'paused',
+  'cleanup_pending',
+  'orphaned',
+]);
+const AGENT_WORKSPACE_OBSERVED_DIRTY = new Set(['clean', 'dirty', 'dirty-excluded']);
+const AGENT_WORKSPACE_BASE_COMMIT = 'f814998dd05cb491caf8637bf570dbd74b539090';
+const SW_2_1_FROZEN_CHECKPOINT = '02d82361449a09e93e5880a08e35e3043617002d';
+const SW_3_1_FROZEN_CHECKPOINT = '4b1e344dcd202c911498af17236fcb86a2a2cb1e';
+
+function isAgentWorkspaceStatus(value) {
+  return AGENT_WORKSPACE_STATUSES.includes(value);
+}
+
+function isAgentWorkspaceReadyState(value) {
+  return value === 'ready' || value === 'active';
+}
+
+function isAgentWorkspaceLocked(value) {
+  return AGENT_WORKSPACE_LOCKED.has(value);
+}
+
+function normalizeWorkspaceRecord(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    workspace_id: row.workspace_id || row.id,
+  };
+}
+
+function buildPrepareWorkspaceId(taskId, agentId) {
+  return `workspace-${taskId}-${agentId}`;
+}
+
+function validatePrepareWorkspaceIdentity({ workspace_id, task_id, agent_id, correlation_id }) {
+  const hasWorkspaceId = Boolean(workspace_id);
+  const hasTaskIdentity = Boolean(task_id || agent_id);
+  const hasCompleteTaskIdentity = Boolean(task_id && agent_id);
+
+  if (!correlation_id) {
+    throw new Error('correlation_id es requerido.');
+  }
+
+  if (!hasWorkspaceId && hasTaskIdentity && !hasCompleteTaskIdentity) {
+    throw new Error('task_id y agent_id deben enviarse juntos.');
+  }
+
+  if (!hasWorkspaceId && !hasCompleteTaskIdentity) {
+    throw new Error('Se requiere exactamente una identidad: workspace_id o task_id + agent_id.');
+  }
+
+  if (hasWorkspaceId && hasTaskIdentity) {
+    throw new Error('workspace_id no puede combinarse con task_id o agent_id.');
+  }
+}
+
+function buildPrepareAgentWorkspaceAck(workspace) {
+  return {
+    workspace_id: workspace.id,
+    task_id: workspace.current_task_id,
+    agent_id: workspace.agent_id,
+    requested_base_ref: workspace.base_commit,
+    reservation_token: workspace.reservation_token,
+    correlation_id: workspace.correlation_id,
+    status: workspace.status,
+    accepted_at: workspace.accepted_at || workspace.updated_at || workspace.created_at || null,
+  };
+}
+
+async function resolveWorkspaceProjectId(taskId) {
+  if (!taskId) return 'control-plane-pending';
+
+  if (DB_DRIVER !== 'supabase') {
+    const db = localDb.getDb();
+    const task = db.prepare('SELECT project_id FROM tasks WHERE id = ? LIMIT 1').get(taskId);
+    return task?.project_id || 'control-plane-pending';
+  }
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('project_id')
+    .eq('id', taskId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw new Error(error.message);
+  return data?.project_id || 'control-plane-pending';
+}
+
+async function prepareAgentWorkspaceLease(input = {}) {
+  validatePrepareWorkspaceIdentity(input);
+
+  const timestamp = nowIso();
+  const requestedBaseRef = input.requested_base_ref || AGENT_WORKSPACE_BASE_COMMIT;
+  let workspace = null;
+  let workspaceId = input.workspace_id || null;
+  let taskId = input.task_id || null;
+  let agentId = input.agent_id || null;
+
+  if (workspaceId) {
+    workspace = await getAgentWorkspaceById(workspaceId);
+    if (!workspace) throw new Error(`Workspace ${workspaceId} no encontrado.`);
+    taskId = workspace.current_task_id;
+    agentId = workspace.agent_id;
+  } else {
+    workspaceId = buildPrepareWorkspaceId(taskId, agentId);
+    if (DB_DRIVER !== 'supabase') {
+      const db = localDb.getDb();
+      workspace = normalizeWorkspaceRecord(
+        db
+          .prepare(
+            'SELECT * FROM agent_workspaces WHERE current_task_id = ? AND agent_id = ? ORDER BY created_at DESC LIMIT 1'
+          )
+          .get(taskId, agentId)
+      );
+    } else {
+      const { data, error } = await supabase
+        .from('agent_workspaces')
+        .select('*')
+        .eq('current_task_id', taskId)
+        .eq('agent_id', agentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error && error.code !== 'PGRST116') throw new Error(error.message);
+      workspace = normalizeWorkspaceRecord(data || null);
+    }
+  }
+
+  if (workspace && workspace.correlation_id === input.correlation_id) {
+    return {
+      created: false,
+      reused: true,
+      workspace,
+      ack: buildPrepareAgentWorkspaceAck(workspace),
+    };
+  }
+
+  const reservationToken =
+    input.reservation_token || workspace?.reservation_token || `rsv-${randomUUID()}`;
+  const projectId = workspace?.project_id || (await resolveWorkspaceProjectId(taskId));
+  const workspacePath =
+    workspace?.workspace_path || input.workspace_path || `workspace://${projectId}/${workspaceId}`;
+
+  if (!workspace) {
+    const payload = validateAgentWorkspacePayload({
+      id: workspaceId,
+      project_id: projectId,
+      agent_id: agentId,
+      current_task_id: taskId,
+      run_id_or_session_id: null,
+      repo_root: process.cwd(),
+      workspace_path: workspacePath,
+      worktree_path: null,
+      base_branch: 'main',
+      base_commit: requestedBaseRef,
+      branch_name: null,
+      status: 'provisioning',
+      observed_branch: null,
+      observed_head: null,
+      observed_dirty: null,
+      last_error: null,
+      recovery_reason: null,
+      evidence_ref: null,
+      reservation_token: reservationToken,
+      correlation_id: input.correlation_id,
+      accepted_at: timestamp,
+      claimed_at: null,
+      started_at: null,
+      completed_at: null,
+    });
+
+    const created = await insertAgentWorkspace({
+      ...payload,
+      last_error_class: null,
+      updated_at: timestamp,
+    });
+
+    return {
+      created: true,
+      reused: false,
+      workspace: created,
+      ack: buildPrepareAgentWorkspaceAck(created),
+    };
+  }
+
+  const updates = {
+    base_commit: requestedBaseRef,
+    status: AGENT_WORKSPACE_TERMINAL.has(workspace.status) ? workspace.status : 'provisioning',
+    last_error: null,
+    last_error_class: null,
+    recovery_reason: null,
+    reservation_token: reservationToken,
+    correlation_id: input.correlation_id,
+    accepted_at: timestamp,
+    updated_at: timestamp,
+  };
+  const updated = await updateAgentWorkspaceRow(workspace.id, updates);
+  return {
+    created: false,
+    reused: false,
+    workspace: updated,
+    ack: buildPrepareAgentWorkspaceAck(updated),
+  };
+}
+
+function workspaceStatusPlaceholder(statuses = []) {
+  return statuses.map(() => '?').join(', ');
+}
+
+async function listAgentWorkspaces({ projectId = null, status = null } = {}) {
+  if (DB_DRIVER !== 'supabase') {
+    const db = localDb.getDb();
+    const clauses = [];
+    const params = [];
+    if (projectId) {
+      clauses.push('project_id = ?');
+      params.push(projectId);
+    }
+    if (status && status !== 'all') {
+      clauses.push('status = ?');
+      params.push(status);
+    }
+    const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = db
+      .prepare(`SELECT * FROM agent_workspaces ${whereSql} ORDER BY created_at ASC, id ASC`)
+      .all(...params);
+    return rows.map(normalizeWorkspaceRecord);
+  }
+
+  let query = supabase
+    .from('agent_workspaces')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (projectId) query = query.eq('project_id', projectId);
+  if (status && status !== 'all') query = query.eq('status', status);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data || []).map(normalizeWorkspaceRecord);
+}
+
+async function getAgentWorkspaceById(workspaceId) {
+  if (DB_DRIVER !== 'supabase') {
+    const db = localDb.getDb();
+    return normalizeWorkspaceRecord(
+      db.prepare('SELECT * FROM agent_workspaces WHERE id = ?').get(workspaceId)
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('agent_workspaces')
+    .select('*')
+    .eq('id', workspaceId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw new Error(error.message);
+  return normalizeWorkspaceRecord(data || null);
+}
+
+async function insertAgentWorkspace(row) {
+  if (DB_DRIVER !== 'supabase') {
+    const db = localDb.getDb();
+    const keys = Object.keys(row);
+    const values = keys.map((key) => row[key] ?? null);
+    db.prepare(
+      `INSERT INTO agent_workspaces (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+    ).run(...values);
+    return getAgentWorkspaceById(row.id);
+  }
+
+  const { data, error } = await supabase.from('agent_workspaces').insert(row).select().single();
+  if (error) throw new Error(error.message);
+  return normalizeWorkspaceRecord(data);
+}
+
+async function updateAgentWorkspaceRow(workspaceId, updates) {
+  if (DB_DRIVER !== 'supabase') {
+    const db = localDb.getDb();
+    const keys = Object.keys(updates);
+    if (keys.length === 0) return getAgentWorkspaceById(workspaceId);
+    db.prepare(
+      `UPDATE agent_workspaces SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`
+    ).run(...keys.map((key) => updates[key] ?? null), workspaceId);
+    return getAgentWorkspaceById(workspaceId);
+  }
+
+  const { data, error } = await supabase
+    .from('agent_workspaces')
+    .update(updates)
+    .eq('id', workspaceId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return normalizeWorkspaceRecord(data);
+}
+
+async function getAgentWorkspaceCollisions({
+  projectId,
+  workspaceId,
+  branchName,
+  worktreePath,
+  agentId,
+  currentTaskId,
+}) {
+  const workspaces = await listAgentWorkspaces({ projectId, status: 'all' });
+  return workspaces.filter((workspace) => {
+    if (workspace.id === workspaceId) return false;
+    if (!isAgentWorkspaceLocked(workspace.status)) return false;
+    if (branchName && workspace.branch_name === branchName) return true;
+    if (worktreePath && workspace.worktree_path === worktreePath) return true;
+    if (
+      agentId &&
+      currentTaskId &&
+      workspace.agent_id === agentId &&
+      workspace.current_task_id === currentTaskId
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function deriveWorkspaceCollisionReason(
+  { branchName, worktreePath, agentId, currentTaskId },
+  collisions = []
+) {
+  if (!collisions.length) return null;
+  if (branchName && collisions.some((workspace) => workspace.branch_name === branchName)) {
+    return 'branch_name';
+  }
+  if (worktreePath && collisions.some((workspace) => workspace.worktree_path === worktreePath)) {
+    return 'worktree_path';
+  }
+  if (
+    agentId &&
+    currentTaskId &&
+    collisions.some(
+      (workspace) => workspace.agent_id === agentId && workspace.current_task_id === currentTaskId
+    )
+  ) {
+    return 'agent_task_owner';
+  }
+  return 'reservation';
+}
+
+function validateAgentWorkspacePayload(payload, existingWorkspace = null) {
+  const merged = { ...existingWorkspace, ...payload };
+  const status = merged.status;
+
+  if (!isAgentWorkspaceStatus(status)) {
+    throw new Error(`Estado de workspace inválido: ${status}`);
+  }
+  if (!merged.id) throw new Error('workspace_id es requerido.');
+  if (!merged.project_id) throw new Error('project_id es requerido.');
+  if (!merged.agent_id) throw new Error('agent_id es requerido.');
+  if (!merged.repo_root) throw new Error('repo_root es requerido.');
+  if (!merged.workspace_path) throw new Error('workspace_path es requerido.');
+  if (!merged.base_branch) throw new Error('base_branch es requerido.');
+  if (!merged.base_commit) throw new Error('base_commit es requerido.');
+  if (payload.observed_dirty && !AGENT_WORKSPACE_OBSERVED_DIRTY.has(payload.observed_dirty)) {
+    throw new Error(`observed_dirty inválido: ${payload.observed_dirty}`);
+  }
+  if (isAgentWorkspaceReadyState(status)) {
+    if (
+      !merged.branch_name ||
+      !merged.worktree_path ||
+      !merged.observed_branch ||
+      !merged.observed_head
+    ) {
+      throw new Error(
+        'ready|active requieren branch_name, worktree_path, observed_branch y observed_head.'
+      );
+    }
+  }
+  if (status === 'orphaned' && !merged.recovery_reason) {
+    throw new Error('orphaned requiere recovery_reason.');
+  }
+
+  return merged;
+}
+
+function deriveWorkspaceTransition(existingWorkspace, updates, { allowTerminal = true } = {}) {
+  if (!existingWorkspace) throw new Error('Workspace no encontrado.');
+  if (AGENT_WORKSPACE_TERMINAL.has(existingWorkspace.status)) {
+    throw new Error('agent_workspaces_terminal_immutable');
+  }
+
+  const merged = validateAgentWorkspacePayload(
+    {
+      ...updates,
+      id: existingWorkspace.id,
+      project_id: existingWorkspace.project_id,
+      agent_id: existingWorkspace.agent_id,
+      repo_root: existingWorkspace.repo_root,
+      workspace_path: existingWorkspace.workspace_path,
+      base_branch: updates.base_branch ?? existingWorkspace.base_branch,
+      base_commit: updates.base_commit ?? existingWorkspace.base_commit,
+      status: updates.status || existingWorkspace.status,
+    },
+    existingWorkspace
+  );
+
+  if (!allowTerminal && AGENT_WORKSPACE_TERMINAL.has(merged.status)) {
+    throw new Error('Esta operación no permite estados terminales.');
+  }
+
+  const next = {
+    ...updates,
+    updated_at: nowIso(),
+  };
+
+  if (merged.status === 'active' && !existingWorkspace.started_at) {
+    next.started_at = existingWorkspace.started_at || nowIso();
+  }
+  if (AGENT_WORKSPACE_TERMINAL.has(merged.status)) {
+    next.completed_at = updates.completed_at || nowIso();
+  }
+
+  return { merged, next };
+}
+
+function detectWorkspaceDrift(existingWorkspace, mergedWorkspace) {
+  if (!existingWorkspace) return null;
+  const mismatches = [];
+  if (
+    existingWorkspace.branch_name &&
+    mergedWorkspace.observed_branch &&
+    existingWorkspace.branch_name !== mergedWorkspace.observed_branch
+  ) {
+    mismatches.push(
+      `reserved branch ${existingWorkspace.branch_name} != observed ${mergedWorkspace.observed_branch}`
+    );
+  }
+  if (
+    existingWorkspace.worktree_path &&
+    mergedWorkspace.worktree_path &&
+    existingWorkspace.worktree_path !== mergedWorkspace.worktree_path
+  ) {
+    mismatches.push(
+      `reserved worktree ${existingWorkspace.worktree_path} != observed ${mergedWorkspace.worktree_path}`
+    );
+  }
+  return mismatches.length ? `workspace drift: ${mismatches.join('; ')}` : null;
+}
 
 function scoreTask(task, depsUnlock = 0) {
   const urgency = TASK_PRIORITY_SCORE[task.priority] || 2;
@@ -1663,6 +2121,327 @@ server.tool(
       });
 
       return ok({ released: true, task: data, message: 'Tarea liberada.' });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+// ────────────────────────────────────────────────────────────────────────────
+// AGENT WORKSPACES (control plane only)
+// ────────────────────────────────────────────────────────────────────────────
+
+const agentWorkspaceStatusSchema = z.enum(AGENT_WORKSPACE_STATUSES);
+
+server.tool(
+  'prepare_agent_workspace',
+  'Acepta intención narrow de preparación de workspace y devuelve ack idempotente sin exponer verbos git/worktree.',
+  {
+    workspace_id: z.string().min(1).optional(),
+    task_id: z.string().min(1).optional(),
+    agent_id: z.string().min(1).optional(),
+    requested_base_ref: z.string().min(1).optional(),
+    correlation_id: z.string().min(1),
+    reservation_token: z.string().min(1).optional(),
+  },
+  async ({
+    workspace_id,
+    task_id,
+    agent_id,
+    requested_base_ref,
+    correlation_id,
+    reservation_token,
+  }) => {
+    try {
+      const prepared = await prepareAgentWorkspaceLease({
+        workspace_id,
+        task_id,
+        agent_id,
+        requested_base_ref,
+        correlation_id,
+        reservation_token,
+      });
+
+      return ok({
+        accepted: true,
+        created: prepared.created,
+        reused: prepared.reused,
+        ack: prepared.ack,
+        contract: {
+          frozen_base_commit: AGENT_WORKSPACE_BASE_COMMIT,
+          sw_2_1_checkpoint: SW_2_1_FROZEN_CHECKPOINT,
+          sw_3_1_checkpoint: SW_3_1_FROZEN_CHECKPOINT,
+        },
+        message: prepared.reused
+          ? 'Workspace preparation ya aceptada para ese correlation_id.'
+          : 'Workspace preparation aceptada en modo control-plane.',
+      });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'list_agent_workspaces',
+  'Lista workspaces de agentes registrados en el control plane, sin exponer comandos git/worktree.',
+  {
+    project_id: z.string().uuid(),
+    status: z
+      .enum([...AGENT_WORKSPACE_STATUSES, 'all'])
+      .optional()
+      .default('all'),
+  },
+  async ({ project_id, status }) => {
+    try {
+      const workspaces = await listAgentWorkspaces({ projectId: project_id, status });
+      return ok({ total: workspaces.length, workspaces });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'get_agent_workspace',
+  'Obtiene un workspace específico del control plane por workspace_id.',
+  {
+    workspace_id: z.string().min(1),
+  },
+  async ({ workspace_id }) => {
+    try {
+      const workspace = await getAgentWorkspaceById(workspace_id);
+      if (!workspace) return err(`Workspace ${workspace_id} no encontrado.`);
+      return ok({ workspace });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'create_agent_workspace',
+  'Crea una reserva planned para un workspace de agente. Solo guarda metadata durable; no ejecuta git/worktree.',
+  {
+    workspace_id: z.string().min(1),
+    project_id: z.string().uuid(),
+    agent_id: z.string().min(1),
+    current_task_id: z.string().min(1).optional(),
+    run_id_or_session_id: z.string().min(1).optional(),
+    repo_root: z.string().min(1),
+    workspace_path: z.string().min(1),
+    worktree_path: z.string().optional(),
+    base_branch: z.string().min(1),
+    base_commit: z.string().min(1).optional(),
+    branch_name: z.string().min(1).optional(),
+    status: agentWorkspaceStatusSchema.optional().default('planned'),
+    observed_branch: z.string().optional(),
+    observed_head: z.string().optional(),
+    observed_dirty: z.enum(['clean', 'dirty', 'dirty-excluded']).optional(),
+    last_error: z.string().optional(),
+    recovery_reason: z.string().optional(),
+    evidence_ref: z.string().optional(),
+    claimed_at: z.string().optional(),
+    started_at: z.string().optional(),
+    completed_at: z.string().optional(),
+  },
+  async ({ workspace_id, ...input }) => {
+    try {
+      const existing = await getAgentWorkspaceById(workspace_id);
+      if (existing) {
+        return ok({
+          created: false,
+          collision_reason: 'workspace_id',
+          workspace: existing,
+          message: 'Workspace ya existe.',
+        });
+      }
+
+      const payload = validateAgentWorkspacePayload({
+        id: workspace_id,
+        project_id: input.project_id,
+        agent_id: input.agent_id,
+        current_task_id: input.current_task_id || null,
+        run_id_or_session_id: input.run_id_or_session_id || null,
+        repo_root: input.repo_root,
+        workspace_path: input.workspace_path,
+        worktree_path: input.worktree_path || null,
+        base_branch: input.base_branch,
+        base_commit: input.base_commit || AGENT_WORKSPACE_BASE_COMMIT,
+        branch_name: input.branch_name || null,
+        status: input.status || 'planned',
+        observed_branch: input.observed_branch || null,
+        observed_head: input.observed_head || null,
+        observed_dirty: input.observed_dirty || null,
+        last_error: input.last_error || null,
+        recovery_reason: input.recovery_reason || null,
+        evidence_ref: input.evidence_ref || null,
+        claimed_at: input.claimed_at || null,
+        started_at: input.started_at || null,
+        updated_at: nowIso(),
+        completed_at: input.completed_at || null,
+      });
+
+      const collisions = await getAgentWorkspaceCollisions({
+        projectId: payload.project_id,
+        workspaceId: payload.id,
+        branchName: payload.branch_name,
+        worktreePath: payload.worktree_path,
+        agentId: payload.agent_id,
+        currentTaskId: payload.current_task_id,
+      });
+
+      if (collisions.length > 0) {
+        const collisionReason = deriveWorkspaceCollisionReason(
+          {
+            branchName: payload.branch_name,
+            worktreePath: payload.worktree_path,
+            agentId: payload.agent_id,
+            currentTaskId: payload.current_task_id,
+          },
+          collisions
+        );
+        const conflict = await insertAgentWorkspace({
+          ...payload,
+          status: 'conflicted',
+          last_error: `Reservation collision on ${collisionReason}`,
+          evidence_ref: payload.evidence_ref || null,
+        }).catch(async (error) => {
+          const fallback = {
+            ...payload,
+            branch_name: null,
+            worktree_path: null,
+            status: 'conflicted',
+            last_error: `Reservation collision: ${error.message}`,
+          };
+          return insertAgentWorkspace(fallback);
+        });
+        return ok({
+          created: false,
+          workspace: conflict,
+          collision_reason: collisionReason,
+          collisions: collisions.map((workspace) => ({
+            workspace_id: workspace.id,
+            branch_name: workspace.branch_name,
+            worktree_path: workspace.worktree_path,
+            current_task_id: workspace.current_task_id,
+          })),
+          message: 'Workspace reservado como conflicted por colisión.',
+        });
+      }
+
+      const workspace = await insertAgentWorkspace(payload);
+      return ok({
+        created: true,
+        collision_reason: null,
+        workspace,
+        message: 'Workspace creado en estado planned.',
+      });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'update_agent_workspace',
+  'Actualiza metadata/lifecycle de un workspace ya reservado. No ejecuta git/worktree.',
+  {
+    workspace_id: z.string().min(1),
+    status: agentWorkspaceStatusSchema.optional(),
+    current_task_id: z.string().nullable().optional(),
+    run_id_or_session_id: z.string().nullable().optional(),
+    worktree_path: z.string().nullable().optional(),
+    branch_name: z.string().nullable().optional(),
+    observed_branch: z.string().nullable().optional(),
+    observed_head: z.string().nullable().optional(),
+    observed_dirty: z.enum(['clean', 'dirty', 'dirty-excluded']).nullable().optional(),
+    last_error: z.string().nullable().optional(),
+    recovery_reason: z.string().nullable().optional(),
+    evidence_ref: z.string().nullable().optional(),
+    claimed_at: z.string().nullable().optional(),
+    started_at: z.string().nullable().optional(),
+    completed_at: z.string().nullable().optional(),
+  },
+  async ({ workspace_id, ...updates }) => {
+    try {
+      const existing = await getAgentWorkspaceById(workspace_id);
+      if (!existing) return err(`Workspace ${workspace_id} no encontrado.`);
+
+      const { merged, next } = deriveWorkspaceTransition(existing, updates, {
+        allowTerminal: false,
+      });
+      const collisions = await getAgentWorkspaceCollisions({
+        projectId: existing.project_id,
+        workspaceId: existing.id,
+        branchName: merged.branch_name,
+        worktreePath: merged.worktree_path,
+        agentId: merged.agent_id,
+        currentTaskId: merged.current_task_id,
+      });
+
+      if (collisions.length > 0) {
+        next.status = 'conflicted';
+        next.last_error = `Reservation collision: ${collisions.map((workspace) => workspace.id).join(', ')}`;
+      }
+
+      const workspace = await updateAgentWorkspaceRow(workspace_id, next);
+      return ok({ updated: true, workspace, message: 'Workspace actualizado.' });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'report_agent_workspace',
+  'Registra observed state reportado por el ejecutor para un workspace. Solo metadata; nunca comandos git/worktree.',
+  {
+    workspace_id: z.string().min(1),
+    status: agentWorkspaceStatusSchema,
+    worktree_path: z.string().optional(),
+    observed_branch: z.string().optional(),
+    observed_head: z.string().optional(),
+    observed_dirty: z.enum(['clean', 'dirty', 'dirty-excluded']).optional(),
+    evidence_ref: z.string().optional(),
+    last_error: z.string().optional(),
+    recovery_reason: z.string().optional(),
+  },
+  async ({ workspace_id, ...report }) => {
+    try {
+      const existing = await getAgentWorkspaceById(workspace_id);
+      if (!existing) return err(`Workspace ${workspace_id} no encontrado.`);
+
+      const updates = {
+        ...report,
+      };
+      const { merged, next } = deriveWorkspaceTransition(existing, updates, {
+        allowTerminal: true,
+      });
+
+      const driftError = detectWorkspaceDrift(existing, merged);
+      if (driftError) {
+        next.status = 'conflicted';
+        next.last_error = report.last_error || driftError;
+      }
+
+      const collisions = await getAgentWorkspaceCollisions({
+        projectId: existing.project_id,
+        workspaceId: existing.id,
+        branchName: merged.branch_name,
+        worktreePath: merged.worktree_path,
+        agentId: merged.agent_id,
+        currentTaskId: merged.current_task_id,
+      });
+      if (collisions.length > 0) {
+        next.status = 'conflicted';
+        next.last_error =
+          report.last_error ||
+          `Reservation collision: ${collisions.map((workspace) => workspace.id).join(', ')}`;
+      }
+
+      const workspace = await updateAgentWorkspaceRow(workspace_id, next);
+      return ok({ updated: true, workspace, message: 'Observed state registrado.' });
     } catch (e) {
       return err(e.message);
     }

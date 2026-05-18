@@ -7,9 +7,12 @@ function normalizeText(value) {
 }
 
 export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
-  // devhub_agent_runs is keyed by taskId, which matches current_task_id or agent_id
-  const runKey = agent.current_task_id || agent.agent_id;
-  const run = agentRuns?.[runKey] || agentRuns?.[agent.agent_id] || {};
+  // devhub_agent_runs stays observer-only: prefer durable workspace identity, then task, then agent.
+  const run =
+    agentRuns?.[agent.workspace_id] ||
+    agentRuns?.[agent.current_task_id] ||
+    agentRuns?.[agent.agent_id] ||
+    {};
   return {
     ...run,
     selectedAgent: run.selectedAgent || run.selected_agent || null,
@@ -79,9 +82,10 @@ export function getAgentRegistryLiveSnapshot({
   agentRuns = {},
 } = {}) {
   const activeAgents = (agents || []).filter((agent) => {
-    // Try multiple key sources since agent_registry schema may vary
-    const runKey = agent.current_task_id || agent.agent_id;
-    const run = agentRuns?.[runKey] || agentRuns?.[agent.agent_id];
+    const run =
+      agentRuns?.[agent.workspace_id] ||
+      agentRuns?.[agent.current_task_id] ||
+      agentRuns?.[agent.agent_id];
     const hasLiveSession = run?.panelId && liveSessions?.[run.panelId]?.alive;
     return isActiveAgent(agent) || hasLiveSession;
   });
@@ -105,11 +109,8 @@ export function getAgentRegistryLiveSnapshot({
 export function resolveAgentToPanelId(agent = {}, agentRuns = {}) {
   if (!agent || !agentRuns) return null;
 
-  // agent_registry schema: agent_id, current_task_id (no task_id or run_id columns)
-  const taskId = agent.current_task_id || agent.agent_id;
-  if (!taskId) return null;
-
-  const run = agentRuns[taskId];
+  const run =
+    agentRuns[agent.workspace_id] || agentRuns[agent.current_task_id] || agentRuns[agent.agent_id];
   return run?.panelId || null;
 }
 
