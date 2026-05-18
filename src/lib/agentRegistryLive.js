@@ -13,11 +13,18 @@ export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
     agentRuns?.[agent.current_task_id] ||
     agentRuns?.[agent.agent_id] ||
     {};
+  const {
+    reportedStatus: _reportedStatus,
+    reported_status: _reportedStatusLegacy,
+    ...observerRun
+  } = run;
   return {
-    ...run,
+    ...observerRun,
     selectedAgent: run.selectedAgent || run.selected_agent || null,
     launchOrigin: run.launchOrigin || run.origin || null,
     promptSummary: run.promptSummary || run.commandSummary || run.taskTitle || null,
+    workspaceStatus: run.workspaceStatus || run.workspace_status || null,
+    evidenceRef: run.evidenceRef || run.evidence_ref || null,
   };
 }
 

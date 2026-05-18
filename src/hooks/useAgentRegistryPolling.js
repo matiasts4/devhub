@@ -61,7 +61,7 @@ export default function useAgentRegistryPolling(projectId, options = {}) {
         .order('last_heartbeat', { ascending: false });
 
       // ── Source 2: Live PTY sessions ─────────────────────────────────────────
-      let liveSessions = {};
+      const liveSessions = {};
       try {
         const res = await fetch('/api/terminal/sessions', { cache: 'no-store' });
         if (res.ok) {
@@ -91,8 +91,10 @@ export default function useAgentRegistryPolling(projectId, options = {}) {
       const allAgents = [...(registryData || [])];
 
       allAgents.forEach((agent) => {
-        const runKey = agent.current_task_id || agent.agent_id;
-        const run = agentRuns[runKey] || agentRuns[agent.agent_id];
+        const run =
+          agentRuns[agent.workspace_id] ||
+          agentRuns[agent.current_task_id] ||
+          agentRuns[agent.agent_id];
         if (run) {
           agent._displayName = run.taskTitle || run.promptSummary || null;
           agent._selectedAgent = run.selectedAgent || null;
@@ -113,7 +115,11 @@ export default function useAgentRegistryPolling(projectId, options = {}) {
         if (!Number.isFinite(hb)) return false;
         const age = Date.now() - hb;
         const isActiveStatus = [
-          'running', 'working', 'active', 'thinking', 'asking_questions',
+          'running',
+          'working',
+          'active',
+          'thinking',
+          'asking_questions',
         ].includes(String(agent.status || '').toLowerCase());
         return age > AGENT_HEARTBEAT_STALE_MS && isActiveStatus;
       });
@@ -174,7 +180,8 @@ export default function useAgentRegistryPolling(projectId, options = {}) {
   useEffect(() => {
     clearPollingTimer();
 
-    const hidden = visibilityAware && typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const hidden =
+      visibilityAware && typeof document !== 'undefined' && document.visibilityState === 'hidden';
     if (!hidden) {
       fetchAgents();
       intervalRef.current = setInterval(fetchAgents, POLL_INTERVAL_MS);

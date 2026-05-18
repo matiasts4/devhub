@@ -92,6 +92,36 @@ class McpTestHarness extends TestHarness {
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS agent_workspaces (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        current_task_id TEXT,
+        run_id_or_session_id TEXT,
+        repo_root TEXT NOT NULL,
+        workspace_path TEXT NOT NULL,
+        worktree_path TEXT,
+        base_branch TEXT NOT NULL,
+        base_commit TEXT NOT NULL DEFAULT 'f814998dd05cb491caf8637bf570dbd74b539090',
+        branch_name TEXT,
+        status TEXT NOT NULL DEFAULT 'planned',
+        observed_branch TEXT,
+        observed_head TEXT,
+        observed_dirty TEXT,
+        last_error TEXT,
+        last_error_class TEXT,
+        recovery_reason TEXT,
+        evidence_ref TEXT,
+        reservation_token TEXT,
+        correlation_id TEXT,
+        accepted_at TEXT,
+        claimed_at TEXT,
+        started_at TEXT,
+        updated_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
     `);
   }
 
@@ -106,6 +136,7 @@ class McpTestHarness extends TestHarness {
     this._registerTaskTools();
     this._registerMilestoneTools();
     this._registerSwarmTools();
+    this._registerWorkspaceTools();
     this._registerDocOpsTools();
     this._registerDashboardTools();
   }
@@ -659,6 +690,216 @@ class McpTestHarness extends TestHarness {
         agent: this._normalizeAgentRecord(data),
       });
     });
+  }
+
+  _registerWorkspaceTools() {
+    const WORKSPACE_STATUSES = [
+      'planned',
+      'provisioning',
+      'ready',
+      'active',
+      'paused',
+      'conflicted',
+      'cleanup_pending',
+      'completed',
+      'failed',
+      'orphaned',
+    ];
+    const TERMINAL = new Set(['completed', 'failed']);
+    const BASE_COMMIT = 'f814998dd05cb491caf8637bf570dbd74b539090';
+    const SW_2_1_CHECKPOINT = '02d82361449a09e93e5880a08e35e3043617002d';
+    const SW_3_1_CHECKPOINT = '4b1e344dcd202c911498af17236fcb86a2a2cb1e';
+
+    const normalizeWorkspace = (row) =>
+      row ? { ...row, workspace_id: row.workspace_id || row.id } : null;
+    const buildWorkspaceId = (taskId, agentId) => `workspace-${taskId}-${agentId}`;
+    const buildAck = (workspace) => ({
+      workspace_id: workspace.id,
+      task_id: workspace.current_task_id,
+      agent_id: workspace.agent_id,
+      requested_base_ref: workspace.base_commit,
+      reservation_token: workspace.reservation_token,
+      correlation_id: workspace.correlation_id,
+      status: workspace.status,
+      accepted_at: workspace.accepted_at || workspace.updated_at || workspace.created_at || null,
+    });
+
+    const validateIdentity = ({ workspace_id, task_id, agent_id, correlation_id }) => {
+      const hasWorkspaceId = Boolean(workspace_id);
+      const hasTaskIdentity = Boolean(task_id || agent_id);
+      const hasCompleteTaskIdentity = Boolean(task_id && agent_id);
+      if (!correlation_id) throw new Error('correlation_id es requerido.');
+      if (!hasWorkspaceId && hasTaskIdentity && !hasCompleteTaskIdentity) {
+        throw new Error('task_id y agent_id deben enviarse juntos.');
+      }
+      if (!hasWorkspaceId && !hasCompleteTaskIdentity) {
+        throw new Error(
+          'Se requiere exactamente una identidad: workspace_id o task_id + agent_id.'
+        );
+      }
+      if (hasWorkspaceId && hasTaskIdentity) {
+        throw new Error('workspace_id no puede combinarse con task_id o agent_id.');
+      }
+    };
+
+    const validateWorkspaceRow = (row, existing = null) => {
+      const merged = { ...existing, ...row };
+      if (!WORKSPACE_STATUSES.includes(merged.status)) {
+        throw new Error(`Estado de workspace inválido: ${merged.status}`);
+      }
+      if (!merged.id) throw new Error('workspace_id es requerido.');
+      if (!merged.project_id) throw new Error('project_id es requerido.');
+      if (!merged.agent_id) throw new Error('agent_id es requerido.');
+      if (!merged.repo_root) throw new Error('repo_root es requerido.');
+      if (!merged.workspace_path) throw new Error('workspace_path es requerido.');
+      if (!merged.base_branch) throw new Error('base_branch es requerido.');
+      if (!merged.base_commit) throw new Error('base_commit es requerido.');
+      return merged;
+    };
+
+    const getWorkspaceById = (id) =>
+      normalizeWorkspace(
+        this.db.prepare('SELECT * FROM agent_workspaces WHERE id = ? LIMIT 1').get(id)
+      );
+
+    const updateWorkspace = (id, updates) => {
+      const keys = Object.keys(updates);
+      this.db
+        .prepare(
+          `UPDATE agent_workspaces SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`
+        )
+        .run(...keys.map((key) => updates[key] ?? null), id);
+      return getWorkspaceById(id);
+    };
+
+    this._tools.set(
+      'prepare_agent_workspace',
+      async ({
+        workspace_id,
+        task_id,
+        agent_id,
+        requested_base_ref,
+        correlation_id,
+        reservation_token,
+      }) => {
+        try {
+          validateIdentity({ workspace_id, task_id, agent_id, correlation_id });
+          const timestamp = new Date().toISOString();
+          let workspace = null;
+          let resolvedTaskId = task_id || null;
+          let resolvedAgentId = agent_id || null;
+          let workspaceId = workspace_id || null;
+
+          if (workspaceId) {
+            workspace = getWorkspaceById(workspaceId);
+            if (!workspace) return this._err(`Workspace ${workspaceId} no encontrado.`);
+            resolvedTaskId = workspace.current_task_id;
+            resolvedAgentId = workspace.agent_id;
+          } else {
+            workspaceId = buildWorkspaceId(task_id, agent_id);
+            workspace = normalizeWorkspace(
+              this.db
+                .prepare(
+                  'SELECT * FROM agent_workspaces WHERE current_task_id = ? AND agent_id = ? ORDER BY created_at DESC LIMIT 1'
+                )
+                .get(task_id, agent_id)
+            );
+          }
+
+          if (workspace && workspace.correlation_id === correlation_id) {
+            return this._ok({
+              accepted: true,
+              created: false,
+              reused: true,
+              ack: buildAck(workspace),
+              contract: {
+                frozen_base_commit: BASE_COMMIT,
+                sw_2_1_checkpoint: SW_2_1_CHECKPOINT,
+                sw_3_1_checkpoint: SW_3_1_CHECKPOINT,
+              },
+            });
+          }
+
+          const projectId =
+            workspace?.project_id ||
+            this.db.prepare('SELECT project_id FROM tasks WHERE id = ? LIMIT 1').get(resolvedTaskId)
+              ?.project_id ||
+            'control-plane-pending';
+          const payload = validateWorkspaceRow(
+            {
+              id: workspaceId,
+              project_id: projectId,
+              agent_id: resolvedAgentId,
+              current_task_id: resolvedTaskId,
+              run_id_or_session_id: null,
+              repo_root: process.cwd(),
+              workspace_path:
+                workspace?.workspace_path || `workspace://${projectId}/${workspaceId}`,
+              worktree_path: null,
+              base_branch: 'main',
+              base_commit: requested_base_ref || BASE_COMMIT,
+              branch_name: null,
+              status: 'provisioning',
+              observed_branch: null,
+              observed_head: null,
+              observed_dirty: null,
+              last_error: null,
+              last_error_class: null,
+              recovery_reason: null,
+              evidence_ref: null,
+              reservation_token:
+                reservation_token || workspace?.reservation_token || `rsv-${Date.now()}`,
+              correlation_id,
+              accepted_at: timestamp,
+              claimed_at: null,
+              started_at: null,
+              updated_at: timestamp,
+              completed_at: null,
+            },
+            workspace
+          );
+
+          let stored = null;
+          let created = false;
+          if (!workspace) {
+            const keys = Object.keys(payload);
+            this.db
+              .prepare(
+                `INSERT INTO agent_workspaces (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+              )
+              .run(...keys.map((key) => payload[key] ?? null));
+            stored = getWorkspaceById(workspaceId);
+            created = true;
+          } else {
+            stored = updateWorkspace(workspaceId, {
+              base_commit: payload.base_commit,
+              status: TERMINAL.has(workspace.status) ? workspace.status : 'provisioning',
+              last_error: null,
+              last_error_class: null,
+              recovery_reason: null,
+              reservation_token: payload.reservation_token,
+              correlation_id,
+              accepted_at: timestamp,
+              updated_at: timestamp,
+            });
+          }
+
+          return this._ok({
+            accepted: true,
+            created,
+            reused: false,
+            ack: buildAck(stored),
+            contract: {
+              frozen_base_commit: BASE_COMMIT,
+              sw_2_1_checkpoint: SW_2_1_CHECKPOINT,
+              sw_3_1_checkpoint: SW_3_1_CHECKPOINT,
+            },
+          });
+        } catch (e) {
+          return this._err(e.message);
+        }
+      }
+    );
   }
 
   _registerDocOpsTools() {

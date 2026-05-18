@@ -654,6 +654,12 @@ const AGENT_WORKSPACE_OBSERVED_DIRTY = new Set(['clean', 'dirty', 'dirty-exclude
 const AGENT_WORKSPACE_BASE_COMMIT = 'f814998dd05cb491caf8637bf570dbd74b539090';
 const SW_2_1_FROZEN_CHECKPOINT = '02d82361449a09e93e5880a08e35e3043617002d';
 const SW_3_1_FROZEN_CHECKPOINT = '4b1e344dcd202c911498af17236fcb86a2a2cb1e';
+const PREPARE_WORKSPACE_ERROR_CLASS_TO_STATUS = {
+  base_drift: 'conflicted',
+  ownership_collision: 'conflicted',
+  executor_lost: 'orphaned',
+  prepare_failed: 'failed',
+};
 
 function isAgentWorkspaceStatus(value) {
   return AGENT_WORKSPACE_STATUSES.includes(value);
@@ -1085,6 +1091,46 @@ function detectWorkspaceDrift(existingWorkspace, mergedWorkspace) {
     );
   }
   return mismatches.length ? `workspace drift: ${mismatches.join('; ')}` : null;
+}
+
+function derivePrepareWorkspaceOutcome(existingWorkspace, report = {}) {
+  const { error_class: errorClass = null, ...restReport } = report;
+  const status =
+    PREPARE_WORKSPACE_ERROR_CLASS_TO_STATUS[errorClass] ||
+    report.status ||
+    existingWorkspace.status;
+
+  return {
+    ...restReport,
+    status,
+    branch_name:
+      restReport.branch_name ?? existingWorkspace.branch_name ?? restReport.observed_branch ?? null,
+    last_error_class: errorClass,
+  };
+}
+
+function isPrepareWorkspaceReportNoOp(existingWorkspace, report = {}, nextStatus) {
+  return Boolean(
+    report.correlation_id &&
+    existingWorkspace.correlation_id === report.correlation_id &&
+    existingWorkspace.status === nextStatus &&
+    (report.evidence_ref ?? existingWorkspace.evidence_ref ?? null) ===
+      (existingWorkspace.evidence_ref ?? null) &&
+    (report.last_error ?? existingWorkspace.last_error ?? null) ===
+      (existingWorkspace.last_error ?? null) &&
+    (report.last_error_class ?? existingWorkspace.last_error_class ?? null) ===
+      (existingWorkspace.last_error_class ?? null) &&
+    (report.recovery_reason ?? existingWorkspace.recovery_reason ?? null) ===
+      (existingWorkspace.recovery_reason ?? null) &&
+    (report.worktree_path ?? existingWorkspace.worktree_path ?? null) ===
+      (existingWorkspace.worktree_path ?? null) &&
+    (report.observed_branch ?? existingWorkspace.observed_branch ?? null) ===
+      (existingWorkspace.observed_branch ?? null) &&
+    (report.observed_head ?? existingWorkspace.observed_head ?? null) ===
+      (existingWorkspace.observed_head ?? null) &&
+    (report.observed_dirty ?? existingWorkspace.observed_dirty ?? null) ===
+      (existingWorkspace.observed_dirty ?? null)
+  );
 }
 
 function scoreTask(task, depsUnlock = 0) {
@@ -2398,12 +2444,16 @@ server.tool(
   'Registra observed state reportado por el ejecutor para un workspace. Solo metadata; nunca comandos git/worktree.',
   {
     workspace_id: z.string().min(1),
+    correlation_id: z.string().min(1).optional(),
     status: agentWorkspaceStatusSchema,
     worktree_path: z.string().optional(),
     observed_branch: z.string().optional(),
     observed_head: z.string().optional(),
     observed_dirty: z.enum(['clean', 'dirty', 'dirty-excluded']).optional(),
     evidence_ref: z.string().optional(),
+    error_class: z
+      .enum(['base_drift', 'ownership_collision', 'executor_lost', 'prepare_failed'])
+      .optional(),
     last_error: z.string().optional(),
     recovery_reason: z.string().optional(),
   },
@@ -2412,8 +2462,24 @@ server.tool(
       const existing = await getAgentWorkspaceById(workspace_id);
       if (!existing) return err(`Workspace ${workspace_id} no encontrado.`);
 
+      if (report.correlation_id && existing.correlation_id !== report.correlation_id) {
+        return err(
+          `correlation_id no coincide con el intento activo del workspace ${workspace_id}.`
+        );
+      }
+
+      const normalizedReport = derivePrepareWorkspaceOutcome(existing, report);
+      if (isPrepareWorkspaceReportNoOp(existing, normalizedReport, normalizedReport.status)) {
+        return ok({
+          updated: false,
+          no_op: true,
+          workspace: existing,
+          message: 'Observed state duplicado para el correlation_id activo.',
+        });
+      }
+
       const updates = {
-        ...report,
+        ...normalizedReport,
       };
       const { merged, next } = deriveWorkspaceTransition(existing, updates, {
         allowTerminal: true,
@@ -2423,6 +2489,7 @@ server.tool(
       if (driftError) {
         next.status = 'conflicted';
         next.last_error = report.last_error || driftError;
+        next.last_error_class = report.error_class || 'base_drift';
       }
 
       const collisions = await getAgentWorkspaceCollisions({
@@ -2438,10 +2505,16 @@ server.tool(
         next.last_error =
           report.last_error ||
           `Reservation collision: ${collisions.map((workspace) => workspace.id).join(', ')}`;
+        next.last_error_class = report.error_class || 'ownership_collision';
+      }
+
+      if (next.status === 'ready' && !next.last_error_class) {
+        next.last_error = null;
+        next.recovery_reason = null;
       }
 
       const workspace = await updateAgentWorkspaceRow(workspace_id, next);
-      return ok({ updated: true, workspace, message: 'Observed state registrado.' });
+      return ok({ updated: true, no_op: false, workspace, message: 'Observed state registrado.' });
     } catch (e) {
       return err(e.message);
     }

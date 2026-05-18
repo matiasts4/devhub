@@ -466,6 +466,12 @@ Resultado esperado:
 
 - Telegram vuelve como interfaz útil, no como núcleo frágil.
 
+### Consumo downstream congelado por SW-2.2A
+
+- Telegram, Control Room y Supervisor Loop deben leer `workspace_status`, `run_status` y `evidence_ref` desde proyecciones durables/runtime observer-only.
+- Esos consumers muestran outcomes (`ready`, `conflicted`, `failed`, `orphaned`) y referencias auditables, **sin mostrar verbos Git** como `checkout`, `merge`, `branch` o `worktree`.
+- `dirty-excluded` sigue siendo realidad observada del ejecutor; los consumers la propagan como estado/evidencia, no como limpieza normalizada.
+
 ---
 
 ## Fase SW-7 — MCP Control Center

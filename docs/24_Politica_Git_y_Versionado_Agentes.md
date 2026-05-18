@@ -46,9 +46,10 @@ Regla: si la operación modifica Git o toca archivos del repo, pertenece al **ej
 ### Freeze SW-2.1A para workspaces
 
 - Baseline seguro de workspaces: `f814998dd05cb491caf8637bf570dbd74b539090`.
+- Freeze documental consumido por SW-2.2A sobre `02d82361449a09e93e5880a08e35e3043617002d` (SW-2.1) y `4b1e344dcd202c911498af17236fcb86a2a2cb1e` (SW-3.1).
 - Si el ejecutor observa árbol compartido no limpio, DevHub debe registrar `observed_dirty='dirty-excluded'` y **nunca normalizarlo**.
 - `cleanup_pending` representa solicitud de teardown al ejecutor; DevHub mantiene control plane only.
-- `agent_workspaces` guarda reserva/lifecycle/evidence; Git real sigue fuera del MCP general.
+- `agent_workspaces` guarda reserva/lifecycle/`evidence_ref`; Git real sigue fuera del MCP general y la evidencia resultante debe ser **auditable**.
 
 ---
 

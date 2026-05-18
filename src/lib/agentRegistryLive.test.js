@@ -48,7 +48,8 @@ test('prefers workspace_id when resolving launch metadata from observer-only run
   );
 
   assert.equal(launch.panelId, 'panel-ws');
-  assert.equal(launch.reportedStatus, 'paused');
+  assert.equal(launch.selectedAgent, 'worker-alpha');
+  assert.equal('reportedStatus' in launch, false);
 });
 
 test('resolveAgentToPanelId uses workspace_id before task mirrors', () => {
@@ -65,4 +66,45 @@ test('resolveAgentToPanelId uses workspace_id before task mirrors', () => {
   );
 
   assert.equal(panelId, 'panel-2');
+});
+
+test('drops executor-reported status from observer-only launch metadata', () => {
+  const launch = getAgentLaunchMetadata(
+    {
+      agent_id: 'agent-3',
+      current_task_id: 'task-3',
+      workspace_id: 'ws-3',
+    },
+    {
+      'ws-3': {
+        panelId: 'panel-3',
+        selectedAgent: 'worker-gamma',
+        workspaceStatus: 'conflicted',
+        evidenceRef: 'evidence://workspace-3',
+        reportedStatus: 'active',
+      },
+    }
+  );
+
+  assert.equal(launch.workspaceStatus, 'conflicted');
+  assert.equal(launch.evidenceRef, 'evidence://workspace-3');
+  assert.equal('reportedStatus' in launch, false);
+});
+
+test('does not treat executor-reported status as durable liveness truth', () => {
+  const snapshot = getAgentRegistryLiveSnapshot({
+    agents: [
+      {
+        agent_id: 'agent-4',
+        status: 'idle',
+        last_heartbeat: STALE_HEARTBEAT,
+        workspace_id: 'ws-4',
+      },
+    ],
+    agentRuns: {
+      'ws-4': { reportedStatus: 'active' },
+    },
+  });
+
+  assert.equal(snapshot.activeAgentsCount, 0);
 });

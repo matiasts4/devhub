@@ -102,6 +102,8 @@ Notas de contrato:
 - `cleanup_pending` significa cleanup intent; el ejecutor hace la mutación Git/worktree real.
 - `devhub_agent_runs` sigue siendo observer-only para UI/runtime; no reemplaza el ownership durable del workspace.
 - Baseline congelado: `f814998dd05cb491caf8637bf570dbd74b539090`; `observed_dirty='dirty-excluded'` se conserva textual.
+- Los consumers de AgentHub/Telegram priorizan `workspace_status` y `evidence_ref` para mostrar outcome auditable del workspace.
+- Cuando el `current_tool` contenga verbos Git, AgentHub los oculta: **oculta verbos Git** y deja la mutación real del lado del ejecutor.
 
 **Sintaxis en el prompt del LLM:**
 

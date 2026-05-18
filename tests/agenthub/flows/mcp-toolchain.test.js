@@ -7,7 +7,10 @@
 const { TestHarness } = require('../harness');
 const { FlowVerifier } = require('../flow-verifier');
 const { seedProject, seedTask } = require('../fixtures');
-const { assertDbRow, assertDbRowCount } = require('../assertions');
+const {
+  getCurrentToolDisplay,
+  getWorkspaceOutcomeDisplay,
+} = require('../../../src/views/telegramMonitorRealtime');
 
 describe('Flow: MCP Tool Chain', () => {
   let harness;
@@ -134,5 +137,67 @@ describe('Flow: MCP Tool Chain', () => {
     const shouldNotRun = result.steps.find((s) => s.name === 'should-not-run');
     expect(shouldNotRun).toBeUndefined();
     expect(result.failedSteps).toBe(1);
+  });
+
+  test('downstream consumers read workspace outcomes without surfacing git verbs', async () => {
+    const result = await verifier.execute({
+      name: 'mcp-workspace-consumer-chain',
+      timeout: 30000,
+      onFailure: 'abort',
+      locks: [{ type: 'flow', key: 'mcp-workspace-consumer-chain' }],
+      steps: [
+        {
+          name: 'create-project',
+          action: 'custom',
+          fn: (harness) => {
+            seedProject(harness.db, {
+              id: 'test-consumer-proj',
+              name: 'Consumer Projection Project',
+            });
+            return { success: true };
+          },
+        },
+        {
+          name: 'create-task',
+          action: 'custom',
+          fn: (harness) => {
+            seedTask(harness.db, 'test-consumer-proj', {
+              id: 'test-consumer-task',
+              title: 'Project workspace outcome into downstream surfaces',
+            });
+            return { success: true };
+          },
+        },
+        {
+          name: 'project-downstream-status',
+          action: 'custom',
+          fn: () => {
+            const statusPayload = {
+              workspace_status: 'ready',
+              run_status: 'running',
+              evidence_ref: 'evidence://workspace-ready-1',
+              current_tool: 'git checkout -b task/test-consumer-task',
+            };
+
+            return {
+              success: true,
+              workspaceStatus: getWorkspaceOutcomeDisplay(statusPayload),
+              toolDisplay: getCurrentToolDisplay(statusPayload),
+            };
+          },
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.totalSteps).toBe(3);
+
+    const projectionStep = result.steps.find((step) => step.name === 'project-downstream-status');
+    expect(projectionStep.workspaceStatus).toEqual({
+      workspaceStatus: 'ready',
+      evidenceRef: 'evidence://workspace-ready-1',
+      label: 'READY',
+    });
+    expect(projectionStep.toolDisplay).toBe(null);
   });
 });

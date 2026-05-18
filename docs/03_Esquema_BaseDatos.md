@@ -116,9 +116,9 @@ Archivos de contexto subidos por el usuario para la Planning IA.
 
 ---
 
-### `agent_workspaces` ⭐ SW-2.1A
+### `agent_workspaces` ⭐ SW-2.1A / SW-2.2A
 
-Reserva durable de workspaces de agentes. DevHub guarda lifecycle, metadata observada y evidence hook; el ejecutor sigue siendo dueño de Git/worktree real.
+Reserva durable de workspaces de agentes. DevHub guarda lifecycle, metadata observada y evidence hook; **El ejecutor sigue siendo dueño de Git/worktree real**.
 
 | Columna                | Tipo      | Default                                    | Descripción                                                                                                                |
 | ---------------------- | --------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -152,6 +152,8 @@ Reglas clave:
 - Las filas terminales (`completed`, `failed`) son inmutables y no se reutilizan.
 - Existen locks activos por `branch_name`, `worktree_path` y `(agent_id,current_task_id)` en estados no terminales.
 - `cleanup_pending` modela intención de teardown; no implica ejecución Git dentro de DevHub.
+- La idempotencia operativa de preparación se resuelve por `workspace_id + correlation_id`.
+- `evidence_ref` es opaco en control plane, pero debe seguir siendo **auditable** vía SW-3.1 con joins **auditables** sin copiar detalles de git al esquema durable.
 
 ---
 
