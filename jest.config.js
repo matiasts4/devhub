@@ -17,6 +17,7 @@ module.exports = {
     '<rootDir>/src-tauri/',
     '<rootDir>/tests/e2e/',
     '<rootDir>/devhub-mcp/',
+    '/fixtures/',
   ],
   // Transform JSX/ESM files for component tests
   transform: {
