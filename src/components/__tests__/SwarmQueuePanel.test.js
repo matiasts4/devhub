@@ -16,6 +16,7 @@ const {
   buildItemsFromResponse,
   removeItemFromList,
   buildOperationalQueueBanner,
+  buildSupervisorSnapshotSummary,
 } = require('../SwarmQueuePanel.jsx');
 
 describe('SwarmQueuePanel pure logic', () => {
@@ -84,6 +85,138 @@ describe('SwarmQueuePanel pure logic', () => {
       const data = { queue: { length: 0 } };
       expect(buildItemsFromResponse(data)).toEqual([]);
     });
+
+    test('normalizes supervisor snapshots from MCP queue payloads', () => {
+      const data = {
+        queue: [
+          {
+            id: 'task-1',
+            title: 'Supervisor contract',
+            agent: 'worker-1',
+            supervisor_snapshot: {
+              supervisor_state: 'awaiting_approval',
+              outcome: 'request_approval',
+              reason_class: 'approval_required',
+              task_retry_count: 1,
+              attempt_count: 2,
+              unchanged_failure_count: 0,
+              approval_request_count: 3,
+              orphan_recovery_count: 0,
+              evidence_ref: 'evidence://supervisor/task-1',
+              updated_at: '2026-05-19T06:45:00.000Z',
+            },
+          },
+        ],
+      };
+
+      const result = buildItemsFromResponse(data);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].position).toBe(1);
+      expect(result[0].supervisor).toEqual({
+        supervisor_state: 'awaiting_approval',
+        outcome: 'request_approval',
+        reason_class: 'approval_required',
+        task_retry_count: 1,
+        attempt_count: 2,
+        unchanged_failure_count: 0,
+        approval_request_count: 3,
+        orphan_recovery_count: 0,
+        workspace_id: null,
+        run_id: null,
+        evidence_ref: 'evidence://supervisor/task-1',
+        updated_at: '2026-05-19T06:45:00.000Z',
+      });
+    });
+
+    test('strips non-snapshot approval internals from queue supervisor payloads', () => {
+      const data = {
+        queue: {
+          items: [
+            {
+              id: 'task-2',
+              position: 2,
+              agent: 'worker-2',
+              title: 'Recover orphan',
+              supervisor: {
+                supervisorState: 'recovering_orphan',
+                outcome: 'recover_orphan',
+                reasonClass: 'stale_lease',
+                taskRetryCount: 0,
+                attemptCount: 4,
+                unchangedFailureCount: 1,
+                approvalRequestCount: 0,
+                orphanRecoveryCount: 2,
+                workspaceId: 'ws-2',
+                runId: 'run-2',
+                evidenceRef: 'evidence://supervisor/task-2',
+                updatedAt: '2026-05-19T06:46:00.000Z',
+                approval_checkpoint: { status: 'pending' },
+              },
+            },
+          ],
+        },
+      };
+
+      const result = buildItemsFromResponse(data);
+
+      expect(result[0].supervisor).toEqual({
+        supervisor_state: 'recovering_orphan',
+        outcome: 'recover_orphan',
+        reason_class: 'stale_lease',
+        task_retry_count: 0,
+        attempt_count: 4,
+        unchanged_failure_count: 1,
+        approval_request_count: 0,
+        orphan_recovery_count: 2,
+        workspace_id: 'ws-2',
+        run_id: 'run-2',
+        evidence_ref: 'evidence://supervisor/task-2',
+        updated_at: '2026-05-19T06:46:00.000Z',
+      });
+    });
+
+    test('normalizes blocked supervisor snapshots used for unchanged-failure rendering', () => {
+      const data = {
+        queue: [
+          {
+            id: 'task-3',
+            title: 'Repeated failure',
+            supervisor_snapshot: {
+              supervisor_state: 'blocked',
+              outcome: 'block',
+              reason_class: 'unchanged_failure',
+              task_retry_count: 2,
+              attempt_count: 3,
+              unchanged_failure_count: 1,
+              approval_request_count: 0,
+              orphan_recovery_count: 0,
+              workspace_id: 'ws-3',
+              run_id: 'run-3',
+              evidence_ref: 'evidence://supervisor/task-3/repeat',
+              updated_at: '2026-05-19T06:47:00.000Z',
+            },
+          },
+        ],
+      };
+
+      const result = buildItemsFromResponse(data);
+
+      expect(result[0].supervisor).toEqual({
+        supervisor_state: 'blocked',
+        outcome: 'block',
+        reason_class: 'unchanged_failure',
+        task_retry_count: 2,
+        attempt_count: 3,
+        unchanged_failure_count: 1,
+        approval_request_count: 0,
+        orphan_recovery_count: 0,
+        workspace_id: 'ws-3',
+        run_id: 'run-3',
+        evidence_ref: 'evidence://supervisor/task-3/repeat',
+        updated_at: '2026-05-19T06:47:00.000Z',
+      });
+    });
   });
 
   // ─── removeItemFromList ──────────────────────────────────────────────────
@@ -135,6 +268,58 @@ describe('SwarmQueuePanel pure logic', () => {
       expect(result.tone).toBe('muted');
       expect(result.title).toBe('Cola sin telemetría');
       expect(result.body).toContain('snapshot canónico');
+    });
+  });
+
+  describe('buildSupervisorSnapshotSummary()', () => {
+    test('formats state, reason, counters, and evidence ref for downstream consumers', () => {
+      const result = buildSupervisorSnapshotSummary({
+        supervisor_state: 'awaiting_approval',
+        reason_class: 'approval_required',
+        task_retry_count: 1,
+        attempt_count: 2,
+        approval_request_count: 3,
+        evidence_ref: 'evidence://supervisor/task-1',
+      });
+
+      expect(result.stateLabel).toBe('AWAITING APPROVAL');
+      expect(result.reasonLabel).toBe('approval_required');
+      expect(result.counters).toEqual(['Intentos 2', 'Retries 1', 'Aprobaciones 3']);
+      expect(result.evidenceRef).toBe('evidence://supervisor/task-1');
+    });
+
+    test('returns null when no supervisor snapshot is present', () => {
+      expect(buildSupervisorSnapshotSummary(null)).toBeNull();
+    });
+
+    test('formats blocked unchanged-failure counters for queue rendering', () => {
+      const result = buildSupervisorSnapshotSummary({
+        supervisor_state: 'blocked',
+        reason_class: 'unchanged_failure',
+        task_retry_count: 2,
+        attempt_count: 3,
+        evidence_ref: 'evidence://supervisor/task-3/repeat',
+      });
+
+      expect(result.stateLabel).toBe('BLOCKED');
+      expect(result.reasonLabel).toBe('unchanged_failure');
+      expect(result.counters).toEqual(['Intentos 3', 'Retries 2']);
+      expect(result.evidenceRef).toBe('evidence://supervisor/task-3/repeat');
+    });
+
+    test('formats orphan recovery counters for queue rendering', () => {
+      const result = buildSupervisorSnapshotSummary({
+        supervisor_state: 'recovering_orphan',
+        reason_class: 'orphaned_workspace',
+        attempt_count: 1,
+        orphan_recovery_count: 2,
+        evidence_ref: 'evidence://supervisor/task-4/orphan',
+      });
+
+      expect(result.stateLabel).toBe('RECOVERING ORPHAN');
+      expect(result.reasonLabel).toBe('orphaned_workspace');
+      expect(result.counters).toEqual(['Intentos 1', 'Recuperaciones 2']);
+      expect(result.evidenceRef).toBe('evidence://supervisor/task-4/orphan');
     });
   });
 });

@@ -14,6 +14,8 @@ Due Date: 2026-05-05
 
 > **Nota Git/versionado — 2026-05-15:** Las menciones a `git_branch`, `git_commit`, `git_diff_review` o merge automático a `main` en este documento son **legacy/deprecated**. La política vigente está en [24_Politica_Git_y_Versionado_Agentes.md](./24_Politica_Git_y_Versionado_Agentes.md): Git vive en la capability/skill del ejecutor; DevHub MCP queda como control plane.
 
+> **Seguimiento post SW-4.1 — 2026-05-19:** Queda pendiente un cambio separado para eliminar los side effects legacy que todavía sobreviven en `src/app/api/agent/execute/route.js` y `src/app/api/agent/qa-result/route.js`. SW-4.1 congeló el contrato del supervisor como capa de orquestación, pero la remoción final de esos efectos del ejecutor NO forma parte de este documento histórico ni debe mezclarse con el rollout actual.
+
 El Swarm Control actual tiene la UI construida y los endpoints de ramas Git funcionando, pero **los Workers son cáscaras vacías** — no ejecutan nada sin intervención manual del humano. Esta fase cierra esa brecha: al final, un Worker Agent podrá recibir una tarea, crear su rama, ejecutar el código con un LLM real, y someter el resultado al QA de forma completamente autónoma.
 
 > **Prerrequisito crítico:** Las tareas `[PRIO-01]`, `[PRIO-02]` y `[PRIO-06]` deben estar completadas antes de comenzar `[SWARM-02]`.

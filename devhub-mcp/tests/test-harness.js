@@ -175,5 +175,5 @@ export async function createTestHarness() {
     initialized = false;
   }
 
-  return { initialize, callTool, listTools, cleanup, getProcess: () => null };
+  return { initialize, callTool, listTools, cleanup, getProcess: () => null, dbPath, workDir };
 }

@@ -19,6 +19,42 @@ function normalizeCount(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
 
+function pickFirstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function normalizeSupervisorSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+
+  const normalized = {
+    supervisor_state: pickFirstDefined(snapshot.supervisor_state, snapshot.supervisorState) || null,
+    outcome: pickFirstDefined(snapshot.outcome, snapshot.outcome) || null,
+    reason_class: pickFirstDefined(snapshot.reason_class, snapshot.reasonClass) || null,
+    task_retry_count: normalizeCount(
+      pickFirstDefined(snapshot.task_retry_count, snapshot.taskRetryCount)
+    ),
+    attempt_count: normalizeCount(pickFirstDefined(snapshot.attempt_count, snapshot.attemptCount)),
+    unchanged_failure_count: normalizeCount(
+      pickFirstDefined(snapshot.unchanged_failure_count, snapshot.unchangedFailureCount)
+    ),
+    approval_request_count: normalizeCount(
+      pickFirstDefined(snapshot.approval_request_count, snapshot.approvalRequestCount)
+    ),
+    orphan_recovery_count: normalizeCount(
+      pickFirstDefined(snapshot.orphan_recovery_count, snapshot.orphanRecoveryCount)
+    ),
+    workspace_id: pickFirstDefined(snapshot.workspace_id, snapshot.workspaceId) || null,
+    run_id: pickFirstDefined(snapshot.run_id, snapshot.runId) || null,
+    evidence_ref: pickFirstDefined(snapshot.evidence_ref, snapshot.evidenceRef) || null,
+    updated_at: pickFirstDefined(snapshot.updated_at, snapshot.updatedAt) || null,
+  };
+
+  return normalized.supervisor_state ? normalized : null;
+}
+
 function isTerminalProjectedRunStatus(status) {
   return ['succeeded', 'failed', 'aborted', 'superseded'].includes(normalizeText(status));
 }
@@ -36,6 +72,9 @@ export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
   const {
     reportedStatus: _reportedStatus,
     reported_status: _reportedStatusLegacy,
+    supervisor: _supervisor,
+    supervisor_snapshot: _supervisorSnapshot,
+    supervisorSnapshot: _supervisorSnapshotCamel,
     ...observerRun
   } = run;
   return {
@@ -52,6 +91,9 @@ export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
     latestArtifactSummary: run.latestArtifactSummary || run.latest_artifact_summary || null,
     latestArtifactKind: run.latestArtifactKind || run.latest_artifact_kind || null,
     artifactCount: normalizeCount(run.artifactCount || run.artifact_count),
+    supervisor: normalizeSupervisorSnapshot(
+      run.supervisor_snapshot || run.supervisorSnapshot || run.supervisor
+    ),
   };
 }
 
@@ -177,6 +219,7 @@ export function findAgentWorkspaceAndPanel(agent = {}, agentRuns = {}, workspace
 export function getAgentExecutionContext(agent = {}, { agentRuns = {} } = {}) {
   const launch = getAgentLaunchMetadata(agent, agentRuns);
   const runStatus = normalizeText(launch.runStatus);
+  const supervisorState = normalizeText(launch.supervisor?.supervisor_state);
   const status = String(agent.status || '').toLowerCase();
   const hasTask = Boolean(agent.current_task_id);
   const staleHeartbeat = !isActiveAgent(agent);
@@ -187,6 +230,18 @@ export function getAgentExecutionContext(agent = {}, { agentRuns = {} } = {}) {
 
   if (isBlockedProjectedRun(launch)) {
     return { label: 'BLOQUEADO', tone: 'bg-red-500/10 text-red-400 border-red-500/20' };
+  }
+
+  if (supervisorState === 'blocked') {
+    return { label: 'BLOQUEADO', tone: 'bg-red-500/10 text-red-400 border-red-500/20' };
+  }
+
+  if (supervisorState === 'awaiting_approval') {
+    return { label: 'APROBACIÓN', tone: 'bg-amber-500/10 text-amber-400 border-amber-500/20' };
+  }
+
+  if (supervisorState === 'recovering_orphan') {
+    return { label: 'RECUPERANDO', tone: 'bg-orange-500/10 text-orange-400 border-orange-500/20' };
   }
 
   if (staleHeartbeat) {

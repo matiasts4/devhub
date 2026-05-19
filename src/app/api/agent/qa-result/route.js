@@ -3,6 +3,10 @@ import {
   getDb,
   getLatestAgentRunForWorkspace,
   getLatestAgentRunForTask,
+  getSupervisorSnapshot,
+  getSupervisorApprovalCheckpoint,
+  upsertSupervisorApprovalCheckpoint,
+  upsertSupervisorSnapshot,
   updateAgentRunTerminal,
   appendAgentArtifact,
 } from '@/lib/db/localDb';
@@ -28,6 +32,10 @@ function appendQaArtifact(db, runId, { result, reasons, evidence_ref }) {
   });
 }
 
+function buildDecisionNote(reasons = [], fallback) {
+  return reasons?.length ? reasons.join(' | ') : fallback;
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -42,12 +50,51 @@ export async function POST(request) {
       where: [['id', '=', task_id]],
     });
     const run = resolveRun(db, { workspace_id, task_id });
+    const supervisor = getSupervisorSnapshot(db, task_id);
 
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
+    if (!supervisor || supervisor.supervisor_state !== 'awaiting_approval') {
+      return NextResponse.json(
+        {
+          error: 'Supervisor is not awaiting a human approval decision for this task',
+          supervisor: supervisor || null,
+        },
+        { status: 409 }
+      );
+    }
+
+    const approvalCheckpoint = supervisor.approval_checkpoint_key
+      ? getSupervisorApprovalCheckpoint(db, supervisor.approval_checkpoint_key)
+      : null;
+
+    if (!approvalCheckpoint || approvalCheckpoint.status !== 'pending') {
+      return NextResponse.json(
+        {
+          error: 'Supervisor approval checkpoint is missing or no longer pending',
+          supervisor: supervisor || null,
+        },
+        { status: 409 }
+      );
+    }
+
     if (result === 'approved') {
+      const decidedAt = new Date().toISOString();
+      const decisionNote = buildDecisionNote(reasons, 'Approved');
+      const checkpoint = upsertSupervisorApprovalCheckpoint(db, {
+        checkpoint_key: approvalCheckpoint.checkpoint_key,
+        task_id,
+        workspace_id: workspace_id || supervisor.workspace_id || approvalCheckpoint.workspace_id,
+        run_id: run?.run_id || supervisor.run_id || approvalCheckpoint.run_id,
+        reason_class: approvalCheckpoint.reason_class,
+        evidence_ref: evidence_ref || supervisor.evidence_ref || approvalCheckpoint.evidence_ref,
+        status: 'approved',
+        decision_note: decisionNote,
+        decided_at: decidedAt,
+      });
+
       db.tables.tasks.update(
         { status: 'completed', last_qa_feedback: reasons?.join('\n') || 'Approved' },
         [['id', '=', task_id]]
@@ -74,89 +121,71 @@ export async function POST(request) {
         updateAgentRunTerminal(db, run.run_id, {
           status: 'succeeded',
           terminal_reason_class: 'qa_approved',
-          completed_at: new Date().toISOString(),
+          completed_at: decidedAt,
         });
         appendQaArtifact(db, run.run_id, { result, reasons, evidence_ref });
       }
+
+      const snapshot = upsertSupervisorSnapshot(db, {
+        task_id,
+        supervisor_state: 'closed',
+        outcome: 'close',
+        reason_class: 'completed',
+        task_retry_count: Number(task.retry_count || supervisor.task_retry_count || 0),
+        attempt_count: Number(supervisor.attempt_count || 0),
+        unchanged_failure_count: Number(supervisor.unchanged_failure_count || 0),
+        approval_request_count: Number(supervisor.approval_request_count || 1),
+        orphan_recovery_count: Number(supervisor.orphan_recovery_count || 0),
+        workspace_id: workspace_id || supervisor.workspace_id || approvalCheckpoint.workspace_id,
+        run_id: run?.run_id || supervisor.run_id || approvalCheckpoint.run_id,
+        evidence_ref: evidence_ref || supervisor.evidence_ref || approvalCheckpoint.evidence_ref,
+        approval_checkpoint_key: checkpoint.checkpoint_key,
+        updated_at: decidedAt,
+      });
 
       return NextResponse.json({
         success: true,
         message: 'Task approved; cleanup intent recorded for executor handoff.',
         run_id: run?.run_id || null,
+        supervisor: snapshot,
       });
     } else {
-      // Rejected
-      const newRetries = (task.retry_count || 0) + 1;
-      const feedback = reasons?.join('\n') || 'No reasons provided';
+      const decidedAt = new Date().toISOString();
+      const decisionNote = buildDecisionNote(reasons, 'Rejected');
+      const checkpoint = upsertSupervisorApprovalCheckpoint(db, {
+        checkpoint_key: approvalCheckpoint.checkpoint_key,
+        task_id,
+        workspace_id: workspace_id || supervisor.workspace_id || approvalCheckpoint.workspace_id,
+        run_id: run?.run_id || supervisor.run_id || approvalCheckpoint.run_id,
+        reason_class: approvalCheckpoint.reason_class,
+        evidence_ref: evidence_ref || supervisor.evidence_ref || approvalCheckpoint.evidence_ref,
+        status: 'rejected',
+        decision_note: decisionNote,
+        decided_at: decidedAt,
+      });
+      const snapshot = upsertSupervisorSnapshot(db, {
+        task_id,
+        supervisor_state: 'blocked',
+        outcome: 'block',
+        reason_class: 'approval_rejected',
+        task_retry_count: Number(task.retry_count || supervisor.task_retry_count || 0),
+        attempt_count: Number(supervisor.attempt_count || 0),
+        unchanged_failure_count: Number(supervisor.unchanged_failure_count || 0),
+        approval_request_count: Number(supervisor.approval_request_count || 1),
+        orphan_recovery_count: Number(supervisor.orphan_recovery_count || 0),
+        workspace_id: workspace_id || supervisor.workspace_id || approvalCheckpoint.workspace_id,
+        run_id: run?.run_id || supervisor.run_id || approvalCheckpoint.run_id,
+        evidence_ref: evidence_ref || supervisor.evidence_ref || approvalCheckpoint.evidence_ref,
+        approval_checkpoint_key: checkpoint.checkpoint_key,
+        updated_at: decidedAt,
+      });
 
-      if (newRetries >= 3) {
-        // Block task
-        db.tables.tasks.update(
-          { status: 'blocked', retry_count: newRetries, last_qa_feedback: feedback },
-          [['id', '=', task_id]]
-        );
-
-        db.tables.agent_registry.update({ current_task_id: null, status: 'idle' }, [
-          ['current_task_id', '=', task_id],
-        ]);
-
-        if (workspace_id) {
-          db.tables.agent_workspaces.update(
-            {
-              status: 'cleanup_pending',
-              last_error: feedback,
-              recovery_reason: 'qa-blocked',
-              evidence_ref: evidence_ref || `qa://${task_id}/blocked`,
-            },
-            [['id', '=', workspace_id]]
-          );
-        }
-        if (run) {
-          updateAgentRunTerminal(db, run.run_id, {
-            status: 'failed',
-            terminal_reason_class: 'qa_blocked',
-            completed_at: new Date().toISOString(),
-          });
-          appendQaArtifact(db, run.run_id, {
-            result: 'blocked',
-            reasons,
-            evidence_ref: evidence_ref || `qa://${task_id}/blocked`,
-          });
-        }
-        return NextResponse.json({ success: true, message: 'Task blocked after 3 retries.' });
-      } else {
-        // Retry
-        db.tables.tasks.update({ retry_count: newRetries, last_qa_feedback: feedback }, [
-          ['id', '=', task_id],
-        ]);
-
-        if (workspace_id) {
-          db.tables.agent_workspaces.update(
-            {
-              status: 'paused',
-              last_error: feedback,
-              recovery_reason: 'qa-rejected',
-              evidence_ref: evidence_ref || `qa://${task_id}/rejected/${newRetries}`,
-            },
-            [['id', '=', workspace_id]]
-          );
-        }
-
-        if (run) {
-          updateAgentRunTerminal(db, run.run_id, {
-            status: 'failed',
-            terminal_reason_class: 'qa_rejected',
-            completed_at: new Date().toISOString(),
-          });
-          appendQaArtifact(db, run.run_id, { result, reasons, evidence_ref });
-        }
-
-        return NextResponse.json({
-          success: true,
-          message: 'Task rejected. Sent back for retry.',
-          run_id: run?.run_id || null,
-        });
-      }
+      return NextResponse.json({
+        success: true,
+        message: 'Supervisor approval rejected. Task remains blocked until conditions change.',
+        run_id: run?.run_id || null,
+        supervisor: snapshot,
+      });
     }
   } catch (error) {
     console.error('Agent QA Result Error:', error);

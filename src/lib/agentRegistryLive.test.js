@@ -214,3 +214,89 @@ test('maps blocked durable run projections to blocked execution context', () => 
 
   assert.equal(context.label, 'BLOQUEADO');
 });
+
+test('projects normalized supervisor snapshots from MCP-style observer runs', () => {
+  const launch = getAgentLaunchMetadata(
+    {
+      agent_id: 'agent-10',
+      current_task_id: 'task-10',
+      workspace_id: 'ws-10',
+    },
+    {
+      'ws-10': {
+        supervisor_snapshot: {
+          supervisor_state: 'awaiting_approval',
+          outcome: 'request_approval',
+          reason_class: 'approval_required',
+          task_retry_count: 1,
+          attempt_count: 2,
+          unchanged_failure_count: 0,
+          approval_request_count: 3,
+          orphan_recovery_count: 0,
+          evidence_ref: 'evidence://supervisor/task-10',
+          updated_at: '2026-05-19T06:40:00.000Z',
+        },
+      },
+    }
+  );
+
+  assert.deepEqual(launch.supervisor, {
+    supervisor_state: 'awaiting_approval',
+    outcome: 'request_approval',
+    reason_class: 'approval_required',
+    task_retry_count: 1,
+    attempt_count: 2,
+    unchanged_failure_count: 0,
+    approval_request_count: 3,
+    orphan_recovery_count: 0,
+    workspace_id: null,
+    run_id: null,
+    evidence_ref: 'evidence://supervisor/task-10',
+    updated_at: '2026-05-19T06:40:00.000Z',
+  });
+});
+
+test('normalizes legacy supervisor mirrors without leaking approval internals', () => {
+  const launch = getAgentLaunchMetadata(
+    {
+      agent_id: 'agent-11',
+      current_task_id: 'task-11',
+      workspace_id: 'ws-11',
+    },
+    {
+      'ws-11': {
+        supervisor: {
+          supervisorState: 'recovering_orphan',
+          outcome: 'recover_orphan',
+          reasonClass: 'stale_lease',
+          taskRetryCount: 0,
+          attemptCount: 4,
+          unchangedFailureCount: 1,
+          approvalRequestCount: 0,
+          orphanRecoveryCount: 2,
+          workspaceId: 'ws-11',
+          runId: 'run-11',
+          evidenceRef: 'evidence://supervisor/task-11',
+          updatedAt: '2026-05-19T06:41:00.000Z',
+          approval_checkpoint: { status: 'pending' },
+        },
+      },
+    }
+  );
+
+  assert.deepEqual(launch.supervisor, {
+    supervisor_state: 'recovering_orphan',
+    outcome: 'recover_orphan',
+    reason_class: 'stale_lease',
+    task_retry_count: 0,
+    attempt_count: 4,
+    unchanged_failure_count: 1,
+    approval_request_count: 0,
+    orphan_recovery_count: 2,
+    workspace_id: 'ws-11',
+    run_id: 'run-11',
+    evidence_ref: 'evidence://supervisor/task-11',
+    updated_at: '2026-05-19T06:41:00.000Z',
+  });
+  assert.equal('approval_checkpoint' in launch.supervisor, false);
+});

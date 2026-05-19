@@ -23,6 +23,7 @@ config({ path: resolve(__dirname, '../.env.local') });
 
 const require = createRequire(import.meta.url);
 const localDb = require('../src/lib/db/localDb.js');
+const { evaluateSupervisorSnapshot } = require('../src/lib/swarm/supervisorLoop.js');
 const {
   AGENT_RUN_STATUSES,
   TERMINAL_AGENT_RUN_STATUSES,
@@ -717,6 +718,40 @@ const PREPARE_WORKSPACE_ERROR_CLASS_TO_STATUS = {
   executor_lost: 'orphaned',
   prepare_failed: 'failed',
 };
+const SUPERVISOR_STATES = [
+  'idle',
+  'dispatch_pending',
+  'lease_active',
+  'awaiting_evidence',
+  'retry_pending',
+  'blocked',
+  'awaiting_approval',
+  'recovering_orphan',
+  'closed',
+];
+const SUPERVISOR_OUTCOMES = [
+  'wait',
+  'dispatch',
+  'retry',
+  'block',
+  'recover_orphan',
+  'request_approval',
+  'close',
+];
+const SUPERVISOR_REASON_CLASSES = [
+  'blocked',
+  'approval_required',
+  'approval_rejected',
+  'stale_lease',
+  'orphaned_workspace',
+  'orphaned_run',
+  'dirty_excluded_observed',
+  'recoverable_failure',
+  'blocked_dependency',
+  'unchanged_failure',
+  'completed',
+];
+const SUPERVISOR_APPROVAL_STATUSES = ['pending', 'approved', 'rejected'];
 
 function isAgentWorkspaceStatus(value) {
   return AGENT_WORKSPACE_STATUSES.includes(value);
@@ -1058,6 +1093,51 @@ async function getLatestAgentRunForTask(taskId) {
   return runs[0] || null;
 }
 
+async function getLatestAgentWorkspaceForTask(taskId) {
+  if (!taskId) return null;
+
+  if (DB_DRIVER !== 'supabase') {
+    const db = localDb.getDb();
+    return normalizeWorkspaceRecord(
+      db
+        .prepare(
+          'SELECT * FROM agent_workspaces WHERE current_task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
+        )
+        .get(taskId)
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('agent_workspaces')
+    .select('*')
+    .eq('current_task_id', taskId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error && error.code !== 'PGRST116') throw new Error(error.message);
+  return normalizeWorkspaceRecord(data || null);
+}
+
+async function getRunFactsForTask(taskId) {
+  const runs = await listAgentRuns({ taskId });
+  if (!runs.length) return [];
+
+  const facts = await Promise.all(
+    runs.map(async (run) => {
+      const latestArtifact = await getLatestAgentArtifactForRun(run.run_id);
+      return {
+        run_id: run.run_id,
+        workspace_id: run.workspace_id,
+        status: run.status,
+        terminal_reason_class: run.terminal_reason_class || null,
+        evidence_ref: latestArtifact?.evidence_ref || null,
+      };
+    })
+  );
+
+  return facts;
+}
+
 async function createAgentRunRow(input = {}) {
   if (!isAgentRunStatus(input.status || 'planned')) {
     throw new Error(`Agent run status inválido: ${input.status}`);
@@ -1189,6 +1269,168 @@ async function getWorkspaceEvidence(workspaceId) {
     workspace,
     latest_run: latestRun,
     latest_artifact: latestArtifact,
+  };
+}
+
+async function getSupervisorSnapshot(taskId) {
+  if (!taskId) return null;
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.getSupervisorSnapshot(taskId);
+  }
+
+  const { data, error } = await supabase
+    .from('supervisor_snapshots')
+    .select('*')
+    .eq('task_id', taskId)
+    .maybeSingle();
+  if (error && error.code !== 'PGRST116') throw new Error(error.message);
+  return data || null;
+}
+
+async function getSupervisorApprovalCheckpoint(checkpointKey) {
+  if (!checkpointKey) return null;
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.getSupervisorApprovalCheckpoint(checkpointKey);
+  }
+
+  const { data, error } = await supabase
+    .from('supervisor_approval_checkpoints')
+    .select('*')
+    .eq('checkpoint_key', checkpointKey)
+    .maybeSingle();
+  if (error && error.code !== 'PGRST116') throw new Error(error.message);
+  return data || null;
+}
+
+async function getLatestSupervisorApprovalCheckpointForTask(taskId) {
+  if (!taskId) return null;
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.listSupervisorApprovalCheckpoints({ task_id: taskId, limit: 1 })[0] || null;
+  }
+
+  const { data, error } = await supabase
+    .from('supervisor_approval_checkpoints')
+    .select('*')
+    .eq('task_id', taskId)
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return data?.[0] || null;
+}
+
+async function upsertSupervisorSnapshotRow(input = {}) {
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.upsertSupervisorSnapshot(input);
+  }
+
+  const existing = await getSupervisorSnapshot(input.task_id);
+  const timestamp = input.updated_at || nowIso();
+  const payload = {
+    task_id: input.task_id,
+    supervisor_state: input.supervisor_state,
+    outcome: input.outcome || null,
+    reason_class: input.reason_class || null,
+    task_retry_count: Number(input.task_retry_count || 0),
+    attempt_count: Number(input.attempt_count || 0),
+    unchanged_failure_count: Number(input.unchanged_failure_count || 0),
+    approval_request_count: Number(input.approval_request_count || 0),
+    orphan_recovery_count: Number(input.orphan_recovery_count || 0),
+    workspace_id: input.workspace_id || null,
+    run_id: input.run_id || null,
+    evidence_ref: input.evidence_ref || null,
+    approval_checkpoint_key: input.approval_checkpoint_key || null,
+    created_at: existing?.created_at || input.created_at || timestamp,
+    updated_at: timestamp,
+  };
+
+  const { data, error } = await supabase
+    .from('supervisor_snapshots')
+    .upsert(payload, { onConflict: 'task_id' })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function upsertSupervisorApprovalCheckpointRow(input = {}) {
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.upsertSupervisorApprovalCheckpoint(input);
+  }
+
+  const checkpointKey = input.checkpoint_key || localDb.buildSupervisorApprovalCheckpointKey(input);
+  const existing = await getSupervisorApprovalCheckpoint(checkpointKey);
+  const timestamp = input.updated_at || nowIso();
+  const payload = {
+    checkpoint_key: checkpointKey,
+    task_id: input.task_id,
+    workspace_id: input.workspace_id || null,
+    run_id: input.run_id || null,
+    reason_class: input.reason_class,
+    evidence_ref: input.evidence_ref || null,
+    status: input.status || 'pending',
+    requested_at: existing?.requested_at || input.requested_at || timestamp,
+    decided_at: input.decided_at ?? existing?.decided_at ?? null,
+    decision_note: input.decision_note ?? existing?.decision_note ?? null,
+    created_at: existing?.created_at || input.created_at || timestamp,
+    updated_at: timestamp,
+  };
+
+  const { data, error } = await supabase
+    .from('supervisor_approval_checkpoints')
+    .upsert(payload, { onConflict: 'checkpoint_key' })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function evaluateSupervisorForTask(task, { staleLeaseObserved = false } = {}) {
+  if (!task?.id) return null;
+
+  const existingSnapshot = await getSupervisorSnapshot(task.id);
+  const workspace = existingSnapshot?.workspace_id
+    ? (await getAgentWorkspaceById(existingSnapshot.workspace_id)) ||
+      (await getLatestAgentWorkspaceForTask(task.id))
+    : await getLatestAgentWorkspaceForTask(task.id);
+  const latestRun = workspace?.id
+    ? await getLatestAgentRunForWorkspace(workspace.id)
+    : await getLatestAgentRunForTask(task.id);
+  const latestArtifact = latestRun ? await getLatestAgentArtifactForRun(latestRun.run_id) : null;
+  const runFacts = await getRunFactsForTask(task.id);
+  const approvalCheckpoint = existingSnapshot?.approval_checkpoint_key
+    ? await getSupervisorApprovalCheckpoint(existingSnapshot.approval_checkpoint_key)
+    : await getLatestSupervisorApprovalCheckpointForTask(task.id);
+
+  const snapshotInput = evaluateSupervisorSnapshot({
+    task,
+    workspace,
+    latestRun,
+    latestArtifact,
+    runFacts,
+    existingSnapshot,
+    approvalCheckpoint,
+    staleLeaseObserved,
+  });
+
+  const snapshot = await upsertSupervisorSnapshotRow(snapshotInput);
+  const hydratedApprovalCheckpoint = snapshot.approval_checkpoint_key
+    ? await getSupervisorApprovalCheckpoint(snapshot.approval_checkpoint_key)
+    : null;
+
+  return {
+    ...snapshot,
+    approval_checkpoint: hydratedApprovalCheckpoint,
+  };
+}
+
+async function attachSupervisorToTask(task, options = {}) {
+  if (!task) return task;
+  const supervisor = await evaluateSupervisorForTask(task, options);
+  return {
+    ...task,
+    supervisor,
+    supervisor_snapshot: supervisor,
   };
 }
 
@@ -1424,6 +1666,7 @@ function buildQueue(tasks = [], deps = [], allTasks = [], { includeBlocked = fal
         description: task.description,
         status: task.status,
         priority: task.priority,
+        retry_count: task.retry_count ?? 0,
         due_date: task.due_date,
         milestone_id: task.milestone_id,
         assigned_to: task.assigned_to,
@@ -1587,7 +1830,30 @@ async function cleanupExpiredLeases(projectId = null, agentId = null, nowMs = Da
 }
 
 async function getExecutionQueueData(projectId, { limit = 20, includeBlocked = false } = {}) {
-  await cleanupExpiredLeases(projectId);
+  if (DB_DRIVER !== 'supabase') {
+    const staleTasks = await cleanupExpiredLeases(projectId);
+    const staleTaskIds = new Set((staleTasks || []).map((task) => task.id));
+    const db = localDb.getDb();
+    const tasks = db
+      .prepare(
+        "SELECT * FROM tasks WHERE project_id = ? AND status = 'pending' ORDER BY created_at ASC"
+      )
+      .all(projectId);
+    const allTasks = db.prepare('SELECT id, status FROM tasks WHERE project_id = ?').all(projectId);
+    const deps = db.prepare('SELECT * FROM task_dependencies').all();
+    const queue = buildQueue(tasks || [], deps || [], allTasks || [], { includeBlocked }).slice(
+      0,
+      limit
+    );
+    return Promise.all(
+      queue.map((task) =>
+        attachSupervisorToTask(task, { staleLeaseObserved: staleTaskIds.has(task.id) })
+      )
+    );
+  }
+
+  const staleTasks = await cleanupExpiredLeases(projectId);
+  const staleTaskIds = new Set((staleTasks || []).map((task) => task.id));
   const [{ data: tasks, error: tasksErr }, { data: allTasks }, { data: deps }] = await Promise.all([
     supabase
       .from('tasks')
@@ -1600,7 +1866,15 @@ async function getExecutionQueueData(projectId, { limit = 20, includeBlocked = f
   ]);
 
   if (tasksErr) throw new Error(tasksErr.message);
-  return buildQueue(tasks || [], deps || [], allTasks || [], { includeBlocked }).slice(0, limit);
+  const queue = buildQueue(tasks || [], deps || [], allTasks || [], { includeBlocked }).slice(
+    0,
+    limit
+  );
+  return Promise.all(
+    queue.map((task) =>
+      attachSupervisorToTask(task, { staleLeaseObserved: staleTaskIds.has(task.id) })
+    )
+  );
 }
 
 async function claimNextTaskSupabase(projectId, agentId, { compatibilityMode = false } = {}) {
@@ -2199,7 +2473,10 @@ server.tool(
         return ok({ task: null, message: 'Sin tareas pendientes' });
       }
 
-      return ok({ task: claimed.task, message: 'Tarea asignada al agente.' });
+      return ok({
+        task: await attachSupervisorToTask(claimed.task),
+        message: 'Tarea asignada al agente.',
+      });
     } catch (e) {
       return err(e.message);
     }
@@ -2238,12 +2515,91 @@ server.tool(
     try {
       if (DB_DRIVER !== 'supabase') {
         const claimed = getLocalClaimTransaction()({ projectId: project_id, agentId: agent_id });
-        return ok(claimed);
+        return ok(
+          claimed.task ? { ...claimed, task: await attachSupervisorToTask(claimed.task) } : claimed
+        );
       }
 
       const claimed = await claimNextTaskSupabase(project_id, agent_id);
       if (claimed?.error) return err(claimed.error);
-      return ok(claimed);
+      return ok(
+        claimed.task ? { ...claimed, task: await attachSupervisorToTask(claimed.task) } : claimed
+      );
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'request_supervisor_approval',
+  'Crea o actualiza un approval checkpoint y snapshot supervisor keyed por task/workspace/run/evidence.',
+  {
+    task_id: UUID_OR_LEGACY_ID_SCHEMA,
+    workspace_id: z.string().min(1).optional(),
+    run_id: z.string().min(1).optional(),
+    reason_class: z.enum(SUPERVISOR_REASON_CLASSES),
+    evidence_ref: z.string().min(1).optional(),
+    supervisor_state: z.enum(SUPERVISOR_STATES).optional().default('awaiting_approval'),
+    outcome: z.enum(SUPERVISOR_OUTCOMES).optional().default('request_approval'),
+    task_retry_count: z.number().int().min(0).optional().default(0),
+    attempt_count: z.number().int().min(0).optional().default(0),
+    unchanged_failure_count: z.number().int().min(0).optional().default(0),
+    approval_request_count: z.number().int().min(0).optional().default(1),
+    orphan_recovery_count: z.number().int().min(0).optional().default(0),
+    status: z.enum(SUPERVISOR_APPROVAL_STATUSES).optional().default('pending'),
+    decision_note: z.string().optional(),
+  },
+  async ({
+    task_id,
+    workspace_id,
+    run_id,
+    reason_class,
+    evidence_ref,
+    supervisor_state,
+    outcome,
+    task_retry_count,
+    attempt_count,
+    unchanged_failure_count,
+    approval_request_count,
+    orphan_recovery_count,
+    status,
+    decision_note,
+  }) => {
+    try {
+      const checkpoint = await upsertSupervisorApprovalCheckpointRow({
+        task_id,
+        workspace_id,
+        run_id,
+        reason_class,
+        evidence_ref,
+        status,
+        decision_note,
+        decided_at: status === 'pending' ? null : nowIso(),
+      });
+      const snapshot = await upsertSupervisorSnapshotRow({
+        task_id,
+        workspace_id,
+        run_id,
+        evidence_ref,
+        supervisor_state,
+        outcome,
+        reason_class,
+        task_retry_count,
+        attempt_count,
+        unchanged_failure_count,
+        approval_request_count,
+        orphan_recovery_count,
+        approval_checkpoint_key: checkpoint.checkpoint_key,
+      });
+      return ok({
+        created: true,
+        checkpoint,
+        snapshot: {
+          ...snapshot,
+          approval_checkpoint: checkpoint,
+        },
+      });
     } catch (e) {
       return err(e.message);
     }

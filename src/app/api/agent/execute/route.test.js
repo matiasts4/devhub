@@ -11,6 +11,7 @@ const mockWorkspaceUpdate = jest.fn();
 const mockPrepareAgentWorkspaceLease = jest.fn();
 const mockCreateAgentRun = jest.fn();
 const mockAppendAgentArtifact = jest.fn();
+const mockGetSupervisorSnapshot = jest.fn();
 
 jest.mock('@/lib/db/localDb', () => ({
   getDb: jest.fn(() => ({
@@ -30,6 +31,7 @@ jest.mock('@/lib/db/localDb', () => ({
   prepareAgentWorkspaceLease: (...args) => mockPrepareAgentWorkspaceLease(...args),
   createAgentRun: (...args) => mockCreateAgentRun(...args),
   appendAgentArtifact: (...args) => mockAppendAgentArtifact(...args),
+  getSupervisorSnapshot: (...args) => mockGetSupervisorSnapshot(...args),
 }));
 
 const { NextResponse } = require('next/server');
@@ -81,15 +83,24 @@ describe('POST /api/agent/execute', () => {
       run_id: input.run_id,
       seq: 1,
     }));
+    mockGetSupervisorSnapshot.mockReturnValue({
+      task_id: 'task-1234',
+      supervisor_state: 'dispatch_pending',
+      outcome: 'dispatch',
+      workspace_id: 'workspace-task-1234-agent-1',
+      run_id: 'run-task-1234-agent-1',
+      evidence_ref: null,
+    });
   });
 
-  test('requests workspace preparation handshake, creates a durable run, and does not execute git', async () => {
+  test('consumes supervisor dispatch outcome to request workspace preparation handshake and does not execute git', async () => {
     const { POST } = require('./route.js');
 
     const response = await POST({
       json: async () => ({ task_id: 'task-1234', agent_id: 'agent-1' }),
     });
 
+    expect(mockGetSupervisorSnapshot).toHaveBeenCalledWith(expect.any(Object), 'task-1234');
     expect(mockPrepareAgentWorkspaceLease).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -128,6 +139,25 @@ describe('POST /api/agent/execute', () => {
     expect(response.body.workspace_id).toBe('workspace-task-1234-agent-1');
     expect(response.body.correlation_id).toBe('corr-execute-1');
     expect(response.body.message).toMatch(/workspace preparation/i);
+  });
+
+  test('rejects execute requests when supervisor has not emitted dispatch', async () => {
+    mockGetSupervisorSnapshot.mockReturnValue({
+      task_id: 'task-1234',
+      supervisor_state: 'awaiting_approval',
+      outcome: 'wait',
+      reason_class: 'approval_required',
+    });
+    const { POST } = require('./route.js');
+
+    const response = await POST({
+      json: async () => ({ task_id: 'task-1234', agent_id: 'agent-1' }),
+    });
+
+    expect(mockPrepareAgentWorkspaceLease).not.toHaveBeenCalled();
+    expect(mockCreateAgentRun).not.toHaveBeenCalled();
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/supervisor/i);
   });
 
   test('returns 404 when task is missing', async () => {

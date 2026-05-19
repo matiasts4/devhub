@@ -1,3 +1,5 @@
+/* global window, document */
+
 const React = require('react');
 const useAgentRegistryPolling = require('./useAgentRegistryPolling').default;
 const {
@@ -97,17 +99,19 @@ describe('useAgentRegistryPolling', () => {
   });
 
   test('keeps active/live polling focused on registry plus live sessions and leaves inactive history empty', async () => {
-    mockDbChain.order.mockImplementation(() => Promise.resolve({
-      data: [
-        {
-          agent_id: 'agent-1',
-          current_task_id: 'task-1',
-          nombre: 'opencode',
-          status: 'running',
-          last_heartbeat: new Date().toISOString(),
-        },
-      ],
-    }));
+    mockDbChain.order.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            agent_id: 'agent-1',
+            current_task_id: 'task-1',
+            nombre: 'opencode',
+            status: 'running',
+            last_heartbeat: new Date().toISOString(),
+          },
+        ],
+      })
+    );
     window.localStorage.setItem(
       'devhub_agent_runs',
       JSON.stringify({
@@ -121,7 +125,9 @@ describe('useAgentRegistryPolling', () => {
     );
     fetchSpy.mockResolvedValue({
       ok: true,
-      json: async () => ({ sessions: [{ terminalId: 'panel-1', alive: true, opencodeSessionId: 'oc-1' }] }),
+      json: async () => ({
+        sessions: [{ terminalId: 'panel-1', alive: true, opencodeSessionId: 'oc-1' }],
+      }),
     });
     mockGetAgentRegistryLiveSnapshot.mockReturnValue({
       activeAgents: [
@@ -133,12 +139,17 @@ describe('useAgentRegistryPolling', () => {
       activeAgentsCount: 1,
     });
 
-    const view = await renderIntoDom(React.createElement(Harness, { projectId: 'project-1' }), mountedRoots);
+    const view = await renderIntoDom(
+      React.createElement(Harness, { projectId: 'project-1' }),
+      mountedRoots
+    );
     await waitFor(() => {
       expect(view.container.querySelector('[data-testid="active-count"]')?.textContent).toBe('1');
     });
     expect(view.container.querySelector('[data-testid="inactive-count"]')?.textContent).toBe('0');
-    expect(view.container.querySelector('[data-testid="active-labels"]')?.textContent).toContain('Active run');
+    expect(view.container.querySelector('[data-testid="active-labels"]')?.textContent).toContain(
+      'Active run'
+    );
     expect(fetchSpy).toHaveBeenCalledWith('/api/terminal/sessions', { cache: 'no-store' });
     expect(intervalSpy).toHaveBeenCalled();
   });
@@ -158,5 +169,159 @@ describe('useAgentRegistryPolling', () => {
 
     expect(intervalSpy).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('keeps polling consumers focused on blocked supervisor projections without reviving inactive history', async () => {
+    mockDbChain.order.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            agent_id: 'agent-blocked',
+            current_task_id: 'task-blocked',
+            nombre: 'opencode',
+            status: 'running',
+            last_heartbeat: new Date().toISOString(),
+            workspace_id: 'ws-blocked',
+          },
+        ],
+      })
+    );
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({
+        'ws-blocked': {
+          panelId: 'panel-blocked',
+          taskTitle: 'Blocked by unchanged failure',
+          selectedAgent: 'worker',
+          supervisor_snapshot: {
+            supervisor_state: 'blocked',
+            outcome: 'block',
+            reason_class: 'unchanged_failure',
+            attempt_count: 3,
+            task_retry_count: 2,
+          },
+        },
+      })
+    );
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({ sessions: [{ terminalId: 'panel-blocked', alive: true }] }),
+    });
+    mockGetAgentRegistryLiveSnapshot.mockReturnValue({
+      activeAgents: [
+        {
+          agent_id: 'agent-blocked',
+          _displayName: 'Blocked by unchanged failure',
+          supervisor: {
+            supervisor_state: 'blocked',
+            reason_class: 'unchanged_failure',
+          },
+        },
+      ],
+      activeAgentsCount: 1,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(Harness, { projectId: 'project-1' }),
+      mountedRoots
+    );
+
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-testid="active-count"]')?.textContent).toBe('1');
+    });
+    expect(view.container.querySelector('[data-testid="inactive-count"]')?.textContent).toBe('0');
+    expect(view.container.querySelector('[data-testid="active-labels"]')?.textContent).toContain(
+      'Blocked by unchanged failure'
+    );
+    expect(fetchSpy).toHaveBeenCalledWith('/api/terminal/sessions', { cache: 'no-store' });
+  });
+
+  test('keeps approval and orphan supervisor polling payloads in active registry results', async () => {
+    mockDbChain.order.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            agent_id: 'agent-approval',
+            current_task_id: 'task-approval',
+            nombre: 'opencode',
+            status: 'running',
+            last_heartbeat: new Date().toISOString(),
+            workspace_id: 'ws-approval',
+          },
+          {
+            agent_id: 'agent-orphan',
+            current_task_id: 'task-orphan',
+            nombre: 'worker',
+            status: 'running',
+            last_heartbeat: new Date().toISOString(),
+            workspace_id: 'ws-orphan',
+          },
+        ],
+      })
+    );
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({
+        'ws-approval': {
+          panelId: 'panel-approval',
+          taskTitle: 'Awaiting approval',
+          supervisor_snapshot: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'approval_required',
+          },
+        },
+        'ws-orphan': {
+          panelId: 'panel-orphan',
+          taskTitle: 'Recover orphan workspace',
+          supervisor_snapshot: {
+            supervisor_state: 'recovering_orphan',
+            reason_class: 'orphaned_workspace',
+          },
+        },
+      })
+    );
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        sessions: [
+          { terminalId: 'panel-approval', alive: true },
+          { terminalId: 'panel-orphan', alive: true },
+        ],
+      }),
+    });
+    mockGetAgentRegistryLiveSnapshot.mockReturnValue({
+      activeAgents: [
+        {
+          agent_id: 'agent-approval',
+          _displayName: 'Awaiting approval',
+          supervisor: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'approval_required',
+          },
+        },
+        {
+          agent_id: 'agent-orphan',
+          _displayName: 'Recover orphan workspace',
+          supervisor: {
+            supervisor_state: 'recovering_orphan',
+            reason_class: 'orphaned_workspace',
+          },
+        },
+      ],
+      activeAgentsCount: 2,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(Harness, { projectId: 'project-1' }),
+      mountedRoots
+    );
+
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-testid="active-count"]')?.textContent).toBe('2');
+    });
+    expect(view.container.querySelector('[data-testid="inactive-count"]')?.textContent).toBe('0');
+    const labels = view.container.querySelector('[data-testid="active-labels"]')?.textContent || '';
+    expect(labels).toContain('Awaiting approval');
+    expect(labels).toContain('Recover orphan workspace');
   });
 });

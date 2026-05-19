@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   getDb,
+  getSupervisorSnapshot,
   prepareAgentWorkspaceLease,
   createAgentRun,
   appendAgentArtifact,
@@ -18,6 +19,17 @@ export async function POST(request) {
     }
 
     const db = getDb();
+    const supervisor = getSupervisorSnapshot(db, task_id);
+
+    if (!supervisor || supervisor.outcome !== 'dispatch') {
+      return NextResponse.json(
+        {
+          error: 'Supervisor has not emitted a dispatch outcome for this task',
+          supervisor: supervisor || null,
+        },
+        { status: 409 }
+      );
+    }
 
     // 1. Validate agent exists
     const agent = db.tables.agent_registry.select({
@@ -93,6 +105,7 @@ export async function POST(request) {
       run_id: run.run_id,
       startup_artifact_id: startupArtifact.artifact_id,
       correlation_id: prepared.ack.correlation_id,
+      supervisor,
       agent_id: agent_id,
       task_id: task_id,
     });

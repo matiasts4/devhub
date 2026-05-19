@@ -17,8 +17,6 @@ jest.mock('@/lib/db/localDb.js', () => ({
 
 // SwarmQueue is a class — we need a fresh instance per test.
 // Require the module AFTER mocks are set up.
-const SwarmQueue = require('../queue.js').constructor;
-
 // But queue.js exports a singleton instance, not the class.
 // We need to test the class directly. Two options:
 //   A) Require the singleton and manipulate it directly
@@ -148,5 +146,65 @@ describe('SwarmQueue.remove()', () => {
     expect(rejects[1]).toHaveBeenCalledTimes(1); // item-2's reject called
     expect(rejects[0]).not.toHaveBeenCalled(); // item-1 untouched
     expect(rejects[2]).not.toHaveBeenCalled(); // item-3 untouched
+  });
+
+  test('getStatus() keeps FIFO order with 1-based positions for queued work', () => {
+    queue.queue.push(
+      {
+        id: 'item-1',
+        body: { agent: 'worker-1' },
+        enqueuedAt: 1000,
+        resolve: jest.fn(),
+        reject: jest.fn(),
+      },
+      {
+        id: 'item-2',
+        body: { agent: 'worker-2' },
+        enqueuedAt: 2000,
+        resolve: jest.fn(),
+        reject: jest.fn(),
+      },
+      {
+        id: 'item-3',
+        body: { agent: 'worker-3' },
+        enqueuedAt: 3000,
+        resolve: jest.fn(),
+        reject: jest.fn(),
+      }
+    );
+
+    const status = queue.getStatus();
+
+    expect(status.length).toBe(3);
+    expect(status.items).toEqual([
+      expect.objectContaining({ id: 'item-1', position: 1, enqueuedAt: 1000 }),
+      expect.objectContaining({ id: 'item-2', position: 2, enqueuedAt: 2000 }),
+      expect.objectContaining({ id: 'item-3', position: 3, enqueuedAt: 3000 }),
+    ]);
+  });
+
+  test('getStatus() estimates longer wait for later queue positions', () => {
+    queue.queue.push(
+      {
+        id: 'item-1',
+        body: {},
+        enqueuedAt: 1000,
+        resolve: jest.fn(),
+        reject: jest.fn(),
+      },
+      {
+        id: 'item-2',
+        body: {},
+        enqueuedAt: 2000,
+        resolve: jest.fn(),
+        reject: jest.fn(),
+      }
+    );
+
+    const status = queue.getStatus();
+
+    expect(status.items[0].estimatedWaitMs).toBe(0);
+    expect(status.items[1].estimatedWaitMs).toBe(30000);
+    expect(status.atLimit).toBe(false);
   });
 });

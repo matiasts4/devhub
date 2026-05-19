@@ -25,7 +25,12 @@ jest.mock('@/lib/db/localDb', () => {
 
 const executeRoute = require('../../src/app/api/agent/execute/route.js');
 const qaRoute = require('../../src/app/api/agent/qa-result/route.js');
-const { getAgentRunById, listAgentArtifacts } = require('../../src/lib/db/localDb');
+const {
+  getAgentRunById,
+  listAgentArtifacts,
+  upsertSupervisorSnapshot,
+  upsertSupervisorApprovalCheckpoint,
+} = require('../../src/lib/db/localDb');
 
 function buildWhereClause(where = []) {
   const clauses = [];
@@ -116,6 +121,18 @@ function seedExecutionFixture(db, { taskId, agentId, retryCount = 0 }) {
     '2026-05-18T22:00:00.000Z',
     '2026-05-18T22:00:00.000Z'
   );
+
+  upsertSupervisorSnapshot(db, {
+    task_id: taskId,
+    supervisor_state: 'dispatch_pending',
+    outcome: 'dispatch',
+    reason_class: null,
+    task_retry_count: retryCount,
+    attempt_count: 0,
+    unchanged_failure_count: 0,
+    approval_request_count: 0,
+    orphan_recovery_count: 0,
+  });
 }
 
 describe('agent execute/qa durable audit integration', () => {
@@ -140,6 +157,32 @@ describe('agent execute/qa durable audit integration', () => {
 
     expect(executeResponse.status).toBe(200);
 
+    upsertSupervisorApprovalCheckpoint(db, {
+      task_id: 'task-approve-1',
+      workspace_id: executeResponse.body.workspace_id,
+      run_id: executeResponse.body.run_id,
+      reason_class: 'approval_required',
+      evidence_ref: 'evidence://qa-approved-integration-1',
+      status: 'pending',
+      requested_at: '2026-05-19T01:00:00.000Z',
+      updated_at: '2026-05-19T01:00:00.000Z',
+    });
+    upsertSupervisorSnapshot(db, {
+      task_id: 'task-approve-1',
+      supervisor_state: 'awaiting_approval',
+      outcome: 'request_approval',
+      reason_class: 'approval_required',
+      task_retry_count: 0,
+      attempt_count: 1,
+      unchanged_failure_count: 0,
+      approval_request_count: 1,
+      orphan_recovery_count: 0,
+      workspace_id: executeResponse.body.workspace_id,
+      run_id: executeResponse.body.run_id,
+      evidence_ref: 'evidence://qa-approved-integration-1',
+      approval_checkpoint_key: `${'task-approve-1'}|${executeResponse.body.workspace_id}|${executeResponse.body.run_id}|approval_required|evidence://qa-approved-integration-1`,
+    });
+
     const qaResponse = await qaRoute.POST({
       json: async () => ({
         task_id: 'task-approve-1',
@@ -157,6 +200,12 @@ describe('agent execute/qa durable audit integration', () => {
         'SELECT status, evidence_ref, run_id_or_session_id FROM agent_workspaces WHERE id = ?'
       )
       .get(executeResponse.body.workspace_id);
+    const snapshot = db
+      .prepare('SELECT * FROM supervisor_snapshots WHERE task_id = ?')
+      .get('task-approve-1');
+    const checkpoint = db
+      .prepare('SELECT * FROM supervisor_approval_checkpoints WHERE task_id = ?')
+      .get('task-approve-1');
 
     expect(qaResponse.status).toBe(200);
     expect(run.status).toBe('succeeded');
@@ -166,6 +215,10 @@ describe('agent execute/qa durable audit integration', () => {
       evidence_ref: 'evidence://qa-approved-integration-1',
       run_id_or_session_id: executeResponse.body.run_id,
     });
+    expect(snapshot.supervisor_state).toBe('closed');
+    expect(snapshot.outcome).toBe('close');
+    expect(snapshot.reason_class).toBe('completed');
+    expect(checkpoint.status).toBe('approved');
     expect(artifacts.map((artifact) => artifact.seq)).toEqual([1, 2]);
     expect(artifacts.map((artifact) => artifact.kind)).toEqual(['decision.note', 'qa.result']);
     expect(artifacts.map((artifact) => artifact.evidence_ref)).toEqual([
@@ -186,6 +239,32 @@ describe('agent execute/qa durable audit integration', () => {
       json: async () => ({ task_id: 'task-blocked-1', agent_id: 'agent-blocked-1' }),
     });
 
+    upsertSupervisorApprovalCheckpoint(db, {
+      task_id: 'task-blocked-1',
+      workspace_id: executeResponse.body.workspace_id,
+      run_id: executeResponse.body.run_id,
+      reason_class: 'approval_required',
+      evidence_ref: 'evidence://qa-blocked-integration-1',
+      status: 'pending',
+      requested_at: '2026-05-19T01:00:00.000Z',
+      updated_at: '2026-05-19T01:00:00.000Z',
+    });
+    upsertSupervisorSnapshot(db, {
+      task_id: 'task-blocked-1',
+      supervisor_state: 'awaiting_approval',
+      outcome: 'request_approval',
+      reason_class: 'approval_required',
+      task_retry_count: 2,
+      attempt_count: 1,
+      unchanged_failure_count: 0,
+      approval_request_count: 1,
+      orphan_recovery_count: 0,
+      workspace_id: executeResponse.body.workspace_id,
+      run_id: executeResponse.body.run_id,
+      evidence_ref: 'evidence://qa-blocked-integration-1',
+      approval_checkpoint_key: `${'task-blocked-1'}|${executeResponse.body.workspace_id}|${executeResponse.body.run_id}|approval_required|evidence://qa-blocked-integration-1`,
+    });
+
     const qaResponse = await qaRoute.POST({
       json: async () => ({
         task_id: 'task-blocked-1',
@@ -204,19 +283,26 @@ describe('agent execute/qa durable audit integration', () => {
     const workspace = db
       .prepare('SELECT status, recovery_reason, evidence_ref FROM agent_workspaces WHERE id = ?')
       .get(executeResponse.body.workspace_id);
+    const snapshot = db
+      .prepare('SELECT * FROM supervisor_snapshots WHERE task_id = ?')
+      .get('task-blocked-1');
+    const checkpoint = db
+      .prepare('SELECT * FROM supervisor_approval_checkpoints WHERE task_id = ?')
+      .get('task-blocked-1');
 
     expect(qaResponse.status).toBe(200);
-    expect(run.status).toBe('failed');
-    expect(run.terminal_reason_class).toBe('qa_blocked');
-    expect(task).toEqual({ status: 'blocked', retry_count: 3 });
+    expect(run.status).toBe('running');
+    expect(run.terminal_reason_class).toBeNull();
+    expect(task).toEqual({ status: 'in_progress', retry_count: 2 });
     expect(workspace).toEqual({
-      status: 'cleanup_pending',
-      recovery_reason: 'qa-blocked',
-      evidence_ref: 'evidence://qa-blocked-integration-1',
+      status: 'provisioning',
+      recovery_reason: null,
+      evidence_ref: null,
     });
-    expect(artifacts.map((artifact) => artifact.seq)).toEqual([1, 2]);
-    expect(artifacts[1].kind).toBe('qa.result');
-    expect(artifacts[1].summary).toMatch(/blocked/i);
+    expect(snapshot.supervisor_state).toBe('blocked');
+    expect(snapshot.reason_class).toBe('approval_rejected');
+    expect(checkpoint.status).toBe('rejected');
+    expect(artifacts.map((artifact) => artifact.seq)).toEqual([1]);
     expect(artifacts.every((artifact) => artifact.kind !== 'workspace.cleanup')).toBe(true);
   });
 });

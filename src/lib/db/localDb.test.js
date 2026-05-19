@@ -4,8 +4,14 @@ const Database = require('better-sqlite3');
 const {
   AGENT_WORKSPACE_BASE_COMMIT,
   buildPrepareAgentWorkspaceAck,
+  buildSupervisorApprovalCheckpointKey,
   ensureRuntimeSchema,
+  getSupervisorApprovalCheckpoint,
+  getSupervisorSnapshot,
+  listSupervisorApprovalCheckpoints,
   prepareAgentWorkspaceLease,
+  upsertSupervisorApprovalCheckpoint,
+  upsertSupervisorSnapshot,
 } = require('./localDb.js');
 const { applyTestSchema } = require('../../../lib/test-schema.js');
 
@@ -425,4 +431,354 @@ test('buildPrepareAgentWorkspaceAck exposes opaque correlation fields only', () 
   assert.equal(ack.task_id, 'task-ack-1');
   assert.equal(ack.agent_id, 'agent-ack-1');
   assert.equal(ack.requested_base_ref, FROZEN_BASE_COMMIT);
+});
+
+test('creates supervisor snapshot projection tables without git ownership fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const snapshotColumns = db
+    .prepare('PRAGMA table_info(supervisor_snapshots)')
+    .all()
+    .map((column) => column.name);
+  const approvalColumns = db
+    .prepare('PRAGMA table_info(supervisor_approval_checkpoints)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(
+    JSON.stringify(snapshotColumns),
+    JSON.stringify([
+      'task_id',
+      'supervisor_state',
+      'outcome',
+      'reason_class',
+      'task_retry_count',
+      'attempt_count',
+      'unchanged_failure_count',
+      'approval_request_count',
+      'orphan_recovery_count',
+      'workspace_id',
+      'run_id',
+      'evidence_ref',
+      'approval_checkpoint_key',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(approvalColumns),
+    JSON.stringify([
+      'checkpoint_key',
+      'task_id',
+      'workspace_id',
+      'run_id',
+      'reason_class',
+      'evidence_ref',
+      'status',
+      'requested_at',
+      'decided_at',
+      'decision_note',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(snapshotColumns.includes('branch_name'), false);
+  assert.equal(snapshotColumns.includes('worktree_path'), false);
+  assert.equal(snapshotColumns.includes('repo_root'), false);
+  assert.equal(approvalColumns.includes('branch_name'), false);
+  assert.equal(approvalColumns.includes('worktree_path'), false);
+
+  db.close();
+});
+
+test('applyTestSchema mirrors supervisor snapshot projection tables', () => {
+  const db = new Database(':memory:');
+
+  applyTestSchema(db);
+
+  const snapshotColumns = db
+    .prepare('PRAGMA table_info(supervisor_snapshots)')
+    .all()
+    .map((column) => column.name);
+  const approvalColumns = db
+    .prepare('PRAGMA table_info(supervisor_approval_checkpoints)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(snapshotColumns.length > 0, true);
+  assert.equal(approvalColumns.length > 0, true);
+  assert.equal(snapshotColumns.includes('approval_checkpoint_key'), true);
+  assert.equal(approvalColumns.includes('checkpoint_key'), true);
+
+  db.close();
+});
+
+test('stores supervisor snapshots with reason and evidence fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-1',
+    current_task_id: 'task-supervisor-1',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-1',
+    'ws-supervisor-1',
+    'task-supervisor-1',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  const snapshot = upsertSupervisorSnapshot(db, {
+    task_id: 'task-supervisor-1',
+    supervisor_state: 'awaiting_approval',
+    outcome: 'request_approval',
+    reason_class: 'approval_required',
+    task_retry_count: 2,
+    attempt_count: 3,
+    unchanged_failure_count: 1,
+    approval_request_count: 1,
+    orphan_recovery_count: 0,
+    workspace_id: 'ws-supervisor-1',
+    run_id: 'run-supervisor-1',
+    evidence_ref: 'evidence://supervisor/task-supervisor-1',
+  });
+
+  const stored = getSupervisorSnapshot(db, 'task-supervisor-1');
+
+  assert.equal(snapshot.task_id, 'task-supervisor-1');
+  assert.equal(stored.supervisor_state, 'awaiting_approval');
+  assert.equal(stored.outcome, 'request_approval');
+  assert.equal(stored.reason_class, 'approval_required');
+  assert.equal(stored.workspace_id, 'ws-supervisor-1');
+  assert.equal(stored.run_id, 'run-supervisor-1');
+  assert.equal(stored.evidence_ref, 'evidence://supervisor/task-supervisor-1');
+  assert.equal(stored.task_retry_count, 2);
+  assert.equal(stored.attempt_count, 3);
+  assert.equal(stored.unchanged_failure_count, 1);
+  assert.equal(stored.approval_request_count, 1);
+
+  db.close();
+});
+
+test('builds deterministic approval checkpoint keys from task workspace run and evidence', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-2',
+    current_task_id: 'task-supervisor-2',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-2',
+    'ws-supervisor-2',
+    'task-supervisor-2',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  const checkpointKey = buildSupervisorApprovalCheckpointKey({
+    task_id: 'task-supervisor-2',
+    workspace_id: 'ws-supervisor-2',
+    run_id: 'run-supervisor-2',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-2',
+  });
+
+  const checkpoint = upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-2',
+    workspace_id: 'ws-supervisor-2',
+    run_id: 'run-supervisor-2',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-2',
+  });
+
+  const stored = getSupervisorApprovalCheckpoint(db, checkpointKey);
+
+  assert.equal(checkpoint.checkpoint_key, checkpointKey);
+  assert.equal(stored.checkpoint_key, checkpointKey);
+  assert.equal(stored.status, 'pending');
+  assert.equal(stored.reason_class, 'approval_required');
+  assert.equal(stored.workspace_id, 'ws-supervisor-2');
+  assert.equal(stored.run_id, 'run-supervisor-2');
+  assert.equal(stored.evidence_ref, 'evidence://supervisor/task-supervisor-2');
+
+  db.close();
+});
+
+test('persists approval decisions with auditable timestamps', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-3',
+    current_task_id: 'task-supervisor-3',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-3',
+    'ws-supervisor-3',
+    'task-supervisor-3',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  const pending = upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-3',
+    workspace_id: 'ws-supervisor-3',
+    run_id: 'run-supervisor-3',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-3',
+    status: 'pending',
+    requested_at: '2026-05-19T01:00:00.000Z',
+    updated_at: '2026-05-19T01:00:00.000Z',
+  });
+
+  const approved = upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-3',
+    workspace_id: 'ws-supervisor-3',
+    run_id: 'run-supervisor-3',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-3',
+    status: 'approved',
+    decision_note: 'Approved by human supervisor',
+    updated_at: '2026-05-19T01:05:00.000Z',
+  });
+
+  assert.equal(approved.checkpoint_key, pending.checkpoint_key);
+  assert.equal(approved.status, 'approved');
+  assert.equal(approved.requested_at, '2026-05-19T01:00:00.000Z');
+  assert.equal(approved.decided_at, '2026-05-19T01:05:00.000Z');
+  assert.equal(approved.decision_note, 'Approved by human supervisor');
+
+  db.close();
+});
+
+test('lists approval checkpoints newest-first so pending and approved audit records stay queryable', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-4',
+    current_task_id: 'task-supervisor-4',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-4',
+    'ws-supervisor-4',
+    'task-supervisor-4',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-4',
+    workspace_id: 'ws-supervisor-4',
+    run_id: 'run-supervisor-4',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-4/pending',
+    status: 'pending',
+    requested_at: '2026-05-19T02:00:00.000Z',
+    updated_at: '2026-05-19T02:00:00.000Z',
+  });
+  upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-4',
+    workspace_id: 'ws-supervisor-4',
+    run_id: 'run-supervisor-4',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-4/approved',
+    status: 'approved',
+    decision_note: 'Approved after review',
+    requested_at: '2026-05-19T02:05:00.000Z',
+    updated_at: '2026-05-19T02:06:00.000Z',
+    decided_at: '2026-05-19T02:06:00.000Z',
+  });
+
+  const checkpoints = listSupervisorApprovalCheckpoints(db, {
+    task_id: 'task-supervisor-4',
+    limit: 2,
+  });
+
+  assert.equal(checkpoints.length, 2);
+  assert.equal(checkpoints[0].status, 'approved');
+  assert.equal(checkpoints[0].decision_note, 'Approved after review');
+  assert.equal(checkpoints[1].status, 'pending');
+  assert.equal(checkpoints[1].evidence_ref, 'evidence://supervisor/task-supervisor-4/pending');
+
+  db.close();
+});
+
+test('stores unchanged_failure supervisor snapshots with durable counters and evidence refs', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-5',
+    current_task_id: 'task-supervisor-5',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status, terminal_reason_class
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-5',
+    'ws-supervisor-5',
+    'task-supervisor-5',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'failed',
+    'recoverable_failure'
+  );
+
+  upsertSupervisorSnapshot(db, {
+    task_id: 'task-supervisor-5',
+    supervisor_state: 'blocked',
+    outcome: 'block',
+    reason_class: 'unchanged_failure',
+    task_retry_count: 2,
+    attempt_count: 3,
+    unchanged_failure_count: 1,
+    approval_request_count: 0,
+    orphan_recovery_count: 0,
+    workspace_id: 'ws-supervisor-5',
+    run_id: 'run-supervisor-5',
+    evidence_ref: 'evidence://supervisor/task-supervisor-5/repeat',
+  });
+
+  const stored = getSupervisorSnapshot(db, 'task-supervisor-5');
+
+  assert.equal(stored.supervisor_state, 'blocked');
+  assert.equal(stored.outcome, 'block');
+  assert.equal(stored.reason_class, 'unchanged_failure');
+  assert.equal(stored.attempt_count, 3);
+  assert.equal(stored.task_retry_count, 2);
+  assert.equal(stored.unchanged_failure_count, 1);
+  assert.equal(stored.evidence_ref, 'evidence://supervisor/task-supervisor-5/repeat');
+
+  db.close();
 });

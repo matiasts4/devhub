@@ -475,6 +475,37 @@ Resultado esperado:
 - Esos consumers muestran outcomes (`ready`, `conflicted`, `failed`, `orphaned`) y referencias auditables, **sin mostrar verbos Git** como `checkout`, `merge`, `branch` o `worktree`.
 - `dirty-excluded` sigue siendo realidad observada del ejecutor; los consumers la propagan como estado/evidencia, no como limpieza normalizada.
 
+### Snapshot supervisor downstream congelado por SW-4.1
+
+Desde SW-4.1 los consumers externos y de UI deben leer UNICAMENTE un snapshot supervisor normalizado. Ese payload es el boundary canónico para Swarm Control, Telegram y MCP Control Center.
+
+Campos esperados:
+
+```json
+{
+  "supervisor_state": "awaiting_approval",
+  "outcome": "request_approval",
+  "reason_class": "approval_required",
+  "task_retry_count": 1,
+  "attempt_count": 2,
+  "unchanged_failure_count": 0,
+  "approval_request_count": 3,
+  "orphan_recovery_count": 0,
+  "workspace_id": "ws-123",
+  "run_id": "run-123",
+  "evidence_ref": "evidence://supervisor/task-123",
+  "updated_at": "2026-05-19T06:45:00.000Z"
+}
+```
+
+Reglas de consumo:
+
+- UI/Telegram/Control Center pueden renderizar `supervisor_state`, `reason_class`, contadores y `evidence_ref`.
+- Pueden mostrar labels tipo `awaiting_approval`, `recovering_orphan`, `blocked`, `retry_pending` o `awaiting_evidence`.
+- NO deben depender de `approval_checkpoint`, logs de terminal, `panelId`, paths locales, branch names, worktree paths ni mirrors `devhub_agent_runs` para decidir estado.
+- `evidence_ref` se trata como locator opaco auditable; se muestra o enruta, pero no se parsea como contrato UI.
+- Si existe mirror runtime local, sólo puede enriquecer UX efímera; jamás corrige ni reemplaza el snapshot supervisor durable.
+
 ---
 
 ## Fase SW-7 — MCP Control Center

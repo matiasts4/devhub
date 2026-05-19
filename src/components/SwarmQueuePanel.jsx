@@ -27,7 +27,25 @@ export function formatWaitMs(ms) {
  * @returns {Array}
  */
 export function buildItemsFromResponse(data) {
-  return data?.queue?.items ?? [];
+  const rawItems = Array.isArray(data?.queue) ? data.queue : data?.queue?.items;
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems.map((item, index) => {
+    const {
+      supervisor: _supervisor,
+      supervisor_snapshot: _supervisorSnapshot,
+      supervisorSnapshot: _supervisorSnapshotCamel,
+      ...rest
+    } = item;
+
+    return {
+      ...rest,
+      position: item.position ?? index + 1,
+      supervisor: normalizeSupervisorSnapshot(
+        item.supervisor_snapshot || item.supervisorSnapshot || item.supervisor
+      ),
+    };
+  });
 }
 
 /**
@@ -60,6 +78,68 @@ export function buildOperationalQueueBanner(queueHealth) {
       length > 0
         ? `Hay ${length} tarea${length !== 1 ? 's' : ''} en memoria; se pierden al reiniciar.`
         : 'La cola sigue siendo en memoria; se pierde al reiniciar.',
+  };
+}
+
+function normalizeCount(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function pickFirstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function normalizeSupervisorSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+
+  const normalized = {
+    supervisor_state: pickFirstDefined(snapshot.supervisor_state, snapshot.supervisorState) || null,
+    outcome: snapshot.outcome || null,
+    reason_class: pickFirstDefined(snapshot.reason_class, snapshot.reasonClass) || null,
+    task_retry_count: normalizeCount(
+      pickFirstDefined(snapshot.task_retry_count, snapshot.taskRetryCount)
+    ),
+    attempt_count: normalizeCount(pickFirstDefined(snapshot.attempt_count, snapshot.attemptCount)),
+    unchanged_failure_count: normalizeCount(
+      pickFirstDefined(snapshot.unchanged_failure_count, snapshot.unchangedFailureCount)
+    ),
+    approval_request_count: normalizeCount(
+      pickFirstDefined(snapshot.approval_request_count, snapshot.approvalRequestCount)
+    ),
+    orphan_recovery_count: normalizeCount(
+      pickFirstDefined(snapshot.orphan_recovery_count, snapshot.orphanRecoveryCount)
+    ),
+    workspace_id: pickFirstDefined(snapshot.workspace_id, snapshot.workspaceId) || null,
+    run_id: pickFirstDefined(snapshot.run_id, snapshot.runId) || null,
+    evidence_ref: pickFirstDefined(snapshot.evidence_ref, snapshot.evidenceRef) || null,
+    updated_at: pickFirstDefined(snapshot.updated_at, snapshot.updatedAt) || null,
+  };
+
+  return normalized.supervisor_state ? normalized : null;
+}
+
+export function buildSupervisorSnapshotSummary(supervisor) {
+  const snapshot = normalizeSupervisorSnapshot(supervisor);
+  if (!snapshot) return null;
+
+  const counters = [];
+  if (snapshot.attempt_count > 0) counters.push(`Intentos ${snapshot.attempt_count}`);
+  if (snapshot.task_retry_count > 0) counters.push(`Retries ${snapshot.task_retry_count}`);
+  if (snapshot.approval_request_count > 0) {
+    counters.push(`Aprobaciones ${snapshot.approval_request_count}`);
+  }
+  if (snapshot.orphan_recovery_count > 0) {
+    counters.push(`Recuperaciones ${snapshot.orphan_recovery_count}`);
+  }
+
+  return {
+    stateLabel: snapshot.supervisor_state.replace(/_/g, ' ').toUpperCase(),
+    reasonLabel: snapshot.reason_class || null,
+    counters,
+    evidenceRef: snapshot.evidence_ref || null,
   };
 }
 
@@ -254,52 +334,85 @@ export default function SwarmQueuePanel() {
           </div>
         ) : (
           <div className="p-2 flex flex-col gap-1.5">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-start gap-2 p-2 rounded-md"
-                style={{ background: '#111826', border: '1px solid #1f2937' }}
-              >
-                {/* Position badge */}
-                <span
-                  className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold mt-0.5"
-                  style={{ background: '#1a2744', color: '#93c5fd' }}
-                >
-                  {item.position}
-                </span>
+            {items.map((item) => {
+              const supervisorSummary = buildSupervisorSnapshotSummary(item.supervisor);
 
-                {/* Item info */}
-                <div className="flex-1 min-w-0">
-                  <div
-                    className="font-medium truncate"
-                    style={{ color: '#e2e8f0' }}
-                    title={item.title}
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-start gap-2 p-2 rounded-md"
+                  style={{ background: '#111826', border: '1px solid #1f2937' }}
+                >
+                  {/* Position badge */}
+                  <span
+                    className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold mt-0.5"
+                    style={{ background: '#1a2744', color: '#93c5fd' }}
                   >
-                    {item.title}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5" style={{ color: '#6b7280' }}>
-                    <span>{item.agent}</span>
-                    {item.estimatedWaitMs > 0 && (
-                      <span className="flex items-center gap-0.5">
-                        <Clock className="w-2.5 h-2.5" />
-                        {formatWaitMs(item.estimatedWaitMs)}
-                      </span>
+                    {item.position}
+                  </span>
+
+                  {/* Item info */}
+                  <div className="flex-1 min-w-0">
+                    {supervisorSummary && (
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                        <span className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-300">
+                          {supervisorSummary.stateLabel}
+                        </span>
+                        {supervisorSummary.reasonLabel && (
+                          <span style={{ color: '#fbbf24' }}>{supervisorSummary.reasonLabel}</span>
+                        )}
+                      </div>
+                    )}
+                    <div
+                      className="font-medium truncate"
+                      style={{ color: '#e2e8f0' }}
+                      title={item.title}
+                    >
+                      {item.title}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5" style={{ color: '#6b7280' }}>
+                      <span>{item.agent}</span>
+                      {item.estimatedWaitMs > 0 && (
+                        <span className="flex items-center gap-0.5">
+                          <Clock className="w-2.5 h-2.5" />
+                          {formatWaitMs(item.estimatedWaitMs)}
+                        </span>
+                      )}
+                    </div>
+                    {supervisorSummary?.counters?.length > 0 && (
+                      <div
+                        className="mt-1 flex flex-wrap gap-2 text-[10px]"
+                        style={{ color: '#94a3b8' }}
+                      >
+                        {supervisorSummary.counters.map((counter) => (
+                          <span key={counter}>{counter}</span>
+                        ))}
+                      </div>
+                    )}
+                    {supervisorSummary?.evidenceRef && (
+                      <div
+                        className="mt-1 truncate text-[10px]"
+                        style={{ color: '#7dd3fc' }}
+                        title={supervisorSummary.evidenceRef}
+                      >
+                        {supervisorSummary.evidenceRef}
+                      </div>
                     )}
                   </div>
-                </div>
 
-                {/* Cancel button */}
-                <button
-                  onClick={() => handleCancel(item.id)}
-                  disabled={cancelling.has(item.id)}
-                  className="shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-red-500/20 transition-colors disabled:opacity-50"
-                  style={{ color: '#9ca3af' }}
-                  title="Cancelar tarea"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
+                  {/* Cancel button */}
+                  <button
+                    onClick={() => handleCancel(item.id)}
+                    disabled={cancelling.has(item.id)}
+                    className="shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                    style={{ color: '#9ca3af' }}
+                    title="Cancelar tarea"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

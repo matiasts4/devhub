@@ -18,6 +18,7 @@ describe('MCP Task Tools', () => {
   let projectId;
   let userId;
   let createdTaskId;
+  let isolatedProjectId;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -29,6 +30,10 @@ describe('MCP Task Tools', () => {
       projectId = projects.projects[0].id;
     }
     userId = '54fee7d7-340d-4683-b259-b61a39567f94'; // Standard test user
+    const isolatedProject = await harness.callTool('create_project', {
+      name: 'Supervisor Contract Integration Project',
+    });
+    isolatedProjectId = isolatedProject.project.id;
   });
 
   afterAll(async () => {
@@ -264,6 +269,87 @@ describe('MCP Task Tools', () => {
       expect(released.released).toBe(true);
       expect(released.task.status).toBe('pending');
       expect(released.task.claim_token).toBeNull();
+    });
+
+    it('surfaces supervisor snapshots with reason/evidence fields in queue and task claims', async () => {
+      if (!isolatedProjectId) return;
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: isolatedProjectId,
+        user_id: userId,
+        title: 'Supervisor Contract Task',
+      });
+
+      const workspaceResult = await harness.callTool('create_agent_workspace', {
+        workspace_id: 'ws-supervisor-contract-1',
+        project_id: isolatedProjectId,
+        agent_id: 'agent-supervisor-contract-1',
+        current_task_id: taskResult.task.id,
+        run_id_or_session_id: 'session-supervisor-contract-1',
+        repo_root: '/repo/devhub',
+        workspace_path: 'workspace://devhub/ws-supervisor-contract-1',
+        base_branch: 'main',
+        status: 'planned',
+      });
+
+      const runResult = await harness.callTool('create_agent_run', {
+        run_id: 'run-supervisor-contract-1',
+        workspace_id: workspaceResult.workspace.id,
+        task_id: taskResult.task.id,
+        agent_id: 'agent-supervisor-contract-1',
+        requested_base_ref: 'f814998dd05cb491caf8637bf570dbd74b539090',
+        baseline_commit: 'f814998dd05cb491caf8637bf570dbd74b539090',
+        status: 'running',
+      });
+
+      const checkpoint = await harness.callTool('request_supervisor_approval', {
+        task_id: taskResult.task.id,
+        workspace_id: workspaceResult.workspace.id,
+        run_id: runResult.run.run_id,
+        reason_class: 'approval_required',
+        evidence_ref: 'evidence://supervisor/contract-1',
+      });
+
+      const queue = await harness.callTool('get_execution_queue', {
+        project_id: isolatedProjectId,
+        limit: 20,
+      });
+      const nextTask = await harness.callTool('get_next_task', {
+        project_id: isolatedProjectId,
+        agent_id: 'agent-supervisor-reader-1',
+      });
+
+      const queuedTask = queue.queue.find((task) => task.id === taskResult.task.id);
+      expect(queuedTask.supervisor).toEqual(
+        expect.objectContaining({
+          supervisor_state: 'awaiting_approval',
+          outcome: 'wait',
+          reason_class: 'approval_required',
+          evidence_ref: 'evidence://supervisor/contract-1',
+          workspace_id: workspaceResult.workspace.id,
+          run_id: runResult.run.run_id,
+          approval_checkpoint_key: checkpoint.checkpoint.checkpoint_key,
+        })
+      );
+      expect(queuedTask.supervisor.approval_checkpoint).toEqual(
+        expect.objectContaining({
+          checkpoint_key: checkpoint.checkpoint.checkpoint_key,
+          status: 'pending',
+          task_id: taskResult.task.id,
+          workspace_id: workspaceResult.workspace.id,
+          run_id: runResult.run.run_id,
+        })
+      );
+      expect(nextTask.task.id).toBe(taskResult.task.id);
+      expect(nextTask.task.supervisor).toEqual(
+        expect.objectContaining({
+          supervisor_state: 'awaiting_approval',
+          outcome: 'wait',
+          reason_class: 'approval_required',
+          evidence_ref: 'evidence://supervisor/contract-1',
+          approval_checkpoint_key: checkpoint.checkpoint.checkpoint_key,
+        })
+      );
     });
   });
 });
