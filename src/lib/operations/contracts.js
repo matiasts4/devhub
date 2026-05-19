@@ -11,6 +11,32 @@ export const HEALTH_STATUSES = Object.freeze([
   'offline',
   'unknown',
 ]);
+export const CONTROL_ROOM_AUTHORITIES = Object.freeze([
+  'authoritative',
+  'inferred',
+  'cached',
+  'unavailable',
+]);
+export const CONTROL_ROOM_FRESHNESS = Object.freeze([
+  'current',
+  'degraded',
+  'stale',
+  'unavailable',
+]);
+
+const CONTROL_ROOM_AUTHORITY_RANK = Object.freeze({
+  authoritative: 0,
+  inferred: 1,
+  cached: 2,
+  unavailable: 3,
+});
+
+const CONTROL_ROOM_FRESHNESS_RANK = Object.freeze({
+  current: 0,
+  degraded: 1,
+  stale: 2,
+  unavailable: 3,
+});
 
 function compactParts(parts = []) {
   return parts
@@ -29,6 +55,59 @@ function normalizeAuthority(value) {
 
 function normalizeHealthStatus(value) {
   return HEALTH_STATUSES.includes(value) ? value : 'unknown';
+}
+
+export function normalizeControlRoomAuthority(value) {
+  return CONTROL_ROOM_AUTHORITIES.includes(value) ? value : 'unavailable';
+}
+
+export function normalizeControlRoomFreshness(value) {
+  return CONTROL_ROOM_FRESHNESS.includes(value) ? value : 'unavailable';
+}
+
+export function normalizeEvidenceRefs(...values) {
+  const refs = compactParts(values);
+  return Array.from(new Set(refs));
+}
+
+export function createControlRoomStatus(input = {}) {
+  const evidenceRefs = normalizeEvidenceRefs(input.evidence_refs, input.evidence_ref);
+
+  return {
+    authority: normalizeControlRoomAuthority(input.authority),
+    freshness: normalizeControlRoomFreshness(input.freshness),
+    evidence_ref: evidenceRefs[0] || null,
+    evidence_refs: evidenceRefs,
+  };
+}
+
+export function mergeControlRoomStatus(...inputs) {
+  const statuses = inputs
+    .flat()
+    .filter(Boolean)
+    .map((input) => createControlRoomStatus(input));
+
+  if (statuses.length === 0) {
+    return createControlRoomStatus();
+  }
+
+  const authority = statuses.reduce((best, current) => {
+    return CONTROL_ROOM_AUTHORITY_RANK[current.authority] < CONTROL_ROOM_AUTHORITY_RANK[best]
+      ? current.authority
+      : best;
+  }, 'unavailable');
+
+  const freshness = statuses.reduce((worst, current) => {
+    return CONTROL_ROOM_FRESHNESS_RANK[current.freshness] > CONTROL_ROOM_FRESHNESS_RANK[worst]
+      ? current.freshness
+      : worst;
+  }, 'current');
+
+  return createControlRoomStatus({
+    authority,
+    freshness,
+    evidence_refs: statuses.flatMap((status) => status.evidence_refs || []),
+  });
 }
 
 export function buildOperationalDedupeKey(source, eventType, parts = []) {
