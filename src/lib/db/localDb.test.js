@@ -4,11 +4,18 @@ const Database = require('better-sqlite3');
 const {
   AGENT_WORKSPACE_BASE_COMMIT,
   buildPrepareAgentWorkspaceAck,
+  createMissionMessage,
+  createSwarmMission,
   buildSupervisorApprovalCheckpointKey,
   ensureRuntimeSchema,
+  getAgentPresenceStatus,
+  getSwarmMissionDirectorSnapshot,
   getSupervisorApprovalCheckpoint,
   getSupervisorSnapshot,
   listSupervisorApprovalCheckpoints,
+  registerMissionParticipant,
+  upsertAgentPresence,
+  upsertMessageDelivery,
   prepareAgentWorkspaceLease,
   upsertSupervisorApprovalCheckpoint,
   upsertSupervisorSnapshot,
@@ -779,6 +786,446 @@ test('stores unchanged_failure supervisor snapshots with durable counters and ev
   assert.equal(stored.task_retry_count, 2);
   assert.equal(stored.unchanged_failure_count, 1);
   assert.equal(stored.evidence_ref, 'evidence://supervisor/task-supervisor-5/repeat');
+
+  db.close();
+});
+
+test('creates swarm mission kernel tables with compact coordination-only fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const missionColumns = db
+    .prepare('PRAGMA table_info(swarm_missions)')
+    .all()
+    .map((column) => column.name);
+  const participantColumns = db
+    .prepare('PRAGMA table_info(mission_participants)')
+    .all()
+    .map((column) => column.name);
+  const messageColumns = db
+    .prepare('PRAGMA table_info(mission_messages)')
+    .all()
+    .map((column) => column.name);
+  const deliveryColumns = db
+    .prepare('PRAGMA table_info(message_deliveries)')
+    .all()
+    .map((column) => column.name);
+  const presenceColumns = db
+    .prepare('PRAGMA table_info(agent_presence)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(
+    JSON.stringify(missionColumns),
+    JSON.stringify([
+      'mission_id',
+      'project_id',
+      'task_id',
+      'workspace_id',
+      'run_id',
+      'approval_checkpoint_key',
+      'owner_agent_id',
+      'kind',
+      'status',
+      'title',
+      'summary',
+      'evidence_ref',
+      'started_at',
+      'updated_at',
+      'completed_at',
+      'created_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(participantColumns),
+    JSON.stringify([
+      'participant_id',
+      'mission_id',
+      'agent_id',
+      'role_in_mission',
+      'status',
+      'joined_at',
+      'left_at',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(messageColumns),
+    JSON.stringify([
+      'message_id',
+      'mission_id',
+      'sender_agent_id',
+      'message_kind',
+      'body_summary',
+      'evidence_ref',
+      'related_task_id',
+      'related_workspace_id',
+      'related_run_id',
+      'related_artifact_id',
+      'related_approval_checkpoint_key',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(deliveryColumns),
+    JSON.stringify([
+      'delivery_id',
+      'message_id',
+      'recipient_agent_id',
+      'channel',
+      'status',
+      'delivery_ref',
+      'evidence_ref',
+      'last_error',
+      'attempt_count',
+      'last_attempt_at',
+      'acked_at',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(presenceColumns),
+    JSON.stringify([
+      'presence_id',
+      'mission_id',
+      'agent_id',
+      'workspace_id',
+      'run_id',
+      'runtime_surface',
+      'presence_state',
+      'status_summary',
+      'evidence_ref',
+      'last_seen_at',
+      'expires_at',
+      'created_at',
+      'updated_at',
+    ])
+  );
+
+  assert.equal(missionColumns.includes('branch_name'), false);
+  assert.equal(missionColumns.includes('observed_head'), false);
+  assert.equal(messageColumns.includes('log_content'), false);
+  assert.equal(messageColumns.includes('session_id'), false);
+  assert.equal(deliveryColumns.includes('tool_output'), false);
+  assert.equal(presenceColumns.includes('terminal_log'), false);
+
+  db.close();
+});
+
+test('creates mission, participant, message, delivery and presence with compact durable refs only', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-mission',
+    'Mission Project'
+  );
+  insertWorkspace(db, {
+    id: 'ws-mission-1',
+    project_id: 'project-mission',
+    current_task_id: 'task-mission-1',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-mission-1',
+    'ws-mission-1',
+    'task-mission-1',
+    'agent-director',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+  db.prepare(
+    `INSERT INTO agent_artifacts (
+      artifact_id, run_id, seq, phase, kind, producer, summary, evidence_ref, observed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'artifact-mission-1',
+    'run-mission-1',
+    1,
+    'execute',
+    'decision.note',
+    'executor',
+    'Mission evidence',
+    'evidence://mission/artifact-1',
+    '2026-05-19T10:00:00.000Z'
+  );
+  upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-mission-1',
+    workspace_id: 'ws-mission-1',
+    run_id: 'run-mission-1',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://mission/approval-1',
+    status: 'pending',
+    requested_at: '2026-05-19T10:01:00.000Z',
+    updated_at: '2026-05-19T10:01:00.000Z',
+  });
+
+  const mission = createSwarmMission(db, {
+    project_id: 'project-mission',
+    task_id: 'task-mission-1',
+    workspace_id: 'ws-mission-1',
+    run_id: 'run-mission-1',
+    approval_checkpoint_key:
+      'task-mission-1|ws-mission-1|run-mission-1|approval_required|evidence://mission/approval-1',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    title: 'SW-8.1C mission',
+    summary: 'Minimal mission kernel',
+    evidence_ref: 'evidence://mission/root',
+    started_at: '2026-05-19T10:00:00.000Z',
+    updated_at: '2026-05-19T10:00:00.000Z',
+  });
+  const participant = registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-19T10:02:00.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'directive',
+    body_summary: 'Implement durable mission kernel',
+    evidence_ref: 'evidence://mission/message-1',
+    related_task_id: 'task-mission-1',
+    related_workspace_id: 'ws-mission-1',
+    related_run_id: 'run-mission-1',
+    related_artifact_id: 'artifact-mission-1',
+    related_approval_checkpoint_key:
+      'task-mission-1|ws-mission-1|run-mission-1|approval_required|evidence://mission/approval-1',
+    created_at: '2026-05-19T10:03:00.000Z',
+    updated_at: '2026-05-19T10:03:00.000Z',
+  });
+  const delivery = upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'pending',
+    delivery_ref: 'receipt://mission/message-1/agent-worker-1',
+    evidence_ref: 'evidence://mission/delivery-1',
+    last_attempt_at: '2026-05-19T10:03:30.000Z',
+  });
+  const presence = upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    workspace_id: 'ws-mission-1',
+    run_id: 'run-mission-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    status_summary: 'Working on mission kernel',
+    evidence_ref: 'evidence://mission/presence-1',
+    last_seen_at: '2026-05-19T10:04:00.000Z',
+  });
+
+  assert.equal(mission.project_id, 'project-mission');
+  assert.equal(mission.workspace_id, 'ws-mission-1');
+  assert.equal(mission.run_id, 'run-mission-1');
+  assert.equal(participant.agent_id, 'agent-worker-1');
+  assert.equal(message.related_artifact_id, 'artifact-mission-1');
+  assert.equal(delivery.status, 'pending');
+  assert.equal(presence.expires_at, '2026-05-19T10:06:00.000Z');
+
+  const storedMission = db
+    .prepare('SELECT * FROM swarm_missions WHERE mission_id = ?')
+    .get(mission.mission_id);
+  const storedMessage = db
+    .prepare('SELECT * FROM mission_messages WHERE message_id = ?')
+    .get(message.message_id);
+
+  assert.equal('branch_name' in storedMission, false);
+  assert.equal('observed_start_head' in storedMission, false);
+  assert.equal('baseline_commit' in storedMission, false);
+  assert.equal('tool_output' in storedMessage, false);
+  assert.equal('content' in storedMessage, false);
+
+  db.close();
+});
+
+test('updates delivery receipts and computes active versus stale presence in mission snapshot', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run('project-snapshot', 'Snapshot');
+  const mission = createSwarmMission(db, {
+    project_id: 'project-snapshot',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    title: 'Snapshot mission',
+    status: 'active',
+    started_at: '2026-05-19T11:00:00.000Z',
+    updated_at: '2026-05-19T11:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-director',
+    role_in_mission: 'director',
+    status: 'active',
+    joined_at: '2026-05-19T11:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-19T11:00:05.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-reviewer-1',
+    role_in_mission: 'reviewer',
+    status: 'active',
+    joined_at: '2026-05-19T11:00:10.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'handoff',
+    body_summary: 'Take over execution',
+    created_at: '2026-05-19T11:01:00.000Z',
+    updated_at: '2026-05-19T11:01:00.000Z',
+  });
+  upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'pending',
+    last_attempt_at: '2026-05-19T11:01:10.000Z',
+  });
+  const sentDelivery = upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'sent',
+    last_attempt_at: '2026-05-19T11:01:20.000Z',
+  });
+  upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-reviewer-1',
+    channel: 'telegram',
+    status: 'retry_pending',
+    last_error: 'adapter timeout',
+    last_attempt_at: '2026-05-19T11:01:30.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-director',
+    runtime_surface: 'agenthub',
+    presence_state: 'online',
+    last_seen_at: '2026-05-19T11:01:40.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    last_seen_at: '2026-05-19T10:58:00.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-reviewer-1',
+    runtime_surface: 'telegram',
+    presence_state: 'offline',
+    last_seen_at: '2026-05-19T11:01:00.000Z',
+  });
+
+  assert.equal(sentDelivery.status, 'sent');
+  assert.equal(sentDelivery.acked_at, null);
+  assert.equal(
+    getAgentPresenceStatus(
+      { presence_state: 'busy', last_seen_at: '2026-05-19T10:58:00.000Z' },
+      { now: '2026-05-19T11:01:40.000Z' }
+    ).effective_state,
+    'stale'
+  );
+  assert.equal(
+    getAgentPresenceStatus(
+      { presence_state: 'offline', last_seen_at: '2026-05-19T11:01:00.000Z' },
+      { now: '2026-05-19T11:01:40.000Z' }
+    ).effective_state,
+    'offline'
+  );
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-19T11:01:40.000Z',
+  });
+
+  assert.equal(snapshot.mission.mission_id, mission.mission_id);
+  assert.equal(snapshot.participants.length, 3);
+  assert.equal(snapshot.latest_message.message_id, message.message_id);
+  assert.equal(snapshot.pending_deliveries.length, 1);
+  assert.equal(snapshot.pending_deliveries[0].status, 'retry_pending');
+  assert.equal(snapshot.presence.active.length, 1);
+  assert.equal(snapshot.presence.stale.length, 1);
+  assert.equal(snapshot.presence.offline.length, 1);
+
+  db.close();
+});
+
+test('rejects runtime logs and operational identity metadata in mission kernel payloads', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-guardrails',
+    'Guardrails'
+  );
+  const mission = createSwarmMission(db, {
+    project_id: 'project-guardrails',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    title: 'Guardrails mission',
+    started_at: '2026-05-19T12:00:00.000Z',
+    updated_at: '2026-05-19T12:00:00.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'directive',
+    body_summary: 'Safe summary',
+    created_at: '2026-05-19T12:01:00.000Z',
+    updated_at: '2026-05-19T12:01:00.000Z',
+  });
+
+  assert.throws(
+    () =>
+      registerMissionParticipant(db, {
+        mission_id: mission.mission_id,
+        agent_id: 'agent-worker-2',
+        role_in_mission: 'executor',
+        profile_key: 'sdd-orchestrator',
+      }),
+    /identity metadata canónica/i
+  );
+  assert.throws(
+    () =>
+      createMissionMessage(db, {
+        mission_id: mission.mission_id,
+        sender_agent_id: 'agent-director',
+        message_kind: 'directive',
+        body_summary: 'Unsafe message',
+        terminal_log: 'raw terminal output',
+      }),
+    /runtime-only payload/i
+  );
+  assert.throws(
+    () =>
+      upsertMessageDelivery(db, {
+        message_id: message.message_id,
+        recipient_agent_id: 'agent-worker-2',
+        channel: 'runtime_bus',
+        status: 'delivered',
+      }),
+    /status inválido/i
+  );
 
   db.close();
 });
