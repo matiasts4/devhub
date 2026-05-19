@@ -1450,7 +1450,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
   // Phase 4: MCP server refresh
   const handleMCPRefresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/mcp/servers');
+      const res = await fetch('/api/agenthub/mcp/status');
       if (res.ok) {
         const data = await res.json();
         setMcpServers(data);
