@@ -35,3 +35,7 @@ export function isAgentActive(agent, nowMs, heartbeatFreshMs, activeStatuses) {
 
   return nowMs - new Date(lastSeen).getTime() <= heartbeatFreshMs;
 }
+
+export function shouldShowPlanningSignal(key, planningStatus) {
+  return key === 'swarm' && planningStatus === 'pending';
+}

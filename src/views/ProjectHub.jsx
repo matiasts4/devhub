@@ -37,6 +37,7 @@ import {
   PROJECT_TYPE_OPTIONS,
   buildProjectCreatePayload,
 } from '@/lib/projectClassification';
+import { getProjectEntryPath } from '@/lib/workspaceRouting';
 
 const PROJECT_TYPES_MODAL = [
   { key: 'software', label: 'Software', Icon: MonitorSmartphone, color: '#58A6FF' },
@@ -217,9 +218,7 @@ export default function ProjectHub() {
       });
       setPendingFiles([]);
       setEnablePlanning(true);
-      navigate(
-        enablePlanning ? `/project/${data.id}/agenthub?plan=1` : `/project/${data.id}/dashboard`
-      );
+      navigate(getProjectEntryPath(data.id, enablePlanning));
     }
   }
 
@@ -281,11 +280,7 @@ export default function ProjectHub() {
                 className="bg-surface-card border border-borders-subtle rounded-lg pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder-[#484F58] focus:outline-none focus:border-[var(--accent-primary)] w-52 transition-all"
               />
             </div>
-            <Button
-              onClick={() => setShowNewModal(true)}
-              variant="devhubPrimary"
-              size="toolbar"
-            >
+            <Button onClick={() => setShowNewModal(true)} variant="devhubPrimary" size="toolbar">
               <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
               Nuevo Proyecto
             </Button>
@@ -508,9 +503,7 @@ export default function ProjectHub() {
 
               {/* Nombre */}
               <div>
-                <label className={modalLabelClass}>
-                  Nombre del proyecto *
-                </label>
+                <label className={modalLabelClass}>Nombre del proyecto *</label>
                 <input
                   type="text"
                   required
@@ -523,9 +516,7 @@ export default function ProjectHub() {
 
               {/* Ruta Local */}
               <div>
-                <label className={modalLabelClass}>
-                  Directorio / Ruta Local
-                </label>
+                <label className={modalLabelClass}>Directorio / Ruta Local</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -554,9 +545,7 @@ export default function ProjectHub() {
 
               {/* Descripción corta */}
               <div>
-                <label className={modalLabelClass}>
-                  Descripción breve
-                </label>
+                <label className={modalLabelClass}>Descripción breve</label>
                 <input
                   type="text"
                   value={newProject.description}
@@ -568,9 +557,7 @@ export default function ProjectHub() {
 
               {/* Color */}
               <div>
-                <label className={modalLabelClass}>
-                  Color de acento
-                </label>
+                <label className={modalLabelClass}>Color de acento</label>
                 <div className="flex items-center gap-3">
                   {ACCENT_COLORS.map((c) => (
                     <button

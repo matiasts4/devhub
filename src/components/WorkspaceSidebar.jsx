@@ -15,7 +15,6 @@ import {
   Plug2,
   FolderOpen,
   Terminal,
-  Brain,
   Send,
   Cpu,
   Plus,
@@ -23,7 +22,11 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import StatusSignal from '@/components/ui/StatusSignal';
-import { getVisibleNavKeys, isAgentActive } from './workspaceSidebarUtils';
+import {
+  getVisibleNavKeys,
+  isAgentActive,
+  shouldShowPlanningSignal,
+} from './workspaceSidebarUtils';
 import { Button } from '@/components/ui/button';
 
 const ACTIVE_AGENT_STATUSES = new Set([
@@ -42,7 +45,6 @@ const allNavItems = {
   scaffolding: { icon: Layers, label: 'Scaffolding' },
   roadmap: { icon: MapPin, label: 'Roadmap' },
   historial: { icon: History, label: 'Historial' },
-  agenthub: { icon: Brain, label: 'Agent Hub' },
   swarm: { icon: Cpu, label: 'Swarm Control' },
   telegram: { icon: Send, label: 'Telegram Bot' },
 };
@@ -52,15 +54,7 @@ const configNavItems = {
   ajustes: { icon: Settings, label: 'Ajustes' },
 };
 
-const DEFAULT_NAV = [
-  'dashboard',
-  'tareas',
-  'editor',
-  'roadmap',
-  'historial',
-  'swarm',
-  'telegram',
-];
+const DEFAULT_NAV = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial', 'swarm', 'telegram'];
 
 const SECTION_CORE = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial'];
 const SECTION_AI = ['swarm', 'telegram'];
@@ -212,16 +206,18 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
       >
         <div className="relative shrink-0">
           <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />
-          {key === 'agenthub' && project?.planning_status === 'pending' && (
+          {shouldShowPlanningSignal(key, project?.planning_status) && (
             <span className="absolute -top-1 -right-1">
               <StatusSignal tone="warning" animation="none" compact />
             </span>
           )}
-          {key === 'swarm' && activeAgentsCount > 0 && (
-            <span className="absolute -top-1 -right-1">
-              <StatusSignal tone="success" animation="pulse" compact />
-            </span>
-          )}
+          {key === 'swarm' &&
+            !shouldShowPlanningSignal(key, project?.planning_status) &&
+            activeAgentsCount > 0 && (
+              <span className="absolute -top-1 -right-1">
+                <StatusSignal tone="success" animation="pulse" compact />
+              </span>
+            )}
         </div>
         <AnimatePresence initial={false}>
           {!collapsed && (
@@ -332,7 +328,10 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
         </div>
 
         {/* Identity block */}
-        <div className="px-2.5 py-2.5 border-b" style={{ borderBottomColor: 'var(--border-subtle)' }}>
+        <div
+          className="px-2.5 py-2.5 border-b"
+          style={{ borderBottomColor: 'var(--border-subtle)' }}
+        >
           <motion.div
             layout
             className={collapsed ? 'flex justify-center' : 'rounded-xl border p-2.5'}
@@ -400,7 +399,11 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
                 >
                   {[
                     { label: 'Progreso', value: `${progressValue}%`, valueColor: accentColor },
-                    { label: 'Agentes', value: activeAgentsCount, valueColor: 'var(--text-primary)' },
+                    {
+                      label: 'Agentes',
+                      value: activeAgentsCount,
+                      valueColor: 'var(--text-primary)',
+                    },
                     {
                       label: 'IA',
                       value: (
@@ -437,17 +440,23 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
         </div>
 
         {/* Nav blocks */}
-        <nav className={`flex-1 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-2.5'} py-2.5 space-y-3`}>
+        <nav
+          className={`flex-1 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-2.5'} py-2.5 space-y-3`}
+        >
           {renderNavSection('Core', SECTION_CORE)}
           {renderNavSection('AI Ops', SECTION_AI, true)}
 
           <div className="space-y-1">
             {renderSectionLabel('Infra')}
-            {renderNavItem('terminales', { icon: Terminal, label: 'Terminales & IDE' }, {
-              background:
-                'linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 14%, transparent), color-mix(in srgb, var(--surface-elevated) 92%, transparent))',
-              borderColor: 'color-mix(in srgb, var(--accent-primary) 28%, transparent)',
-            })}
+            {renderNavItem(
+              'terminales',
+              { icon: Terminal, label: 'Terminales & IDE' },
+              {
+                background:
+                  'linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 14%, transparent), color-mix(in srgb, var(--surface-elevated) 92%, transparent))',
+                borderColor: 'color-mix(in srgb, var(--accent-primary) 28%, transparent)',
+              }
+            )}
           </div>
 
           <div className="space-y-1">

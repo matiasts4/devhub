@@ -34,6 +34,7 @@ import {
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
+import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -214,6 +215,13 @@ function WorkspaceLayout() {
   );
 }
 
+function LegacyAgentHubRedirect() {
+  const { projectId } = useParams();
+  const location = useLocation();
+
+  return <Navigate to={getLegacyWorkspaceRedirectPath(projectId, location.search)} replace />;
+}
+
 function App() {
   useEffect(() => {
     applyThemeToDocument(getStoredTheme());
@@ -241,7 +249,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development') return;
+    if (!import.meta.env.DEV) return;
     if (typeof window === 'undefined') return;
 
     const clearStalePwaState = async () => {
@@ -293,6 +301,7 @@ function App() {
             <Route path="ajustes" element={<Ajustes />} />
             <Route path="swarm" element={<SwarmControl />} />
             <Route path="telegram" element={<TelegramMonitor />} />
+            <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
 
             {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}
             <Route path="terminales" element={<div />} />

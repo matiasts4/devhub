@@ -6,7 +6,13 @@
  *   - isAgentActive(agent, nowMs, heartbeatFreshMs)
  */
 
-const { getVisibleNavKeys, isAgentActive } = require('../workspaceSidebarUtils.js');
+const fs = require('fs');
+const path = require('path');
+const {
+  getVisibleNavKeys,
+  isAgentActive,
+  shouldShowPlanningSignal,
+} = require('../workspaceSidebarUtils.js');
 
 const DEFAULT_NAV = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial', 'swarm', 'telegram'];
 
@@ -66,5 +72,22 @@ describe('isAgentActive()', () => {
     const nowMs = Date.now();
     const agent = { status: 'working' };
     expect(isAgentActive(agent, nowMs, HEARTBEAT_FRESH_MS, ACTIVE_STATUSES)).toBe(false);
+  });
+});
+
+describe('planning affordances', () => {
+  test('shows the planning signal on swarm only while planning is pending', () => {
+    expect(shouldShowPlanningSignal('swarm', 'pending')).toBe(true);
+    expect(shouldShowPlanningSignal('dashboard', 'pending')).toBe(false);
+    expect(shouldShowPlanningSignal('swarm', 'completed')).toBe(false);
+  });
+
+  test('does not keep legacy agenthub navigation metadata in the sidebar', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'src', 'components', 'WorkspaceSidebar.jsx'),
+      'utf8'
+    );
+
+    expect(source).not.toContain('agenthub: {');
   });
 });
