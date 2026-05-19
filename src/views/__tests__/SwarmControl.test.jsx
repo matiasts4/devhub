@@ -1,14 +1,26 @@
 const React = require('react');
-const { installDom, renderIntoDom, cleanupMountedRoots, flushEffects, click } = require('@/test-support/domHarness');
+const {
+  installDom,
+  renderIntoDom,
+  cleanupMountedRoots,
+  flushEffects,
+  click,
+} = require('@/test-support/domHarness');
 
 const mockUseOutletContext = jest.fn();
 
-jest.mock('react-router-dom', () => ({
-  useOutletContext: () => mockUseOutletContext(),
-}), { virtual: true });
+jest.mock(
+  'react-router-dom',
+  () => ({
+    useOutletContext: () => mockUseOutletContext(),
+  }),
+  { virtual: true }
+);
 
 const SwarmControl = require('../SwarmControl').default;
-const { buildControlRoomInput } = require('@/lib/operations/__tests__/fixtures/controlRoomSnapshot');
+const {
+  buildControlRoomInput,
+} = require('@/lib/operations/__tests__/fixtures/controlRoomSnapshot');
 
 const mountedRoots = [];
 
@@ -251,6 +263,18 @@ describe('SwarmControl control room composition', () => {
     expect(text).toContain('Live activity: running');
   });
 
+  test('uses the canonical header label from the composed snapshot instead of the outlet project name', async () => {
+    const snapshotInput = buildControlRoomInput({
+      project: { id: 'project-1', name: 'Canonical Control Room' },
+    });
+
+    const view = await renderSwarmControl({ snapshotInput });
+    const header = view.container.querySelector('[aria-label="Control Room Header"]');
+
+    expect(header?.textContent).toContain('Canonical Control Room');
+    expect(header?.textContent).not.toContain('DevHub');
+  });
+
   test('regression: component displays supervisor state and authoritative status over conflicting live activity hints', async () => {
     const input = buildControlRoomInput();
     input.supervisor.agents[0].supervisor_state = 'awaiting_approval';
@@ -260,8 +284,8 @@ describe('SwarmControl control room composition', () => {
           agent_id: 'worker-1',
           status: 'idle',
           authority: 'cached',
-        }
-      ]
+        },
+      ],
     };
 
     const view = await renderSwarmControl({ snapshotInput: input });

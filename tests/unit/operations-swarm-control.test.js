@@ -1,4 +1,5 @@
 const {
+  buildControlRoomSnapshotInputFromHealth,
   deriveSwarmControlHealthModel,
   deriveSwarmHeaderModel,
   getSourceByKey,
@@ -97,5 +98,60 @@ describe('operations swarm control model', () => {
 
     expect(missing.processLabel).toBe('Server sin datos');
     expect(missing.processTone).toBe('muted');
+  });
+
+  test('maps operational health sources into a control-room compatibility payload', () => {
+    const input = buildControlRoomSnapshotInputFromHealth({
+      summary: { total: 5, worst_status: 'stale' },
+      sources: [
+        {
+          key: 'opencode-process',
+          status: 'healthy',
+          authority: 'authoritative',
+          freshness_ms: 0,
+        },
+        {
+          key: 'mcp',
+          status: 'stale',
+          authority: 'inferred',
+          freshness_ms: 120000,
+        },
+        {
+          key: 'telegram',
+          status: 'degraded',
+          authority: 'authoritative',
+          freshness_ms: 45000,
+        },
+        {
+          key: 'session-stream',
+          status: 'healthy',
+          authority: 'authoritative',
+          freshness_ms: 500,
+        },
+        {
+          key: 'queue',
+          status: 'healthy',
+          authority: 'authoritative',
+          freshness_ms: 0,
+        },
+      ],
+    });
+
+    expect(input).toEqual({
+      diagnostics: {
+        process: expect.objectContaining({ key: 'opencode-process', status: 'healthy' }),
+        mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
+        telegram: expect.objectContaining({ key: 'telegram', status: 'degraded' }),
+        session_stream: expect.objectContaining({ key: 'session-stream', status: 'healthy' }),
+      },
+    });
+  });
+
+  test('returns null when health snapshot has no control-room compatible diagnostics', () => {
+    expect(
+      buildControlRoomSnapshotInputFromHealth({
+        sources: [{ key: 'queue', status: 'healthy', authority: 'authoritative' }],
+      })
+    ).toBe(null);
   });
 });

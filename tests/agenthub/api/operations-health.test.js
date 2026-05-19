@@ -60,6 +60,15 @@ describe('GET /api/agenthub/operations/health', () => {
         expect.objectContaining({ key: 'mcp', authority: 'inferred', status: 'stale' }),
       ])
     );
+
+    expect(snapshot.control_room_snapshot_input).toEqual({
+      diagnostics: {
+        process: expect.objectContaining({ key: 'opencode-process', status: 'healthy' }),
+        mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
+        telegram: expect.objectContaining({ key: 'telegram', status: 'healthy' }),
+        session_stream: expect.objectContaining({ key: 'session-stream', status: 'degraded' }),
+      },
+    });
   });
 
   test('explicitly degrades missing process health instead of defaulting to healthy', async () => {
@@ -94,5 +103,13 @@ describe('GET /api/agenthub/operations/health', () => {
     expect(processSource).toMatchObject({ status: 'offline', authority: 'authoritative' });
     expect(sessionSource).toMatchObject({ status: 'stale', authority: 'cached' });
     expect(snapshot.summary.worst_status).toBe('offline');
+    expect(snapshot.control_room_snapshot_input).toEqual({
+      diagnostics: {
+        process: expect.objectContaining({ key: 'opencode-process', status: 'offline' }),
+        mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
+        telegram: expect.objectContaining({ key: 'telegram', status: 'degraded' }),
+        session_stream: expect.objectContaining({ key: 'session-stream', status: 'stale' }),
+      },
+    });
   });
 });

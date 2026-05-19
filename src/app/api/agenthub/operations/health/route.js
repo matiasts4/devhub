@@ -10,6 +10,7 @@ import {
   buildSessionStreamHealthSource,
   buildTelegramHealthSource,
 } from '@/lib/operations/health';
+import { buildControlRoomSnapshotInputFromHealth } from '@/lib/operations/swarmControl';
 
 export const runtime = 'nodejs';
 
@@ -52,7 +53,7 @@ export async function gatherOperationalHealth(dependencies = {}) {
       getTelegramStatus(),
     ]);
 
-  return buildHealthSnapshot({
+  const snapshot = buildHealthSnapshot({
     generated_at: now,
     sources: [
       buildProcessHealthSource(processStatus, { now }),
@@ -65,6 +66,17 @@ export async function gatherOperationalHealth(dependencies = {}) {
       buildTelegramHealthSource(telegramStatus, { now }),
     ],
   });
+
+  const controlRoomSnapshotInput = buildControlRoomSnapshotInputFromHealth(snapshot);
+
+  return {
+    ...snapshot,
+    ...(controlRoomSnapshotInput
+      ? {
+          control_room_snapshot_input: controlRoomSnapshotInput,
+        }
+      : {}),
+  };
 }
 
 export async function GET() {

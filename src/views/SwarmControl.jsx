@@ -91,7 +91,9 @@ export default function SwarmControl({ snapshotInput = null }) {
   const normalizedFilter = filterText.trim().toLowerCase();
   const matchesFilter = (record) => {
     if (!normalizedFilter) return true;
-    return JSON.stringify(record || {}).toLowerCase().includes(normalizedFilter);
+    return JSON.stringify(record || {})
+      .toLowerCase()
+      .includes(normalizedFilter);
   };
 
   const filteredAgents = useMemo(() => agents.filter(matchesFilter), [agents, normalizedFilter]);
@@ -112,11 +114,7 @@ export default function SwarmControl({ snapshotInput = null }) {
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <ControlRoomHeader
-          header={header}
-          loading={loading}
-          projectName={project?.name || header.workspace_label}
-        />
+        <ControlRoomHeader header={header} loading={loading} projectName={header.workspace_label} />
 
         <div
           className="flex flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"

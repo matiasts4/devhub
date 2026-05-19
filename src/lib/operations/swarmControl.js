@@ -84,6 +84,13 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+const HEALTH_TO_CONTROL_ROOM_DIAGNOSTIC_KEY = Object.freeze({
+  'opencode-process': 'process',
+  mcp: 'mcp',
+  telegram: 'telegram',
+  'session-stream': 'session_stream',
+});
+
 function isMissing(value) {
   return value === undefined || value === null || String(value).trim() === '';
 }
@@ -331,6 +338,17 @@ function indexLiveHintsByAgent(liveHints = []) {
     if (hint?.agent_id) acc[hint.agent_id] = hint;
     return acc;
   }, {});
+}
+
+export function buildControlRoomSnapshotInputFromHealth(snapshot = {}) {
+  const diagnostics = asArray(snapshot.sources).reduce((acc, source) => {
+    const key = HEALTH_TO_CONTROL_ROOM_DIAGNOSTIC_KEY[source?.key];
+    if (!key) return acc;
+    acc[key] = source;
+    return acc;
+  }, {});
+
+  return Object.keys(diagnostics).length > 0 ? { diagnostics } : null;
 }
 
 export function composeControlRoomSnapshot(input = {}) {
