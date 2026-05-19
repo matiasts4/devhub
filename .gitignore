@@ -92,6 +92,9 @@ tmp/
 # === OpenCode ===
 opencode/
 .opencode/
+opencode.json
+.claude/
+.plyrium-forge/
 data/logs/opencode_*.log
 # Git hygiene additions
 .hermes/

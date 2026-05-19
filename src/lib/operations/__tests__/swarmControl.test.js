@@ -5,6 +5,9 @@ const {
   selectControlRoomWorkspaces,
   selectControlRoomRuns,
   selectControlRoomApprovals,
+  selectControlRoomAgentProfiles,
+  selectControlRoomAgentTeams,
+  selectControlRoomTeamMembers,
   selectControlRoomDiagnostics,
   selectControlRoomErrors,
 } = require('../swarmControl');
@@ -237,6 +240,9 @@ describe('composeControlRoomSnapshot', () => {
     expect(selectControlRoomWorkspaces(snapshot)).toEqual([]);
     expect(selectControlRoomRuns(snapshot)).toEqual([]);
     expect(selectControlRoomApprovals(snapshot)).toEqual([]);
+    expect(selectControlRoomAgentProfiles(snapshot)).toEqual([]);
+    expect(selectControlRoomAgentTeams(snapshot)).toEqual([]);
+    expect(selectControlRoomTeamMembers(snapshot)).toEqual([]);
     expect(selectControlRoomDiagnostics(snapshot)).toEqual({
       telegram: expect.objectContaining({
         status: 'unavailable',
@@ -279,8 +285,8 @@ describe('composeControlRoomSnapshot', () => {
             authority: 'authoritative',
             freshness: 'current',
             evidence_ref: 'evidence://supervisor/task-1',
-          }
-        ]
+          },
+        ],
       },
       liveHints: {
         agents: [
@@ -288,9 +294,9 @@ describe('composeControlRoomSnapshot', () => {
             agent_id: 'worker-1',
             status: 'idle',
             authority: 'cached',
-          }
-        ]
-      }
+          },
+        ],
+      },
     });
 
     const agent = selectControlRoomAgents(snapshot)[0];
@@ -302,5 +308,83 @@ describe('composeControlRoomSnapshot', () => {
       status: 'idle',
       authority: 'cached',
     });
+  });
+
+  test('passes through optional coordination slices in normalized form without affecting existing control room data', () => {
+    const snapshot = composeControlRoomSnapshot(
+      buildControlRoomInput({
+        agent_profiles: [
+          {
+            id: 'profile-1',
+            agent_id: 'worker-1',
+            key: 'director',
+            label: 'Director',
+            authority: 'authoritative',
+            freshness: 'current',
+            evidence_ref: 'evidence://agent-profile/profile-1',
+          },
+        ],
+        agent_teams: [
+          {
+            id: 'team-1',
+            key: 'core',
+            label: 'Core Team',
+            authority: 'authoritative',
+            freshness: 'current',
+            evidence_ref: 'evidence://agent-team/team-1',
+          },
+        ],
+        team_members: [
+          {
+            id: 'member-1',
+            team_id: 'team-1',
+            agent_id: 'worker-1',
+            agent_profile_id: 'profile-1',
+            role: 'lead',
+            authority: 'authoritative',
+            freshness: 'current',
+            evidence_ref: 'evidence://team-member/member-1',
+          },
+        ],
+      })
+    );
+
+    expect(selectControlRoomHeader(snapshot)).toMatchObject({
+      workspace_label: 'DevHub',
+      authority: 'authoritative',
+    });
+    expect(selectControlRoomAgentProfiles(snapshot)).toEqual([
+      expect.objectContaining({
+        agent_profile_id: 'profile-1',
+        agent_id: 'worker-1',
+        key: 'director',
+        label: 'Director',
+        authority: 'authoritative',
+        freshness: 'current',
+        evidence_ref: 'evidence://agent-profile/profile-1',
+      }),
+    ]);
+    expect(selectControlRoomAgentTeams(snapshot)).toEqual([
+      expect.objectContaining({
+        team_id: 'team-1',
+        key: 'core',
+        label: 'Core Team',
+        authority: 'authoritative',
+        freshness: 'current',
+        evidence_ref: 'evidence://agent-team/team-1',
+      }),
+    ]);
+    expect(selectControlRoomTeamMembers(snapshot)).toEqual([
+      expect.objectContaining({
+        team_member_id: 'member-1',
+        team_id: 'team-1',
+        agent_id: 'worker-1',
+        agent_profile_id: 'profile-1',
+        role: 'lead',
+        authority: 'authoritative',
+        freshness: 'current',
+        evidence_ref: 'evidence://team-member/member-1',
+      }),
+    ]);
   });
 });

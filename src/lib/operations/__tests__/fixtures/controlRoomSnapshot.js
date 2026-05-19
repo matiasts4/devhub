@@ -65,6 +65,9 @@ function buildControlRoomInput(overrides = {}) {
         evidence_ref: 'evidence://artifact/artifact-1',
       },
     ],
+    agent_profiles: [],
+    agent_teams: [],
+    team_members: [],
     diagnostics: {
       telegram: {
         status: 'healthy',

@@ -231,6 +231,54 @@ function normalizeApproval(approval = {}) {
   };
 }
 
+function normalizeAgentProfile(profile = {}) {
+  const status = statusFromRecord(profile, { authority: 'authoritative' });
+
+  return {
+    agent_profile_id: profile.id || profile.agent_profile_id || null,
+    agent_id: profile.agent_id || null,
+    key: profile.key || profile.profile_key || null,
+    label: profile.label || profile.display_name || null,
+    authority: status.authority,
+    freshness: status.freshness,
+    evidence_ref: status.evidence_ref,
+    evidence_refs: status.evidence_refs,
+    missing_source: status.evidence_ref ? null : 'agent profile evidence',
+  };
+}
+
+function normalizeAgentTeam(team = {}) {
+  const status = statusFromRecord(team, { authority: 'authoritative' });
+
+  return {
+    team_id: team.id || team.team_id || null,
+    key: team.key || team.team_key || null,
+    label: team.label || team.display_name || null,
+    authority: status.authority,
+    freshness: status.freshness,
+    evidence_ref: status.evidence_ref,
+    evidence_refs: status.evidence_refs,
+    missing_source: status.evidence_ref ? null : 'agent team evidence',
+  };
+}
+
+function normalizeTeamMember(member = {}) {
+  const status = statusFromRecord(member, { authority: 'authoritative' });
+
+  return {
+    team_member_id: member.id || member.team_member_id || null,
+    team_id: member.team_id || null,
+    agent_id: member.agent_id || null,
+    agent_profile_id: member.agent_profile_id || member.profile_id || null,
+    role: member.role || member.member_role || null,
+    authority: status.authority,
+    freshness: status.freshness,
+    evidence_ref: status.evidence_ref,
+    evidence_refs: status.evidence_refs,
+    missing_source: status.evidence_ref ? null : 'team member evidence',
+  };
+}
+
 function normalizeDiagnosticRecord(record = null, fallbackAuthority = 'unavailable') {
   if (!record) {
     return {
@@ -290,6 +338,9 @@ export function composeControlRoomSnapshot(input = {}) {
   const workspaces = asArray(input.workspaces).map(normalizeWorkspace);
   const artifactsByRun = indexArtifactsByRun(asArray(input.artifacts));
   const approvals = asArray(supervisor.approvals || input.approvals).map(normalizeApproval);
+  const agentProfiles = asArray(input.agent_profiles).map(normalizeAgentProfile);
+  const agentTeams = asArray(input.agent_teams).map(normalizeAgentTeam);
+  const teamMembers = asArray(input.team_members).map(normalizeTeamMember);
   const approvalsIndex = indexApprovals(approvals);
   const runs = asArray(input.runs).map((run) =>
     normalizeRun(
@@ -335,11 +386,17 @@ export function composeControlRoomSnapshot(input = {}) {
     workspaces,
     runs,
     approvals,
+    agent_profiles: agentProfiles,
+    agent_teams: agentTeams,
+    team_members: teamMembers,
     diagnostics: {
       telegram: normalizeDiagnosticRecord(input.diagnostics?.telegram, 'telegram'),
       mcp: normalizeDiagnosticRecord(input.diagnostics?.mcp, 'mcp'),
       process: normalizeDiagnosticRecord(input.diagnostics?.process, 'process'),
-      session_stream: normalizeDiagnosticRecord(input.diagnostics?.session_stream, 'session stream'),
+      session_stream: normalizeDiagnosticRecord(
+        input.diagnostics?.session_stream,
+        'session stream'
+      ),
     },
     errors,
   };
@@ -363,6 +420,18 @@ export function selectControlRoomRuns(snapshot = {}) {
 
 export function selectControlRoomApprovals(snapshot = {}) {
   return asArray(snapshot.approvals);
+}
+
+export function selectControlRoomAgentProfiles(snapshot = {}) {
+  return asArray(snapshot.agent_profiles);
+}
+
+export function selectControlRoomAgentTeams(snapshot = {}) {
+  return asArray(snapshot.agent_teams);
+}
+
+export function selectControlRoomTeamMembers(snapshot = {}) {
+  return asArray(snapshot.team_members);
 }
 
 export function selectControlRoomDiagnostics(snapshot = {}) {
