@@ -30,11 +30,36 @@ describe('telegram monitor realtime helpers', () => {
   it('prefers durable workspace/run outcomes and evidence refs for downstream consumers', () => {
     expect(
       getWorkspaceOutcomeDisplay({
+        workspace_status: 'cleanup_pending',
+        run_status: 'succeeded',
+        terminal_reason_class: 'qa_approved',
+        latest_artifact_kind: 'qa.result',
+        latest_artifact_evidence_ref: 'artifact://run-1/qa/2',
+        artifact_count: 2,
+      })
+    ).toEqual({
+      workspaceStatus: 'cleanup_pending',
+      runStatus: 'succeeded',
+      terminalReasonClass: 'qa_approved',
+      artifactKind: 'qa.result',
+      artifactCount: 2,
+      evidenceRef: 'artifact://run-1/qa/2',
+      label: 'SUCCEEDED',
+    });
+  });
+
+  it('falls back to workspace evidence when no durable artifact projection exists', () => {
+    expect(
+      getWorkspaceOutcomeDisplay({
         workspace_status: 'conflicted',
         evidence_ref: 'evidence://workspace-conflict-1',
       })
     ).toEqual({
       workspaceStatus: 'conflicted',
+      runStatus: null,
+      terminalReasonClass: null,
+      artifactKind: null,
+      artifactCount: 0,
       evidenceRef: 'evidence://workspace-conflict-1',
       label: 'CONFLICTED',
     });

@@ -23,6 +23,18 @@ config({ path: resolve(__dirname, '../.env.local') });
 
 const require = createRequire(import.meta.url);
 const localDb = require('../src/lib/db/localDb.js');
+const {
+  AGENT_RUN_STATUSES,
+  TERMINAL_AGENT_RUN_STATUSES,
+  AGENT_ARTIFACT_PHASES,
+  AGENT_ARTIFACT_PRODUCERS,
+  AGENT_ARTIFACT_KINDS,
+  isAgentRunStatus,
+  isTerminalAgentRunStatus,
+  normalizeEvidenceRef,
+  parseEvidenceRef,
+  validateAgentArtifactInput,
+} = require('../src/lib/db/agentRunArtifacts.js');
 
 const DB_DRIVER = (process.env.DEVHUB_MCP_DB_DRIVER || 'sqlite').toLowerCase();
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -210,6 +222,48 @@ function ensureLocalMcpTables() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      run_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      task_id TEXT,
+      agent_id TEXT NOT NULL,
+      requested_base_ref TEXT NOT NULL,
+      baseline_commit TEXT NOT NULL,
+      observed_start_branch TEXT,
+      observed_start_head TEXT,
+      observed_start_dirty TEXT,
+      observed_start_path TEXT,
+      status TEXT NOT NULL DEFAULT 'planned',
+      predecessor_run_id TEXT,
+      recovery_group_id TEXT,
+      terminal_reason_class TEXT,
+      started_at TEXT DEFAULT (datetime('now')),
+      completed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      phase TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      producer TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      evidence_ref TEXT NOT NULL,
+      evidence_kind TEXT,
+      evidence_locator TEXT,
+      evidence_version TEXT,
+      parent_artifact_id TEXT,
+      supersedes_artifact_id TEXT,
+      content_digest TEXT,
+      locator_version TEXT,
+      observed_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(run_id, seq)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
@@ -223,6 +277,9 @@ function ensureLocalMcpTables() {
     CREATE INDEX IF NOT EXISTS idx_agent_memory_project ON agent_memory(project_id);
     CREATE INDEX IF NOT EXISTS idx_agent_memory_tipo ON agent_memory(tipo);
     CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_workspace ON agent_runs(workspace_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_task ON agent_runs(task_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_artifacts_run_seq ON agent_artifacts(run_id, seq ASC);
   `);
 
   const alterStatements = [
@@ -681,6 +738,14 @@ function normalizeWorkspaceRecord(row) {
   };
 }
 
+function normalizeAgentRunRecord(row) {
+  return row || null;
+}
+
+function normalizeAgentArtifactRecord(row) {
+  return row || null;
+}
+
 function buildPrepareWorkspaceId(taskId, agentId) {
   return `workspace-${taskId}-${agentId}`;
 }
@@ -942,6 +1007,189 @@ async function updateAgentWorkspaceRow(workspaceId, updates) {
     .single();
   if (error) throw new Error(error.message);
   return normalizeWorkspaceRecord(data);
+}
+
+async function getAgentRunById(runId) {
+  if (DB_DRIVER !== 'supabase') {
+    return normalizeAgentRunRecord(localDb.getAgentRunById(runId));
+  }
+
+  const { data, error } = await supabase
+    .from('agent_runs')
+    .select('*')
+    .eq('run_id', runId)
+    .maybeSingle();
+  if (error && error.code !== 'PGRST116') throw new Error(error.message);
+  return normalizeAgentRunRecord(data || null);
+}
+
+async function listAgentRuns({
+  workspaceId = null,
+  taskId = null,
+  agentId = null,
+  limit = null,
+} = {}) {
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.listAgentRuns({
+      workspace_id: workspaceId,
+      task_id: taskId,
+      agent_id: agentId,
+      limit,
+    });
+  }
+
+  let query = supabase.from('agent_runs').select('*').order('created_at', { ascending: false });
+  if (workspaceId) query = query.eq('workspace_id', workspaceId);
+  if (taskId) query = query.eq('task_id', taskId);
+  if (agentId) query = query.eq('agent_id', agentId);
+  if (Number.isInteger(limit)) query = query.limit(limit);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data || []).map(normalizeAgentRunRecord);
+}
+
+async function getLatestAgentRunForWorkspace(workspaceId) {
+  const runs = await listAgentRuns({ workspaceId, limit: 1 });
+  return runs[0] || null;
+}
+
+async function getLatestAgentRunForTask(taskId) {
+  const runs = await listAgentRuns({ taskId, limit: 1 });
+  return runs[0] || null;
+}
+
+async function createAgentRunRow(input = {}) {
+  if (!isAgentRunStatus(input.status || 'planned')) {
+    throw new Error(`Agent run status inválido: ${input.status}`);
+  }
+
+  if (DB_DRIVER !== 'supabase') {
+    return normalizeAgentRunRecord(localDb.createAgentRun(input));
+  }
+
+  const timestamp = input.started_at || nowIso();
+  const payload = {
+    run_id: input.run_id || randomUUID(),
+    workspace_id: input.workspace_id,
+    task_id: input.task_id || null,
+    agent_id: input.agent_id,
+    requested_base_ref: input.requested_base_ref,
+    baseline_commit: input.baseline_commit,
+    observed_start_branch: input.observed_start?.branch || null,
+    observed_start_head: input.observed_start?.head || null,
+    observed_start_dirty: input.observed_start?.dirty || null,
+    observed_start_path: input.observed_start?.path || null,
+    status: input.status || 'planned',
+    predecessor_run_id: input.predecessor_run_id || null,
+    recovery_group_id: input.recovery_group_id || null,
+    terminal_reason_class: input.terminal_reason_class || null,
+    started_at: timestamp,
+    completed_at: input.completed_at || null,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  const { data, error } = await supabase.from('agent_runs').insert(payload).select().single();
+  if (error) throw new Error(error.message);
+  return normalizeAgentRunRecord(data);
+}
+
+async function updateAgentRunTerminalRow(runId, updates = {}) {
+  const status = updates.status;
+  if (!isTerminalAgentRunStatus(status)) {
+    throw new Error(`Estado terminal inválido para agent_run: ${status}`);
+  }
+
+  if (DB_DRIVER !== 'supabase') {
+    return normalizeAgentRunRecord(localDb.updateAgentRunTerminal(runId, updates));
+  }
+
+  const payload = {
+    status,
+    terminal_reason_class: updates.terminal_reason_class || null,
+    completed_at: updates.completed_at || nowIso(),
+    updated_at: updates.updated_at || nowIso(),
+  };
+
+  const { data, error } = await supabase
+    .from('agent_runs')
+    .update(payload)
+    .eq('run_id', runId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return normalizeAgentRunRecord(data);
+}
+
+async function listAgentArtifacts(runId) {
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.listAgentArtifacts(runId);
+  }
+
+  const { data, error } = await supabase
+    .from('agent_artifacts')
+    .select('*')
+    .eq('run_id', runId)
+    .order('seq', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data || []).map(normalizeAgentArtifactRecord);
+}
+
+async function getLatestAgentArtifactForRun(runId) {
+  const artifacts = await listAgentArtifacts(runId);
+  return artifacts.at(-1) || null;
+}
+
+async function appendAgentArtifactRow(input = {}) {
+  validateAgentArtifactInput(input);
+  const evidenceRef = normalizeEvidenceRef(input.evidence_ref);
+  const parsedEvidenceRef = parseEvidenceRef(evidenceRef);
+
+  if (DB_DRIVER !== 'supabase') {
+    return normalizeAgentArtifactRecord(
+      localDb.appendAgentArtifact({
+        ...input,
+        evidence_ref: evidenceRef,
+      })
+    );
+  }
+
+  const artifacts = await listAgentArtifacts(input.run_id);
+  const nextSeq = input.seq || (artifacts.at(-1)?.seq || 0) + 1;
+  const payload = {
+    artifact_id: input.artifact_id || randomUUID(),
+    run_id: input.run_id,
+    seq: nextSeq,
+    phase: input.phase,
+    kind: input.kind,
+    producer: input.producer,
+    summary: input.summary,
+    evidence_ref: evidenceRef,
+    evidence_kind: parsedEvidenceRef.kind,
+    evidence_locator: parsedEvidenceRef.locator,
+    evidence_version: parsedEvidenceRef.version,
+    parent_artifact_id: input.parent_artifact_id || null,
+    supersedes_artifact_id: input.supersedes_artifact_id || null,
+    content_digest: input.content_digest || input.integrity?.content_digest || null,
+    locator_version: input.locator_version || input.integrity?.locator_version || null,
+    observed_at: input.observed_at || input.integrity?.observed_at || nowIso(),
+  };
+
+  const { data, error } = await supabase.from('agent_artifacts').insert(payload).select().single();
+  if (error) throw new Error(error.message);
+  return normalizeAgentArtifactRecord(data);
+}
+
+async function getWorkspaceEvidence(workspaceId) {
+  const workspace = await getAgentWorkspaceById(workspaceId);
+  if (!workspace) return null;
+  const latestRun = await getLatestAgentRunForWorkspace(workspaceId);
+  const latestArtifact = latestRun ? await getLatestAgentArtifactForRun(latestRun.run_id) : null;
+  return {
+    workspace,
+    latest_run: latestRun,
+    latest_artifact: latestArtifact,
+  };
 }
 
 async function getAgentWorkspaceCollisions({
@@ -2515,6 +2763,222 @@ server.tool(
 
       const workspace = await updateAgentWorkspaceRow(workspace_id, next);
       return ok({ updated: true, no_op: false, workspace, message: 'Observed state registrado.' });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'create_agent_run',
+  'Crea un header durable en agent_runs sin convertir git/worktree en verbos MCP.',
+  {
+    run_id: z.string().min(1).optional(),
+    workspace_id: z.string().min(1),
+    task_id: z.string().min(1).optional(),
+    agent_id: z.string().min(1),
+    requested_base_ref: z.string().min(1),
+    baseline_commit: z.string().min(1),
+    observed_start_branch: z.string().optional(),
+    observed_start_head: z.string().optional(),
+    observed_start_dirty: z.enum(['clean', 'dirty', 'dirty-excluded']).optional(),
+    observed_start_path: z.string().optional(),
+    status: z.enum(AGENT_RUN_STATUSES).optional().default('planned'),
+    predecessor_run_id: z.string().min(1).optional(),
+    recovery_group_id: z.string().min(1).optional(),
+  },
+  async ({
+    run_id,
+    workspace_id,
+    task_id,
+    agent_id,
+    requested_base_ref,
+    baseline_commit,
+    observed_start_branch,
+    observed_start_head,
+    observed_start_dirty,
+    observed_start_path,
+    status,
+    predecessor_run_id,
+    recovery_group_id,
+  }) => {
+    try {
+      const run = await createAgentRunRow({
+        run_id,
+        workspace_id,
+        task_id,
+        agent_id,
+        requested_base_ref,
+        baseline_commit,
+        observed_start: {
+          branch: observed_start_branch || null,
+          head: observed_start_head || null,
+          dirty: observed_start_dirty || null,
+          path: observed_start_path || null,
+        },
+        status,
+        predecessor_run_id,
+        recovery_group_id,
+      });
+
+      return ok({ created: true, run });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'get_agent_run',
+  'Obtiene un agent_run durable por run_id.',
+  {
+    run_id: z.string().min(1),
+  },
+  async ({ run_id }) => {
+    try {
+      const run = await getAgentRunById(run_id);
+      if (!run) return err(`agent_run ${run_id} no encontrado.`);
+      return ok({ run });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'list_agent_runs',
+  'Lista runs durables por workspace/task/agent.',
+  {
+    workspace_id: z.string().min(1).optional(),
+    task_id: z.string().min(1).optional(),
+    agent_id: z.string().min(1).optional(),
+    limit: z.number().int().positive().max(100).optional(),
+  },
+  async ({ workspace_id, task_id, agent_id, limit }) => {
+    try {
+      const runs = await listAgentRuns({
+        workspaceId: workspace_id || null,
+        taskId: task_id || null,
+        agentId: agent_id || null,
+        limit: limit || null,
+      });
+      return ok({ total: runs.length, runs });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'complete_agent_run',
+  'Cierra un agent_run con metadata terminal sin reescribir procedencia.',
+  {
+    run_id: z.string().min(1),
+    status: z.enum(TERMINAL_AGENT_RUN_STATUSES),
+    terminal_reason_class: z.string().min(1).optional(),
+    completed_at: z.string().min(1).optional(),
+  },
+  async ({ run_id, status, terminal_reason_class, completed_at }) => {
+    try {
+      const run = await updateAgentRunTerminalRow(run_id, {
+        status,
+        terminal_reason_class,
+        completed_at,
+      });
+      return ok({ updated: true, run });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'append_agent_artifact',
+  'Agrega evidencia append-only para un run durable.',
+  {
+    artifact_id: z.string().min(1).optional(),
+    run_id: z.string().min(1),
+    phase: z.enum(AGENT_ARTIFACT_PHASES),
+    kind: z.enum(AGENT_ARTIFACT_KINDS),
+    producer: z.enum(AGENT_ARTIFACT_PRODUCERS),
+    summary: z.string().min(1),
+    evidence_ref: z.union([
+      z.string().min(1),
+      z.object({
+        kind: z.string().min(1),
+        locator: z.string().min(1),
+        version: z.string().min(1).optional(),
+      }),
+    ]),
+    parent_artifact_id: z.string().min(1).optional(),
+    supersedes_artifact_id: z.string().min(1).optional(),
+    content_digest: z.string().min(1).optional(),
+    locator_version: z.string().min(1).optional(),
+    observed_at: z.string().min(1).optional(),
+  },
+  async ({
+    artifact_id,
+    run_id,
+    phase,
+    kind,
+    producer,
+    summary,
+    evidence_ref,
+    parent_artifact_id,
+    supersedes_artifact_id,
+    content_digest,
+    locator_version,
+    observed_at,
+  }) => {
+    try {
+      const artifact = await appendAgentArtifactRow({
+        artifact_id,
+        run_id,
+        phase,
+        kind,
+        producer,
+        summary,
+        evidence_ref,
+        parent_artifact_id,
+        supersedes_artifact_id,
+        content_digest,
+        locator_version,
+        observed_at,
+      });
+      return ok({ created: true, artifact });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'list_agent_artifacts',
+  'Lista artifacts append-only ordenados por seq para un run.',
+  {
+    run_id: z.string().min(1),
+  },
+  async ({ run_id }) => {
+    try {
+      const artifacts = await listAgentArtifacts(run_id);
+      return ok({ total: artifacts.length, artifacts });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'get_workspace_evidence',
+  'Devuelve workspace + latest run + latest artifact para consumers downstream.',
+  {
+    workspace_id: z.string().min(1),
+  },
+  async ({ workspace_id }) => {
+    try {
+      const evidence = await getWorkspaceEvidence(workspace_id);
+      if (!evidence) return err(`Workspace ${workspace_id} no encontrado.`);
+      return ok(evidence);
     } catch (e) {
       return err(e.message);
     }

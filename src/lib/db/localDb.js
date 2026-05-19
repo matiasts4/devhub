@@ -6,6 +6,13 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 const { resolveDbPath } = require('./pathResolver');
+const {
+  isAgentRunStatus,
+  isTerminalAgentRunStatus,
+  normalizeEvidenceRef,
+  parseEvidenceRef,
+  validateAgentArtifactInput,
+} = require('./agentRunArtifacts');
 
 const DB_PATH = resolveDbPath();
 let _db = null;
@@ -21,6 +28,8 @@ const AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES = [
   'cleanup_pending',
   'orphaned',
 ];
+
+const AGENT_RUN_OBSERVED_DIRTY_STATUSES = ['clean', 'dirty', 'dirty-excluded'];
 
 function ensureRuntimeSchema(db) {
   db.exec(`
@@ -267,6 +276,111 @@ function ensureRuntimeSchema(db) {
     BEGIN
       SELECT RAISE(ABORT, 'agent_workspaces_terminal_immutable');
     END;
+
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      run_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      task_id TEXT,
+      agent_id TEXT NOT NULL,
+      requested_base_ref TEXT NOT NULL,
+      baseline_commit TEXT NOT NULL,
+      observed_start_branch TEXT,
+      observed_start_head TEXT,
+      observed_start_dirty TEXT CHECK(observed_start_dirty IN ('clean', 'dirty', 'dirty-excluded') OR observed_start_dirty IS NULL),
+      observed_start_path TEXT,
+      status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned', 'running', 'paused', 'succeeded', 'failed', 'aborted', 'superseded')),
+      predecessor_run_id TEXT,
+      recovery_group_id TEXT,
+      terminal_reason_class TEXT,
+      started_at TEXT DEFAULT (datetime('now')),
+      completed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (workspace_id) REFERENCES agent_workspaces(id),
+      FOREIGN KEY (predecessor_run_id) REFERENCES agent_runs(run_id),
+      CHECK(predecessor_run_id IS NULL OR predecessor_run_id != run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_workspace ON agent_runs(workspace_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_task ON agent_runs(task_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_recovery_group ON agent_runs(recovery_group_id, created_at DESC);
+
+    CREATE TRIGGER IF NOT EXISTS agent_runs_provenance_immutable
+    BEFORE UPDATE ON agent_runs
+    FOR EACH ROW
+    WHEN
+      OLD.workspace_id IS NOT NEW.workspace_id OR
+      OLD.task_id IS NOT NEW.task_id OR
+      OLD.agent_id IS NOT NEW.agent_id OR
+      OLD.requested_base_ref IS NOT NEW.requested_base_ref OR
+      OLD.baseline_commit IS NOT NEW.baseline_commit OR
+      OLD.observed_start_branch IS NOT NEW.observed_start_branch OR
+      OLD.observed_start_head IS NOT NEW.observed_start_head OR
+      OLD.observed_start_dirty IS NOT NEW.observed_start_dirty OR
+      OLD.observed_start_path IS NOT NEW.observed_start_path OR
+      OLD.predecessor_run_id IS NOT NEW.predecessor_run_id OR
+      OLD.recovery_group_id IS NOT NEW.recovery_group_id OR
+      OLD.started_at IS NOT NEW.started_at
+    BEGIN
+      SELECT RAISE(ABORT, 'agent_runs_provenance_immutable');
+    END;
+
+    CREATE TABLE IF NOT EXISTS agent_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      phase TEXT NOT NULL CHECK(phase IN ('prepare', 'execute', 'qa', 'cleanup', 'recovery')),
+      kind TEXT NOT NULL CHECK(kind IN (
+        'workspace.prepared',
+        'workspace.drift',
+        'workspace.cleanup',
+        'git.branch',
+        'git.commit',
+        'git.merge',
+        'git.checkout',
+        'command.exec',
+        'test.result',
+        'diff.patch',
+        'qa.result',
+        'attachment.log',
+        'attachment.file',
+        'decision.note',
+        'error.report'
+      )),
+      producer TEXT NOT NULL CHECK(producer IN ('executor', 'devhub', 'qa', 'supervisor')),
+      summary TEXT NOT NULL,
+      evidence_ref TEXT NOT NULL,
+      evidence_kind TEXT,
+      evidence_locator TEXT,
+      evidence_version TEXT,
+      parent_artifact_id TEXT,
+      supersedes_artifact_id TEXT,
+      content_digest TEXT,
+      locator_version TEXT,
+      observed_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (run_id) REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_artifact_id) REFERENCES agent_artifacts(artifact_id),
+      FOREIGN KEY (supersedes_artifact_id) REFERENCES agent_artifacts(artifact_id),
+      UNIQUE(run_id, seq)
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_artifacts_run_seq ON agent_artifacts(run_id, seq ASC);
+    CREATE INDEX IF NOT EXISTS idx_agent_artifacts_kind ON agent_artifacts(kind, observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_artifacts_phase ON agent_artifacts(phase, observed_at DESC);
+
+    CREATE TRIGGER IF NOT EXISTS agent_artifacts_append_only
+    BEFORE UPDATE ON agent_artifacts
+    FOR EACH ROW
+    BEGIN
+      SELECT RAISE(ABORT, 'agent_artifacts_append_only');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS agent_artifacts_delete_forbidden
+    BEFORE DELETE ON agent_artifacts
+    FOR EACH ROW
+    BEGIN
+      SELECT RAISE(ABORT, 'agent_artifacts_append_only');
+    END;
   `);
 
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
@@ -380,6 +494,9 @@ function getDb() {
     _db.pragma('foreign_keys = ON');
     _db.pragma('busy_timeout = 5000');
     ensureRuntimeSchema(_db);
+  }
+  if (!_db.tables) {
+    _db.tables = tables;
   }
   return _db;
 }
@@ -498,6 +615,242 @@ function buildPrepareAgentWorkspaceAck(workspace) {
     status: workspace.status,
     accepted_at: workspace.accepted_at || workspace.updated_at || workspace.created_at || null,
   };
+}
+
+function resolveDbArgs(dbOrInput, maybeInput) {
+  if (dbOrInput && typeof dbOrInput.prepare === 'function') {
+    return { db: dbOrInput, input: maybeInput || {} };
+  }
+  return { db: getDb(), input: dbOrInput || {} };
+}
+
+function getAgentRunById(dbOrRunId, maybeRunId) {
+  const hasDb = dbOrRunId && typeof dbOrRunId.prepare === 'function';
+  const db = hasDb ? dbOrRunId : getDb();
+  const runId = hasDb ? maybeRunId : dbOrRunId;
+  if (!runId) return null;
+  return db.prepare('SELECT * FROM agent_runs WHERE run_id = ? LIMIT 1').get(runId) || null;
+}
+
+function listAgentRuns(dbOrFilters, maybeFilters) {
+  const { db, input } = resolveDbArgs(dbOrFilters, maybeFilters);
+  const filters = input || {};
+  const clauses = [];
+  const params = [];
+
+  if (filters.workspace_id) {
+    clauses.push('workspace_id = ?');
+    params.push(filters.workspace_id);
+  }
+  if (filters.task_id) {
+    clauses.push('task_id = ?');
+    params.push(filters.task_id);
+  }
+  if (filters.agent_id) {
+    clauses.push('agent_id = ?');
+    params.push(filters.agent_id);
+  }
+  if (filters.recovery_group_id) {
+    clauses.push('recovery_group_id = ?');
+    params.push(filters.recovery_group_id);
+  }
+
+  const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const limitSql = Number.isInteger(filters.limit) ? ' LIMIT ?' : '';
+  const statement = db.prepare(
+    `SELECT * FROM agent_runs ${whereSql} ORDER BY created_at DESC, rowid DESC${limitSql}`
+  );
+  if (Number.isInteger(filters.limit)) params.push(filters.limit);
+  return statement.all(...params);
+}
+
+function getLatestAgentRunForWorkspace(dbOrWorkspaceId, maybeWorkspaceId) {
+  const hasDb = dbOrWorkspaceId && typeof dbOrWorkspaceId.prepare === 'function';
+  const db = hasDb ? dbOrWorkspaceId : getDb();
+  const workspaceId = hasDb ? maybeWorkspaceId : dbOrWorkspaceId;
+  if (!workspaceId) return null;
+  return (
+    db
+      .prepare(
+        'SELECT * FROM agent_runs WHERE workspace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
+      )
+      .get(workspaceId) || null
+  );
+}
+
+function getLatestAgentRunForTask(dbOrTaskId, maybeTaskId) {
+  const hasDb = dbOrTaskId && typeof dbOrTaskId.prepare === 'function';
+  const db = hasDb ? dbOrTaskId : getDb();
+  const taskId = hasDb ? maybeTaskId : dbOrTaskId;
+  if (!taskId) return null;
+  return (
+    db
+      .prepare(
+        'SELECT * FROM agent_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
+      )
+      .get(taskId) || null
+  );
+}
+
+function createAgentRun(dbOrInput, maybeInput) {
+  const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
+  const timestamp = input.started_at || new Date().toISOString();
+  const status = input.status || 'planned';
+  if (!isAgentRunStatus(status)) {
+    throw new Error(`Agent run status inválido: ${status}`);
+  }
+  if (!input.workspace_id) throw new Error('workspace_id es requerido para agent_runs.');
+  if (!input.agent_id) throw new Error('agent_id es requerido para agent_runs.');
+  if (!input.requested_base_ref)
+    throw new Error('requested_base_ref es requerido para agent_runs.');
+  if (!input.baseline_commit) throw new Error('baseline_commit es requerido para agent_runs.');
+  if (
+    input.observed_start?.dirty &&
+    !AGENT_RUN_OBSERVED_DIRTY_STATUSES.includes(input.observed_start.dirty)
+  ) {
+    throw new Error(`observed_start.dirty inválido: ${input.observed_start.dirty}`);
+  }
+  if (input.predecessor_run_id && !getAgentRunById(db, input.predecessor_run_id)) {
+    throw new Error(`predecessor_run_id no encontrado: ${input.predecessor_run_id}`);
+  }
+
+  const row = {
+    run_id: input.run_id || crypto.randomUUID(),
+    workspace_id: input.workspace_id,
+    task_id: input.task_id || null,
+    agent_id: input.agent_id,
+    requested_base_ref: input.requested_base_ref,
+    baseline_commit: input.baseline_commit,
+    observed_start_branch: input.observed_start?.branch || null,
+    observed_start_head: input.observed_start?.head || null,
+    observed_start_dirty: input.observed_start?.dirty || null,
+    observed_start_path: input.observed_start?.path || null,
+    status,
+    predecessor_run_id: input.predecessor_run_id || null,
+    recovery_group_id: input.recovery_group_id || null,
+    terminal_reason_class: input.terminal_reason_class || null,
+    started_at: timestamp,
+    completed_at: input.completed_at || null,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  const keys = Object.keys(row);
+  db.prepare(
+    `INSERT INTO agent_runs (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+  ).run(...keys.map((key) => row[key] ?? null));
+
+  return getAgentRunById(db, row.run_id);
+}
+
+function updateAgentRunTerminal(dbOrRunId, maybeRunId, maybeUpdates) {
+  const hasDb = dbOrRunId && typeof dbOrRunId.prepare === 'function';
+  const db = hasDb ? dbOrRunId : getDb();
+  const runId = hasDb ? maybeRunId : dbOrRunId;
+  const updates = hasDb ? maybeUpdates || {} : maybeRunId || {};
+  const existing = getAgentRunById(db, runId);
+  if (!existing) throw new Error(`agent_run ${runId} no encontrado.`);
+  const status = updates.status || existing.status;
+  if (!isTerminalAgentRunStatus(status)) {
+    throw new Error(`Estado terminal inválido para agent_run: ${status}`);
+  }
+
+  const payload = {
+    status,
+    terminal_reason_class: updates.terminal_reason_class || existing.terminal_reason_class || null,
+    completed_at: updates.completed_at || new Date().toISOString(),
+    updated_at: updates.updated_at || new Date().toISOString(),
+  };
+  const keys = Object.keys(payload);
+  db.prepare(
+    `UPDATE agent_runs SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE run_id = ?`
+  ).run(...keys.map((key) => payload[key] ?? null), runId);
+  return getAgentRunById(db, runId);
+}
+
+function listAgentArtifacts(dbOrRunId, maybeRunId) {
+  const hasDb = dbOrRunId && typeof dbOrRunId.prepare === 'function';
+  const db = hasDb ? dbOrRunId : getDb();
+  const runId = hasDb ? maybeRunId : dbOrRunId;
+  return db
+    .prepare('SELECT * FROM agent_artifacts WHERE run_id = ? ORDER BY seq ASC, created_at ASC')
+    .all(runId);
+}
+
+function getLatestAgentArtifactForRun(dbOrRunId, maybeRunId) {
+  const hasDb = dbOrRunId && typeof dbOrRunId.prepare === 'function';
+  const db = hasDb ? dbOrRunId : getDb();
+  const runId = hasDb ? maybeRunId : dbOrRunId;
+  return (
+    db
+      .prepare(
+        'SELECT * FROM agent_artifacts WHERE run_id = ? ORDER BY seq DESC, created_at DESC LIMIT 1'
+      )
+      .get(runId) || null
+  );
+}
+
+function appendAgentArtifact(dbOrInput, maybeInput) {
+  const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
+  if (!input.run_id) throw new Error('run_id es requerido para agent_artifacts.');
+  const run = getAgentRunById(db, input.run_id);
+  if (!run) throw new Error(`agent_run ${input.run_id} no encontrado.`);
+
+  validateAgentArtifactInput(input);
+  const normalizedEvidenceRef = normalizeEvidenceRef(input.evidence_ref);
+  const parsedEvidenceRef = parseEvidenceRef(normalizedEvidenceRef);
+  const previous = getLatestAgentArtifactForRun(db, input.run_id);
+  const nextSeq = input.seq || (previous?.seq || 0) + 1;
+  if (previous && nextSeq <= previous.seq) {
+    throw new Error(`agent_artifacts seq inválido para ${input.run_id}: ${nextSeq}`);
+  }
+
+  if (input.parent_artifact_id) {
+    const parent = db
+      .prepare('SELECT run_id FROM agent_artifacts WHERE artifact_id = ? LIMIT 1')
+      .get(input.parent_artifact_id);
+    if (!parent || parent.run_id !== input.run_id) {
+      throw new Error(`parent_artifact_id inválido para ${input.parent_artifact_id}`);
+    }
+  }
+
+  if (input.supersedes_artifact_id) {
+    const supersedes = db
+      .prepare('SELECT run_id FROM agent_artifacts WHERE artifact_id = ? LIMIT 1')
+      .get(input.supersedes_artifact_id);
+    if (!supersedes || supersedes.run_id !== input.run_id) {
+      throw new Error(`supersedes_artifact_id inválido para ${input.supersedes_artifact_id}`);
+    }
+  }
+
+  const integrity = input.integrity || {};
+  const row = {
+    artifact_id: input.artifact_id || crypto.randomUUID(),
+    run_id: input.run_id,
+    seq: nextSeq,
+    phase: input.phase,
+    kind: input.kind,
+    producer: input.producer,
+    summary: String(input.summary).trim(),
+    evidence_ref: normalizedEvidenceRef,
+    evidence_kind: parsedEvidenceRef.kind,
+    evidence_locator: parsedEvidenceRef.locator,
+    evidence_version: parsedEvidenceRef.version,
+    parent_artifact_id: input.parent_artifact_id || null,
+    supersedes_artifact_id: input.supersedes_artifact_id || null,
+    content_digest: integrity.content_digest || null,
+    locator_version: integrity.locator_version || null,
+    observed_at: integrity.observed_at || input.observed_at || new Date().toISOString(),
+  };
+
+  const keys = Object.keys(row);
+  db.prepare(
+    `INSERT INTO agent_artifacts (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+  ).run(...keys.map((key) => row[key] ?? null));
+
+  return db
+    .prepare('SELECT * FROM agent_artifacts WHERE artifact_id = ? LIMIT 1')
+    .get(row.artifact_id);
 }
 
 function prepareAgentWorkspaceLease(db, input = {}, options = {}) {
@@ -741,6 +1094,8 @@ const tables = {
   tasks: makeTableOps('tasks', 'id'),
   milestones: makeTableOps('milestones', 'id'),
   agent_workspaces: makeTableOps('agent_workspaces', 'id'),
+  agent_runs: makeTableOps('agent_runs', 'run_id'),
+  agent_artifacts: makeTableOps('agent_artifacts', 'artifact_id'),
   project_files: makeTableOps('project_files', 'id'),
   agent_registry: makeTableOps('agent_registry', 'agent_id'),
   mcp_connections: makeTableOps('mcp_connections', 'id'),
@@ -1453,6 +1808,15 @@ module.exports = {
   buildPrepareAgentWorkspaceAck,
   buildWorkspaceIntentId,
   prepareAgentWorkspaceLease,
+  createAgentRun,
+  updateAgentRunTerminal,
+  appendAgentArtifact,
+  getAgentRunById,
+  getLatestAgentRunForWorkspace,
+  getLatestAgentRunForTask,
+  listAgentRuns,
+  listAgentArtifacts,
+  getLatestAgentArtifactForRun,
   tables,
   from(table) {
     return new LocalQuery(table);

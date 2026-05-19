@@ -13,18 +13,30 @@ function shouldShowRealtimeBadge(status) {
 }
 
 function getWorkspaceOutcomeDisplay(status) {
-  const workspaceStatus =
-    status?.workspace_status || status?.workspaceStatus || status?.run_status || null;
-  const evidenceRef = status?.evidence_ref || status?.evidenceRef || null;
+  const workspaceStatus = status?.workspace_status || status?.workspaceStatus || null;
+  const runStatus = status?.run_status || status?.runStatus || null;
+  const terminalReasonClass = status?.terminal_reason_class || status?.terminalReasonClass || null;
+  const artifactKind = status?.latest_artifact_kind || status?.latestArtifactKind || null;
+  const artifactCount = Number(status?.artifact_count || status?.artifactCount || 0) || 0;
+  const evidenceRef =
+    status?.latest_artifact_evidence_ref ||
+    status?.latestArtifactEvidenceRef ||
+    status?.evidence_ref ||
+    status?.evidenceRef ||
+    null;
 
-  if (!workspaceStatus && !evidenceRef) {
+  if (!workspaceStatus && !runStatus && !evidenceRef) {
     return null;
   }
 
   return {
     workspaceStatus,
+    runStatus,
+    terminalReasonClass,
+    artifactKind,
+    artifactCount,
     evidenceRef,
-    label: workspaceStatus ? String(workspaceStatus).toUpperCase() : 'UNKNOWN',
+    label: String(runStatus || workspaceStatus || 'unknown').toUpperCase(),
   };
 }
 

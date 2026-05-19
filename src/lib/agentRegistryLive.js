@@ -6,13 +6,33 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
-export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
-  // devhub_agent_runs stays observer-only: prefer durable workspace identity, then task, then agent.
-  const run =
+function resolveObserverRun(agent = {}, agentRuns = {}) {
+  return (
     agentRuns?.[agent.workspace_id] ||
     agentRuns?.[agent.current_task_id] ||
     agentRuns?.[agent.agent_id] ||
-    {};
+    {}
+  );
+}
+
+function normalizeCount(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function isTerminalProjectedRunStatus(status) {
+  return ['succeeded', 'failed', 'aborted', 'superseded'].includes(normalizeText(status));
+}
+
+function isBlockedProjectedRun(run = {}) {
+  return (
+    normalizeText(run.runStatus || run.run_status) === 'failed' &&
+    normalizeText(run.terminalReasonClass || run.terminal_reason_class).includes('blocked')
+  );
+}
+
+export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
+  // devhub_agent_runs stays observer-only: prefer durable workspace identity, then task, then agent.
+  const run = resolveObserverRun(agent, agentRuns);
   const {
     reportedStatus: _reportedStatus,
     reported_status: _reportedStatusLegacy,
@@ -25,6 +45,13 @@ export function getAgentLaunchMetadata(agent = {}, agentRuns = {}) {
     promptSummary: run.promptSummary || run.commandSummary || run.taskTitle || null,
     workspaceStatus: run.workspaceStatus || run.workspace_status || null,
     evidenceRef: run.evidenceRef || run.evidence_ref || null,
+    runStatus: run.runStatus || run.run_status || null,
+    terminalReasonClass: run.terminalReasonClass || run.terminal_reason_class || null,
+    latestArtifactEvidenceRef:
+      run.latestArtifactEvidenceRef || run.latest_artifact_evidence_ref || null,
+    latestArtifactSummary: run.latestArtifactSummary || run.latest_artifact_summary || null,
+    latestArtifactKind: run.latestArtifactKind || run.latest_artifact_kind || null,
+    artifactCount: normalizeCount(run.artifactCount || run.artifact_count),
   };
 }
 
@@ -33,7 +60,7 @@ export function getAgentDisplayMeta(agent = {}, { agentRuns = {} } = {}) {
   const selectedAgent = normalizeText(launch.selectedAgent);
   const launchOrigin = normalizeText(launch.launchOrigin);
   const name = normalizeText(agent.nombre || agent.profile_name || agent.agent_id);
-  const taskTitle = launch.promptSummary || null;
+  const taskTitle = launch.promptSummary || launch.latestArtifactSummary || null;
   const summary =
     taskTitle ||
     launch.commandSummary ||
@@ -89,10 +116,10 @@ export function getAgentRegistryLiveSnapshot({
   agentRuns = {},
 } = {}) {
   const activeAgents = (agents || []).filter((agent) => {
-    const run =
-      agentRuns?.[agent.workspace_id] ||
-      agentRuns?.[agent.current_task_id] ||
-      agentRuns?.[agent.agent_id];
+    const run = resolveObserverRun(agent, agentRuns);
+    if (isTerminalProjectedRunStatus(run.runStatus || run.run_status)) {
+      return false;
+    }
     const hasLiveSession = run?.panelId && liveSessions?.[run.panelId]?.alive;
     return isActiveAgent(agent) || hasLiveSession;
   });
@@ -116,8 +143,7 @@ export function getAgentRegistryLiveSnapshot({
 export function resolveAgentToPanelId(agent = {}, agentRuns = {}) {
   if (!agent || !agentRuns) return null;
 
-  const run =
-    agentRuns[agent.workspace_id] || agentRuns[agent.current_task_id] || agentRuns[agent.agent_id];
+  const run = resolveObserverRun(agent, agentRuns);
   return run?.panelId || null;
 }
 
@@ -148,13 +174,19 @@ export function findAgentWorkspaceAndPanel(agent = {}, agentRuns = {}, workspace
   return { wsId: null, panelId };
 }
 
-export function getAgentExecutionContext(agent = {}) {
+export function getAgentExecutionContext(agent = {}, { agentRuns = {} } = {}) {
+  const launch = getAgentLaunchMetadata(agent, agentRuns);
+  const runStatus = normalizeText(launch.runStatus);
   const status = String(agent.status || '').toLowerCase();
   const hasTask = Boolean(agent.current_task_id);
   const staleHeartbeat = !isActiveAgent(agent);
 
-  if (status === 'completed') {
+  if (status === 'completed' || runStatus === 'succeeded') {
     return { label: 'COMPLETADO', tone: 'bg-green-500/10 text-green-400 border-green-500/20' };
+  }
+
+  if (isBlockedProjectedRun(launch)) {
+    return { label: 'BLOQUEADO', tone: 'bg-red-500/10 text-red-400 border-red-500/20' };
   }
 
   if (staleHeartbeat) {

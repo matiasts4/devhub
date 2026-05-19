@@ -1,5 +1,32 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/localDb';
+import {
+  getDb,
+  getLatestAgentRunForWorkspace,
+  getLatestAgentRunForTask,
+  updateAgentRunTerminal,
+  appendAgentArtifact,
+} from '@/lib/db/localDb';
+
+function resolveRun(db, { workspace_id, task_id }) {
+  return (
+    getLatestAgentRunForWorkspace(db, workspace_id) || getLatestAgentRunForTask(db, task_id) || null
+  );
+}
+
+function appendQaArtifact(db, runId, { result, reasons, evidence_ref }) {
+  if (!runId) return null;
+  return appendAgentArtifact(db, {
+    run_id: runId,
+    phase: 'qa',
+    kind: 'qa.result',
+    producer: 'qa',
+    summary: `QA ${result}${reasons?.length ? `: ${reasons.join(' | ')}` : ''}`,
+    evidence_ref: evidence_ref || `qa://${runId}/${result}`,
+    integrity: {
+      observed_at: new Date().toISOString(),
+    },
+  });
+}
 
 export async function POST(request) {
   try {
@@ -14,6 +41,7 @@ export async function POST(request) {
     const task = db.tables.tasks.single({
       where: [['id', '=', task_id]],
     });
+    const run = resolveRun(db, { workspace_id, task_id });
 
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
@@ -42,9 +70,19 @@ export async function POST(request) {
         ['current_task_id', '=', task_id],
       ]);
 
+      if (run) {
+        updateAgentRunTerminal(db, run.run_id, {
+          status: 'succeeded',
+          terminal_reason_class: 'qa_approved',
+          completed_at: new Date().toISOString(),
+        });
+        appendQaArtifact(db, run.run_id, { result, reasons, evidence_ref });
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Task approved; cleanup intent recorded for executor handoff.',
+        run_id: run?.run_id || null,
       });
     } else {
       // Rejected
@@ -73,6 +111,18 @@ export async function POST(request) {
             [['id', '=', workspace_id]]
           );
         }
+        if (run) {
+          updateAgentRunTerminal(db, run.run_id, {
+            status: 'failed',
+            terminal_reason_class: 'qa_blocked',
+            completed_at: new Date().toISOString(),
+          });
+          appendQaArtifact(db, run.run_id, {
+            result: 'blocked',
+            reasons,
+            evidence_ref: evidence_ref || `qa://${task_id}/blocked`,
+          });
+        }
         return NextResponse.json({ success: true, message: 'Task blocked after 3 retries.' });
       } else {
         // Retry
@@ -92,7 +142,20 @@ export async function POST(request) {
           );
         }
 
-        return NextResponse.json({ success: true, message: 'Task rejected. Sent back for retry.' });
+        if (run) {
+          updateAgentRunTerminal(db, run.run_id, {
+            status: 'failed',
+            terminal_reason_class: 'qa_rejected',
+            completed_at: new Date().toISOString(),
+          });
+          appendQaArtifact(db, run.run_id, { result, reasons, evidence_ref });
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: 'Task rejected. Sent back for retry.',
+          run_id: run?.run_id || null,
+        });
       }
     }
   } catch (error) {

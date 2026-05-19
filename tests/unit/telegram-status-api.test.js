@@ -56,6 +56,30 @@ function createTestDb() {
       metadata TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE agent_workspaces (
+      id TEXT PRIMARY KEY,
+      status TEXT,
+      evidence_ref TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE agent_runs (
+      run_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      status TEXT,
+      terminal_reason_class TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE agent_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      kind TEXT,
+      evidence_ref TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   return db;
@@ -68,6 +92,45 @@ function insertAgentLog(db, { eventType, toolName = null, secsAgo = 0 }) {
       VALUES (?, ?, datetime('now', ? || ' seconds'))
     `
   ).run(eventType, toolName, String(-secsAgo));
+}
+
+function insertWorkspaceAudit(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_workspaces (id, status, evidence_ref, updated_at)
+     VALUES (?, ?, ?, ?)`
+  ).run(
+    overrides.id || 'ws-1',
+    overrides.status || 'cleanup_pending',
+    overrides.evidence_ref || 'evidence://workspace-1',
+    overrides.updated_at || '2026-05-18T22:00:00.000Z'
+  );
+}
+
+function insertRunAudit(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_runs (run_id, workspace_id, status, terminal_reason_class, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(
+    overrides.run_id || 'run-1',
+    overrides.workspace_id || 'ws-1',
+    overrides.status || 'succeeded',
+    overrides.terminal_reason_class || 'qa_approved',
+    overrides.created_at || '2026-05-18T22:01:00.000Z'
+  );
+}
+
+function insertArtifactAudit(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_artifacts (artifact_id, run_id, seq, kind, evidence_ref, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.artifact_id || 'artifact-1',
+    overrides.run_id || 'run-1',
+    overrides.seq || 1,
+    overrides.kind || 'decision.note',
+    overrides.evidence_ref || 'artifact://run-1/1',
+    overrides.created_at || '2026-05-18T22:02:00.000Z'
+  );
 }
 
 describe('GET /api/telegram/status', () => {
@@ -132,5 +195,47 @@ describe('GET /api/telegram/status', () => {
 
     expect(body.current_tool).toBe('new_tool');
     expect(body.is_busy).toBe(true);
+  });
+
+  it('projects durable run and artifact audit fields for telegram consumers', async () => {
+    insertWorkspaceAudit(db, {
+      id: 'ws-audit-1',
+      status: 'cleanup_pending',
+      evidence_ref: 'evidence://workspace-audit-1',
+    });
+    insertRunAudit(db, {
+      run_id: 'run-audit-1',
+      workspace_id: 'ws-audit-1',
+      status: 'failed',
+      terminal_reason_class: 'qa_blocked',
+    });
+    insertArtifactAudit(db, {
+      artifact_id: 'artifact-audit-1',
+      run_id: 'run-audit-1',
+      seq: 1,
+      kind: 'decision.note',
+      evidence_ref: 'run://run-audit-1/startup-intent',
+    });
+    insertArtifactAudit(db, {
+      artifact_id: 'artifact-audit-2',
+      run_id: 'run-audit-1',
+      seq: 2,
+      kind: 'qa.result',
+      evidence_ref: 'artifact://run-audit-1/qa/2',
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      workspace_status: 'cleanup_pending',
+      run_status: 'failed',
+      terminal_reason_class: 'qa_blocked',
+      latest_artifact_kind: 'qa.result',
+      latest_artifact_evidence_ref: 'artifact://run-audit-1/qa/2',
+      artifact_count: 2,
+      evidence_ref: 'evidence://workspace-audit-1',
+    });
   });
 });

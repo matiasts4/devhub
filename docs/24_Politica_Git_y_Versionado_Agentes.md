@@ -1,5 +1,5 @@
 ---
-Fecha de Modificación: 15 de mayo de 2026
+Fecha de Modificación: 19 de mayo de 2026
 Estado: VIGENTE
 Owner: DevHub
 Relacionado:
@@ -14,6 +14,7 @@ Changelog:
   - 2026-05-15 v3: Alineados hooks reales con la política canónica; `core.hooksPath` oficializado en Husky y `.githooks/*` marcado como legado inactivo.
   - 2026-05-15 v4: Formalizado el checkpoint gate antes de `completed`/`qa-ready`, la excepción `commit=none` sólo para análisis sin cambios y la regla de no hacer push automático.
   - 2026-05-18 v5: Alineada con SW-2.1A: baseline congelado, `dirty-excluded` explícito y cleanup intent modelado vía `agent_workspaces` sin Git en MCP.
+  - 2026-05-19 v6: Alineada con SW-3.1: `agent_runs`/`agent_artifacts` como auditoría durable; Telegram/UI leen evidencia desde ese modelo y SW-2.2 queda como emisor de `prepare_agent_workspace` evidence.
 ---
 
 # 24 Política de Git y Versionado para Agentes
@@ -50,6 +51,8 @@ Regla: si la operación modifica Git o toca archivos del repo, pertenece al **ej
 - Si el ejecutor observa árbol compartido no limpio, DevHub debe registrar `observed_dirty='dirty-excluded'` y **nunca normalizarlo**.
 - `cleanup_pending` representa solicitud de teardown al ejecutor; DevHub mantiene control plane only.
 - `agent_workspaces` guarda reserva/lifecycle/`evidence_ref`; Git real sigue fuera del MCP general y la evidencia resultante debe ser **auditable**.
+- `SW-3.1` agrega `agent_runs` + `agent_artifacts` como bitácora durable de ejecución/QA; `devhub_agent_runs` NO reemplaza ese ledger y jamás se usa como verdad durable.
+- `SW-2.2` debe limitarse a emitir evidencia auditable de `prepare_agent_workspace` (`workspace.prepared`/`workspace.drift`) respetando `dirty-excluded` y el baseline congelado.
 
 ---
 
@@ -358,6 +361,8 @@ executor skill/capability para Git + DevHub comments/tasks para chronology y con
 ```
 
 El freeze actual agrega una regla más: `agent_workspaces` concentra baseline, naming reservado, `cleanup_pending`, `orphaned` y `evidence_ref`; el ejecutor aplica branch/worktree/merge/delete y luego reporta metadata.
+
+Con SW-3.1 vigente, toda UI/adapter downstream debe priorizar `agent_runs.status`, `agent_runs.terminal_reason_class` y `agent_artifacts` ordenados para resumir outcomes. `devhub_agent_runs` puede seguir aportando hints de panel/sesión, pero NO resultado durable.
 
 ---
 

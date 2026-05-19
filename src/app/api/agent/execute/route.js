@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getDb, prepareAgentWorkspaceLease } from '@/lib/db/localDb';
+import {
+  getDb,
+  prepareAgentWorkspaceLease,
+  createAgentRun,
+  appendAgentArtifact,
+} from '@/lib/db/localDb';
 
 const FROZEN_BASE_COMMIT = 'f814998dd05cb491caf8637bf570dbd74b539090';
 
@@ -48,10 +53,45 @@ export async function POST(request) {
       }
     );
 
+    const run = createAgentRun(db, {
+      run_id: `run-${task_id}-${agent_id}`,
+      workspace_id: prepared.ack.workspace_id,
+      task_id,
+      agent_id,
+      requested_base_ref: prepared.ack.requested_base_ref,
+      baseline_commit: prepared.ack.requested_base_ref,
+      observed_start: {
+        branch: prepared.workspace?.observed_branch || null,
+        head: prepared.workspace?.observed_head || null,
+        dirty: prepared.workspace?.observed_dirty || null,
+        path: prepared.workspace?.workspace_path || null,
+      },
+      status: 'running',
+      started_at: prepared.ack.accepted_at || new Date().toISOString(),
+    });
+
+    db.tables.agent_workspaces.update({ run_id_or_session_id: run.run_id }, [
+      ['id', '=', prepared.ack.workspace_id],
+    ]);
+
+    const startupArtifact = appendAgentArtifact(db, {
+      run_id: run.run_id,
+      phase: 'execute',
+      kind: 'decision.note',
+      producer: 'devhub',
+      summary: 'Workspace preparation accepted; executor must provision workspace outside DevHub.',
+      evidence_ref: `run://${run.run_id}/startup-intent`,
+      integrity: {
+        observed_at: prepared.ack.accepted_at || new Date().toISOString(),
+      },
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Workspace preparation requested; executor must provision workspace outside DevHub.',
       workspace_id: prepared.ack.workspace_id,
+      run_id: run.run_id,
+      startup_artifact_id: startupArtifact.artifact_id,
       correlation_id: prepared.ack.correlation_id,
       agent_id: agent_id,
       task_id: task_id,

@@ -52,6 +52,43 @@ export async function GET() {
       )
       .get();
 
+    const latestWorkspaceAudit = db
+      .prepare(
+        `SELECT id, status, evidence_ref
+         FROM agent_workspaces
+         WHERE status IS NOT NULL OR evidence_ref IS NOT NULL
+         ORDER BY updated_at DESC, rowid DESC
+         LIMIT 1`
+      )
+      .get();
+
+    const latestRunAudit = db
+      .prepare(
+        `SELECT run_id, workspace_id, status, terminal_reason_class
+         FROM agent_runs
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT 1`
+      )
+      .get();
+
+    const latestArtifactAudit = latestRunAudit?.run_id
+      ? db
+          .prepare(
+            `SELECT artifact_id, kind, evidence_ref, seq
+             FROM agent_artifacts
+             WHERE run_id = ?
+             ORDER BY seq DESC, created_at DESC
+             LIMIT 1`
+          )
+          .get(latestRunAudit.run_id)
+      : null;
+
+    const artifactCountRow = latestRunAudit?.run_id
+      ? db
+          .prepare(`SELECT count(*) as cnt FROM agent_artifacts WHERE run_id = ?`)
+          .get(latestRunAudit.run_id)
+      : null;
+
     // Derive bot_connected from recency of last activity
     let botConnected = false;
     if (lastActivity?.created_at) {
@@ -69,6 +106,13 @@ export async function GET() {
       recent_errors: Number(recentErrors?.cnt ?? 0),
       is_busy: Number(busyStatus?.cnt ?? 0) > 0,
       current_tool: currentTool?.tool_name ?? null,
+      workspace_status: latestWorkspaceAudit?.status ?? null,
+      run_status: latestRunAudit?.status ?? null,
+      terminal_reason_class: latestRunAudit?.terminal_reason_class ?? null,
+      evidence_ref: latestWorkspaceAudit?.evidence_ref ?? null,
+      latest_artifact_kind: latestArtifactAudit?.kind ?? null,
+      latest_artifact_evidence_ref: latestArtifactAudit?.evidence_ref ?? null,
+      artifact_count: Number(artifactCountRow?.cnt ?? 0),
     });
   } catch (error) {
     console.error('telegram/status error:', error.message);

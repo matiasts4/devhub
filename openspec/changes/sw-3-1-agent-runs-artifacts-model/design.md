@@ -109,6 +109,12 @@ Consumer contract: Supervisor Loop reads latest run header plus ordered artifact
 
 No migration required in design phase. Implementation should dual-write runtime mirrors only for UI compatibility, but durable reads for audit/recovery MUST come from `agent_runs` and `agent_artifacts`.
 
+Rollout note after SW-3.1A:
+
+- `agentRegistryLive` and Telegram status helpers now consume durable run/artifact projections for status/outcome summaries.
+- `devhub_agent_runs` remains UI/session-local metadata only (panel/session identity, launch hints).
+- Next implementation dependency stays `SW-2.2`: `prepare_agent_workspace` must emit durable `workspace.prepared` / `workspace.drift` artifacts with auditable locator metadata.
+
 ## Open Questions
 
 - [ ] Should `recovery_group_id` be run-scoped only, or also shared across workspace successors created after orphan cleanup?

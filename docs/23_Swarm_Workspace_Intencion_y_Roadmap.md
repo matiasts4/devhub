@@ -1,5 +1,5 @@
 ---
-Fecha de Modificación: 18 de mayo de 2026
+Fecha de Modificación: 19 de mayo de 2026
 Estado: PARCIAL — SW-2.1A congelado para control plane de workspaces
 Owner: DevHub
 Relacionado:
@@ -41,8 +41,10 @@ La meta NO es copiar Hermes Workspace 1:1. La meta es que DevHub se convierta en
 - `observed_dirty='dirty-excluded'` se preserva textual como realidad observada y NO se normaliza a `clean`.
 - `cleanup_pending` significa **intención de cleanup**, nunca ejecución Git/worktree dentro de DevHub.
 - `devhub_agent_runs` sigue observer-only; no puede convertirse en ownership truth del workspace.
+- `SW-3.1` fija `agent_runs` + `agent_artifacts` como auditoría durable; UI, Telegram y supervisor deben leer esas proyecciones antes que cualquier mirror runtime.
 - `SW-2.2 sigue bloqueado` hasta consumir este contrato congelado sin reabrir lifecycle ni ownership.
 - `SW-3.1 puede consumir `evidence_ref`` como hook opaco ya congelado, sin redefinir lifecycle.
+- Próximo paso después de SW-3.1: `SW-2.2` debe emitir `workspace.prepared`/`workspace.drift` con `requested_base_ref`, branch/head/dirty/path observados y locator auditable.
 
 ## Capas canónicas de Swarm Workspace
 
@@ -469,6 +471,7 @@ Resultado esperado:
 ### Consumo downstream congelado por SW-2.2A
 
 - Telegram, Control Room y Supervisor Loop deben leer `workspace_status`, `run_status` y `evidence_ref` desde proyecciones durables/runtime observer-only.
+- Desde SW-3.1 esas proyecciones durables salen de `agent_runs` + `agent_artifacts`; `devhub_agent_runs` queda sólo como mirror UI-local para paneles/sesiones.
 - Esos consumers muestran outcomes (`ready`, `conflicted`, `failed`, `orphaned`) y referencias auditables, **sin mostrar verbos Git** como `checkout`, `merge`, `branch` o `worktree`.
 - `dirty-excluded` sigue siendo realidad observada del ejecutor; los consumers la propagan como estado/evidencia, no como limpieza normalizada.
 

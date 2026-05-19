@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  getAgentDisplayMeta,
+  getAgentExecutionContext,
   getAgentLaunchMetadata,
   getAgentRegistryLiveSnapshot,
   resolveAgentToPanelId,
@@ -91,6 +93,55 @@ test('drops executor-reported status from observer-only launch metadata', () => 
   assert.equal('reportedStatus' in launch, false);
 });
 
+test('exposes durable run projections without promoting observer status to truth', () => {
+  const launch = getAgentLaunchMetadata(
+    {
+      agent_id: 'agent-5',
+      current_task_id: 'task-5',
+      workspace_id: 'ws-5',
+    },
+    {
+      'ws-5': {
+        panelId: 'panel-5',
+        selectedAgent: 'worker-delta',
+        run_status: 'failed',
+        terminal_reason_class: 'qa_blocked',
+        latest_artifact_evidence_ref: 'artifact://run-5/qa/2',
+        latest_artifact_summary: 'QA blocked after retries',
+        artifact_count: 2,
+        reportedStatus: 'active',
+      },
+    }
+  );
+
+  assert.equal(launch.runStatus, 'failed');
+  assert.equal(launch.terminalReasonClass, 'qa_blocked');
+  assert.equal(launch.latestArtifactEvidenceRef, 'artifact://run-5/qa/2');
+  assert.equal(launch.latestArtifactSummary, 'QA blocked after retries');
+  assert.equal(launch.artifactCount, 2);
+  assert.equal('reportedStatus' in launch, false);
+});
+
+test('uses durable artifact summary for display metadata when no prompt summary exists', () => {
+  const display = getAgentDisplayMeta(
+    {
+      agent_id: 'agent-6',
+      workspace_id: 'ws-6',
+    },
+    {
+      agentRuns: {
+        'ws-6': {
+          selectedAgent: 'worker-epsilon',
+          latest_artifact_summary: 'Workspace drift detected',
+        },
+      },
+    }
+  );
+
+  assert.equal(display.label, 'WORKER / Ejecución');
+  assert.equal(display.summary, 'Workspace drift detected');
+});
+
 test('does not treat executor-reported status as durable liveness truth', () => {
   const snapshot = getAgentRegistryLiveSnapshot({
     agents: [
@@ -107,4 +158,59 @@ test('does not treat executor-reported status as durable liveness truth', () => 
   });
 
   assert.equal(snapshot.activeAgentsCount, 0);
+});
+
+test('does not keep terminal durable runs live just because the panel is still open', () => {
+  const snapshot = getAgentRegistryLiveSnapshot({
+    agents: [
+      {
+        agent_id: 'agent-7',
+        status: 'idle',
+        last_heartbeat: STALE_HEARTBEAT,
+        workspace_id: 'ws-7',
+      },
+    ],
+    liveSessions: { panel7: { alive: true } },
+    agentRuns: {
+      'ws-7': { panelId: 'panel7', run_status: 'succeeded' },
+    },
+  });
+
+  assert.equal(snapshot.activeAgentsCount, 0);
+});
+
+test('prefers durable run completion over stale registry execution context', () => {
+  const context = getAgentExecutionContext(
+    {
+      agent_id: 'agent-8',
+      status: 'working',
+      last_heartbeat: STALE_HEARTBEAT,
+      workspace_id: 'ws-8',
+    },
+    {
+      agentRuns: {
+        'ws-8': { run_status: 'succeeded' },
+      },
+    }
+  );
+
+  assert.equal(context.label, 'COMPLETADO');
+});
+
+test('maps blocked durable run projections to blocked execution context', () => {
+  const context = getAgentExecutionContext(
+    {
+      agent_id: 'agent-9',
+      status: 'working',
+      last_heartbeat: FRESH_HEARTBEAT,
+      workspace_id: 'ws-9',
+    },
+    {
+      agentRuns: {
+        'ws-9': { run_status: 'failed', terminal_reason_class: 'qa_blocked' },
+      },
+    }
+  );
+
+  assert.equal(context.label, 'BLOQUEADO');
 });
