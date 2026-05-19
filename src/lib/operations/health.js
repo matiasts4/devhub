@@ -111,6 +111,40 @@ export function buildSessionStreamHealthSource(payload = {}, options = {}) {
 
 export function buildMcpHealthSource(payload = {}, options = {}) {
   const observedAt = payload.observed_at || options.now || new Date().toISOString();
+
+  if (payload.doctor?.probes && payload.list_tools?.tools) {
+    const problematicProbes = payload.doctor.probes.filter(
+      (probe) => probe.status === 'degraded' || probe.status === 'unavailable'
+    );
+    const status =
+      payload.smoke?.status === 'fail'
+        ? 'offline'
+        : problematicProbes.length > 0 || payload.smoke?.status === 'degraded'
+          ? 'degraded'
+          : 'healthy';
+
+    return createHealthSource({
+      key: 'mcp',
+      label: 'MCP',
+      status,
+      authority: payload.authority === 'durable' ? 'authoritative' : 'inferred',
+      freshness_ms: resolveFreshnessMs(observedAt, options.now),
+      observed_at: observedAt,
+      status_reason:
+        problematicProbes[0]?.reason ||
+        payload.status_reason ||
+        (payload.smoke?.status === 'degraded'
+          ? 'MCP diagnostics are degraded.'
+          : 'MCP control center snapshot available.'),
+      metrics: {
+        probe_count: payload.doctor.probes.length,
+        degraded_probes: problematicProbes.length,
+        tool_count: payload.list_tools.tools.length,
+        safe_tool_count: payload.list_tools.tools.filter((tool) => tool.safe_action).length,
+      },
+    });
+  }
+
   const isCached = Boolean(payload.note) || payload.authority === 'inferred';
   const disconnectedCount = (payload.servers || []).filter(
     (server) => server.status !== 'connected'

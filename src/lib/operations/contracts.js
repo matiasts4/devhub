@@ -38,6 +38,15 @@ const CONTROL_ROOM_FRESHNESS_RANK = Object.freeze({
   unavailable: 3,
 });
 
+export const MCP_CONTROL_CENTER_AUTHORITIES = Object.freeze(['durable', 'live', 'configured']);
+export const MCP_CONTROL_CENTER_FRESHNESS = Object.freeze(['current', 'stale', 'unknown']);
+export const MCP_CONTROL_CENTER_PROBE_STATUSES = Object.freeze([
+  'healthy',
+  'degraded',
+  'unavailable',
+]);
+export const MCP_CONTROL_CENTER_SMOKE_STATUSES = Object.freeze(['pass', 'degraded', 'fail']);
+
 function compactParts(parts = []) {
   return parts
     .flat()
@@ -110,6 +119,22 @@ export function mergeControlRoomStatus(...inputs) {
   });
 }
 
+function normalizeMcpAuthority(value) {
+  return MCP_CONTROL_CENTER_AUTHORITIES.includes(value) ? value : 'configured';
+}
+
+function normalizeMcpFreshness(value) {
+  return MCP_CONTROL_CENTER_FRESHNESS.includes(value) ? value : 'unknown';
+}
+
+function normalizeMcpProbeStatus(value) {
+  return MCP_CONTROL_CENTER_PROBE_STATUSES.includes(value) ? value : 'unavailable';
+}
+
+function normalizeMcpSmokeStatus(value) {
+  return MCP_CONTROL_CENTER_SMOKE_STATUSES.includes(value) ? value : 'fail';
+}
+
 export function buildOperationalDedupeKey(source, eventType, parts = []) {
   return compactParts([source, eventType, parts]).join(':');
 }
@@ -150,6 +175,70 @@ export function createHealthSource(input = {}) {
     observed_at: input.observed_at || null,
     status_reason: input.status_reason || '',
     metrics: input.metrics || {},
+  };
+}
+
+export function createMcpEvidenceRef(input = {}) {
+  return {
+    kind: input.kind || 'unknown',
+    ref: input.ref || null,
+    authority: normalizeMcpAuthority(input.authority),
+  };
+}
+
+export function createMcpProbe(input = {}) {
+  return {
+    key: input.key || 'unknown',
+    status: normalizeMcpProbeStatus(input.status),
+    authority: normalizeMcpAuthority(input.authority),
+    freshness: normalizeMcpFreshness(input.freshness),
+    reason: input.reason || '',
+    evidence: Array.isArray(input.evidence)
+      ? input.evidence.map((item) => createMcpEvidenceRef(item))
+      : [],
+  };
+}
+
+export function createMcpToolEntry(input = {}) {
+  return {
+    name: input.name || 'unknown',
+    server: input.server || null,
+    description: input.description || '',
+    authority: normalizeMcpAuthority(input.authority),
+    control_plane: Boolean(input.control_plane),
+    safe_action: Boolean(input.safe_action),
+    reason: input.reason || '',
+    evidence: Array.isArray(input.evidence)
+      ? input.evidence.map((item) => createMcpEvidenceRef(item))
+      : [],
+  };
+}
+
+export function createMcpControlCenterSnapshot(input = {}) {
+  return {
+    observed_at: input.observed_at || new Date().toISOString(),
+    authority: normalizeMcpAuthority(input.authority),
+    freshness: normalizeMcpFreshness(input.freshness),
+    doctor: {
+      probes: Array.isArray(input.doctor?.probes)
+        ? input.doctor.probes.map((probe) => createMcpProbe(probe))
+        : [],
+    },
+    list_tools: {
+      tools: Array.isArray(input.list_tools?.tools)
+        ? input.list_tools.tools.map((tool) => createMcpToolEntry(tool))
+        : [],
+    },
+    smoke: {
+      status: normalizeMcpSmokeStatus(input.smoke?.status),
+      checks: Array.isArray(input.smoke?.checks)
+        ? input.smoke.checks.map((probe) => createMcpProbe(probe))
+        : [],
+    },
+    evidence: input.evidence || {},
+    note: input.note || null,
+    status_reason: input.status_reason || '',
+    servers: Array.isArray(input.servers) ? input.servers : [],
   };
 }
 

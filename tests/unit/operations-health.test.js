@@ -43,21 +43,36 @@ describe('operations health mappers', () => {
     expect(source.status_reason).toContain('Live session check unavailable');
   });
 
-  test('marks cached MCP status as inferred and stale even when legacy status says connected', () => {
+  test('maps MCP control-center snapshots into degraded health when inventory is only configured', () => {
     const source = buildMcpHealthSource(
       {
-        servers: [{ name: 'filesystem', status: 'connected', tools: [{ name: 'read_file' }] }],
-        note: 'MCP status is cached. OpenCode headless does not expose live MCP server info.',
+        authority: 'durable',
+        observed_at: '2026-04-10T17:15:00.000Z',
+        doctor: {
+          probes: [
+            { key: 'database', status: 'healthy', authority: 'durable', freshness: 'current' },
+            { key: 'inventory', status: 'degraded', authority: 'configured', freshness: 'unknown' },
+          ],
+        },
+        list_tools: {
+          tools: [
+            { name: 'list_projects', authority: 'durable', control_plane: true, safe_action: true },
+            { name: 'read_file', authority: 'configured', control_plane: false, safe_action: false },
+          ],
+        },
+        smoke: {
+          status: 'degraded',
+        },
       },
       { now: '2026-04-10T17:20:00.000Z' }
     );
 
     expect(source).toMatchObject({
       key: 'mcp',
-      status: 'stale',
-      authority: 'inferred',
+      status: 'degraded',
+      authority: 'authoritative',
     });
-    expect(source.status_reason).toContain('cached');
+    expect(source.status_reason.toLowerCase()).toContain('degraded');
   });
 
   test('summarizes mixed source health into one health snapshot', () => {
@@ -72,8 +87,21 @@ describe('operations health mappers', () => {
           checked_at: '2026-04-10T17:19:00.000Z',
         }),
         buildMcpHealthSource({
-          servers: [{ name: 'filesystem', status: 'connected', tools: [{ name: 'read_file' }] }],
-          note: 'MCP status is cached.',
+          authority: 'durable',
+          observed_at: '2026-04-10T17:19:00.000Z',
+          doctor: {
+            probes: [
+              { key: 'database', status: 'healthy', authority: 'durable', freshness: 'current' },
+              { key: 'inventory', status: 'degraded', authority: 'configured', freshness: 'unknown' },
+            ],
+          },
+          list_tools: {
+            tools: [
+              { name: 'list_projects', authority: 'durable', control_plane: true, safe_action: true },
+              { name: 'read_file', authority: 'configured', control_plane: false, safe_action: false },
+            ],
+          },
+          smoke: { status: 'degraded' },
         }),
         buildTelegramHealthSource({
           bot_connected: true,
@@ -88,8 +116,9 @@ describe('operations health mappers', () => {
       total: 4,
       healthy: 2,
       degraded: 1,
-      stale: 1,
-      worst_status: 'stale',
+      degraded: 2,
+      stale: 0,
+      worst_status: 'degraded',
     });
     expect(snapshot.sources.map((source) => source.key)).toEqual([
       'opencode-process',
