@@ -2,6 +2,8 @@ const {
   TELEGRAM_BUSY_POLLING_MS,
   TELEGRAM_IDLE_POLLING_MS,
   getTelegramPollingInterval,
+  getTelegramSnapshotBadges,
+  normalizeTelegramActivityItem,
   getWorkspaceOutcomeDisplay,
   shouldShowRealtimeBadge,
   getCurrentToolDisplay,
@@ -45,6 +47,7 @@ describe('telegram monitor realtime helpers', () => {
       artifactCount: 2,
       evidenceRef: 'artifact://run-1/qa/2',
       label: 'SUCCEEDED',
+      degraded: false,
     });
   });
 
@@ -62,11 +65,72 @@ describe('telegram monitor realtime helpers', () => {
       artifactCount: 0,
       evidenceRef: 'evidence://workspace-conflict-1',
       label: 'CONFLICTED',
+      degraded: false,
+    });
+  });
+
+  it('marks degraded-unavailable snapshot states without inventing local truth', () => {
+    expect(
+      getWorkspaceOutcomeDisplay({
+        snapshot: {
+          degraded: true,
+        },
+      })
+    ).toEqual({
+      workspaceStatus: null,
+      runStatus: null,
+      terminalReasonClass: null,
+      artifactKind: null,
+      artifactCount: 0,
+      evidenceRef: null,
+      label: 'DEGRADED-UNAVAILABLE',
+      degraded: true,
     });
   });
 
   it('hides git verbs from the realtime tool badge', () => {
     expect(getCurrentToolDisplay({ current_tool: 'git checkout -b task/sw-2-2' })).toBe(null);
     expect(getCurrentToolDisplay({ current_tool: 'worktree add .worktrees/ws-1' })).toBe(null);
+  });
+
+  it('normalizes durable adapter activity items without Telegram-local metadata heuristics', () => {
+    expect(
+      normalizeTelegramActivityItem({
+        id: 'intent-1',
+        entry_type: 'intent',
+        action: 'approval.respond',
+        task_id: 'task-1',
+        workspace_id: 'ws-1',
+        run_id: 'run-1',
+        intent_status: 'accepted',
+        approval_status: 'approved',
+        delivery_status: 'retry_pending',
+        evidence_ref: 'artifact://run-1/qa/1',
+      })
+    ).toEqual(
+      expect.objectContaining({
+        entryType: 'intent',
+        title: 'approval.respond',
+        primaryStatus: 'retry_pending',
+        approvalStatus: 'approved',
+        deliveryStatus: 'retry_pending',
+        targetSummary: 'task:task-1 · ws:ws-1 · run:run-1',
+        detail: expect.stringContaining('artifact://run-1/qa/1'),
+      })
+    );
+  });
+
+  it('derives approval and delivery badges from the shared snapshot only', () => {
+    expect(
+      getTelegramSnapshotBadges({
+        snapshot: {
+          approval: { id: 'approval-1', status: 'pending' },
+          delivery: { last_status: 'retry_pending', attempts_count: 2 },
+        },
+      })
+    ).toEqual([
+      { key: 'approval', label: 'approval: pending', tone: 'warn' },
+      { key: 'delivery', label: 'delivery: retry_pending · 2', tone: 'warn' },
+    ]);
   });
 });

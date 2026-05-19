@@ -25,6 +25,10 @@ describe('GET /api/agenthub/mcp/status', () => {
   });
 
   test('returns MCP server status with servers array', async () => {
+    if (await harness.skipIfServerUnavailable()) {
+      return;
+    }
+
     const { response, body } = await harness.requestJson('GET', '/api/agenthub/mcp/status');
 
     harness.assertStatus(response, 200);
@@ -50,6 +54,10 @@ describe('GET /api/agenthub/mcp/status', () => {
   });
 
   test('known MCP servers include filesystem and web', async () => {
+    if (await harness.skipIfServerUnavailable()) {
+      return;
+    }
+
     const { response, body } = await harness.requestJson('GET', '/api/agenthub/mcp/status');
 
     if (response.status === 200) {
@@ -61,6 +69,10 @@ describe('GET /api/agenthub/mcp/status', () => {
   });
 
   test('filesystem server has expected tools', async () => {
+    if (await harness.skipIfServerUnavailable()) {
+      return;
+    }
+
     const { response, body } = await harness.requestJson('GET', '/api/agenthub/mcp/status');
 
     if (response.status === 200) {

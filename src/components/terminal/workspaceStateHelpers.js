@@ -34,10 +34,18 @@ export async function closeTerminalSessions(panelIds, fetchImpl = fetch) {
   const uniquePanelIds = [...new Set((panelIds || []).filter(Boolean))];
 
   await Promise.allSettled(
-    uniquePanelIds.map((panelId) =>
-      fetchImpl(`/api/terminal/session?sessionId=${encodeURIComponent(panelId)}`, {
+    uniquePanelIds.map((panelId) => {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-session-closing', {
+            detail: { panelId },
+          })
+        );
+      }
+
+      return fetchImpl(`/api/terminal/session?sessionId=${encodeURIComponent(panelId)}`, {
         method: 'DELETE',
-      })
-    )
+      });
+    })
   );
 }

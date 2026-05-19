@@ -9,17 +9,6 @@ const { ApiTestHarness, getAgentHubBaseUrl } = require('./harness');
 
 const BASE_URL = getAgentHubBaseUrl();
 
-async function serverReachable() {
-  try {
-    const res = await fetch(`${BASE_URL}/api/agenthub/sessions?limit=1`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    return res.ok || res.status === 200;
-  } catch {
-    return false;
-  }
-}
-
 describe('POST /api/agenthub/chat', () => {
   let harness;
 
@@ -41,6 +30,10 @@ describe('POST /api/agenthub/chat', () => {
 
   describe('validation', () => {
     test('missing messages → 400', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('POST', '/api/agenthub/chat', {
         project_id: 'test-1',
       });
@@ -50,6 +43,10 @@ describe('POST /api/agenthub/chat', () => {
     });
 
     test('messages not an array → 400', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('POST', '/api/agenthub/chat', {
         messages: 'not-an-array',
       });
@@ -58,6 +55,10 @@ describe('POST /api/agenthub/chat', () => {
     });
 
     test('empty messages array → may succeed or fail', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response } = await harness.requestJson('POST', '/api/agenthub/chat', {
         messages: [],
       });
@@ -69,9 +70,7 @@ describe('POST /api/agenthub/chat', () => {
 
   describe('happy path (requires running server + LLM config)', () => {
     test('sends message and returns SSE stream', async () => {
-      const reachable = await serverReachable();
-      if (!reachable) {
-        console.warn('SKIP: Next.js server not reachable at', BASE_URL);
+      if (await harness.skipIfServerUnavailable()) {
         return;
       }
 
@@ -118,9 +117,7 @@ describe('POST /api/agenthub/chat', () => {
     });
 
     test('with session_id includes tool context', async () => {
-      const reachable = await serverReachable();
-      if (!reachable) {
-        console.warn('SKIP: Next.js server not reachable at', BASE_URL);
+      if (await harness.skipIfServerUnavailable()) {
         return;
       }
 
@@ -141,9 +138,7 @@ describe('POST /api/agenthub/chat', () => {
 
   describe('model override', () => {
     test('accepts modelOverride parameter', async () => {
-      const reachable = await serverReachable();
-      if (!reachable) {
-        console.warn('SKIP: Next.js server not reachable at', BASE_URL);
+      if (await harness.skipIfServerUnavailable()) {
         return;
       }
 

@@ -61,7 +61,6 @@ import OutputViewerModal from '@/components/chat/OutputViewerModal';
 import PermissionModal from '@/components/chat/PermissionModal';
 import TokenUsageBadge from '@/components/chat/TokenUsageBadge';
 import MCPStatusPanel from '@/components/chat/MCPStatusPanel';
-import GeminiQuotasPanel from '@/components/chat/GeminiQuotasPanel';
 import SessionListModal from '@/components/chat/SessionListModal';
 import ChatCommandPalette from '@/components/chat/ChatCommandPalette';
 import { useSessionUsage } from '@/hooks/useSessionUsage';
@@ -2675,7 +2674,6 @@ Dale, empezá leyendo el contexto del proyecto.`;
           </div>
           <div className="p-3 overflow-y-auto max-h-[calc(100vh-50px)]">
             <MCPStatusPanel servers={mcpServers} onRefresh={handleMCPRefresh} />
-            <GeminiQuotasPanel collapsed={true} />
           </div>
         </div>
       )}

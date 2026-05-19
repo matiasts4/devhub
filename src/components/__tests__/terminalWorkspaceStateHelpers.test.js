@@ -46,6 +46,19 @@ describe('syncWorkspaceCountersMonotonic()', () => {
 });
 
 describe('closeTerminalSessions()', () => {
+  let originalWindow;
+  let originalCustomEvent;
+
+  beforeEach(() => {
+    originalWindow = global.window;
+    originalCustomEvent = global.CustomEvent;
+  });
+
+  afterEach(() => {
+    global.window = originalWindow;
+    global.CustomEvent = originalCustomEvent;
+  });
+
   test('issues DELETE requests for every explicit panel session id', async () => {
     const fetchMock = jest.fn(() => Promise.resolve({ ok: true }));
 
@@ -65,6 +78,35 @@ describe('closeTerminalSessions()', () => {
     await closeTerminalSessions(['p3', null, 'p3', '', undefined], fetchMock);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/terminal/session?sessionId=p3', {
+      method: 'DELETE',
+    });
+  });
+
+  test('announces explicit native/session close before removing terminal sessions', async () => {
+    const fetchMock = jest.fn(() => Promise.resolve({ ok: true }));
+    const events = [];
+    global.CustomEvent = class {
+      constructor(type, init = {}) {
+        this.type = type;
+        this.detail = init.detail;
+      }
+    };
+    global.window = {
+      dispatchEvent: jest.fn((event) => {
+        events.push(event);
+      }),
+    };
+
+    await closeTerminalSessions(['p3'], fetchMock);
+
+    expect(global.window.dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'devhub:terminal-session-closing',
+        detail: { panelId: 'p3' },
+      })
+    );
+    expect(events[0].type).toBe('devhub:terminal-session-closing');
     expect(fetchMock).toHaveBeenCalledWith('/api/terminal/session?sessionId=p3', {
       method: 'DELETE',
     });

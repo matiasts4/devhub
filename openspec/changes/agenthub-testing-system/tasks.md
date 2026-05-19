@@ -140,12 +140,12 @@
 - **Description:** ‖ Test GET `/api/agenthub/mcp/status`: MCP server health, tool count, connection status. Mock MCP server connection.
 - **Acceptance:** Returns `{ healthy, toolCount, connected }` shape. Unhealthy state returns appropriate error.
 
-### Task 17: Test `/api/agents/launch`, `/api/agents/profiles`, and `/api/agents/quotas`
+### Task 17: Test `/api/agents/launch` and `/api/agents/profiles`
 
-- **File(s):** `tests/agenthub/api/agents-launch.test.js`, `tests/agenthub/api/agents-profiles.test.js`, `tests/agenthub/api/agents-quotas.test.js`
+- **File(s):** `tests/agenthub/api/agents-launch.test.js`, `tests/agenthub/api/agents-profiles.test.js`
 - **Depends on:** Task 10, Task 9
-- **Description:** ‖ Test POST `/api/agents/launch` (agent launch with validation), GET `/api/agents/profiles` (list profiles), GET `/api/agents/quotas` (quota status, limit enforcement). Test validation, auth, and error paths. Verify 429 when quota limit reached.
-- **Acceptance:** Launch creates session and returns session ID. Profiles returns list. Quotas returns `{ used, limit, remaining }`. Validation errors return 400. Quota exceeded returns 429.
+- **Description:** ‖ Test POST `/api/agents/launch` (agent launch with validation) and GET `/api/agents/profiles` (list profiles). Test validation, auth, and error paths.
+- **Acceptance:** Launch creates session and returns session ID. Profiles returns list. Validation errors return 400.
 
 ### Task 18: Test session sub-routes (abort, traces, usage, status, permissions)
 

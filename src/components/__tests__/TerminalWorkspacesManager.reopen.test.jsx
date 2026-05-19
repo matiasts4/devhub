@@ -54,13 +54,14 @@ jest.mock('react-resizable-panels', () => ({
 
 jest.mock('../TerminalTTY', () => ({
   __esModule: true,
-  default: ({ id, initialCommand }) => {
+  default: ({ id, initialCommand, requestedRendererMode = 'xterm' }) => {
     const React = require('react');
     return React.createElement(
       'div',
       {
         'data-testid': `terminal-${id}`,
         'data-command': initialCommand || '',
+        'data-renderer': requestedRendererMode,
       },
       id
     );
@@ -174,6 +175,12 @@ const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').defaul
 
 const mountedRoots = [];
 
+function getRenderedTerminalNodes(container) {
+  return Array.from(container.querySelectorAll('[data-testid^="terminal-"]')).filter(
+    (node) => !node.getAttribute('data-testid').startsWith('terminal-renderer-')
+  );
+}
+
 function renderManager(props = {}) {
   return renderIntoDom(
     React.createElement(TerminalWorkspacesManager, {
@@ -261,13 +268,13 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     const view = await renderManager();
 
-    const beforePanels = view.container.querySelectorAll('[data-testid^="terminal-"]').length;
+    const beforePanels = getRenderedTerminalNodes(view.container).length;
     await click(
       Array.from(view.container.querySelectorAll('button')).find((button) =>
         button.textContent.includes('Recovered session')
       )
     );
-    const afterPanels = view.container.querySelectorAll('[data-testid^="terminal-"]').length;
+    const afterPanels = getRenderedTerminalNodes(view.container).length;
 
     expect(afterPanels).toBe(beforePanels + 1);
 
@@ -280,7 +287,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
       })
     );
 
-    const resumedPanel = Array.from(view.container.querySelectorAll('[data-testid^="terminal-"]')).find(
+    const resumedPanel = getRenderedTerminalNodes(view.container).find(
       (node) => node.textContent === 'p2'
     );
     expect(resumedPanel).not.toBeUndefined();
@@ -331,7 +338,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     const view = await renderManager();
 
-    const beforePanels = view.container.querySelectorAll('[data-testid^="terminal-"]');
+    const beforePanels = getRenderedTerminalNodes(view.container);
     expect(beforePanels).toHaveLength(1);
 
     await click(
@@ -340,7 +347,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
       )
     );
 
-    expect(view.container.querySelectorAll('[data-testid^="terminal-"]')).toHaveLength(2);
+    expect(getRenderedTerminalNodes(view.container)).toHaveLength(2);
 
     window.dispatchEvent(
       new window.CustomEvent('devhub:terminal-exit', {
@@ -353,7 +360,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     await flushEffects();
 
     expect(view.container.textContent).toContain('Session is no longer available to resume.');
-    expect(view.container.querySelectorAll('[data-testid^="terminal-"]')).toHaveLength(1);
+    expect(getRenderedTerminalNodes(view.container)).toHaveLength(1);
 
     const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
     expect(runs['oc-reopen-oc-expired']).toBeUndefined();
@@ -390,6 +397,53 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     const restoredTerminal = view.container.querySelector('[data-testid="terminal-p1"]');
 
     expect(restoredTerminal?.getAttribute('data-command')).toBe('opencode --session oc-reboot-1');
+  });
+
+  test('migrates legacy Ghostty renderer preference to xterm on reload', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [
+                  {
+                    id: 'p1',
+                    cwd: '/workspace/devhub',
+                    initialCommand: 'opencode --session oc-render-1',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: 'p1' },
+      })
+    );
+    window.localStorage.setItem(
+      'devhub_terminal_renderer_preferences:project-1',
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          ws1: {
+            defaultMode: 'xterm',
+            panels: {
+              p1: 'ghostty-experimental',
+            },
+          },
+        },
+      })
+    );
+
+    const view = await renderManager();
+    const restoredTerminal = view.container.querySelector('[data-testid="terminal-p1"]');
+
+    expect(restoredTerminal?.getAttribute('data-renderer')).toBe('xterm');
   });
 
   test('keeps restored OpenCode command persisted after process exit instead of removing the panel', async () => {

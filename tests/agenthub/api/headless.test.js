@@ -14,20 +14,6 @@ const { seedSession, seedProject } = require('../fixtures');
 
 const BASE_URL = getAgentHubBaseUrl();
 
-/**
- * Check if the server is reachable.
- */
-async function serverReachable() {
-  try {
-    const res = await fetch(`${BASE_URL}/api/agenthub/sessions?limit=1`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    return res.ok || res.status === 200;
-  } catch {
-    return false;
-  }
-}
-
 describe('POST /api/agenthub/headless', () => {
   let harness;
 
@@ -49,6 +35,10 @@ describe('POST /api/agenthub/headless', () => {
 
   describe('validation', () => {
     test('missing prompt → 400', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('POST', '/api/agenthub/headless', {
         agent: 'test-agent',
       });
@@ -58,6 +48,10 @@ describe('POST /api/agenthub/headless', () => {
     });
 
     test('empty body → 400 or 500', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response } = await harness.requestJson('POST', '/api/agenthub/headless', {});
 
       // Server may return 400 (validation) or 500 (JSON parse error)
@@ -67,9 +61,7 @@ describe('POST /api/agenthub/headless', () => {
 
   describe('happy path (requires running server)', () => {
     test('creates session and returns { success, sessionID, messageID }', async () => {
-      const reachable = await serverReachable();
-      if (!reachable) {
-        console.warn('SKIP: Next.js server not reachable at', BASE_URL);
+      if (await harness.skipIfServerUnavailable()) {
         return;
       }
 
@@ -104,9 +96,7 @@ describe('POST /api/agenthub/headless', () => {
     });
 
     test('with existing session_id reuses session', async () => {
-      const reachable = await serverReachable();
-      if (!reachable) {
-        console.warn('SKIP: Next.js server not reachable at', BASE_URL);
+      if (await harness.skipIfServerUnavailable()) {
         return;
       }
 
@@ -137,9 +127,7 @@ describe('POST /api/agenthub/headless', () => {
 
   describe('DB side effects', () => {
     test('session row is created after successful launch', async () => {
-      const reachable = await serverReachable();
-      if (!reachable) {
-        console.warn('SKIP: Next.js server not reachable at', BASE_URL);
+      if (await harness.skipIfServerUnavailable()) {
         return;
       }
 

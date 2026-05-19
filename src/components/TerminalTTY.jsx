@@ -4,6 +4,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
+import {
+  closeNativeVtePanel,
+  focusNativeVtePanel,
+  isNativeVteRuntimeAvailable,
+  openNativeVtePanel,
+  probeNativeVte,
+  resizeNativeVtePanel,
+  setNativeVtePanelVisibility,
+  subscribeNativeVteEvents,
+} from '@/lib/terminal/nativeVteBridge';
+import {
+  getTerminalRendererFallbackCopy,
+  getTerminalRendererOptionLabel,
+  getTerminalRendererRuntimeCapabilities,
+  resolveRendererSelection,
+} from '@/components/terminal/terminalRendererCapabilities';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -75,6 +91,27 @@ export function stabilizeTerminalRenderer(term) {
   return refreshTerminalViewport(term);
 }
 
+export function isTerminalRendererReady(term) {
+  if (!term) return false;
+
+  if (term._core?._isDisposed) return false;
+  if (term.element && !term.element.isConnected) return false;
+
+  const rendererSlot = term._core?._renderService?._renderer;
+  if (rendererSlot && !rendererSlot.value) return false;
+
+  return true;
+}
+
+function isStaleXtermRendererError(error) {
+  const message = String(error?.message || error || '');
+  return (
+    message.includes('_renderer') ||
+    message.includes('dimensions') ||
+    message.includes('RenderService')
+  );
+}
+
 export function fitTerminalViewport({
   container,
   fitAddon,
@@ -83,11 +120,17 @@ export function fitTerminalViewport({
   websocketOpenState = WebSocket.OPEN,
 }) {
   if (!container || !fitAddon || !term) return false;
+  if (!isTerminalRendererReady(term)) return false;
 
   const rect = container.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return false;
 
-  fitAddon.fit();
+  try {
+    fitAddon.fit();
+  } catch (error) {
+    if (isStaleXtermRendererError(error)) return false;
+    throw error;
+  }
   stabilizeTerminalRenderer(term);
 
   if (socket?.readyState === websocketOpenState) {
@@ -111,6 +154,8 @@ export function buildTerminalViewportDiagnosticPayload({
   connectionState,
   transport,
   devicePixelRatio,
+  requestedRendererMode,
+  effectiveRendererMode,
 }) {
   const width = Number(containerRect?.width ?? 0);
   const height = Number(containerRect?.height ?? 0);
@@ -126,6 +171,8 @@ export function buildTerminalViewportDiagnosticPayload({
     transport: transport || 'unknown',
     dpr: Number(devicePixelRatio ?? 1),
     zeroSized: width <= 0 || height <= 0,
+    requestedRendererMode: requestedRendererMode || 'xterm',
+    effectiveRendererMode: effectiveRendererMode || 'xterm',
   };
 }
 
@@ -167,29 +214,179 @@ export function shouldAutoReconnectTerminal(connectionState, autoFocus) {
   return connectionState === 'disconnected' || connectionState === 'error';
 }
 
+export function getTerminalRuntimePlatform(explicitPlatform) {
+  if (explicitPlatform) return String(explicitPlatform).toLowerCase();
+  if (typeof navigator !== 'undefined') {
+    return String(navigator.userAgentData?.platform || navigator.platform || 'unknown').toLowerCase();
+  }
+  return 'unknown';
+}
+
+export function getNativeTerminalBounds(element) {
+  const rect = element?.getBoundingClientRect?.();
+  if (!rect) return null;
+
+  const width = Number(rect.width || 0);
+  const height = Number(rect.height || 0);
+
+  if (width <= 0 || height <= 0) return null;
+
+  return {
+    x: Number(rect.left || 0),
+    y: Number(rect.top || 0),
+    width,
+    height,
+  };
+}
+
+export function shouldOpenNativeVtePanel({
+  isActivePanel,
+  isVisibleInLayout = true,
+  suspendNativeSurface = false,
+  nativeVteOpenFailure,
+  nativeVteProbe,
+  requestedRendererMode,
+  runtimePlatform,
+  tauriAvailable,
+} = {}) {
+  return Boolean(
+    isVisibleInLayout &&
+      !suspendNativeSurface &&
+      requestedRendererMode === 'vte-experimental' &&
+      tauriAvailable &&
+      getTerminalRuntimePlatform(runtimePlatform).includes('linux') &&
+      nativeVteProbe?.ready &&
+      !nativeVteOpenFailure
+  );
+}
+
+export function resolveTerminalRuntimePhase({
+  isActivePanel,
+  isVisibleInLayout = true,
+  suspendNativeSurface = false,
+  nativeSurfacePolicy = 'live',
+  nativeVteOpenFailure,
+  nativeVteOpened,
+  nativeVteProbe,
+  requestedRendererMode,
+  runtimePlatform,
+  tauriAvailable,
+} = {}) {
+  const nativeCandidate = Boolean(
+    requestedRendererMode === 'vte-experimental' &&
+      tauriAvailable &&
+      getTerminalRuntimePlatform(runtimePlatform).includes('linux')
+  );
+
+  if (!nativeCandidate) return 'xterm';
+  if (!isVisibleInLayout) return nativeVteOpened ? 'native-hidden' : 'xterm';
+  if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') return 'fallback-xterm';
+  if (suspendNativeSurface) return nativeVteOpened ? 'native-suspended' : 'xterm';
+  if (!isActivePanel) return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';
+  if (nativeVteOpened) return 'native-opened';
+  if (nativeVteOpenFailure) return 'fallback-xterm';
+  if (nativeVteProbe?.ready) return 'native-opening';
+  if (!nativeVteProbe) return 'native-probing';
+  return 'fallback-xterm';
+}
+
+export function shouldBootXtermRuntime(input = {}) {
+  const runtimePhase = resolveTerminalRuntimePhase(input);
+  return runtimePhase === 'xterm' || runtimePhase === 'fallback-xterm';
+}
+
+export function resolveTerminalRendererViewModel({
+  requestedRendererMode,
+  rendererCapabilities,
+  nativeVteReady = false,
+} = {}) {
+  const selection = resolveRendererSelection({
+    requestedMode: requestedRendererMode || 'xterm',
+    capabilities: rendererCapabilities,
+  });
+
+  if (requestedRendererMode === 'vte-experimental' && nativeVteReady) {
+    return {
+      ...selection,
+      effectiveMode: 'vte-experimental',
+      didFallback: false,
+      fallbackReason: null,
+      capability: rendererCapabilities?.['vte-experimental'] || selection.capability,
+      requestedLabel: getTerminalRendererOptionLabel(selection.requestedMode),
+      effectiveLabel: getTerminalRendererOptionLabel('vte-experimental'),
+      showRecoveryBanner: false,
+    };
+  }
+
+  return {
+    ...selection,
+    requestedLabel: getTerminalRendererOptionLabel(selection.requestedMode),
+    effectiveLabel: getTerminalRendererOptionLabel(selection.effectiveMode),
+    showRecoveryBanner: selection.didFallback,
+  };
+}
+
+export function getTerminalRendererStatusCopy(rendererViewModel) {
+  return getTerminalRendererFallbackCopy(rendererViewModel);
+}
+
+export function getTerminalRendererRecoveryActionLabel() {
+  return 'Volver a xterm';
+}
+
+export function shouldReinitializeTerminalForRenderer(previousEffectiveMode, nextEffectiveMode) {
+  // TERM-02 cares about runtime churn only when the live renderer changes.
+  // Requested-mode flips that still resolve to xterm must stay on the same imperative instance.
+  return previousEffectiveMode !== nextEffectiveMode;
+}
+
 export const TERMINAL_VIEWPORT_SHELL_STYLE = Object.freeze({
   isolation: 'isolate',
 });
 
+export const TERMINAL_NATIVE_CONTENT_BODY_STYLE = Object.freeze({
+  isolation: 'isolate',
+});
+
+const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
+
 export default function TerminalTTY({
   id,
   onClose,
+  onActivatePanel,
   cwd,
   autoFocus,
   hideTitleBar,
   initialCommand,
   restored,
+  requestedRendererMode = 'vte-experimental',
+  onResetRendererToXterm,
+  isActivePanel = autoFocus,
+  isVisibleInLayout = true,
+  suspendNativeSurface = false,
+  nativeSurfacePolicy = 'live',
+  runtimePlatform,
   showQuickCopyButton = true,
 }) {
   const containerRef = useRef(null);
+  const nativePlaceholderRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
   const resizeObserverRef = useRef(null);
+  const nativeResizeObserverRef = useRef(null);
+  const nativeResizeRafRef = useRef(null);
+  const nativeResizeSettleTimersRef = useRef([]);
   const wsRef = useRef(null);
   const searchRef = useRef(null);
   const transportRef = useRef('json');
   const lastViewportDiagnosticRef = useRef(null);
   const connectionStateRef = useRef('idle');
+  const requestedRendererModeRef = useRef(requestedRendererMode);
+  const nativeLeaseRef = useRef(false);
+  const nativeVteProbeRetryCountRef = useRef(0);
+  const nativeVteProbeRetryTimerRef = useRef(null);
+  const nativeVteProbeRetryDelayRef = useRef(null);
+  const shouldRetryNativeVteProbeRef = useRef(false);
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
@@ -197,11 +394,57 @@ export default function TerminalTTY({
   const [copied, setCopied] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [restoredToast, setRestoredToast] = useState(false);
+  const [nativeVteProbeResult, setNativeVteProbeResult] = useState(null);
+  const [nativeVteOpenFailure, setNativeVteOpenFailure] = useState(null);
+  const [nativeVteOpened, setNativeVteOpened] = useState(false);
+  const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
+  const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
+  const tauriAvailable = isNativeVteRuntimeAvailable();
+  const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
+  const rendererCapabilities = getTerminalRendererRuntimeCapabilities({
+    platform: resolvedRuntimePlatform,
+    tauriAvailable,
+    nativeVteProbe: nativeVteProbeResult,
+    nativeVteOpenFailure,
+  });
+  const rendererViewModel = resolveTerminalRendererViewModel({
+    requestedRendererMode,
+    rendererCapabilities,
+    nativeVteReady: requestedRendererMode === 'vte-experimental' && nativeVteOpened,
+  });
+  const rendererStatusCopy = getTerminalRendererStatusCopy(rendererViewModel);
   const hasSentInitialCommand = useRef(false);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
   const initTimeoutRef = useRef(null);
+  const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
+  const runtimePhase = resolveTerminalRuntimePhase({
+    isActivePanel,
+    isVisibleInLayout,
+    suspendNativeSurface,
+    nativeSurfacePolicy,
+    nativeVteOpenFailure,
+    nativeVteOpened,
+    nativeVteProbe: nativeVteProbeResult,
+    requestedRendererMode,
+    runtimePlatform: resolvedRuntimePlatform,
+    tauriAvailable,
+  });
+  const shouldUseNativeRenderer =
+    rendererViewModel.effectiveMode === 'vte-experimental' && runtimePhase !== 'fallback-xterm';
+  const shouldBootXterm = shouldBootXtermRuntime({
+    isActivePanel,
+    isVisibleInLayout,
+    suspendNativeSurface,
+    nativeSurfacePolicy,
+    nativeVteOpenFailure,
+    nativeVteOpened,
+    nativeVteProbe: nativeVteProbeResult,
+    requestedRendererMode,
+    runtimePlatform: resolvedRuntimePlatform,
+    tauriAvailable,
+  });
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -213,11 +456,100 @@ export default function TerminalTTY({
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
+
+    if (nativeVteProbeRetryTimerRef.current) {
+      clearTimeout(nativeVteProbeRetryTimerRef.current);
+      nativeVteProbeRetryTimerRef.current = null;
+      nativeVteProbeRetryDelayRef.current = null;
+    }
   }, []);
+
+  const clearNativeVteProbeRetryTimer = useCallback(() => {
+    if (!nativeVteProbeRetryTimerRef.current) return;
+
+    clearTimeout(nativeVteProbeRetryTimerRef.current);
+    nativeVteProbeRetryTimerRef.current = null;
+    nativeVteProbeRetryDelayRef.current = null;
+  }, []);
+
+  const disposeXtermRuntime = useCallback(() => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
+
+    if (wsRef.current) {
+      const stale = wsRef.current;
+      stale.onopen = null;
+      stale.onmessage = null;
+      stale.onerror = null;
+      stale.onclose = null;
+      stale.close();
+      wsRef.current = null;
+    }
+
+    termRef.current?.dispose();
+    termRef.current = null;
+    fitRef.current = null;
+    searchRef.current = null;
+  }, []);
+
+  const shouldRetryNativeVteProbe =
+    isActivePanel &&
+    requestedRendererMode === 'vte-experimental' &&
+    !nativeVteOpened &&
+    !nativeVteOpenFailure &&
+    nativeVteProbeResult?.ready === false &&
+    nativeVteProbeResult?.reason === 'probe-failed';
+
+  useEffect(() => {
+    shouldRetryNativeVteProbeRef.current = shouldRetryNativeVteProbe;
+  }, [shouldRetryNativeVteProbe]);
+
+  const queueNativeVteProbeRetry = useCallback(
+    (delayMs = 80) => {
+      if (!shouldRetryNativeVteProbeRef.current) return;
+      if (nativeVteProbeRetryCountRef.current >= MAX_NATIVE_VTE_PROBE_RETRIES) return;
+
+      if (delayMs <= 0) {
+        clearNativeVteProbeRetryTimer();
+        nativeVteProbeRetryCountRef.current += 1;
+        setNativeVteProbeAttempt((attempt) => attempt + 1);
+        return;
+      }
+
+      if (nativeVteProbeRetryTimerRef.current) {
+        const pendingDelay = nativeVteProbeRetryDelayRef.current ?? Number.POSITIVE_INFINITY;
+        if (delayMs >= pendingDelay) return;
+
+        clearTimeout(nativeVteProbeRetryTimerRef.current);
+        nativeVteProbeRetryTimerRef.current = null;
+      }
+
+      nativeVteProbeRetryDelayRef.current = delayMs;
+
+      nativeVteProbeRetryTimerRef.current = setTimeout(() => {
+        nativeVteProbeRetryTimerRef.current = null;
+        nativeVteProbeRetryDelayRef.current = null;
+
+        if (!shouldRetryNativeVteProbeRef.current) return;
+
+        nativeVteProbeRetryCountRef.current += 1;
+        setNativeVteProbeAttempt((attempt) => attempt + 1);
+      }, delayMs);
+    },
+    [clearNativeVteProbeRetryTimer]
+  );
 
   useEffect(() => {
     connectionStateRef.current = connectionState;
   }, [connectionState]);
+
+  useEffect(() => {
+    requestedRendererModeRef.current = requestedRendererMode;
+  }, [requestedRendererMode]);
+
+  useEffect(() => {
+    effectiveRendererModeRef.current = rendererViewModel.effectiveMode;
+  }, [rendererViewModel.effectiveMode]);
 
   const logViewportDiagnostic = useCallback(
     createTerminalViewportDiagnosticLogger({
@@ -234,10 +566,66 @@ export default function TerminalTTY({
           connectionState: connectionStateRef.current,
           transport: transportRef.current,
           devicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio : 1,
+          requestedRendererMode: requestedRendererModeRef.current,
+          effectiveRendererMode: effectiveRendererModeRef.current,
         }),
     }),
     [id]
   );
+
+  const closeNativeLease = useCallback(
+    async (reason = 'deactivate') => {
+      if (!nativeLeaseRef.current) return;
+      nativeLeaseRef.current = false;
+      setNativeVteOpened(false);
+      await Promise.resolve(closeNativeVtePanel({ panelId: id, reason })).catch(() => {});
+    },
+    [id]
+  );
+
+  const hideNativeLease = useCallback(
+    async (reason = 'inactive') => {
+      if (!nativeLeaseRef.current) return;
+      await Promise.resolve(
+        setNativeVtePanelVisibility({
+          panelId: id,
+          visible: false,
+          reason,
+        })
+      ).catch(() => {});
+    },
+    [id]
+  );
+
+  useEffect(() => {
+    return () => {
+      hideNativeLease('unmount');
+    };
+  }, [hideNativeLease]);
+
+  const handleNativeLeaseCommandError = useCallback((error) => {
+    const reason = String(error?.message || error || '');
+    if (!reason.includes('panel-not-active')) return;
+
+    nativeLeaseRef.current = false;
+    setNativeVteOpened(false);
+    setNativeVteOpenFailure(null);
+    nativeVteProbeRetryCountRef.current = 0;
+    clearNativeVteProbeRetryTimer();
+    setNativeVteRecoveryAttempt((attempt) => attempt + 1);
+  }, [clearNativeVteProbeRetryTimer]);
+
+  const showNativeLease = useCallback(async () => {
+    if (!nativeLeaseRef.current) return;
+    const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+    await Promise.resolve(
+      setNativeVtePanelVisibility({
+        panelId: id,
+        visible: true,
+        bounds: bounds || undefined,
+      })
+    ).catch(handleNativeLeaseCommandError);
+  }, [handleNativeLeaseCommandError, id]);
 
   const waitForVisibleDimensions = useCallback(async () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -302,6 +690,313 @@ export default function TerminalTTY({
       }, 120);
     });
   }, [autoFocus, logViewportDiagnostic, sendResize]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.resolve(subscribeNativeVteEvents())
+      .then((unsubscribe) => {
+        if (cancelled) {
+          unsubscribe?.();
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (requestedRendererMode !== 'vte-experimental') {
+      setNativeVteProbeResult(null);
+      setNativeVteOpenFailure(null);
+      setNativeVteOpened(false);
+      nativeVteProbeRetryCountRef.current = 0;
+      clearNativeVteProbeRetryTimer();
+      closeNativeLease('renderer-disabled');
+      return undefined;
+    }
+
+    if (!isVisibleInLayout) {
+      clearNativeVteProbeRetryTimer();
+      return undefined;
+    }
+
+    probeNativeVte({
+      panelId: id,
+      requestedMode: requestedRendererMode,
+      tauriAvailable,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        cliLog(`CLIENT:${id}`, 'native VTE probe result', {
+          result,
+          requestedRendererMode,
+          tauriAvailable,
+        });
+        setNativeVteProbeResult(result);
+        if (result?.ready) {
+          nativeVteProbeRetryCountRef.current = 0;
+          clearNativeVteProbeRetryTimer();
+        } else {
+          setNativeVteOpenFailure(null);
+          setNativeVteOpened(false);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        cliLog(`CLIENT:${id}`, 'native VTE probe failed', {
+          error: error?.message,
+          requestedRendererMode,
+          tauriAvailable,
+        });
+        setNativeVteProbeResult({ ready: false, reason: error?.message || 'probe-failed' });
+        setNativeVteOpened(false);
+        setNativeVteOpenFailure(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clearNativeVteProbeRetryTimer, closeNativeLease, id, isActivePanel, nativeVteProbeAttempt, requestedRendererMode, tauriAvailable]);
+
+  useEffect(() => {
+    if (!shouldRetryNativeVteProbe) return undefined;
+
+    queueNativeVteProbeRetry(160);
+    return undefined;
+  }, [queueNativeVteProbeRetry, shouldRetryNativeVteProbe]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (
+        !shouldOpenNativeVtePanel({
+          isActivePanel,
+          isVisibleInLayout,
+          suspendNativeSurface,
+          nativeVteOpenFailure,
+          nativeVteProbe: nativeVteProbeResult,
+          requestedRendererMode,
+        runtimePlatform: resolvedRuntimePlatform,
+        tauriAvailable,
+      })
+    ) {
+      if (requestedRendererMode !== 'vte-experimental') {
+        closeNativeLease('renderer-disabled');
+      }
+      return undefined;
+    }
+
+    const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+    if (!bounds) return undefined;
+
+    const nativeOpenRequest = {
+      panelId: id,
+      bounds,
+      cwd: cwd || null,
+      initialCommand: initialCommand || null,
+      sessionId: id,
+    };
+
+    const applyNativeOpenResult = (result) => {
+      if (result?.opened) {
+        nativeLeaseRef.current = true;
+        setNativeVteOpenFailure(null);
+        setNativeVteOpened(true);
+        setConnectionState('connected');
+        setIsInitializing(false);
+        clearNativeVteProbeRetryTimer();
+        return true;
+      }
+
+      nativeLeaseRef.current = false;
+      setNativeVteOpened(false);
+      setNativeVteOpenFailure(result?.reason || 'open-failed');
+      nativeVteProbeRetryCountRef.current = 0;
+      clearNativeVteProbeRetryTimer();
+      return false;
+    };
+
+    if (nativeLeaseRef.current && nativeVteOpened) {
+      (async () => {
+        try {
+          await showNativeLease();
+          await resizeNativeVtePanel({ panelId: id, bounds });
+        } catch (error) {
+          if (cancelled) return;
+          const reason = String(error?.message || error || '');
+          handleNativeLeaseCommandError(error);
+
+          if (!reason.includes('panel-not-active')) return;
+
+          try {
+            const reopenResult = await openNativeVtePanel(nativeOpenRequest);
+            if (cancelled) return;
+            applyNativeOpenResult(reopenResult);
+          } catch (reopenError) {
+            if (cancelled) return;
+            applyNativeOpenResult({ opened: false, reason: reopenError?.message || 'open-failed' });
+          }
+        }
+      })();
+      return undefined;
+    }
+
+    openNativeVtePanel(nativeOpenRequest)
+      .then((result) => {
+        if (cancelled) return;
+        applyNativeOpenResult(result);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        applyNativeOpenResult({ opened: false, reason: error?.message || 'open-failed' });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    closeNativeLease,
+    clearNativeVteProbeRetryTimer,
+    cwd,
+    handleNativeLeaseCommandError,
+    id,
+    initialCommand,
+    isActivePanel,
+    isVisibleInLayout,
+    nativeVteOpenFailure,
+    nativeVteOpened,
+    nativeVteRecoveryAttempt,
+    nativeVteProbeResult,
+    requestedRendererMode,
+    resolvedRuntimePlatform,
+    showNativeLease,
+    suspendNativeSurface,
+    tauriAvailable,
+  ]);
+
+  useEffect(() => {
+    if (!nativeVteOpened || requestedRendererMode !== 'vte-experimental') return undefined;
+    if (isVisibleInLayout && !suspendNativeSurface) return undefined;
+
+    (async () => {
+      try {
+        await setNativeVtePanelVisibility({
+          panelId: id,
+          visible: false,
+          reason: suspendNativeSurface
+            ? (nativeSurfacePolicy === 'dock-side-by-side' ? 'dock-side-by-side' : 'suspended')
+            : undefined,
+        });
+      } catch (error) {
+        handleNativeLeaseCommandError(error);
+      }
+    })();
+
+    return undefined;
+  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, nativeSurfacePolicy, nativeVteOpened, requestedRendererMode, suspendNativeSurface]);
+
+  useEffect(() => {
+    if (!nativeVteOpened || suspendNativeSurface || !autoFocus || !isActivePanel) return undefined;
+
+    Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
+    return undefined;
+  }, [autoFocus, handleNativeLeaseCommandError, id, isActivePanel, nativeVteOpened, suspendNativeSurface]);
+
+  useEffect(() => {
+    if (!nativeVteOpened || !isVisibleInLayout || suspendNativeSurface) return undefined;
+
+    const sendNativeResize = () => {
+      const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+      if (!bounds) return;
+      Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(handleNativeLeaseCommandError);
+    };
+    const clearNativeResizeSettleTimers = () => {
+      nativeResizeSettleTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+      nativeResizeSettleTimersRef.current = [];
+    };
+    const scheduleNativeResize = () => {
+      if (nativeResizeRafRef.current) return;
+      nativeResizeRafRef.current = requestAnimationFrame(() => {
+        nativeResizeRafRef.current = null;
+        sendNativeResize();
+      });
+    };
+    const scheduleNativeResizeAfterLayoutSettles = () => {
+      clearNativeResizeSettleTimers();
+      scheduleNativeResize();
+      nativeResizeSettleTimersRef.current = [80, 180].map((delayMs) =>
+        setTimeout(() => {
+          sendNativeResize();
+        }, delayMs)
+      );
+    };
+
+    sendNativeResize();
+    scheduleNativeResizeAfterLayoutSettles();
+    window.addEventListener('resize', sendNativeResize);
+    const observedElement = nativePlaceholderRef.current || containerRef.current;
+    if (typeof ResizeObserver !== 'undefined' && observedElement) {
+      nativeResizeObserverRef.current?.disconnect();
+      nativeResizeObserverRef.current = new ResizeObserver(() => {
+        scheduleNativeResize();
+      });
+      nativeResizeObserverRef.current.observe(observedElement);
+    }
+
+    return () => {
+      window.removeEventListener('resize', sendNativeResize);
+      clearNativeResizeSettleTimers();
+      nativeResizeObserverRef.current?.disconnect();
+      nativeResizeObserverRef.current = null;
+      if (nativeResizeRafRef.current) {
+        cancelAnimationFrame(nativeResizeRafRef.current);
+        nativeResizeRafRef.current = null;
+      }
+    };
+  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, nativeVteOpened, suspendNativeSurface]);
+
+  useEffect(() => {
+    const handleSessionClosing = (event) => {
+      if (event.detail?.panelId !== id) return;
+      closeNativeLease('session-close');
+    };
+
+    window.addEventListener('devhub:terminal-session-closing', handleSessionClosing);
+    return () => {
+      window.removeEventListener('devhub:terminal-session-closing', handleSessionClosing);
+    };
+  }, [closeNativeLease, id]);
+
+  useEffect(() => {
+    if (!shouldUseNativeRenderer) return undefined;
+
+    const handleNativeRuntimeEvent = (event) => {
+      const detail = event.detail || {};
+      if (detail.panelId !== id) return;
+      if (detail.type === 'panel-activated') {
+        onActivatePanel?.(id);
+        return;
+      }
+      if (detail.type !== 'runtime-error') return;
+
+      nativeLeaseRef.current = false;
+      setNativeVteOpened(false);
+      setNativeVteOpenFailure(detail.reason || 'open-failed');
+      setConnectionState('error');
+      nativeVteProbeRetryCountRef.current = 0;
+      clearNativeVteProbeRetryTimer();
+    };
+
+    window.addEventListener('devhub:terminal-native-vte-event', handleNativeRuntimeEvent);
+    return () => {
+      window.removeEventListener('devhub:terminal-native-vte-event', handleNativeRuntimeEvent);
+    };
+  }, [clearNativeVteProbeRetryTimer, id, onActivatePanel, shouldUseNativeRenderer]);
 
   const connect = useCallback(async () => {
     setConnectionState('connecting');
@@ -483,8 +1178,32 @@ export default function TerminalTTY({
   useEffect(() => {
     let mounted = true;
 
+    if (!shouldBootXterm) {
+      disposeXtermRuntime();
+      setInitError(null);
+      setIsInitializing(runtimePhase === 'native-probing' || runtimePhase === 'native-opening');
+
+      return () => {
+        mounted = false;
+        clearTimers();
+        resizeObserverRef.current?.disconnect();
+        nativeResizeObserverRef.current?.disconnect();
+        nativeResizeObserverRef.current = null;
+        if (nativeResizeRafRef.current) {
+          cancelAnimationFrame(nativeResizeRafRef.current);
+          nativeResizeRafRef.current = null;
+        }
+        disposeXtermRuntime();
+      };
+    }
+
     async function initializeTerminal() {
-      cliLog(`CLIENT:${id}`, 'initializeTerminal() start', { cwd, autoFocus });
+      cliLog(`CLIENT:${id}`, 'initializeTerminal() start', {
+        cwd,
+        autoFocus,
+        requestedRendererMode: requestedRendererModeRef.current,
+        effectiveRendererMode: rendererViewModel.effectiveMode,
+      });
       try {
         const [{ Terminal }, { FitAddon }, { SearchAddon }] = await Promise.all([
           import('xterm'),
@@ -570,14 +1289,7 @@ export default function TerminalTTY({
         setInitError('No se pudo inicializar la terminal en esta ventana.');
         setConnectionState('error');
         setIsInitializing(false);
-        termRef.current?.dispose();
-        termRef.current = null;
-        fitRef.current = null;
-        searchRef.current = null;
-        resizeObserverRef.current?.disconnect();
-        resizeObserverRef.current = null;
-        wsRef.current?.close();
-        wsRef.current = null;
+        disposeXtermRuntime();
         clearTimers();
         return;
       }
@@ -589,6 +1301,12 @@ export default function TerminalTTY({
       mounted = false;
       clearTimers();
       resizeObserverRef.current?.disconnect();
+      nativeResizeObserverRef.current?.disconnect();
+      nativeResizeObserverRef.current = null;
+      if (nativeResizeRafRef.current) {
+        cancelAnimationFrame(nativeResizeRafRef.current);
+        nativeResizeRafRef.current = null;
+      }
       // Silence the socket before closing so it doesn't set 'disconnected'
       // on the (possibly re-mounting) component during React Strict Mode double-invoke.
       if (wsRef.current) {
@@ -600,17 +1318,16 @@ export default function TerminalTTY({
         stale.close();
         wsRef.current = null;
       }
-      termRef.current?.dispose();
-      termRef.current = null;
-      fitRef.current = null;
-      searchRef.current = null;
+      disposeXtermRuntime();
     };
   }, [
-    connect,
-    sendResize,
-    fitAndResize,
     clearTimers,
+    connect,
+    disposeXtermRuntime,
     logViewportDiagnostic,
+    runtimePhase,
+    sendResize,
+    shouldBootXterm,
     waitForVisibleDimensions,
   ]);
 
@@ -691,20 +1408,24 @@ export default function TerminalTTY({
       if (document.visibilityState === 'visible') {
         logViewportDiagnostic('visibility-visible');
         reactivateTerminalViewport();
+        queueNativeVteProbeRetry(0);
       }
     };
 
     const handleWindowResize = () => {
       logViewportDiagnostic('window-resize');
       sendResize();
+      queueNativeVteProbeRetry();
     };
     const handleWindowFocus = () => {
       logViewportDiagnostic('window-focus');
       reactivateTerminalViewport();
+      queueNativeVteProbeRetry(0);
     };
     const handlePageShow = () => {
       logViewportDiagnostic('pageshow');
       reactivateTerminalViewport();
+      queueNativeVteProbeRetry(0);
     };
 
     window.addEventListener('resize', handleWindowResize);
@@ -718,7 +1439,7 @@ export default function TerminalTTY({
       window.removeEventListener('pageshow', handlePageShow);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [logViewportDiagnostic, reactivateTerminalViewport, sendResize]);
+  }, [logViewportDiagnostic, queueNativeVteProbeRetry, reactivateTerminalViewport, sendResize]);
 
   // ── Custom context menu for terminal ────────────────────────────────────────
   const handleContextMenu = useCallback((e) => {
@@ -729,6 +1450,17 @@ export default function TerminalTTY({
       setContextMenu({ x: e.clientX, y: e.clientY, text });
     }
   }, []);
+
+  const handleViewportMouseDown = useCallback(() => {
+    onActivatePanel?.(id);
+    if (shouldUseNativeRenderer) {
+      if (nativeVteOpened) {
+        Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
+      }
+      return;
+    }
+    termRef.current?.focus?.();
+  }, [handleNativeLeaseCommandError, id, nativeVteOpened, onActivatePanel, shouldUseNativeRenderer]);
 
   const handleCopyFromMenu = useCallback(async () => {
     if (contextMenu?.text) {
@@ -785,7 +1517,7 @@ export default function TerminalTTY({
   }, []);
 
   const isConnected = connectionState === 'connected';
-  const showTerminalViewport = shouldShowTerminalViewport(isInitializing, initError);
+  const showTerminalViewport = shouldShowTerminalViewport(isInitializing, initError) && !shouldUseNativeRenderer;
   const showTerminalStatusOverlay = shouldShowTerminalStatusOverlay(
     isInitializing,
     initError,
@@ -856,17 +1588,40 @@ export default function TerminalTTY({
 
       {/* Terminal View */}
       <div
-        className="relative flex-1 bg-[var(--surface-app)]"
-        onContextMenu={handleContextMenu}
-        data-testid="terminal-viewport-shell"
-        style={TERMINAL_VIEWPORT_SHELL_STYLE}
+        className="flex min-h-0 flex-1 flex-col bg-[var(--surface-app)]"
+        data-testid="terminal-root-body"
       >
-        <motion.div
-          ref={containerRef}
-          className="devhub-xterm-container h-full w-full p-2.5"
-          {...getXtermContainerAnimProps(showTerminalViewport)}
-        />
+        <div
+          className="relative flex-1 bg-[var(--surface-app)]"
+          onContextMenu={handleContextMenu}
+          onMouseDown={handleViewportMouseDown}
+          data-testid="terminal-viewport-shell"
+          style={TERMINAL_VIEWPORT_SHELL_STYLE}
+        >
+          <div
+            ref={nativePlaceholderRef}
+            className="relative h-full w-full overflow-hidden"
+            data-testid="terminal-content-body"
+            style={TERMINAL_NATIVE_CONTENT_BODY_STYLE}
+          >
+            {shouldUseNativeRenderer && (
+              <div
+                className="absolute inset-0 z-10 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.18)] bg-[var(--surface-app)]"
+                data-testid="terminal-native-placeholder"
+              >
+                <div className="flex h-full w-full items-start justify-between px-3 py-2 text-[11px] font-mono text-[var(--text-secondary)]">
+                  <span>GTK VTE · misma ventana · panel visible</span>
+                  <span>Linux/Tauri spike</span>
+                </div>
+              </div>
+            )}
 
+            <motion.div
+              ref={containerRef}
+              className="devhub-xterm-container h-full w-full p-2.5"
+              {...getXtermContainerAnimProps(showTerminalViewport)}
+            />
+          </div>
         {/* Restored session toast */}
         {restoredToast && (
           <div
@@ -878,6 +1633,30 @@ export default function TerminalTTY({
             }}
           >
             ↺ Restored shell at {cwd}
+          </div>
+        )}
+
+        {rendererViewModel.showRecoveryBanner && (
+          <div
+            className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 rounded-md border border-amber-400/40 bg-[#1e1a12]/90 px-3 py-2 text-xs text-amber-100 backdrop-blur-sm"
+            data-testid="terminal-renderer-fallback-banner"
+          >
+            <div className="min-w-0">
+              <div className="font-semibold" data-testid="terminal-renderer-fallback-title">
+                Renderer en fallback: {rendererViewModel.requestedLabel}
+              </div>
+              <div className="truncate" data-testid="terminal-renderer-fallback-copy">
+                {rendererStatusCopy}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onResetRendererToXterm?.()}
+              className="shrink-0 rounded-md border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-black/30"
+              data-testid="terminal-renderer-reset"
+            >
+              {getTerminalRendererRecoveryActionLabel()}
+            </button>
           </div>
         )}
 
@@ -972,6 +1751,7 @@ export default function TerminalTTY({
             </button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

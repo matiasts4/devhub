@@ -40,7 +40,32 @@ describe('Flow: Telegram Bot', () => {
         launchAgent: () => Promise.resolve({ sessionId: 'test-telegram-spawn-session' }),
       },
       'session-bridge': {
+        resolveTelegramAdapterContext: () => ({
+          actor: { actor_id: 'telegram:test-user-1', devhub_actor_id: 'human-test-user-1' },
+          envelope: { action: 'status.query' },
+          outcome: {
+            accepted: false,
+            pending_approval: false,
+            denial_reason: 'out-of-scope-orchestration',
+            intent: {
+              intent_id: 'intent-telegram-1',
+              audit_status: 'denied',
+              result_ref: 'telegram-intent://intent-telegram-1',
+            },
+          },
+        }),
+        getActiveSession: () => null,
         getSessions: () => [{ id: 'sess-1', title: 'Session 1', status: 'active' }],
+      },
+      formatter: {
+        formatHelp: () => '*🤖 DevHub Bot — Ayuda*',
+        formatDashboard: () => 'Test Project',
+        formatTasks: () => 'Task 1',
+        formatError: (message) => `Error: ${message}`,
+        formatCommandQuarantined: () => '🚫 Fuera de alcance',
+      },
+      'telegram-persister': {
+        persistMessage: () => null,
       },
       'lib/db-bridge': {
         getUsage: () => ({ total_tokens: 7, tool_calls_count: 1 }),
@@ -50,13 +75,15 @@ describe('Flow: Telegram Bot', () => {
 
   afterEach(async () => {
     harness.restoreService('lib/db-bridge');
+    harness.restoreService('telegram-persister');
+    harness.restoreService('formatter');
     harness.restoreService('session-bridge');
     harness.restoreService('api');
     harness.restoreService('db');
     await harness.teardown();
   });
 
-  test('executes telegram spawn flow', async () => {
+  test('denies legacy telegram spawn flow as out of scope', async () => {
     const result = await verifier.execute({
       name: 'telegram-spawn-flow',
       timeout: 30000,
@@ -69,15 +96,16 @@ describe('Flow: Telegram Bot', () => {
           command: 'spawn',
           ctx: { chatId: 'test-chat-1' },
           args: 'Implementar auth JWT',
-          assert: { replyContains: 'Implementar auth JWT' },
+          assert: { replyContains: 'Fuera de alcance' },
         },
         {
-          name: 'verify-reply',
+          name: 'verify-no-session-created',
           action: 'assert',
           type: 'db.rowCount',
           table: 'agent_hub_sessions',
           where: { project_id: 'test-proj-1' },
-          min: 0, // Session may or may not be created depending on mock
+          min: 0,
+          max: 0,
         },
         {
           name: 'estado',

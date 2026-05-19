@@ -25,6 +25,10 @@ describe('GET /api/agenthub/opencode/status', () => {
   });
 
   test('returns process, concurrency, and queue info', async () => {
+    if (await harness.skipIfServerUnavailable()) {
+      return;
+    }
+
     const { response, body } = await harness.requestJson('GET', '/api/agenthub/opencode/status');
 
     harness.assertStatus(response, 200);
@@ -55,6 +59,10 @@ describe('GET /api/agenthub/opencode/status', () => {
   });
 
   test('concurrency values are consistent', async () => {
+    if (await harness.skipIfServerUnavailable()) {
+      return;
+    }
+
     const { response, body } = await harness.requestJson('GET', '/api/agenthub/opencode/status');
 
     if (response.status === 200) {

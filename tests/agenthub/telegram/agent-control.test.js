@@ -5,14 +5,11 @@
  */
 
 const { TelegramTestHarness } = require('./harness');
-const { seedProject, seedSession, seedSwarmConfig } = require('../fixtures');
-const { assertDbRow, assertDbFieldValue } = require('../assertions');
+const { seedSwarmConfig } = require('../fixtures');
 
 describe('Telegram Agent Control Commands', () => {
   let harness;
   let originalMultiTurn;
-  let pauseAgent;
-  let resumeAgent;
 
   beforeEach(async () => {
     originalMultiTurn = process.env.TELEGRAM_MULTI_TURN;
@@ -22,29 +19,32 @@ describe('Telegram Agent Control Commands', () => {
     await harness.setup();
     seedSwarmConfig(harness.db, 'max_concurrent', '5');
 
-    pauseAgent = jest.fn();
-    resumeAgent = jest.fn();
-
-    harness.mockService('db', {
-      getAgents: () => [],
-      pauseAgent,
-      resumeAgent,
-      getProjectByName: () => null,
-      getNextTask: () => null,
+    harness.mockService('session-bridge', {
+      resolveTelegramAdapterContext: () => ({
+        actor: { actor_id: 'telegram:test-user-1', devhub_actor_id: 'human-test-user-1' },
+        envelope: { action: 'control' },
+        outcome: {
+          accepted: false,
+          pending_approval: false,
+          denial_reason: 'out-of-scope-orchestration',
+          intent: {
+            intent_id: 'intent-control-1',
+            audit_status: 'denied',
+            result_ref: 'telegram-intent://intent-control-1',
+          },
+        },
+      }),
+      getActiveSession: () => ({ id: 'mock-session-id' }),
     });
 
-    harness.mockService('api', {
-      health: () => Promise.resolve(true),
-      getProfiles: () => Promise.resolve([{ name: 'default' }]),
-      launchAgent: () => Promise.resolve({ sessionId: 'test-spawn-session' }),
-      executeAgent: () => Promise.resolve({ ok: true }),
-      buildPrompt: () => Promise.resolve({ prompt: 'Mock prompt' }),
+    harness.mockService('telegram-persister', {
+      persistMessage: () => null,
     });
   });
 
   afterEach(async () => {
-    harness.restoreService('api');
-    harness.restoreService('db');
+    harness.restoreService('telegram-persister');
+    harness.restoreService('session-bridge');
     await harness.teardown();
 
     if (originalMultiTurn === undefined) {
@@ -55,99 +55,78 @@ describe('Telegram Agent Control Commands', () => {
   });
 
   describe('/pausar', () => {
-    test('changes agent status to paused', async () => {
-      harness.mockService('db', {
-        getAgents: () => [{ agent_id: 'agent-1', nombre: 'Agent Uno', status: 'working' }],
-        pauseAgent,
-        resumeAgent,
-        getProjectByName: () => null,
-        getNextTask: () => null,
-      });
-
+    test('denies pausar command because orchestration is quarantined', async () => {
       const ctx = harness.createMockCtx();
       await harness.executeCommand('pausar', ctx, 'agent-1');
 
       const replies = harness.getReplies();
-      expect(pauseAgent).toHaveBeenCalledWith('agent-1');
       expect(replies).toHaveLength(1);
-      expect(replies[0].text).toContain('pausado correctamente');
+      expect(replies[0].text).toContain('Fuera de alcance');
+      expect(replies[0].text).toContain('intent\\-control\\-1');
     });
 
-    test('shows success when there are no active agents', async () => {
+    test('shows degraded message when durable read is unavailable', async () => {
+      harness.mockService('session-bridge', {
+        resolveTelegramAdapterContext: () => ({
+          actor: { actor_id: 'telegram:test-user-1', devhub_actor_id: 'human-test-user-1' },
+          envelope: { action: 'control' },
+          outcome: {
+            accepted: false,
+            pending_approval: false,
+            denial_reason: 'durable-read-unavailable',
+            intent: {
+              intent_id: 'intent-control-degraded',
+              audit_status: 'denied',
+              result_ref: 'telegram-intent://intent-control-degraded',
+            },
+          },
+        }),
+        getActiveSession: () => ({ id: 'mock-session-id' }),
+      });
+
       const ctx = harness.createMockCtx();
       await harness.executeCommand('pausar', ctx);
 
       const replies = harness.getReplies();
       expect(replies).toHaveLength(1);
-      expect(replies[0].text).toContain('No hay agentes activos para pausar');
+      expect(replies[0].text).toContain('Modo degradado');
+      expect(replies[0].text).toContain('intent\\-control\\-degraded');
     });
   });
 
   describe('/reanudar', () => {
-    test('resumes paused session', async () => {
-      harness.mockService('db', {
-        getAgents: () => [{ agent_id: 'agent-2', nombre: 'Agent Dos', status: 'paused' }],
-        pauseAgent,
-        resumeAgent,
-        getProjectByName: () => null,
-        getNextTask: () => null,
-      });
-
+    test('denies reanudar command because orchestration is quarantined', async () => {
       const ctx = harness.createMockCtx();
       await harness.executeCommand('reanudar', ctx, 'agent-2');
 
       const replies = harness.getReplies();
-      expect(resumeAgent).toHaveBeenCalledWith('agent-2');
       expect(replies).toHaveLength(1);
-      expect(replies[0].text).toContain('reanudado correctamente');
+      expect(replies[0].text).toContain('Fuera de alcance');
+      expect(replies[0].text).toContain('intent\\-control\\-1');
     });
   });
 
   describe('/spawn', () => {
-    test('requires task description', async () => {
-      const ctx = harness.createMockCtx();
-      await harness.executeCommand('spawn', ctx, '');
-
-      const replies = harness.getReplies();
-      expect(replies.length).toBe(1);
-      expect(replies[0].text).toContain('Uso:');
-    });
-
-    test('launches agent with task description', async () => {
+    test('denies spawn command because orchestration is quarantined', async () => {
       const ctx = harness.createMockCtx();
       await harness.executeCommand('spawn', ctx, 'Implementar auth JWT');
 
       const replies = harness.getReplies();
-      expect(replies.length).toBe(1);
-      expect(replies[0].text).toContain('Implementar auth JWT');
-    });
-
-    test('shows error when Next.js is down', async () => {
-      harness.mockService('api', {
-        health: () => Promise.reject(new Error('Server down')),
-        getProfiles: () => Promise.resolve([{ name: 'default' }]),
-        launchAgent: () => Promise.resolve({ sessionId: 'unused' }),
-        executeAgent: () => Promise.resolve({ ok: true }),
-        buildPrompt: () => Promise.resolve({ prompt: 'unused' }),
-      });
-
-      const ctx = harness.createMockCtx();
-      await harness.executeCommand('spawn', ctx, 'Some task');
-
-      const replies = harness.getReplies();
-      expect(replies.length).toBe(1);
-      expect(replies[0].text).toContain('corriendo');
+      expect(replies).toHaveLength(1);
+      expect(replies[0].text).toContain('Fuera de alcance');
+      expect(replies[0].text).toContain('intent\\-control\\-1');
     });
   });
 
   describe('/continuar', () => {
-    test('shows usage when project argument is missing', async () => {
+    test('denies continuar command because orchestration is quarantined', async () => {
       const ctx = harness.createMockCtx();
-      await harness.executeCommand('continuar', ctx);
+      await harness.executeCommand('continuar', ctx, 'devhub');
 
       const replies = harness.getReplies();
       expect(replies).toHaveLength(1);
-      expect(replies[0].text).toContain('Uso: /continuar');
+      expect(replies[0].text).toContain('Fuera de alcance');
+      expect(replies[0].text).toContain('intent\\-control\\-1');
     });
   });
 });

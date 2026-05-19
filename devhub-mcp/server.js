@@ -657,6 +657,65 @@ function err(msg) {
   return { content: [{ type: 'text', text: `ERROR: ${msg}` }], isError: true };
 }
 
+const TELEGRAM_ADAPTER_ACTIONS = [
+  'status.query',
+  'task.detail',
+  'workspace.detail',
+  'approval.respond',
+  'notification.retry',
+  'subscription.set',
+];
+const TELEGRAM_FORBIDDEN_SURFACE_PATTERN = /\b(git|checkout|merge|worktree|filesystem|queue|lease)\b/i;
+
+function ensureTelegramAdapterActionAllowed(action, requestedVerb = '') {
+  if (!TELEGRAM_ADAPTER_ACTIONS.includes(action)) {
+    throw new Error(`Telegram adapter action out of scope: ${action}`);
+  }
+  if (requestedVerb && TELEGRAM_FORBIDDEN_SURFACE_PATTERN.test(requestedVerb)) {
+    throw new Error(`Telegram adapter action out of scope: ${requestedVerb}`);
+  }
+}
+
+async function getTelegramChannelSnapshot(filters = {}) {
+  if (DB_DRIVER !== 'supabase') {
+    return localDb.getLatestTelegramChannelSnapshot(filters);
+  }
+
+  const taskId = filters.task_id || null;
+  const snapshot = taskId ? await getSupervisorSnapshot(taskId) : null;
+  const workspace = snapshot?.workspace_id ? await getAgentWorkspaceById(snapshot.workspace_id) : null;
+  const run = snapshot?.run_id ? await getAgentRunById(snapshot.run_id) : null;
+  const latestArtifact = run?.run_id ? await getLatestAgentArtifactForRun(run.run_id) : null;
+  const approval = snapshot?.approval_checkpoint_key
+    ? await getSupervisorApprovalCheckpoint(snapshot.approval_checkpoint_key)
+    : null;
+
+  return {
+    task_id: snapshot?.task_id || null,
+    supervisor_state: snapshot?.supervisor_state || null,
+    outcome: snapshot?.outcome || null,
+    reason_class: snapshot?.reason_class || null,
+    workspace_id: snapshot?.workspace_id || workspace?.id || null,
+    run_id: snapshot?.run_id || run?.run_id || null,
+    evidence_ref: snapshot?.evidence_ref || latestArtifact?.evidence_ref || workspace?.evidence_ref || null,
+    workspace_status: workspace?.status || null,
+    run_status: run?.status || null,
+    terminal_reason_class: run?.terminal_reason_class || null,
+    latest_artifact_kind: latestArtifact?.kind || null,
+    latest_artifact_evidence_ref: latestArtifact?.evidence_ref || null,
+    artifact_count: latestArtifact ? 1 : 0,
+    approval: approval
+      ? {
+          id: approval.checkpoint_key,
+          status: approval.status,
+          expires_at: approval.expires_at || null,
+        }
+      : null,
+    delivery: null,
+    degraded: false,
+  };
+}
+
 const TOPIC_KEY_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*){1,3}$/;
 
 function normalizeTopicKey(value) {
@@ -2600,6 +2659,178 @@ server.tool(
           approval_checkpoint: checkpoint,
         },
       });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'record_telegram_adapter_intent',
+  'Registra un intent bounded de Telegram contra el control plane durable.',
+  {
+    actor_id: z.string().min(1),
+    chat_id: z.string().min(1),
+    message_id: z.string().optional(),
+    update_id: z.string().optional(),
+    action: z.string().min(1),
+    requested_verb: z.string().optional(),
+    target_ref: z
+      .object({
+        task_id: UUID_OR_LEGACY_ID_SCHEMA.optional(),
+        workspace_id: z.string().min(1).optional(),
+        run_id: z.string().min(1).optional(),
+        approval_id: z.string().min(1).optional(),
+      })
+      .optional(),
+    payload: z.record(z.any()).optional(),
+    status: z.enum(['accepted', 'pending_approval', 'denied']).optional().default('accepted'),
+    audit_status: z.string().optional(),
+  },
+  async ({ actor_id, chat_id, message_id, update_id, action, requested_verb, target_ref, payload, status, audit_status }) => {
+    try {
+      ensureTelegramAdapterActionAllowed(action, requested_verb);
+      const intent = localDb.recordTelegramIntentEnvelope({
+        actor_id,
+        chat_id,
+        message_id,
+        update_id,
+        action,
+        target_ref: target_ref || {},
+        payload: payload || null,
+        status,
+        audit_status: audit_status || status,
+      });
+      return ok({ accepted: status !== 'denied', replayed: Boolean(intent.replayed), intent });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'record_telegram_delivery',
+  'Registra delivery receipts bounded para Telegram sin alterar la verdad durable.',
+  {
+    telegram_chat_id: z.string().min(1),
+    task_id: UUID_OR_LEGACY_ID_SCHEMA.optional(),
+    workspace_id: z.string().min(1).optional(),
+    run_id: z.string().min(1).optional(),
+    intent_id: z.string().min(1).optional(),
+    status: z.enum(['sent', 'failed', 'retry_pending']),
+    attempts_count: z.number().int().min(1).optional().default(1),
+    last_error: z.string().optional(),
+  },
+  async ({ telegram_chat_id, task_id, workspace_id, run_id, intent_id, status, attempts_count, last_error }) => {
+    try {
+      const delivery = localDb.upsertTelegramDeliveryReceipt({
+        telegram_chat_id,
+        task_id,
+        workspace_id,
+        run_id,
+        intent_id,
+        status,
+        attempts_count,
+        last_error,
+        last_attempt_at: nowIso(),
+      });
+      return ok({ recorded: true, delivery });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'set_telegram_subscription',
+  'Actualiza subscriptions bounded de Telegram para task/workspace/run.',
+  {
+    actor_id: z.string().min(1).optional(),
+    telegram_chat_id: z.string().min(1),
+    task_id: UUID_OR_LEGACY_ID_SCHEMA.optional(),
+    workspace_id: z.string().min(1).optional(),
+    run_id: z.string().min(1).optional(),
+    status: z.enum(['mute', 'unmute']),
+  },
+  async ({ actor_id, telegram_chat_id, task_id, workspace_id, run_id, status }) => {
+    try {
+      const subscription = localDb.upsertTelegramSubscription({
+        actor_id: actor_id || null,
+        telegram_chat_id,
+        task_id,
+        workspace_id,
+        run_id,
+        status,
+      });
+      return ok({ updated: true, subscription });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'respond_telegram_approval',
+  'Responde un approval checkpoint desde Telegram sin introducir surface de orquestación.',
+  {
+    actor_id: z.string().min(1),
+    chat_id: z.string().min(1),
+    approval_id: z.string().min(1),
+    decision: z.enum(['approve', 'reject']),
+    message_id: z.string().optional(),
+    update_id: z.string().optional(),
+  },
+  async ({ actor_id, chat_id, approval_id, decision, message_id, update_id }) => {
+    try {
+      const checkpoint = localDb.getSupervisorApprovalCheckpoint(approval_id);
+      if (!checkpoint) {
+        throw new Error(`Approval checkpoint no encontrado: ${approval_id}`);
+      }
+      const nextStatus = decision === 'reject' ? 'rejected' : 'approved';
+      const updatedCheckpoint = localDb.upsertSupervisorApprovalCheckpoint({
+        checkpoint_key: approval_id,
+        task_id: checkpoint.task_id,
+        workspace_id: checkpoint.workspace_id,
+        run_id: checkpoint.run_id,
+        reason_class: checkpoint.reason_class,
+        evidence_ref: checkpoint.evidence_ref,
+        status: nextStatus,
+        decision_note: `telegram:${actor_id}:${nextStatus}`,
+        decided_at: nowIso(),
+      });
+      const intent = localDb.recordTelegramIntentEnvelope({
+        actor_id,
+        chat_id,
+        message_id,
+        update_id,
+        action: 'approval.respond',
+        target_ref: {
+          task_id: checkpoint.task_id,
+          workspace_id: checkpoint.workspace_id,
+          run_id: checkpoint.run_id,
+          approval_id,
+        },
+        payload: { decision },
+        status: 'accepted',
+        audit_status: nextStatus,
+      });
+      return ok({ accepted: true, checkpoint: updatedCheckpoint, intent });
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'get_telegram_channel_snapshot',
+  'Lee el snapshot durable compartido para Telegram/UI/MCP.',
+  {
+    task_id: UUID_OR_LEGACY_ID_SCHEMA.optional(),
+  },
+  async ({ task_id }) => {
+    try {
+      const snapshot = await getTelegramChannelSnapshot({ task_id: task_id || null });
+      return ok({ snapshot: snapshot || null });
     } catch (e) {
       return err(e.message);
     }

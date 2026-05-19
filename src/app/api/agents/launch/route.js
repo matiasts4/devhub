@@ -4,6 +4,8 @@ import { getProfileHome } from '@/utils/geminiProfiles';
 import { getDb } from '@/lib/db/localDb';
 import { enforceDocOpsGateOnText, isDocOpsPlanningPrompt } from '@/lib/docopsPrompts';
 
+const DEFAULT_PROFILE_NAME = 'default';
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -15,29 +17,7 @@ export async function POST(request) {
     }
 
     if (!profileName || profileName === 'auto') {
-      try {
-        const url = new URL(request.url);
-        const quotasUrl = `${url.protocol}//${url.host}/api/agents/quotas/`;
-        const res = await fetch(quotasUrl, { redirect: 'follow' });
-        if (res.ok) {
-          const json = await res.json();
-          const available = json.quotas.filter(q => q.status === 'available');
-          if (available.length > 0) {
-            // Sort by lowest quota usage
-            available.sort((a, b) => (a.quotaUsedPercent || 0) - (b.quotaUsedPercent || 0));
-            profileName = available[0].profile;
-            console.log(`[Launch] Auto-selected profile '${profileName}' (${available[0].quotaUsedPercent}% used)`);
-          } else {
-            profileName = json.quotas[0]?.profile || 'default';
-            console.warn(`[Launch] No available profiles found. Falling back to '${profileName}'`);
-          }
-        } else {
-          profileName = 'default';
-        }
-      } catch (e) {
-        console.error('[Launch] Error fetching quotas for auto-selection:', e.message);
-        profileName = 'default';
-      }
+      profileName = DEFAULT_PROFILE_NAME;
     }
 
     if (isDocOpsPlanningPrompt(task) && !projectId) {

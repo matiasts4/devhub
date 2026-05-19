@@ -13,6 +13,12 @@
 const db = require('../lib/db-bridge');
 const logger = require('../utils/logger');
 const opencode = require('./opencode');
+const { getDb: getDurableDb } = require('../../src/lib/db/localDb');
+const { resolveAllowedActor } = require('./auth');
+const {
+  normalizeInboundTelegramIntent,
+  handleInboundTelegramIntent,
+} = require('./external-adapter');
 
 const DEFAULT_PROJECT_ID = process.env.DEFAULT_PROJECT_ID || null;
 const DEFAULT_DIRECTORY = process.env.DEFAULT_DIRECTORY || process.cwd();
@@ -93,6 +99,50 @@ function resolveSessionProjectContext({ projectId, mappedProjectId, directory })
     project,
     projectId: project.id,
     directory: directory || project.directory || DEFAULT_DIRECTORY,
+  };
+}
+
+function resolveTelegramAdapterContext(input = {}) {
+  const chatId = input.chatId ?? input.chat_id;
+  const telegramUserId = input.telegramUserId ?? input.telegram_user_id;
+
+  if (chatId == null || telegramUserId == null) {
+    return null;
+  }
+
+  const durableDb = getDurableDb();
+  const actor = resolveAllowedActor(durableDb, telegramUserId, chatId);
+
+  if (!actor) {
+    return {
+      actor: null,
+      envelope: null,
+      outcome: {
+        accepted: false,
+        pending_approval: false,
+        denial_reason: 'actor-not-allowlisted',
+        intent: null,
+      },
+    };
+  }
+
+  const envelope = normalizeInboundTelegramIntent({
+    actor_id: actor.actor_id,
+    chat_id: String(chatId),
+    message_id: input.messageId ?? input.message_id ?? null,
+    update_id: input.updateId ?? input.update_id ?? null,
+    text: input.text ?? '',
+    callback_data: input.callbackData ?? input.callback_data ?? '',
+    requires_approval: input.requiresApproval ?? input.requires_approval ?? false,
+    approval_reason: input.approvalReason ?? input.approval_reason ?? undefined,
+  });
+
+  const outcome = handleInboundTelegramIntent(durableDb, envelope);
+
+  return {
+    actor,
+    envelope,
+    outcome,
   };
 }
 
@@ -316,6 +366,7 @@ module.exports = {
   switchSession,
   getActiveSession,
   switchProject,
+  resolveTelegramAdapterContext,
   __private__: {
     normalizeOpenCodeSessionId,
     hasReusableOpenCodeSessionId,
@@ -323,5 +374,6 @@ module.exports = {
     canReuseSession,
     resolveProjectRecord,
     resolveSessionProjectContext,
+    resolveTelegramAdapterContext,
   },
 };

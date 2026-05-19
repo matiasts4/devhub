@@ -31,6 +31,10 @@ describe('GET /api/agenthub/config', () => {
   });
 
   test('returns swarm config with max_concurrent_swarms and swarm_enabled', async () => {
+    if (await harness.skipIfServerUnavailable()) {
+      return;
+    }
+
     const { response, body } = await harness.requestJson('GET', '/api/agenthub/config');
 
     harness.assertStatus(response, 200);
@@ -61,6 +65,10 @@ describe('PUT /api/agenthub/config', () => {
 
   describe('validation', () => {
     test('invalid max_concurrent_swarms (too low) → 400', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('PUT', '/api/agenthub/config', {
         max_concurrent_swarms: 0,
       });
@@ -70,6 +78,10 @@ describe('PUT /api/agenthub/config', () => {
     });
 
     test('invalid max_concurrent_swarms (too high) → 400', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('PUT', '/api/agenthub/config', {
         max_concurrent_swarms: 21,
       });
@@ -79,6 +91,10 @@ describe('PUT /api/agenthub/config', () => {
     });
 
     test('non-numeric max_concurrent_swarms → 400', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('PUT', '/api/agenthub/config', {
         max_concurrent_swarms: 'not-a-number',
       });
@@ -89,6 +105,10 @@ describe('PUT /api/agenthub/config', () => {
 
   describe('happy path', () => {
     test('update max_concurrent_swarms', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('PUT', '/api/agenthub/config', {
         max_concurrent_swarms: 10,
       });
@@ -102,6 +122,10 @@ describe('PUT /api/agenthub/config', () => {
     });
 
     test('enable swarm', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('PUT', '/api/agenthub/config', {
         swarm_enabled: true,
       });
@@ -111,6 +135,10 @@ describe('PUT /api/agenthub/config', () => {
     });
 
     test('disable swarm', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('PUT', '/api/agenthub/config', {
         swarm_enabled: false,
       });
@@ -120,6 +148,10 @@ describe('PUT /api/agenthub/config', () => {
     });
 
     test('update both fields at once', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const { response, body } = await harness.requestJson('PUT', '/api/agenthub/config', {
         max_concurrent_swarms: 3,
         swarm_enabled: true,
@@ -131,6 +163,10 @@ describe('PUT /api/agenthub/config', () => {
     });
 
     test('valid boundary values (1 and 20)', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       // Min value
       const res1 = await harness.requestJson('PUT', '/api/agenthub/config', {
         max_concurrent_swarms: 1,

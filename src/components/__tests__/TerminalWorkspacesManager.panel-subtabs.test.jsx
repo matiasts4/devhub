@@ -49,15 +49,24 @@ jest.mock('react-resizable-panels', () => ({
   },
 }));
 
+const mockTerminalTTYProps = [];
+
 jest.mock('../TerminalTTY', () => ({
   __esModule: true,
-  default: ({ id, autoFocus }) => {
+  default: ({ id, autoFocus, isActivePanel, requestedRendererMode = 'xterm', onResetRendererToXterm }) => {
     const React = require('react');
-    return React.createElement(
-      'div',
-      { 'data-testid': `terminal-${id}`, 'data-autofocus': autoFocus ? 'true' : 'false' },
-      id
-    );
+    mockTerminalTTYProps.push({ id, autoFocus, isActivePanel, requestedRendererMode });
+    return React.createElement('div', { 'data-testid': `terminal-${id}`, 'data-autofocus': autoFocus ? 'true' : 'false' }, [
+      React.createElement('span', { key: 'label', 'data-testid': `terminal-renderer-${id}` }, requestedRendererMode),
+      React.createElement('span', { key: 'active', 'data-testid': `terminal-active-${id}` }, isActivePanel ? 'active' : 'inactive'),
+      onResetRendererToXterm
+        ? React.createElement(
+            'button',
+            { key: 'reset', type: 'button', 'data-testid': `terminal-renderer-reset-${id}`, onClick: onResetRendererToXterm },
+            'reset renderer'
+          )
+        : null,
+    ]);
   },
 }));
 
@@ -221,6 +230,24 @@ function getVisibleWorkspaceShell(container) {
   );
 }
 
+function getTerminalRendererValues(container) {
+  return Array.from(container.querySelectorAll('[data-testid^="terminal-renderer-p"]')).map((node) =>
+    node.textContent
+  );
+}
+
+function getLatestTerminalTTYProps(id) {
+  return [...mockTerminalTTYProps].reverse().find((entry) => entry.id === id) || null;
+}
+
+async function changeSelect(element, value) {
+  flushSync(() => {
+    element.value = value;
+    element.dispatchEvent(new window.Event('change', { bubbles: true }));
+  });
+  await flushEffects();
+}
+
 function defaultProps() {
   return { cwd: '/workspace/devhub', isVisible: true, projectId: 'proj-1' };
 }
@@ -234,6 +261,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    mockTerminalTTYProps.length = 0;
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -246,6 +274,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     consoleErrorSpy?.mockRestore();
     dom.window.close();
     delete global.localStorage;
+    mockTerminalTTYProps.length = 0;
     jest.clearAllMocks();
   });
 
@@ -447,5 +476,192 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     expect(getPanelTab(container, 'p2')).toBeNull();
     expect(getPanelTab(container, 'p1')).not.toBeNull();
     expectAutoFocusedTerminal(container, 'p1');
+  });
+
+  test('closing a split V1 does not transfer its panels into the remaining V2', async () => {
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    await click(getSplitRightButton(container));
+    expect(getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(2);
+    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
+    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p2"]')).not.toBeNull();
+
+    await click(getAddButton(container));
+    expectAutoFocusedTerminal(container, 'p3');
+
+    await click(getPanelTab(container, 'p1'));
+    expect(getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(2);
+
+    const closeV1 = getPanelTab(container, 'p1').querySelector('[role="button"]');
+    await click(closeV1);
+
+    expect(getPanelTab(container, 'p2')).toBeNull();
+    expect(getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(1);
+    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p3"]')).not.toBeNull();
+    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p1"]')).toBeNull();
+    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p2"]')).toBeNull();
+  });
+
+  test('stores an explicit renderer selection for the active panel and keeps other panels independent', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_renderer_preferences:proj-1',
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          ws1: {
+            defaultMode: 'vte-experimental',
+            panels: { p1: 'xterm' },
+          },
+        },
+      })
+    );
+
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
+      'xterm'
+    );
+
+    await click(getAddButton(container));
+    expect(container.querySelector('[data-testid="terminal-renderer-p2"]')?.textContent).toBe('vte-experimental');
+
+    await click(getPanelTab(container, 'p1'));
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
+      'xterm'
+    );
+  });
+
+  test('lets the visible terminal recovery action force the active panel back to xterm', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_renderer_preferences:proj-1',
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          ws1: {
+            defaultMode: 'vte-experimental',
+            panels: { p1: 'vte-experimental' },
+          },
+        },
+      })
+    );
+
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    await click(container.querySelector('[data-testid="terminal-renderer-reset-p1"]'));
+
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe('xterm');
+  });
+
+  test('uses GTK VTE as the default renderer for fresh workspaces and inherited views', async () => {
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
+      'vte-experimental'
+    );
+  });
+
+  test('persisted workspace default renderer from settings/preferences is reused after reload', async () => {
+    window.localStorage.setItem('devhub_terminal_renderer_default_mode', 'xterm');
+    window.localStorage.setItem(
+      'devhub_terminal_renderer_preferences:proj-1',
+      JSON.stringify({
+        version: 1,
+        defaultMode: 'xterm',
+        workspaces: {
+          ws1: {
+            defaultMode: 'xterm',
+            panels: {},
+          },
+        },
+      })
+    );
+
+    const firstView = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    await click(getAddButton(firstView.container));
+
+    expect(firstView.container.querySelector('[data-testid="terminal-renderer-p2"]')?.textContent).toBe(
+      'xterm'
+    );
+
+    const secondView = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    expect(getTerminalRendererValues(secondView.container)).toContain('xterm');
+  });
+
+  test('applies global Settings renderer default when no workspace override exists', async () => {
+    window.localStorage.setItem('devhub_terminal_renderer_default_mode', 'xterm');
+
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe('xterm');
+  });
+
+  test('keeps explicit panel override independent from workspace default settings', async () => {
+    window.localStorage.setItem('devhub_terminal_renderer_default_mode', 'vte-experimental');
+    window.localStorage.setItem(
+      'devhub_terminal_renderer_preferences:proj-1',
+      JSON.stringify({
+        version: 1,
+        defaultMode: 'vte-experimental',
+        workspaces: {
+          ws1: {
+            defaultMode: 'vte-experimental',
+            panels: { p1: 'xterm' },
+          },
+        },
+      })
+    );
+
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
+      'xterm'
+    );
+  });
+
+  test('does not show operational renderer selectors in the terminal header anymore', async () => {
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    expect(container.querySelector('[data-testid="terminal-renderer-workspace-select"]')).toBeNull();
+    expect(container.querySelector('[data-testid="terminal-renderer-panel-select"]')).toBeNull();
+    expect(container.textContent).not.toContain('Renderer por defecto');
+    expect(container.textContent).not.toContain('Vista activa');
+  });
+
+  test('marks only the active panel as native-eligible when switching between views', async () => {
+    const { container } = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, defaultProps())
+    );
+
+    await click(getAddButton(container));
+
+    expect(container.querySelector('[data-testid="terminal-active-p2"]')?.textContent).toBe('active');
+    expect(getLatestTerminalTTYProps('p1')).toEqual(expect.objectContaining({ isActivePanel: true }));
+    expect(getLatestTerminalTTYProps('p2')).toEqual(expect.objectContaining({ isActivePanel: true }));
+
+    await click(getPanelTab(container, 'p1'));
+
+    expect(container.querySelector('[data-testid="terminal-active-p1"]')?.textContent).toBe('active');
+    expect(getLatestTerminalTTYProps('p1')).toEqual(expect.objectContaining({ isActivePanel: true }));
+    expect(container.querySelector('[data-testid="terminal-p2"]')).toBeNull();
   });
 });

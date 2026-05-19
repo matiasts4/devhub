@@ -2,9 +2,9 @@
 
 ## Phase 1: Contract & schema foundation
 
-- [ ] 1.1 RED — Add failing contract coverage in `devhub-mcp/tests/integration/telegram-external-adapter.test.js`, `tests/unit/telegram-status-api.test.js`, and `tests/agenthub/flows/telegram-flow.test.js` for allowlisted intents, forbidden verbs, degraded reads, and idempotent replays.
-- [ ] 1.2 GREEN — Extend `src/lib/db/localDb.js` with durable adapter records for actor mapping, intent envelopes, approval checkpoints, delivery receipts, subscriptions, and `ChannelSupervisorSnapshot` projections anchored to DevHub task/workspace/run/artifact truth.
-- [ ] 1.3 GREEN — Add bounded adapter helpers in `devhub-mcp/server.js` for status/detail reads, approval responses, retry receipts, and subscription writes; reject git/worktree/merge/filesystem verbs at the boundary.
+- [x] 1.1 RED — Add failing contract coverage in `devhub-mcp/tests/integration/telegram-external-adapter.test.js`, `tests/unit/telegram-status-api.test.js`, and `tests/agenthub/flows/telegram-flow.test.js` for allowlisted intents, forbidden verbs, degraded reads, and idempotent replays.
+- [x] 1.2 GREEN — Extend `src/lib/db/localDb.js` with durable adapter records for actor mapping, intent envelopes, approval checkpoints, delivery receipts, subscriptions, and `ChannelSupervisorSnapshot` projections anchored to DevHub task/workspace/run/artifact truth.
+- [x] 1.3 GREEN — Add bounded adapter helpers in `devhub-mcp/server.js` for status/detail reads, approval responses, retry receipts, and subscription writes; reject git/worktree/merge/filesystem verbs at the boundary.
 
 ## Phase 2: Inbound intents and approval gates
 
@@ -15,7 +15,7 @@
 ## Phase 3: Shared read models and outbound rendering
 
 - [ ] 3.1 RED — Add parity tests in `tests/unit/telegram-monitor-realtime.test.js`, `tests/e2e/telegram-web-sync.test.js`, and `devhub-mcp/tests/integration/channel-supervisor-snapshot.test.js` proving Telegram, UI, and MCP render the same durable snapshot and degraded state.
-- [ ] 3.2 GREEN — Rework `src/app/api/telegram/status/route.js` and `src/app/api/telegram/activity/route.js` to serve shared `ChannelSupervisorSnapshot` and delivery history instead of `agent_logs`, `telegram_sessions`, or other Telegram-local truth.
+- [x] 3.2 GREEN — Rework `src/app/api/telegram/status/route.js` and `src/app/api/telegram/activity/route.js` to serve shared `ChannelSupervisorSnapshot` and delivery history instead of `agent_logs`, `telegram_sessions`, or other Telegram-local truth.
 - [ ] 3.3 GREEN — Update `src/views/TelegramMonitor.jsx`, `src/views/telegramMonitorRealtime.js`, and MCP-facing snapshot serializers in `devhub-mcp/server.js` to consume shared supervisor, approval, evidence, and delivery fields only.
 - [ ] 3.4 GREEN — Wire outbound Telegram formatting in `telegram-bot/services/formatter.js` and `telegram-bot/bot.js` to render durable outcome/audit refs and degraded-state messaging without local busy heuristics.
 

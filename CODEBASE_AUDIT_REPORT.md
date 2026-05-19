@@ -112,7 +112,6 @@ El codebase de DevHub es una aplicación full-stack ambiciosa que funciona como 
 | `engram/memories`   | `spawn('node', ['devhub-mcp/server.js'])`                            |
 | `centro-ia/query`   | `spawn('node', ['devhub-mcp/server.js'])`                            |
 | `agents/launch`     | `spawn('opencode', ['--task', ...], { detached: true })`             |
-| `agents/quotas`     | `execAsync('opencode run "/gquota"')` + `execAsync('gemini -p ...')` |
 | `agent/qa-result`   | `execAsync('git checkout main && git merge ...')`                    |
 | `agent/execute`     | `execAsync('git checkout -b ...')`                                   |
 

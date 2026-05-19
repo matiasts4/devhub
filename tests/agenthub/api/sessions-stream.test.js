@@ -27,6 +27,10 @@ describe('GET /api/agenthub/sessions/stream', () => {
 
   describe('SSE connection', () => {
     test('accepts SSE connection and sends initial events', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const response = await harness.request('GET', '/api/agenthub/sessions/stream');
 
       harness.assertStatus(response, 200);
@@ -56,6 +60,10 @@ describe('GET /api/agenthub/sessions/stream', () => {
     });
 
     test('receives heartbeat events', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const response = await harness.request('GET', '/api/agenthub/sessions/stream');
 
       harness.assertStatus(response, 200);
@@ -75,6 +83,10 @@ describe('GET /api/agenthub/sessions/stream', () => {
     });
 
     test('receives session-update events for existing sessions', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       const response = await harness.request('GET', '/api/agenthub/sessions/stream');
 
       harness.assertStatus(response, 200);
@@ -101,6 +113,10 @@ describe('GET /api/agenthub/sessions/stream', () => {
 
   describe('reconnect', () => {
     test('can reconnect after disconnect', async () => {
+      if (await harness.skipIfServerUnavailable()) {
+        return;
+      }
+
       // First connection
       const response1 = await harness.request('GET', '/api/agenthub/sessions/stream');
       harness.assertStatus(response1, 200);

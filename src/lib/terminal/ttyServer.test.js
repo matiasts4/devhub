@@ -183,6 +183,47 @@ describe('ttyServer — session create', () => {
     const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
     expect(sessions.get('term-safe-fallback')?.cwd).toBe(process.cwd());
   });
+
+  it('strips npm prefix env vars from spawned shell sessions to avoid nvm startup noise', async () => {
+    const { createSession } = await import('./ttyServer.js');
+    const previousLowerPrefix = process.env.npm_config_prefix;
+    const previousUpperPrefix = process.env.NPM_CONFIG_PREFIX;
+
+    process.env.npm_config_prefix = '/home/user/.npm-global';
+    process.env.NPM_CONFIG_PREFIX = '/home/user/.npm-global-upper';
+
+    try {
+      createSession({ id: 'term-sanitized-env', cwd: process.cwd(), shell: '/bin/zsh' });
+
+      const spawnCall = mockPtySpawn.mock.calls[0];
+      const spawnEnv = spawnCall[2]?.env;
+      expect(spawnEnv?.npm_config_prefix).toBeUndefined();
+      expect(spawnEnv?.NPM_CONFIG_PREFIX).toBeUndefined();
+      expect(spawnEnv?.DEVHUB_PROJECT_DIR).toBe(process.cwd());
+    } finally {
+      if (previousLowerPrefix === undefined) {
+        delete process.env.npm_config_prefix;
+      } else {
+        process.env.npm_config_prefix = previousLowerPrefix;
+      }
+
+      if (previousUpperPrefix === undefined) {
+        delete process.env.NPM_CONFIG_PREFIX;
+      } else {
+        process.env.NPM_CONFIG_PREFIX = previousUpperPrefix;
+      }
+    }
+  });
+
+  it('passes zsh --no-use args for direct shell sessions to skip nvm auto-use warnings', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    createSession({ id: 'term-zsh-no-use', cwd: process.cwd(), shell: '/bin/zsh' });
+
+    const spawnCall = mockPtySpawn.mock.calls[0];
+    expect(spawnCall[0]).toBe('/bin/zsh');
+    expect(spawnCall[1]).toEqual(['-lic', 'exec zsh -i', 'devhub-shell', '--no-use']);
+  });
 });
 
 describe('ttyServer — session close', () => {
@@ -363,6 +404,34 @@ describe('ttyServer — shell history hygiene', () => {
       JSON.stringify({ type: 'output', data: 'echo ok\r\nok\r\n' })
     );
     expect(socket.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('filters recurring nvm startup warnings from shell-mode broadcast and history', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    createSession({ id: 'shell-nvm-warning', cwd: '/home/user', shell: '/bin/zsh' });
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('shell-nvm-warning');
+    const socket = createMockSocket();
+    session.sockets.add(socket);
+
+    const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
+    onDataHandler(
+      'Your user’s .npmrc file (${HOME}/.npmrc)\n' +
+        'has a `globalconfig` and/or a `prefix` setting, which are incompatible with nvm.\n' +
+        'Run `nvm use --delete-prefix v24.14.0 --silent` to unset it.\n'
+    );
+    onDataHandler(
+      'nvm is not compatible with the "npm_config_prefix" environment variable: currently set to "/home/user/.npm-global"\n' +
+        'Run `unset npm_config_prefix` to unset it.\n'
+    );
+    onDataHandler('prompt$ pwd\r\n/home/user\r\n');
+
+    expect(session.history).toBe('prompt$ pwd\r\n/home/user\r\n');
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    expect(socket.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'output', data: 'prompt$ pwd\r\n/home/user\r\n' })
+    );
   });
 
   it('does not replay stored terminal response noise on existing shell-session reconnect', async () => {

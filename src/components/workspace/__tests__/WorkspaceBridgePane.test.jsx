@@ -46,6 +46,8 @@ function installDom() {
 
 const mountedRoots = [];
 let usingFakeTimers = false;
+let originalFetch = null;
+let originalWindowFetch = null;
 
 async function flushEffects() {
   await Promise.resolve();
@@ -179,6 +181,14 @@ describe('WorkspaceBridgePane', () => {
     installDom();
     usingFakeTimers = false;
     jest.useRealTimers();
+    originalFetch = global.fetch;
+    originalWindowFetch = window.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({}),
+      text: async () => '',
+    }));
+    window.fetch = global.fetch;
   });
 
   afterEach(() => {
@@ -192,6 +202,16 @@ describe('WorkspaceBridgePane', () => {
       const { root, container } = mountedRoots.pop();
       flushSync(() => root.unmount());
       container.remove();
+    }
+    if (originalWindowFetch) {
+      window.fetch = originalWindowFetch;
+    } else {
+      delete window.fetch;
+    }
+    if (originalFetch) {
+      global.fetch = originalFetch;
+    } else {
+      delete global.fetch;
     }
     jest.restoreAllMocks();
   });

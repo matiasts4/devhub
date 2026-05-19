@@ -4,7 +4,6 @@
  * Tests:
  * - POST /api/agents/launch — creates session, returns session ID
  * - GET /api/agents/profiles — returns list
- * - GET /api/agents/quotas — returns { used, limit, remaining }
  * - Validation errors → 400
  */
 
@@ -76,7 +75,7 @@ describe('POST /api/agents/launch', () => {
       harness.assertError(body, /task.*required/i);
     });
 
-    test('missing profileName uses auto-selection or validation fallback', async () => {
+    test('missing profileName falls back to default profile or validation fallback', async () => {
       const reachable = await serverReachable();
       if (!reachable) {
         console.warn('SKIP: Next.js server not reachable at', BASE_URL);
@@ -91,7 +90,7 @@ describe('POST /api/agents/launch', () => {
           task: 'Do something',
         },
         { timeout: 20000 },
-        'agents launch auto-selection check'
+        'agents launch default-profile fallback check'
       );
       if (!result) return;
 
@@ -199,78 +198,5 @@ describe('GET /api/agents/profiles', () => {
     harness.assertStatus(response, 200);
     // Endpoint returns defaults ['default', 'dev', 'code'] if none found
     expect(body.profiles.length).toBeGreaterThan(0);
-  });
-});
-
-describe('GET /api/agents/quotas', () => {
-  let harness;
-
-  beforeEach(async () => {
-    harness = new ApiTestHarness({
-      baseUrl: BASE_URL,
-      dbPath: ':memory:',
-      lockOwner: 'test-agents-quotas',
-    });
-    harness.setupDb();
-  });
-
-  afterEach(async () => {
-    if (harness._activeLocks.length > 0) {
-      await harness.releaseLocks(harness._activeLocks);
-    }
-    harness.teardownDb();
-  });
-
-  test('returns quotas array with checkedAt', async () => {
-    const reachable = await serverReachable();
-    if (!reachable) {
-      console.warn('SKIP: Next.js server not reachable at', BASE_URL);
-      return;
-    }
-
-    const result = await requestJsonOrSkip(
-      harness,
-      'GET',
-      '/api/agents/quotas',
-      undefined,
-      { timeout: 20000 },
-      'agents quotas check'
-    );
-    if (!result) return;
-
-    const { response, body } = result;
-
-    harness.assertStatus(response, 200);
-    harness.assertBodyShape(body, ['success', 'quotas', 'checkedAt']);
-    expect(body.success).toBe(true);
-    expect(Array.isArray(body.quotas)).toBe(true);
-    expect(body.checkedAt).toBeDefined();
-  });
-
-  test('each quota has profile and status', async () => {
-    const reachable = await serverReachable();
-    if (!reachable) {
-      console.warn('SKIP: Next.js server not reachable at', BASE_URL);
-      return;
-    }
-
-    const result = await requestJsonOrSkip(
-      harness,
-      'GET',
-      '/api/agents/quotas',
-      undefined,
-      { timeout: 20000 },
-      'agents quotas detail check'
-    );
-    if (!result) return;
-
-    const { response, body } = result;
-
-    harness.assertStatus(response, 200);
-
-    for (const quota of body.quotas) {
-      expect(quota).toHaveProperty('profile');
-      expect(quota).toHaveProperty('status');
-    }
   });
 });

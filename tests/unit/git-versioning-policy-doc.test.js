@@ -53,6 +53,20 @@ describe('git versioning policy documentation', () => {
     expect(doc).toMatch(/solo cuando haga falta publicar la rama/i);
   });
 
+  test('policy documents workspace baseline, dirty-excluded observation, and cleanup intent boundaries', () => {
+    const doc = read('docs/24_Politica_Git_y_Versionado_Agentes.md');
+
+    expect(doc).toContain('f814998dd05cb491caf8637bf570dbd74b539090');
+    expect(doc).toContain('02d82361449a09e93e5880a08e35e3043617002d');
+    expect(doc).toContain('4b1e344dcd202c911498af17236fcb86a2a2cb1e');
+    expect(doc).toContain("observed_dirty='dirty-excluded'");
+    expect(doc).toContain('cleanup_pending');
+    expect(doc).toContain('evidence_ref');
+    expect(doc).toMatch(/auditable|auditablez|audit trail/i);
+    expect(doc).toMatch(/control plane only|control plane/i);
+    expect(doc).toMatch(/nunca normalizar|no normaliza/i);
+  });
+
   test('checkpoint gate is documented across prompts, repo guide, and MCP flow', () => {
     const promptsDoc = read('docs/09_Prompts_Maestros_Agentes.md');
     const repoGuide = read('AGENTS.md');

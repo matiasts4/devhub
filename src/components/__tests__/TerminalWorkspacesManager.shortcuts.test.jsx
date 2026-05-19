@@ -125,6 +125,14 @@ jest.mock('../workspace/WorkspaceRightDock', () => ({
   },
 }));
 
+jest.mock('../workspace/FileExplorerEditorPane', () => ({
+  __esModule: true,
+  default: () => {
+    const React = require('react');
+    return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
+  },
+}), { virtual: true });
+
 jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   __esModule: true,
   default: () => ({

@@ -61,6 +61,14 @@ import {
   shouldHandleTerminalShortcut,
   TERMINAL_WORKSPACE_SHORTCUTS,
 } from './terminal/workspaceShortcuts';
+import {
+  createDefaultTerminalRendererPreferences,
+  readTerminalRendererPreferences,
+  resolveRequestedRenderer,
+  setPanelRendererPreference,
+  TERMINAL_RENDERER_INHERIT_MODE,
+  writeTerminalRendererPreferences,
+} from './terminal/terminalRendererPreferences';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null) => ({
@@ -232,6 +240,125 @@ function getAgentFromCommand(command) {
   return null;
 }
 
+function normalizeAgentLabel(agent) {
+  const raw = typeof agent === 'string' ? agent.trim() : '';
+  if (!raw) return null;
+  if (raw.toLowerCase() === 'opencode') return 'OpenCode';
+  return raw;
+}
+
+function shortenSemanticLabel(value, maxLength = 40) {
+  const raw = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+  if (!raw) return null;
+  if (raw.length <= maxLength) return raw;
+  return `${raw.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function readAgentRunsByPanel(storage) {
+  if (!storage) return {};
+
+  try {
+    const rawRuns = JSON.parse(storage.getItem('devhub_agent_runs') || '{}');
+    const indexedRuns = {};
+
+    Object.values(rawRuns || {}).forEach((run) => {
+      const panelId = typeof run?.panelId === 'string' ? run.panelId.trim() : '';
+      if (!panelId) return;
+
+      const previous = indexedRuns[panelId];
+      const nextTimestamp = Number(run?.launchedAt) || 0;
+      const previousTimestamp = Number(previous?.launchedAt) || 0;
+
+      if (!previous || nextTimestamp >= previousTimestamp) {
+        indexedRuns[panelId] = run;
+      }
+    });
+
+    return indexedRuns;
+  } catch {
+    return {};
+  }
+}
+
+function derivePanelCommandMetadata(initialCommand) {
+  const command = typeof initialCommand === 'string' ? initialCommand.trim() : '';
+  const detectedAgent = normalizeAgentLabel(getAgentFromCommand(command));
+
+  if (detectedAgent?.startsWith('OpenCode (')) {
+    return {
+      source: 'command',
+      primary: detectedAgent,
+      secondary: null,
+      fullText: detectedAgent,
+    };
+  }
+
+  if (command.toLowerCase().includes('opencode')) {
+    const secondary = detectedAgent && detectedAgent !== 'OpenCode' ? detectedAgent : null;
+    const fullText = secondary ? `OpenCode · ${secondary}` : 'OpenCode';
+    return {
+      source: 'command',
+      primary: 'OpenCode',
+      secondary,
+      fullText,
+    };
+  }
+
+  if (detectedAgent) {
+    return {
+      source: 'command',
+      primary: detectedAgent,
+      secondary: null,
+      fullText: detectedAgent,
+    };
+  }
+
+  const quietCommand = shortenSemanticLabel(shortenCommandSummary(command), 34);
+  if (quietCommand && quietCommand !== 'Ejecucion iniciada desde terminal') {
+    return {
+      source: 'fallback',
+      primary: 'Terminal',
+      secondary: quietCommand,
+      fullText: `Terminal · ${quietCommand}`,
+    };
+  }
+
+  return {
+    source: 'fallback',
+    primary: 'Terminal',
+    secondary: null,
+    fullText: 'Terminal',
+  };
+}
+
+function derivePanelSemanticMetadata(panel, agentRun) {
+  const commandMetadata = derivePanelCommandMetadata(panel?.initialCommand);
+  if (!agentRun) return commandMetadata;
+
+  const agentLabel = normalizeAgentLabel(agentRun?.selectedAgent) || commandMetadata.primary || 'Terminal';
+  const sessionId = typeof agentRun?.opencodeSessionId === 'string' ? agentRun.opencodeSessionId.trim() : '';
+  const taskTitle = shortenSemanticLabel(agentRun?.taskTitle, 32);
+  const promptSummary = shortenSemanticLabel(agentRun?.promptSummary, 36);
+  const secondary = taskTitle || promptSummary || null;
+
+  if (sessionId && agentLabel === 'OpenCode' && !secondary) {
+    const sessionLabel = `OpenCode (${sessionId.slice(0, 6)})`;
+    return {
+      source: 'agent-run',
+      primary: sessionLabel,
+      secondary: null,
+      fullText: sessionLabel,
+    };
+  }
+
+  return {
+    source: 'agent-run',
+    primary: agentLabel,
+    secondary,
+    fullText: secondary ? `${agentLabel} · ${secondary}` : agentLabel,
+  };
+}
+
 function shortPath(path) {
   if (!path) return '~';
   const tokens = String(path).split('/').filter(Boolean);
@@ -260,73 +387,167 @@ function renderWorkspacePanel(
   {
     activePanelId,
     activeWsId,
+    isActivePanel,
+    isVisibleInLayout,
     cwd,
     wsId,
     setActivePanelIds,
     onClosePanel,
     onSplitRight,
     onSplitDown,
+    requestedRendererMode,
+    onResetRendererToXterm,
+    onActivatePanel,
+    panelLabel,
+    panelSemanticMetadata,
+    suspendNativeSurface,
+    nativeSurfacePolicy,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
+  const panelChromeSafeZoneMinTop = 34;
+  const semanticMetadata = panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand);
 
   return (
     <div
       key={panel.id}
       data-testid={`panel-slot-${panel.id}`}
-      className={`group relative h-full w-full min-h-0 min-w-0 overflow-hidden rounded-lg border ${
+      className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-lg border ${
         isActive
           ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
           : 'border-transparent'
       }`}
-      onMouseDown={() => setActivePanelIds((prev) => ({ ...prev, [wsId]: panel.id }))}
-    >
-      <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1 rounded-md border border-white/10 bg-[#111827]/85 px-1 py-0.5 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
-        <button
-          type="button"
-          className="h-5 w-5 inline-flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10"
-          title="Dividir a la derecha"
-          aria-label="Dividir a la derecha"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSplitRight?.();
-          }}
+      onMouseDown={() => {
+        if (onActivatePanel) {
+          onActivatePanel(panel.id);
+          return;
+        }
+        setActivePanelIds((prev) => ({ ...prev, [wsId]: panel.id }));
+      }}
+      >
+        <div
+          data-testid={`panel-safe-zone-${panel.id}`}
+        data-native-safe-zone="floating-chrome"
+        data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
+        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-1 pt-0.5"
+        style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
         >
-          <SplitSquareVertical className="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          className="h-5 w-5 inline-flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10"
-          title="Dividir hacia abajo"
-          aria-label="Dividir hacia abajo"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSplitDown?.();
-          }}
+          <div className="pointer-events-none absolute left-1 right-24 top-1 z-[1] min-w-0">
+            <div
+              data-testid={`panel-semantic-header-${panel.id}`}
+              data-panel-metadata-source={semanticMetadata.source}
+              className="min-w-0 pr-1.5 text-[10px] leading-none text-[rgba(226,232,240,0.66)]"
+              title={semanticMetadata.fullText}
+            >
+              <span
+                data-testid={`panel-semantic-primary-${panel.id}`}
+                className="truncate align-middle font-medium text-[rgba(241,245,249,0.82)]"
+              >
+                {semanticMetadata.primary}
+              </span>
+              {semanticMetadata.secondary ? (
+                <>
+                  <span aria-hidden="true" className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]">
+                    {' · '}
+                  </span>
+                  <span
+                    data-testid={`panel-semantic-secondary-${panel.id}`}
+                    className="truncate align-middle text-[rgba(148,163,184,0.88)]"
+                  >
+                    {semanticMetadata.secondary}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div
+            aria-hidden="true"
+            className={`absolute inset-x-1 top-0.5 h-[calc(100%-0.125rem)] rounded-[14px] border border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.03))] transition-opacity ${
+             isActive ? 'opacity-100' : 'opacity-75'
+           }`}
+         />
+        <div
+          className="pointer-events-none absolute right-1 top-1 z-10"
+          data-testid={`panel-chrome-overlay-${panel.id}`}
+          data-floating-placement="inside-top-right"
+          aria-label={`Panel ${panelLabel || panel.id} controls`}
         >
-          <SplitSquareHorizontal className="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          className="h-5 w-5 inline-flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#ff7b72] hover:bg-white/10"
-          title="Cerrar terminal"
-          aria-label="Cerrar terminal"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClosePanel?.();
-          }}
-        >
-          <X className="w-3 h-3" />
-        </button>
+          <div
+            className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors ${
+               isActive
+                 ? 'border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320]/92 shadow-[0_10px_24px_rgba(2,6,23,0.34)]'
+                 : 'border-white/10 bg-[#0d1320]/82 shadow-[0_8px_20px_rgba(2,6,23,0.24)]'
+            }`}
+            data-testid={`panel-header-actions-${panel.id}`}
+            title={`Panel ${panelLabel || panel.id} actions`}
+          >
+            <button
+              type="button"
+              data-testid={`panel-split-right-${panel.id}`}
+              data-size="comfortable"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              title="Dividir a la derecha"
+              aria-label="Dividir a la derecha"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSplitRight?.();
+              }}
+            >
+              <SplitSquareVertical className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              data-testid={`panel-split-down-${panel.id}`}
+              data-size="comfortable"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              title="Dividir hacia abajo"
+              aria-label="Dividir hacia abajo"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSplitDown?.();
+              }}
+            >
+              <SplitSquareHorizontal className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              data-testid={`panel-close-${panel.id}`}
+              data-size="comfortable"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
+              title="Cerrar terminal"
+              aria-label="Cerrar terminal"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClosePanel?.();
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
-      <TerminalTTY
-        id={panel.id}
-        cwd={panel.cwd || cwd}
-        hideTitleBar={true}
-        showQuickCopyButton={false}
-        autoFocus={isActive}
-        initialCommand={panel.initialCommand}
-      />
+        <div
+          className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+        data-testid={`panel-body-${panel.id}`}
+      >
+        <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
+          <TerminalTTY
+            id={panel.id}
+            cwd={panel.cwd || cwd}
+            hideTitleBar={true}
+            showQuickCopyButton={false}
+            autoFocus={isActive}
+            isActivePanel={Boolean(isActivePanel ?? isActive)}
+            isVisibleInLayout={Boolean(isVisibleInLayout)}
+            initialCommand={panel.initialCommand}
+            requestedRendererMode={requestedRendererMode}
+            onResetRendererToXterm={onResetRendererToXterm}
+            onActivatePanel={onActivatePanel}
+            suspendNativeSurface={Boolean(suspendNativeSurface)}
+            nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -444,14 +665,28 @@ export function resolveRightDockLayerStyle({
   if (measuredBounds) {
     return {
       top: 0,
-      right: measuredBounds.right,
+      right: 'auto',
       bottom: 0,
       left: measuredBounds.left,
-      width: 'auto',
+      width: measuredBounds.width,
     };
   }
 
   return { top: 0, right: 0, bottom: 0, left: 'auto', width: `${size}%` };
+}
+
+export function resolveMeasuredRightDockBounds(containerRect, placeholderRect) {
+  if (!containerRect || !placeholderRect) return null;
+
+  const containerWidth = Number(containerRect.width || 0);
+  const placeholderWidth = Number(placeholderRect.width || 0);
+  if (containerWidth <= 0 || placeholderWidth <= 0) return null;
+
+  return {
+    left: Math.max(0, placeholderRect.left - containerRect.left),
+    right: Math.max(0, containerRect.right - placeholderRect.right),
+    width: placeholderWidth,
+  };
 }
 
 export default function TerminalWorkspacesManager({ cwd, isVisible, projectId }) {
@@ -460,6 +695,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const workspaceGridAreaRef = useRef(null);
   const rightDockPlaceholderRef = useRef(null);
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
+  const agentRunsByPanel = readAgentRunsByPanel(storage);
   const terminalStateStorageKey = projectId
     ? `devhub_terminal_state:${projectId}`
     : 'devhub_terminal_state';
@@ -475,14 +711,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [draggedWsId, setDraggedWsId] = useState(null);
   const [dragOverWsId, setDragOverWsId] = useState(null);
   const [gridCommand, setGridCommand] = useState('opencode');
+  const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
   const [rightDockState, setRightDockState] = useState(() => ({ ...DEFAULT_RIGHT_DOCK_STATE }));
   const [rightDockMeasuredBounds, setRightDockMeasuredBounds] = useState(null);
   const [hasMountedRightDock, setHasMountedRightDock] = useState(false);
   const [isDraggingDock, setIsDraggingDock] = useState(false);
+  const [isDraggingInternalSplit, setIsDraggingInternalSplit] = useState(false);
   const [dockWorkspaceId, setDockWorkspaceId] = useState(() => createDefaultWorkspaceState().activeWsId);
   const [browserWindowStates, setBrowserWindowStates] = useState(() => ({}));
   const [workspaceWindows, setWorkspaceWindows] = useState(() => ({}));
   const [activeWindowIds, setActiveWindowIds] = useState(() => ({}));
+  const [terminalRendererPreferences, setTerminalRendererPreferences] = useState(() =>
+    createDefaultTerminalRendererPreferences()
+  );
   const [showWorkspacePathChip, setShowWorkspacePathChip] = useState(true);
   const {
     status: resumableStatus,
@@ -518,6 +759,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
+  const activeWindowIdsRef = useRef(activeWindowIds);
 
   // Persist agent sidebar visibility
   useEffect(() => {
@@ -569,6 +811,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
           setWorkspaceWindows(normalizedWindows.workspaceWindows);
           setActiveWindowIds(normalizedWindows.activeWindowIds);
+          setTerminalRendererPreferences(
+            readTerminalRendererPreferences(storage, projectId, normalizedState.workspaces)
+          );
           windowCounterRef.current = Math.max(windowCounterRef.current, normalizedWindows.windowCounter);
 
           const nextCounters = syncWorkspaceCountersMonotonic(normalizedState.workspaces, {
@@ -591,6 +836,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setDockWorkspaceId(initialDockWorkspaceId);
     setRightDockState(readRightDockState(storage, projectId, initialDockWorkspaceId));
     setBrowserWindowStates(readBrowserWindowStates(storage, projectId));
+    setTerminalRendererPreferences((prev) =>
+      readTerminalRendererPreferences(
+        storage,
+        projectId,
+        workspacesRef.current.length ? workspacesRef.current : createDefaultWorkspaceState().workspaces
+      )
+    );
     setIsClientLoaded(true);
   }, [projectId, storage, terminalStateStorageKey]);
 
@@ -628,6 +880,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     storage,
     terminalStateStorageKey,
   ]);
+
+  useEffect(() => {
+    if (!isClientLoaded) return;
+    writeTerminalRendererPreferences(storage, projectId, terminalRendererPreferences, workspaces);
+  }, [isClientLoaded, projectId, storage, terminalRendererPreferences, workspaces]);
 
   // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
@@ -678,6 +935,33 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [isDraggingDock]);
+
+  useEffect(() => {
+    if (!isDraggingInternalSplit) return undefined;
+
+    const stopSplitDrag = () => setIsDraggingInternalSplit(false);
+
+    window.addEventListener('mouseup', stopSplitDrag);
+    window.addEventListener('pointerup', stopSplitDrag);
+    window.addEventListener('dragend', stopSplitDrag);
+    window.addEventListener('blur', stopSplitDrag);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        stopSplitDrag();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('mouseup', stopSplitDrag);
+      window.removeEventListener('pointerup', stopSplitDrag);
+      window.removeEventListener('dragend', stopSplitDrag);
+      window.removeEventListener('blur', stopSplitDrag);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isDraggingInternalSplit]);
 
   useEffect(() => {
     if (!workspaces.length) return;
@@ -778,9 +1062,25 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
+  const requestedRendererMode = resolveRequestedRenderer({
+    workspaceId: activeWsId,
+    panelId: activePanelId,
+    prefs: terminalRendererPreferences,
+  });
   const activeBrowserWindowState = browserWindowStates?.[activeWsId] || null;
   const isFullscreenBrowser = rightDockState.visible && rightDockState.maximized && rightDockState.maximizedView === 'browser';
   const hideRightDockPanel = rightDockState.maximized && rightDockState.maximizedView === 'window';
+  const shouldFallbackNativeSurfacesForRightDock =
+    rightDockState.visible
+    && !rightDockState.maximized
+    && (rightDockState.activeTab === 'browser' || rightDockState.activeTab === 'editor');
+  const shouldSuspendNativeSurfaces =
+    shouldFallbackNativeSurfacesForRightDock || isGridLauncherOpen || isDraggingDock || isDraggingInternalSplit;
+  const nativeSurfacePolicy = shouldFallbackNativeSurfacesForRightDock
+    ? 'dock-side-by-side'
+    : shouldSuspendNativeSurfaces
+      ? 'transient-overlay'
+      : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
     size: rightDockState.size,
@@ -803,17 +1103,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const containerRect = containerElement.getBoundingClientRect?.();
     const placeholderRect = placeholderElement.getBoundingClientRect?.();
 
-    if (!containerRect || !placeholderRect || containerRect.width <= 0 || placeholderRect.width <= 0) {
+    const nextBounds = resolveMeasuredRightDockBounds(containerRect, placeholderRect);
+    if (!nextBounds) {
+      setRightDockMeasuredBounds(null);
       return;
     }
 
-    const nextBounds = {
-      left: Math.max(0, placeholderRect.left - containerRect.left),
-      right: Math.max(0, containerRect.right - placeholderRect.right),
-    };
-
     setRightDockMeasuredBounds((prev) => {
-      if (prev && prev.left === nextBounds.left && prev.right === nextBounds.right) {
+      if (
+        prev
+        && prev.left === nextBounds.left
+        && prev.right === nextBounds.right
+        && prev.width === nextBounds.width
+      ) {
         return prev;
       }
       return nextBounds;
@@ -852,6 +1154,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   workspacesRef.current = workspaces;
   activeWsIdRef.current = activeWsId;
   activePanelIdsRef.current = activePanelIds;
+  activeWindowIdsRef.current = activeWindowIds;
 
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
@@ -874,6 +1177,62 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       };
     });
   }, []);
+
+  const handleResetPanelRendererToXterm = useCallback((workspaceId, panelId) => {
+    setTerminalRendererPreferences((prev) => setPanelRendererPreference(prev, workspaceId, panelId, 'xterm'));
+  }, []);
+
+  const activateWorkspacePanel = useCallback((workspaceId, panelId) => {
+    if (!workspaceId || !panelId) return;
+
+    setActiveWsId((prev) => (prev === workspaceId ? prev : workspaceId));
+    setActivePanelIds((prev) =>
+      prev[workspaceId] === panelId ? prev : { ...prev, [workspaceId]: panelId }
+    );
+    setWorkspaceWindows((prev) => {
+      const windows = prev[workspaceId] || [];
+      const activeWindowId = activeWindowIdsRef.current?.[workspaceId];
+      if (!activeWindowId || windows.length === 0) return prev;
+
+      let changed = false;
+      const nextWindows = windows.map((windowView) => {
+        if (windowView.id !== activeWindowId || windowView.activePanelId === panelId) {
+          return windowView;
+        }
+
+        changed = true;
+        return {
+          ...windowView,
+          activePanelId: panelId,
+        };
+      });
+
+      return changed ? { ...prev, [workspaceId]: nextWindows } : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleNativePanelActivated = (event) => {
+      const detail = event.detail || {};
+      if (detail.type !== 'panel-activated') return;
+
+      const panelId = typeof detail.panelId === 'string' ? detail.panelId.trim() : '';
+      if (!panelId) return;
+
+      const workspaceId =
+        workspacesRef.current.find((workspace) =>
+          workspace?.columns?.some((column) => (column.panels || []).some((panel) => panel.id === panelId))
+        )?.id || null;
+
+      if (!workspaceId) return;
+      activateWorkspacePanel(workspaceId, panelId);
+    };
+
+    window.addEventListener('devhub:terminal-native-vte-event', handleNativePanelActivated);
+    return () => {
+      window.removeEventListener('devhub:terminal-native-vte-event', handleNativePanelActivated);
+    };
+  }, [activateWorkspacePanel]);
 
   const closeWorkspaceBrowserWindow = useCallback(async (wsId) => {
     if (!wsId) return;
@@ -1057,6 +1416,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
     setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
+    setTerminalRendererPreferences((prev) =>
+      setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+    );
 
     setWorkspaces((prev) =>
       prev.map((ws) => (ws.id === wsId ? { ...ws, columns: newColumns } : ws))
@@ -1142,6 +1504,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       [newWsId]: [createWindow(newWindowId, 'V1', newColumns, newPanelId)],
     }));
     setActiveWindowIds((prev) => ({ ...prev, [newWsId]: newWindowId }));
+    setTerminalRendererPreferences((prev) =>
+      setPanelRendererPreference(prev, newWsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+    );
   };
 
   const removeWorkspace = async (e, idToRemove) => {
@@ -1173,6 +1538,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setActiveWindowIds((prev) => {
       const next = { ...prev };
       delete next[idToRemove];
+      return next;
+    });
+    setTerminalRendererPreferences((prev) => {
+      const next = {
+        ...prev,
+        workspaces: { ...prev.workspaces },
+      };
+      delete next.workspaces[idToRemove];
       return next;
     });
     setBrowserWindowStates((prev) => {
@@ -1217,6 +1590,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ]);
     setActiveWsId(newWsId);
     setActivePanelIds((prev) => ({ ...prev, [newWsId]: firstPanelId }));
+    setTerminalRendererPreferences((prev) =>
+      setPanelRendererPreference(prev, newWsId, firstPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+    );
   };
 
   const reorderWorkspaceTabs = useCallback((sourceWsId, targetWsId) => {
@@ -1242,44 +1618,42 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       panelCounterRef.current += 1;
       const newPanelId = `p${panelCounterRef.current}`;
 
-      let nextColumnsSnapshot = null;
+      const nextColumnsSnapshot = activeWorkspace.columns.map((col) => ({
+        ...col,
+        panels: [...(col.panels || [])],
+      }));
+
+      const colIndex = nextColumnsSnapshot.findIndex((col) =>
+        col.panels.some((p) => p.id === targetId)
+      );
+      if (colIndex === -1) return;
+
+      if (direction === 'horizontal') {
+        // Split Right: Agregar una nueva columna a la derecha
+        colCounterRef.current += 1;
+        const newColId = `c${colCounterRef.current}`;
+        nextColumnsSnapshot.splice(
+          colIndex + 1,
+          0,
+          createColumn(newColId, newPanelId, initialCommand, panelCwd)
+        );
+      } else {
+        // Split Down: Agregar un nuevo panel debajo en la misma columna
+        const panelIndex = nextColumnsSnapshot[colIndex].panels.findIndex((p) => p.id === targetId);
+        const newPanels = [...nextColumnsSnapshot[colIndex].panels];
+        newPanels.splice(panelIndex + 1, 0, createPanel(newPanelId, initialCommand, panelCwd));
+        nextColumnsSnapshot[colIndex] = { ...nextColumnsSnapshot[colIndex], panels: newPanels };
+      }
+
       setWorkspaces((prev) =>
-        prev.map((ws) => {
-          if (ws.id !== activeWsId) return ws;
-
-          const newColumns = [...ws.columns];
-
-          // Encontrar en qué columna está el panel a dividir
-          const colIndex = newColumns.findIndex((col) => col.panels.some((p) => p.id === targetId));
-          if (colIndex === -1) return ws;
-
-          if (direction === 'horizontal') {
-            // Split Right: Agregar una nueva columna a la derecha
-            colCounterRef.current += 1;
-            const newColId = `c${colCounterRef.current}`;
-            newColumns.splice(
-              colIndex + 1,
-              0,
-              createColumn(newColId, newPanelId, initialCommand, panelCwd)
-            );
-          } else {
-            // Split Down: Agregar un nuevo panel debajo en la misma columna
-            const panelIndex = newColumns[colIndex].panels.findIndex((p) => p.id === targetId);
-            const newPanels = [...newColumns[colIndex].panels];
-            newPanels.splice(panelIndex + 1, 0, createPanel(newPanelId, initialCommand, panelCwd));
-            newColumns[colIndex] = { ...newColumns[colIndex], panels: newPanels };
-          }
-
-          nextColumnsSnapshot = newColumns;
-
-          return { ...ws, columns: newColumns };
-        })
+        prev.map((ws) => (ws.id === activeWsId ? { ...ws, columns: nextColumnsSnapshot } : ws))
       );
 
       setActivePanelIds((prev) => ({ ...prev, [activeWsId]: newPanelId }));
-      if (nextColumnsSnapshot) {
-        syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, newPanelId);
-      }
+      setTerminalRendererPreferences((prev) =>
+        setPanelRendererPreference(prev, activeWsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+      );
+      syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, newPanelId);
       return newPanelId;
     },
     [activeWorkspace, activeWsId, activePanelId, syncActiveWindowSnapshot]
@@ -1297,9 +1671,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         <div
           ref={activeWsId === ws.id ? panelSubtabsBarRef : null}
           data-testid="panel-subtabs-bar"
-          className="h-11 flex items-center justify-between px-3 shrink-0 border-b border-[rgba(var(--accent-rgb,88,166,255),0.22)] bg-[var(--surface-card)] select-none"
+          className="h-10 flex items-center justify-between px-2.5 shrink-0 border-b border-[rgba(var(--accent-rgb,88,166,255),0.22)] bg-[var(--surface-card)] select-none"
         >
-        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden pr-2">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden pr-2">
           {viewTabs.map((view, idx) => {
             const isActive = !isBrowserFullscreen && view.id === activeWindowId;
             return (
@@ -1316,7 +1690,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                     });
                   }
                 }}
-                className={`group h-7 shrink-0 px-3.5 rounded-xl text-[13px] font-mono font-semibold border flex items-center gap-2 transition-colors ${
+                className={`group h-6.5 shrink-0 px-3 rounded-xl text-[12px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
                   isActive
                     ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
                     : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
@@ -1352,7 +1726,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   maximizedView: 'browser',
                 });
               }}
-              className={`h-7 shrink-0 px-3.5 rounded-xl text-[13px] font-mono font-semibold border flex items-center gap-2 transition-colors ${
+              className={`h-6.5 shrink-0 px-3 rounded-xl text-[12px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
                 isBrowserFullscreen
                   ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
                   : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
@@ -1366,7 +1740,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <button
             data-testid="panel-subtabs-add"
             onClick={() => addWindowToWorkspace(ws.id)}
-            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg transition-colors text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]"
+            className="h-6.5 w-6.5 shrink-0 flex items-center justify-center rounded-lg transition-colors text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]"
             title="Nueva vista"
             aria-label="Agregar vista"
           >
@@ -1378,7 +1752,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 type="button"
                 data-testid="panel-subtabs-split-right"
                 onClick={() => handleSplit('horizontal', activePanelId)}
-                className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                className="h-6.5 w-6.5 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
                 title={splitRightLabel}
                 aria-label={splitRightLabel}
               >
@@ -1388,7 +1762,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 type="button"
                 data-testid="panel-subtabs-split-down"
                 onClick={() => handleSplit('vertical', activePanelId)}
-                className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                className="h-6.5 w-6.5 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
                 title={splitDownLabel}
                 aria-label={splitDownLabel}
               >
@@ -1401,7 +1775,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           {cwd && showWorkspacePathChip ? (
             <span
               data-testid="panel-subtabs-cwd-chip"
-              className="inline-flex shrink-0 items-center gap-2 px-3 py-1 rounded-xl text-[12px] font-mono border"
+              className="inline-flex shrink-0 items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono border"
               style={{
                 color: 'var(--accent-primary)',
                 borderColor: 'rgba(var(--accent-rgb,88,166,255),0.35)',
@@ -1421,6 +1795,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     workspaceWindows,
     activeWindowIds,
     activeWsId,
+    activateWorkspacePanel,
     cwd,
     showWorkspacePathChip,
     switchWindowInWorkspace,
@@ -1428,6 +1803,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     addWindowToWorkspace,
     handleSplit,
     activePanelId,
+    activePanelIds,
+    terminalRendererPreferences,
   ]);
 
   const launchPanelWithCommand = useCallback(
@@ -1539,22 +1916,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       await closeTerminalSessions([targetId]);
 
-      let nextColumnsSnapshot = null;
+      const nextColumnsSnapshot = activeWorkspace.columns
+        .map((col) => ({
+          ...col,
+          panels: col.panels.filter((p) => p.id !== targetId),
+        }))
+        .filter((col) => col.panels.length > 0); // Eliminar columnas vacías
+
       setWorkspaces((prev) =>
-        prev.map((ws) => {
-          if (ws.id !== activeWsId) return ws;
-
-          const newColumns = ws.columns
-            .map((col) => ({
-              ...col,
-              panels: col.panels.filter((p) => p.id !== targetId),
-            }))
-            .filter((col) => col.panels.length > 0); // Eliminar columnas vacías
-
-          nextColumnsSnapshot = newColumns;
-
-          return { ...ws, columns: newColumns };
-        })
+        prev.map((ws) => (ws.id === activeWsId ? { ...ws, columns: nextColumnsSnapshot } : ws))
       );
 
       if (activePanelId === targetId) {
@@ -1568,10 +1938,27 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         });
       }
 
-      if (nextColumnsSnapshot) {
-        const fallbackPanel = nextColumnsSnapshot.flatMap((col) => col.panels || [])[0]?.id || null;
-        syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, fallbackPanel);
-      }
+      const fallbackPanel = nextColumnsSnapshot.flatMap((col) => col.panels || [])[0]?.id || null;
+      syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, fallbackPanel);
+
+      setTerminalRendererPreferences((prev) => {
+        const workspacePref = prev.workspaces?.[activeWsId];
+        if (!workspacePref) return prev;
+
+        const nextPanels = { ...(workspacePref.panels || {}) };
+        delete nextPanels[targetId];
+
+        return {
+          ...prev,
+          workspaces: {
+            ...prev.workspaces,
+            [activeWsId]: {
+              ...workspacePref,
+              panels: nextPanels,
+            },
+          },
+        };
+      });
 
       // When a panel closes, mark any associated OC session as terminated
       // so Agent Room Activity updates correctly on next poll (5s)
@@ -1889,9 +2276,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       {/* Top Workspace Tab Bar */}
       <div
         key="workspace-top-tab-bar"
-        className="flex items-center min-h-[52px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
+        data-testid="workspace-top-tab-bar"
+        className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
       >
-        <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1.5">
+        <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
           {workspaces.map((ws, wsIndex) => {
             const totalPanels = getAllPanelIds(ws.columns).length;
             const workspaceTabKey = buildUniqueRenderKey('workspace-tab', ws.id, wsIndex, workspaceTabKeyCounts);
@@ -1998,7 +2386,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <button
             type="button"
             onClick={addWorkspace}
-            className="inline-flex items-center justify-center w-10 h-10 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] rounded-xl border border-transparent hover:border-[var(--border-subtle)] transition-all ml-0.5 shrink-0"
+            className="inline-flex items-center justify-center w-9 h-9 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] rounded-xl border border-transparent hover:border-[var(--border-subtle)] transition-all ml-0.5 shrink-0"
             title="Nuevo workspace"
             aria-label="Nuevo workspace"
             data-testid="workspace-add-button"
@@ -2027,9 +2415,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           </button>
 
           {/* Grid Launcher */}
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
             <DropdownMenuTrigger asChild>
               <button
+                data-testid="workspace-grid-launcher-trigger"
                 className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[11px] font-medium text-gray-400 hover:text-gray-200 hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)] transition-all cursor-pointer select-none"
                 title="Lanzar Cuadrícula"
               >
@@ -2037,7 +2426,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 <span>Grid</span>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50">
+            <DropdownMenuContent
+              className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
+              data-testid="workspace-grid-launcher-content"
+            >
               <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
                 Grillas Predefinidas
               </DropdownMenuLabel>
@@ -2384,7 +2776,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <div
               key={workspaceGridKey}
               data-testid={`workspace-shell-${ws.id}`}
-              className={`absolute inset-0 p-2 ${activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+              className={`absolute inset-0 p-1.5 ${activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
               style={{
                 zIndex: activeWsId === ws.id ? 10 : 0,
               }}
@@ -2421,17 +2813,43 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                       {renderWorkspacePanel(panel, {
                                         activePanelId,
                                         activeWsId,
+                                        isActivePanel: activePanelId === panel.id && activeWsId === ws.id,
+                                        isVisibleInLayout: activeWsId === ws.id && isVisible,
+                                        panelLabel: getPanelDisplayLabel(ws, panel.id),
                                         cwd,
                                         wsId: ws.id,
                                         setActivePanelIds,
                                         onClosePanel: () => handleClosePanel(panel.id),
                                         onSplitRight: () => handleSplit('horizontal', panel.id),
                                         onSplitDown: () => handleSplit('vertical', panel.id),
+                                        onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
+                                        panelSemanticMetadata: derivePanelSemanticMetadata(
+                                          panel,
+                                          agentRunsByPanel[panel.id]
+                                        ),
+                                        suspendNativeSurface:
+                                          activeWsId === ws.id && isVisible && shouldSuspendNativeSurfaces,
+                                        nativeSurfacePolicy,
+                                        requestedRendererMode: resolveRequestedRenderer({
+                                          workspaceId: ws.id,
+                                          panelId: panel.id,
+                                          prefs: terminalRendererPreferences,
+                                        }),
+                                        onResetRendererToXterm: () =>
+                                          handleResetPanelRendererToXterm(ws.id, panel.id),
                                       })}
                                     </Panel>
                                     {panelIndex < column.panels.length - 1 ? (
-                                      <PanelResizeHandle className="h-2 flex items-center justify-center">
-                                        <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.18)]" />
+                                      <PanelResizeHandle
+                                        className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
+                                        data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
+                                        onDragging={setIsDraggingInternalSplit}
+                                        onPointerDown={() => setIsDraggingInternalSplit(true)}
+                                        onPointerUp={() => setIsDraggingInternalSplit(false)}
+                                        onMouseDown={() => setIsDraggingInternalSplit(true)}
+                                        onMouseUp={() => setIsDraggingInternalSplit(false)}
+                                      >
+                                        <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
                                       </PanelResizeHandle>
                                     ) : null}
                                   </React.Fragment>
@@ -2440,21 +2858,47 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                             ) : (
                               <div className="h-full w-full" data-testid={`workspace-column-${column.id}`}>
                                 {renderWorkspacePanel(column.panels[0], {
-                                  activePanelId,
-                                  activeWsId,
-                                  cwd,
-                                  wsId: ws.id,
-                                  setActivePanelIds,
-                                  onClosePanel: () => handleClosePanel(column.panels[0].id),
-                                  onSplitRight: () => handleSplit('horizontal', column.panels[0].id),
-                                  onSplitDown: () => handleSplit('vertical', column.panels[0].id),
+                                    activePanelId,
+                                    activeWsId,
+                                    isActivePanel: activePanelId === column.panels[0].id && activeWsId === ws.id,
+                                    isVisibleInLayout: activeWsId === ws.id && isVisible,
+                                    panelLabel: getPanelDisplayLabel(ws, column.panels[0].id),
+                                    cwd,
+                                    wsId: ws.id,
+                                   setActivePanelIds,
+                                    onClosePanel: () => handleClosePanel(column.panels[0].id),
+                                    onSplitRight: () => handleSplit('horizontal', column.panels[0].id),
+                                     onSplitDown: () => handleSplit('vertical', column.panels[0].id),
+                                     onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
+                                      panelSemanticMetadata: derivePanelSemanticMetadata(
+                                        column.panels[0],
+                                        agentRunsByPanel[column.panels[0].id]
+                                      ),
+                                       suspendNativeSurface:
+                                         activeWsId === ws.id && isVisible && shouldSuspendNativeSurfaces,
+                                      nativeSurfacePolicy,
+                                    requestedRendererMode: resolveRequestedRenderer({
+                                      workspaceId: ws.id,
+                                      panelId: column.panels[0].id,
+                                    prefs: terminalRendererPreferences,
+                                  }),
+                                  onResetRendererToXterm: () =>
+                                    handleResetPanelRendererToXterm(ws.id, column.panels[0].id),
                                 })}
                               </div>
                             )}
                           </Panel>
                           {columnIndex < ws.columns.length - 1 ? (
-                            <PanelResizeHandle className="w-2 flex items-center justify-center">
-                              <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.18)]" />
+                            <PanelResizeHandle
+                              className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
+                              data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
+                              onDragging={setIsDraggingInternalSplit}
+                              onPointerDown={() => setIsDraggingInternalSplit(true)}
+                              onPointerUp={() => setIsDraggingInternalSplit(false)}
+                              onMouseDown={() => setIsDraggingInternalSplit(true)}
+                              onMouseUp={() => setIsDraggingInternalSplit(false)}
+                            >
+                              <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
                             </PanelResizeHandle>
                           ) : null}
                         </React.Fragment>

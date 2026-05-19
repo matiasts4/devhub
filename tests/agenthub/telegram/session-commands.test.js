@@ -180,6 +180,47 @@ describe('Telegram Session Commands', () => {
       expect(replies[0].text).toContain('Agente actual');
       expect(replies[0].text).toContain('gentleman');
     });
+
+    test('denies agent mutation because telegram cannot orchestrate local provider state', async () => {
+      const resolveTelegramAdapterContext = jest.fn(() => ({
+        actor: { actor_id: 'telegram:test-user-1', devhub_actor_id: 'human-test-user-1' },
+        envelope: { action: null },
+        outcome: {
+          accepted: false,
+          pending_approval: false,
+          denial_reason: 'out-of-scope-orchestration',
+          intent: {
+            intent_id: 'intent-agente-1',
+            audit_status: 'denied',
+            result_ref: 'telegram-intent://intent-agente-1',
+          },
+        },
+      }));
+
+      harness.mockService('session-bridge', {
+        resolveSession: () => Promise.resolve({ id: 'mock-session-id', title: 'Mock Session' }),
+        createSession: () => Promise.resolve({ id: 'mock-session-id', title: 'Mock Session' }),
+        getSessions,
+        switchSession,
+        getActiveSession,
+        switchProject,
+        resolveTelegramAdapterContext,
+      });
+
+      const ctx = harness.createMockCtx();
+      await harness.executeCommand('agente', ctx, 'build');
+
+      const replies = harness.getReplies();
+      expect(replies).toHaveLength(1);
+      expect(replies[0].text).toContain('Fuera de alcance');
+      expect(replies[0].text).toContain('intent\\-agente\\-1');
+      expect(setAgent).not.toHaveBeenCalled();
+      expect(resolveTelegramAdapterContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: '/agente build',
+        })
+      );
+    });
   });
 
   describe('/historial', () => {

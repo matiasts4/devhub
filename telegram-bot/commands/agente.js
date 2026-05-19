@@ -2,6 +2,7 @@ const conversation = require('../services/conversation');
 const opencode = require('../services/opencode');
 const formatter = require('../services/formatter');
 const logger = require('../utils/logger');
+const { quarantineLegacyCommand } = require('../services/command-quarantine');
 
 /**
  * /agente [nombre] — View or change the current agent for this chat.
@@ -20,6 +21,11 @@ module.exports = async function agente(bot, msg, args) {
       });
       return;
     }
+
+    // Telegram stays read-only for local provider/agent orchestration.
+    return quarantineLegacyCommand(bot, msg, 'agente', 'agente', {
+      commandText: `/agente ${args}`,
+    });
 
     // Validate against known agents
     const knownAgents = ['gentleman', 'sdd-orchestrator', 'build', 'plan', 'qa'];

@@ -21,10 +21,63 @@ const { TestHarness } = require('../harness');
 const { assertHttpStatus, assertBodyShape } = require('../assertions');
 
 const DEFAULT_BASE_URL = 'http://localhost:3100';
+const DEFAULT_SERVER_PROBE_PATH = '/api/agenthub/sessions?limit=1';
 const fetchImpl = global.fetch;
+const reachabilityCache = new Map();
+const warnedUnavailableBaseUrls = new Set();
 
 function getAgentHubBaseUrl() {
   return process.env.AGENTHUB_BASE_URL || DEFAULT_BASE_URL;
+}
+
+function normalizeBaseUrl(baseUrl = getAgentHubBaseUrl()) {
+  return baseUrl.replace(/\/+$/, '');
+}
+
+async function isAgentHubServerReachable(baseUrl = getAgentHubBaseUrl(), options = {}) {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  const timeoutMs = options.timeoutMs ?? 3000;
+  const probePath = options.path ?? DEFAULT_SERVER_PROBE_PATH;
+  const cacheKey = `${normalizedBaseUrl}|${probePath}|${timeoutMs}`;
+
+  if (!options.fresh && reachabilityCache.has(cacheKey)) {
+    return reachabilityCache.get(cacheKey);
+  }
+
+  const probePromise = (async () => {
+    if (typeof fetchImpl !== 'function') {
+      return false;
+    }
+
+    try {
+      const response = await fetchImpl(`${normalizedBaseUrl}${probePath}`, {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      return response.ok || response.status === 200;
+    } catch {
+      return false;
+    }
+  })();
+
+  if (!options.fresh) {
+    reachabilityCache.set(cacheKey, probePromise);
+  }
+
+  return probePromise;
+}
+
+function resetAgentHubServerReachabilityCache() {
+  reachabilityCache.clear();
+  warnedUnavailableBaseUrls.clear();
+}
+
+function warnServerUnavailable(baseUrl) {
+  if (warnedUnavailableBaseUrls.has(baseUrl)) {
+    return;
+  }
+
+  warnedUnavailableBaseUrls.add(baseUrl);
+  console.warn('SKIP: Next.js server not reachable at', baseUrl);
 }
 
 class ApiTestHarness extends TestHarness {
@@ -36,7 +89,21 @@ class ApiTestHarness extends TestHarness {
    */
   constructor({ baseUrl = getAgentHubBaseUrl(), dbPath = ':memory:', lockOwner = 'api-test' } = {}) {
     super({ dbPath, lockOwner });
-    this.baseUrl = baseUrl.replace(/\/+$/, ''); // strip trailing slashes
+    this.baseUrl = normalizeBaseUrl(baseUrl);
+  }
+
+  async isServerReachable(options = {}) {
+    return isAgentHubServerReachable(this.baseUrl, options);
+  }
+
+  async skipIfServerUnavailable(options = {}) {
+    const reachable = await this.isServerReachable(options);
+    if (reachable) {
+      return false;
+    }
+
+    warnServerUnavailable(this.baseUrl);
+    return true;
   }
 
   /**
@@ -242,4 +309,11 @@ class ApiTestHarness extends TestHarness {
   }
 }
 
-module.exports = { ApiTestHarness, DEFAULT_BASE_URL, getAgentHubBaseUrl };
+module.exports = {
+  ApiTestHarness,
+  DEFAULT_BASE_URL,
+  DEFAULT_SERVER_PROBE_PATH,
+  getAgentHubBaseUrl,
+  isAgentHubServerReachable,
+  resetAgentHubServerReachabilityCache,
+};

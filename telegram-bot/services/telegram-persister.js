@@ -33,13 +33,35 @@ function persistMessage(chatId, sessionId, role, content, options = {}) {
       return null;
     }
 
+    const adapterOutcome = options.adapterOutcome || null;
+    const adapterMeta = adapterOutcome
+      ? {
+          telegram_actor_id: adapterOutcome.actor?.actor_id || null,
+          telegram_devhub_actor_id: adapterOutcome.actor?.devhub_actor_id || null,
+          telegram_action: adapterOutcome.envelope?.action || null,
+          telegram_idempotency_key: adapterOutcome.outcome?.intent?.idempotency_key || null,
+          telegram_intent_id: adapterOutcome.outcome?.intent?.intent_id || null,
+          telegram_approval_id: adapterOutcome.outcome?.intent?.approval_id || null,
+          telegram_audit_status: adapterOutcome.outcome?.intent?.audit_status || null,
+          telegram_result_ref: adapterOutcome.outcome?.intent?.result_ref || null,
+          telegram_denial_reason: adapterOutcome.outcome?.denial_reason || null,
+        }
+      : null;
+
+    const mergedMeta = adapterMeta
+      ? {
+          ...(options.meta || {}),
+          ...adapterMeta,
+        }
+      : (options.meta ?? null);
+
     const result = insertMessage({
       id: crypto.randomUUID(),
       session_id: sessionId,
       role,
       content,
-      meta: options.meta || null,
-      source: 'telegram',
+      meta: mergedMeta,
+      source: adapterOutcome ? 'telegram-adapter' : 'telegram',
       tool_call_id: options.tool_call_id || null,
       tool_name: options.tool_name || null,
     });

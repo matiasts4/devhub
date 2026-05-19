@@ -195,8 +195,13 @@ describe('Flow: MCP Tool Chain', () => {
     const projectionStep = result.steps.find((step) => step.name === 'project-downstream-status');
     expect(projectionStep.workspaceStatus).toEqual({
       workspaceStatus: 'ready',
+      runStatus: 'running',
+      terminalReasonClass: null,
+      artifactKind: null,
+      artifactCount: 0,
       evidenceRef: 'evidence://workspace-ready-1',
-      label: 'READY',
+      label: 'RUNNING',
+      degraded: false,
     });
     expect(projectionStep.toolDisplay).toBe(null);
   });

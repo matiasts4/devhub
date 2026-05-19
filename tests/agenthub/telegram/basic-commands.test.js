@@ -38,6 +38,28 @@ describe('Telegram Basic Commands', () => {
       cleanupOldConversations: () => {},
     });
 
+    harness.mockService('session-bridge', {
+      resolveTelegramAdapterContext: () => ({
+        actor: { actor_id: 'telegram:test-user-1', devhub_actor_id: 'human-test-user-1' },
+        envelope: { action: 'status.query' },
+        outcome: {
+          accepted: false,
+          pending_approval: false,
+          denial_reason: 'out-of-scope-orchestration',
+          intent: {
+            intent_id: 'intent-reset-1',
+            audit_status: 'denied',
+            result_ref: 'telegram-intent://intent-reset-1',
+          },
+        },
+      }),
+      getActiveSession: () => null,
+    });
+
+    harness.mockService('telegram-persister', {
+      persistMessage: () => null,
+    });
+
     harness.mockService('lib/db-bridge', {
       getTelegramSession: () => null,
       createTelegramSession: () => ({}),
@@ -120,14 +142,14 @@ describe('Telegram Basic Commands', () => {
   });
 
   describe('/reset', () => {
-    test('clears session state', async () => {
+    test('denies reset because orchestration remains quarantined in Telegram', async () => {
       const ctx = harness.createMockCtx();
       await harness.executeCommand('reset', ctx);
 
       const replies = harness.getReplies();
       expect(replies.length).toBe(1);
-      expect(replies[0].text).toContain('Conversación reiniciada');
-      expect(replies[0].text).toContain('Historial limpio');
+      expect(replies[0].text).toContain('Fuera de alcance');
+      expect(replies[0].text).toContain('intent\\-reset\\-1');
     });
   });
 });

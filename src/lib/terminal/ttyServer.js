@@ -60,6 +60,7 @@ const { WebSocketServer } = eval('require')('ws');
 
 const GLOBAL_TTY_KEY = '__DEVHUB_TTY_SERVER__';
 const GLOBAL_TTY_SESSIONS_KEY = '__DEVHUB_TTY_SESSIONS__';
+const STRIPPED_SHELL_ENV_KEYS = ['npm_config_prefix', 'NPM_CONFIG_PREFIX'];
 let tmuxAvailabilityCache;
 
 function resolveShell() {
@@ -69,6 +70,16 @@ function resolveShell() {
 
 function resolveHomeDirectory() {
   return process.env.HOME || process.cwd();
+}
+
+function sanitizeTerminalSpawnEnv(sourceEnv = process.env) {
+  const env = { ...sourceEnv };
+
+  for (const key of STRIPPED_SHELL_ENV_KEYS) {
+    delete env[key];
+  }
+
+  return env;
 }
 
 function escapeShellArg(value) {
@@ -287,7 +298,8 @@ function getOrInitSessions() {
 function buildSessionSpawnConfig(cwd, terminalId) {
   const tmuxEnabled = hasTmux();
   const tmuxSession = normalizeTmuxSessionName(terminalId);
-  const env = Object.assign({}, process.env, {
+  const resolvedShell = resolveShell();
+  const env = Object.assign(sanitizeTerminalSpawnEnv(process.env), {
     DEVHUB_PROJECT_DIR: cwd,
     DEVHUB_MCP_CMD: `node ${MCP_SERVER_PATH}`,
     GEMINI_MCP_HINT: 'Use DEVHUB_MCP_CMD to connect Gemini CLI to your local server.',
@@ -301,6 +313,8 @@ function buildSessionSpawnConfig(cwd, terminalId) {
   if (tmuxEnabled && os.platform() !== 'win32') {
     const attachCommand = `tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
     spawnArgs = ['-lc', attachCommand];
+  } else if (path.basename(resolvedShell) === 'zsh') {
+    spawnArgs = ['-lic', 'exec zsh -i', 'devhub-shell', '--no-use'];
   }
 
   return { env, spawnArgs, tmuxEnabled };
@@ -431,10 +445,22 @@ const OPENCODE_OUTPUT_SESSION_RE = /\bses_([a-zA-Z0-9_]+)\b/;
 // eslint-disable-next-line no-control-regex -- ANSI escape sequences must be matched literally.
 const SHELL_TERMINAL_RESPONSE_RE =
   /(?:\x1b\[\?(?:\d+;)*\d+[cnR]|\x1b\[>(?:\d+;)*\d+c|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+const SHELL_NVM_ENV_WARNING_RE =
+  /nvm is not compatible with the "[^"]+" environment variable:[^\n]*\nRun `unset [^`]+` to unset it\.\n?/g;
+const SHELL_NVM_NPMRC_WARNING_RE =
+  /Your user.?s \.npmrc file \(\$\{HOME\}\/\.npmrc\)\nhas a `globalconfig` and\/or a `prefix` setting, which are incompatible with nvm\.\nRun `nvm use --delete-prefix [^`]+` to unset it\.\n?/g;
 
 function stripShellTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
+}
+
+function stripShellStartupNoise(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+
+  return chunk
+    .replace(SHELL_NVM_ENV_WARNING_RE, '')
+    .replace(SHELL_NVM_NPMRC_WARNING_RE, '');
 }
 
 function sanitizeHistoryReplay(session, history) {
@@ -454,6 +480,7 @@ function handleSessionOutput(sessions, session, chunk) {
       ''
     );
     filtered = filtered.replace(/zsh: corrupt history file[^\n]*\n?/g, '');
+    filtered = stripShellStartupNoise(filtered);
 
     if (session.mode === 'shell') {
       filtered = stripShellTerminalResponseNoise(filtered);

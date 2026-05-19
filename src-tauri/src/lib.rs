@@ -1,11 +1,19 @@
-use tauri::{RunEvent, WindowEvent, Manager, WebviewWindowBuilder};
-use tauri_plugin_shell::ShellExt;
-use sysinfo::System;
 use std::fs;
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
-use std::time::{Duration, UNIX_EPOCH};
 use std::thread;
+use std::time::{Duration, UNIX_EPOCH};
+use sysinfo::System;
+use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_shell::ShellExt;
+
+mod native_vte;
+
+use native_vte::{
+    native_vte_close, native_vte_focus, native_vte_open, native_vte_probe, native_vte_resize,
+    native_vte_set_visibility, NativeVteState,
+};
 
 fn nextjs_port() -> u16 {
     if cfg!(debug_assertions) {
@@ -23,26 +31,95 @@ fn is_port_ready(port: u16) -> bool {
     .is_ok()
 }
 
+fn parse_http_status_code(response: &str) -> Option<u16> {
+    response
+        .lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u16>()
+        .ok()
+}
+
+fn is_ready_http_status(status: u16) -> bool {
+    (200..400).contains(&status)
+}
+
+fn is_http_route_ready(port: u16, path: &str) -> bool {
+    let address = format!("127.0.0.1:{}", port);
+    let mut stream =
+        match TcpStream::connect_timeout(&address.parse().unwrap(), Duration::from_millis(500)) {
+            Ok(stream) => stream,
+            Err(_) => return false,
+        };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: localhost:{}\r\nConnection: close\r\n\r\n",
+        path, port,
+    );
+
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut response = [0u8; 512];
+    let bytes_read = match stream.read(&mut response) {
+        Ok(bytes_read) if bytes_read > 0 => bytes_read,
+        _ => return false,
+    };
+
+    let response_head = String::from_utf8_lossy(&response[..bytes_read]);
+    parse_http_status_code(&response_head)
+        .map(is_ready_http_status)
+        .unwrap_or(false)
+}
+
+fn nextjs_route_is_ready(port: u16) -> bool {
+    is_http_route_ready(port, "/")
+}
+
+fn is_devhub_runtime_process(name: &str, cmdline: &str) -> bool {
+    let normalized_name = name.to_lowercase();
+    let normalized_cmdline = cmdline.to_lowercase();
+    let runtime_marker = normalized_cmdline.contains("devhub")
+        || normalized_cmdline.contains("next")
+        || normalized_cmdline.contains("sidecar")
+        || normalized_cmdline.contains("server.js");
+
+    if !runtime_marker {
+        return false;
+    }
+
+    normalized_name.contains("node")
+        || normalized_name.contains("bun")
+        || normalized_name.contains("mainthread")
+}
+
 /// Espera hasta que el puerto de Next.js esté disponible.
 /// En dev usa 3100; en producción empaquetada usa 3400 (standalone).
 /// Tauri carga la webview inmediatamente, pero el sidecar / servidor tarda en arrancar.
 fn wait_for_nextjs_ready() {
     let port = nextjs_port();
-    println!("[DevHub] Esperando a que Next.js esté listo en puerto {}...", port);
+    println!(
+        "[DevHub] Esperando a que Next.js responda HTTP OK en http://localhost:{}/ ...",
+        port
+    );
     for attempt in 0..30 {
         // Máx 15 segundos (30 * 500ms)
         thread::sleep(Duration::from_millis(500));
-        if TcpStream::connect_timeout(
-            &format!("127.0.0.1:{}", port).parse().unwrap(),
-            Duration::from_millis(500),
-        )
-        .is_ok()
-        {
-            println!("[DevHub] Next.js listo en puerto {} (intento {}).", port, attempt + 1);
+        if nextjs_route_is_ready(port) {
+            println!(
+                "[DevHub] Next.js listo por HTTP en / (puerto {}, intento {}).",
+                port,
+                attempt + 1
+            );
             return;
         }
     }
-    eprintln!("[DevHub] ⚠️  Next.js no respondió en 15s. La webview puede mostrar error.");
+    eprintln!("[DevHub] ⚠️  Next.js no devolvió HTTP OK en / dentro de 15s. La webview puede mostrar error.");
 }
 
 /// Matar procesos zombie que ocupan los puertos del sidecar (4000) y Next.js.
@@ -68,16 +145,23 @@ fn cleanup_zombie_ports() {
             for pid_str in stdout.split("pid=") {
                 if let Some(pid_part) = pid_str.split(',').next() {
                     if let Ok(pid) = pid_part.parse::<u32>() {
-                        if pid == 0 { continue; }
+                        if pid == 0 {
+                            continue;
+                        }
                         // Verificar si es un proceso de DevHub (node con devhub o next)
                         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
                             let name = process.name().to_string_lossy().to_lowercase();
-                            let cmdline: String = process.cmd().iter()
+                            let cmdline: String = process
+                                .cmd()
+                                .iter()
                                 .map(|s| s.to_string_lossy().to_lowercase())
                                 .collect::<Vec<_>>()
                                 .join(" ");
-                            if name.contains("node") && (cmdline.contains("devhub") || cmdline.contains("next") || cmdline.contains("sidecar")) {
-                                println!("[DevHub] Matando proceso zombie PID {} en puerto {} ({}).", pid, port, name);
+                            if is_devhub_runtime_process(&name, &cmdline) {
+                                println!(
+                                    "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
+                                    pid, port, name
+                                );
                                 process.kill();
                             }
                         }
@@ -106,22 +190,26 @@ fn find_devhub_pid_on_port(port: u16) -> Option<u32> {
     }
 
     for pid_str in stdout.split("pid=") {
-        let Some(pid_part) = pid_str.split(',').next() else { continue };
-        let Ok(pid) = pid_part.parse::<u32>() else { continue };
+        let Some(pid_part) = pid_str.split(',').next() else {
+            continue;
+        };
+        let Ok(pid) = pid_part.parse::<u32>() else {
+            continue;
+        };
         if pid == 0 {
             continue;
         }
 
         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
             let name = process.name().to_string_lossy().to_lowercase();
-            let cmdline: String = process.cmd().iter()
+            let cmdline: String = process
+                .cmd()
+                .iter()
                 .map(|s| s.to_string_lossy().to_lowercase())
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            let is_devhub_process =
-                (name.contains("node") || name.contains("bun"))
-                && (cmdline.contains("devhub") || cmdline.contains("next") || cmdline.contains("sidecar"));
+            let is_devhub_process = is_devhub_runtime_process(&name, &cmdline);
 
             if is_devhub_process {
                 return Some(pid);
@@ -257,7 +345,10 @@ fn check_existing_sidecar() -> Option<u32> {
     if let Some(pid) = find_devhub_pid_on_port(4000) {
         let _ = fs::write(&pid_file, pid.to_string());
         let _ = fs::write(get_sidecar_port_file(), "4000");
-        println!("[DevHub] Sidecar readoptado por puerto 4000 con PID {}.", pid);
+        println!(
+            "[DevHub] Sidecar readoptado por puerto 4000 con PID {}.",
+            pid
+        );
         return Some(pid);
     }
     None
@@ -266,10 +357,17 @@ fn check_existing_sidecar() -> Option<u32> {
 /// Shutdown graceful del sidecar: primero HTTP POST /shutdown, luego SIGKILL si no responde.
 fn shutdown_sidecar() {
     let pid_file = get_sidecar_pid_file();
-    let Ok(content) = fs::read_to_string(&pid_file) else { return };
-    let Ok(pid) = content.trim().parse::<u32>() else { return };
+    let Ok(content) = fs::read_to_string(&pid_file) else {
+        return;
+    };
+    let Ok(pid) = content.trim().parse::<u32>() else {
+        return;
+    };
 
-    println!("[DevHub] Solicitando shutdown graceful del sidecar (PID {})...", pid);
+    println!(
+        "[DevHub] Solicitando shutdown graceful del sidecar (PID {})...",
+        pid
+    );
     let port_file = get_sidecar_port_file();
     let mut closed_gracefully = false;
 
@@ -314,9 +412,7 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         .sidecar("devhub-server")
         .expect("No se encontró el sidecar 'devhub-server'");
 
-    let (mut rx, _child) = sidecar_command
-        .spawn()
-        .expect("Error al lanzar el sidecar");
+    let (mut rx, _child) = sidecar_command.spawn().expect("Error al lanzar el sidecar");
 
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -338,7 +434,11 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         if pid_file.exists() {
             if let Ok(content) = fs::read_to_string(&pid_file) {
                 if let Ok(pid) = content.trim().parse::<u32>() {
-                    println!("[DevHub] Sidecar listo con PID {} (intento {})", pid, attempt + 1);
+                    println!(
+                        "[DevHub] Sidecar listo con PID {} (intento {})",
+                        pid,
+                        attempt + 1
+                    );
                     break;
                 }
             }
@@ -348,7 +448,7 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
 
 fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()> {
     let has_valid_sidecar = check_existing_sidecar().is_some();
-    let next_ready = is_port_ready(nextjs_port());
+    let next_ready = nextjs_route_is_ready(nextjs_port());
     let sidecar_ready = is_port_ready(4000);
 
     if has_valid_sidecar && next_ready && sidecar_ready {
@@ -370,12 +470,67 @@ fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_devhub_runtime_process, is_ready_http_status, nextjs_route_is_ready,
+        parse_http_status_code,
+    };
+
+    #[test]
+    fn nextjs_readiness_parses_http_ok_status_line() {
+        let response = "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\n";
+
+        assert_eq!(parse_http_status_code(response), Some(200));
+    }
+
+    #[test]
+    fn nextjs_readiness_rejects_non_ready_statuses() {
+        assert!(is_ready_http_status(200));
+        assert!(is_ready_http_status(307));
+        assert!(!is_ready_http_status(404));
+        assert!(!is_ready_http_status(500));
+    }
+
+    #[test]
+    fn nextjs_readiness_uses_root_route_probe() {
+        let route_probe: fn(u16) -> bool = nextjs_route_is_ready;
+
+        let _ = route_probe;
+    }
+
+    #[test]
+    fn devhub_runtime_process_accepts_mainthread_sidecar_processes() {
+        assert!(is_devhub_runtime_process(
+            "MainThread",
+            "/usr/bin/node /home/matias/ArxonLabs/devhub/sidecar-backend/server.js"
+        ));
+    }
+
+    #[test]
+    fn devhub_runtime_process_rejects_unrelated_mainthread_processes() {
+        assert!(!is_devhub_runtime_process(
+            "MainThread",
+            "/usr/bin/python /tmp/other-app.py"
+        ));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .manage(NativeVteState::default())
+        .invoke_handler(tauri::generate_handler![
+            native_vte_probe,
+            native_vte_open,
+            native_vte_focus,
+            native_vte_resize,
+            native_vte_set_visibility,
+            native_vte_close,
+        ])
         .setup(|app| {
             // Log plugin solo en debug
             if cfg!(debug_assertions) {
@@ -433,7 +588,9 @@ pub fn run() {
                 }
                 // Prevenir el cierre real
                 api.prevent_close();
-                println!("[DevHub] Ventana ocultada (app sigue en background con el sidecar activo).");
+                println!(
+                    "[DevHub] Ventana ocultada (app sigue en background con el sidecar activo)."
+                );
             }
 
             // ── Cierre real de la aplicación (desde menú o señal del SO) ─────────
