@@ -118,6 +118,10 @@ const RUNTIME_ONLY_FIELDS = [
 ];
 
 function ensureRuntimeSchema(db) {
+  if (typeof db.pragma === 'function') {
+    db.pragma('foreign_keys = ON');
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -350,6 +354,88 @@ function ensureRuntimeSchema(db) {
       FOREIGN KEY (actor_id) REFERENCES telegram_actor_mappings(actor_id)
     );
     CREATE INDEX IF NOT EXISTS idx_tg_subscription_chat ON telegram_subscriptions(telegram_chat_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS agent_profiles (
+      profile_key TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      runtime_role TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      app TEXT NOT NULL,
+      runtime_package TEXT NOT NULL,
+      authority_scope TEXT NOT NULL,
+      prohibited_actions TEXT NOT NULL,
+      evidence_contract TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'disabled', 'retired')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK(runtime_role != profile_key),
+      CHECK(profile_key NOT LIKE '/%')
+    );
+
+    CREATE TABLE IF NOT EXISTS registered_agents (
+      agent_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      profile_key TEXT NOT NULL,
+      display_name_override TEXT,
+      identity_source TEXT NOT NULL DEFAULT 'manual' CHECK(identity_source IN ('seed', 'manual', 'legacy_migration', 'runtime_adapter')),
+      status TEXT NOT NULL DEFAULT 'pending_review' CHECK(status IN ('pending_review', 'active', 'disabled', 'retired')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (profile_key) REFERENCES agent_profiles(profile_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS workflow_phases (
+      phase_key TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK(kind IN ('explore', 'propose', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive', 'custom')),
+      writes_artifact TEXT,
+      requires_artifacts TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled', 'retired')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK(phase_key NOT LIKE '/%')
+    );
+
+    CREATE TABLE IF NOT EXISTS capabilities (
+      capability_key TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK(kind IN ('mcp', 'git', 'filesystem', 'tests', 'docs', 'security-review', 'sdd-phase', 'approval', 'ops')),
+      surface TEXT NOT NULL,
+      allowed_tools TEXT NOT NULL,
+      requires_permissions TEXT NOT NULL,
+      approval_required_for TEXT NOT NULL,
+      side_effect_class TEXT NOT NULL CHECK(side_effect_class IN ('none', 'read_only', 'repo_write', 'git_write', 'runtime_ops')),
+      owner_system TEXT NOT NULL CHECK(owner_system IN ('devhub', 'opencode', 'external')),
+      default_runtime TEXT,
+      output_contract TEXT NOT NULL,
+      evidence_contract TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled', 'retired')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS profile_capability_bindings (
+      profile_key TEXT NOT NULL,
+      capability_key TEXT NOT NULL,
+      permission_level TEXT NOT NULL CHECK(permission_level IN ('deny', 'allow', 'allow_with_approval')),
+      approval_required INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (profile_key) REFERENCES agent_profiles(profile_key),
+      FOREIGN KEY (capability_key) REFERENCES capabilities(capability_key),
+      UNIQUE(profile_key, capability_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS profile_phase_bindings (
+      profile_key TEXT NOT NULL,
+      phase_key TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (profile_key) REFERENCES agent_profiles(profile_key),
+      FOREIGN KEY (phase_key) REFERENCES workflow_phases(phase_key),
+      UNIQUE(profile_key, phase_key)
+    );
 
     -- Swarm process configuration
     CREATE TABLE IF NOT EXISTS swarm_config (

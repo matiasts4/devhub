@@ -522,6 +522,284 @@ test('applyTestSchema mirrors supervisor snapshot projection tables', () => {
   db.close();
 });
 
+test('SW-8.2A creates canonical localDb-first registry tables', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const tables = [
+    'agent_profiles',
+    'registered_agents',
+    'workflow_phases',
+    'capabilities',
+    'profile_capability_bindings',
+    'profile_phase_bindings',
+  ];
+
+  for (const tableName of tables) {
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(tableName);
+    assert.equal(row?.name, tableName);
+  }
+
+  db.close();
+});
+
+test('SW-8.2A keeps registered_agents free from heartbeat and runtime presence fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const columns = db
+    .prepare('PRAGMA table_info(registered_agents)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(columns.includes('last_heartbeat'), false);
+  assert.equal(columns.includes('current_task_id'), false);
+  assert.equal(columns.includes('session_id'), false);
+  assert.equal(columns.includes('terminal_id'), false);
+  assert.equal(columns.includes('workspace_id'), false);
+  assert.equal(columns.includes('run_id'), false);
+
+  db.close();
+});
+
+test('SW-8.2A enforces identity and binding constraints in localDb schema', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  db.prepare(
+    `INSERT INTO agent_profiles (
+      profile_key,
+      display_name,
+      runtime_role,
+      provider,
+      app,
+      runtime_package,
+      authority_scope,
+      prohibited_actions,
+      evidence_contract,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'coder',
+    'Coder',
+    'executor',
+    'opencode',
+    'agenthub-headless',
+    'opencode-agent',
+    '{"scope":"repo"}',
+    '[]',
+    '{"artifacts":["diff.patch"]}',
+    'active'
+  );
+
+  db.prepare(
+    `INSERT INTO workflow_phases (phase_key, kind, requires_artifacts, status)
+     VALUES (?, ?, ?, ?)`
+  ).run('sdd-apply', 'apply', '[]', 'active');
+
+  db.prepare(
+    `INSERT INTO capabilities (
+      capability_key,
+      kind,
+      surface,
+      allowed_tools,
+      requires_permissions,
+      approval_required_for,
+      side_effect_class,
+      owner_system,
+      output_contract,
+      evidence_contract,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'write_repo',
+    'filesystem',
+    'repo',
+    '["apply_patch"]',
+    '[]',
+    '[]',
+    'repo_write',
+    'devhub',
+    '{"type":"patch"}',
+    '{"artifacts":["diff.patch"]}',
+    'active'
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO agent_profiles (
+          profile_key,
+          display_name,
+          runtime_role,
+          provider,
+          app,
+          runtime_package,
+          authority_scope,
+          prohibited_actions,
+          evidence_contract,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          'reviewer',
+          'Reviewer',
+          'reviewer',
+          'opencode',
+          'agenthub-headless',
+          'opencode-agent',
+          '{"scope":"repo"}',
+          '[]',
+          '{"artifacts":[]}',
+          'active'
+        ),
+    /CHECK constraint failed/
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO workflow_phases (phase_key, kind, requires_artifacts, status)
+         VALUES (?, ?, ?, ?)`
+        )
+        .run('/sdd-design', 'design', '[]', 'active'),
+    /CHECK constraint failed/
+  );
+
+  db.prepare(
+    `INSERT INTO profile_capability_bindings (
+      profile_key,
+      capability_key,
+      permission_level,
+      approval_required,
+      status
+    ) VALUES (?, ?, ?, ?, ?)`
+  ).run('coder', 'write_repo', 'allow', 0, 'active');
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_capability_bindings (
+          profile_key,
+          capability_key,
+          permission_level,
+          approval_required,
+          status
+        ) VALUES (?, ?, ?, ?, ?)`
+        )
+        .run('coder', 'write_repo', 'allow', 0, 'active'),
+    /UNIQUE constraint failed: profile_capability_bindings\.profile_key, profile_capability_bindings\.capability_key/
+  );
+
+  db.prepare(
+    `INSERT INTO profile_phase_bindings (
+      profile_key,
+      phase_key,
+      is_default,
+      status
+    ) VALUES (?, ?, ?, ?)`
+  ).run('coder', 'sdd-apply', 1, 'active');
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_phase_bindings (
+          profile_key,
+          phase_key,
+          is_default,
+          status
+        ) VALUES (?, ?, ?, ?)`
+        )
+        .run('coder', 'sdd-apply', 0, 'active'),
+    /UNIQUE constraint failed: profile_phase_bindings\.profile_key, profile_phase_bindings\.phase_key/
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_capability_bindings (
+          profile_key,
+          capability_key,
+          permission_level,
+          approval_required,
+          status
+        ) VALUES (?, ?, ?, ?, ?)`
+        )
+        .run('missing-profile', 'write_repo', 'allow', 0, 'active'),
+    /FOREIGN KEY constraint failed/
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_phase_bindings (
+          profile_key,
+          phase_key,
+          is_default,
+          status
+        ) VALUES (?, ?, ?, ?)`
+        )
+        .run('coder', 'missing-phase', 0, 'active'),
+    /FOREIGN KEY constraint failed/
+  );
+
+  db.close();
+});
+
+test('SW-8.2A does not allow canonical schema to absorb runtime-only durability', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const canonicalTables = [
+    'agent_profiles',
+    'registered_agents',
+    'workflow_phases',
+    'capabilities',
+    'profile_capability_bindings',
+    'profile_phase_bindings',
+  ];
+  const forbiddenColumns = [
+    'terminal_log',
+    'logs',
+    'transcript',
+    'stdout',
+    'stderr',
+    'tool_output',
+    'raw_output',
+  ];
+
+  for (const tableName of canonicalTables) {
+    const columns = db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all()
+      .map((column) => column.name);
+    for (const columnName of forbiddenColumns) {
+      assert.equal(columns.includes(columnName), false, `${tableName} leaked ${columnName}`);
+    }
+  }
+
+  const participantColumns = db
+    .prepare('PRAGMA table_info(mission_participants)')
+    .all()
+    .map((column) => column.name);
+  assert.equal(participantColumns.includes('profile_key'), false);
+  assert.equal(participantColumns.includes('runtime_role'), false);
+
+  db.close();
+});
+
 test('stores supervisor snapshots with reason and evidence fields', () => {
   const db = new Database(':memory:');
 
