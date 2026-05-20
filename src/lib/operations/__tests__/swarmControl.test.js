@@ -3,6 +3,7 @@ const {
   extractMissionControlPayload,
   persistMissionControlComposerMessage,
   selectDirectorMissionSummary,
+  selectDirectorQueue,
   selectControlRoomHeader,
   selectControlRoomAgents,
   selectControlRoomWorkspaces,
@@ -635,6 +636,109 @@ describe('composeControlRoomSnapshot', () => {
       offlinePresenceCount: 0,
       snapshotAt: null,
       watermark: null,
+    });
+  });
+
+  test('normalizes director_queue order and blocked semantics from durable queue truth', () => {
+    const snapshot = composeControlRoomSnapshot(
+      buildControlRoomInput({
+        director_queue: {
+          authority: 'authoritative',
+          freshness: 'current',
+          items: [
+            {
+              id: 'task-blocked',
+              title: 'Blocked first from durable queue',
+              status: 'pending',
+              blocked: true,
+              priority: 'high',
+              blocked_reason: 'dep-1',
+              supervisor: {
+                supervisor_state: 'awaiting_approval',
+                reason_class: 'blocked_dependency',
+              },
+            },
+            {
+              id: 'task-ready',
+              title: 'Ready second from durable queue',
+              status: 'pending',
+              priority: 'medium',
+              blocked_reason: null,
+              supervisor: {
+                supervisor_state: 'dispatch_pending',
+                reason_class: null,
+              },
+            },
+          ],
+        },
+      })
+    );
+
+    expect(selectDirectorQueue(snapshot)).toEqual({
+      authority: 'authoritative',
+      freshness: 'current',
+      items: [
+        {
+          id: 'task-blocked',
+          title: 'Blocked first from durable queue',
+          status: 'blocked',
+          position: 1,
+          priority: 'high',
+          blocked_reason: 'dep-1',
+          supervisor: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'blocked_dependency',
+          },
+        },
+        {
+          id: 'task-ready',
+          title: 'Ready second from durable queue',
+          status: 'pending',
+          position: 2,
+          priority: 'medium',
+          blocked_reason: null,
+          supervisor: {
+            supervisor_state: 'dispatch_pending',
+            reason_class: null,
+          },
+        },
+      ],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    });
+  });
+
+  test('keeps durable empty director_queue state and degraded freshness without inventing handoff truth', () => {
+    const snapshot = composeControlRoomSnapshot({
+      director_queue: {
+        authority: 'authoritative',
+        freshness: 'degraded',
+        items: [],
+      },
+    });
+
+    expect(selectDirectorQueue(snapshot)).toEqual({
+      authority: 'authoritative',
+      freshness: 'degraded',
+      items: [],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
     });
   });
 

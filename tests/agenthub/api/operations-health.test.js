@@ -152,6 +152,173 @@ describe('GET /api/agenthub/operations/health', () => {
     });
   });
 
+  test('projects director_queue from durable execution queue truth without claim side effects', async () => {
+    const getExecutionQueue = jest.fn().mockResolvedValue({
+      total: 2,
+      queue: [
+        {
+          id: 'task-blocked',
+          title: 'Blocked first from durable queue',
+          status: 'pending',
+          priority: 'high',
+          blocked: true,
+          blocking_dependencies: ['dep-1'],
+          priority_score: 0,
+          supervisor: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'blocked_dependency',
+          },
+        },
+        {
+          id: 'task-ready',
+          title: 'Claimable second from durable queue',
+          status: 'pending',
+          priority: 'medium',
+          blocked: false,
+          blocking_dependencies: [],
+          priority_score: 98.5,
+          supervisor: {
+            supervisor_state: 'dispatch_pending',
+            reason_class: null,
+          },
+        },
+      ],
+    });
+    const getNextTask = jest.fn();
+    const claimNextTask = jest.fn();
+    const { GET } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await GET(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000'
+      ),
+      undefined,
+      {
+        now: '2026-05-20T18:00:00.000Z',
+        getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+        getQueueStatus: () => ({ length: 0, items: [] }),
+        getActiveAgentCount: () => 0,
+        getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+        getSessionsHealth: async () => ({
+          active_sessions: [],
+          stale_sessions: [],
+          aborted_count: 0,
+          live_check_available: true,
+          checked_at: '2026-05-20T18:00:00.000Z',
+        }),
+        getTelegramStatus: async () => ({
+          bot_connected: true,
+          active_chats: 0,
+          recent_errors: 0,
+          last_activity: '2026-05-20T18:00:00.000Z',
+        }),
+        getExecutionQueue,
+        getNextTask,
+        claimNextTask,
+      }
+    );
+    const snapshot = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(getExecutionQueue).toHaveBeenCalledWith({
+      projectId: '550e8400-e29b-41d4-a716-446655440000',
+      includeBlocked: true,
+    });
+    expect(getNextTask).not.toHaveBeenCalled();
+    expect(claimNextTask).not.toHaveBeenCalled();
+    expect(snapshot.control_room_snapshot_input.director_queue).toEqual({
+      authority: 'authoritative',
+      freshness: 'current',
+      items: [
+        {
+          id: 'task-blocked',
+          title: 'Blocked first from durable queue',
+          status: 'blocked',
+          position: 1,
+          priority: 'high',
+          blocked_reason: 'dep-1',
+          supervisor: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'blocked_dependency',
+          },
+        },
+        {
+          id: 'task-ready',
+          title: 'Claimable second from durable queue',
+          status: 'pending',
+          position: 2,
+          priority: 'medium',
+          blocked_reason: null,
+          supervisor: {
+            supervisor_state: 'dispatch_pending',
+            reason_class: null,
+          },
+        },
+      ],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    });
+  });
+
+  test('returns a stable empty director_queue shape from durable queue truth', async () => {
+    const getExecutionQueue = jest.fn().mockResolvedValue({ total: 0, queue: [] });
+    const { GET } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await GET(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000'
+      ),
+      undefined,
+      {
+        now: '2026-05-20T18:05:00.000Z',
+        getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+        getQueueStatus: () => ({ length: 0, items: [] }),
+        getActiveAgentCount: () => 0,
+        getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+        getSessionsHealth: async () => ({
+          active_sessions: [],
+          stale_sessions: [],
+          aborted_count: 0,
+          live_check_available: true,
+          checked_at: '2026-05-20T18:05:00.000Z',
+        }),
+        getTelegramStatus: async () => ({
+          bot_connected: true,
+          active_chats: 0,
+          recent_errors: 0,
+          last_activity: '2026-05-20T18:05:00.000Z',
+        }),
+        getExecutionQueue,
+      }
+    );
+    const snapshot = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(snapshot.control_room_snapshot_input.director_queue).toEqual({
+      authority: 'authoritative',
+      freshness: 'current',
+      items: [],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    });
+  });
+
   test('creates a local mission message with pending local deliveries only', async () => {
     const Database = require('better-sqlite3');
     const {
@@ -344,5 +511,413 @@ describe('GET /api/agenthub/operations/health', () => {
     db.close();
     jest.useRealTimers();
     jest.resetModules();
+  });
+
+  test('claims next safe task, refreshes queue, and returns durable workspace evidence only', async () => {
+    const getMissionSnapshot = jest.fn().mockResolvedValue({
+      participants: [
+        { agent_id: 'agent-director', role_in_mission: 'director', status: 'active' },
+        { agent_id: 'agent-executor-1', role_in_mission: 'executor', status: 'active' },
+      ],
+    });
+    const getNextTask = jest.fn().mockResolvedValue({
+      task: {
+        id: 'task-claimed-1',
+        title: 'Claimed durable task',
+        status: 'in_progress',
+        priority: 'high',
+        supervisor: {
+          supervisor_state: 'dispatch_pending',
+          reason_class: null,
+          workspace_id: 'ws-claimed-1',
+        },
+      },
+      message: 'Tarea asignada al agente.',
+    });
+    const getWorkspaceEvidence = jest.fn().mockResolvedValue({
+      workspace: {
+        workspace_id: 'ws-claimed-1',
+        status: 'active',
+        branch_name: 'feat/claimed-task',
+      },
+      latest_run: {
+        run_id: 'run-claimed-1',
+        status: 'running',
+      },
+      latest_artifact: {
+        artifact_id: 'artifact-claimed-1',
+        kind: 'decision.note',
+      },
+    });
+    const getExecutionQueue = jest.fn().mockResolvedValue({
+      total: 1,
+      queue: [
+        {
+          id: 'task-follow-up',
+          title: 'Follow-up durable task',
+          status: 'pending',
+          priority: 'medium',
+          blocked: false,
+          blocking_dependencies: [],
+          supervisor: {
+            supervisor_state: 'dispatch_pending',
+            reason_class: null,
+          },
+        },
+      ],
+    });
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await POST(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000',
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'claim_director_next_task' }),
+        }
+      ),
+      undefined,
+      {
+        getMissionSnapshot,
+        getNextTask,
+        getWorkspaceEvidence,
+        getExecutionQueue,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(getNextTask).toHaveBeenCalledWith({
+      projectId: '550e8400-e29b-41d4-a716-446655440000',
+      agentId: 'agent-executor-1',
+    });
+    expect(getWorkspaceEvidence).toHaveBeenCalledWith({ workspaceId: 'ws-claimed-1' });
+    expect(getExecutionQueue).toHaveBeenCalledWith({
+      projectId: '550e8400-e29b-41d4-a716-446655440000',
+      includeBlocked: true,
+    });
+    expect(payload.control_room_snapshot_input.director_queue).toEqual({
+      authority: 'authoritative',
+      freshness: 'current',
+      items: [
+        {
+          id: 'task-follow-up',
+          title: 'Follow-up durable task',
+          status: 'pending',
+          position: 1,
+          priority: 'medium',
+          blocked_reason: null,
+          supervisor: {
+            supervisor_state: 'dispatch_pending',
+            reason_class: null,
+          },
+        },
+      ],
+      handoff: {
+        status: 'claimed',
+        recipient_agent_id: 'agent-executor-1',
+        message: 'Tarea asignada al agente.',
+        task: {
+          id: 'task-claimed-1',
+          title: 'Claimed durable task',
+          status: 'in_progress',
+          priority: 'high',
+          supervisor: {
+            supervisor_state: 'dispatch_pending',
+            reason_class: null,
+            workspace_id: 'ws-claimed-1',
+          },
+        },
+        workspace: {
+          workspace_id: 'ws-claimed-1',
+          status: 'active',
+          branch_name: 'feat/claimed-task',
+        },
+        run: {
+          run_id: 'run-claimed-1',
+          status: 'running',
+        },
+        artifact: {
+          artifact_id: 'artifact-claimed-1',
+          kind: 'decision.note',
+        },
+        supervisor: {
+          supervisor_state: 'dispatch_pending',
+          reason_class: null,
+          workspace_id: 'ws-claimed-1',
+        },
+      },
+    });
+  });
+
+  test('returns disabled handoff when there is no active non-director executor', async () => {
+    const getMissionSnapshot = jest.fn().mockResolvedValue({
+      participants: [{ agent_id: 'agent-director', role_in_mission: 'director', status: 'active' }],
+    });
+    const getExecutionQueue = jest.fn().mockResolvedValue({ total: 0, queue: [] });
+    const getNextTask = jest.fn();
+    const getWorkspaceEvidence = jest.fn();
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await POST(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000',
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'claim_director_next_task' }),
+        }
+      ),
+      undefined,
+      {
+        getMissionSnapshot,
+        getExecutionQueue,
+        getNextTask,
+        getWorkspaceEvidence,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(getNextTask).not.toHaveBeenCalled();
+    expect(getWorkspaceEvidence).not.toHaveBeenCalled();
+    expect(payload.control_room_snapshot_input.director_queue.handoff).toEqual({
+      status: 'disabled',
+      recipient_agent_id: null,
+      message: 'No hay executor activo para handoff.',
+      task: null,
+      workspace: null,
+      run: null,
+      artifact: null,
+      supervisor: null,
+    });
+  });
+
+  test('treats active reviewers as ineligible and keeps handoff disabled without claiming', async () => {
+    const getMissionSnapshot = jest.fn().mockResolvedValue({
+      participants: [
+        { agent_id: 'agent-director', role_in_mission: 'director', status: 'active' },
+        { agent_id: 'agent-reviewer-1', role_in_mission: 'reviewer', status: 'active' },
+      ],
+    });
+    const getExecutionQueue = jest.fn().mockResolvedValue({ total: 0, queue: [] });
+    const getNextTask = jest.fn();
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await POST(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000',
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'claim_director_next_task' }),
+        }
+      ),
+      undefined,
+      {
+        getMissionSnapshot,
+        getExecutionQueue,
+        getNextTask,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(getNextTask).not.toHaveBeenCalled();
+    expect(payload.control_room_snapshot_input.director_queue.handoff).toEqual({
+      status: 'disabled',
+      recipient_agent_id: null,
+      message: 'No hay executor activo para handoff.',
+      task: null,
+      workspace: null,
+      run: null,
+      artifact: null,
+      supervisor: null,
+    });
+  });
+
+  test('returns disabled handoff when multiple active non-director executors exist', async () => {
+    const getMissionSnapshot = jest.fn().mockResolvedValue({
+      participants: [
+        { agent_id: 'agent-director', role_in_mission: 'director', status: 'active' },
+        { agent_id: 'agent-executor-1', role_in_mission: 'executor', status: 'active' },
+        { agent_id: 'agent-executor-2', role_in_mission: 'executor', status: 'active' },
+      ],
+    });
+    const getExecutionQueue = jest.fn().mockResolvedValue({
+      total: 1,
+      queue: [
+        {
+          id: 'task-blocked',
+          title: 'Blocked durable task',
+          status: 'pending',
+          priority: 'high',
+          blocked: true,
+          blocking_dependencies: ['dep-1'],
+          supervisor: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'blocked_dependency',
+          },
+        },
+      ],
+    });
+    const getNextTask = jest.fn();
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await POST(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000',
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'claim_director_next_task' }),
+        }
+      ),
+      undefined,
+      {
+        getMissionSnapshot,
+        getExecutionQueue,
+        getNextTask,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(getNextTask).not.toHaveBeenCalled();
+    expect(payload.control_room_snapshot_input.director_queue).toEqual({
+      authority: 'authoritative',
+      freshness: 'current',
+      items: [
+        {
+          id: 'task-blocked',
+          title: 'Blocked durable task',
+          status: 'blocked',
+          position: 1,
+          priority: 'high',
+          blocked_reason: 'dep-1',
+          supervisor: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'blocked_dependency',
+          },
+        },
+      ],
+      handoff: {
+        status: 'disabled',
+        recipient_agent_id: null,
+        message: 'Hay más de un executor activo; el handoff seguro sigue deshabilitado.',
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    });
+  });
+
+  test('returns bounded blocked handoff when durable claim reports no safe task', async () => {
+    const getMissionSnapshot = jest.fn().mockResolvedValue({
+      participants: [
+        { agent_id: 'agent-director', role_in_mission: 'director', status: 'active' },
+        { agent_id: 'agent-executor-1', role_in_mission: 'executor', status: 'active' },
+      ],
+    });
+    const getNextTask = jest.fn().mockResolvedValue({
+      task: null,
+      message: 'Todas las tareas pendientes están bloqueadas.',
+    });
+    const getExecutionQueue = jest.fn().mockResolvedValue({
+      total: 1,
+      queue: [
+        {
+          id: 'task-blocked',
+          title: 'Blocked durable task',
+          status: 'pending',
+          priority: 'high',
+          blocked: true,
+          blocking_dependencies: ['dep-2'],
+          supervisor: {
+            supervisor_state: 'awaiting_approval',
+            reason_class: 'blocked_dependency',
+          },
+        },
+      ],
+    });
+    const getWorkspaceEvidence = jest.fn();
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await POST(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000',
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'claim_director_next_task' }),
+        }
+      ),
+      undefined,
+      {
+        getMissionSnapshot,
+        getNextTask,
+        getExecutionQueue,
+        getWorkspaceEvidence,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(getWorkspaceEvidence).not.toHaveBeenCalled();
+    expect(payload.control_room_snapshot_input.director_queue.handoff).toEqual({
+      status: 'blocked',
+      recipient_agent_id: 'agent-executor-1',
+      message: 'Todas las tareas pendientes están bloqueadas.',
+      task: null,
+      workspace: null,
+      run: null,
+      artifact: null,
+      supervisor: null,
+    });
+  });
+
+  test('returns bounded empty handoff when durable claim reports no pending task', async () => {
+    const getMissionSnapshot = jest.fn().mockResolvedValue({
+      participants: [
+        { agent_id: 'agent-director', role_in_mission: 'director', status: 'active' },
+        { agent_id: 'agent-executor-1', role_in_mission: 'executor', status: 'active' },
+      ],
+    });
+    const getNextTask = jest.fn().mockResolvedValue({
+      task: null,
+      message: 'Sin tareas pendientes',
+    });
+    const getExecutionQueue = jest.fn().mockResolvedValue({ total: 0, queue: [] });
+    const getWorkspaceEvidence = jest.fn();
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await POST(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000',
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'claim_director_next_task' }),
+        }
+      ),
+      undefined,
+      {
+        getMissionSnapshot,
+        getNextTask,
+        getExecutionQueue,
+        getWorkspaceEvidence,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(getWorkspaceEvidence).not.toHaveBeenCalled();
+    expect(payload.control_room_snapshot_input.director_queue.handoff).toEqual({
+      status: 'empty',
+      recipient_agent_id: 'agent-executor-1',
+      message: 'Sin tareas pendientes',
+      task: null,
+      workspace: null,
+      run: null,
+      artifact: null,
+      supervisor: null,
+    });
   });
 });

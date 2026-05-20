@@ -11,9 +11,11 @@ import {
   selectControlRoomMission,
   selectControlRoomRuns,
   selectControlRoomWorkspaces,
+  selectDirectorQueue,
   selectDirectorMissionSummary,
 } from '@/lib/operations/swarmControl';
 import ControlRoomHeader from '@/components/control-room/ControlRoomHeader';
+import DirectorQueuePanel from '@/components/control-room/DirectorQueuePanel';
 import AgentsClaimsPanel from '@/components/control-room/AgentsClaimsPanel';
 import WorkspacesPanel from '@/components/control-room/WorkspacesPanel';
 import RunsArtifactsPanel from '@/components/control-room/RunsArtifactsPanel';
@@ -32,6 +34,8 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [fetchedInput, setFetchedInput] = useState(null);
   const [loading, setLoading] = useState(false);
   const [missionControlOverride, setMissionControlOverride] = useState(null);
+  const [directorQueueOverride, setDirectorQueueOverride] = useState(null);
+  const [handoffSubmitState, setHandoffSubmitState] = useState({ submitting: false, error: null });
   const [filterText, setFilterText] = useState('');
   const [layout, setLayout] = useState('grid');
   const [selectedRunId, setSelectedRunId] = useState(null);
@@ -46,7 +50,15 @@ export default function SwarmControl({ snapshotInput = null }) {
       setLoading(true);
 
       try {
-        const response = await fetch('/api/agenthub/operations/health', { cache: 'no-store' });
+        const params = new URLSearchParams();
+        if (project?.id) params.set('project_id', project.id);
+
+        const response = await fetch(
+          params.size
+            ? `/api/agenthub/operations/health?${params.toString()}`
+            : '/api/agenthub/operations/health',
+          { cache: 'no-store' }
+        );
         if (!response.ok) return;
 
         const payload = await response.json();
@@ -71,7 +83,7 @@ export default function SwarmControl({ snapshotInput = null }) {
     return () => {
       cancelled = true;
     };
-  }, [snapshotInput]);
+  }, [project?.id, snapshotInput]);
 
   const snapshot = useMemo(
     () =>
@@ -94,11 +106,36 @@ export default function SwarmControl({ snapshotInput = null }) {
   const diagnostics = useMemo(() => selectControlRoomDiagnostics(snapshot), [snapshot]);
   const errors = useMemo(() => selectControlRoomErrors(snapshot), [snapshot]);
   const missionControl = useMemo(() => selectControlRoomMission(snapshot), [snapshot]);
+  const directorQueue = useMemo(() => selectDirectorQueue(snapshot), [snapshot]);
   const effectiveMissionControl = missionControlOverride || missionControl;
+  const effectiveDirectorQueue = directorQueueOverride || directorQueue;
+
+  const eligibleExecutors = useMemo(
+    () =>
+      (Array.isArray(effectiveMissionControl?.participants)
+        ? effectiveMissionControl.participants
+        : []
+      ).filter(
+        (participant) =>
+          participant?.status === 'active' && participant?.role_in_mission !== 'director'
+      ),
+    [effectiveMissionControl]
+  );
+  const handoffUnsafe = eligibleExecutors.length !== 1;
+  const handoffDisabledReason = handoffSubmitState.error
+    ? handoffSubmitState.error
+    : handoffUnsafe
+      ? 'Resolución insegura de destinatario: exactamente un executor activo.'
+      : null;
 
   useEffect(() => {
     setMissionControlOverride(null);
   }, [missionControl]);
+
+  useEffect(() => {
+    setDirectorQueueOverride(null);
+    setHandoffSubmitState({ submitting: false, error: null });
+  }, [directorQueue]);
 
   const handleComposerSubmit = async ({ recipient_agent_ids, body_summary }) => {
     if (!effectiveMissionControl?.mission?.mission_id) {
@@ -111,6 +148,43 @@ export default function SwarmControl({ snapshotInput = null }) {
     });
 
     setMissionControlOverride(nextMissionControl);
+  };
+
+  const handleClaimNext = async () => {
+    if (handoffUnsafe || !project?.id) return;
+
+    setHandoffSubmitState({ submitting: true, error: null });
+
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'claim_director_next_task',
+          project_id: project.id,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo reclamar el siguiente task durable.');
+      }
+
+      const nextDirectorQueue =
+        payload?.control_room_snapshot_input?.director_queue ||
+        payload?.control_room_input?.director_queue;
+
+      if (nextDirectorQueue) {
+        setDirectorQueueOverride(nextDirectorQueue);
+      }
+
+      setHandoffSubmitState({ submitting: false, error: null });
+    } catch (error) {
+      setHandoffSubmitState({
+        submitting: false,
+        error: error?.message || 'No se pudo reclamar el siguiente task durable.',
+      });
+    }
   };
 
   const normalizedFilter = filterText.trim().toLowerCase();
@@ -149,6 +223,14 @@ export default function SwarmControl({ snapshotInput = null }) {
         <MissionKernelPanel
           missionControl={effectiveMissionControl}
           onComposerSubmit={handleComposerSubmit}
+        />
+
+        <DirectorQueuePanel
+          queue={effectiveDirectorQueue}
+          handoffDisabled={handoffUnsafe}
+          handoffDisabledReason={handoffDisabledReason}
+          isSubmitting={handoffSubmitState.submitting}
+          onClaimNext={handleClaimNext}
         />
 
         <div

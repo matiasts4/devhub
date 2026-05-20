@@ -185,6 +185,75 @@ function buildDegradedInput() {
   });
 }
 
+function buildDirectorQueueInput() {
+  return buildControlRoomInput({
+    director_queue: {
+      authority: 'authoritative',
+      freshness: 'current',
+      items: [
+        {
+          id: 'task-1',
+          title: 'Checkpoint workspace principal',
+          status: 'pending',
+          position: 1,
+          priority: 'critical',
+          blocked_reason: null,
+        },
+        {
+          id: 'task-2',
+          title: 'Validar regresión del panel',
+          status: 'pending',
+          position: 2,
+          priority: 'high',
+          blocked_reason: null,
+        },
+        {
+          id: 'task-3',
+          title: 'Espera aprobación de QA',
+          status: 'blocked',
+          position: 3,
+          priority: 'high',
+          blocked_reason: 'approval_required',
+        },
+        {
+          id: 'task-4',
+          title: 'Reconciliar evidencia durable',
+          status: 'pending',
+          position: 4,
+          priority: 'medium',
+          blocked_reason: null,
+        },
+        {
+          id: 'task-5',
+          title: 'Cerrar checkpoint local',
+          status: 'pending',
+          position: 5,
+          priority: 'medium',
+          blocked_reason: null,
+        },
+        {
+          id: 'task-6',
+          title: 'No debería entrar en el panel acotado',
+          status: 'pending',
+          position: 6,
+          priority: 'low',
+          blocked_reason: null,
+        },
+      ],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    },
+  });
+}
+
 describe('SwarmControl control room composition', () => {
   let dom;
 
@@ -367,6 +436,265 @@ describe('SwarmControl control room composition', () => {
     expect(missionTextAfterToggle.indexOf('Entregas pendientes')).toBeLessThan(
       missionTextAfterToggle.indexOf('Presencia TTL')
     );
+  });
+
+  test('renders ordered director queue rows inside a bounded read-only panel', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    const panel = view.container.querySelector('[aria-label="Cola del director"]');
+    const text = panel?.textContent || '';
+    const handoffButton = Array.from(panel?.querySelectorAll('button') || []).find((button) =>
+      button.textContent.includes('Tomar siguiente durable')
+    );
+
+    expect(panel).not.toBeNull();
+    expect(text).toContain('Cola del director');
+    expect(text).toContain('Solo lectura');
+    expect(text).toContain('Mostrando 5 de 6 tareas durables');
+    expect(text.indexOf('1Checkpoint workspace principal')).toBeLessThan(
+      text.indexOf('2Validar regresión del panel')
+    );
+    expect(text.indexOf('2Validar regresión del panel')).toBeLessThan(
+      text.indexOf('3Espera aprobación de QA')
+    );
+    expect(text).toContain('5Cerrar checkpoint local');
+    expect(text).not.toContain('No debería entrar en el panel acotado');
+    expect(handoffButton).not.toBeNull();
+    expect(handoffButton.disabled).toBe(false);
+  });
+
+  test('renders blocked queue badges and checkpoint-before-next-claim copy with bounded handoff control', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    const panel = view.container.querySelector('[aria-label="Cola del director"]');
+    const text = panel?.textContent || '';
+    const handoffButton = Array.from(panel?.querySelectorAll('button') || []).find((button) =>
+      button.textContent.includes('Tomar siguiente durable')
+    );
+
+    expect(text).toContain('Bloqueada');
+    expect(text).toContain('approval_required');
+    expect(text).toContain('Hacé checkpoint local de la tarea actual antes del próximo claim.');
+    expect(text).toContain('El refresh del servidor sigue siendo la única verdad.');
+    expect(handoffButton).not.toBeNull();
+    expect(panel.querySelector('form')).toBeNull();
+  });
+
+  test('renders durable empty queue state in the director queue panel', async () => {
+    const view = await renderSwarmControl({
+      snapshotInput: buildControlRoomInput({
+        director_queue: {
+          authority: 'authoritative',
+          freshness: 'degraded',
+          items: [],
+        },
+      }),
+    });
+    const panel = view.container.querySelector('[aria-label="Cola del director"]');
+    const text = panel?.textContent || '';
+
+    expect(text).toContain('Cola del director');
+    expect(text).toContain('canónica');
+    expect(text).toContain('degradado');
+    expect(text).toContain('Sin tareas durables listas o bloqueadas en este snapshot.');
+    expect(panel.querySelectorAll('article')).toHaveLength(0);
+  });
+
+  test('disables the handoff button when recipient resolution is unsafe', async () => {
+    global.fetch = jest.fn();
+    const view = await renderSwarmControl({
+      snapshotInput: buildControlRoomInput({
+        mission_control: {
+          mission: {
+            mission_id: 'mission-1',
+            title: 'Misión Director',
+            status: 'active',
+          },
+          participants: [
+            {
+              participant_id: 'participant-1',
+              agent_id: 'agent-director',
+              role_in_mission: 'director',
+              status: 'active',
+            },
+            {
+              participant_id: 'participant-2',
+              agent_id: 'agent-worker-1',
+              role_in_mission: 'executor',
+              status: 'active',
+            },
+            {
+              participant_id: 'participant-3',
+              agent_id: 'agent-worker-2',
+              role_in_mission: 'executor',
+              status: 'active',
+            },
+          ],
+          latest_message: null,
+          pending_deliveries: [],
+          presence: { active: [], stale: [], offline: [] },
+        },
+        director_queue: {
+          authority: 'authoritative',
+          freshness: 'current',
+          items: [
+            {
+              id: 'task-1',
+              title: 'Checkpoint workspace principal',
+              status: 'pending',
+              position: 1,
+              priority: 'critical',
+              blocked_reason: null,
+            },
+          ],
+          handoff: {
+            status: 'idle',
+            recipient_agent_id: null,
+            message: null,
+            task: null,
+            workspace: null,
+            run: null,
+            artifact: null,
+            supervisor: null,
+          },
+        },
+      }),
+    });
+    const handoffButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Tomar siguiente durable')
+    );
+
+    expect(handoffButton).not.toBeNull();
+    expect(handoffButton.disabled).toBe(true);
+    expect(view.container.textContent).toContain(
+      'Resolución insegura de destinatario: exactamente un executor activo.'
+    );
+
+    await click(handoffButton);
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('submits durable handoff and renders the refreshed durable result card', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        control_room_snapshot_input: {
+          director_queue: {
+            authority: 'authoritative',
+            freshness: 'current',
+            items: [
+              {
+                id: 'task-2',
+                title: 'Validar regresión del panel',
+                status: 'pending',
+                position: 1,
+                priority: 'high',
+                blocked_reason: null,
+              },
+            ],
+            handoff: {
+              status: 'claimed',
+              recipient_agent_id: 'agent-worker-1',
+              message: 'Tarea asignada al agente.',
+              task: {
+                id: 'task-1',
+                title: 'Checkpoint workspace principal',
+                status: 'in_progress',
+                priority: 'critical',
+              },
+              workspace: {
+                workspace_id: 'ws-1',
+                status: 'active',
+                branch_name: 'feat/sw-8-5a',
+              },
+              run: {
+                run_id: 'run-1',
+                status: 'running',
+              },
+              artifact: {
+                artifact_id: 'artifact-1',
+                kind: 'decision.note',
+              },
+              supervisor: {
+                supervisor_state: 'dispatch_pending',
+              },
+            },
+          },
+        },
+      }),
+    });
+    const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    const handoffButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Tomar siguiente durable')
+    );
+
+    await click(handoffButton);
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'claim_director_next_task',
+        project_id: 'project-1',
+      }),
+    });
+    expect(view.container.textContent).toContain('Resultado durable del handoff');
+    expect(view.container.textContent).toContain('Tarea asignada al agente.');
+    expect(view.container.textContent).toContain('Checkpoint workspace principal');
+    expect(view.container.textContent).toContain('ws-1');
+    expect(view.container.textContent).toContain('run-1');
+    expect(view.container.textContent).toContain('dispatch pending');
+  });
+
+  test.each([
+    ['blocked', 'Todas las tareas pendientes están bloqueadas.'],
+    ['empty', 'Sin tareas pendientes'],
+  ])('renders %s handoff refresh message from durable route payload', async (_status, message) => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        control_room_snapshot_input: {
+          director_queue: {
+            authority: 'authoritative',
+            freshness: 'current',
+            items: [],
+            handoff: {
+              status: _status,
+              recipient_agent_id: 'agent-worker-1',
+              message,
+              task: null,
+              workspace: null,
+              run: null,
+              artifact: null,
+              supervisor: null,
+            },
+          },
+        },
+      }),
+    });
+    const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    const handoffButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Tomar siguiente durable')
+    );
+
+    await click(handoffButton);
+
+    expect(view.container.textContent).toContain(message);
+  });
+
+  test('renders route error message after a failed handoff refresh', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: 'No se pudo reclamar el siguiente task durable.' }),
+    });
+    const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    const handoffButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Tomar siguiente durable')
+    );
+
+    await click(handoffButton);
+
+    expect(view.container.textContent).toContain('No se pudo reclamar el siguiente task durable.');
+    expect(handoffButton.disabled).toBe(false);
   });
 
   test('keeps secondary panels visible when mission snapshot is empty', async () => {
@@ -552,5 +880,23 @@ describe('SwarmControl control room composition', () => {
     expect(view.container.textContent).toContain('Necesito update del workspace hoy');
     expect(view.container.textContent).toContain('snapshot local');
     expect(view.container.textContent).toContain('pendiente');
+  });
+
+  test('requests the health snapshot with the outlet project_id when loading from the route', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        control_room_snapshot_input: buildControlRoomInput({
+          project: { id: 'project-1', name: 'DevHub route' },
+        }),
+      }),
+    });
+
+    await renderSwarmControl();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/agenthub/operations/health?project_id=project-1',
+      { cache: 'no-store' }
+    );
   });
 });

@@ -116,6 +116,28 @@ function createEmptyMissionControl() {
   };
 }
 
+function createEmptyDirectorQueueHandoff() {
+  return {
+    status: 'idle',
+    recipient_agent_id: null,
+    message: null,
+    task: null,
+    workspace: null,
+    run: null,
+    artifact: null,
+    supervisor: null,
+  };
+}
+
+function createEmptyDirectorQueue() {
+  return {
+    authority: 'unavailable',
+    freshness: 'unavailable',
+    items: [],
+    handoff: createEmptyDirectorQueueHandoff(),
+  };
+}
+
 function normalizeMission(mission = null) {
   if (!mission) return null;
 
@@ -201,6 +223,50 @@ function normalizeMissionControl(snapshot = null) {
       stale: asArray(missionControl.presence?.stale).map(normalizeMissionPresenceRow),
       offline: asArray(missionControl.presence?.offline).map(normalizeMissionPresenceRow),
     },
+  };
+}
+
+function normalizeDirectorQueueItem(item = {}, index = 0) {
+  return {
+    id: item.id || null,
+    title: item.title || null,
+    status: item.blocked ? 'blocked' : item.status || 'unknown',
+    position: Number.isFinite(item.position) ? item.position : index + 1,
+    priority: item.priority || null,
+    blocked_reason: pickFirstDefined(item.blocked_reason, item.blocking_dependencies?.[0]),
+    supervisor: item.supervisor || null,
+  };
+}
+
+function normalizeDirectorQueueHandoff(handoff = null) {
+  if (!handoff) return createEmptyDirectorQueueHandoff();
+
+  return {
+    ...createEmptyDirectorQueueHandoff(),
+    status: handoff.status || 'idle',
+    recipient_agent_id: handoff.recipient_agent_id || null,
+    message: handoff.message || null,
+    task: handoff.task || null,
+    workspace: handoff.workspace || null,
+    run: handoff.run || null,
+    artifact: handoff.artifact || null,
+    supervisor: handoff.supervisor || null,
+  };
+}
+
+function normalizeDirectorQueue(queue = null) {
+  if (!queue) return createEmptyDirectorQueue();
+
+  const status = statusFromRecord(queue, {
+    authority: pickFirstDefined(queue.authority, 'authoritative'),
+    freshness: pickFirstDefined(queue.freshness, 'degraded'),
+  });
+
+  return {
+    authority: status.authority,
+    freshness: status.freshness,
+    items: asArray(queue.items).map(normalizeDirectorQueueItem),
+    handoff: normalizeDirectorQueueHandoff(queue.handoff),
   };
 }
 
@@ -574,6 +640,7 @@ export function composeControlRoomSnapshot(input = {}) {
         'session stream'
       ),
     },
+    director_queue: normalizeDirectorQueue(input.director_queue),
     mission_control: normalizeMissionControl(input.mission_control),
     errors,
   };
@@ -601,6 +668,10 @@ export function selectControlRoomApprovals(snapshot = {}) {
 
 export function selectControlRoomMission(snapshot = {}) {
   return snapshot.mission_control || createEmptyMissionControl();
+}
+
+export function selectDirectorQueue(snapshot = {}) {
+  return snapshot.director_queue || createEmptyDirectorQueue();
 }
 
 export function selectDirectorMissionSummary(snapshot = {}) {
