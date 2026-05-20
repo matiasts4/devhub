@@ -296,6 +296,105 @@ describe('SwarmControl control room composition', () => {
     ).toContain('worker-2');
   });
 
+  test('renders director mission context in the header before local controls without adding operational verbs', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    const header = view.container.querySelector('[aria-label="Control Room Header"]');
+    const fullText = view.container.textContent || '';
+    const buttonLabels = Array.from(view.container.querySelectorAll('button'))
+      .map((button) => button.textContent?.trim().toLowerCase())
+      .filter(Boolean);
+
+    expect(header?.textContent).toContain('Contexto de misión');
+    expect(header?.textContent).toContain('Misión Director');
+    expect(header?.textContent).toContain('2 participantes');
+    expect(header?.textContent).toContain('1 entrega pendiente');
+    expect(header?.textContent).toContain('Tomá la ejecución del workspace principal');
+    expect(fullText.indexOf('Contexto de misión')).toBeGreaterThan(-1);
+    expect(fullText.indexOf('Contexto de misión')).toBeLessThan(
+      fullText.indexOf('Filtrar registros')
+    );
+    expect(fullText.indexOf('Contexto de misión')).toBeLessThan(fullText.indexOf('Grilla'));
+    expect(buttonLabels).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /start|stop|restart|attach|dispatch|browser|gtk|vte|iniciar|detener|reiniciar|adjuntar|despachar/
+        ),
+      ])
+    );
+  });
+
+  test('renders the mission panel before local controls and keeps mission-first ordering across stack mode', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    const missionPanel = view.container.querySelector('[aria-label="Kernel de misión"]');
+    const stackButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Pila')
+    );
+    const fullTextBeforeToggle = view.container.textContent || '';
+    const missionTextBeforeToggle = missionPanel?.textContent || '';
+
+    expect(fullTextBeforeToggle.indexOf('Kernel de misión')).toBeLessThan(
+      fullTextBeforeToggle.indexOf('Filtrar registros')
+    );
+    expect(missionTextBeforeToggle.indexOf('Misión activa')).toBeLessThan(
+      missionTextBeforeToggle.indexOf('Mensajes recientes')
+    );
+    expect(missionTextBeforeToggle.indexOf('Mensajes recientes')).toBeLessThan(
+      missionTextBeforeToggle.indexOf('Entregas pendientes')
+    );
+    expect(missionTextBeforeToggle.indexOf('Entregas pendientes')).toBeLessThan(
+      missionTextBeforeToggle.indexOf('Presencia TTL')
+    );
+    expect(missionTextBeforeToggle.indexOf('Presencia TTL')).toBeLessThan(
+      missionTextBeforeToggle.indexOf('Participantes')
+    );
+
+    await click(stackButton);
+
+    const fullTextAfterToggle = view.container.textContent || '';
+    const missionTextAfterToggle =
+      view.container.querySelector('[aria-label="Kernel de misión"]')?.textContent || '';
+
+    expect(stackButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(fullTextAfterToggle.indexOf('Kernel de misión')).toBeLessThan(
+      fullTextAfterToggle.indexOf('Filtrar registros')
+    );
+    expect(missionTextAfterToggle.indexOf('Misión activa')).toBeLessThan(
+      missionTextAfterToggle.indexOf('Mensajes recientes')
+    );
+    expect(missionTextAfterToggle.indexOf('Mensajes recientes')).toBeLessThan(
+      missionTextAfterToggle.indexOf('Entregas pendientes')
+    );
+    expect(missionTextAfterToggle.indexOf('Entregas pendientes')).toBeLessThan(
+      missionTextAfterToggle.indexOf('Presencia TTL')
+    );
+  });
+
+  test('keeps secondary panels visible when mission snapshot is empty', async () => {
+    const input = buildControlRoomInput({ mission_control: null });
+    const view = await renderSwarmControl({ snapshotInput: input });
+    const fullText = view.container.textContent || '';
+
+    expect(fullText.indexOf('Kernel de misión')).toBeLessThan(
+      fullText.indexOf('Filtrar registros')
+    );
+    expect(fullText).toContain('No hay misión activa');
+    expect(fullText).toContain('Sin mensajes recientes en este snapshot.');
+    expect(fullText).toContain('Sin entregas pendientes en este snapshot.');
+    expect(fullText).toContain('Sin presencia TTL en este snapshot.');
+    expect(
+      view.container.querySelector('[aria-label="Agentes y asignaciones"]')?.textContent
+    ).toContain('worker-1');
+    expect(view.container.querySelector('[aria-label="Workspaces"]')?.textContent).toContain(
+      'ws-1'
+    );
+    expect(
+      view.container.querySelector('[aria-label="Ejecuciones y artefactos"]')?.textContent
+    ).toContain('run-1');
+    expect(
+      view.container.querySelector('[aria-label="Aprobaciones y errores"]')?.textContent
+    ).toContain('aprobación requerida');
+  });
+
   test('renders stale, degraded, unavailable, and approval-pending messaging from the snapshot', async () => {
     const view = await renderSwarmControl({ snapshotInput: buildDegradedInput() });
     const text = view.container.textContent;

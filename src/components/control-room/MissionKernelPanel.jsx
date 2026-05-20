@@ -88,6 +88,8 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const canSubmit = Boolean(mission?.mission_id) && eligibleParticipants.length > 0;
+  const hasPresence =
+    presence.active.length > 0 || presence.stale.length > 0 || presence.offline.length > 0;
 
   return (
     <section
@@ -104,246 +106,292 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="space-y-4">
-          <section className="rounded-xl border p-3" style={panelShellStyle()}>
-            <h3 className="text-sm font-semibold">Misión activa</h3>
-            {mission ? (
-              <div className="mt-3 space-y-2 text-sm">
-                <div className="font-medium">{mission.title || mission.mission_id}</div>
-                <p style={metaTextStyle()}>{mission.summary || 'Sin resumen de misión.'}</p>
-                <dl className="grid gap-2 sm:grid-cols-2">
-                  <MetaRow label="Estado" value={formatMissionToken(mission.status)} />
-                  <MetaRow label="Workspace" value={mission.workspace_id || '—'} />
-                  <MetaRow label="Run" value={mission.run_id || '—'} />
-                  <MetaRow label="Evidencia" value={mission.evidence_ref || 'Sin evidencia'} />
-                </dl>
-              </div>
-            ) : (
-              renderEmptyCopy('No hay misión activa')
-            )}
-          </section>
+          <MissionOverviewSection mission={mission} />
 
-          <section className="rounded-xl border p-3" style={panelShellStyle()}>
-            <h3 className="text-sm font-semibold">Participantes</h3>
-            <div className="mt-3 space-y-2">
-              {participants.length === 0
-                ? renderEmptyCopy('Sin participantes durables en este snapshot.')
-                : participants.map((participant) => (
-                    <article
-                      key={participant.participant_id || participant.agent_id}
-                      className="rounded-lg border p-3"
-                      style={panelShellStyle()}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-medium">{participant.agent_id}</div>
-                        <div className="text-xs" style={metaTextStyle()}>
-                          {formatMissionToken(participant.status)}
-                        </div>
-                      </div>
-                      <p className="mt-1 text-xs" style={metaTextStyle()}>
-                        {formatMissionToken(participant.role_in_mission)} · desde{' '}
-                        {participant.joined_at || '—'}
-                      </p>
-                    </article>
-                  ))}
-            </div>
-          </section>
+          <RecentMessagesSection recentMessages={recentMessages} />
 
-          <section className="rounded-xl border p-3" style={panelShellStyle()}>
-            <h3 className="text-sm font-semibold">Mensajes recientes</h3>
-            <div className="mt-3 space-y-2">
-              {recentMessages.length === 0
-                ? renderEmptyCopy('Sin mensajes recientes en este snapshot.')
-                : recentMessages.map((message) => (
-                    <article
-                      key={message.message_id}
-                      className="rounded-lg border p-3"
-                      style={panelShellStyle()}
-                    >
-                      <div className="font-medium">
-                        {message.body_summary || 'Mensaje sin resumen'}
-                      </div>
-                      <p className="mt-1 text-xs" style={metaTextStyle()}>
-                        {formatMissionToken(message.message_kind)} ·{' '}
-                        {message.sender_agent_id || 'sin emisor'} ·{' '}
-                        {message.created_at || 'sin timestamp'}
-                      </p>
-                    </article>
-                  ))}
-            </div>
-          </section>
+          <PendingDeliveriesSection pendingDeliveries={pendingDeliveries} />
 
-          <section className="rounded-xl border p-3" style={panelShellStyle()}>
-            <h3 className="text-sm font-semibold">Composer local</h3>
-            <p className="mt-1 text-xs" style={metaTextStyle()}>
-              Redactá una directiva local para participantes activos. Solo persiste mensajes de
-              misión y entregas pendientes.
-            </p>
-
-            {!mission ? (
-              <div className="mt-3">
-                {renderEmptyCopy('Sin misión activa para redactar mensajes locales.')}
-              </div>
-            ) : eligibleParticipants.length === 0 ? (
-              <div className="mt-3">
-                {renderEmptyCopy('No hay participantes elegibles para este mensaje local.')}
-              </div>
-            ) : (
-              <form
-                ref={composerFormRef}
-                className="mt-3 space-y-3"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  const formData = new window.FormData(event.currentTarget);
-                  const recipientAgentIds = formData
-                    .getAll('recipient_agent_ids')
-                    .map((value) => String(value).trim())
-                    .filter(Boolean);
-                  const bodySummary = String(formData.get('body_summary') || '').trim();
-
-                  if (recipientAgentIds.length === 0) {
-                    setSubmitError('Elegí al menos un destinatario activo.');
-                    return;
-                  }
-
-                  if (!bodySummary) {
-                    setSubmitError('Escribí un mensaje breve antes de guardar.');
-                    return;
-                  }
-
-                  if (!onComposerSubmit) return;
-
-                  setIsSubmitting(true);
-                  setSubmitError('');
-
-                  try {
-                    await onComposerSubmit({
-                      recipient_agent_ids: recipientAgentIds,
-                      body_summary: bodySummary,
-                    });
-                    composerFormRef.current?.reset();
-                  } catch (error) {
-                    setSubmitError(error?.message || 'No se pudo guardar el mensaje local.');
-                  } finally {
-                    setIsSubmitting(false);
-                  }
-                }}
-              >
-                <fieldset className="space-y-2">
-                  <legend className="text-xs font-semibold uppercase tracking-wide">
-                    Destinatarios
-                  </legend>
-                  <div className="space-y-2">
-                    {eligibleParticipants.map((participant) => {
-                      return (
-                        <label
-                          key={participant.participant_id || participant.agent_id}
-                          className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
-                          style={panelShellStyle()}
-                        >
-                          <input
-                            type="checkbox"
-                            name="recipient_agent_ids"
-                            value={participant.agent_id}
-                          />
-                          <span>{participant.agent_id}</span>
-                          <span className="text-xs" style={metaTextStyle()}>
-                            {formatMissionToken(participant.role_in_mission)}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-
-                <label className="flex flex-col gap-2 text-sm font-medium">
-                  <span>Mensaje breve</span>
-                  <textarea
-                    aria-label="Mensaje breve para la misión"
-                    name="body_summary"
-                    className="min-h-[96px] rounded-lg border px-3 py-2 outline-none"
-                    style={{
-                      background: 'var(--surface-app)',
-                      borderColor: 'var(--border-subtle)',
-                      color: 'var(--text-primary)',
-                    }}
-                    placeholder="Ej.: Necesito update del workspace principal antes de QA."
-                    maxLength={280}
-                  />
-                </label>
-
-                {submitError ? (
-                  <p className="text-xs" style={{ color: 'var(--text-danger, #f87171)' }}>
-                    {submitError}
-                  </p>
-                ) : null}
-
-                <button
-                  type="submit"
-                  disabled={!canSubmit || isSubmitting}
-                  className="rounded-lg border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{
-                    background: 'var(--surface-app)',
-                    borderColor: 'var(--border-subtle)',
-                  }}
-                >
-                  {isSubmitting ? 'Guardando…' : 'Guardar mensaje local'}
-                </button>
-              </form>
-            )}
-          </section>
+          <PresenceSummarySection presence={presence} hasPresence={hasPresence} />
         </div>
 
         <div className="space-y-4">
-          <section className="rounded-xl border p-3" style={panelShellStyle()}>
-            <h3 className="text-sm font-semibold">Entregas pendientes</h3>
-            <div className="mt-3 space-y-2">
-              {pendingDeliveries.length === 0
-                ? renderEmptyCopy('Sin entregas pendientes en este snapshot.')
-                : pendingDeliveries.map((delivery) => (
-                    <article
-                      key={
-                        delivery.delivery_id || `${delivery.recipient_agent_id}-${delivery.channel}`
-                      }
-                      className="rounded-lg border p-3"
-                      style={panelShellStyle()}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-medium">
-                          {delivery.recipient_agent_id || 'destino desconocido'}
-                        </div>
-                        <div className="text-xs" style={metaTextStyle()}>
-                          {formatMissionToken(delivery.status)}
-                        </div>
-                      </div>
-                      <p className="mt-1 text-xs" style={metaTextStyle()}>
-                        {formatToken(delivery.channel || 'canal desconocido')} · último intento{' '}
-                        {delivery.last_attempt_at || '—'}
-                      </p>
-                      {delivery.last_error ? (
-                        <p className="mt-1 text-xs" style={metaTextStyle()}>
-                          {delivery.last_error}
-                        </p>
-                      ) : null}
-                    </article>
-                  ))}
-            </div>
-          </section>
+          <ParticipantsSection participants={participants} />
 
-          <section className="rounded-xl border p-3" style={panelShellStyle()}>
-            <h3 className="text-sm font-semibold">Presencia TTL</h3>
-            <div className="mt-3 grid gap-4 lg:grid-cols-3">
-              <PresenceGroup label="Activa" entries={presence.active} />
-              <PresenceGroup label="Vencida" entries={presence.stale} />
-              <PresenceGroup label="Fuera de línea" entries={presence.offline} />
-            </div>
-            {presence.active.length === 0 &&
-            presence.stale.length === 0 &&
-            presence.offline.length === 0
-              ? renderEmptyCopy('Sin presencia TTL en este snapshot.')
-              : null}
-          </section>
+          <ComposerSection
+            mission={mission}
+            eligibleParticipants={eligibleParticipants}
+            onComposerSubmit={onComposerSubmit}
+            composerFormRef={composerFormRef}
+            isSubmitting={isSubmitting}
+            submitError={submitError}
+            setIsSubmitting={setIsSubmitting}
+            setSubmitError={setSubmitError}
+            canSubmit={canSubmit}
+          />
         </div>
       </div>
+    </section>
+  );
+}
+
+function MissionOverviewSection({ mission }) {
+  return (
+    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+      <h3 className="text-sm font-semibold">Misión activa</h3>
+      {mission ? (
+        <div className="mt-3 space-y-2 text-sm">
+          <div className="font-medium">{mission.title || mission.mission_id}</div>
+          <p style={metaTextStyle()}>{mission.summary || 'Sin resumen de misión.'}</p>
+          <dl className="grid gap-2 sm:grid-cols-2">
+            <MetaRow label="Estado" value={formatMissionToken(mission.status)} />
+            <MetaRow label="Workspace" value={mission.workspace_id || '—'} />
+            <MetaRow label="Run" value={mission.run_id || '—'} />
+            <MetaRow label="Evidencia" value={mission.evidence_ref || 'Sin evidencia'} />
+          </dl>
+        </div>
+      ) : (
+        renderEmptyCopy('No hay misión activa')
+      )}
+    </section>
+  );
+}
+
+function RecentMessagesSection({ recentMessages }) {
+  return (
+    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+      <h3 className="text-sm font-semibold">Mensajes recientes</h3>
+      <div className="mt-3 space-y-2">
+        {recentMessages.length === 0
+          ? renderEmptyCopy('Sin mensajes recientes en este snapshot.')
+          : recentMessages.map((message) => (
+              <article
+                key={message.message_id}
+                className="rounded-lg border p-3"
+                style={panelShellStyle()}
+              >
+                <div className="font-medium">{message.body_summary || 'Mensaje sin resumen'}</div>
+                <p className="mt-1 text-xs" style={metaTextStyle()}>
+                  {formatMissionToken(message.message_kind)} ·{' '}
+                  {message.sender_agent_id || 'sin emisor'} ·{' '}
+                  {message.created_at || 'sin timestamp'}
+                </p>
+              </article>
+            ))}
+      </div>
+    </section>
+  );
+}
+
+function PendingDeliveriesSection({ pendingDeliveries }) {
+  return (
+    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+      <h3 className="text-sm font-semibold">Entregas pendientes</h3>
+      <div className="mt-3 space-y-2">
+        {pendingDeliveries.length === 0
+          ? renderEmptyCopy('Sin entregas pendientes en este snapshot.')
+          : pendingDeliveries.map((delivery) => (
+              <article
+                key={delivery.delivery_id || `${delivery.recipient_agent_id}-${delivery.channel}`}
+                className="rounded-lg border p-3"
+                style={panelShellStyle()}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium">
+                    {delivery.recipient_agent_id || 'destino desconocido'}
+                  </div>
+                  <div className="text-xs" style={metaTextStyle()}>
+                    {formatMissionToken(delivery.status)}
+                  </div>
+                </div>
+                <p className="mt-1 text-xs" style={metaTextStyle()}>
+                  {formatToken(delivery.channel || 'canal desconocido')} · último intento{' '}
+                  {delivery.last_attempt_at || '—'}
+                </p>
+                {delivery.last_error ? (
+                  <p className="mt-1 text-xs" style={metaTextStyle()}>
+                    {delivery.last_error}
+                  </p>
+                ) : null}
+              </article>
+            ))}
+      </div>
+    </section>
+  );
+}
+
+function PresenceSummarySection({ presence, hasPresence }) {
+  return (
+    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+      <h3 className="text-sm font-semibold">Presencia TTL</h3>
+      <div className="mt-3 grid gap-4 lg:grid-cols-3">
+        <PresenceGroup label="Activa" entries={presence.active} />
+        <PresenceGroup label="Vencida" entries={presence.stale} />
+        <PresenceGroup label="Fuera de línea" entries={presence.offline} />
+      </div>
+      {hasPresence ? null : renderEmptyCopy('Sin presencia TTL en este snapshot.')}
+    </section>
+  );
+}
+
+function ParticipantsSection({ participants }) {
+  return (
+    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+      <h3 className="text-sm font-semibold">Participantes</h3>
+      <div className="mt-3 space-y-2">
+        {participants.length === 0
+          ? renderEmptyCopy('Sin participantes durables en este snapshot.')
+          : participants.map((participant) => (
+              <article
+                key={participant.participant_id || participant.agent_id}
+                className="rounded-lg border p-3"
+                style={panelShellStyle()}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium">{participant.agent_id}</div>
+                  <div className="text-xs" style={metaTextStyle()}>
+                    {formatMissionToken(participant.status)}
+                  </div>
+                </div>
+                <p className="mt-1 text-xs" style={metaTextStyle()}>
+                  {formatMissionToken(participant.role_in_mission)} · desde{' '}
+                  {participant.joined_at || '—'}
+                </p>
+              </article>
+            ))}
+      </div>
+    </section>
+  );
+}
+
+function ComposerSection({
+  mission,
+  eligibleParticipants,
+  onComposerSubmit,
+  composerFormRef,
+  isSubmitting,
+  submitError,
+  setIsSubmitting,
+  setSubmitError,
+  canSubmit,
+}) {
+  return (
+    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+      <h3 className="text-sm font-semibold">Composer local</h3>
+      <p className="mt-1 text-xs" style={metaTextStyle()}>
+        Redactá una directiva local para participantes activos. Solo persiste mensajes de misión y
+        entregas pendientes.
+      </p>
+
+      {!mission ? (
+        <div className="mt-3">
+          {renderEmptyCopy('Sin misión activa para redactar mensajes locales.')}
+        </div>
+      ) : eligibleParticipants.length === 0 ? (
+        <div className="mt-3">
+          {renderEmptyCopy('No hay participantes elegibles para este mensaje local.')}
+        </div>
+      ) : (
+        <form
+          ref={composerFormRef}
+          className="mt-3 space-y-3"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const formData = new window.FormData(event.currentTarget);
+            const recipientAgentIds = formData
+              .getAll('recipient_agent_ids')
+              .map((value) => String(value).trim())
+              .filter(Boolean);
+            const bodySummary = String(formData.get('body_summary') || '').trim();
+
+            if (recipientAgentIds.length === 0) {
+              setSubmitError('Elegí al menos un destinatario activo.');
+              return;
+            }
+
+            if (!bodySummary) {
+              setSubmitError('Escribí un mensaje breve antes de guardar.');
+              return;
+            }
+
+            if (!onComposerSubmit) return;
+
+            setIsSubmitting(true);
+            setSubmitError('');
+
+            try {
+              await onComposerSubmit({
+                recipient_agent_ids: recipientAgentIds,
+                body_summary: bodySummary,
+              });
+              composerFormRef.current?.reset();
+            } catch (error) {
+              setSubmitError(error?.message || 'No se pudo guardar el mensaje local.');
+            } finally {
+              setIsSubmitting(false);
+            }
+          }}
+        >
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-semibold uppercase tracking-wide">Destinatarios</legend>
+            <div className="space-y-2">
+              {eligibleParticipants.map((participant) => {
+                return (
+                  <label
+                    key={participant.participant_id || participant.agent_id}
+                    className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                    style={panelShellStyle()}
+                  >
+                    <input
+                      type="checkbox"
+                      name="recipient_agent_ids"
+                      value={participant.agent_id}
+                    />
+                    <span>{participant.agent_id}</span>
+                    <span className="text-xs" style={metaTextStyle()}>
+                      {formatMissionToken(participant.role_in_mission)}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            <span>Mensaje breve</span>
+            <textarea
+              aria-label="Mensaje breve para la misión"
+              name="body_summary"
+              className="min-h-[96px] rounded-lg border px-3 py-2 outline-none"
+              style={{
+                background: 'var(--surface-app)',
+                borderColor: 'var(--border-subtle)',
+                color: 'var(--text-primary)',
+              }}
+              placeholder="Ej.: Necesito update del workspace principal antes de QA."
+              maxLength={280}
+            />
+          </label>
+
+          {submitError ? (
+            <p className="text-xs" style={{ color: 'var(--text-danger, #f87171)' }}>
+              {submitError}
+            </p>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={!canSubmit || isSubmitting}
+            className="rounded-lg border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+            style={{
+              background: 'var(--surface-app)',
+              borderColor: 'var(--border-subtle)',
+            }}
+          >
+            {isSubmitting ? 'Guardando…' : 'Guardar mensaje local'}
+          </button>
+        </form>
+      )}
     </section>
   );
 }

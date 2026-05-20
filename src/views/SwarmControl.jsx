@@ -11,6 +11,7 @@ import {
   selectControlRoomMission,
   selectControlRoomRuns,
   selectControlRoomWorkspaces,
+  selectDirectorMissionSummary,
 } from '@/lib/operations/swarmControl';
 import ControlRoomHeader from '@/components/control-room/ControlRoomHeader';
 import AgentsClaimsPanel from '@/components/control-room/AgentsClaimsPanel';
@@ -85,6 +86,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   );
 
   const header = useMemo(() => selectControlRoomHeader(snapshot), [snapshot]);
+  const missionSummary = useMemo(() => selectDirectorMissionSummary(snapshot), [snapshot]);
   const agents = useMemo(() => selectControlRoomAgents(snapshot), [snapshot]);
   const workspaces = useMemo(() => selectControlRoomWorkspaces(snapshot), [snapshot]);
   const runs = useMemo(() => selectControlRoomRuns(snapshot), [snapshot]);
@@ -137,7 +139,17 @@ export default function SwarmControl({ snapshotInput = null }) {
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <ControlRoomHeader header={header} loading={loading} projectName={header.workspace_label} />
+        <ControlRoomHeader
+          header={header}
+          loading={loading}
+          projectName={header.workspace_label}
+          missionSummary={missionSummary}
+        />
+
+        <MissionKernelPanel
+          missionControl={effectiveMissionControl}
+          onComposerSubmit={handleComposerSubmit}
+        />
 
         <div
           className="flex flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
@@ -189,11 +201,6 @@ export default function SwarmControl({ snapshotInput = null }) {
             </button>
           </div>
         </div>
-
-        <MissionKernelPanel
-          missionControl={effectiveMissionControl}
-          onComposerSubmit={handleComposerSubmit}
-        />
 
         <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
           <AgentsClaimsPanel agents={filteredAgents} />

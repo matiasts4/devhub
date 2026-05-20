@@ -84,6 +84,38 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function createEmptyMissionSummary() {
+  return {
+    title: null,
+    status: 'unknown',
+    participantCount: 0,
+    pendingDeliveryCount: 0,
+    latestMessageSummary: null,
+    activePresenceCount: 0,
+    stalePresenceCount: 0,
+    offlinePresenceCount: 0,
+    snapshotAt: null,
+    watermark: null,
+  };
+}
+
+function createEmptyMissionControl() {
+  return {
+    mission: null,
+    participants: [],
+    recent_messages: [],
+    latest_message: null,
+    pending_deliveries: [],
+    snapshot_at: null,
+    watermark: null,
+    presence: {
+      active: [],
+      stale: [],
+      offline: [],
+    },
+  };
+}
+
 function normalizeMission(mission = null) {
   if (!mission) return null;
 
@@ -568,22 +600,26 @@ export function selectControlRoomApprovals(snapshot = {}) {
 }
 
 export function selectControlRoomMission(snapshot = {}) {
-  return (
-    snapshot.mission_control || {
-      mission: null,
-      participants: [],
-      recent_messages: [],
-      latest_message: null,
-      pending_deliveries: [],
-      snapshot_at: null,
-      watermark: null,
-      presence: {
-        active: [],
-        stale: [],
-        offline: [],
-      },
-    }
-  );
+  return snapshot.mission_control || createEmptyMissionControl();
+}
+
+export function selectDirectorMissionSummary(snapshot = {}) {
+  const missionControl = selectControlRoomMission(snapshot);
+  const summary = createEmptyMissionSummary();
+
+  return {
+    ...summary,
+    title: missionControl.mission?.title || null,
+    status: missionControl.mission?.status || summary.status,
+    participantCount: asArray(missionControl.participants).length,
+    pendingDeliveryCount: asArray(missionControl.pending_deliveries).length,
+    latestMessageSummary: missionControl.latest_message?.body_summary || null,
+    activePresenceCount: asArray(missionControl.presence?.active).length,
+    stalePresenceCount: asArray(missionControl.presence?.stale).length,
+    offlinePresenceCount: asArray(missionControl.presence?.offline).length,
+    snapshotAt: missionControl.snapshot_at || null,
+    watermark: missionControl.watermark || null,
+  };
 }
 
 export function selectControlRoomAgentProfiles(snapshot = {}) {

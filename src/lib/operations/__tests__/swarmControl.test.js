@@ -2,6 +2,7 @@ const {
   composeControlRoomSnapshot,
   extractMissionControlPayload,
   persistMissionControlComposerMessage,
+  selectDirectorMissionSummary,
   selectControlRoomHeader,
   selectControlRoomAgents,
   selectControlRoomWorkspaces,
@@ -569,6 +570,72 @@ describe('composeControlRoomSnapshot', () => {
         watermark: 'legacy-watermark',
       })
     );
+  });
+
+  test('selectDirectorMissionSummary derives mission counts from existing mission_control slices', () => {
+    const snapshot = composeControlRoomSnapshot(buildControlRoomInput());
+
+    expect(selectDirectorMissionSummary(snapshot)).toEqual({
+      title: 'Misión Director',
+      status: 'active',
+      participantCount: 2,
+      pendingDeliveryCount: 1,
+      latestMessageSummary: 'Tomá la ejecución del workspace principal',
+      activePresenceCount: 1,
+      stalePresenceCount: 1,
+      offlinePresenceCount: 1,
+      snapshotAt: null,
+      watermark: null,
+    });
+  });
+
+  test('selectDirectorMissionSummary preserves latest_message fallback when recent_messages came from legacy payloads', () => {
+    const snapshot = composeControlRoomSnapshot(
+      buildControlRoomInput({
+        mission_control: {
+          mission: {
+            mission_id: 'mission-legacy',
+            title: 'Misión legacy',
+            status: 'active',
+          },
+          latest_message: {
+            message_id: 'message-legacy',
+            sender_agent_id: 'agent-director',
+            message_kind: 'directive',
+            body_summary: 'Compat payload legacy',
+            created_at: '2026-05-19T13:00:00.000Z',
+          },
+          pending_deliveries: [],
+          presence: {
+            active: [],
+            stale: [],
+            offline: [],
+          },
+        },
+      })
+    );
+
+    expect(selectDirectorMissionSummary(snapshot)).toMatchObject({
+      title: 'Misión legacy',
+      latestMessageSummary: 'Compat payload legacy',
+    });
+  });
+
+  test('selectDirectorMissionSummary returns stable empty output when mission_control is missing', () => {
+    const snapshot = composeControlRoomSnapshot({ mission_control: null });
+
+    expect(selectDirectorMissionSummary(snapshot)).toEqual({
+      title: null,
+      status: 'unknown',
+      participantCount: 0,
+      pendingDeliveryCount: 0,
+      latestMessageSummary: null,
+      activePresenceCount: 0,
+      stalePresenceCount: 0,
+      offlinePresenceCount: 0,
+      snapshotAt: null,
+      watermark: null,
+    });
   });
 
   test('posts local composer messages and returns normalized mission control state', async () => {
