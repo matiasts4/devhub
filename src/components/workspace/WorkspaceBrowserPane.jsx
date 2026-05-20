@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -26,12 +26,26 @@ import {
 } from './bridgeAgentRequest';
 import useBrowserPreviewController, { SELECTOR_STATE } from './useBrowserPreviewController';
 import {
+  BROWSER_RUNTIME,
   PREVIEW_SUPPORT_MODE,
   SUPPORT_REASON,
+  getBrowserRuntimeFallbackCopy,
+  getBrowserRuntimeLabel,
   getHostnameLabel,
   parseUrlMeta,
+  resolveBrowserRuntimeSelection,
   shouldWarnAboutFraming,
 } from './browserPreviewSupport';
+import {
+  closeNativeBrowser,
+  focusNativeBrowser,
+  loadNativeBrowserUrl,
+  openNativeBrowser,
+  probeNativeBrowser,
+  reloadNativeBrowser,
+  resizeNativeBrowser,
+  setNativeBrowserVisibility,
+} from '@/lib/browser/nativeBrowserBridge';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
@@ -61,6 +75,10 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowAdd = null,
   onWorkspaceWindowRemove = null,
 }) {
+  const viewportShellRef = useRef(null);
+  const nativeLeaseRef = useRef({ opened: false, lastUrl: '' });
+  const [nativeCapability, setNativeCapability] = useState(null);
+  const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
   const {
     browserError,
     canSubmit,
@@ -101,7 +119,27 @@ function WorkspaceBrowserPane({
   const canGoForward = dockState.browserHistoryIndex < (dockState.browserHistory?.length || 0) - 1;
   const iframeTitle = useMemo(() => `Workspace preview ${dockState.browserUrl || ''}`.trim(), [dockState.browserUrl]);
   const hostLabel = useMemo(() => getHostnameLabel(dockState.browserUrl), [dockState.browserUrl]);
-  const shouldShowFrameWarning = useMemo(() => shouldWarnAboutFraming(dockState.browserUrl), [dockState.browserUrl]);
+  const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.IFRAME;
+  const nativePanelId = useMemo(() => `browser-${projectId}-${workspaceId}`, [projectId, workspaceId]);
+  const browserRuntimeSelection = useMemo(() => resolveBrowserRuntimeSelection({
+    requestedRuntime: requestedBrowserRuntime,
+    editMode: effectiveEditMode,
+    nativeCapability,
+  }), [effectiveEditMode, nativeCapability, requestedBrowserRuntime]);
+  const nativeRuntimeActive = browserRuntimeSelection.effectiveRuntime === BROWSER_RUNTIME.NATIVE_GTK;
+  const runtimeChipCopy = useMemo(() => {
+    if (nativeRuntimeActive) {
+      return getBrowserRuntimeLabel(BROWSER_RUNTIME.NATIVE_GTK);
+    }
+    if (browserRuntimeSelection.requestedRuntime !== BROWSER_RUNTIME.NATIVE_GTK) {
+      return null;
+    }
+    return getBrowserRuntimeFallbackCopy(browserRuntimeSelection.fallbackReason);
+  }, [browserRuntimeSelection.fallbackReason, browserRuntimeSelection.requestedRuntime, nativeRuntimeActive]);
+  const shouldShowFrameWarning = useMemo(
+    () => !nativeRuntimeActive && shouldWarnAboutFraming(dockState.browserUrl),
+    [dockState.browserUrl, nativeRuntimeActive]
+  );
   const dedicatedBrowserWindowLabel = useMemo(
     () => buildBrowserWindowLabel(projectId, workspaceId),
     [projectId, workspaceId]
@@ -109,6 +147,136 @@ function WorkspaceBrowserPane({
   const dedicatedBrowserOpen = browserWindowState?.open === true;
   const visibleWorkspaceWindows = Array.isArray(workspaceWindows) ? workspaceWindows : [];
   const showFullscreenWorkspaceTabs = dockState.maximized && dockState.maximizedView === 'browser';
+
+  const measureNativeBounds = () => {
+    const rect = viewportShellRef.current?.getBoundingClientRect?.();
+    return {
+      x: Number(rect?.x) || 0,
+      y: Number(rect?.y) || 0,
+      width: Math.max(Number(rect?.width) || 0, 1),
+      height: Math.max(Number(rect?.height) || 0, 1),
+    };
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (requestedBrowserRuntime !== BROWSER_RUNTIME.NATIVE_GTK) {
+      setNativeCapability(null);
+      return undefined;
+    }
+
+    probeNativeBrowser({
+      panelId: nativePanelId,
+      requestedMode: BROWSER_RUNTIME.NATIVE_GTK,
+      tauriAvailable: true,
+    }).then((result) => {
+      if (cancelled) return;
+      setNativeCapability({
+        ready: result?.ready === true,
+        reason: result?.reason || null,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nativePanelId, requestedBrowserRuntime]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncNativeRuntime() {
+      if (!nativeRuntimeActive || !dockState.browserUrl || browserError) {
+        if (nativeLeaseRef.current.opened) {
+          await closeNativeBrowser({ panelId: nativePanelId, reason: 'iframe-fallback' }).catch(() => {});
+          nativeLeaseRef.current = { opened: false, lastUrl: '' };
+        }
+        if (!cancelled) setNativeRuntimeReady(false);
+        return;
+      }
+
+      const bounds = measureNativeBounds();
+
+      if (!nativeLeaseRef.current.opened) {
+        const result = await openNativeBrowser({
+          panelId: nativePanelId,
+          url: dockState.browserUrl,
+          bounds,
+        });
+
+        if (cancelled) return;
+
+        if (result?.opened !== true) {
+          setNativeCapability({ ready: false, reason: result?.reason || 'open-failed' });
+          setNativeRuntimeReady(false);
+          return;
+        }
+
+        nativeLeaseRef.current = { opened: true, lastUrl: dockState.browserUrl };
+      } else if (nativeLeaseRef.current.lastUrl !== dockState.browserUrl) {
+        const result = await loadNativeBrowserUrl({
+          panelId: nativePanelId,
+          url: dockState.browserUrl,
+        });
+
+        if (cancelled) return;
+
+        if (result?.loaded === false) {
+          setNativeCapability({ ready: false, reason: result?.reason || 'load-failed' });
+          setNativeRuntimeReady(false);
+          return;
+        }
+
+        nativeLeaseRef.current.lastUrl = dockState.browserUrl;
+      }
+
+      await resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
+      await setNativeBrowserVisibility({ panelId: nativePanelId, visible: true, bounds }).catch(() => {});
+      await focusNativeBrowser({ panelId: nativePanelId }).catch(() => {});
+
+      if (!cancelled) setNativeRuntimeReady(true);
+    }
+
+    syncNativeRuntime();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [browserError, dockState.browserUrl, nativePanelId, nativeRuntimeActive]);
+
+  useEffect(() => () => {
+    if (!nativeLeaseRef.current.opened) return;
+    closeNativeBrowser({ panelId: nativePanelId, reason: 'component-unmount' }).catch(() => {});
+    nativeLeaseRef.current = { opened: false, lastUrl: '' };
+  }, [nativePanelId]);
+
+  useEffect(() => {
+    if (!nativeRuntimeActive || !nativeRuntimeReady) return undefined;
+    if (typeof window === 'undefined' || typeof window.ResizeObserver !== 'function') return undefined;
+    const node = viewportShellRef.current;
+    if (!node) return undefined;
+
+    const observer = new window.ResizeObserver(() => {
+      const bounds = measureNativeBounds();
+      resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
+      setNativeBrowserVisibility({ panelId: nativePanelId, visible: true, bounds }).catch(() => {});
+    });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [nativePanelId, nativeRuntimeActive, nativeRuntimeReady]);
+
+  const handleRuntimeReload = () => {
+    if (nativeRuntimeActive) {
+      reloadNativeBrowser({ panelId: nativePanelId }).catch(() => {
+        setNativeCapability({ ready: false, reason: 'reload-failed' });
+        setNativeRuntimeReady(false);
+      });
+      return;
+    }
+    handleReload();
+  };
 
   const handleOpenDedicatedBrowser = async () => {
     const targetUrl = String(dockState.browserUrl || '').trim();
@@ -291,7 +459,7 @@ function WorkspaceBrowserPane({
           <button
             type="button"
             data-testid="browser-reload"
-            onClick={handleReload}
+            onClick={handleRuntimeReload}
             className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05]"
             aria-label="Reload"
           >
@@ -336,6 +504,21 @@ function WorkspaceBrowserPane({
                 {dockState.maximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
                 <span className="text-[10px] font-semibold">{dockState.maximized ? 'Terminales' : 'Expandir'}</span>
               </button>
+            ) : null}
+            {dockState.browserUrl ? (
+              runtimeChipCopy ? (
+                <div
+                  className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
+                    nativeRuntimeActive
+                      ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
+                      : 'border-amber-400/25 bg-amber-400/10 text-amber-100'
+                  }`}
+                  data-testid="browser-native-runtime-chip"
+                  title={nativeRuntimeActive ? 'Native GTK/WebKitGTK runtime active' : 'Browser runtime fell back to iframe'}
+                >
+                  {runtimeChipCopy}
+                </div>
+              ) : null
             ) : null}
             {dockState.browserUrl ? (
               <div
@@ -409,6 +592,7 @@ function WorkspaceBrowserPane({
           className="relative h-full overflow-hidden rounded-[16px] border border-white/10 bg-[#0a111d] shadow-[0_18px_48px_rgba(3,7,18,0.28)]"
           data-testid="browser-viewport-shell"
           style={VIEWPORT_SHELL_STYLE}
+          ref={viewportShellRef}
         >
           {shouldShowFrameWarning ? (
             <div
@@ -478,6 +662,32 @@ function WorkspaceBrowserPane({
                 ) : null}
               </div>
             </div>
+          ) : nativeRuntimeActive ? (
+            <>
+              <div
+                className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(88,166,255,0.08),transparent_45%),#0a111d] text-center text-[var(--text-secondary)]"
+                data-testid="browser-native-runtime-shell"
+                onMouseDown={() => focusNativeBrowser({ panelId: nativePanelId }).catch(() => {})}
+              >
+                <div className="max-w-sm space-y-2 px-6">
+                  <div className="text-sm font-semibold text-[var(--text-primary)]">Native GTK/WebKitGTK runtime</div>
+                  <p className="text-sm leading-6">
+                    {nativeRuntimeReady
+                      ? 'El panel nativo está activo dentro de DevHub. Si falla, vuelve silenciosamente al iframe.'
+                      : 'Preparando el panel nativo dentro de DevHub.'}
+                  </p>
+                </div>
+              </div>
+
+              {isLoading || !nativeRuntimeReady ? (
+                <div
+                  className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#050814]/80"
+                  data-testid="browser-loading-overlay"
+                >
+                  <RefreshCw className="h-5 w-5 animate-spin text-[var(--text-muted)]" />
+                </div>
+              ) : null}
+            </>
           ) : (
             <>
               <iframe

@@ -3,6 +3,9 @@ const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
+const mockInvoke = jest.fn();
+const mockListen = jest.fn();
+
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
     const React = require('react');
@@ -10,6 +13,11 @@ jest.mock('lucide-react', () => {
   };
   return new Proxy({}, { get: (_, key) => icon(String(key)) });
 });
+
+jest.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args) => mockInvoke(...args),
+  listen: (...args) => mockListen(...args),
+}));
 
 const { COMMAND_ACTION, MESSAGE_TYPE, MONITOR_ACTION } = require('@emergentbase/visual-edits');
 const WorkspaceBrowserPane = require('../WorkspaceBrowserPane').default;
@@ -181,6 +189,8 @@ describe('WorkspaceBridgePane', () => {
     installDom();
     usingFakeTimers = false;
     jest.useRealTimers();
+    mockInvoke.mockReset();
+    mockListen.mockReset();
     originalFetch = global.fetch;
     originalWindowFetch = window.fetch;
     global.fetch = jest.fn(async () => ({
@@ -327,6 +337,58 @@ describe('WorkspaceBridgePane', () => {
 
     expect(view.container.querySelector('[data-testid="bridge-unsupported-copy"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="bridge-status-badge"]')?.textContent).toContain('Select an element');
+  });
+
+  test('falls back to iframe when native browser runtime is requested while edit mode is enabled', async () => {
+    const view = await renderIntoDom(
+      React.createElement(WorkspaceBrowserPaneHarness, {
+        initialDockState: {
+          browserUrl: 'https://example.com',
+          browserHistory: ['https://example.com'],
+          browserHistoryIndex: 0,
+          browserRuntime: 'native-gtk',
+          editMode: true,
+        },
+      })
+    );
+
+    expect(view.container.querySelector('[data-testid="browser-iframe"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="browser-native-runtime-chip"]')?.textContent).toContain('iframe fallback');
+    expect(view.container.querySelector('[data-testid="browser-native-runtime-chip"]')?.textContent).toContain('edit mode');
+  });
+
+  test('shows native runtime shell when native browser runtime is active', async () => {
+    window.__TAURI_INTERNALS__ = {};
+    mockInvoke.mockImplementation(async (command) => {
+      if (command === 'native_browser_probe') return { ready: true, reason: null };
+      if (command === 'native_browser_open') return { opened: true, reason: null };
+      if (command === 'native_browser_load_url') return { loaded: true, reason: null };
+      if (command === 'native_browser_reload') return { reloaded: true, reason: null };
+      if (command === 'native_browser_select_all' || command === 'native_browser_copy') {
+        return { supported: true, reason: null };
+      }
+      return null;
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(WorkspaceBrowserPane, {
+        dockState: {
+          browserUrl: 'https://example.com',
+          browserHistory: ['https://example.com'],
+          browserHistoryIndex: 0,
+          browserRuntime: 'native-gtk',
+          editMode: false,
+        },
+        onDockStateChange: jest.fn(),
+      })
+    );
+
+    await flushEffects();
+
+    expect(view.container.querySelector('[data-testid="browser-iframe"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="browser-native-runtime-shell"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="browser-native-runtime-chip"]')?.textContent).toContain('native gtk');
+    expect(mockInvoke).toHaveBeenCalledWith('native_browser_probe', expect.any(Object));
   });
 
   test('keeps the preview interactive while inspect is connecting', async () => {
