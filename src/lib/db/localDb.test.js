@@ -5,10 +5,12 @@ const {
   AGENT_WORKSPACE_BASE_COMMIT,
   buildPrepareAgentWorkspaceAck,
   createMissionMessage,
+  resolveAgentRuntimeBinding,
   createSwarmMission,
   buildSupervisorApprovalCheckpointKey,
   ensureRuntimeSchema,
   getAgentPresenceStatus,
+  getVerifiedMissionRecipientBinding,
   getSwarmMissionDirectorSnapshot,
   getSupervisorApprovalCheckpoint,
   getSupervisorSnapshot,
@@ -63,6 +65,34 @@ function insertWorkspace(db, overrides = {}) {
   db.prepare(
     `INSERT INTO agent_workspaces (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
   ).run(...values);
+  return row;
+}
+
+function insertAgentRun(db, overrides = {}) {
+  const row = {
+    run_id: overrides.run_id || 'run-1',
+    workspace_id: overrides.workspace_id || 'ws-1',
+    task_id: overrides.task_id ?? 'task-1',
+    agent_id: overrides.agent_id || 'agent-1',
+    requested_base_ref: overrides.requested_base_ref || FROZEN_BASE_COMMIT,
+    baseline_commit: overrides.baseline_commit || FROZEN_BASE_COMMIT,
+    status: overrides.status || 'running',
+  };
+
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    row.run_id,
+    row.workspace_id,
+    row.task_id,
+    row.agent_id,
+    row.requested_base_ref,
+    row.baseline_commit,
+    row.status
+  );
+
   return row;
 }
 
@@ -1448,6 +1478,293 @@ test('updates delivery receipts and computes active versus stale presence in mis
   db.close();
 });
 
+test('returns recent_messages newest-first capped at 20 with latest_message alias preserved', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-recent-messages',
+    'Recent Messages'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-recent-messages',
+    project_id: 'project-recent-messages',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Recent messages mission',
+    started_at: '2026-05-20T17:00:00.000Z',
+    updated_at: '2026-05-20T17:00:00.000Z',
+  });
+
+  for (let index = 0; index < 25; index += 1) {
+    const seconds = String(index).padStart(2, '0');
+    createMissionMessage(db, {
+      message_id: `message-${index}`,
+      mission_id: mission.mission_id,
+      sender_agent_id: 'agent-director',
+      message_kind: 'status',
+      body_summary: `Message ${index}`,
+      created_at: `2026-05-20T17:00:${seconds}.000Z`,
+      updated_at: `2026-05-20T17:00:${seconds}.000Z`,
+    });
+  }
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T17:01:00.000Z',
+  });
+
+  assert.equal(snapshot.recent_messages.length, 20);
+  assert.equal(snapshot.recent_messages[0].message_id, 'message-24');
+  assert.equal(snapshot.recent_messages[19].message_id, 'message-5');
+  assert.deepEqual(snapshot.latest_message, snapshot.recent_messages[0]);
+
+  db.close();
+});
+
+test('returns empty recent_messages and null latest_message when mission has no messages', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-empty-messages',
+    'Empty Messages'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-empty-messages',
+    project_id: 'project-empty-messages',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Empty messages mission',
+    started_at: '2026-05-20T18:00:00.000Z',
+    updated_at: '2026-05-20T18:00:00.000Z',
+  });
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T18:00:30.000Z',
+  });
+
+  assert.equal(Array.isArray(snapshot.recent_messages), true);
+  assert.equal(snapshot.recent_messages.length, 0);
+  assert.equal(snapshot.latest_message, null);
+
+  db.close();
+});
+
+test('returns pending_deliveries newest-first by latest durable activity capped at 20 and adds snapshot_at', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-pending-deliveries',
+    'Pending Deliveries'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-pending-deliveries',
+    project_id: 'project-pending-deliveries',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Pending deliveries mission',
+    started_at: '2026-05-20T19:00:00.000Z',
+    updated_at: '2026-05-20T19:00:00.000Z',
+  });
+
+  for (let index = 0; index < 25; index += 1) {
+    const seconds = String(index).padStart(2, '0');
+    const message = createMissionMessage(db, {
+      message_id: `delivery-message-${index}`,
+      mission_id: mission.mission_id,
+      sender_agent_id: 'agent-director',
+      message_kind: 'status',
+      body_summary: `Delivery message ${index}`,
+      created_at: `2026-05-20T19:00:${seconds}.000Z`,
+      updated_at: `2026-05-20T19:00:${seconds}.000Z`,
+    });
+    upsertMessageDelivery(db, {
+      message_id: message.message_id,
+      recipient_agent_id: `agent-worker-${index}`,
+      channel: 'runtime_bus',
+      status: index % 2 === 0 ? 'pending' : 'retry_pending',
+      updated_at: '2026-05-20T19:00:00.000Z',
+      last_attempt_at: `2026-05-20T19:01:${seconds}.000Z`,
+      evidence_ref: `evidence://delivery/${index}`,
+    });
+  }
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T19:05:00.000Z',
+  });
+
+  assert.equal(snapshot.snapshot_at, '2026-05-20T19:05:00.000Z');
+  assert.equal(snapshot.pending_deliveries.length, 20);
+  assert.equal(snapshot.pending_deliveries[0].message_id, 'delivery-message-24');
+  assert.equal(snapshot.pending_deliveries[19].message_id, 'delivery-message-5');
+  assert.equal(snapshot.pending_deliveries[0].status, 'pending');
+  assert.equal(snapshot.pending_deliveries[1].status, 'retry_pending');
+
+  db.close();
+});
+
+test('keeps watermark stable across no-op polls while TTL regrouping changes presence buckets', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-watermark-stable',
+    'Watermark Stable'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-watermark-stable',
+    project_id: 'project-watermark-stable',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Stable watermark mission',
+    started_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-director',
+    role_in_mission: 'director',
+    status: 'active',
+    joined_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+  createMissionMessage(db, {
+    message_id: 'stable-message-1',
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'status',
+    body_summary: 'Stable message',
+    created_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-ttl',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    status_summary: 'Working',
+    last_seen_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+
+  const firstSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T20:01:30.000Z',
+  });
+  const secondSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T20:02:30.000Z',
+  });
+
+  assert.equal(firstSnapshot.snapshot_at, '2026-05-20T20:01:30.000Z');
+  assert.equal(secondSnapshot.snapshot_at, '2026-05-20T20:02:30.000Z');
+  assert.equal(firstSnapshot.presence.active.length, 1);
+  assert.equal(firstSnapshot.presence.stale.length, 0);
+  assert.equal(secondSnapshot.presence.active.length, 0);
+  assert.equal(secondSnapshot.presence.stale.length, 1);
+  assert.equal(firstSnapshot.watermark, secondSnapshot.watermark);
+
+  db.close();
+});
+
+test('changes watermark when durable mission rows mutate', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-watermark-mutation',
+    'Watermark Mutation'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-watermark-mutation',
+    project_id: 'project-watermark-mutation',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Mutation watermark mission',
+    started_at: '2026-05-20T21:00:00.000Z',
+    updated_at: '2026-05-20T21:00:00.000Z',
+  });
+  const baselineMessage = createMissionMessage(db, {
+    message_id: 'mutation-message-0',
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'status',
+    body_summary: 'Baseline',
+    created_at: '2026-05-20T21:00:00.000Z',
+    updated_at: '2026-05-20T21:00:00.000Z',
+  });
+  upsertMessageDelivery(db, {
+    message_id: baselineMessage.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'pending',
+    last_attempt_at: '2026-05-20T21:00:10.000Z',
+    updated_at: '2026-05-20T21:00:10.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'online',
+    status_summary: 'Ready',
+    last_seen_at: '2026-05-20T21:00:20.000Z',
+    updated_at: '2026-05-20T21:00:20.000Z',
+  });
+
+  const baselineSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:01:00.000Z',
+  });
+
+  createMissionMessage(db, {
+    message_id: 'mutation-message-1',
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'decision',
+    body_summary: 'Mutation happened',
+    created_at: '2026-05-20T21:01:10.000Z',
+    updated_at: '2026-05-20T21:01:10.000Z',
+  });
+  const afterMessageSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:01:30.000Z',
+  });
+
+  upsertMessageDelivery(db, {
+    message_id: baselineMessage.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'retry_pending',
+    last_error: 'network timeout',
+    last_attempt_at: '2026-05-20T21:01:40.000Z',
+    updated_at: '2026-05-20T21:01:40.000Z',
+  });
+  const afterDeliverySnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:01:50.000Z',
+  });
+
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    status_summary: 'Executing',
+    last_seen_at: '2026-05-20T21:01:55.000Z',
+    updated_at: '2026-05-20T21:01:55.000Z',
+  });
+  const afterPresenceSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:02:00.000Z',
+  });
+
+  assert.notEqual(afterMessageSnapshot.watermark, baselineSnapshot.watermark);
+  assert.notEqual(afterDeliverySnapshot.watermark, afterMessageSnapshot.watermark);
+  assert.notEqual(afterPresenceSnapshot.watermark, afterDeliverySnapshot.watermark);
+
+  db.close();
+});
+
 test('rejects runtime logs and operational identity metadata in mission kernel payloads', () => {
   const db = new Database(':memory:');
 
@@ -1504,6 +1821,669 @@ test('rejects runtime logs and operational identity metadata in mission kernel p
       }),
     /status inválido/i
   );
+
+  db.close();
+});
+
+test('resolveAgentRuntimeBinding returns missing when no durable workspace exists', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-resolver-1',
+    'Binding Resolver'
+  );
+
+  const result = resolveAgentRuntimeBinding(db, {
+    project_id: 'project-binding-resolver-1',
+    agent_id: 'worker-missing',
+    preferred_task_id: 'task-binding-missing',
+  });
+
+  assert.deepEqual(result, {
+    classification: 'missing',
+    status: 'unbound',
+    reason: 'binding_missing',
+    agent_id: 'worker-missing',
+    workspace_id: null,
+    run_id: null,
+    run_id_or_session_id: null,
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: null,
+  });
+
+  db.close();
+});
+
+test('resolveAgentRuntimeBinding returns missing when workspace exists without durable latest run', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-resolver-2',
+    'Binding Resolver Missing Run'
+  );
+  insertWorkspace(db, {
+    id: 'ws-missing-run',
+    project_id: 'project-binding-resolver-2',
+    agent_id: 'worker-missing-run',
+    current_task_id: 'task-binding-missing-run',
+    run_id_or_session_id: 'runtime-session-42',
+    status: 'ready',
+    observed_branch: 'agent/worker-missing-run/task-binding-missing-run',
+    observed_head: 'head-missing-run',
+    observed_dirty: 'clean',
+  });
+
+  const result = resolveAgentRuntimeBinding(db, {
+    project_id: 'project-binding-resolver-2',
+    agent_id: 'worker-missing-run',
+    preferred_task_id: 'task-binding-missing-run',
+  });
+
+  assert.deepEqual(result, {
+    classification: 'missing',
+    status: 'unbound',
+    reason: 'binding_missing',
+    agent_id: 'worker-missing-run',
+    workspace_id: 'ws-missing-run',
+    run_id: null,
+    run_id_or_session_id: 'runtime-session-42',
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('resolveAgentRuntimeBinding returns bound from durable workspace and latest run without runtime session rows', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-resolver-3',
+    'Binding Resolver Bound'
+  );
+  insertWorkspace(db, {
+    id: 'ws-older',
+    project_id: 'project-binding-resolver-3',
+    agent_id: 'worker-bound',
+    current_task_id: 'task-other',
+    status: 'ready',
+    updated_at: '2026-05-20T16:05:00.000Z',
+    branch_name: 'agent/worker-bound/task-other--ws-older',
+    worktree_path: '.worktrees/devhub/ws-older',
+    observed_branch: 'agent/worker-bound/task-other',
+    observed_head: 'head-older',
+    observed_dirty: 'clean',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-older',
+    workspace_id: 'ws-older',
+    task_id: 'task-other',
+    agent_id: 'worker-bound',
+  });
+  insertWorkspace(db, {
+    id: 'ws-bound',
+    project_id: 'project-binding-resolver-3',
+    agent_id: 'worker-bound',
+    current_task_id: 'task-bound',
+    run_id_or_session_id: 'runtime-session-bound',
+    status: 'active',
+    updated_at: '2026-05-20T16:10:00.000Z',
+    branch_name: 'agent/worker-bound/task-bound--ws-bound',
+    worktree_path: '.worktrees/devhub/ws-bound',
+    observed_branch: 'agent/worker-bound/task-bound',
+    observed_head: 'head-bound',
+    observed_dirty: 'clean',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-bound',
+    workspace_id: 'ws-bound',
+    task_id: 'task-bound',
+    agent_id: 'worker-bound',
+  });
+
+  const result = resolveAgentRuntimeBinding(db, {
+    project_id: 'project-binding-resolver-3',
+    agent_id: 'worker-bound',
+    preferred_task_id: 'task-bound',
+    runtime_session_id: 'runtime-session-bound',
+  });
+
+  assert.deepEqual(result, {
+    classification: 'bound',
+    status: 'bound',
+    reason: 'binding_found',
+    agent_id: 'worker-bound',
+    workspace_id: 'ws-bound',
+    run_id: 'run-bound',
+    run_id_or_session_id: 'runtime-session-bound',
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('resolves verified mission recipient binding from participant workspace and active opencode session', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding',
+    'Binding Project'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-1',
+    project_id: 'project-binding',
+    task_id: 'task-binding-1',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-1',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-1',
+    project_id: 'project-binding',
+    agent_id: 'worker-1',
+    current_task_id: 'task-binding-1',
+    run_id_or_session_id: 'session-binding-1',
+    status: 'ready',
+    observed_branch: 'agent/worker-1/task-binding-1',
+    observed_head: 'head-binding-1',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-1/task-binding-1',
+    worktree_path: '.worktrees/ws-binding-1',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-1',
+    workspace_id: 'ws-binding-1',
+    task_id: 'task-binding-1',
+    agent_id: 'worker-1',
+  });
+  db.prepare(
+    `INSERT INTO agent_hub_sessions (
+      id, project_id, title, agent_model, status, visibility, opencode_session_id, directory, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'session-binding-1',
+    'project-binding',
+    'Worker Session',
+    'gpt-5.4',
+    'active',
+    'visible',
+    'oc-binding-1',
+    '/repo/devhub',
+    '2026-05-20T16:01:00.000Z',
+    '2026-05-20T16:01:00.000Z'
+  );
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-1',
+  });
+
+  assert.deepEqual(result, {
+    status: 'bound',
+    classification: 'bound',
+    agent_id: 'worker-1',
+    session_id: 'session-binding-1',
+    opencode_session_id: 'oc-binding-1',
+    workspace_id: 'ws-binding-1',
+    run_id: 'run-binding-1',
+    run_id_or_session_id: 'session-binding-1',
+    reason: 'binding_found',
+    agent_model: 'gpt-5.4',
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_missing when recipient has no verifiable workspace binding', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-miss',
+    'Binding Missing'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-miss',
+    project_id: 'project-binding-miss',
+    task_id: 'task-binding-miss',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding missing mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-2',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-2',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'missing',
+    agent_id: 'worker-2',
+    session_id: null,
+    opencode_session_id: null,
+    workspace_id: null,
+    run_id: null,
+    run_id_or_session_id: null,
+    reason: 'binding_missing',
+    agent_model: null,
+    cwd: null,
+  });
+
+  db.close();
+});
+
+test('returns binding_stale when workspace references a missing or unusable session binding', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-stale',
+    'Binding Stale'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-stale',
+    project_id: 'project-binding-stale',
+    task_id: 'task-binding-stale',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding stale mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-3',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-stale',
+    project_id: 'project-binding-stale',
+    agent_id: 'worker-3',
+    current_task_id: 'task-binding-stale',
+    run_id_or_session_id: 'session-binding-stale',
+    status: 'active',
+    observed_branch: 'agent/worker-3/task-binding-stale',
+    observed_head: 'head-binding-stale',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-3/task-binding-stale',
+    worktree_path: '.worktrees/ws-binding-stale',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-stale',
+    workspace_id: 'ws-binding-stale',
+    task_id: 'task-binding-stale',
+    agent_id: 'worker-3',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-3',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'stale',
+    agent_id: 'worker-3',
+    session_id: 'session-binding-stale',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-stale',
+    run_id: 'run-binding-stale',
+    run_id_or_session_id: 'session-binding-stale',
+    reason: 'binding_stale',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_stale when runtime session is inactive or missing opencode session id', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-stale-inactive',
+    'Binding Stale Inactive'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-stale-inactive',
+    project_id: 'project-binding-stale-inactive',
+    task_id: 'task-binding-stale-inactive',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding stale inactive mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-4',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-stale-inactive',
+    project_id: 'project-binding-stale-inactive',
+    agent_id: 'worker-4',
+    current_task_id: 'task-binding-stale-inactive',
+    run_id_or_session_id: 'session-binding-stale-inactive',
+    status: 'active',
+    observed_branch: 'agent/worker-4/task-binding-stale-inactive',
+    observed_head: 'head-binding-stale-inactive',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-4/task-binding-stale-inactive',
+    worktree_path: '.worktrees/ws-binding-stale-inactive',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-stale-inactive',
+    workspace_id: 'ws-binding-stale-inactive',
+    task_id: 'task-binding-stale-inactive',
+    agent_id: 'worker-4',
+  });
+  db.prepare(
+    `INSERT INTO agent_hub_sessions (
+      id, project_id, title, agent_model, status, visibility, opencode_session_id, directory, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'session-binding-stale-inactive',
+    'project-binding-stale-inactive',
+    'Inactive Worker Session',
+    'gpt-5.4',
+    'error',
+    'visible',
+    null,
+    '/repo/devhub',
+    '2026-05-20T16:01:00.000Z',
+    '2026-05-20T16:01:00.000Z'
+  );
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-4',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'stale',
+    agent_id: 'worker-4',
+    session_id: 'session-binding-stale-inactive',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-stale-inactive',
+    run_id: 'run-binding-stale-inactive',
+    run_id_or_session_id: 'session-binding-stale-inactive',
+    reason: 'binding_stale',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_orphaned when workspace durable state is orphaned', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-orphaned',
+    'Binding Orphaned'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-orphaned',
+    project_id: 'project-binding-orphaned',
+    task_id: 'task-binding-orphaned',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding orphaned mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-5',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-orphaned',
+    project_id: 'project-binding-orphaned',
+    agent_id: 'worker-5',
+    current_task_id: 'task-binding-orphaned',
+    run_id_or_session_id: 'runtime-session-orphaned',
+    status: 'orphaned',
+    observed_branch: 'agent/worker-5/task-binding-orphaned',
+    observed_head: 'head-binding-orphaned',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-5/task-binding-orphaned',
+    worktree_path: '.worktrees/ws-binding-orphaned',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-orphaned',
+    workspace_id: 'ws-binding-orphaned',
+    task_id: 'task-binding-orphaned',
+    agent_id: 'worker-5',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-5',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'orphaned',
+    agent_id: 'worker-5',
+    session_id: 'runtime-session-orphaned',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-orphaned',
+    run_id: 'run-binding-orphaned',
+    run_id_or_session_id: 'runtime-session-orphaned',
+    reason: 'binding_orphaned',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_orphaned when supervisor durable reason marks orphaned_run', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-orphaned-supervisor',
+    'Binding Orphaned Supervisor'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-orphaned-supervisor',
+    project_id: 'project-binding-orphaned-supervisor',
+    task_id: 'task-binding-orphaned-supervisor',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding orphaned supervisor mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-6',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-orphaned-supervisor',
+    project_id: 'project-binding-orphaned-supervisor',
+    agent_id: 'worker-6',
+    current_task_id: 'task-binding-orphaned-supervisor',
+    run_id_or_session_id: 'runtime-session-orphaned-supervisor',
+    status: 'active',
+    observed_branch: 'agent/worker-6/task-binding-orphaned-supervisor',
+    observed_head: 'head-binding-orphaned-supervisor',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-6/task-binding-orphaned-supervisor',
+    worktree_path: '.worktrees/ws-binding-orphaned-supervisor',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-orphaned-supervisor',
+    workspace_id: 'ws-binding-orphaned-supervisor',
+    task_id: 'task-binding-orphaned-supervisor',
+    agent_id: 'worker-6',
+  });
+  upsertSupervisorSnapshot(db, {
+    task_id: 'task-binding-orphaned-supervisor',
+    supervisor_state: 'recovering_orphan',
+    outcome: 'recover_orphan',
+    reason_class: 'orphaned_run',
+    workspace_id: 'ws-binding-orphaned-supervisor',
+    run_id: 'run-binding-orphaned-supervisor',
+    evidence_ref: 'evidence://binding/orphaned-run',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-6',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'orphaned',
+    agent_id: 'worker-6',
+    session_id: 'runtime-session-orphaned-supervisor',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-orphaned-supervisor',
+    run_id: 'run-binding-orphaned-supervisor',
+    run_id_or_session_id: 'runtime-session-orphaned-supervisor',
+    reason: 'binding_orphaned',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('rejects runtime session statuses as durable message delivery states', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-delivery-guard',
+    'Delivery Guard'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-delivery-guard',
+    project_id: 'project-delivery-guard',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    title: 'Delivery guard mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'director-1',
+    message_kind: 'directive',
+    body_summary: 'No runtime leaks',
+    created_at: '2026-05-20T16:01:00.000Z',
+    updated_at: '2026-05-20T16:01:00.000Z',
+  });
+
+  for (const invalidStatus of ['running', 'completed', 'error']) {
+    assert.throws(
+      () =>
+        upsertMessageDelivery(db, {
+          message_id: message.message_id,
+          recipient_agent_id: `worker-${invalidStatus}`,
+          channel: 'opencode',
+          status: invalidStatus,
+          last_attempt_at: '2026-05-20T16:02:00.000Z',
+        }),
+      /status inválido/
+    );
+  }
+
+  db.close();
+});
+
+test('SW-8.2B keeps mission kernel free from team_messages and runtime-only mission fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const teamMessages = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'team_messages'")
+    .get();
+  const missionMessageColumns = db
+    .prepare('PRAGMA table_info(mission_messages)')
+    .all()
+    .map((column) => column.name);
+  const deliveryColumns = db
+    .prepare('PRAGMA table_info(message_deliveries)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(teamMessages, undefined);
+  for (const forbiddenColumn of [
+    'terminal_log',
+    'stdout',
+    'stderr',
+    'sse_event',
+    'sse_payload',
+    'transcript',
+    'transcripts',
+    'tool_output',
+    'raw_output',
+    'session_state',
+  ]) {
+    assert.equal(missionMessageColumns.includes(forbiddenColumn), false);
+    assert.equal(deliveryColumns.includes(forbiddenColumn), false);
+  }
 
   db.close();
 });

@@ -34,7 +34,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = join(__dirname, '..', 'server.js');
 const ROOT_DIR = join(__dirname, '..', '..');
 
-export async function createTestHarness() {
+export async function createTestHarness(options = {}) {
   const runId = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const workDir = join(tmpdir(), `devhub-mcp-test-${runId}`);
   const dbPath = join(workDir, 'devhub.db');
@@ -50,6 +50,7 @@ export async function createTestHarness() {
       ...process.env,
       DEVHUB_DB_PATH: dbPath,
       DEVHUB_MCP_DB_DRIVER: 'sqlite',
+      ...(options.env || {}),
     };
   }
 

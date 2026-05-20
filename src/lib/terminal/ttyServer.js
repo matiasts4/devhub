@@ -295,6 +295,77 @@ function getOrInitSessions() {
   return globalThis[GLOBAL_TTY_SESSIONS_KEY];
 }
 
+function normalizePtyRuntimeEvidence(session, terminalId) {
+  if (!session) {
+    return {
+      provider: 'pty',
+      availability: 'missing',
+      handle_ref: null,
+      evidence: terminalId ? { terminalId } : null,
+    };
+  }
+
+  return {
+    provider: 'pty',
+    availability: 'live',
+    handle_ref: session.id,
+    evidence: {
+      terminalId: session.id,
+      cwd: session.cwd || null,
+      restored: Boolean(session.restored),
+      opencodeSessionId: session.opencodeSessionId || null,
+    },
+  };
+}
+
+export function readPtyRuntime({ terminalId } = {}) {
+  const sessions = getOrInitSessions();
+  return normalizePtyRuntimeEvidence(
+    terminalId ? sessions.get(terminalId) : null,
+    terminalId || null
+  );
+}
+
+export function openPtyLifecycle({ runtimeHint } = {}) {
+  const terminalId = runtimeHint?.terminalId || null;
+  const existingRuntime = readPtyRuntime({ terminalId });
+
+  if (existingRuntime.availability === 'live') {
+    return {
+      outcome: 'ok',
+      reason: 'runtime_handle_live',
+      runtime: existingRuntime,
+    };
+  }
+
+  const session = createSession({ id: terminalId || `term-${Date.now()}` });
+
+  return {
+    outcome: 'ok',
+    reason: 'runtime_handle_created',
+    runtime: normalizePtyRuntimeEvidence(session, session.id),
+  };
+}
+
+export function attachPtyLifecycle({ runtimeHint } = {}) {
+  const terminalId = runtimeHint?.terminalId || null;
+  const runtime = readPtyRuntime({ terminalId });
+
+  if (runtime.availability !== 'live') {
+    return {
+      outcome: 'degraded',
+      reason: 'runtime_handle_missing',
+      runtime,
+    };
+  }
+
+  return {
+    outcome: 'ok',
+    reason: 'runtime_handle_live',
+    runtime,
+  };
+}
+
 function buildSessionSpawnConfig(cwd, terminalId) {
   const tmuxEnabled = hasTmux();
   const tmuxSession = normalizeTmuxSessionName(terminalId);
@@ -442,9 +513,15 @@ function _debouncedSave(sessions, session) {
 }
 
 const OPENCODE_OUTPUT_SESSION_RE = /\bses_([a-zA-Z0-9_]+)\b/;
-// eslint-disable-next-line no-control-regex -- ANSI escape sequences must be matched literally.
-const SHELL_TERMINAL_RESPONSE_RE =
-  /(?:\x1b\[\?(?:\d+;)*\d+[cnR]|\x1b\[>(?:\d+;)*\d+c|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+const SHELL_TERMINAL_RESPONSE_RE = new RegExp(
+  [
+    String.raw`\u001b\[\?(?:\d+;)*\d+[cnR]`,
+    String.raw`\u001b\[>(?:\d+;)*\d+c`,
+    String.raw`\u001b\[(?:\d+;)*\d+n`,
+    String.raw`\u001b\[(?:\d+;)*\d+R`,
+  ].join('|'),
+  'g'
+);
 const SHELL_NVM_ENV_WARNING_RE =
   /nvm is not compatible with the "[^"]+" environment variable:[^\n]*\nRun `unset [^`]+` to unset it\.\n?/g;
 const SHELL_NVM_NPMRC_WARNING_RE =
@@ -458,9 +535,7 @@ function stripShellTerminalResponseNoise(chunk) {
 function stripShellStartupNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
 
-  return chunk
-    .replace(SHELL_NVM_ENV_WARNING_RE, '')
-    .replace(SHELL_NVM_NPMRC_WARNING_RE, '');
+  return chunk.replace(SHELL_NVM_ENV_WARNING_RE, '').replace(SHELL_NVM_NPMRC_WARNING_RE, '');
 }
 
 function sanitizeHistoryReplay(session, history) {

@@ -16,6 +16,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { randomUUID } from 'crypto';
+import { appendFileSync } from 'fs';
 
 // Cargar .env.local desde la raíz del proyecto
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,9 @@ config({ path: resolve(__dirname, '../.env.local') });
 const require = createRequire(import.meta.url);
 const localDb = require('../src/lib/db/localDb.js');
 const { evaluateSupervisorSnapshot } = require('../src/lib/swarm/supervisorLoop.js');
+const { createTeamTell } = require('../src/lib/swarm/teamTell.js');
+const { createOpencodeTargetResolver } = require('../src/lib/swarm/opencodeTargetResolver.js');
+const { createOpencodeDeliveryAdapter } = require('../src/lib/swarm/opencodeDeliveryAdapter.js');
 const {
   AGENT_RUN_STATUSES,
   TERMINAL_AGENT_RUN_STATUSES,
@@ -665,7 +669,9 @@ const TELEGRAM_ADAPTER_ACTIONS = [
   'notification.retry',
   'subscription.set',
 ];
-const TELEGRAM_FORBIDDEN_SURFACE_PATTERN = /\b(git|checkout|merge|worktree|filesystem|queue|lease)\b/i;
+const TELEGRAM_FORBIDDEN_SURFACE_PATTERN =
+  /\b(git|checkout|merge|worktree|filesystem|queue|lease)\b/i;
+const TEAM_TELL_ACTIVE_PARTICIPANT_STATUSES = new Set(['invited', 'active', 'paused']);
 
 function ensureTelegramAdapterActionAllowed(action, requestedVerb = '') {
   if (!TELEGRAM_ADAPTER_ACTIONS.includes(action)) {
@@ -676,6 +682,73 @@ function ensureTelegramAdapterActionAllowed(action, requestedVerb = '') {
   }
 }
 
+function getTeamTellTransportOverride() {
+  if (process.env.DEVHUB_MCP_TEAM_TELL_FAKE_TRANSPORT !== '1') return null;
+  const transportLogPath = process.env.DEVHUB_MCP_TEAM_TELL_TRANSPORT_LOG_PATH || null;
+
+  return async (_sessionId, opencodeSessionId) => {
+    if (transportLogPath) {
+      appendFileSync(transportLogPath, `${String(opencodeSessionId)}\n`, 'utf8');
+    }
+
+    if (String(opencodeSessionId).includes('stale')) {
+      throw new Error(
+        `Failed to send message to OpenCode session ${opencodeSessionId}: 404 session missing`
+      );
+    }
+
+    return {
+      delivery_ref: `delivery-ref:${opencodeSessionId}`,
+      evidence_ref: `evidence-ref:${opencodeSessionId}`,
+    };
+  };
+}
+
+function validateTeamTellMembership(db, { mission_id, sender_agent_id, recipients }) {
+  const mission = localDb.getSwarmMissionById(db, mission_id);
+  if (!mission) {
+    throw new Error(`Misión ${mission_id} no encontrada.`);
+  }
+
+  const participants = localDb
+    .listMissionParticipants(db, mission_id)
+    .filter((participant) => TEAM_TELL_ACTIVE_PARTICIPANT_STATUSES.has(participant.status));
+  const participantIds = new Set(participants.map((participant) => participant.agent_id));
+
+  if (!participantIds.has(sender_agent_id)) {
+    throw new Error(`sender_agent_id no pertenece a la misión ${mission_id}.`);
+  }
+
+  const invalidRecipient = (recipients || []).find((recipient) => !participantIds.has(recipient));
+  if (invalidRecipient) {
+    throw new Error(
+      `recipient_agent_id no pertenece a la misión ${mission_id}: ${invalidRecipient}`
+    );
+  }
+
+  return mission;
+}
+
+function toCompactTeamTellResult(result) {
+  return {
+    accepted: true,
+    message: {
+      message_id: result.message.message_id,
+      mission_id: result.message.mission_id,
+      message_kind: result.message.message_kind,
+      created_at: result.message.created_at,
+    },
+    outcomes: result.outcomes.map((outcome) => ({
+      recipient_agent_id: outcome.recipient_agent_id,
+      status: outcome.status,
+      reason: outcome.reason,
+      delivery_id: outcome.delivery_id,
+      delivery_ref: outcome.delivery_ref || null,
+      evidence_ref: outcome.evidence_ref || null,
+    })),
+  };
+}
+
 async function getTelegramChannelSnapshot(filters = {}) {
   if (DB_DRIVER !== 'supabase') {
     return localDb.getLatestTelegramChannelSnapshot(filters);
@@ -683,7 +756,9 @@ async function getTelegramChannelSnapshot(filters = {}) {
 
   const taskId = filters.task_id || null;
   const snapshot = taskId ? await getSupervisorSnapshot(taskId) : null;
-  const workspace = snapshot?.workspace_id ? await getAgentWorkspaceById(snapshot.workspace_id) : null;
+  const workspace = snapshot?.workspace_id
+    ? await getAgentWorkspaceById(snapshot.workspace_id)
+    : null;
   const run = snapshot?.run_id ? await getAgentRunById(snapshot.run_id) : null;
   const latestArtifact = run?.run_id ? await getLatestAgentArtifactForRun(run.run_id) : null;
   const approval = snapshot?.approval_checkpoint_key
@@ -697,7 +772,8 @@ async function getTelegramChannelSnapshot(filters = {}) {
     reason_class: snapshot?.reason_class || null,
     workspace_id: snapshot?.workspace_id || workspace?.id || null,
     run_id: snapshot?.run_id || run?.run_id || null,
-    evidence_ref: snapshot?.evidence_ref || latestArtifact?.evidence_ref || workspace?.evidence_ref || null,
+    evidence_ref:
+      snapshot?.evidence_ref || latestArtifact?.evidence_ref || workspace?.evidence_ref || null,
     workspace_status: workspace?.status || null,
     run_status: run?.status || null,
     terminal_reason_class: run?.terminal_reason_class || null,
@@ -2687,7 +2763,18 @@ server.tool(
     status: z.enum(['accepted', 'pending_approval', 'denied']).optional().default('accepted'),
     audit_status: z.string().optional(),
   },
-  async ({ actor_id, chat_id, message_id, update_id, action, requested_verb, target_ref, payload, status, audit_status }) => {
+  async ({
+    actor_id,
+    chat_id,
+    message_id,
+    update_id,
+    action,
+    requested_verb,
+    target_ref,
+    payload,
+    status,
+    audit_status,
+  }) => {
     try {
       ensureTelegramAdapterActionAllowed(action, requested_verb);
       const intent = localDb.recordTelegramIntentEnvelope({
@@ -2721,7 +2808,16 @@ server.tool(
     attempts_count: z.number().int().min(1).optional().default(1),
     last_error: z.string().optional(),
   },
-  async ({ telegram_chat_id, task_id, workspace_id, run_id, intent_id, status, attempts_count, last_error }) => {
+  async ({
+    telegram_chat_id,
+    task_id,
+    workspace_id,
+    run_id,
+    intent_id,
+    status,
+    attempts_count,
+    last_error,
+  }) => {
     try {
       const delivery = localDb.upsertTelegramDeliveryReceipt({
         telegram_chat_id,
@@ -3886,6 +3982,56 @@ server.tool(
     if (error) return err(error.message);
     if (!data) return err(`Agente ${agent_id} no encontrado en registry.`);
     return ok({ success: true, agent: data });
+  }
+);
+
+server.tool(
+  'team_tell',
+  'Envía una directiva durable por misión a uno o más participantes usando persist-first y OpenCode sólo para bindings verificables.',
+  {
+    mission_id: z.string().min(1),
+    sender_agent_id: z.string().min(1),
+    body_summary: z.string().min(1),
+    recipients: z.array(z.string().min(1)).min(1).max(50),
+    message_kind: z
+      .enum([
+        'directive',
+        'status',
+        'handoff',
+        'decision',
+        'risk',
+        'approval_request',
+        'approval_result',
+      ])
+      .optional()
+      .default('directive'),
+    evidence_ref: z.string().optional(),
+  },
+  async ({ mission_id, sender_agent_id, body_summary, recipients, message_kind, evidence_ref }) => {
+    try {
+      const db = localDb.getDb();
+      validateTeamTellMembership(db, { mission_id, sender_agent_id, recipients });
+
+      const resolveTargetBinding = createOpencodeTargetResolver({ db });
+      const transportSendMessage = getTeamTellTransportOverride();
+      const sendToVerifiedSession = createOpencodeDeliveryAdapter(
+        transportSendMessage ? { transportSendMessage } : {}
+      );
+      const teamTell = createTeamTell({ db, resolveTargetBinding, sendToVerifiedSession });
+
+      const result = await teamTell({
+        mission_id,
+        sender_agent_id,
+        body_summary,
+        recipients,
+        message_kind,
+        evidence_ref: evidence_ref || null,
+      });
+
+      return ok(toCompactTeamTellResult(result));
+    } catch (e) {
+      return err(e.message);
+    }
   }
 );
 

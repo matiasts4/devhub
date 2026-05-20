@@ -18,7 +18,16 @@ const { buildControlRoomInput } = require('./fixtures/controlRoomSnapshot');
 
 describe('composeControlRoomSnapshot', () => {
   test('prefers durable supervisor authority over live hints and exposes panel selectors', () => {
-    const snapshot = composeControlRoomSnapshot(buildControlRoomInput());
+    const baseInput = buildControlRoomInput();
+    const snapshot = composeControlRoomSnapshot({
+      ...baseInput,
+      mission_control: {
+        ...baseInput.mission_control,
+        recent_messages: [baseInput.mission_control.latest_message],
+        snapshot_at: '2026-05-19T11:01:40.000Z',
+        watermark: 'mission-watermark-1',
+      },
+    });
 
     expect(selectControlRoomHeader(snapshot)).toMatchObject({
       workspace_label: 'DevHub',
@@ -117,6 +126,12 @@ describe('composeControlRoomSnapshot', () => {
             channel: 'telegram',
           }),
         ],
+        snapshot_at: '2026-05-19T11:01:40.000Z',
+        watermark: 'mission-watermark-1',
+        latest_message: expect.objectContaining({
+          message_id: 'message-1',
+          body_summary: 'Tomá la ejecución del workspace principal',
+        }),
         presence: {
           active: [expect.objectContaining({ agent_id: 'agent-director' })],
           stale: [expect.objectContaining({ agent_id: 'agent-worker-1' })],
@@ -302,7 +317,10 @@ describe('composeControlRoomSnapshot', () => {
       mission: null,
       participants: [],
       recent_messages: [],
+      latest_message: null,
       pending_deliveries: [],
+      snapshot_at: null,
+      watermark: null,
       presence: {
         active: [],
         stale: [],
@@ -467,6 +485,8 @@ describe('composeControlRoomSnapshot', () => {
               status: 'pending',
             },
           ],
+          snapshot_at: '2026-05-19T12:00:30.000Z',
+          watermark: 'mission-watermark-2',
           presence: {
             active: [],
             stale: [],
@@ -495,6 +515,58 @@ describe('composeControlRoomSnapshot', () => {
             status: 'pending',
           }),
         ],
+        latest_message: expect.objectContaining({
+          body_summary: 'Revisá el snapshot local',
+          message_kind: 'directive',
+        }),
+        snapshot_at: '2026-05-19T12:00:30.000Z',
+        watermark: 'mission-watermark-2',
+      })
+    );
+  });
+
+  test('keeps additive mission_control fields and preserves latest_message fallback for legacy payloads', () => {
+    const missionControl = extractMissionControlPayload({
+      control_room_snapshot_input: {
+        mission_control: {
+          mission: {
+            mission_id: 'mission-legacy',
+            title: 'Misión legacy',
+            status: 'active',
+          },
+          latest_message: {
+            message_id: 'message-legacy',
+            sender_agent_id: 'agent-director',
+            message_kind: 'directive',
+            body_summary: 'Compat payload legacy',
+            created_at: '2026-05-19T13:00:00.000Z',
+          },
+          pending_deliveries: [],
+          snapshot_at: '2026-05-19T13:00:30.000Z',
+          watermark: 'legacy-watermark',
+          presence: {
+            active: [],
+            stale: [],
+            offline: [],
+          },
+        },
+      },
+    });
+
+    expect(missionControl).toEqual(
+      expect.objectContaining({
+        recent_messages: [
+          expect.objectContaining({
+            message_id: 'message-legacy',
+            body_summary: 'Compat payload legacy',
+          }),
+        ],
+        latest_message: expect.objectContaining({
+          message_id: 'message-legacy',
+          body_summary: 'Compat payload legacy',
+        }),
+        snapshot_at: '2026-05-19T13:00:30.000Z',
+        watermark: 'legacy-watermark',
       })
     );
   });

@@ -50,11 +50,19 @@ describe('GET /api/agenthub/operations/health', () => {
           status: 'active',
         },
         participants: [{ agent_id: 'agent-director', role_in_mission: 'director' }],
+        recent_messages: [
+          {
+            message_id: 'message-1',
+            body_summary: 'Tomá la ejecución del workspace principal',
+          },
+        ],
         latest_message: {
           message_id: 'message-1',
           body_summary: 'Tomá la ejecución del workspace principal',
         },
         pending_deliveries: [{ delivery_id: 'delivery-1', status: 'retry_pending' }],
+        snapshot_at: '2026-04-10T17:25:00.000Z',
+        watermark: 'mission-control-watermark-1',
         presence: {
           active: [{ agent_id: 'agent-director' }],
           stale: [],
@@ -88,7 +96,16 @@ describe('GET /api/agenthub/operations/health', () => {
       },
       mission_control: expect.objectContaining({
         mission: expect.objectContaining({ mission_id: 'mission-1', title: 'Misión Director' }),
+        recent_messages: [
+          expect.objectContaining({
+            message_id: 'message-1',
+            body_summary: 'Tomá la ejecución del workspace principal',
+          }),
+        ],
+        latest_message: expect.objectContaining({ message_id: 'message-1' }),
         pending_deliveries: [expect.objectContaining({ status: 'retry_pending' })],
+        snapshot_at: '2026-04-10T17:25:00.000Z',
+        watermark: 'mission-control-watermark-1',
       }),
     });
   });
@@ -219,5 +236,113 @@ describe('GET /api/agenthub/operations/health', () => {
       { channel: 'local_snapshot', status: 'pending' },
     ]);
     db.close();
+  });
+
+  test('reuses one mission_control helper for GET parity and successful local composer POST', async () => {
+    jest.resetModules();
+    jest.useFakeTimers().setSystemTime(new Date('2026-05-19T12:01:00.000Z'));
+
+    const Database = require('better-sqlite3');
+    const actualLocalDb = jest.requireActual('../../../src/lib/db/localDb.js');
+    const db = new Database(':memory:');
+    actualLocalDb.ensureRuntimeSchema(db);
+    db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+      'project-parity',
+      'Project Parity'
+    );
+
+    const mission = actualLocalDb.createSwarmMission(db, {
+      project_id: 'project-parity',
+      owner_agent_id: 'agent-director',
+      kind: 'coordination',
+      title: 'Misión parity',
+      status: 'active',
+      started_at: '2026-05-19T12:00:00.000Z',
+      updated_at: '2026-05-19T12:00:00.000Z',
+    });
+    actualLocalDb.registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-director',
+      role_in_mission: 'director',
+      status: 'active',
+      joined_at: '2026-05-19T12:00:00.000Z',
+    });
+    actualLocalDb.registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-worker-1',
+      role_in_mission: 'executor',
+      status: 'active',
+      joined_at: '2026-05-19T12:00:05.000Z',
+    });
+
+    jest.doMock('@/lib/db/localDb.js', () => ({
+      ...jest.requireActual('@/lib/db/localDb.js'),
+      getDb: () => db,
+      getActiveAgentCount: () => 0,
+    }));
+
+    const {
+      POST,
+      gatherOperationalHealth,
+      buildMissionControlSnapshotInput,
+    } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const postResponse = await POST({
+      json: async () => ({
+        action: 'create_local_mission_message',
+        recipient_agent_ids: ['agent-worker-1'],
+        body_summary: 'Parity update para la misión.',
+      }),
+    });
+    const postPayload = await postResponse.json();
+
+    expect(typeof buildMissionControlSnapshotInput).toBe('function');
+    expect(postPayload.control_room_snapshot_input).toEqual(
+      buildMissionControlSnapshotInput(postPayload.control_room_snapshot_input.mission_control)
+    );
+    expect(postPayload.control_room_snapshot_input.mission_control).toEqual(
+      expect.objectContaining({
+        recent_messages: [
+          expect.objectContaining({ body_summary: 'Parity update para la misión.' }),
+        ],
+        latest_message: expect.objectContaining({ body_summary: 'Parity update para la misión.' }),
+        pending_deliveries: [expect.objectContaining({ recipient_agent_id: 'agent-worker-1' })],
+        snapshot_at: '2026-05-19T12:01:00.000Z',
+        watermark: expect.any(String),
+      })
+    );
+
+    const getPayload = await gatherOperationalHealth({
+      now: '2026-05-19T12:01:00.000Z',
+      getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+      getQueueStatus: () => ({ length: 0, items: [] }),
+      getActiveAgentCount: () => 0,
+      getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+      getSessionsHealth: async () => ({
+        active_sessions: [],
+        stale_sessions: [],
+        aborted_count: 0,
+        live_check_available: true,
+        checked_at: '2026-05-19T12:01:00.000Z',
+      }),
+      getTelegramStatus: async () => ({
+        bot_connected: true,
+        active_chats: 0,
+        recent_errors: 0,
+        last_activity: '2026-05-19T12:01:00.000Z',
+      }),
+      getMissionSnapshot: async () =>
+        actualLocalDb.getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+          now: '2026-05-19T12:01:00.000Z',
+        }),
+    });
+
+    expect(getPayload.control_room_snapshot_input.mission_control).toEqual(
+      postPayload.control_room_snapshot_input.mission_control
+    );
+
+    db.close();
+    jest.useRealTimers();
+    jest.resetModules();
   });
 });

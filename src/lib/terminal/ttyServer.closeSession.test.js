@@ -52,4 +52,18 @@ describe('closeSession()', () => {
     expect(sessions.has('p3')).toBe(false);
     expect(mockSaveSessions).toHaveBeenCalled();
   });
+
+  test('does not synthesize a replacement handle when closing a missing session', async () => {
+    const { closeSession } = await import('./ttyServer.js');
+
+    closeSession('missing-session');
+
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    expect(mockPtyProcess.kill).not.toHaveBeenCalled();
+
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    expect(sessions instanceof Map ? sessions.size : 0).toBe(0);
+    expect(mockSaveSessions).toHaveBeenCalledWith(expect.any(Map));
+    expect(mockSaveSessions.mock.calls[0][0].has('missing-session')).toBe(false);
+  });
 });

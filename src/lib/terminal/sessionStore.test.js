@@ -3,8 +3,6 @@
  * RED phase: these tests fail before implementation exists.
  */
 
-import path from 'path';
-
 // --- Manual mocks ---
 const mockFs = {
   existsSync: jest.fn(),
@@ -158,9 +156,33 @@ describe('loadSessions', () => {
     const fileContent = JSON.stringify({
       version: 1,
       sessions: [
-        { id: 'stale-1', cwd: '/tmp', shell: '/bin/zsh', title: null, createdAt: eightDaysAgo, lastSeenAt: eightDaysAgo, restored: false },
-        { id: 'stale-2', cwd: '/tmp', shell: '/bin/zsh', title: null, createdAt: eightDaysAgo, lastSeenAt: eightDaysAgo, restored: false },
-        { id: 'fresh-1', cwd: '/home/user', shell: '/bin/zsh', title: null, createdAt: freshTime, lastSeenAt: freshTime, restored: false },
+        {
+          id: 'stale-1',
+          cwd: '/tmp',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: eightDaysAgo,
+          lastSeenAt: eightDaysAgo,
+          restored: false,
+        },
+        {
+          id: 'stale-2',
+          cwd: '/tmp',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: eightDaysAgo,
+          lastSeenAt: eightDaysAgo,
+          restored: false,
+        },
+        {
+          id: 'fresh-1',
+          cwd: '/home/user',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: freshTime,
+          lastSeenAt: freshTime,
+          restored: false,
+        },
       ],
     });
 
@@ -180,7 +202,15 @@ describe('loadSessions', () => {
     const fileContent = JSON.stringify({
       version: 1,
       sessions: [
-        { id: 'session-1', cwd: '/home/user', shell: '/bin/zsh', title: null, createdAt: freshTime, lastSeenAt: freshTime, restored: false },
+        {
+          id: 'session-1',
+          cwd: '/home/user',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: freshTime,
+          lastSeenAt: freshTime,
+          restored: false,
+        },
       ],
     });
 
@@ -200,8 +230,24 @@ describe('loadSessions', () => {
     const fileContent = JSON.stringify({
       version: 1,
       sessions: [
-        { id: 's1', cwd: '/proj', shell: '/bin/bash', title: 'Server', createdAt: freshTime, lastSeenAt: freshTime, restored: false },
-        { id: 's2', cwd: '/home', shell: '/bin/zsh', title: null, createdAt: freshTime, lastSeenAt: freshTime, restored: false },
+        {
+          id: 's1',
+          cwd: '/proj',
+          shell: '/bin/bash',
+          title: 'Server',
+          createdAt: freshTime,
+          lastSeenAt: freshTime,
+          restored: false,
+        },
+        {
+          id: 's2',
+          cwd: '/home',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: freshTime,
+          lastSeenAt: freshTime,
+          restored: false,
+        },
       ],
     });
 
@@ -215,5 +261,116 @@ describe('loadSessions', () => {
     expect(result[0].shell).toBe('/bin/bash');
     expect(result[0].title).toBe('Server');
     expect(result[1].id).toBe('s2');
+  });
+});
+
+describe('readPersistedSessionEvidence', () => {
+  it('returns missing evidence when no persisted session matches the runtime hint', async () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            id: 'other-session',
+            cwd: '/proj',
+            shell: '/bin/zsh',
+            title: null,
+            createdAt: '2026-05-20T10:00:00.000Z',
+            lastSeenAt: '2026-05-20T10:00:00.000Z',
+            restored: false,
+          },
+        ],
+      })
+    );
+
+    const { readPersistedSessionEvidence } = await import('./sessionStore.js');
+
+    expect(readPersistedSessionEvidence({ terminalId: 'missing-session' })).toEqual({
+      provider: 'session_store',
+      availability: 'missing',
+      handle_ref: null,
+      evidence: {
+        terminalId: 'missing-session',
+      },
+    });
+  });
+
+  it('returns restorable evidence for a fresh matching persisted session', async () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            id: 'restore-me',
+            cwd: '/workspace/devhub',
+            shell: '/bin/zsh',
+            title: 'DevHub Shell',
+            createdAt: '2026-05-20T09:00:00.000Z',
+            lastSeenAt: '2026-05-20T10:59:59.000Z',
+            restored: false,
+          },
+        ],
+      })
+    );
+
+    const { readPersistedSessionEvidence } = await import('./sessionStore.js');
+
+    expect(
+      readPersistedSessionEvidence({
+        terminalId: 'restore-me',
+        now: new Date('2026-05-20T11:00:00.000Z').getTime(),
+      })
+    ).toEqual({
+      provider: 'session_store',
+      availability: 'restorable',
+      handle_ref: null,
+      evidence: {
+        terminalId: 'restore-me',
+        cwd: '/workspace/devhub',
+        shell: '/bin/zsh',
+        title: 'DevHub Shell',
+        createdAt: '2026-05-20T09:00:00.000Z',
+        lastSeenAt: '2026-05-20T10:59:59.000Z',
+      },
+    });
+  });
+
+  it('returns stale evidence for an expired persisted session without reviving it', async () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            id: 'stale-session',
+            cwd: '/workspace/devhub',
+            shell: '/bin/bash',
+            title: null,
+            createdAt: '2026-05-01T09:00:00.000Z',
+            lastSeenAt: '2026-05-01T09:00:00.000Z',
+            restored: false,
+          },
+        ],
+      })
+    );
+
+    const { readPersistedSessionEvidence, STALE_TTL_MS } = await import('./sessionStore.js');
+    const staleNow = new Date('2026-05-01T09:00:00.000Z').getTime() + STALE_TTL_MS + 1;
+
+    expect(readPersistedSessionEvidence({ terminalId: 'stale-session', now: staleNow })).toEqual({
+      provider: 'session_store',
+      availability: 'stale',
+      handle_ref: null,
+      evidence: {
+        terminalId: 'stale-session',
+        cwd: '/workspace/devhub',
+        shell: '/bin/bash',
+        title: null,
+        createdAt: '2026-05-01T09:00:00.000Z',
+        lastSeenAt: '2026-05-01T09:00:00.000Z',
+      },
+    });
   });
 });

@@ -1,5 +1,9 @@
 'use client';
 
+function getBrowserWindow() {
+  return typeof globalThis !== 'undefined' ? globalThis.window : undefined;
+}
+
 let nativeVteUnlisten = null;
 
 function normalizeNativeVteReason(reason, fallbackReason) {
@@ -28,11 +32,12 @@ function normalizeNativeVteReason(reason, fallbackReason) {
 }
 
 function hasWindow() {
-  return typeof window !== 'undefined';
+  return typeof getBrowserWindow() !== 'undefined';
 }
 
 export function isNativeVteRuntimeAvailable() {
-  return hasWindow() && Boolean(window.__TAURI_INTERNALS__);
+  const browserWindow = getBrowserWindow();
+  return Boolean(browserWindow && browserWindow.__TAURI_INTERNALS__);
 }
 
 async function getTauriCore() {
@@ -44,8 +49,28 @@ async function getTauriCore() {
 }
 
 function emitBrowserEvent(type, detail) {
+  const browserWindow = getBrowserWindow();
   if (!hasWindow()) return;
-  window.dispatchEvent(new CustomEvent(`devhub:${type}`, { detail }));
+  browserWindow.dispatchEvent(new CustomEvent(`devhub:${type}`, { detail }));
+}
+
+function resolveNativeRuntimeAvailability(probeResult) {
+  if (probeResult?.ready) {
+    return 'live';
+  }
+
+  if (
+    probeResult?.reason === 'tauri-unavailable' ||
+    probeResult?.reason === 'unsupported-platform'
+  ) {
+    return 'unsupported';
+  }
+
+  if (probeResult?.reason === 'panel-not-active') {
+    return 'stale';
+  }
+
+  return 'missing';
 }
 
 export async function probeNativeVte(payload = {}) {
@@ -59,6 +84,25 @@ export async function probeNativeVte(payload = {}) {
   } catch (error) {
     return { ready: false, reason: normalizeNativeVteReason(error?.message, 'probe-failed') };
   }
+}
+
+export async function readNativeVteRuntimeEvidence(payload = {}) {
+  const probeResult = await probeNativeVte(payload);
+  const availability = resolveNativeRuntimeAvailability(probeResult);
+  const panelId = probeResult?.panelId ?? payload.panelId ?? null;
+  const sessionId = probeResult?.sessionId ?? payload.sessionId ?? null;
+  const reason = probeResult?.reason ?? null;
+
+  return {
+    provider: 'native-vte',
+    availability,
+    handle_ref: availability === 'live' ? panelId : null,
+    evidence: {
+      panelId,
+      sessionId,
+      reason,
+    },
+  };
 }
 
 export async function openNativeVtePanel(payload = {}) {

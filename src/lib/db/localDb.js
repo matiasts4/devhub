@@ -90,7 +90,6 @@ const MISSION_MESSAGE_KINDS = [
   'approval_result',
 ];
 const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
-const MISSION_DELIVERY_PENDING_STATUSES = new Set(['pending', 'retry_pending']);
 const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline'];
 const AGENT_PRESENCE_TTL_MS = 120_000;
 const MISSION_IDENTITY_METADATA_FIELDS = [
@@ -115,6 +114,80 @@ const RUNTIME_ONLY_FIELDS = [
   'stderr',
   'tool_output',
   'raw_output',
+];
+const DIRECTOR_SNAPSHOT_MISSION_FIELDS = [
+  'mission_id',
+  'project_id',
+  'task_id',
+  'workspace_id',
+  'run_id',
+  'approval_checkpoint_key',
+  'owner_agent_id',
+  'kind',
+  'status',
+  'title',
+  'summary',
+  'evidence_ref',
+  'started_at',
+  'updated_at',
+  'completed_at',
+  'created_at',
+];
+const DIRECTOR_SNAPSHOT_PARTICIPANT_FIELDS = [
+  'participant_id',
+  'mission_id',
+  'agent_id',
+  'role_in_mission',
+  'status',
+  'joined_at',
+  'left_at',
+  'created_at',
+  'updated_at',
+];
+const DIRECTOR_SNAPSHOT_MESSAGE_FIELDS = [
+  'message_id',
+  'mission_id',
+  'sender_agent_id',
+  'message_kind',
+  'body_summary',
+  'evidence_ref',
+  'related_task_id',
+  'related_workspace_id',
+  'related_run_id',
+  'related_artifact_id',
+  'related_approval_checkpoint_key',
+  'created_at',
+  'updated_at',
+];
+const DIRECTOR_SNAPSHOT_DELIVERY_FIELDS = [
+  'delivery_id',
+  'message_id',
+  'recipient_agent_id',
+  'channel',
+  'status',
+  'delivery_ref',
+  'evidence_ref',
+  'last_error',
+  'attempt_count',
+  'last_attempt_at',
+  'acked_at',
+  'created_at',
+  'updated_at',
+];
+const DIRECTOR_SNAPSHOT_PRESENCE_FIELDS = [
+  'presence_id',
+  'mission_id',
+  'agent_id',
+  'workspace_id',
+  'run_id',
+  'runtime_surface',
+  'presence_state',
+  'status_summary',
+  'evidence_ref',
+  'last_seen_at',
+  'expires_at',
+  'created_at',
+  'updated_at',
 ];
 
 function ensureRuntimeSchema(db) {
@@ -1137,6 +1210,111 @@ function getLatestAgentRunForTask(dbOrTaskId, maybeTaskId) {
   );
 }
 
+function getPreferredBindingWorkspace(db, { project_id, agent_id, preferred_task_id } = {}) {
+  if (!project_id || !agent_id) return null;
+  return (
+    db
+      .prepare(
+        `SELECT *
+         FROM agent_workspaces
+         WHERE project_id = ?
+           AND agent_id = ?
+           AND status IN ('planned', 'provisioning', 'ready', 'active', 'paused', 'cleanup_pending', 'orphaned')
+         ORDER BY CASE WHEN current_task_id = ? THEN 0 ELSE 1 END, updated_at DESC, rowid DESC
+         LIMIT 1`
+      )
+      .get(project_id, agent_id, preferred_task_id || '') || null
+  );
+}
+
+function buildMissingRuntimeBinding(agentId, overrides = {}) {
+  return {
+    classification: 'missing',
+    status: 'unbound',
+    reason: 'binding_missing',
+    agent_id: agentId,
+    workspace_id: overrides.workspace_id || null,
+    run_id: null,
+    run_id_or_session_id: overrides.run_id_or_session_id || null,
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: overrides.cwd || null,
+  };
+}
+
+function resolveAgentRuntimeBinding(dbOrInput, maybeInput) {
+  const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
+  const projectId = input.project_id;
+  const agentId = input.agent_id;
+
+  if (!projectId) throw new Error('project_id es requerido para resolveAgentRuntimeBinding.');
+  if (!agentId) throw new Error('agent_id es requerido para resolveAgentRuntimeBinding.');
+
+  const workspace = getPreferredBindingWorkspace(db, {
+    project_id: projectId,
+    agent_id: agentId,
+    preferred_task_id: input.preferred_task_id || null,
+  });
+
+  if (!workspace) {
+    return buildMissingRuntimeBinding(agentId);
+  }
+
+  const run = getLatestAgentRunForWorkspace(db, workspace.id);
+  if (!run) {
+    return buildMissingRuntimeBinding(agentId, {
+      workspace_id: workspace.id,
+      run_id_or_session_id: workspace.run_id_or_session_id || null,
+      cwd: workspace.repo_root || null,
+    });
+  }
+
+  return {
+    classification: 'bound',
+    status: 'bound',
+    reason: 'binding_found',
+    agent_id: agentId,
+    workspace_id: workspace.id,
+    run_id: run.run_id,
+    run_id_or_session_id: workspace.run_id_or_session_id || null,
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: workspace.repo_root || null,
+  };
+}
+
+function buildMissionBindingResult(binding = {}, overrides = {}) {
+  return {
+    status: overrides.status || binding.status || 'unbound',
+    classification: overrides.classification || binding.classification || 'missing',
+    agent_id: overrides.agent_id || binding.agent_id || null,
+    session_id: Object.prototype.hasOwnProperty.call(overrides, 'session_id')
+      ? overrides.session_id
+      : binding.session_id || null,
+    opencode_session_id: Object.prototype.hasOwnProperty.call(overrides, 'opencode_session_id')
+      ? overrides.opencode_session_id
+      : binding.opencode_session_id || null,
+    workspace_id: Object.prototype.hasOwnProperty.call(overrides, 'workspace_id')
+      ? overrides.workspace_id
+      : binding.workspace_id || null,
+    run_id: Object.prototype.hasOwnProperty.call(overrides, 'run_id')
+      ? overrides.run_id
+      : binding.run_id || null,
+    run_id_or_session_id: Object.prototype.hasOwnProperty.call(overrides, 'run_id_or_session_id')
+      ? overrides.run_id_or_session_id
+      : binding.run_id_or_session_id || null,
+    reason: overrides.reason || binding.reason || 'binding_missing',
+    agent_model: Object.prototype.hasOwnProperty.call(overrides, 'agent_model')
+      ? overrides.agent_model
+      : binding.agent_model || null,
+    cwd: Object.prototype.hasOwnProperty.call(overrides, 'cwd')
+      ? overrides.cwd
+      : binding.cwd || null,
+  };
+}
+
 function createAgentRun(dbOrInput, maybeInput) {
   const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
   const timestamp = input.started_at || new Date().toISOString();
@@ -1594,6 +1772,136 @@ function listMissionParticipants(dbOrMissionId, maybeMissionId) {
     .all(missionId);
 }
 
+function getVerifiedMissionRecipientBinding(dbOrInput, maybeInput) {
+  const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
+  const missionId = input.mission_id;
+  const recipientAgentId = input.recipient_agent_id;
+
+  if (!missionId) throw new Error('mission_id es requerido para binding lookup.');
+  if (!recipientAgentId) throw new Error('recipient_agent_id es requerido para binding lookup.');
+
+  const mission = getSwarmMissionById(db, missionId);
+  if (!mission) {
+    return buildMissionBindingResult(null, {
+      status: 'unbound',
+      classification: 'missing',
+      agent_id: recipientAgentId,
+      session_id: null,
+      opencode_session_id: null,
+      workspace_id: null,
+      run_id: null,
+      run_id_or_session_id: null,
+      reason: 'binding_missing',
+      agent_model: null,
+      cwd: null,
+    });
+  }
+
+  const participant = db
+    .prepare(
+      `SELECT *
+       FROM mission_participants
+       WHERE mission_id = ? AND agent_id = ? AND status IN ('invited', 'active', 'paused')
+       ORDER BY updated_at DESC, rowid DESC
+       LIMIT 1`
+    )
+    .get(missionId, recipientAgentId);
+
+  if (!participant) {
+    return buildMissionBindingResult(null, {
+      status: 'unbound',
+      classification: 'missing',
+      agent_id: recipientAgentId,
+      session_id: null,
+      opencode_session_id: null,
+      workspace_id: null,
+      run_id: null,
+      run_id_or_session_id: null,
+      reason: 'binding_missing',
+      agent_model: null,
+      cwd: null,
+    });
+  }
+  const binding = resolveAgentRuntimeBinding(db, {
+    project_id: mission.project_id,
+    agent_id: recipientAgentId,
+    preferred_task_id: mission.task_id || null,
+  });
+
+  if (binding.classification === 'missing') {
+    return buildMissionBindingResult(binding, {
+      status: 'unbound',
+      classification: 'missing',
+      agent_id: recipientAgentId,
+    });
+  }
+
+  const workspace = binding.workspace_id
+    ? getPreferredBindingWorkspace(db, {
+        project_id: mission.project_id,
+        agent_id: recipientAgentId,
+        preferred_task_id: mission.task_id || null,
+      })
+    : null;
+  const supervisor = mission.task_id ? getSupervisorSnapshot(db, mission.task_id) : null;
+  const orphanedByDurableState =
+    workspace?.status === 'orphaned' ||
+    supervisor?.reason_class === 'orphaned_workspace' ||
+    supervisor?.reason_class === 'orphaned_run';
+
+  if (orphanedByDurableState) {
+    return buildMissionBindingResult(binding, {
+      status: 'unbound',
+      classification: 'orphaned',
+      session_id: binding.run_id_or_session_id || null,
+      opencode_session_id: null,
+      reason: 'binding_orphaned',
+      agent_model: null,
+      cwd: binding.cwd,
+    });
+  }
+
+  const sessionId = binding.run_id_or_session_id || null;
+  if (!sessionId) {
+    return buildMissionBindingResult(binding, {
+      status: 'unbound',
+      classification: 'missing',
+      session_id: null,
+      opencode_session_id: null,
+      reason: 'binding_missing',
+      agent_model: null,
+      cwd: binding.cwd,
+    });
+  }
+
+  const session =
+    db.prepare('SELECT * FROM agent_hub_sessions WHERE id = ? LIMIT 1').get(sessionId) || null;
+  const opencodeSessionId = session?.opencode_session_id?.trim() || null;
+  const isVerified = session && session.status === 'active' && opencodeSessionId;
+
+  if (!isVerified) {
+    return buildMissionBindingResult(binding, {
+      status: 'unbound',
+      classification: 'stale',
+      session_id: sessionId,
+      opencode_session_id: null,
+      reason: 'binding_stale',
+      agent_model: null,
+      cwd: binding.cwd,
+    });
+  }
+
+  return buildMissionBindingResult(binding, {
+    status: 'bound',
+    classification: 'bound',
+    session_id: session.id,
+    opencode_session_id: opencodeSessionId,
+    reason: 'binding_found',
+    agent_model: session.agent_model || null,
+    cwd: session.directory || binding.cwd,
+  });
+}
+
 function listMissionMessages(dbOrMissionId, maybeMissionId) {
   const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
   const db = hasDb ? dbOrMissionId : getDb();
@@ -1603,6 +1911,40 @@ function listMissionMessages(dbOrMissionId, maybeMissionId) {
       'SELECT * FROM mission_messages WHERE mission_id = ? ORDER BY created_at DESC, rowid DESC'
     )
     .all(missionId);
+}
+
+function listRecentMissionMessages(dbOrMissionId, maybeMissionId, maybeLimit = 20) {
+  const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
+  const db = hasDb ? dbOrMissionId : getDb();
+  const missionId = hasDb ? maybeMissionId : dbOrMissionId;
+  const limit = hasDb ? maybeLimit : maybeMissionId || 20;
+  return db
+    .prepare(
+      'SELECT * FROM mission_messages WHERE mission_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?'
+    )
+    .all(missionId, limit);
+}
+
+function listPendingMessageDeliveriesForMission(dbOrMissionId, maybeMissionId, maybeLimit = 20) {
+  const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
+  const db = hasDb ? dbOrMissionId : getDb();
+  const missionId = hasDb ? maybeMissionId : dbOrMissionId;
+  const limit = hasDb ? maybeLimit : maybeMissionId || 20;
+  return db
+    .prepare(
+      `SELECT d.*
+       FROM message_deliveries d
+       JOIN mission_messages m ON m.message_id = d.message_id
+       WHERE m.mission_id = ?
+         AND d.status IN ('pending', 'retry_pending')
+       ORDER BY CASE
+         WHEN COALESCE(d.updated_at, '') >= COALESCE(d.last_attempt_at, '') THEN d.updated_at
+         ELSE d.last_attempt_at
+       END DESC,
+       d.rowid DESC
+       LIMIT ?`
+    )
+    .all(missionId, limit);
 }
 
 function listMessageDeliveriesForMission(dbOrMissionId, maybeMissionId) {
@@ -1629,6 +1971,43 @@ function listAgentPresenceForMission(dbOrMissionId, maybeMissionId) {
       'SELECT * FROM agent_presence WHERE mission_id = ? ORDER BY updated_at DESC, rowid DESC'
     )
     .all(missionId);
+}
+
+function pickSnapshotFields(row, allowedFields) {
+  return allowedFields.reduce((acc, fieldName) => {
+    acc[fieldName] = row?.[fieldName] ?? null;
+    return acc;
+  }, {});
+}
+
+function buildDirectorSnapshotWatermark({
+  mission,
+  participants,
+  recentMessages,
+  pendingDeliveries,
+  presenceRows,
+}) {
+  const material = {
+    mission: pickSnapshotFields(mission, DIRECTOR_SNAPSHOT_MISSION_FIELDS),
+    participants: participants.map((row) =>
+      pickSnapshotFields(row, DIRECTOR_SNAPSHOT_PARTICIPANT_FIELDS)
+    ),
+    recent_messages: recentMessages.map((row) =>
+      pickSnapshotFields(row, DIRECTOR_SNAPSHOT_MESSAGE_FIELDS)
+    ),
+    pending_deliveries: pendingDeliveries.map((row) =>
+      pickSnapshotFields(row, DIRECTOR_SNAPSHOT_DELIVERY_FIELDS)
+    ),
+    presence: [...presenceRows]
+      .sort((left, right) => {
+        const leftKey = `${left.presence_id || ''}|${left.agent_id || ''}|${left.runtime_surface || ''}`;
+        const rightKey = `${right.presence_id || ''}|${right.agent_id || ''}|${right.runtime_surface || ''}`;
+        return leftKey.localeCompare(rightKey);
+      })
+      .map((row) => pickSnapshotFields(row, DIRECTOR_SNAPSHOT_PRESENCE_FIELDS)),
+  };
+
+  return crypto.createHash('sha1').update(JSON.stringify(material)).digest('hex');
 }
 
 function createSwarmMission(dbOrInput, maybeInput) {
@@ -1847,24 +2226,34 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
   const db = hasDb ? dbOrMissionId : getDb();
   const missionId = hasDb ? maybeMissionId : dbOrMissionId;
   const options = hasDb ? maybeOptions || {} : maybeMissionId || {};
+  const snapshotAt = options.now || new Date().toISOString();
   const mission = getSwarmMissionById(db, missionId);
   if (!mission) return null;
 
   const participants = listMissionParticipants(db, missionId);
-  const latestMessage = listMissionMessages(db, missionId)[0] || null;
-  const pendingDeliveries = listMessageDeliveriesForMission(db, missionId).filter((delivery) =>
-    MISSION_DELIVERY_PENDING_STATUSES.has(delivery.status)
-  );
+  const recentMessages = listRecentMissionMessages(db, missionId, 20);
+  const latestMessage = recentMessages[0] || null;
+  const pendingDeliveries = listPendingMessageDeliveriesForMission(db, missionId, 20);
   const presenceRows = listAgentPresenceForMission(db, missionId).map((presence) => ({
     ...presence,
-    ...getAgentPresenceStatus(presence, options),
+    ...getAgentPresenceStatus(presence, { ...options, now: snapshotAt }),
   }));
+  const watermark = buildDirectorSnapshotWatermark({
+    mission,
+    participants,
+    recentMessages,
+    pendingDeliveries,
+    presenceRows,
+  });
 
   return {
     mission,
     participants,
+    recent_messages: recentMessages,
     latest_message: latestMessage,
     pending_deliveries: pendingDeliveries,
+    snapshot_at: snapshotAt,
+    watermark,
     presence: {
       active: presenceRows.filter(
         (presence) => !presence.stale && presence.effective_state !== 'offline'
@@ -3322,6 +3711,7 @@ module.exports = {
   getAgentRunById,
   getLatestAgentRunForWorkspace,
   getLatestAgentRunForTask,
+  resolveAgentRuntimeBinding,
   listAgentRuns,
   listAgentArtifacts,
   getLatestAgentArtifactForRun,
@@ -3329,6 +3719,7 @@ module.exports = {
   getSwarmMissionById,
   registerMissionParticipant,
   listMissionParticipants,
+  getVerifiedMissionRecipientBinding,
   createMissionMessage,
   listMissionMessages,
   upsertMessageDelivery,

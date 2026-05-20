@@ -1,3 +1,4 @@
+/* global window */
 const { JSDOM } = require('jsdom');
 
 describe('nativeVteBridge', () => {
@@ -49,11 +50,11 @@ describe('nativeVteBridge', () => {
     });
 
     await bridge.subscribeNativeVteEvents();
-    nativeListener({ payload: { type: 'opencode-session-detected', panelId: 'p1', sessionId: 'oc-1' } });
+    nativeListener({
+      payload: { type: 'opencode-session-detected', panelId: 'p1', sessionId: 'oc-1' },
+    });
 
-    expect(detectedEvents).toEqual([
-      expect.objectContaining({ panelId: 'p1', sessionId: 'oc-1' }),
-    ]);
+    expect(detectedEvents).toEqual([expect.objectContaining({ panelId: 'p1', sessionId: 'oc-1' })]);
   });
 
   test('re-dispatches native Hermes session events back onto the browser window', async () => {
@@ -71,7 +72,9 @@ describe('nativeVteBridge', () => {
     });
 
     await bridge.subscribeNativeVteEvents();
-    nativeListener({ payload: { type: 'hermes-session-detected', panelId: 'p7', sessionId: 'hermes-p7' } });
+    nativeListener({
+      payload: { type: 'hermes-session-detected', panelId: 'p7', sessionId: 'hermes-p7' },
+    });
 
     expect(detectedEvents).toEqual([
       expect.objectContaining({ panelId: 'p7', sessionId: 'hermes-p7' }),
@@ -174,9 +177,10 @@ describe('nativeVteBridge', () => {
 
     const bridge = require('../nativeVteBridge');
 
-    await expect(
-      bridge.openNativeVtePanel({ panelId: 'p3' })
-    ).resolves.toEqual({ opened: false, reason: 'open-failed' });
+    await expect(bridge.openNativeVtePanel({ panelId: 'p3' })).resolves.toEqual({
+      opened: false,
+      reason: 'open-failed',
+    });
   });
 
   test('preserves specific probe diagnostics instead of collapsing them into generic probe-failed', async () => {
@@ -185,8 +189,78 @@ describe('nativeVteBridge', () => {
     const bridge = require('../nativeVteBridge');
 
     await expect(
-      bridge.probeNativeVte({ panelId: 'p4', requestedMode: 'vte-experimental', tauriAvailable: true })
+      bridge.probeNativeVte({
+        panelId: 'p4',
+        requestedMode: 'vte-experimental',
+        tauriAvailable: true,
+      })
     ).resolves.toEqual({ ready: false, reason: 'probe-missing-default-vbox' });
+  });
+
+  test('returns unsupported native runtime evidence when tauri is unavailable', async () => {
+    delete window.__TAURI_INTERNALS__;
+
+    const bridge = require('../nativeVteBridge');
+
+    await expect(
+      bridge.readNativeVteRuntimeEvidence({ panelId: 'p-unsupported', sessionId: 'ses_native_1' })
+    ).resolves.toEqual({
+      provider: 'native-vte',
+      availability: 'unsupported',
+      handle_ref: null,
+      evidence: {
+        panelId: 'p-unsupported',
+        sessionId: 'ses_native_1',
+        reason: 'tauri-unavailable',
+      },
+    });
+  });
+
+  test('returns live native runtime evidence from a successful probe', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ready: true,
+      panelId: 'p-live',
+      sessionId: 'ses_native_live',
+    });
+
+    const bridge = require('../nativeVteBridge');
+
+    await expect(
+      bridge.readNativeVteRuntimeEvidence({ panelId: 'p-live', sessionId: 'ses_native_live' })
+    ).resolves.toEqual({
+      provider: 'native-vte',
+      availability: 'live',
+      handle_ref: 'p-live',
+      evidence: {
+        panelId: 'p-live',
+        sessionId: 'ses_native_live',
+        reason: null,
+      },
+    });
+  });
+
+  test('returns stale native runtime evidence when the panel is no longer active', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ready: false,
+      reason: 'panel-not-active',
+      panelId: 'p-stale',
+      sessionId: 'ses_native_stale',
+    });
+
+    const bridge = require('../nativeVteBridge');
+
+    await expect(
+      bridge.readNativeVteRuntimeEvidence({ panelId: 'p-stale', sessionId: 'ses_native_stale' })
+    ).resolves.toEqual({
+      provider: 'native-vte',
+      availability: 'stale',
+      handle_ref: null,
+      evidence: {
+        panelId: 'p-stale',
+        sessionId: 'ses_native_stale',
+        reason: 'panel-not-active',
+      },
+    });
   });
 
   test('wraps native VTE command payloads under the Rust request argument', async () => {
@@ -220,7 +294,9 @@ describe('nativeVteBridge', () => {
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'native_vte_probe', { request: probePayload });
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'native_vte_open', { request: openPayload });
-    expect(invokeMock).toHaveBeenNthCalledWith(3, 'native_vte_focus', { request: { panelId: 'p5' } });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'native_vte_focus', {
+      request: { panelId: 'p5' },
+    });
     expect(invokeMock).toHaveBeenNthCalledWith(4, 'native_vte_resize', { request: openPayload });
     expect(invokeMock).toHaveBeenNthCalledWith(5, 'native_vte_set_visibility', {
       request: {

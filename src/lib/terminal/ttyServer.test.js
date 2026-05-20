@@ -241,6 +241,107 @@ describe('ttyServer — session close', () => {
   });
 });
 
+describe('ttyServer — PTY lifecycle helpers', () => {
+  it('returns live runtime evidence for an existing PTY session', async () => {
+    const { createSession, readPtyRuntime } = await import('./ttyServer.js');
+
+    createSession({ id: 'pty-live', cwd: process.cwd(), shell: '/bin/zsh' });
+
+    expect(readPtyRuntime({ terminalId: 'pty-live' })).toEqual({
+      provider: 'pty',
+      availability: 'live',
+      handle_ref: 'pty-live',
+      evidence: {
+        terminalId: 'pty-live',
+        cwd: process.cwd(),
+        restored: false,
+        opencodeSessionId: null,
+      },
+    });
+  });
+
+  it('openPtyLifecycle creates a PTY runtime when no live handle exists', async () => {
+    const { openPtyLifecycle } = await import('./ttyServer.js');
+
+    const result = openPtyLifecycle({
+      binding: { workspace_id: 'ws-123', run_id: 'run-456' },
+      runtimeHint: { terminalId: 'pty-open' },
+    });
+
+    expect(mockPtySpawn).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      outcome: 'ok',
+      reason: 'runtime_handle_created',
+      runtime: {
+        provider: 'pty',
+        availability: 'live',
+        handle_ref: 'pty-open',
+        evidence: {
+          terminalId: 'pty-open',
+          cwd: process.env.HOME || process.cwd(),
+          restored: false,
+          opencodeSessionId: null,
+        },
+      },
+    });
+  });
+
+  it('attachPtyLifecycle degrades when runtime handle is missing and never spawns', async () => {
+    const { attachPtyLifecycle } = await import('./ttyServer.js');
+
+    const result = attachPtyLifecycle({
+      runtimeHint: { terminalId: 'pty-missing' },
+    });
+
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      outcome: 'degraded',
+      reason: 'runtime_handle_missing',
+      runtime: {
+        provider: 'pty',
+        availability: 'missing',
+        handle_ref: null,
+        evidence: {
+          terminalId: 'pty-missing',
+        },
+      },
+    });
+  });
+
+  it('reuses an existing live PTY handle for both open and attach without respawning', async () => {
+    const { createSession, openPtyLifecycle, attachPtyLifecycle } = await import('./ttyServer.js');
+
+    createSession({ id: 'pty-existing', cwd: process.cwd(), shell: '/bin/zsh' });
+    mockPtySpawn.mockClear();
+
+    const openResult = openPtyLifecycle({
+      binding: { workspace_id: 'ws-123', run_id: 'run-456' },
+      runtimeHint: { terminalId: 'pty-existing' },
+    });
+    const attachResult = attachPtyLifecycle({
+      runtimeHint: { terminalId: 'pty-existing' },
+    });
+
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    expect(openResult).toEqual({
+      outcome: 'ok',
+      reason: 'runtime_handle_live',
+      runtime: {
+        provider: 'pty',
+        availability: 'live',
+        handle_ref: 'pty-existing',
+        evidence: {
+          terminalId: 'pty-existing',
+          cwd: process.cwd(),
+          restored: false,
+          opencodeSessionId: null,
+        },
+      },
+    });
+    expect(attachResult).toEqual(openResult);
+  });
+});
+
 describe('ttyServer — DEVHUB_MCP_CMD uses dynamic project-root path', () => {
   it('resolves devhub-mcp/server.js relative to this file, not a hardcoded home path', async () => {
     const { createSession } = await import('./ttyServer.js');

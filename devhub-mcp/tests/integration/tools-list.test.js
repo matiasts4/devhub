@@ -64,6 +64,7 @@ describe('MCP Tool Catalog', () => {
         'request_supervisor_approval',
         'respond_telegram_approval',
         'set_telegram_subscription',
+        'team_tell',
         'unregister_agent',
         'update_agent_status',
         'report_agent_workspace',

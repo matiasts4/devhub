@@ -28,6 +28,72 @@ export function getSessionFilePath() {
  */
 export const SESSION_FILE_PATH = getSessionFilePath();
 
+function readPersistedSessionsFile() {
+  const filePath = getSessionFilePath();
+
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (err) {
+    console.warn('[sessionStore] Failed to read session file:', err);
+    return [];
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    console.warn('[sessionStore] Corrupted session file, starting fresh:', err);
+    return [];
+  }
+
+  if (!parsed || !Array.isArray(parsed.sessions)) {
+    console.warn('[sessionStore] Invalid session file schema, starting fresh');
+    return [];
+  }
+
+  return parsed.sessions;
+}
+
+function buildPersistedSessionEvidence(session, availability) {
+  return {
+    provider: 'session_store',
+    availability,
+    handle_ref: null,
+    evidence: {
+      terminalId: session.id,
+      cwd: session.cwd || '',
+      shell: session.shell || '',
+      title: session.title || null,
+      createdAt: session.createdAt || null,
+      lastSeenAt: session.lastSeenAt || null,
+    },
+  };
+}
+
+export function readPersistedSessionEvidence({ terminalId, now = Date.now() } = {}) {
+  const persistedSessions = readPersistedSessionsFile();
+  const matchedSession = persistedSessions.find((session) => session.id === terminalId);
+
+  if (!matchedSession) {
+    return {
+      provider: 'session_store',
+      availability: 'missing',
+      handle_ref: null,
+      evidence: terminalId ? { terminalId } : null,
+    };
+  }
+
+  const lastSeen = new Date(matchedSession.lastSeenAt || 0).getTime();
+  const isFresh = Number.isFinite(lastSeen) && now - lastSeen < STALE_TTL_MS;
+
+  return buildPersistedSessionEvidence(matchedSession, isFresh ? 'restorable' : 'stale');
+}
+
 /**
  * saveSessions — atomically write sessions Map to disk.
  *
@@ -67,35 +133,8 @@ export function saveSessions(sessionsMap) {
  * @returns {Array<object>} array of session objects with restored: true
  */
 export function loadSessions() {
-  const filePath = getSessionFilePath();
-
-  if (!fs.existsSync(filePath)) {
-    return [];
-  }
-
-  let raw;
-  try {
-    raw = fs.readFileSync(filePath, 'utf8');
-  } catch (err) {
-    console.warn('[sessionStore] Failed to read session file:', err);
-    return [];
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    console.warn('[sessionStore] Corrupted session file, starting fresh:', err);
-    return [];
-  }
-
-  if (!parsed || !Array.isArray(parsed.sessions)) {
-    console.warn('[sessionStore] Invalid session file schema, starting fresh');
-    return [];
-  }
-
   const now = Date.now();
-  const fresh = parsed.sessions.filter((s) => {
+  const fresh = readPersistedSessionsFile().filter((s) => {
     if (!s.lastSeenAt) return false;
     const lastSeen = new Date(s.lastSeenAt).getTime();
     return now - lastSeen < STALE_TTL_MS;

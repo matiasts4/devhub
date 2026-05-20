@@ -24,6 +24,13 @@ export const runtime = 'nodejs';
 const LOCAL_MISSION_DELIVERY_CHANNEL = 'local_snapshot';
 const LOCAL_MISSION_MESSAGE_KIND = 'directive';
 
+export function buildMissionControlSnapshotInput(missionControl) {
+  if (!missionControl) return {};
+  return {
+    mission_control: missionControl,
+  };
+}
+
 function getActiveMissionId(db) {
   const mission = db
     .prepare(
@@ -168,7 +175,7 @@ export async function gatherOperationalHealth(dependencies = {}) {
 
   const controlRoomSnapshotInput = {
     ...(buildControlRoomSnapshotInputFromHealth(snapshot) || {}),
-    ...(missionSnapshot ? { mission_control: missionSnapshot } : {}),
+    ...buildMissionControlSnapshotInput(missionSnapshot),
   };
 
   return {
@@ -204,9 +211,7 @@ export async function POST(request) {
     });
 
     return NextResponse.json({
-      control_room_snapshot_input: {
-        mission_control: missionControl,
-      },
+      control_room_snapshot_input: buildMissionControlSnapshotInput(missionControl),
     });
   } catch (error) {
     const status = /misi[oó]n activa|destinatarios|body_summary/i.test(error.message) ? 400 : 500;

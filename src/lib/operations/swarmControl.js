@@ -148,15 +148,22 @@ function normalizeMissionPresenceRow(presence = {}) {
 
 function normalizeMissionControl(snapshot = null) {
   const missionControl = snapshot || {};
+  const recentMessages = asArray(
+    missionControl.recent_messages ||
+      (missionControl.latest_message ? [missionControl.latest_message] : [])
+  ).map(normalizeMissionMessage);
+  const latestMessage = normalizeMissionMessage(
+    pickFirstDefined(missionControl.latest_message, recentMessages[0]) || {}
+  );
 
   return {
     mission: normalizeMission(missionControl.mission || null),
     participants: asArray(missionControl.participants).map(normalizeMissionParticipant),
-    recent_messages: asArray(
-      missionControl.recent_messages ||
-        (missionControl.latest_message ? [missionControl.latest_message] : [])
-    ).map(normalizeMissionMessage),
+    recent_messages: recentMessages,
+    latest_message: latestMessage.message_id ? latestMessage : null,
     pending_deliveries: asArray(missionControl.pending_deliveries).map(normalizeMissionDelivery),
+    snapshot_at: missionControl.snapshot_at || null,
+    watermark: missionControl.watermark || null,
     presence: {
       active: asArray(missionControl.presence?.active).map(normalizeMissionPresenceRow),
       stale: asArray(missionControl.presence?.stale).map(normalizeMissionPresenceRow),
@@ -566,7 +573,10 @@ export function selectControlRoomMission(snapshot = {}) {
       mission: null,
       participants: [],
       recent_messages: [],
+      latest_message: null,
       pending_deliveries: [],
+      snapshot_at: null,
+      watermark: null,
       presence: {
         active: [],
         stale: [],
