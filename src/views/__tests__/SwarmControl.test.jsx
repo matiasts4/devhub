@@ -185,82 +185,112 @@ describe('SwarmControl control room composition', () => {
     const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
     const text = view.container.textContent;
 
-    expect(text).toContain('Workspace Control Room');
+    expect(text).toContain('Swarm / Control Room');
     expect(text).toContain('DevHub');
-    expect(text).toContain('1/5 agents active');
-    expect(text).not.toContain('9/5 agents active');
+    expect(text).toContain('Supervisor lease activo');
+    expect(text).toContain('1/5 activos');
+    expect(text).not.toContain('9/5 activos');
 
-    expect(text).toContain('Agents & claims');
+    expect(text).toContain('Kernel de misión');
+    expect(text).toContain('Misión activa');
+    expect(text).toContain('Misión Director');
+    expect(text).toContain('Participantes');
+    expect(text).toContain('agent-director');
+    expect(text).toContain('Mensajes recientes');
+    expect(text).toContain('Tomá la ejecución del workspace principal');
+    expect(text).toContain('traspaso');
+    expect(text).toContain('Entregas pendientes');
+    expect(text).toContain('reintento pendiente');
+    expect(text).toContain('Presencia TTL');
+    expect(text).toContain('Activa');
+    expect(text).toContain('Vencida');
+    expect(text).toContain('Fuera de línea');
+    expect(text).not.toContain('Estadoactive');
+    expect(text).not.toContain('retry pending');
+    expect(text).not.toContain('Stale');
+    expect(text).not.toContain('Offline');
+
+    expect(text).toContain('Agentes y asignaciones');
+    expect(text).toContain(
+      'Tareas reclamadas, ventanas de lease, enlaces a workspace y autoridad durable.'
+    );
     expect(text).toContain('worker-1');
     expect(text).toContain('task-1');
-    expect(text).toContain('awaiting approval');
+    expect(text).toContain('esperando aprobación');
+    expect(text).not.toContain('Tasks reclamadas');
 
     expect(text).toContain('Workspaces');
     expect(text).toContain('ws-1');
     expect(text).toContain('feat/sw-5-1a');
 
-    expect(text).toContain('Runs & artifacts');
+    expect(text).toContain('Ejecuciones y artefactos');
+    expect(text).toContain('Resultado más reciente del run y línea de evidencia asociada.');
     expect(text).toContain('run-1');
     expect(text).toContain('qa.result');
 
-    expect(text).toContain('Approvals & errors');
-    expect(text).toContain('approval required');
-    expect(text).toContain('Workspace evidence gap');
+    expect(text).toContain('Aprobaciones y errores');
+    expect(text).toContain(
+      'Aprobaciones pendientes y faltantes explícitos de evidencia. Sin controles de mutación.'
+    );
+    expect(text).toContain('aprobación requerida');
+    expect(text).toContain('falta evidencia de workspace');
 
-    expect(text).toContain('Diagnostic overlay');
+    expect(text).toContain('Overlay diagnóstico');
     expect(text).toContain('Telegram');
-    expect(text).toContain('healthy');
+    expect(text).toContain('ok');
     expect(text).toContain('MCP');
-    expect(text).toContain('stale');
+    expect(text).toContain('vencido');
+    expect(text).not.toContain('Diagnostic overlay');
+    expect(view.container.querySelector('[aria-label="Overlay diagnóstico"]')).not.toBeNull();
   });
 
   test('keeps canonical header counts while local layout and overlay state change only presentation', async () => {
     const view = await renderSwarmControl({ snapshotInput: buildExpandedInput() });
     const stackButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent.includes('Stack')
+      button.textContent.includes('Pila')
     );
     const overlayButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent.includes('Collapse')
+      button.textContent.includes('Colapsar')
     );
 
-    expect(view.container.textContent).toContain('2/5 agents active');
-    expect(view.container.querySelector('[aria-label="Agents & claims"]')?.textContent).toContain(
-      'worker-1'
-    );
-    expect(view.container.querySelector('[aria-label="Agents & claims"]')?.textContent).toContain(
-      'worker-2'
-    );
+    expect(view.container.textContent).toContain('2/5 activos');
+    expect(
+      view.container.querySelector('[aria-label="Agentes y asignaciones"]')?.textContent
+    ).toContain('worker-1');
+    expect(
+      view.container.querySelector('[aria-label="Agentes y asignaciones"]')?.textContent
+    ).toContain('worker-2');
 
     await click(stackButton);
     await click(overlayButton);
 
-    expect(view.container.textContent).toContain('2/5 agents active');
+    expect(view.container.textContent).toContain('2/5 activos');
     expect(stackButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(view.container.textContent).not.toContain('Telegram unavailable');
-    expect(view.container.querySelector('[aria-label="Agents & claims"]')?.textContent).toContain(
-      'worker-1'
-    );
-    expect(view.container.querySelector('[aria-label="Agents & claims"]')?.textContent).toContain(
-      'worker-2'
-    );
+    expect(view.container.textContent).not.toContain('Telegram no disponible');
+    expect(
+      view.container.querySelector('[aria-label="Agentes y asignaciones"]')?.textContent
+    ).toContain('worker-1');
+    expect(
+      view.container.querySelector('[aria-label="Agentes y asignaciones"]')?.textContent
+    ).toContain('worker-2');
   });
 
   test('renders stale, degraded, unavailable, and approval-pending messaging from the snapshot', async () => {
     const view = await renderSwarmControl({ snapshotInput: buildDegradedInput() });
     const text = view.container.textContent;
 
-    expect(text).toContain('3/5 agents active');
-    expect(text).toContain('4 queued');
-    expect(text).not.toContain('9/5 agents active');
-    expect(text).toContain('stale');
+    expect(text).toContain('3/5 activos');
+    expect(text).toContain('4 en cola');
+    expect(text).not.toContain('9/5 activos');
+    expect(text).toContain('vencido');
     expect(text).toContain('evidence://supervisor/stale-header');
-    expect(text).toContain('Missing source: approval evidence');
-    expect(text).toContain('Risky outcome pending approval');
-    expect(text).toContain('Outcome unapplied until approval evidence exists');
-    expect(text).toContain('Missing source: telegram snapshot');
+    expect(text).toContain('Fuente faltante: evidencia de aprobación');
+    expect(text).toContain('Resultado riesgoso pendiente de aprobación');
+    expect(text).toContain('Resultado no aplicado hasta que exista evidencia de aprobación');
+    expect(text).toContain('Fuente faltante: snapshot de Telegram');
     expect(text).toContain('MCP');
-    expect(text).toContain('degraded');
-    expect(text).toContain('Live activity: running');
+    expect(text).toContain('degradado');
+    expect(text).toContain('Actividad en vivo: en ejecución');
   });
 
   test('uses the canonical header label from the composed snapshot instead of the outlet project name', async () => {
@@ -292,7 +322,21 @@ describe('SwarmControl control room composition', () => {
     const text = view.container.textContent;
 
     expect(text).toContain('worker-1');
-    expect(text).toContain('awaiting approval');
-    expect(text).toContain('Live activity: idle');
+    expect(text).toContain('esperando aprobación');
+    expect(text).toContain('Actividad en vivo: inactivo');
+  });
+
+  test('renders empty mission kernel states cleanly when no mission snapshot exists', async () => {
+    const input = buildControlRoomInput({ mission_control: null });
+
+    const view = await renderSwarmControl({ snapshotInput: input });
+    const text = view.container.textContent;
+
+    expect(text).toContain('Kernel de misión');
+    expect(text).toContain('No hay misión activa');
+    expect(text).toContain('Sin participantes durables en este snapshot.');
+    expect(text).toContain('Sin mensajes recientes en este snapshot.');
+    expect(text).toContain('Sin entregas pendientes en este snapshot.');
+    expect(text).toContain('Sin presencia TTL en este snapshot.');
   });
 });

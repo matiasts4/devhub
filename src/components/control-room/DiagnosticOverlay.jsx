@@ -11,8 +11,8 @@ import {
 const DIAGNOSTIC_ORDER = [
   ['telegram', 'Telegram'],
   ['mcp', 'MCP'],
-  ['process', 'Process'],
-  ['session_stream', 'Session stream'],
+  ['process', 'Proceso'],
+  ['session_stream', 'Stream de sesión'],
 ];
 
 export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, onToggle }) {
@@ -20,13 +20,13 @@ export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, o
     <section
       className="rounded-2xl border p-4"
       style={panelShellStyle()}
-      aria-label="Diagnostic overlay"
+      aria-label="Overlay diagnóstico"
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Diagnostic overlay</h2>
+          <h2 className="text-lg font-semibold">Overlay diagnóstico</h2>
           <p className="text-sm" style={metaTextStyle()}>
-            Adapter and process diagnostics remain secondary to the durable control-room snapshot.
+            Diagnósticos de adaptadores y proceso siguen siendo secundarios al snapshot durable.
           </p>
         </div>
         <button
@@ -35,7 +35,7 @@ export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, o
           className="rounded-lg border px-3 py-2 text-xs"
           style={panelShellStyle()}
         >
-          {expanded ? 'Collapse' : 'Expand'}
+          {expanded ? 'Colapsar' : 'Expandir'}
         </button>
       </div>
 

@@ -5,6 +5,7 @@ const {
   selectControlRoomWorkspaces,
   selectControlRoomRuns,
   selectControlRoomApprovals,
+  selectControlRoomMission,
   selectControlRoomAgentProfiles,
   selectControlRoomAgentTeams,
   selectControlRoomTeamMembers,
@@ -88,6 +89,39 @@ describe('composeControlRoomSnapshot', () => {
         evidence_ref: 'evidence://approval/task-1',
       }),
     ]);
+
+    expect(selectControlRoomMission(snapshot)).toEqual(
+      expect.objectContaining({
+        mission: expect.objectContaining({
+          mission_id: 'mission-1',
+          title: 'Misión Director',
+          status: 'active',
+          summary: 'Coordinar la ejecución y QA',
+        }),
+        participants: [
+          expect.objectContaining({ agent_id: 'agent-director', role_in_mission: 'director' }),
+          expect.objectContaining({ agent_id: 'agent-worker-1', role_in_mission: 'executor' }),
+        ],
+        recent_messages: [
+          expect.objectContaining({
+            message_id: 'message-1',
+            body_summary: 'Tomá la ejecución del workspace principal',
+          }),
+        ],
+        pending_deliveries: [
+          expect.objectContaining({
+            recipient_agent_id: 'agent-worker-1',
+            status: 'retry_pending',
+            channel: 'telegram',
+          }),
+        ],
+        presence: {
+          active: [expect.objectContaining({ agent_id: 'agent-director' })],
+          stale: [expect.objectContaining({ agent_id: 'agent-worker-1' })],
+          offline: [expect.objectContaining({ agent_id: 'agent-reviewer-1' })],
+        },
+      })
+    );
 
     expect(selectControlRoomDiagnostics(snapshot)).toMatchObject({
       telegram: expect.objectContaining({
@@ -262,6 +296,17 @@ describe('composeControlRoomSnapshot', () => {
       }),
     });
     expect(selectControlRoomErrors(snapshot)).toEqual([]);
+    expect(selectControlRoomMission(snapshot)).toEqual({
+      mission: null,
+      participants: [],
+      recent_messages: [],
+      pending_deliveries: [],
+      presence: {
+        active: [],
+        stale: [],
+        offline: [],
+      },
+    });
   });
 
   test('regression: SSE caches, agent_registry, and live hints cannot override durable snapshot truth', () => {

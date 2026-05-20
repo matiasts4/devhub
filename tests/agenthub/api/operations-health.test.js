@@ -43,6 +43,24 @@ describe('GET /api/agenthub/operations/health', () => {
         recent_errors: 0,
         last_activity: '2026-04-10T17:24:40.000Z',
       }),
+      getMissionSnapshot: async () => ({
+        mission: {
+          mission_id: 'mission-1',
+          title: 'Misión Director',
+          status: 'active',
+        },
+        participants: [{ agent_id: 'agent-director', role_in_mission: 'director' }],
+        latest_message: {
+          message_id: 'message-1',
+          body_summary: 'Tomá la ejecución del workspace principal',
+        },
+        pending_deliveries: [{ delivery_id: 'delivery-1', status: 'retry_pending' }],
+        presence: {
+          active: [{ agent_id: 'agent-director' }],
+          stale: [],
+          offline: [],
+        },
+      }),
     });
 
     expect(snapshot.summary).toMatchObject({
@@ -68,6 +86,10 @@ describe('GET /api/agenthub/operations/health', () => {
         telegram: expect.objectContaining({ key: 'telegram', status: 'healthy' }),
         session_stream: expect.objectContaining({ key: 'session-stream', status: 'degraded' }),
       },
+      mission_control: expect.objectContaining({
+        mission: expect.objectContaining({ mission_id: 'mission-1', title: 'Misión Director' }),
+        pending_deliveries: [expect.objectContaining({ status: 'retry_pending' })],
+      }),
     });
   });
 

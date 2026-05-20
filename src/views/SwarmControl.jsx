@@ -7,6 +7,7 @@ import {
   selectControlRoomDiagnostics,
   selectControlRoomErrors,
   selectControlRoomHeader,
+  selectControlRoomMission,
   selectControlRoomRuns,
   selectControlRoomWorkspaces,
 } from '@/lib/operations/swarmControl';
@@ -16,6 +17,7 @@ import WorkspacesPanel from '@/components/control-room/WorkspacesPanel';
 import RunsArtifactsPanel from '@/components/control-room/RunsArtifactsPanel';
 import ApprovalsErrorsPanel from '@/components/control-room/ApprovalsErrorsPanel';
 import DiagnosticOverlay from '@/components/control-room/DiagnosticOverlay';
+import MissionKernelPanel from '@/components/control-room/MissionKernelPanel';
 
 function buildSnapshotInput({ snapshotInput, fetchedInput, project }) {
   if (snapshotInput) return snapshotInput;
@@ -87,6 +89,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const approvals = useMemo(() => selectControlRoomApprovals(snapshot), [snapshot]);
   const diagnostics = useMemo(() => selectControlRoomDiagnostics(snapshot), [snapshot]);
   const errors = useMemo(() => selectControlRoomErrors(snapshot), [snapshot]);
+  const missionControl = useMemo(() => selectControlRoomMission(snapshot), [snapshot]);
 
   const normalizedFilter = filterText.trim().toLowerCase();
   const matchesFilter = (record) => {
@@ -124,16 +127,16 @@ export default function SwarmControl({ snapshotInput = null }) {
           }}
         >
           <label className="flex flex-1 flex-col gap-2 text-xs font-medium">
-            <span style={{ color: 'var(--text-muted)' }}>Filter records</span>
+            <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
             <input
-              aria-label="Filter records"
+              aria-label="Filtrar registros"
               className="rounded-lg border px-3 py-2 outline-none"
               style={{
                 background: 'var(--surface-app)',
                 borderColor: 'var(--border-subtle)',
                 color: 'var(--text-primary)',
               }}
-              placeholder="agent, workspace, run, evidence…"
+              placeholder="agente, workspace, run, evidencia…"
               value={filterText}
               onChange={(event) => setFilterText(event.target.value)}
             />
@@ -150,7 +153,7 @@ export default function SwarmControl({ snapshotInput = null }) {
                 borderColor: 'var(--border-subtle)',
               }}
             >
-              Grid
+              Grilla
             </button>
             <button
               type="button"
@@ -162,10 +165,12 @@ export default function SwarmControl({ snapshotInput = null }) {
                 borderColor: 'var(--border-subtle)',
               }}
             >
-              Stack
+              Pila
             </button>
           </div>
         </div>
+
+        <MissionKernelPanel missionControl={missionControl} />
 
         <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
           <AgentsClaimsPanel agents={filteredAgents} />

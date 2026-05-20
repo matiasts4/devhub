@@ -84,6 +84,87 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizeMission(mission = null) {
+  if (!mission) return null;
+
+  return {
+    mission_id: mission.mission_id || null,
+    project_id: mission.project_id || null,
+    task_id: mission.task_id || null,
+    workspace_id: mission.workspace_id || null,
+    run_id: mission.run_id || null,
+    status: mission.status || 'unknown',
+    title: mission.title || null,
+    summary: mission.summary || null,
+    evidence_ref: mission.evidence_ref || null,
+  };
+}
+
+function normalizeMissionParticipant(participant = {}) {
+  return {
+    participant_id: participant.participant_id || null,
+    agent_id: participant.agent_id || null,
+    role_in_mission: participant.role_in_mission || null,
+    status: participant.status || 'unknown',
+    joined_at: participant.joined_at || null,
+  };
+}
+
+function normalizeMissionMessage(message = {}) {
+  return {
+    message_id: message.message_id || null,
+    sender_agent_id: message.sender_agent_id || null,
+    message_kind: message.message_kind || null,
+    body_summary: message.body_summary || null,
+    created_at: message.created_at || null,
+    evidence_ref: message.evidence_ref || null,
+  };
+}
+
+function normalizeMissionDelivery(delivery = {}) {
+  return {
+    delivery_id: delivery.delivery_id || null,
+    recipient_agent_id: delivery.recipient_agent_id || null,
+    channel: delivery.channel || null,
+    status: delivery.status || 'unknown',
+    last_error: delivery.last_error || null,
+    last_attempt_at: delivery.last_attempt_at || null,
+    evidence_ref: delivery.evidence_ref || null,
+  };
+}
+
+function normalizeMissionPresenceRow(presence = {}) {
+  return {
+    presence_id: presence.presence_id || null,
+    agent_id: presence.agent_id || null,
+    runtime_surface: presence.runtime_surface || null,
+    presence_state: presence.presence_state || null,
+    effective_state: presence.effective_state || 'offline',
+    last_seen_at: presence.last_seen_at || null,
+    expires_at: presence.expires_at || null,
+    evidence_ref: presence.evidence_ref || null,
+  };
+}
+
+function normalizeMissionControl(snapshot = null) {
+  const missionControl = snapshot || {};
+
+  return {
+    mission: normalizeMission(missionControl.mission || null),
+    participants: asArray(missionControl.participants).map(normalizeMissionParticipant),
+    recent_messages: asArray(
+      missionControl.recent_messages ||
+        (missionControl.latest_message ? [missionControl.latest_message] : [])
+    ).map(normalizeMissionMessage),
+    pending_deliveries: asArray(missionControl.pending_deliveries).map(normalizeMissionDelivery),
+    presence: {
+      active: asArray(missionControl.presence?.active).map(normalizeMissionPresenceRow),
+      stale: asArray(missionControl.presence?.stale).map(normalizeMissionPresenceRow),
+      offline: asArray(missionControl.presence?.offline).map(normalizeMissionPresenceRow),
+    },
+  };
+}
+
 const HEALTH_TO_CONTROL_ROOM_DIAGNOSTIC_KEY = Object.freeze({
   'opencode-process': 'process',
   mcp: 'mcp',
@@ -416,6 +497,7 @@ export function composeControlRoomSnapshot(input = {}) {
         'session stream'
       ),
     },
+    mission_control: normalizeMissionControl(input.mission_control),
     errors,
   };
 }
@@ -438,6 +520,22 @@ export function selectControlRoomRuns(snapshot = {}) {
 
 export function selectControlRoomApprovals(snapshot = {}) {
   return asArray(snapshot.approvals);
+}
+
+export function selectControlRoomMission(snapshot = {}) {
+  return (
+    snapshot.mission_control || {
+      mission: null,
+      participants: [],
+      recent_messages: [],
+      pending_deliveries: [],
+      presence: {
+        active: [],
+        stale: [],
+        offline: [],
+      },
+    }
+  );
 }
 
 export function selectControlRoomAgentProfiles(snapshot = {}) {

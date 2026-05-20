@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import processManager from '@/lib/swarm/processManager';
 import swarmQueue from '@/lib/swarm/queue';
-import { getActiveAgentCount as getDbActiveAgentCount } from '@/lib/db/localDb.js';
+import {
+  getActiveAgentCount as getDbActiveAgentCount,
+  getDb,
+  getSwarmMissionDirectorSnapshot,
+} from '@/lib/db/localDb.js';
 import {
   buildHealthSnapshot,
   buildMcpHealthSource,
@@ -42,6 +46,18 @@ export async function gatherOperationalHealth(dependencies = {}) {
       const route = await import('@/app/api/telegram/status/route');
       return getRoutePayload(route.GET);
     });
+  const getMissionSnapshot =
+    dependencies.getMissionSnapshot ||
+    (() => {
+      const db = getDb();
+      const mission = db
+        .prepare(
+          "SELECT mission_id FROM swarm_missions WHERE status = 'active' ORDER BY updated_at DESC, rowid DESC LIMIT 1"
+        )
+        .get();
+
+      return mission ? getSwarmMissionDirectorSnapshot(db, mission.mission_id, { now }) : null;
+    });
 
   const [processStatus, queueStatus, activeAgentCount, mcpStatus, sessionsHealth, telegramStatus] =
     await Promise.all([
@@ -52,6 +68,7 @@ export async function gatherOperationalHealth(dependencies = {}) {
       getSessionsHealth(),
       getTelegramStatus(),
     ]);
+  const missionSnapshot = await getMissionSnapshot();
 
   const snapshot = buildHealthSnapshot({
     generated_at: now,
@@ -67,11 +84,14 @@ export async function gatherOperationalHealth(dependencies = {}) {
     ],
   });
 
-  const controlRoomSnapshotInput = buildControlRoomSnapshotInputFromHealth(snapshot);
+  const controlRoomSnapshotInput = {
+    ...(buildControlRoomSnapshotInputFromHealth(snapshot) || {}),
+    ...(missionSnapshot ? { mission_control: missionSnapshot } : {}),
+  };
 
   return {
     ...snapshot,
-    ...(controlRoomSnapshotInput
+    ...(Object.keys(controlRoomSnapshotInput).length > 0
       ? {
           control_room_snapshot_input: controlRoomSnapshotInput,
         }

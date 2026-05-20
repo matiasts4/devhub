@@ -11,24 +11,32 @@ import {
 
 export default function AgentsClaimsPanel({ agents = [] }) {
   return (
-    <section className="rounded-2xl border p-4" style={panelShellStyle()} aria-label="Agents & claims">
+    <section
+      className="rounded-2xl border p-4"
+      style={panelShellStyle()}
+      aria-label="Agentes y asignaciones"
+    >
       <header className="mb-4">
-        <h2 className="text-lg font-semibold">Agents & claims</h2>
+        <h2 className="text-lg font-semibold">Agentes y asignaciones</h2>
         <p className="text-sm" style={metaTextStyle()}>
-          Claimed tasks, lease windows, workspace links, and durable authority.
+          Tareas reclamadas, ventanas de lease, enlaces a workspace y autoridad durable.
         </p>
       </header>
 
       <div className="space-y-3">
         {agents.length === 0
-          ? renderEmptyCopy('No durable agents in snapshot.')
+          ? renderEmptyCopy('Sin agentes durables en este snapshot.')
           : agents.map((agent) => (
-              <article key={agent.agent_id} className="rounded-xl border p-3" style={panelShellStyle()}>
+              <article
+                key={agent.agent_id}
+                className="rounded-xl border p-3"
+                style={panelShellStyle()}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="font-medium">{agent.agent_id}</h3>
                     <p className="text-sm" style={metaTextStyle()}>
-                      {agent.task_id || 'No claimed task'}
+                      {agent.task_id || 'Sin tarea reclamada'}
                     </p>
                   </div>
                   <div className="text-xs" style={metaTextStyle()}>
@@ -40,7 +48,7 @@ export default function AgentsClaimsPanel({ agents = [] }) {
                   <MetaRow label="Lease" value={agent.lease_expires_at || '—'} />
                   <MetaRow label="Workspace" value={agent.workspace_id || '—'} />
                   <MetaRow label="Run" value={agent.run_id || '—'} />
-                  <MetaRow label="Authority" value={formatToken(agent.authority)} />
+                  <MetaRow label="Autoridad" value={formatToken(agent.authority)} />
                 </dl>
 
                 <p className="mt-3 text-xs" style={metaTextStyle()}>

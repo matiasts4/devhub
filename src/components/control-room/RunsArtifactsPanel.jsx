@@ -10,17 +10,21 @@ import {
 
 export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectRun }) {
   return (
-    <section className="rounded-2xl border p-4" style={panelShellStyle()} aria-label="Runs & artifacts">
+    <section
+      className="rounded-2xl border p-4"
+      style={panelShellStyle()}
+      aria-label="Ejecuciones y artefactos"
+    >
       <header className="mb-4">
-        <h2 className="text-lg font-semibold">Runs & artifacts</h2>
+        <h2 className="text-lg font-semibold">Ejecuciones y artefactos</h2>
         <p className="text-sm" style={metaTextStyle()}>
-          Latest run outcome and attached evidence timeline.
+          Resultado más reciente del run y línea de evidencia asociada.
         </p>
       </header>
 
       <div className="space-y-3">
         {runs.length === 0
-          ? renderEmptyCopy('No durable runs in snapshot.')
+          ? renderEmptyCopy('Sin ejecuciones durables en este snapshot.')
           : runs.map((run) => {
               const isSelected = selectedRunId === run.run_id;
 
@@ -44,7 +48,7 @@ export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectR
 
                   <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                     <MetaRow label="Workspace" value={run.workspace_id || '—'} />
-                    <MetaRow label="Authority" value={formatToken(run.authority)} />
+                    <MetaRow label="Autoridad" value={formatToken(run.authority)} />
                   </dl>
 
                   <p className="mt-3 text-xs" style={metaTextStyle()}>
@@ -57,20 +61,26 @@ export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectR
                   ) : null}
 
                   {run.approval_gate?.status === 'pending' ? (
-                    <div className="mt-3 rounded-lg border px-3 py-2 text-sm" style={panelShellStyle()}>
-                      <div className="font-medium">Risky outcome pending approval</div>
+                    <div
+                      className="mt-3 rounded-lg border px-3 py-2 text-sm"
+                      style={panelShellStyle()}
+                    >
+                      <div className="font-medium">Resultado riesgoso pendiente de aprobación</div>
                       <div className="mt-1 text-xs" style={metaTextStyle()}>
                         {formatToken(run.approval_gate.reason_class)} ·{' '}
-                        {run.approval_gate.evidence_ref || 'No evidence'}
+                        {run.approval_gate.evidence_ref || 'Sin evidencia'}
                       </div>
                       <div className="mt-1 text-xs" style={metaTextStyle()}>
-                        Outcome unapplied until approval evidence exists
+                        Resultado no aplicado hasta que exista evidencia de aprobación
                       </div>
                     </div>
                   ) : null}
 
                   {run.latest_artifact ? (
-                    <div className="mt-3 rounded-lg border px-3 py-2 text-sm" style={panelShellStyle()}>
+                    <div
+                      className="mt-3 rounded-lg border px-3 py-2 text-sm"
+                      style={panelShellStyle()}
+                    >
                       <div className="font-medium">{run.latest_artifact.kind}</div>
                       <div className="text-xs" style={metaTextStyle()}>
                         seq {run.latest_artifact.seq} · {run.latest_artifact.evidence_ref}
