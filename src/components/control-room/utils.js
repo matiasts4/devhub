@@ -29,6 +29,7 @@ const TOKEN_LABELS = Object.freeze({
   'workspace evidence gap': 'falta evidencia de workspace',
   'unknown error': 'error desconocido',
   'unknown source': 'origen desconocido',
+  local_snapshot: 'snapshot local',
 });
 
 const MISSING_SOURCE_LABELS = Object.freeze({

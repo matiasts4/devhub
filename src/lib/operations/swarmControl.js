@@ -165,6 +165,44 @@ function normalizeMissionControl(snapshot = null) {
   };
 }
 
+function getMissionControlSnapshot(payload = {}) {
+  return (
+    payload?.mission_control ||
+    payload?.control_room_snapshot_input?.mission_control ||
+    payload?.control_room_input?.mission_control ||
+    payload?.control_room?.mission_control ||
+    null
+  );
+}
+
+export function extractMissionControlPayload(payload = {}) {
+  return normalizeMissionControl(getMissionControlSnapshot(payload));
+}
+
+export async function persistMissionControlComposerMessage({
+  recipient_agent_ids,
+  body_summary,
+  fetchImpl = fetch,
+} = {}) {
+  const response = await fetchImpl('/api/agenthub/operations/health', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'create_local_mission_message',
+      recipient_agent_ids,
+      body_summary,
+    }),
+  });
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload?.error || 'No se pudo guardar el mensaje local.');
+  }
+
+  return extractMissionControlPayload(payload);
+}
+
 const HEALTH_TO_CONTROL_ROOM_DIAGNOSTIC_KEY = Object.freeze({
   'opencode-process': 'process',
   mcp: 'mcp',
@@ -564,3 +602,5 @@ export function selectControlRoomDiagnostics(snapshot = {}) {
 export function selectControlRoomErrors(snapshot = {}) {
   return asArray(snapshot.errors);
 }
+
+export { normalizeMissionControl };

@@ -93,6 +93,26 @@ async function renderSwarmControl(props = {}) {
   return renderIntoDom(React.createElement(SwarmControl, props), mountedRoots);
 }
 
+async function changeField(element, value) {
+  element.value = value;
+  element.dispatchEvent(new window.Event('input', { bubbles: true }));
+  element.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await flushEffects();
+}
+
+async function toggleCheckbox(element, checked = true) {
+  element.checked = checked;
+  element.dispatchEvent(new window.Event('click', { bubbles: true }));
+  element.dispatchEvent(new window.Event('input', { bubbles: true }));
+  element.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await flushEffects();
+}
+
+async function submitForm(element) {
+  element.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  await flushEffects();
+}
+
 function buildDegradedInput() {
   return buildControlRoomInput({
     supervisor: {
@@ -178,6 +198,7 @@ describe('SwarmControl control room composition', () => {
   afterEach(() => {
     cleanupMountedRoots(mountedRoots);
     dom.window.close();
+    delete global.fetch;
     jest.clearAllMocks();
   });
 
@@ -338,5 +359,99 @@ describe('SwarmControl control room composition', () => {
     expect(text).toContain('Sin mensajes recientes en este snapshot.');
     expect(text).toContain('Sin entregas pendientes en este snapshot.');
     expect(text).toContain('Sin presencia TTL en este snapshot.');
+  });
+
+  test('renders a local composer for active mission participants only', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+
+    expect(view.container.textContent).toContain('Composer local');
+    expect(view.container.textContent).toContain('Destinatarios');
+    expect(view.container.textContent).toContain('Mensaje breve');
+    expect(view.container.textContent).toContain('agent-worker-1');
+    expect(view.container.textContent).not.toContain('agent-directorSeleccionar');
+    expect(
+      view.container.querySelector('textarea[aria-label="Mensaje breve para la misión"]')
+    ).not.toBeNull();
+  });
+
+  test('persists a local mission message and reflects it in the current control room snapshot', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        control_room_snapshot_input: {
+          mission_control: {
+            mission: {
+              mission_id: 'mission-1',
+              title: 'Misión Director',
+              status: 'active',
+            },
+            participants: [
+              {
+                participant_id: 'participant-1',
+                agent_id: 'agent-director',
+                role_in_mission: 'director',
+                status: 'active',
+              },
+              {
+                participant_id: 'participant-2',
+                agent_id: 'agent-worker-1',
+                role_in_mission: 'executor',
+                status: 'active',
+              },
+            ],
+            latest_message: {
+              message_id: 'message-2',
+              sender_agent_id: 'agent-director',
+              message_kind: 'directive',
+              body_summary: 'Necesito update del workspace hoy',
+              created_at: '2026-05-19T12:30:00.000Z',
+            },
+            pending_deliveries: [
+              {
+                delivery_id: 'delivery-2',
+                recipient_agent_id: 'agent-worker-1',
+                channel: 'local_snapshot',
+                status: 'pending',
+                last_attempt_at: '2026-05-19T12:30:00.000Z',
+              },
+            ],
+            presence: {
+              active: [],
+              stale: [],
+              offline: [],
+            },
+          },
+        },
+      }),
+    });
+
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    const recipient = view.container.querySelector(
+      'input[type="checkbox"][value="agent-worker-1"]'
+    );
+    const textarea = view.container.querySelector(
+      'textarea[aria-label="Mensaje breve para la misión"]'
+    );
+    const submitButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Guardar mensaje local')
+    );
+    const form = submitButton?.closest('form');
+
+    await toggleCheckbox(recipient, true);
+    await changeField(textarea, 'Necesito update del workspace hoy');
+    await submitForm(form);
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_local_mission_message',
+        recipient_agent_ids: ['agent-worker-1'],
+        body_summary: 'Necesito update del workspace hoy',
+      }),
+    });
+    expect(view.container.textContent).toContain('Necesito update del workspace hoy');
+    expect(view.container.textContent).toContain('snapshot local');
+    expect(view.container.textContent).toContain('pendiente');
   });
 });

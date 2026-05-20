@@ -1,5 +1,7 @@
 const {
   composeControlRoomSnapshot,
+  extractMissionControlPayload,
+  persistMissionControlComposerMessage,
   selectControlRoomHeader,
   selectControlRoomAgents,
   selectControlRoomWorkspaces,
@@ -431,5 +433,136 @@ describe('composeControlRoomSnapshot', () => {
         evidence_ref: 'evidence://team-member/member-1',
       }),
     ]);
+  });
+
+  test('extracts normalized mission control payload from local composer responses', () => {
+    const missionControl = extractMissionControlPayload({
+      control_room_snapshot_input: {
+        mission_control: {
+          mission: {
+            mission_id: 'mission-2',
+            title: 'Misión local',
+            status: 'active',
+          },
+          participants: [
+            {
+              participant_id: 'participant-1',
+              agent_id: 'agent-worker-1',
+              role_in_mission: 'executor',
+              status: 'active',
+            },
+          ],
+          latest_message: {
+            message_id: 'message-2',
+            sender_agent_id: 'agent-director',
+            message_kind: 'directive',
+            body_summary: 'Revisá el snapshot local',
+            created_at: '2026-05-19T12:00:00.000Z',
+          },
+          pending_deliveries: [
+            {
+              delivery_id: 'delivery-2',
+              recipient_agent_id: 'agent-worker-1',
+              channel: 'local_snapshot',
+              status: 'pending',
+            },
+          ],
+          presence: {
+            active: [],
+            stale: [],
+            offline: [],
+          },
+        },
+      },
+    });
+
+    expect(missionControl).toEqual(
+      expect.objectContaining({
+        mission: expect.objectContaining({
+          mission_id: 'mission-2',
+          title: 'Misión local',
+        }),
+        recent_messages: [
+          expect.objectContaining({
+            body_summary: 'Revisá el snapshot local',
+            message_kind: 'directive',
+          }),
+        ],
+        pending_deliveries: [
+          expect.objectContaining({
+            recipient_agent_id: 'agent-worker-1',
+            channel: 'local_snapshot',
+            status: 'pending',
+          }),
+        ],
+      })
+    );
+  });
+
+  test('posts local composer messages and returns normalized mission control state', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        control_room_snapshot_input: {
+          mission_control: {
+            mission: {
+              mission_id: 'mission-2',
+              title: 'Misión local',
+              status: 'active',
+            },
+            participants: [
+              {
+                participant_id: 'participant-1',
+                agent_id: 'agent-worker-1',
+                role_in_mission: 'executor',
+                status: 'active',
+              },
+            ],
+            latest_message: {
+              message_id: 'message-2',
+              sender_agent_id: 'agent-director',
+              message_kind: 'directive',
+              body_summary: 'Revisá el snapshot local',
+              created_at: '2026-05-19T12:00:00.000Z',
+            },
+            pending_deliveries: [
+              {
+                delivery_id: 'delivery-2',
+                recipient_agent_id: 'agent-worker-1',
+                channel: 'local_snapshot',
+                status: 'pending',
+              },
+            ],
+            presence: {
+              active: [],
+              stale: [],
+              offline: [],
+            },
+          },
+        },
+      }),
+    });
+
+    const missionControl = await persistMissionControlComposerMessage({
+      recipient_agent_ids: ['agent-worker-1'],
+      body_summary: 'Revisá el snapshot local',
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith('/api/agenthub/operations/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_local_mission_message',
+        recipient_agent_ids: ['agent-worker-1'],
+        body_summary: 'Revisá el snapshot local',
+      }),
+    });
+    expect(missionControl).toEqual(
+      expect.objectContaining({
+        recent_messages: [expect.objectContaining({ body_summary: 'Revisá el snapshot local' })],
+        pending_deliveries: [expect.objectContaining({ status: 'pending' })],
+      })
+    );
   });
 });

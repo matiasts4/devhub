@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   composeControlRoomSnapshot,
+  persistMissionControlComposerMessage,
   selectControlRoomAgents,
   selectControlRoomApprovals,
   selectControlRoomDiagnostics,
@@ -29,6 +30,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const { project } = useOutletContext() || {};
   const [fetchedInput, setFetchedInput] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [missionControlOverride, setMissionControlOverride] = useState(null);
   const [filterText, setFilterText] = useState('');
   const [layout, setLayout] = useState('grid');
   const [selectedRunId, setSelectedRunId] = useState(null);
@@ -90,6 +92,24 @@ export default function SwarmControl({ snapshotInput = null }) {
   const diagnostics = useMemo(() => selectControlRoomDiagnostics(snapshot), [snapshot]);
   const errors = useMemo(() => selectControlRoomErrors(snapshot), [snapshot]);
   const missionControl = useMemo(() => selectControlRoomMission(snapshot), [snapshot]);
+  const effectiveMissionControl = missionControlOverride || missionControl;
+
+  useEffect(() => {
+    setMissionControlOverride(null);
+  }, [missionControl]);
+
+  const handleComposerSubmit = async ({ recipient_agent_ids, body_summary }) => {
+    if (!effectiveMissionControl?.mission?.mission_id) {
+      throw new Error('No hay misión activa para este mensaje local.');
+    }
+
+    const nextMissionControl = await persistMissionControlComposerMessage({
+      recipient_agent_ids,
+      body_summary,
+    });
+
+    setMissionControlOverride(nextMissionControl);
+  };
 
   const normalizedFilter = filterText.trim().toLowerCase();
   const matchesFilter = (record) => {
@@ -170,7 +190,10 @@ export default function SwarmControl({ snapshotInput = null }) {
           </div>
         </div>
 
-        <MissionKernelPanel missionControl={missionControl} />
+        <MissionKernelPanel
+          missionControl={effectiveMissionControl}
+          onComposerSubmit={handleComposerSubmit}
+        />
 
         <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
           <AgentsClaimsPanel agents={filteredAgents} />

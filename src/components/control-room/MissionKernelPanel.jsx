@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { formatToken, metaTextStyle, panelShellStyle, renderEmptyCopy } from './utils';
 
 const STATUS_LABELS = Object.freeze({
@@ -64,12 +64,30 @@ function PresenceGroup({ label, entries = [] }) {
   );
 }
 
-export default function MissionKernelPanel({ missionControl }) {
+function getEligibleParticipants(participants = [], mission = null) {
+  if (!mission?.mission_id) return [];
+  return participants.filter(
+    (participant) =>
+      participant?.agent_id &&
+      participant.status === 'active' &&
+      participant.role_in_mission !== 'director'
+  );
+}
+
+export default function MissionKernelPanel({ missionControl, onComposerSubmit = null }) {
   const mission = missionControl?.mission || null;
   const participants = missionControl?.participants || [];
   const recentMessages = missionControl?.recent_messages || [];
   const pendingDeliveries = missionControl?.pending_deliveries || [];
   const presence = missionControl?.presence || { active: [], stale: [], offline: [] };
+  const eligibleParticipants = useMemo(
+    () => getEligibleParticipants(participants, mission),
+    [participants, mission]
+  );
+  const composerFormRef = useRef(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const canSubmit = Boolean(mission?.mission_id) && eligibleParticipants.length > 0;
 
   return (
     <section
@@ -153,6 +171,126 @@ export default function MissionKernelPanel({ missionControl }) {
                   ))}
             </div>
           </section>
+
+          <section className="rounded-xl border p-3" style={panelShellStyle()}>
+            <h3 className="text-sm font-semibold">Composer local</h3>
+            <p className="mt-1 text-xs" style={metaTextStyle()}>
+              Redactá una directiva local para participantes activos. Solo persiste mensajes de
+              misión y entregas pendientes.
+            </p>
+
+            {!mission ? (
+              <div className="mt-3">
+                {renderEmptyCopy('Sin misión activa para redactar mensajes locales.')}
+              </div>
+            ) : eligibleParticipants.length === 0 ? (
+              <div className="mt-3">
+                {renderEmptyCopy('No hay participantes elegibles para este mensaje local.')}
+              </div>
+            ) : (
+              <form
+                ref={composerFormRef}
+                className="mt-3 space-y-3"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  const formData = new window.FormData(event.currentTarget);
+                  const recipientAgentIds = formData
+                    .getAll('recipient_agent_ids')
+                    .map((value) => String(value).trim())
+                    .filter(Boolean);
+                  const bodySummary = String(formData.get('body_summary') || '').trim();
+
+                  if (recipientAgentIds.length === 0) {
+                    setSubmitError('Elegí al menos un destinatario activo.');
+                    return;
+                  }
+
+                  if (!bodySummary) {
+                    setSubmitError('Escribí un mensaje breve antes de guardar.');
+                    return;
+                  }
+
+                  if (!onComposerSubmit) return;
+
+                  setIsSubmitting(true);
+                  setSubmitError('');
+
+                  try {
+                    await onComposerSubmit({
+                      recipient_agent_ids: recipientAgentIds,
+                      body_summary: bodySummary,
+                    });
+                    composerFormRef.current?.reset();
+                  } catch (error) {
+                    setSubmitError(error?.message || 'No se pudo guardar el mensaje local.');
+                  } finally {
+                    setIsSubmitting(false);
+                  }
+                }}
+              >
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-semibold uppercase tracking-wide">
+                    Destinatarios
+                  </legend>
+                  <div className="space-y-2">
+                    {eligibleParticipants.map((participant) => {
+                      return (
+                        <label
+                          key={participant.participant_id || participant.agent_id}
+                          className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                          style={panelShellStyle()}
+                        >
+                          <input
+                            type="checkbox"
+                            name="recipient_agent_ids"
+                            value={participant.agent_id}
+                          />
+                          <span>{participant.agent_id}</span>
+                          <span className="text-xs" style={metaTextStyle()}>
+                            {formatMissionToken(participant.role_in_mission)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
+                <label className="flex flex-col gap-2 text-sm font-medium">
+                  <span>Mensaje breve</span>
+                  <textarea
+                    aria-label="Mensaje breve para la misión"
+                    name="body_summary"
+                    className="min-h-[96px] rounded-lg border px-3 py-2 outline-none"
+                    style={{
+                      background: 'var(--surface-app)',
+                      borderColor: 'var(--border-subtle)',
+                      color: 'var(--text-primary)',
+                    }}
+                    placeholder="Ej.: Necesito update del workspace principal antes de QA."
+                    maxLength={280}
+                  />
+                </label>
+
+                {submitError ? (
+                  <p className="text-xs" style={{ color: 'var(--text-danger, #f87171)' }}>
+                    {submitError}
+                  </p>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={!canSubmit || isSubmitting}
+                  className="rounded-lg border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{
+                    background: 'var(--surface-app)',
+                    borderColor: 'var(--border-subtle)',
+                  }}
+                >
+                  {isSubmitting ? 'Guardando…' : 'Guardar mensaje local'}
+                </button>
+              </form>
+            )}
+          </section>
         </div>
 
         <div className="space-y-4">
@@ -178,7 +316,7 @@ export default function MissionKernelPanel({ missionControl }) {
                         </div>
                       </div>
                       <p className="mt-1 text-xs" style={metaTextStyle()}>
-                        {delivery.channel || 'canal desconocido'} · último intento{' '}
+                        {formatToken(delivery.channel || 'canal desconocido')} · último intento{' '}
                         {delivery.last_attempt_at || '—'}
                       </p>
                       {delivery.last_error ? (

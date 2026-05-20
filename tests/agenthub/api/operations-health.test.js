@@ -134,4 +134,90 @@ describe('GET /api/agenthub/operations/health', () => {
       },
     });
   });
+
+  test('creates a local mission message with pending local deliveries only', async () => {
+    const Database = require('better-sqlite3');
+    const {
+      ensureRuntimeSchema,
+      createSwarmMission,
+      registerMissionParticipant,
+    } = require('../../../src/lib/db/localDb.js');
+    const {
+      createLocalMissionMessage,
+    } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const db = new Database(':memory:');
+    ensureRuntimeSchema(db);
+    db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+      'project-local',
+      'Project Local'
+    );
+
+    const mission = createSwarmMission(db, {
+      project_id: 'project-local',
+      owner_agent_id: 'agent-director',
+      kind: 'coordination',
+      title: 'Misión local',
+      status: 'active',
+      started_at: '2026-05-19T12:00:00.000Z',
+      updated_at: '2026-05-19T12:00:00.000Z',
+    });
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-director',
+      role_in_mission: 'director',
+      status: 'active',
+      joined_at: '2026-05-19T12:00:00.000Z',
+    });
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-worker-1',
+      role_in_mission: 'executor',
+      status: 'active',
+      joined_at: '2026-05-19T12:00:05.000Z',
+    });
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-reviewer-1',
+      role_in_mission: 'reviewer',
+      status: 'active',
+      joined_at: '2026-05-19T12:00:10.000Z',
+    });
+
+    const snapshot = createLocalMissionMessage({
+      db,
+      recipient_agent_ids: ['agent-worker-1', 'agent-reviewer-1'],
+      body_summary: 'Necesito update del workspace principal.',
+      now: '2026-05-19T12:01:00.000Z',
+    });
+
+    expect(snapshot.latest_message).toMatchObject({
+      message_kind: 'directive',
+      body_summary: 'Necesito update del workspace principal.',
+      sender_agent_id: 'agent-director',
+    });
+    expect(snapshot.pending_deliveries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recipient_agent_id: 'agent-worker-1',
+          channel: 'local_snapshot',
+          status: 'pending',
+        }),
+        expect.objectContaining({
+          recipient_agent_id: 'agent-reviewer-1',
+          channel: 'local_snapshot',
+          status: 'pending',
+        }),
+      ])
+    );
+
+    const rows = db
+      .prepare('SELECT channel, status FROM message_deliveries ORDER BY recipient_agent_id ASC')
+      .all();
+    expect(rows).toEqual([
+      { channel: 'local_snapshot', status: 'pending' },
+      { channel: 'local_snapshot', status: 'pending' },
+    ]);
+    db.close();
+  });
 });
