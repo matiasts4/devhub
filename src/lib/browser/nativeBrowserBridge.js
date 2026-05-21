@@ -1,5 +1,15 @@
 'use client';
 
+let nativeBrowserUnlisten = null;
+
+const NATIVE_BROWSER_EVENT_NAME = 'native-browser-event';
+
+function emitNativeBrowserEvent(detail) {
+  if (!hasWindow()) return;
+  const BrowserEvent = window.CustomEvent || CustomEvent;
+  window.dispatchEvent(new BrowserEvent('devhub:native-browser-event', { detail }));
+}
+
 function hasWindow() {
   return typeof window !== 'undefined';
 }
@@ -13,7 +23,23 @@ async function getTauriCore() {
     throw new Error('tauri-unavailable');
   }
 
+  if (typeof require === 'function') {
+    return require('@tauri-apps/api/core');
+  }
+
   return import('@tauri-apps/api/core');
+}
+
+async function getTauriEvent() {
+  if (!isNativeBrowserRuntimeAvailable()) {
+    throw new Error('tauri-unavailable');
+  }
+
+  if (typeof require === 'function') {
+    return require('@tauri-apps/api/event');
+  }
+
+  return import('@tauri-apps/api/event');
 }
 
 function normalizeNativeBrowserReason(reason, fallbackReason) {
@@ -83,6 +109,13 @@ export async function setNativeBrowserVisibility(payload = {}) {
   await invoke('native_browser_set_visibility', { request: payload });
 }
 
+export async function nativeBrowserSelectorCommand(payload = {}) {
+  return invokeNativeBrowser('native_browser_selector_command', payload, {
+    supported: false,
+    reason: 'tauri-unavailable',
+  });
+}
+
 export async function selectAllNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_select_all', payload, {
     supported: false,
@@ -101,4 +134,26 @@ export async function closeNativeBrowser(payload = {}) {
   if (!isNativeBrowserRuntimeAvailable()) return;
   const { invoke } = await getTauriCore();
   await invoke('native_browser_close', { request: payload });
+}
+
+export async function subscribeNativeBrowserEvents() {
+  if (!isNativeBrowserRuntimeAvailable()) {
+    return () => {};
+  }
+
+  if (nativeBrowserUnlisten) {
+    return nativeBrowserUnlisten;
+  }
+
+  const { listen } = await getTauriEvent();
+  nativeBrowserUnlisten = await listen(NATIVE_BROWSER_EVENT_NAME, (event) => {
+    const payload = event?.payload || {};
+    if (!payload?.type) return;
+    emitNativeBrowserEvent(payload);
+  });
+
+  return () => {
+    nativeBrowserUnlisten?.();
+    nativeBrowserUnlisten = null;
+  };
 }

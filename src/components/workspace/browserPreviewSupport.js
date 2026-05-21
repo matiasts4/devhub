@@ -15,7 +15,12 @@ export const BROWSER_RUNTIME = {
 export const BROWSER_RUNTIME_FALLBACK_REASON = {
   EDIT_MODE_REQUIRES_IFRAME: 'edit-mode-requires-iframe',
   PROBE_FAILED: 'probe-failed',
+  SELECTOR_UNAVAILABLE: 'selector-unavailable',
 };
+
+export function hasNativeSelectorInspectCapability(nativeCapability) {
+  return nativeCapability?.capabilities?.selector?.inspect === true;
+}
 
 export const SUPPORT_REASON = {
   SAME_ORIGIN_ACCESS: 'same-origin-access',
@@ -256,19 +261,19 @@ export function resolveBrowserRuntimeSelection({
     };
   }
 
-  if (editMode) {
-    return {
-      requestedRuntime: normalizedRequestedRuntime,
-      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
-      fallbackReason: BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
-    };
-  }
-
   if (nativeCapability && nativeCapability.ready === false) {
     return {
       requestedRuntime: normalizedRequestedRuntime,
       effectiveRuntime: BROWSER_RUNTIME.IFRAME,
       fallbackReason: nativeCapability.reason || BROWSER_RUNTIME_FALLBACK_REASON.PROBE_FAILED,
+    };
+  }
+
+  if (editMode && !hasNativeSelectorInspectCapability(nativeCapability)) {
+    return {
+      requestedRuntime: normalizedRequestedRuntime,
+      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
+      fallbackReason: nativeCapability?.reason || BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
     };
   }
 
@@ -287,6 +292,8 @@ export function getBrowserRuntimeFallbackCopy(reason) {
   switch (reason) {
     case BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME:
       return 'iframe fallback · edit mode';
+    case BROWSER_RUNTIME_FALLBACK_REASON.SELECTOR_UNAVAILABLE:
+      return 'iframe fallback · selector unavailable';
     case 'unsupported-platform':
       return 'iframe fallback · unsupported platform';
     case 'tauri-unavailable':

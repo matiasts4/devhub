@@ -1285,6 +1285,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, rightDockState.maximized, rightDockState.visible, workspaceWindows]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
+  const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
+  const effectiveRightDockState = activeWorkspaceOwnsDockState
+    ? rightDockState
+    : { ...DEFAULT_RIGHT_DOCK_STATE };
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
   const requestedRendererMode = resolveRequestedRenderer({
     workspaceId: activeWsId,
@@ -1293,14 +1297,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   });
   const activeBrowserWindowState = browserWindowStates?.[activeWsId] || null;
   const isFullscreenBrowser =
-    rightDockState.visible &&
-    rightDockState.maximized &&
-    rightDockState.maximizedView === 'browser';
-  const hideRightDockPanel = rightDockState.maximized && rightDockState.maximizedView === 'window';
+    effectiveRightDockState.visible &&
+    effectiveRightDockState.maximized &&
+    effectiveRightDockState.maximizedView === 'browser';
+  const hideRightDockPanel =
+    effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
   const shouldFallbackNativeSurfacesForRightDock =
-    rightDockState.visible &&
-    !rightDockState.maximized &&
-    (rightDockState.activeTab === 'browser' || rightDockState.activeTab === 'editor');
+    effectiveRightDockState.visible &&
+    !effectiveRightDockState.maximized &&
+    (effectiveRightDockState.activeTab === 'browser' ||
+      effectiveRightDockState.activeTab === 'editor');
   const shouldSuspendNativeSurfaces =
     shouldFallbackNativeSurfacesForRightDock ||
     isGridLauncherOpen ||
@@ -1314,15 +1320,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
-    size: rightDockState.size,
+    size: effectiveRightDockState.size,
     measuredBounds: rightDockMeasuredBounds,
   });
 
   const syncRightDockMeasuredBounds = useCallback(() => {
     if (
       isFullscreenBrowser ||
-      !rightDockState.visible ||
-      rightDockState.maximized ||
+      !effectiveRightDockState.visible ||
+      effectiveRightDockState.maximized ||
       hideRightDockPanel
     ) {
       setRightDockMeasuredBounds(null);
@@ -1356,17 +1362,22 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
       return nextBounds;
     });
-  }, [hideRightDockPanel, isFullscreenBrowser, rightDockState.maximized, rightDockState.visible]);
+  }, [
+    effectiveRightDockState.maximized,
+    effectiveRightDockState.visible,
+    hideRightDockPanel,
+    isFullscreenBrowser,
+  ]);
 
   useLayoutEffect(() => {
     syncRightDockMeasuredBounds();
-  }, [syncRightDockMeasuredBounds, rightDockState.size, activeWsId, isVisible]);
+  }, [syncRightDockMeasuredBounds, effectiveRightDockState.size, activeWsId, isVisible]);
 
   useEffect(() => {
     if (
       isFullscreenBrowser ||
-      !rightDockState.visible ||
-      rightDockState.maximized ||
+      !effectiveRightDockState.visible ||
+      effectiveRightDockState.maximized ||
       hideRightDockPanel
     ) {
       return undefined;
@@ -1391,10 +1402,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     observer.observe(placeholderElement);
     return () => observer.disconnect();
   }, [
+    effectiveRightDockState.maximized,
+    effectiveRightDockState.visible,
     hideRightDockPanel,
     isFullscreenBrowser,
-    rightDockState.maximized,
-    rightDockState.visible,
     syncRightDockMeasuredBounds,
   ]);
 
@@ -3369,7 +3380,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               wsIndex,
               workspaceGridKeyCounts
             );
-            const wsDockState = rightDockState;
+            const wsDockState = activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
             const updateWsDockState = updateRightDockState;
             const focusedPanelId = focusedPanelByWorkspace[ws.id];
             const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
@@ -3608,16 +3619,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               </div>
             );
           })}
-          {(rightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
+          {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
             <div
               data-testid="workspace-right-dock-layer"
-              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!rightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
+              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${(!effectiveRightDockState.visible || hideRightDockPanel) ? 'hidden' : 'flex flex-col'}`}
               style={rightDockLayerStyle}
             >
               <WorkspaceRightDock
                 project={{ id: projectId, local_path: cwd }}
                 workspaceId={activeWorkspace.id}
-                dockState={rightDockState}
+                dockState={effectiveRightDockState}
                 onDockStateChange={updateRightDockState}
                 browserWindowState={browserWindowStates?.[activeWorkspace.id] || null}
                 onBrowserWindowStateChange={updateBrowserWindowState}
@@ -3625,7 +3636,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 activeWorkspaceWindowId={activeWindowIds?.[activeWorkspace.id] || null}
                 onWorkspaceWindowSelect={(windowId) => {
                   switchWindowInWorkspace(activeWorkspace.id, windowId);
-                  if (rightDockState.maximized) {
+                  if (effectiveRightDockState.maximized) {
                     updateRightDockState({
                       visible: true,
                       maximized: true,

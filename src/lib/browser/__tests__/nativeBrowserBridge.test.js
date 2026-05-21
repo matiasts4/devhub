@@ -3,6 +3,7 @@ const { JSDOM } = require('jsdom');
 describe('nativeBrowserBridge', () => {
   let dom;
   let invokeMock;
+  let listenMock;
 
   beforeEach(() => {
     jest.resetModules();
@@ -15,9 +16,13 @@ describe('nativeBrowserBridge', () => {
     window.__TAURI_INTERNALS__ = {};
 
     invokeMock = jest.fn();
+    listenMock = jest.fn();
 
     jest.doMock('@tauri-apps/api/core', () => ({
       invoke: invokeMock,
+    }));
+    jest.doMock('@tauri-apps/api/event', () => ({
+      listen: listenMock,
     }));
   });
 
@@ -31,13 +36,19 @@ describe('nativeBrowserBridge', () => {
 
   test('wraps native browser command payloads under the Rust request argument', async () => {
     invokeMock
-      .mockResolvedValueOnce({ ready: true, reason: null })
+      .mockResolvedValueOnce({
+        ready: true,
+        reason: null,
+        persistentProfile: true,
+        capabilities: { persistentProfile: true, selector: { inspect: true } },
+      })
       .mockResolvedValueOnce({ opened: true, reason: null })
       .mockResolvedValueOnce({ loaded: true, reason: null })
       .mockResolvedValueOnce({ reloaded: true, reason: null })
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ supported: true, reason: null })
       .mockResolvedValueOnce({ supported: true, reason: null })
       .mockResolvedValueOnce({ supported: true, reason: null })
       .mockResolvedValueOnce(undefined);
@@ -56,6 +67,7 @@ describe('nativeBrowserBridge', () => {
     await bridge.resizeNativeBrowser({ panelId: 'browser-panel', bounds: openPayload.bounds });
     await bridge.focusNativeBrowser({ panelId: 'browser-panel' });
     await bridge.setNativeBrowserVisibility({ panelId: 'browser-panel', visible: true, bounds: openPayload.bounds });
+    await bridge.nativeBrowserSelectorCommand({ panelId: 'browser-panel', action: 'activate', mode: 'select' });
     await bridge.selectAllNativeBrowser({ panelId: 'browser-panel' });
     await bridge.copyNativeBrowser({ panelId: 'browser-panel' });
     await bridge.closeNativeBrowser({ panelId: 'browser-panel', reason: 'cleanup' });
@@ -79,15 +91,42 @@ describe('nativeBrowserBridge', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(7, 'native_browser_set_visibility', {
       request: { panelId: 'browser-panel', visible: true, bounds: openPayload.bounds },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(8, 'native_browser_select_all', {
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'native_browser_selector_command', {
+      request: { panelId: 'browser-panel', action: 'activate', mode: 'select' },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'native_browser_select_all', {
       request: { panelId: 'browser-panel' },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(9, 'native_browser_copy', {
+    expect(invokeMock).toHaveBeenNthCalledWith(10, 'native_browser_copy', {
       request: { panelId: 'browser-panel' },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(10, 'native_browser_close', {
+    expect(invokeMock).toHaveBeenNthCalledWith(11, 'native_browser_close', {
       request: { panelId: 'browser-panel', reason: 'cleanup' },
     });
+  });
+
+  test('subscribes native selector events and re-dispatches them on window', async () => {
+    const unlisten = jest.fn();
+    let callback = null;
+    listenMock.mockImplementation(async (_eventName, handler) => {
+      callback = handler;
+      return unlisten;
+    });
+
+    const bridge = require('../nativeBrowserBridge');
+    const payloads = [];
+    window.addEventListener('devhub:native-browser-event', (event) => payloads.push(event.detail));
+
+    const teardown = await bridge.subscribeNativeBrowserEvents();
+    expect(listenMock).toHaveBeenCalledWith('native-browser-event', expect.any(Function));
+
+    callback?.({ payload: { panelId: 'browser-panel', type: 'selector-selected', element: { tagName: 'button' } } });
+    expect(payloads).toEqual([
+      { panelId: 'browser-panel', type: 'selector-selected', element: { tagName: 'button' } },
+    ]);
+
+    teardown();
+    expect(unlisten).toHaveBeenCalledTimes(1);
   });
 
   test('reports tauri-unavailable when the desktop runtime is missing', async () => {
