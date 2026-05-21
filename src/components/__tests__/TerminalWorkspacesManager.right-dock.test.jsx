@@ -8,6 +8,9 @@ const {
   buildBrowserWindowLabel,
 } = require('../workspace/browserWindowState');
 
+const mockInvoke = jest.fn();
+const mockListen = jest.fn();
+
 jest.mock('framer-motion', () => ({
   motion: {
     div: ({ children, ...props }) => {
@@ -58,6 +61,14 @@ jest.mock('react-resizable-panels', () => ({
       },
     });
   },
+}));
+
+jest.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args) => mockInvoke(...args),
+}));
+
+jest.mock('@tauri-apps/api/event', () => ({
+  listen: (...args) => mockListen(...args),
 }));
 
 jest.mock('../TerminalTTY', () => ({
@@ -303,10 +314,13 @@ describe('TerminalWorkspacesManager right dock', () => {
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    delete window.__TAURI_INTERNALS__;
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     sharedEditorPaneMountCount = 0;
     sharedEditorPaneUnmountCount = 0;
+    mockInvoke.mockReset();
+    mockListen.mockReset();
   });
 
   afterEach(() => {
@@ -611,6 +625,59 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(ws1State.visible).toBe(true);
     expect(ws1State.activeTab).toBe('editor');
     expect(ws2State.visible).toBe(false);
+  });
+
+  test('switching to a new workspace keeps a hidden native browser from staying visible on top', async () => {
+    window.__TAURI_INTERNALS__ = {};
+    mockInvoke.mockImplementation(async (command) => {
+      if (command === 'native_browser_probe') {
+        return {
+          ready: true,
+          reason: null,
+          persistentProfile: true,
+          capabilities: { persistentProfile: true, selector: { inspect: true } },
+        };
+      }
+      if (command === 'native_browser_open') return { opened: true, reason: null };
+      if (command === 'native_browser_load_url') return { loaded: true, reason: null };
+      return null;
+    });
+
+    window.localStorage.setItem(
+      buildRightDockStorageKey('project-1', 'ws1'),
+      JSON.stringify({
+        visible: true,
+        activeTab: 'browser',
+        browserRuntime: 'native-gtk',
+        maximized: false,
+        maximizedView: 'browser',
+        browserUrl: 'https://example.com',
+        browserHistory: ['https://example.com'],
+        browserHistoryIndex: 0,
+      })
+    );
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    await flushEffects();
+    mockInvoke.mockClear();
+
+    await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
+    await flushEffects();
+
+    expect(mockInvoke).toHaveBeenCalledWith('native_browser_close', {
+      request: expect.objectContaining({
+        panelId: 'browser-project-1-ws1',
+        reason: 'component-unmount',
+      }),
+    });
+    expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).toBeNull();
   });
 
   test('keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1', async () => {

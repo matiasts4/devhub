@@ -1,9 +1,12 @@
 const {
+  BROWSER_RUNTIME,
+  BROWSER_RUNTIME_FALLBACK_REASON,
   PREVIEW_SUPPORT_MODE,
   SUPPORT_REASON,
   classifyPreviewSupport,
   createSupportState,
   getUnsupportedCopy,
+  resolveBrowserRuntimeSelection,
   resolvePreviewSrc,
 } = require('../browserPreviewSupport');
 
@@ -154,5 +157,77 @@ describe('browserPreviewSupport', () => {
       viaProxy: false,
     }));
     expect(typeof state.checkedAt).toBe('number');
+  });
+
+  test('keeps native-gtk runtime when capability probe reports ready and edit mode is off', () => {
+    expect(resolveBrowserRuntimeSelection({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      editMode: false,
+      nativeCapability: { ready: true, reason: null },
+    })).toEqual({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      effectiveRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      fallbackReason: null,
+    });
+  });
+
+  test('falls back to iframe when native-gtk is requested but edit mode needs the iframe bridge', () => {
+    expect(resolveBrowserRuntimeSelection({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      editMode: true,
+      nativeCapability: {
+        ready: true,
+        reason: null,
+        capabilities: { selector: { inspect: false } },
+      },
+    })).toEqual({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
+      fallbackReason: BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
+    });
+  });
+
+  test('keeps native-gtk active in edit mode when selector inspect capability is ready', () => {
+    expect(resolveBrowserRuntimeSelection({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      editMode: true,
+      nativeCapability: {
+        ready: true,
+        reason: null,
+        capabilities: { selector: { inspect: true } },
+      },
+    })).toEqual({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      effectiveRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      fallbackReason: null,
+    });
+  });
+
+  test('falls back to iframe in edit mode when native selector capability is unavailable', () => {
+    expect(resolveBrowserRuntimeSelection({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      editMode: true,
+      nativeCapability: {
+        ready: false,
+        reason: 'selector-unavailable',
+        capabilities: { selector: { inspect: false } },
+      },
+    })).toEqual({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
+      fallbackReason: 'selector-unavailable',
+    });
+  });
+
+  test('falls back to iframe when native-gtk probe reports an unavailable runtime', () => {
+    expect(resolveBrowserRuntimeSelection({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      editMode: false,
+      nativeCapability: { ready: false, reason: 'unsupported-platform' },
+    })).toEqual({
+      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
+      fallbackReason: 'unsupported-platform',
+    });
   });
 });

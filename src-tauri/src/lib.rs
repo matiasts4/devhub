@@ -9,7 +9,14 @@ use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::ShellExt;
 
 mod native_vte;
+mod native_browser;
+mod native_window_host;
 
+use native_browser::{
+    native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
+    native_browser_open, native_browser_probe, native_browser_reload, native_browser_resize,
+    native_browser_select_all, native_browser_selector_command, native_browser_set_visibility, NativeBrowserState,
+};
 use native_vte::{
     native_vte_close, native_vte_focus, native_vte_open, native_vte_probe, native_vte_resize,
     native_vte_set_visibility, NativeVteState,
@@ -523,7 +530,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(NativeVteState::default())
+        .manage(NativeBrowserState::default())
         .invoke_handler(tauri::generate_handler![
+            native_browser_probe,
+            native_browser_open,
+            native_browser_load_url,
+            native_browser_reload,
+            native_browser_resize,
+            native_browser_focus,
+            native_browser_set_visibility,
+            native_browser_selector_command,
+            native_browser_select_all,
+            native_browser_copy,
+            native_browser_close,
             native_vte_probe,
             native_vte_open,
             native_vte_focus,
