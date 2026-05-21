@@ -1,11 +1,17 @@
+import React from 'react';
 import {
+  CountBadge,
+  StatusPill,
   formatEvidence,
   formatMissingSource,
   formatToken,
   metaTextStyle,
+  panelListStyle,
   panelShellStyle,
   renderEmptyCopy,
 } from './utils';
+
+const MAX_SECONDARY = 3;
 
 function formatOccurredAt(value) {
   return value || 'Sin timestamp durable';
@@ -20,7 +26,10 @@ export default function EvidenceTimelinePanel({ items = [] }) {
     >
       <header className="mb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Timeline de evidencia</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Timeline de evidencia</h2>
+            <CountBadge count={items.length} />
+          </div>
           <span className="text-xs font-medium" style={metaTextStyle()}>
             Solo lectura
           </span>
@@ -30,7 +39,7 @@ export default function EvidenceTimelinePanel({ items = [] }) {
         </p>
       </header>
 
-      <div className="space-y-3">
+      <div className="max-h-[480px] space-y-3 overflow-y-auto pr-0.5" style={panelListStyle()}>
         {items.length === 0
           ? renderEmptyCopy('Sin eventos durables en este snapshot.')
           : items.map((item) => (
@@ -40,10 +49,10 @@ export default function EvidenceTimelinePanel({ items = [] }) {
                 style={panelShellStyle()}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-medium">{item.summary || 'Evento durable sin resumen'}</h3>
-                  <span className="text-xs" style={metaTextStyle()}>
-                    {formatToken(item.kind)}
-                  </span>
+                  <h3 className="font-medium text-sm">
+                    {item.summary || 'Evento durable sin resumen'}
+                  </h3>
+                  <StatusPill status={item.kind} />
                 </div>
 
                 <p className="mt-2 text-xs" style={metaTextStyle()}>
@@ -66,18 +75,25 @@ export default function EvidenceTimelinePanel({ items = [] }) {
                     className="mt-3 space-y-2 rounded-lg border px-3 py-2"
                     style={panelShellStyle()}
                   >
-                    {item.secondary_session_evidence.map((secondary, index) => (
-                      <div key={`${item.item_id || 'timeline'}-secondary-${index}`}>
-                        <div className="text-xs font-medium">{secondary.label}</div>
-                        <div className="text-sm">
-                          {secondary.summary || 'Sin resumen secundario'}
+                    {item.secondary_session_evidence
+                      .slice(0, MAX_SECONDARY)
+                      .map((secondary, index) => (
+                        <div key={`${item.item_id || 'timeline'}-secondary-${index}`}>
+                          <div className="text-xs font-medium">{secondary.label}</div>
+                          <div className="text-sm">
+                            {secondary.summary || 'Sin resumen secundario'}
+                          </div>
+                          <div className="text-xs" style={metaTextStyle()}>
+                            {formatToken(secondary.authority)} · {secondary.source || 'unknown'} ·{' '}
+                            {formatOccurredAt(secondary.observed_at)}
+                          </div>
                         </div>
-                        <div className="text-xs" style={metaTextStyle()}>
-                          {formatToken(secondary.authority)} · {secondary.source || 'unknown'} ·{' '}
-                          {formatOccurredAt(secondary.observed_at)}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    {item.secondary_session_evidence.length > MAX_SECONDARY ? (
+                      <p className="text-xs" style={metaTextStyle()}>
+                        +{item.secondary_session_evidence.length - MAX_SECONDARY} más…
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </article>

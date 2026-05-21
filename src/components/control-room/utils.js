@@ -1,3 +1,5 @@
+import React from 'react';
+
 const TOKEN_LABELS = Object.freeze({
   unknown: 'desconocido',
   active: 'activo',
@@ -45,6 +47,91 @@ const MISSING_SOURCE_LABELS = Object.freeze({
   'mcp snapshot': 'snapshot de MCP',
 });
 
+// ── Status color palette ──────────────────────────────────────────────────────
+const STATUS_COLORS = Object.freeze({
+  // green — healthy / done
+  active: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  running: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  succeeded: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  approved: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  healthy: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  online: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  completed: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  // amber — in-progress / waiting
+  pending: { bg: 'rgba(245,158,11,0.12)', color: '#fbbf24', dot: '#f59e0b' },
+  in_progress: { bg: 'rgba(245,158,11,0.12)', color: '#fbbf24', dot: '#f59e0b' },
+  awaiting_approval: { bg: 'rgba(245,158,11,0.12)', color: '#fbbf24', dot: '#f59e0b' },
+  approval_required: { bg: 'rgba(245,158,11,0.12)', color: '#fbbf24', dot: '#f59e0b' },
+  provisioning: { bg: 'rgba(245,158,11,0.12)', color: '#fbbf24', dot: '#f59e0b' },
+  // red — failure
+  failed: { bg: 'rgba(239,68,68,0.12)', color: '#f87171', dot: '#ef4444' },
+  aborted: { bg: 'rgba(239,68,68,0.12)', color: '#f87171', dot: '#ef4444' },
+  rejected: { bg: 'rgba(239,68,68,0.12)', color: '#f87171', dot: '#ef4444' },
+  error: { bg: 'rgba(239,68,68,0.12)', color: '#f87171', dot: '#ef4444' },
+  // orange — blocked / conflict
+  blocked: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
+  conflicted: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
+  // indigo — lease / special states
+  lease_active: { bg: 'rgba(99,102,241,0.12)', color: '#a5b4fc', dot: '#6366f1' },
+  // purple — paused / suspended
+  paused: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
+  orphaned: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
+  // gray — idle / stale / unknown
+  idle: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  stale: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  offline: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  unknown: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  unavailable: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  degraded: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+});
+
+function resolveStatusTheme(status) {
+  const key = String(status || 'unknown')
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  return STATUS_COLORS[key] || STATUS_COLORS.unknown;
+}
+
+// ── Exported components ───────────────────────────────────────────────────────
+
+/**
+ * Color-coded pill badge for agent/workspace/run statuses.
+ * Replaces plain formatToken(status) spans throughout panels.
+ */
+export function StatusPill({ status, className = '' }) {
+  const theme = resolveStatusTheme(status);
+  const label = formatToken(status);
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${className}`}
+      style={{ background: theme.bg, color: theme.color }}
+    >
+      <span
+        className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full"
+        style={{ background: theme.dot }}
+      />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Count badge for panel headers — only renders when count > 0.
+ */
+export function CountBadge({ count }) {
+  if (!count) return null;
+  return (
+    <span
+      className="rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums"
+      style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+    >
+      {count}
+    </span>
+  );
+}
+
+// ── Exported functions ────────────────────────────────────────────────────────
+
 export function formatToken(value) {
   if (!value) return 'desconocido';
   const raw = String(value).trim();
@@ -69,6 +156,17 @@ export function formatLiveHint(liveHint) {
   return `Actividad en vivo: ${formatToken(liveHint.status)}`;
 }
 
+/**
+ * Truncates long IDs (UUIDs, run IDs) for display.
+ * Shows first 8 chars + … + last 5 chars when over maxLen.
+ */
+export function truncateId(id, maxLen = 22) {
+  if (!id) return '—';
+  const s = String(id);
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, 8)}…${s.slice(-5)}`;
+}
+
 export function renderEmptyCopy(message) {
   return (
     <div
@@ -89,4 +187,15 @@ export function panelShellStyle() {
 
 export function metaTextStyle() {
   return { color: 'var(--text-muted)' };
+}
+
+/**
+ * Inline styles for scrollable list containers inside panels.
+ * Caps height and shows a thin native scrollbar.
+ */
+export function panelListStyle() {
+  return {
+    scrollbarWidth: 'thin',
+    scrollbarColor: 'var(--border-subtle) transparent',
+  };
 }
