@@ -84,6 +84,524 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function countPendingApprovals(approvals = []) {
+  return asArray(approvals).filter((approval) => approval?.status === 'pending').length;
+}
+
+function buildSwarmTemplateCatalog() {
+  return [
+    {
+      id: 'approval-recovery',
+      label: 'Resolver aprobaciones y destrabar',
+      summary: 'Volvé al swarm activo, cerrá bloqueos y seguí desde la cola durable.',
+      readiness: 'ready-now',
+      tags: ['active', 'approval', 'recovery'],
+      category: 'recovery',
+      swarm_type_id: 'recovery-swarm',
+      default_team_id: 'amber-recovery-cell',
+      default_provider_id: 'claude-opus-4-20250514',
+      default_mission:
+        'Resolver checkpoints pendientes, recuperar runs degradados y devolver la cola durable a un estado operable.',
+      topology: {
+        label: 'Director → Recovery Ops → QA → Director',
+        roles: ['Director', 'Recovery Ops', 'QA'],
+        connections: ['Director → Recovery Ops', 'Recovery Ops → QA', 'QA → Director'],
+      },
+    },
+    {
+      id: 'queue-restart',
+      label: 'Retomar backlog durable',
+      summary: 'Reordená la cola y elegí el siguiente foco operativo del swarm.',
+      readiness: 'ready-now',
+      tags: ['active', 'queue', 'focus'],
+      category: 'delivery',
+      swarm_type_id: 'delivery-swarm',
+      default_team_id: 'amber-delivery-pod',
+      default_provider_id: 'claude-sonnet-4-20250514',
+      default_mission:
+        'Tomar el siguiente foco durable, coordinar ejecución y dejar handoff claro para QA.',
+      topology: {
+        label: 'Director → Builder → QA → Director',
+        roles: ['Director', 'Builder', 'QA'],
+        connections: ['Director → Builder', 'Builder → QA', 'QA → Director'],
+      },
+    },
+    {
+      id: 'clean-slate',
+      label: 'Arranque limpio guiado',
+      summary: 'Abrí un director y cuatro agentes listos para trabajar desde el workspace actual.',
+      readiness: 'ready-now',
+      tags: ['idle', 'launchpad', 'template-first'],
+      category: 'delivery',
+      swarm_type_id: 'delivery-swarm',
+      default_team_id: 'feature-delivery-team',
+      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      default_mission:
+        'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
+      topology: {
+        label: 'Director → Coder / Auditor / DevOps / Architect',
+        roles: ['Director', 'Coder', 'Auditor', 'DevOps', 'Architect'],
+        connections: [
+          'Director → Coder',
+          'Director → Auditor',
+          'Director → DevOps',
+          'Director → Architect',
+          'Auditor → Director',
+        ],
+      },
+    },
+  ];
+}
+
+function buildSwarmTypeCatalog() {
+  return [
+    {
+      id: 'delivery-swarm',
+      label: 'Delivery swarm',
+      summary: 'Ejecuta, valida y entrega con foco en handoff seguro.',
+      readiness: 'prep-only',
+      defaults_preview: ['handoff-first', 'checkpoint-safe'],
+      category: 'delivery',
+      default_team_id: 'feature-delivery-team',
+      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      topology: {
+        label: 'Director → Coder / Auditor / DevOps / Architect',
+        roles: ['Director', 'Coder', 'Auditor', 'DevOps', 'Architect'],
+        connections: [
+          'Director → Coder',
+          'Director → Auditor',
+          'Director → DevOps',
+          'Director → Architect',
+          'Auditor → Director',
+        ],
+      },
+    },
+    {
+      id: 'recovery-swarm',
+      label: 'Recovery swarm',
+      summary: 'Recupera runs o workspaces degradados sin abrir configuración profunda.',
+      readiness: 'prep-only',
+      defaults_preview: ['approval-aware', 'durable-refresh'],
+      category: 'recovery',
+      default_team_id: 'amber-recovery-cell',
+      default_provider_id: 'claude-opus-4-20250514',
+      topology: {
+        label: 'Director → Recovery Ops → Evidence → QA',
+        roles: ['Director', 'Recovery Ops', 'Evidence', 'QA'],
+        connections: [
+          'Director → Recovery Ops',
+          'Recovery Ops → Evidence',
+          'Evidence → QA',
+          'QA → Director',
+        ],
+      },
+    },
+    {
+      id: 'research-swarm',
+      label: 'Research swarm',
+      summary: 'Explora contexto y arma focos antes de despachar ejecución.',
+      readiness: 'prep-only',
+      defaults_preview: ['context-first', 'evidence-trace'],
+      category: 'research',
+      default_team_id: 'launchpad-scout-team',
+      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      topology: {
+        label: 'Director → Scout → Analyst → Director',
+        roles: ['Director', 'Scout', 'Analyst'],
+        connections: ['Director → Scout', 'Scout → Analyst', 'Analyst → Director'],
+      },
+    },
+  ];
+}
+
+function buildSwarmLaunchCategories() {
+  return [
+    {
+      id: 'delivery',
+      label: 'Delivery',
+      summary: 'Entregar, validar y cerrar handoff sin perder contexto durable.',
+    },
+    {
+      id: 'recovery',
+      label: 'Recovery',
+      summary: 'Recuperar workspaces, approvals y runs degradados con foco operativo.',
+    },
+    {
+      id: 'research',
+      label: 'Research',
+      summary: 'Preparar contexto, roster y evidencia antes de despachar ejecución.',
+    },
+  ];
+}
+
+function buildSwarmLaunchProviders() {
+  return [
+    {
+      id: 'claude-sonnet-4-20250514',
+      label: 'Claude Sonnet 4',
+      summary: 'Balanceado para delivery y handoff corto.',
+    },
+    {
+      id: 'claude-opus-4-20250514',
+      label: 'Claude Opus 4',
+      summary: 'Mayor criterio para recovery, approvals y decisiones delicadas.',
+    },
+    {
+      id: 'github-copilot/gpt-5.4-mini',
+      label: 'GPT-5.4 mini',
+      summary: 'Modo pruebas: menor consumo por request para swarms y validación rápida.',
+    },
+    {
+      id: 'github-copilot/gpt-5.4',
+      label: 'GPT-5.4',
+      summary: 'Bueno para planning, scouting y coordinación de launchpad.',
+    },
+  ];
+}
+
+function buildSwarmLaunchPrograms() {
+  return [
+    {
+      id: 'opencode',
+      label: 'OpenCode',
+      summary: 'Cliente recomendado para ejecución snapshot-first dentro de DevHub.',
+    },
+    {
+      id: 'codex',
+      label: 'Codex',
+      summary: 'Buen fit para dirección y revisión puntual con contexto acotado.',
+    },
+    {
+      id: 'hermes',
+      label: 'Hermes',
+      summary: 'Cliente alternativo para flujos simples o apoyo operativo.',
+    },
+  ];
+}
+
+function buildSwarmLaunchTeams() {
+  return [
+    {
+      id: 'feature-delivery-team',
+      label: 'Feature Delivery Team',
+      category: 'delivery',
+      summary: 'Director central con cuatro terminal members: Coder, Auditor, DevOps y Architect.',
+      topology: {
+        label: 'Director → Coder / Auditor / DevOps / Architect',
+        roles: ['Director', 'Coder', 'Auditor', 'DevOps', 'Architect'],
+        connections: [
+          'Director → Coder',
+          'Director → Auditor',
+          'Director → DevOps',
+          'Director → Architect',
+          'Coder → Auditor',
+          'Auditor → Director',
+        ],
+      },
+    },
+    {
+      id: 'amber-delivery-pod',
+      label: 'Amber Delivery Pod',
+      category: 'delivery',
+      summary: 'Director, implementer y QA en circuito corto para shipping rápido.',
+      topology: {
+        label: 'Director → Builder → QA',
+        roles: ['Director', 'Builder', 'QA'],
+        connections: ['Director → Builder', 'Builder → QA', 'QA → Director'],
+      },
+    },
+    {
+      id: 'amber-recovery-cell',
+      label: 'Amber Recovery Cell',
+      category: 'recovery',
+      summary: 'Recovery ops + evidencia + QA para desbloquear y cerrar checkpoints.',
+      topology: {
+        label: 'Director → Recovery Ops → Evidence → QA',
+        roles: ['Director', 'Recovery Ops', 'Evidence', 'QA'],
+        connections: [
+          'Director → Recovery Ops',
+          'Recovery Ops → Evidence',
+          'Evidence → QA',
+          'QA → Director',
+        ],
+      },
+    },
+    {
+      id: 'launchpad-scout-team',
+      label: 'Launchpad Scout Team',
+      category: 'research',
+      summary: 'Scout inicial para definir topología, contexto y primer vector de launch.',
+      topology: {
+        label: 'Director → Scout → Analyst → Builder',
+        roles: ['Director', 'Scout', 'Analyst', 'Builder'],
+        connections: [
+          'Director → Scout',
+          'Scout → Analyst',
+          'Analyst → Builder',
+          'Builder → Director',
+        ],
+      },
+    },
+  ];
+}
+
+function slugifyRoleKey(role = '') {
+  return String(role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function buildDefaultRolePrograms(topology = null, defaultProgramId = 'opencode') {
+  return asArray(topology?.roles).reduce((acc, role) => {
+    const key = slugifyRoleKey(role);
+    if (!key) return acc;
+    acc[key] = defaultProgramId;
+    return acc;
+  }, {});
+}
+
+function mergeRolePrograms(defaultRolePrograms = {}, draftRolePrograms = {}) {
+  return Object.entries(draftRolePrograms || {}).reduce(
+    (acc, [key, value]) => {
+      if (!key || !value) return acc;
+      acc[key] = value;
+      return acc;
+    },
+    { ...defaultRolePrograms }
+  );
+}
+
+function buildRoleProgramPreview(topology = null, rolePrograms = {}, programs = []) {
+  const programsById = new Map(asArray(programs).map((program) => [program.id, program]));
+
+  return asArray(topology?.roles)
+    .map((role) => {
+      const roleKey = slugifyRoleKey(role);
+      if (!roleKey) return null;
+
+      const programId = rolePrograms?.[roleKey] || null;
+      const program = programId ? programsById.get(programId) || null : null;
+
+      return {
+        role,
+        role_key: roleKey,
+        program_id: programId,
+        program_label: program?.label || programId || null,
+      };
+    })
+    .filter(Boolean);
+}
+
+function selectRecommendedTemplateId(snapshot = {}) {
+  const approvals = countPendingApprovals(selectControlRoomApprovals(snapshot));
+  const queue = selectDirectorQueue(snapshot);
+  const header = selectControlRoomHeader(snapshot);
+
+  if (approvals > 0) return 'approval-recovery';
+  if (asArray(queue.items).length > 0 || Number(header.queue_depth || 0) > 0)
+    return 'queue-restart';
+  return 'clean-slate';
+}
+
+function findTemplateById(templates = [], templateId) {
+  return templates.find((template) => template.id === templateId) || templates[0] || null;
+}
+
+function findTemplateBySwarmTypeId(templates = [], swarmTypeId) {
+  return templates.find((template) => template.swarm_type_id === swarmTypeId) || null;
+}
+
+function findRecordById(records = [], id) {
+  return records.find((record) => record.id === id) || records[0] || null;
+}
+
+function hasActiveSwarm(snapshot = {}) {
+  const mission = selectControlRoomMission(snapshot)?.mission;
+  const header = selectControlRoomHeader(snapshot);
+  const directorQueue = selectDirectorQueue(snapshot);
+
+  return (
+    mission?.status === 'active' ||
+    Number(header.active || 0) > 0 ||
+    directorQueue?.handoff?.status !== 'idle'
+  );
+}
+
+function buildActivePrimaryCta(snapshot = {}) {
+  const directorQueue = selectDirectorQueue(snapshot);
+  const pendingApprovals = countPendingApprovals(selectControlRoomApprovals(snapshot));
+  const nextQueueItem = asArray(directorQueue.items)[0] || null;
+  const activeHandoff = directorQueue?.handoff?.status && directorQueue.handoff.status !== 'idle';
+
+  if (nextQueueItem || pendingApprovals > 0 || activeHandoff) {
+    return {
+      kind: 'anchor',
+      target: 'director-queue',
+      label: 'Continuar desde cola durable',
+      disabled: false,
+      reason: null,
+    };
+  }
+
+  return {
+    kind: 'anchor',
+    target: 'director-queue',
+    label: 'Continuar desde cola durable',
+    disabled: true,
+    reason: 'No hay foco durable inmediato en este snapshot.',
+  };
+}
+
+function buildIdlePrimaryCta() {
+  return {
+    kind: 'anchor',
+    target: 'launchpad-templates',
+    label: 'Elegir plantilla recomendada',
+    disabled: false,
+    reason: null,
+  };
+}
+
+function buildPrimarySurfaceStats(snapshot = {}) {
+  const header = selectControlRoomHeader(snapshot);
+  const mission = selectControlRoomMission(snapshot);
+
+  return {
+    activeAgents: Number(header.active || 0),
+    queueDepth: Number(header.queue_depth || 0),
+    pendingApprovals: countPendingApprovals(selectControlRoomApprovals(snapshot)),
+    pendingDeliveries: asArray(mission.pending_deliveries).length,
+  };
+}
+
+function humanizeLaunchRole(value = '') {
+  const normalized = String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  if (!normalized) return 'Agent';
+  return normalized
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildActiveRoster(snapshot = {}) {
+  const missionControl = selectControlRoomMission(snapshot);
+  const agentsById = new Map(
+    selectControlRoomAgents(snapshot).map((agent) => [agent.agent_id, agent])
+  );
+  const participants = asArray(missionControl.participants);
+
+  const roster =
+    participants.length > 0
+      ? participants.map((participant, index) => {
+          const agent = agentsById.get(participant.agent_id) || {};
+          const role =
+            participant.role_in_mission === 'director'
+              ? 'Director'
+              : humanizeLaunchRole(
+                  participant.agent_id?.split('-').pop() || participant.role_in_mission
+                );
+
+          return {
+            id: participant.agent_id || participant.participant_id || `participant-${index}`,
+            label: role,
+            role,
+            status: agent.supervisor_state || participant.status || 'active',
+            isDirector: participant.role_in_mission === 'director',
+            workspaceId: agent.workspace_id || null,
+            runId: agent.run_id || null,
+          };
+        })
+      : selectControlRoomAgents(snapshot).map((agent, index) => {
+          const role = humanizeLaunchRole(agent.agent_id?.split('-').pop() || `Agent ${index + 1}`);
+
+          return {
+            id: agent.agent_id || `agent-${index}`,
+            label: role,
+            role,
+            status: agent.supervisor_state || 'active',
+            isDirector: /director/i.test(role),
+            workspaceId: agent.workspace_id || null,
+            runId: agent.run_id || null,
+          };
+        });
+
+  return roster.sort((left, right) => {
+    if (left.isDirector && !right.isDirector) return -1;
+    if (!left.isDirector && right.isDirector) return 1;
+    return String(left.label).localeCompare(String(right.label));
+  });
+}
+
+function buildActiveTopology(roster = []) {
+  const director = roster.find((member) => member.isDirector) || roster[0] || null;
+  const workers = roster.filter((member) => member.id !== director?.id);
+
+  if (!director) return null;
+
+  return {
+    label: `${director.label} → ${workers.map((member) => member.label).join(' / ') || 'workers'}`,
+    roles: roster.map((member) => member.label),
+    connections: workers.flatMap((member) => [
+      `${director.label} → ${member.label}`,
+      `${member.label} → ${director.label}`,
+    ]),
+  };
+}
+
+function buildActiveHero(snapshot = {}) {
+  const header = selectControlRoomHeader(snapshot);
+  const missionSummary = selectDirectorMissionSummary(snapshot);
+  const directorQueue = selectDirectorQueue(snapshot);
+  const nextQueueItem = asArray(directorQueue.items)[0] || null;
+  const roster = buildActiveRoster(snapshot);
+
+  return {
+    title: missionSummary.title || 'Swarm activo',
+    status: missionSummary.status || 'active',
+    authority: header.authority,
+    freshness: header.freshness,
+    primaryCta: buildActivePrimaryCta(snapshot),
+    stats: buildPrimarySurfaceStats(snapshot),
+    roster,
+    topology: buildActiveTopology(roster),
+    highlights: [
+      missionSummary.latestMessageSummary || 'Seguí el foco activo desde la cola durable.',
+      nextQueueItem?.title || 'Sin siguiente task durable confirmado.',
+    ].filter(Boolean),
+    nextFocus: nextQueueItem
+      ? {
+          title: nextQueueItem.title || 'Sin título durable',
+          status: nextQueueItem.status || 'unknown',
+          priority: nextQueueItem.priority || null,
+        }
+      : null,
+  };
+}
+
+function buildIdleHero(snapshot = {}) {
+  const header = selectControlRoomHeader(snapshot);
+  const catalog = selectSwarmLaunchCatalog(snapshot);
+  const recommendedTemplate = findTemplateById(catalog.templates, catalog.recommended_template_id);
+
+  return {
+    title: 'Lanzá un swarm nuevo',
+    status: 'idle',
+    authority: header.authority,
+    freshness: header.freshness,
+    primaryCta: buildIdlePrimaryCta(),
+    stats: buildPrimarySurfaceStats(snapshot),
+    highlights: [
+      recommendedTemplate?.summary || 'Elegí una plantilla para arrancar sin builder profundo.',
+      'Tipos y presets quedan en modo preparación, no en editor profundo.',
+    ],
+    recommendedTemplate,
+  };
+}
+
 const PRIMARY_EVIDENCE_TIMELINE_KINDS = Object.freeze(
   new Set([
     'mission_message',
@@ -384,6 +902,7 @@ function normalizeDirectorQueueItem(item = {}, index = 0) {
     priority: item.priority || null,
     blocked_reason: pickFirstDefined(item.blocked_reason, item.blocking_dependencies?.[0]),
     supervisor: item.supervisor || null,
+    ...(item.checkpoint_gate ? { checkpoint_gate: item.checkpoint_gate } : {}),
   };
 }
 
@@ -455,6 +974,39 @@ export async function persistMissionControlComposerMessage({
   }
 
   return extractMissionControlPayload(payload);
+}
+
+export async function performDirectorApprovalDecision({
+  task_id,
+  checkpoint_key,
+  decision,
+  workspace_id,
+  run_id,
+  evidence_ref,
+  decision_note,
+  fetchImpl = fetch,
+} = {}) {
+  const response = await fetchImpl('/api/agenthub/director-approval', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      task_id,
+      checkpoint_key,
+      decision,
+      workspace_id,
+      run_id,
+      evidence_ref,
+      decision_note,
+    }),
+  });
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload?.error || 'No se pudo registrar la decisión del Director.');
+  }
+
+  return payload;
 }
 
 const HEALTH_TO_CONTROL_ROOM_DIAGNOSTIC_KEY = Object.freeze({
@@ -598,11 +1150,16 @@ function normalizeApproval(approval = {}) {
   const missingSource = status.evidence_ref ? null : 'approval evidence';
 
   return {
+    checkpoint_key: approval.checkpoint_key || approval.approval_checkpoint_key || null,
     task_id: approval.task_id || null,
     workspace_id: approval.workspace_id || null,
     run_id: approval.run_id || null,
     status: approval.status || 'pending',
     reason_class: approval.reason_class || null,
+    decision_note: approval.decision_note || null,
+    decided_at: approval.decided_at || null,
+    linked_supervisor_state: approval.linked_supervisor_state || approval.supervisor_state || null,
+    linked_supervisor_outcome: approval.linked_supervisor_outcome || approval.outcome || null,
     authority: status.authority,
     freshness: status.freshness,
     evidence_ref: status.evidence_ref,
@@ -898,6 +1455,149 @@ export function selectControlRoomEvidenceTimeline(snapshot = {}) {
 
 export function selectControlRoomErrors(snapshot = {}) {
   return asArray(snapshot.errors);
+}
+
+export function selectSwarmLaunchCatalog(snapshot = {}) {
+  const templates = buildSwarmTemplateCatalog();
+  const categories = buildSwarmLaunchCategories();
+  const providers = buildSwarmLaunchProviders();
+  const programs = buildSwarmLaunchPrograms();
+  const teams = buildSwarmLaunchTeams();
+  const swarmTypes = buildSwarmTypeCatalog();
+  const recommendedTemplateId = selectRecommendedTemplateId(snapshot);
+  const recommendedTemplate = findTemplateById(templates, recommendedTemplateId);
+  const orderedTemplates = [
+    recommendedTemplate,
+    ...templates.filter((template) => template.id !== recommendedTemplate?.id),
+  ].filter(Boolean);
+
+  return {
+    authority: 'local-catalog',
+    recommended_template_id: recommendedTemplateId,
+    categories,
+    providers,
+    programs,
+    teams,
+    templates: orderedTemplates,
+    swarm_types: swarmTypes,
+  };
+}
+
+export function createSwarmLaunchDraft({
+  catalog = null,
+  project = null,
+  preferredTemplateId = null,
+  preferredSwarmTypeId = null,
+  draft = {},
+} = {}) {
+  const resolvedCatalog = catalog || selectSwarmLaunchCatalog();
+  const categories = asArray(resolvedCatalog.categories);
+  const providers = asArray(resolvedCatalog.providers);
+  const teams = asArray(resolvedCatalog.teams);
+  const templates = asArray(resolvedCatalog.templates);
+  const swarmTypes = asArray(resolvedCatalog.swarm_types);
+  const desiredSwarmTypeId = preferredSwarmTypeId || draft.swarmTypeId || null;
+  const preferredTemplateForSwarmType = desiredSwarmTypeId
+    ? findTemplateBySwarmTypeId(templates, desiredSwarmTypeId)
+    : null;
+
+  const template = findTemplateById(
+    templates,
+    preferredTemplateId ||
+      draft.templateId ||
+      preferredTemplateForSwarmType?.id ||
+      resolvedCatalog.recommended_template_id
+  );
+  const swarmType = findRecordById(swarmTypes, desiredSwarmTypeId || template?.swarm_type_id);
+  const category = findRecordById(
+    categories,
+    draft.category || template?.category || swarmType?.category
+  );
+  const team = findRecordById(
+    teams,
+    draft.teamId || template?.default_team_id || swarmType?.default_team_id
+  );
+  const provider = findRecordById(
+    providers,
+    draft.providerId || template?.default_provider_id || swarmType?.default_provider_id
+  );
+  const topology = team?.topology || template?.topology || swarmType?.topology || null;
+  const rolePrograms = mergeRolePrograms(
+    buildDefaultRolePrograms(topology, 'opencode'),
+    draft.rolePrograms
+  );
+  const projectPath =
+    project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
+
+  return {
+    mode: draft.mode || 'template',
+    category: category?.id || null,
+    templateId: template?.id || null,
+    swarmTypeId: swarmType?.id || null,
+    teamId: team?.id || null,
+    providerId: provider?.id || null,
+    workspacePath: draft.workspacePath || projectPath,
+    rolePrograms,
+    mission: draft.mission ?? template?.default_mission ?? '',
+  };
+}
+
+export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) {
+  const resolvedCatalog = catalog || selectSwarmLaunchCatalog();
+  const resolvedDraft = createSwarmLaunchDraft({ catalog: resolvedCatalog, draft });
+  const category = findRecordById(resolvedCatalog.categories, resolvedDraft.category);
+  const template = findTemplateById(resolvedCatalog.templates, resolvedDraft.templateId);
+  const swarmType = findRecordById(resolvedCatalog.swarm_types, resolvedDraft.swarmTypeId);
+  const team = findRecordById(resolvedCatalog.teams, resolvedDraft.teamId);
+  const provider = findRecordById(resolvedCatalog.providers, resolvedDraft.providerId);
+  const topology = team?.topology || template?.topology || swarmType?.topology || null;
+  const rolePrograms = buildRoleProgramPreview(
+    topology,
+    resolvedDraft.rolePrograms,
+    resolvedCatalog.programs
+  );
+  const modeLabel = resolvedDraft.mode === 'custom' ? 'Custom team' : 'Template team';
+
+  return {
+    draft: resolvedDraft,
+    category,
+    template,
+    swarmType,
+    team,
+    provider,
+    topology,
+    rolePrograms,
+    modeLabel,
+    launchLabel:
+      resolvedDraft.mode === 'custom'
+        ? `Lanzar ${swarmType?.label || 'custom swarm'}`
+        : `Lanzar ${template?.label || 'template team'}`,
+    summaryLines: [
+      `${modeLabel} · ${category?.label || 'Sin categoría'}`,
+      `${template?.label || 'Sin plantilla'} · ${swarmType?.label || 'Sin tipo'}`,
+      `${team?.label || 'Sin team'} · ${provider?.label || 'Sin provider'}`,
+      resolvedDraft.workspacePath || 'Sin path',
+      resolvedDraft.mission || 'Sin misión',
+    ],
+    isReady: Boolean(
+      resolvedDraft.workspacePath?.trim() &&
+      resolvedDraft.mission?.trim() &&
+      category?.id &&
+      template?.id &&
+      swarmType?.id &&
+      team?.id &&
+      provider?.id
+    ),
+  };
+}
+
+export function selectSwarmControlPrimarySurface(snapshot = {}) {
+  const mode = hasActiveSwarm(snapshot) ? 'active' : 'idle';
+
+  return {
+    mode,
+    hero: mode === 'active' ? buildActiveHero(snapshot) : buildIdleHero(snapshot),
+  };
 }
 
 export { normalizeMissionControl };

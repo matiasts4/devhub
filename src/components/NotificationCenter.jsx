@@ -126,9 +126,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
               ? 'text-text-primary border-white/16 bg-white/[0.09]'
               : 'text-text-secondary'
             : `w-full ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} rounded-lg ${
-                open
-                  ? 'border-white/16 bg-white/[0.08] text-text-primary'
-                  : 'text-text-muted'
+                open ? 'border-white/16 bg-white/[0.08] text-text-primary' : 'text-text-muted'
               }`
         }
         title={collapsed && !isTopbar ? 'Notificaciones' : undefined}
@@ -140,11 +138,7 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
           }`}
         >
           <Bell className="w-3.5 h-3.5" strokeWidth={1.5} />
-          {isTopbar ? (
-            <span className="hidden sm:inline">Alertas</span>
-          ) : (
-            !collapsed && <span>Notificaciones</span>
-          )}
+          {!isTopbar ? !collapsed && <span>Notificaciones</span> : null}
         </span>
         <span
           className={`min-w-5 h-5 px-1 rounded-full border text-xs font-semibold flex items-center justify-center ${

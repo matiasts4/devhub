@@ -22,11 +22,18 @@ function buildControlRoomInput(overrides = {}) {
       ],
       approvals: [
         {
+          checkpoint_key: 'checkpoint-task-1',
           task_id: 'task-1',
           workspace_id: 'ws-1',
           run_id: 'run-1',
           status: 'pending',
           reason_class: 'approval_required',
+          decision_note: null,
+          decided_at: null,
+          authority: 'authoritative',
+          freshness: 'current',
+          linked_supervisor_state: 'awaiting_approval',
+          linked_supervisor_outcome: 'wait',
           evidence_ref: 'evidence://approval/task-1',
         },
       ],

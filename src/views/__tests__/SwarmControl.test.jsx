@@ -112,6 +112,35 @@ async function submitForm(element) {
   await flushEffects();
 }
 
+function buildDirectorApprovalInput(overrides = {}) {
+  const base = buildControlRoomInput();
+  return {
+    ...base,
+    supervisor: {
+      ...base.supervisor,
+      supervisor_state: 'awaiting_approval',
+      approvals: [
+        {
+          checkpoint_key: 'checkpoint-1',
+          task_id: 'task-1',
+          workspace_id: 'ws-1',
+          run_id: 'run-1',
+          status: 'pending',
+          reason_class: 'approval_required',
+          linked_supervisor_state: 'awaiting_approval',
+          linked_supervisor_outcome: 'wait',
+          authority: 'authoritative',
+          freshness: 'current',
+          evidence_ref: 'evidence://approval/checkpoint-1',
+          decision_note: null,
+          decided_at: null,
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 function buildDegradedInput() {
   return buildControlRoomInput({
     supervisor: {
@@ -213,6 +242,13 @@ function buildDirectorQueueInput() {
           position: 3,
           priority: 'high',
           blocked_reason: 'approval_required',
+          checkpoint_gate: {
+            status: 'blocked',
+            code: 'missing-git-checkpoint',
+            message: 'Falta comentario [git:checkpoint] para este handoff.',
+            remediation:
+              'Agregá [git:checkpoint] con commit=<sha|none>, docs=[...], checks=[...] y worktree=<clean|dirty-excluded>.',
+          },
         },
         {
           id: 'task-4',
@@ -221,6 +257,14 @@ function buildDirectorQueueInput() {
           position: 4,
           priority: 'medium',
           blocked_reason: null,
+          checkpoint_gate: {
+            status: 'accepted',
+            code: 'checkpoint-accepted',
+            checkpoint: {
+              commit: 'abc1234',
+              worktree: 'clean',
+            },
+          },
         },
         {
           id: 'task-5',
@@ -306,6 +350,40 @@ function buildPreviewInput(overrides = {}) {
   };
 }
 
+function buildIdleLaunchpadInput(overrides = {}) {
+  const base = buildControlRoomInput();
+
+  return {
+    ...base,
+    supervisor: {
+      ...base.supervisor,
+      supervisor_state: 'idle',
+      active_agents: 0,
+      queue_depth: 0,
+      approvals: [],
+      agents: [],
+    },
+    mission_control: null,
+    evidence_timeline: [],
+    director_queue: {
+      authority: 'authoritative',
+      freshness: 'current',
+      items: [],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    },
+    ...overrides,
+  };
+}
+
 describe('SwarmControl control room composition', () => {
   let dom;
 
@@ -372,7 +450,7 @@ describe('SwarmControl control room composition', () => {
 
     expect(text).toContain('Aprobaciones y errores');
     expect(text).toContain(
-      'Aprobaciones pendientes y faltantes explícitos de evidencia. Sin controles de mutación.'
+      'Aprobaciones pendientes y faltantes explícitos de evidencia. Las decisiones del Director se revalidan contra el estado durable antes de mutar.'
     );
     expect(text).toContain('aprobación requerida');
     expect(text).toContain('falta evidencia de workspace');
@@ -444,50 +522,276 @@ describe('SwarmControl control room composition', () => {
     );
   });
 
-  test('renders the mission panel before local controls and keeps mission-first ordering across stack mode', async () => {
+  test('renders the active swarm tower as the first primary surface ahead of queue, mission, and filters', async () => {
     const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
-    const missionPanel = view.container.querySelector('[aria-label="Kernel de misión"]');
-    const stackButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent.includes('Pila')
+    const primarySurface = view.container.querySelector(
+      '[aria-label="Superficie primaria de swarm"]'
     );
-    const fullTextBeforeToggle = view.container.textContent || '';
-    const missionTextBeforeToggle = missionPanel?.textContent || '';
+    const fullText = view.container.textContent || '';
 
-    expect(fullTextBeforeToggle.indexOf('Kernel de misión')).toBeLessThan(
-      fullTextBeforeToggle.indexOf('Filtrar registros')
+    expect(primarySurface).not.toBeNull();
+    expect(primarySurface?.textContent).toContain('Swarm activo');
+    expect(primarySurface?.textContent).toContain('Continuar desde cola durable');
+    expect(primarySurface?.textContent).toContain('1 agente activo');
+    expect(fullText.indexOf('Swarm activo')).toBeLessThan(fullText.indexOf('Cola del director'));
+    expect(fullText.indexOf('Swarm activo')).toBeLessThan(fullText.indexOf('Kernel de misión'));
+    expect(fullText.indexOf('Swarm activo')).toBeLessThan(fullText.indexOf('Filtrar registros'));
+    expect(fullText.indexOf('Cola del director')).toBeLessThan(
+      fullText.indexOf('Kernel de misión')
     );
-    expect(missionTextBeforeToggle.indexOf('Misión activa')).toBeLessThan(
-      missionTextBeforeToggle.indexOf('Mensajes recientes')
+  });
+
+  test('renders an idle launchpad first with recommended templates before swarm types and bounded prep copy', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildIdleLaunchpadInput() });
+    const primarySurface = view.container.querySelector(
+      '[aria-label="Superficie primaria de swarm"]'
     );
-    expect(missionTextBeforeToggle.indexOf('Mensajes recientes')).toBeLessThan(
-      missionTextBeforeToggle.indexOf('Entregas pendientes')
+    const launchpadPanel = view.container.querySelector('[aria-label="Plantillas de launchpad"]');
+    const swarmTypesPanel = view.container.querySelector('[aria-label="Tipos de swarm"]');
+    const fullText = view.container.textContent || '';
+
+    expect(primarySurface).not.toBeNull();
+    expect(primarySurface?.textContent).toContain('Lanzá un swarm nuevo');
+    expect(primarySurface?.textContent).toContain('Elegir plantilla recomendada');
+    expect(launchpadPanel?.textContent).toContain('Arranque limpio guiado');
+    expect(launchpadPanel?.textContent).toContain('Plantilla recomendada');
+    expect(swarmTypesPanel?.textContent).toContain('Delivery swarm');
+    expect(swarmTypesPanel?.textContent).toContain('checkpoint-safe');
+    expect(swarmTypesPanel?.textContent).not.toContain('builder');
+    expect(fullText.indexOf('Lanzá un swarm nuevo')).toBeLessThan(
+      fullText.indexOf('Plantillas de launchpad')
     );
-    expect(missionTextBeforeToggle.indexOf('Entregas pendientes')).toBeLessThan(
-      missionTextBeforeToggle.indexOf('Presencia TTL')
+    expect(fullText.indexOf('Plantillas de launchpad')).toBeLessThan(
+      fullText.indexOf('Tipos de swarm')
     );
-    expect(missionTextBeforeToggle.indexOf('Presencia TTL')).toBeLessThan(
-      missionTextBeforeToggle.indexOf('Participantes')
+    expect(fullText.indexOf('Lanzá un swarm nuevo')).toBeLessThan(
+      fullText.indexOf('Filtrar registros')
+    );
+  });
+
+  test('launches through the durable route and dispatches runtime requests after the wizard completes', async () => {
+    const launchEvents = [];
+    const handleLaunchEvent = (event) => launchEvents.push(event.detail);
+    window.addEventListener('devhub:run-agent', handleLaunchEvent);
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: buildIdleLaunchpadInput(),
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: buildControlRoomInput({
+            supervisor: {
+              ...buildControlRoomInput().supervisor,
+              supervisor_state: 'lease_active',
+              active_agents: 3,
+              queue_depth: 0,
+            },
+            mission_control: {
+              ...buildPreviewInput().mission_control,
+              mission: {
+                ...buildPreviewInput().mission_control.mission,
+                title: 'Lanzar Arranque limpio guiado',
+                status: 'active',
+              },
+            },
+          }),
+          launch_result: {
+            launchId: 'launch-1',
+            launchLabel: 'Lanzar Arranque limpio guiado',
+            summaryLines: [
+              'Template team · Delivery',
+              'Arranque limpio guiado · Delivery swarm',
+              'Launchpad Scout Team · GPT-5.4 mini',
+            ],
+            runtime_requests: [
+              {
+                taskId: 'launch-1-director',
+                selectedAgent: 'codex',
+                command:
+                  '/home/matias/.nvm/versions/node/v24.14.0/bin/codex exec --sandbox workspace-write "Director launch"',
+                launchOrigin: 'swarm-control-launch',
+                promptSummary: 'Director · Arranque limpio guiado',
+                taskTitle: 'Lanzar Arranque limpio guiado · Director',
+              },
+              {
+                taskId: 'launch-1-builder',
+                selectedAgent: 'opencode',
+                command:
+                  '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt "Builder launch"',
+                launchOrigin: 'swarm-control-launch',
+                promptSummary: 'Builder · Arranque limpio guiado',
+                taskTitle: 'Lanzar Arranque limpio guiado · Builder',
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: buildControlRoomInput({
+            supervisor: {
+              ...buildControlRoomInput().supervisor,
+              supervisor_state: 'lease_active',
+              active_agents: 3,
+              queue_depth: 0,
+            },
+            mission_control: {
+              ...buildPreviewInput().mission_control,
+              mission: {
+                ...buildPreviewInput().mission_control.mission,
+                title: 'Lanzar Arranque limpio guiado',
+                status: 'active',
+              },
+            },
+          }),
+        }),
+      });
+
+    const view = await renderSwarmControl();
+    const wizardTrigger = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Abrir wizard')
     );
 
-    await click(stackButton);
+    expect(wizardTrigger).not.toBeNull();
+    await click(wizardTrigger);
 
-    const fullTextAfterToggle = view.container.textContent || '';
-    const missionTextAfterToggle =
-      view.container.querySelector('[aria-label="Kernel de misión"]')?.textContent || '';
+    expect(document.body.textContent).toContain('Launch wizard');
+    expect(document.body.textContent).toContain('Template team');
+    expect(document.body.textContent).toContain('Team');
+    expect(document.body.textContent).toContain('Configure');
+    expect(document.body.textContent).toContain('Launch');
 
-    expect(stackButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(fullTextAfterToggle.indexOf('Kernel de misión')).toBeLessThan(
-      fullTextAfterToggle.indexOf('Filtrar registros')
+    const nextButtons = () =>
+      Array.from(document.body.querySelectorAll('button')).filter((button) =>
+        button.textContent?.includes('Siguiente')
+      );
+
+    await click(nextButtons()[0]);
+    expect(document.body.textContent).toContain('Path operativo');
+    expect(document.body.textContent).toContain('Mission');
+
+    await click(nextButtons()[0]);
+    expect(document.body.textContent).toContain('Summary');
+    expect(document.body.textContent).toContain('Payload local');
+    expect(document.body.textContent).toContain('Topology preview');
+
+    const launchButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Lanzar swarm local')
     );
-    expect(missionTextAfterToggle.indexOf('Misión activa')).toBeLessThan(
-      missionTextAfterToggle.indexOf('Mensajes recientes')
+    expect(launchButton).not.toBeNull();
+
+    await click(launchButton);
+
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/agenthub/operations/health',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
-    expect(missionTextAfterToggle.indexOf('Mensajes recientes')).toBeLessThan(
-      missionTextAfterToggle.indexOf('Entregas pendientes')
+
+    const launchPayload = JSON.parse(global.fetch.mock.calls[1][1].body);
+    expect(launchPayload).toEqual(
+      expect.objectContaining({
+        action: 'launch_swarm_local',
+        project_id: 'project-1',
+        draft: expect.objectContaining({
+          templateId: 'clean-slate',
+          workspacePath: '/workspace/devhub',
+        }),
+      })
     );
-    expect(missionTextAfterToggle.indexOf('Entregas pendientes')).toBeLessThan(
-      missionTextAfterToggle.indexOf('Presencia TTL')
+    expect(view.container.textContent).toContain('Launch snapshot durable');
+    expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+    expect(view.container.textContent).toContain('Swarm activo');
+    expect(view.container.textContent).not.toContain('Lanzá un swarm nuevo');
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/agenthub/operations/health?project_id=project-1',
+      { cache: 'no-store' }
     );
+    expect(launchEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
+        expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
+      ])
+    );
+
+    window.removeEventListener('devhub:run-agent', handleLaunchEvent);
+  });
+
+  test('lets swarm type cards open the wizard in custom mode and keeps topology preview visible', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildIdleLaunchpadInput() });
+    const configureButtons = Array.from(view.container.querySelectorAll('button')).filter(
+      (button) => button.textContent?.includes('Configurar')
+    );
+
+    expect(configureButtons.length).toBeGreaterThan(0);
+    await click(configureButtons[1]);
+
+    expect(document.body.textContent).toContain('Custom team');
+    expect(document.body.textContent).toContain('Topology preview');
+    expect(document.body.textContent).toContain('Director → Recovery Ops → Evidence → QA');
+  });
+
+  test('lets the operator pick a program per role inside the launch wizard and reflects it in the summary', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildIdleLaunchpadInput() });
+    const wizardTrigger = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Abrir wizard')
+    );
+
+    expect(wizardTrigger).not.toBeNull();
+    await click(wizardTrigger);
+
+    const nextButtons = () =>
+      Array.from(document.body.querySelectorAll('button')).filter((button) =>
+        button.textContent?.includes('Siguiente')
+      );
+
+    await click(nextButtons()[0]);
+
+    const directorProgram = document.body.querySelector(
+      'select[aria-label="Programa para Director"]'
+    );
+    const coderProgram = document.body.querySelector('select[aria-label="Programa para Coder"]');
+
+    expect(directorProgram).not.toBeNull();
+    expect(coderProgram).not.toBeNull();
+
+    await changeField(directorProgram, 'codex');
+    await changeField(coderProgram, 'hermes');
+    await click(nextButtons()[0]);
+
+    expect(document.body.textContent).toContain('Programas por rol');
+    expect(document.body.textContent).toContain('Director · Codex');
+    expect(document.body.textContent).toContain('Coder · Hermes');
+    expect(document.body.textContent).toContain('Auditor · OpenCode');
+  });
+
+  test('keeps secondary control-room panels below the primary surface in active mode', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    const fullText = view.container.textContent || '';
+
+    expect(fullText).toContain('Aprobaciones y errores');
+    expect(fullText).toContain('Timeline de evidencia');
+    expect(fullText).toContain('Agentes y asignaciones');
+    expect(fullText.indexOf('Continuar desde cola durable')).toBeLessThan(
+      fullText.indexOf('Filtrar registros')
+    );
+    expect(fullText.indexOf('Filtrar registros')).toBeLessThan(
+      fullText.indexOf('Aprobaciones y errores')
+    );
+    expect(fullText.indexOf('Aprobaciones y errores')).toBeLessThan(
+      fullText.indexOf('Kernel de misión')
+    );
+    expect(fullText).toContain('Timeline de evidencia');
   });
 
   test('renders ordered director queue rows inside a bounded read-only panel', async () => {
@@ -675,8 +979,44 @@ describe('SwarmControl control room composition', () => {
     expect(text).toContain('approval_required');
     expect(text).toContain('Hacé checkpoint local de la tarea actual antes del próximo claim.');
     expect(text).toContain('El refresh del servidor sigue siendo la única verdad.');
+    expect(text).toContain('missing-git-checkpoint');
+    expect(text).toContain('Agregá [git:checkpoint]');
     expect(handoffButton).not.toBeNull();
     expect(panel.querySelector('form')).toBeNull();
+  });
+
+  test('renders checkpoint remediation from projected snapshot errors', async () => {
+    const view = await renderSwarmControl({
+      snapshotInput: buildControlRoomInput({
+        supervisor: {
+          ...buildControlRoomInput().supervisor,
+          errors: [
+            {
+              code: 'missing-git-checkpoint',
+              message: 'Falta comentario [git:checkpoint] para este handoff.',
+              source: 'checkpoint_gate',
+              remediation:
+                'Agregá [git:checkpoint] con commit=<sha|none>, docs=[...], checks=[...] y worktree=<clean|dirty-excluded>.',
+            },
+          ],
+        },
+      }),
+    });
+    const panel = view.container.querySelector('[aria-label="Aprobaciones y errores"]');
+    const text = panel?.textContent || '';
+
+    expect(text).toContain('checkpoint gate');
+    expect(text).toContain('Agregá [git:checkpoint]');
+  });
+
+  test('renders accepted checkpoint summaries as read-only operator context', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    const panel = view.container.querySelector('[aria-label="Cola del director"]');
+    const text = panel?.textContent || '';
+
+    expect(text).toContain('checkpoint-accepted');
+    expect(text).toContain('abc1234');
+    expect(text).toContain('clean');
   });
 
   test('renders durable empty queue state in the director queue panel', async () => {
@@ -903,8 +1243,10 @@ describe('SwarmControl control room composition', () => {
     const view = await renderSwarmControl({ snapshotInput: input });
     const fullText = view.container.textContent || '';
 
-    expect(fullText.indexOf('Kernel de misión')).toBeLessThan(
-      fullText.indexOf('Filtrar registros')
+    expect(fullText).toContain('Swarm activo');
+    expect(fullText.indexOf('Swarm activo')).toBeLessThan(fullText.indexOf('Filtrar registros'));
+    expect(fullText.indexOf('Filtrar registros')).toBeLessThan(
+      fullText.indexOf('Kernel de misión')
     );
     expect(fullText).toContain('No hay misión activa');
     expect(fullText).toContain('Sin mensajes recientes en este snapshot.');
@@ -1208,6 +1550,101 @@ describe('SwarmControl control room composition', () => {
     await renderSwarmControl();
 
     expect(global.fetch).toHaveBeenCalledWith(
+      '/api/agenthub/operations/health?project_id=project-1',
+      { cache: 'no-store' }
+    );
+  });
+
+  test('submits approve decision, disables controls while pending, hydrates response, and revalidates via GET', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: buildDirectorApprovalInput(),
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: {
+            ...buildDirectorApprovalInput(),
+            supervisor: {
+              supervisor_state: 'dispatch_pending',
+              approvals: [],
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: {
+            ...buildDirectorApprovalInput(),
+            supervisor: {
+              supervisor_state: 'dispatch_pending',
+              approvals: [],
+            },
+          },
+        }),
+      });
+
+    const view = await renderSwarmControl();
+    const approveButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Aprobar')
+    );
+
+    expect(approveButton).not.toBeNull();
+    await click(approveButton);
+
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/agenthub/director-approval',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/agenthub/operations/health?project_id=project-1',
+      { cache: 'no-store' }
+    );
+    expect(view.container.textContent).not.toContain('checkpoint-1');
+  });
+
+  test('submits reject decision and renders conflict error while keeping controls enabled after failure', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: buildDirectorApprovalInput(),
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: 'La linkage durable cambió: workspace_id ya no coincide.' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ control_room_snapshot_input: buildDirectorApprovalInput() }),
+      });
+
+    const view = await renderSwarmControl();
+    const rejectButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Rechazar')
+    );
+
+    expect(rejectButton).not.toBeNull();
+    await click(rejectButton);
+
+    expect(view.container.textContent).toContain(
+      'La linkage durable cambió: workspace_id ya no coincide.'
+    );
+    expect(rejectButton.disabled).toBe(false);
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      3,
       '/api/agenthub/operations/health?project_id=project-1',
       { cache: 'no-store' }
     );

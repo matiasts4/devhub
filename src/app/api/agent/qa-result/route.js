@@ -3,6 +3,7 @@ import {
   getDb,
   getLatestAgentRunForWorkspace,
   getLatestAgentRunForTask,
+  getLatestTaskComment,
   getSupervisorSnapshot,
   getSupervisorApprovalCheckpoint,
   upsertSupervisorApprovalCheckpoint,
@@ -10,6 +11,10 @@ import {
   updateAgentRunTerminal,
   appendAgentArtifact,
 } from '@/lib/db/localDb';
+import {
+  parseGitCheckpointComment,
+  validateCheckpointHandoff,
+} from '@/lib/gitCheckpointHandoff.js';
 
 function resolveRun(db, { workspace_id, task_id }) {
   return (
@@ -34,6 +39,18 @@ function appendQaArtifact(db, runId, { result, reasons, evidence_ref }) {
 
 function buildDecisionNote(reasons = [], fallback) {
   return reasons?.length ? reasons.join(' | ') : fallback;
+}
+
+function buildQaCheckpointGate(db, task, { handoffKind = 'qa-ready', evidence_ref = null } = {}) {
+  const latestComment = getLatestTaskComment(db, task?.id);
+  const checkpoint = latestComment ? parseGitCheckpointComment(latestComment.content) : null;
+  return validateCheckpointHandoff({
+    task,
+    checkpoint,
+    latestComment,
+    handoffKind,
+    minCreatedAt: evidence_ref || null,
+  });
 }
 
 export async function POST(request) {
@@ -81,6 +98,22 @@ export async function POST(request) {
     }
 
     if (result === 'approved') {
+      const checkpointGate = buildQaCheckpointGate(db, task, {
+        handoffKind: 'qa-ready',
+        evidence_ref,
+      });
+      if (!checkpointGate.ok) {
+        return NextResponse.json(
+          {
+            error: checkpointGate.message,
+            code: checkpointGate.code,
+            remediation: checkpointGate.remediation || null,
+            checkpoint_gate: checkpointGate,
+          },
+          { status: 409 }
+        );
+      }
+
       const decidedAt = new Date().toISOString();
       const decisionNote = buildDecisionNote(reasons, 'Approved');
       const checkpoint = upsertSupervisorApprovalCheckpoint(db, {
@@ -148,6 +181,7 @@ export async function POST(request) {
         message: 'Task approved; cleanup intent recorded for executor handoff.',
         run_id: run?.run_id || null,
         supervisor: snapshot,
+        checkpoint_gate: checkpointGate,
       });
     } else {
       const decidedAt = new Date().toISOString();

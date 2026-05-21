@@ -88,6 +88,10 @@ describe('git versioning policy documentation', () => {
     expect(agentFlow).toContain('git status --short');
     expect(agentFlow).toContain('commit=<sha|none>');
     expect(agentFlow).toContain('Do not push automatically');
+    expect(agentFlow).toMatch(/server rejects|durably enforced/i);
+
+    expect(promptsDoc).toMatch(/rechaza|enforced|durable/i);
+    expect(repoGuide).toMatch(/completed unless it was verified|Git gate/i);
   });
 
   test('policy documents canonical hooks path and active Husky hooks', () => {

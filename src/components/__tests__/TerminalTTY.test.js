@@ -38,38 +38,50 @@ jest.mock('lucide-react', () => {
   return new Proxy({}, { get: (_, key) => icon(String(key)) });
 });
 
-jest.mock('xterm', () => ({
-  Terminal: jest.fn().mockImplementation(() => {
-    const instance = {
-      rows: 24,
-      cols: 80,
-      loadAddon: jest.fn(),
-      open: jest.fn(),
-      onData: jest.fn(),
-      focus: jest.fn(),
-      write: jest.fn(),
-      writeln: jest.fn(),
-      refresh: jest.fn(),
-      clearTextureAtlas: jest.fn(),
-      dispose: jest.fn(),
-      getSelection: jest.fn(() => ''),
-      clear: jest.fn(),
-    };
-    mockTerminalInstances.push(instance);
-    return instance;
+jest.mock(
+  'xterm',
+  () => ({
+    Terminal: jest.fn().mockImplementation(() => {
+      const instance = {
+        rows: 24,
+        cols: 80,
+        loadAddon: jest.fn(),
+        open: jest.fn(),
+        onData: jest.fn(),
+        focus: jest.fn(),
+        write: jest.fn(),
+        writeln: jest.fn(),
+        refresh: jest.fn(),
+        clearTextureAtlas: jest.fn(),
+        dispose: jest.fn(),
+        getSelection: jest.fn(() => ''),
+        clear: jest.fn(),
+      };
+      mockTerminalInstances.push(instance);
+      return instance;
+    }),
   }),
-}), { virtual: true });
+  { virtual: true }
+);
 
-jest.mock('xterm-addon-fit', () => ({
-  FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
-}), { virtual: true });
+jest.mock(
+  'xterm-addon-fit',
+  () => ({
+    FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
+  }),
+  { virtual: true }
+);
 
-jest.mock('xterm-addon-search', () => ({
-  SearchAddon: jest.fn().mockImplementation(() => ({
-    findNext: jest.fn(),
-    findPrevious: jest.fn(),
-  })),
-}), { virtual: true });
+jest.mock(
+  'xterm-addon-search',
+  () => ({
+    SearchAddon: jest.fn().mockImplementation(() => ({
+      findNext: jest.fn(),
+      findPrevious: jest.fn(),
+    })),
+  }),
+  { virtual: true }
+);
 
 jest.mock('@/lib/terminal/nativeVteBridge', () => mockNativeVteBridge, { virtual: true });
 
@@ -405,9 +417,13 @@ describe('fitTerminalViewport()', () => {
     const container = {
       getBoundingClientRect: () => ({ width: 1280, height: 720 }),
     };
-    const fitAddon = { fit: jest.fn(() => {
-      throw new TypeError("undefined is not an object (evaluating 'this._renderer.value.dimensions')");
-    }) };
+    const fitAddon = {
+      fit: jest.fn(() => {
+        throw new TypeError(
+          "undefined is not an object (evaluating 'this._renderer.value.dimensions')"
+        );
+      }),
+    };
     const term = {
       cols: 80,
       rows: 24,
@@ -606,12 +622,16 @@ describe('resolveTerminalRendererViewModel()', () => {
 describe('getTerminalRendererStatusCopy()', () => {
   test('describes fallback clearly when experimental renderer is not ready', () => {
     expect(
-      getTerminalRendererStatusCopy(resolveTerminalRendererViewModel({ requestedRendererMode: 'vte-experimental' }))
+      getTerminalRendererStatusCopy(
+        resolveTerminalRendererViewModel({ requestedRendererMode: 'vte-experimental' })
+      )
     ).toContain('GTK VTE');
   });
 
   test('normalizes legacy ghostty requests to xterm without showing a stale fallback banner', () => {
-    expect(resolveTerminalRendererViewModel({ requestedRendererMode: 'ghostty-experimental' })).toEqual(
+    expect(
+      resolveTerminalRendererViewModel({ requestedRendererMode: 'ghostty-experimental' })
+    ).toEqual(
       expect.objectContaining({
         requestedMode: 'xterm',
         effectiveMode: 'xterm',
@@ -623,7 +643,9 @@ describe('getTerminalRendererStatusCopy()', () => {
 
   test('returns empty copy when no fallback happened', () => {
     expect(
-      getTerminalRendererStatusCopy(resolveTerminalRendererViewModel({ requestedRendererMode: 'xterm' }))
+      getTerminalRendererStatusCopy(
+        resolveTerminalRendererViewModel({ requestedRendererMode: 'xterm' })
+      )
     ).toBe('');
   });
 
@@ -722,7 +744,9 @@ describe('shouldReinitializeTerminalForRenderer()', () => {
     const previous = resolveTerminalRendererViewModel({ requestedRendererMode: 'xterm' });
     const next = resolveTerminalRendererViewModel({ requestedRendererMode: 'vte-experimental' });
 
-    expect(shouldReinitializeTerminalForRenderer(previous.effectiveMode, next.effectiveMode)).toBe(false);
+    expect(shouldReinitializeTerminalForRenderer(previous.effectiveMode, next.effectiveMode)).toBe(
+      false
+    );
   });
 
   test('reinitializes only when the effective renderer actually changes', () => {
@@ -797,8 +821,14 @@ describe('TerminalTTY renderer fallback UI', () => {
       }
     });
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(false);
-    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: false, reason: 'tauri-unavailable' });
-    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: false, reason: 'tauri-unavailable' });
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({
+      ready: false,
+      reason: 'tauri-unavailable',
+    });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({
+      opened: false,
+      reason: 'tauri-unavailable',
+    });
     mockNativeVteBridge.subscribeNativeVteEvents.mockReturnValue(jest.fn());
     jest.clearAllMocks();
   });
@@ -818,9 +848,15 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
     const terminalContainer = view.container.querySelector('.devhub-xterm-container');
-    const fallbackBanner = view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]');
-    const fallbackTitle = view.container.querySelector('[data-testid="terminal-renderer-fallback-title"]');
-    const fallbackCopy = view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]');
+    const fallbackBanner = view.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-banner"]'
+    );
+    const fallbackTitle = view.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-title"]'
+    );
+    const fallbackCopy = view.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-copy"]'
+    );
     const recoveryButton = view.container.querySelector('[data-testid="terminal-renderer-reset"]');
 
     expect(shell).not.toBeNull();
@@ -876,7 +912,9 @@ describe('TerminalTTY renderer fallback UI', () => {
         cwd: '/workspace/devhub',
       })
     );
-    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({ panelId: 'term-native-1' });
+    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-1',
+    });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-1',
@@ -885,7 +923,9 @@ describe('TerminalTTY renderer fallback UI', () => {
     );
     expect(mockTerminalInstances).toHaveLength(0);
     expect(mockWebSocketInstances).toHaveLength(0);
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
   });
 
   test('opens native GTK VTE for each visible split panel instead of only the focused one', async () => {
@@ -1035,7 +1075,9 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     await flushTerminalEffects();
 
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
     expect(window.open).not.toHaveBeenCalled();
   });
 
@@ -1095,7 +1137,8 @@ describe('TerminalTTY renderer fallback UI', () => {
       },
     });
 
-    const nativeResizeObserver = mockResizeObserverInstances[mockResizeObserverInstances.length - 1];
+    const nativeResizeObserver =
+      mockResizeObserverInstances[mockResizeObserverInstances.length - 1];
     nativeResizeObserver.callback([{ contentRect: { width: 920, height: 680 } }]);
     await flushTerminalEffects();
 
@@ -1197,7 +1240,9 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.probeNativeVte).not.toHaveBeenCalled();
     expect(mockNativeVteBridge.openNativeVtePanel).not.toHaveBeenCalled();
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')
+    ).toBeNull();
   });
 
   test('probe failure keeps the live xterm session without native open churn', async () => {
@@ -1219,7 +1264,9 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     expect(mockNativeVteBridge.openNativeVtePanel).not.toHaveBeenCalled();
     expect(mockTerminalInstances).toHaveLength(1);
-    expect(view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
+    ).not.toBeNull();
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
   });
 
@@ -1255,13 +1302,18 @@ describe('TerminalTTY renderer fallback UI', () => {
         panelId: 'term-native-reprobe-focus',
       })
     );
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
   });
 
   test('does not keep re-probing after a stronger native open failure takes over', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
-    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: false, reason: 'open-failed' });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({
+      opened: false,
+      reason: 'open-failed',
+    });
 
     await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -1334,7 +1386,9 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
     expect(shell).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
     expect(mockTerminalInstances).toHaveLength(0);
 
     shell.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
@@ -1391,7 +1445,10 @@ describe('TerminalTTY renderer fallback UI', () => {
   test('native open failure falls back in place without blanking the live xterm session', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
-    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: false, reason: 'open-failed' });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({
+      opened: false,
+      reason: 'open-failed',
+    });
 
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -1406,9 +1463,9 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     await flushTerminalEffects();
 
-    expect(view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent).toContain(
-      'xterm'
-    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
+    ).toContain('xterm');
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
@@ -1486,7 +1543,9 @@ describe('TerminalTTY renderer fallback UI', () => {
       visible: true,
       bounds: expect.objectContaining({ width: 1280, height: 720 }),
     });
-    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({ panelId: 'term-native-close' });
+    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-close',
+    });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-close',
@@ -1528,7 +1587,9 @@ describe('TerminalTTY renderer fallback UI', () => {
     );
     await flushTerminalEffects();
 
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
     expect(view.container.textContent).not.toContain('Iniciando terminal...');
     expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledTimes(1);
   });
@@ -1774,7 +1835,9 @@ describe('TerminalTTY renderer fallback UI', () => {
     );
 
     await flushTerminalEffects();
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
     expect(mockTerminalInstances).toHaveLength(0);
 
     mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
@@ -1832,8 +1895,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({ panelId: 'term-native-dock-fallback' })
     );
-    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({ panelId: 'term-native-dock-fallback' });
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-dock-fallback',
+    });
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
   });
 
   test('restores every visible native split sibling with fresh bounds after shared resize suspension ends', async () => {
@@ -1997,9 +2064,11 @@ describe('TerminalTTY renderer fallback UI', () => {
     );
     await flushTerminalEffects();
 
-    const placeholders = view.container.querySelectorAll('[data-testid="terminal-native-placeholder"]');
+    const placeholders = view.container.querySelectorAll(
+      '[data-testid="terminal-native-placeholder"]'
+    );
     expect(placeholders).toHaveLength(1);
-    expect(view.container.textContent).toContain('GTK VTE');
+    expect(view.container.textContent).not.toContain('GTK VTE · misma ventana');
   });
 
   test('hides but does not close the native lease on React unmount so view switches can resume it', async () => {
@@ -2081,7 +2150,9 @@ describe('TerminalTTY renderer fallback UI', () => {
     );
 
     await flushTerminalEffects();
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
 
     window.dispatchEvent(
       new window.CustomEvent('devhub:terminal-native-vte-event', {
@@ -2095,16 +2166,19 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent).toContain(
-      'xterm'
-    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
+    ).toContain('xterm');
     expect(mockTerminalInstances.length).toBeGreaterThan(0);
   });
 
   test('non-active registry routing errors keep the same xterm instance alive without remount churn', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
-    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: false, reason: 'panel-not-active' });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({
+      opened: false,
+      reason: 'panel-not-active',
+    });
 
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -2122,9 +2196,9 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockTerminalInstances).toHaveLength(1);
     const originalTerminal = mockTerminalInstances[0];
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent).toContain(
-      'paneles vecinos'
-    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
+    ).toContain('paneles vecinos');
     expect(mockTerminalInstances[0]).toBe(originalTerminal);
   });
 });

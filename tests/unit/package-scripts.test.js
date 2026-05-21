@@ -15,6 +15,12 @@ describe('package scripts', () => {
     expect(packageJson.scripts['native:vte-smoke']).toBe('node scripts/native-vte-smoke.cjs');
   });
 
+  test('exposes the multi-agent desktop QA harness as a Linux-first runner command', () => {
+    expect(packageJson.scripts['qa:multi-agent-desktop']).toBe(
+      'node scripts/qa/run-multi-agent-desktop.cjs'
+    );
+  });
+
   test('ignores Plyrium worktrees during Jest suite discovery', () => {
     expect(jestConfig.testPathIgnorePatterns).toContain('<rootDir>/.plyrium-forge/worktrees/');
     expect(jestConfig.modulePathIgnorePatterns).toContain('<rootDir>/.plyrium-forge/worktrees/');

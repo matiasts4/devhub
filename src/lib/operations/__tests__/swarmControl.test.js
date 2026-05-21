@@ -1,7 +1,11 @@
 const {
   composeControlRoomSnapshot,
+  createSwarmLaunchDraft,
+  deriveSwarmLaunchPreview,
   extractMissionControlPayload,
   persistMissionControlComposerMessage,
+  selectSwarmControlPrimarySurface,
+  selectSwarmLaunchCatalog,
   selectDirectorBriefingPreview,
   selectDirectorMissionSummary,
   selectDirectorQueue,
@@ -38,6 +42,39 @@ function buildMissionControl(overrides = {}) {
         },
       })
     )
+  );
+}
+
+function buildIdleSnapshot(overrides = {}) {
+  return composeControlRoomSnapshot(
+    buildControlRoomInput({
+      supervisor: {
+        ...buildControlRoomInput().supervisor,
+        supervisor_state: 'idle',
+        active_agents: 0,
+        queue_depth: 0,
+        approvals: [],
+        agents: [],
+      },
+      director_queue: {
+        authority: 'authoritative',
+        freshness: 'current',
+        items: [],
+        handoff: {
+          status: 'idle',
+          recipient_agent_id: null,
+          message: null,
+          task: null,
+          workspace: null,
+          run: null,
+          artifact: null,
+          supervisor: null,
+        },
+      },
+      mission_control: null,
+      evidence_timeline: [],
+      ...overrides,
+    })
   );
 }
 
@@ -115,11 +152,16 @@ describe('composeControlRoomSnapshot', () => {
 
     expect(selectControlRoomApprovals(snapshot)).toEqual([
       expect.objectContaining({
+        checkpoint_key: 'checkpoint-task-1',
         task_id: 'task-1',
         workspace_id: 'ws-1',
         run_id: 'run-1',
         status: 'pending',
         reason_class: 'approval_required',
+        decision_note: null,
+        decided_at: null,
+        linked_supervisor_state: 'awaiting_approval',
+        linked_supervisor_outcome: 'wait',
         authority: 'authoritative',
         freshness: 'current',
         evidence_ref: 'evidence://approval/task-1',
@@ -275,6 +317,110 @@ describe('composeControlRoomSnapshot', () => {
         freshness: 'degraded',
       }),
     });
+  });
+
+  test('normalizes enriched approval identity and gating fields from authoritative snapshot input', () => {
+    const snapshot = composeControlRoomSnapshot({
+      supervisor: {
+        supervisor_state: 'awaiting_approval',
+        approvals: [
+          {
+            checkpoint_key: 'checkpoint-88a',
+            task_id: 'task-88a',
+            workspace_id: 'ws-88a',
+            run_id: 'run-88a',
+            status: 'pending',
+            reason_class: 'approval_required',
+            decision_note: 'Director needs more evidence',
+            decided_at: '2026-05-21T10:00:00.000Z',
+            freshness: 'current',
+            authority: 'authoritative',
+            evidence_ref: 'evidence://approval/checkpoint-88a',
+            linked_supervisor_state: 'awaiting_approval',
+            linked_supervisor_outcome: 'wait',
+          },
+        ],
+      },
+    });
+
+    expect(selectControlRoomApprovals(snapshot)).toEqual([
+      {
+        checkpoint_key: 'checkpoint-88a',
+        task_id: 'task-88a',
+        workspace_id: 'ws-88a',
+        run_id: 'run-88a',
+        status: 'pending',
+        reason_class: 'approval_required',
+        decision_note: 'Director needs more evidence',
+        decided_at: '2026-05-21T10:00:00.000Z',
+        linked_supervisor_state: 'awaiting_approval',
+        linked_supervisor_outcome: 'wait',
+        authority: 'authoritative',
+        freshness: 'current',
+        evidence_ref: 'evidence://approval/checkpoint-88a',
+        evidence_refs: ['evidence://approval/checkpoint-88a'],
+        missing_source: null,
+      },
+    ]);
+  });
+
+  test('normalizes checkpoint gate summaries from director queue items without inventing extra authority', () => {
+    const snapshot = composeControlRoomSnapshot({
+      director_queue: {
+        authority: 'authoritative',
+        freshness: 'current',
+        items: [
+          {
+            id: 'task-gate-1',
+            title: 'Cerrar checkpoint local',
+            status: 'blocked',
+            position: 1,
+            priority: 'high',
+            blocked_reason: 'missing-git-checkpoint',
+            checkpoint_gate: {
+              status: 'blocked',
+              code: 'missing-git-checkpoint',
+              message: 'Falta comentario [git:checkpoint] para este handoff.',
+              remediation:
+                'Agregá [git:checkpoint] con commit=<sha|none>, docs=[...], checks=[...] y worktree=<clean|dirty-excluded>.',
+            },
+          },
+          {
+            id: 'task-gate-2',
+            title: 'Cerrar task con checkpoint',
+            status: 'pending',
+            position: 2,
+            priority: 'medium',
+            checkpoint_gate: {
+              status: 'accepted',
+              code: 'checkpoint-accepted',
+              checkpoint: {
+                commit: 'abc1234',
+                worktree: 'clean',
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(selectDirectorQueue(snapshot).items).toEqual([
+      expect.objectContaining({
+        id: 'task-gate-1',
+        blocked_reason: 'missing-git-checkpoint',
+        checkpoint_gate: expect.objectContaining({
+          code: 'missing-git-checkpoint',
+          status: 'blocked',
+        }),
+      }),
+      expect.objectContaining({
+        id: 'task-gate-2',
+        checkpoint_gate: expect.objectContaining({
+          code: 'checkpoint-accepted',
+          checkpoint: expect.objectContaining({ commit: 'abc1234', worktree: 'clean' }),
+        }),
+      }),
+    ]);
   });
 
   test('marks workspace rows degraded when durable records exist without evidence', () => {
@@ -1058,6 +1204,360 @@ describe('composeControlRoomSnapshot', () => {
       expect.objectContaining({
         recent_messages: [expect.objectContaining({ body_summary: 'Revisá el snapshot local' })],
         pending_deliveries: [expect.objectContaining({ status: 'pending' })],
+      })
+    );
+  });
+
+  test('selectSwarmControlPrimarySurface returns an active tower with durable CTA priority when the snapshot has a live swarm', () => {
+    const snapshot = composeControlRoomSnapshot(buildControlRoomInput());
+
+    expect(selectSwarmControlPrimarySurface(snapshot)).toEqual(
+      expect.objectContaining({
+        mode: 'active',
+        hero: expect.objectContaining({
+          title: 'Misión Director',
+          status: 'active',
+          authority: 'authoritative',
+          freshness: 'current',
+          primaryCta: {
+            kind: 'anchor',
+            target: 'director-queue',
+            label: 'Continuar desde cola durable',
+            disabled: false,
+            reason: null,
+          },
+          stats: {
+            activeAgents: 1,
+            queueDepth: 2,
+            pendingApprovals: 1,
+            pendingDeliveries: 1,
+          },
+        }),
+      })
+    );
+  });
+
+  test('selectSwarmControlPrimarySurface flips launch payload input into active mode when launch returns top-level durable slices', () => {
+    const snapshot = composeControlRoomSnapshot({
+      project: { id: 'project-1', name: 'DevHub' },
+      supervisor: {
+        supervisor_state: 'lease_active',
+        active_agents: 3,
+        max_agents: 3,
+        queue_depth: 0,
+        authority: 'authoritative',
+        freshness: 'current',
+        evidence_ref: 'evidence://presence/director',
+        agents: [
+          {
+            agent_id: 'launch-director',
+            task_id: 'launch:director',
+            workspace_id: 'ws-director',
+            run_id: 'run-director',
+            supervisor_state: 'lease_active',
+            evidence_ref: 'evidence://presence/director',
+          },
+        ],
+        approvals: [],
+      },
+      mission_control: {
+        mission: {
+          mission_id: 'launch-1',
+          status: 'active',
+          title: 'Lanzar Arranque limpio guiado',
+        },
+        participants: [
+          {
+            participant_id: 'p1',
+            agent_id: 'launch-director',
+            role_in_mission: 'director',
+            status: 'active',
+          },
+          {
+            participant_id: 'p2',
+            agent_id: 'launch-analyst',
+            role_in_mission: 'executor',
+            status: 'active',
+          },
+        ],
+        latest_message: {
+          message_id: 'message-1',
+          body_summary: 'Definir topología inicial y dejar listo el primer launch snapshot-first.',
+          created_at: '2026-05-21T10:00:00.000Z',
+        },
+        pending_deliveries: [],
+        presence: {
+          active: [
+            {
+              presence_id: 'presence-1',
+              agent_id: 'launch-analyst',
+              effective_state: 'online',
+              last_seen_at: '2026-05-21T10:00:00.000Z',
+              evidence_ref: 'evidence://presence/analyst',
+            },
+          ],
+          stale: [],
+          offline: [],
+        },
+      },
+      workspaces: [
+        {
+          id: 'ws-director',
+          agent_id: 'launch-director',
+          current_task_id: 'launch:director',
+          status: 'ready',
+          branch_name: 'swarm/launch-1/director',
+          evidence_ref: 'evidence://workspace/ws-director',
+        },
+      ],
+      runs: [
+        {
+          run_id: 'run-director',
+          workspace_id: 'ws-director',
+          task_id: 'launch:director',
+          status: 'running',
+          evidence_ref: 'evidence://run/run-director',
+        },
+      ],
+      artifacts: [],
+      evidence_timeline: [],
+      director_queue: {
+        authority: 'authoritative',
+        freshness: 'current',
+        items: [],
+        handoff: {
+          status: 'idle',
+          recipient_agent_id: null,
+          message: null,
+          task: null,
+          workspace: null,
+          run: null,
+          artifact: null,
+          supervisor: null,
+        },
+      },
+    });
+
+    expect(selectSwarmControlPrimarySurface(snapshot)).toEqual(
+      expect.objectContaining({
+        mode: 'active',
+        hero: expect.objectContaining({
+          title: 'Lanzar Arranque limpio guiado',
+          status: 'active',
+          stats: expect.objectContaining({ activeAgents: 3 }),
+        }),
+      })
+    );
+  });
+
+  test('selectSwarmControlPrimarySurface exposes a disabled CTA reason when an active swarm has no durable next focus', () => {
+    const snapshot = composeControlRoomSnapshot(
+      buildControlRoomInput({
+        supervisor: {
+          ...buildControlRoomInput().supervisor,
+          active_agents: 1,
+          queue_depth: 0,
+          approvals: [],
+          agents: [],
+        },
+        director_queue: {
+          authority: 'authoritative',
+          freshness: 'current',
+          items: [],
+          handoff: {
+            status: 'idle',
+            recipient_agent_id: null,
+            message: null,
+            task: null,
+            workspace: null,
+            run: null,
+            artifact: null,
+            supervisor: null,
+          },
+        },
+        mission_control: null,
+      })
+    );
+
+    expect(selectSwarmControlPrimarySurface(snapshot)).toEqual(
+      expect.objectContaining({
+        mode: 'active',
+        hero: expect.objectContaining({
+          primaryCta: expect.objectContaining({
+            disabled: true,
+            reason: 'No hay foco durable inmediato en este snapshot.',
+          }),
+        }),
+      })
+    );
+  });
+
+  test('selectSwarmControlPrimarySurface returns an idle launchpad when no active swarm exists', () => {
+    const snapshot = buildIdleSnapshot();
+
+    expect(selectSwarmControlPrimarySurface(snapshot)).toEqual(
+      expect.objectContaining({
+        mode: 'idle',
+        hero: expect.objectContaining({
+          title: 'Lanzá un swarm nuevo',
+          status: 'idle',
+          primaryCta: {
+            kind: 'anchor',
+            target: 'launchpad-templates',
+            label: 'Elegir plantilla recomendada',
+            disabled: false,
+            reason: null,
+          },
+          stats: {
+            activeAgents: 0,
+            queueDepth: 0,
+            pendingApprovals: 0,
+            pendingDeliveries: 0,
+          },
+        }),
+      })
+    );
+  });
+
+  test('selectSwarmLaunchCatalog recommends approvals-first recovery before clean-start templates', () => {
+    const snapshot = composeControlRoomSnapshot(buildControlRoomInput());
+    const catalog = selectSwarmLaunchCatalog(snapshot);
+
+    expect(catalog).toEqual(
+      expect.objectContaining({
+        authority: 'local-catalog',
+        recommended_template_id: 'approval-recovery',
+      })
+    );
+    expect(catalog.templates[0]).toEqual(
+      expect.objectContaining({
+        id: 'approval-recovery',
+        readiness: 'ready-now',
+      })
+    );
+    expect(catalog.templates[1]).toEqual(
+      expect.objectContaining({
+        id: 'queue-restart',
+      })
+    );
+  });
+
+  test('selectSwarmLaunchCatalog falls back to a clean-start recommendation when the control room is idle', () => {
+    const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
+
+    expect(catalog.recommended_template_id).toBe('clean-slate');
+    expect(catalog.templates[0]).toEqual(
+      expect.objectContaining({
+        id: 'clean-slate',
+        readiness: 'ready-now',
+      })
+    );
+    expect(catalog.swarm_types).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'delivery-swarm',
+          defaults_preview: expect.arrayContaining(['handoff-first', 'checkpoint-safe']),
+        }),
+      ])
+    );
+  });
+
+  test('createSwarmLaunchDraft seeds launch defaults from the recommended template and project path', () => {
+    const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
+
+    expect(
+      createSwarmLaunchDraft({
+        catalog,
+        project: { id: 'project-1', local_path: '/home/matias/ArxonLabs/devhub' },
+      })
+    ).toEqual({
+      mode: 'template',
+      category: 'delivery',
+      templateId: 'clean-slate',
+      swarmTypeId: 'delivery-swarm',
+      teamId: 'feature-delivery-team',
+      providerId: 'github-copilot/gpt-5.4-mini',
+      workspacePath: '/home/matias/ArxonLabs/devhub',
+      rolePrograms: {
+        director: 'opencode',
+        coder: 'opencode',
+        auditor: 'opencode',
+        devops: 'opencode',
+        architect: 'opencode',
+      },
+      mission:
+        'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
+    });
+  });
+
+  test('selectSwarmLaunchCatalog exposes supported launch clients from existing runtime options', () => {
+    const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
+
+    expect(catalog.programs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'opencode', label: 'OpenCode' }),
+        expect.objectContaining({ id: 'codex', label: 'Codex' }),
+        expect.objectContaining({ id: 'hermes', label: 'Hermes' }),
+      ])
+    );
+  });
+
+  test('deriveSwarmLaunchPreview returns summary lines and topology for the current draft', () => {
+    const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
+    const preview = deriveSwarmLaunchPreview({
+      catalog,
+      draft: {
+        mode: 'custom',
+        category: 'recovery',
+        templateId: 'approval-recovery',
+        swarmTypeId: 'recovery-swarm',
+        teamId: 'amber-recovery-cell',
+        providerId: 'claude-opus-4-20250514',
+        workspacePath: '/tmp/devhub-recovery',
+        rolePrograms: {
+          director: 'codex',
+          recovery_ops: 'opencode',
+          evidence: 'opencode',
+          qa: 'hermes',
+        },
+        mission: 'Recuperar approvals y normalizar workspaces antes del próximo handoff.',
+      },
+    });
+
+    expect(preview).toEqual(
+      expect.objectContaining({
+        modeLabel: 'Custom team',
+        launchLabel: 'Lanzar Recovery swarm',
+        isReady: true,
+        topology: expect.objectContaining({
+          label: 'Director → Recovery Ops → Evidence → QA',
+          roles: expect.arrayContaining(['Director', 'Recovery Ops', 'Evidence', 'QA']),
+        }),
+        summaryLines: expect.arrayContaining([
+          'Custom team · Recovery',
+          'Resolver aprobaciones y destrabar · Recovery swarm',
+          'Amber Recovery Cell · Claude Opus 4',
+          '/tmp/devhub-recovery',
+          'Recuperar approvals y normalizar workspaces antes del próximo handoff.',
+        ]),
+        rolePrograms: [
+          expect.objectContaining({
+            role: 'Director',
+            program_id: 'codex',
+            program_label: 'Codex',
+          }),
+          expect.objectContaining({
+            role: 'Recovery Ops',
+            program_id: 'opencode',
+            program_label: 'OpenCode',
+          }),
+          expect.objectContaining({
+            role: 'Evidence',
+            program_id: 'opencode',
+            program_label: 'OpenCode',
+          }),
+          expect.objectContaining({ role: 'QA', program_id: 'hermes', program_label: 'Hermes' }),
+        ],
       })
     );
   });

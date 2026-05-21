@@ -108,6 +108,22 @@ export default function DirectorQueuePanel({
                     {item.blocked_reason}
                   </p>
                 ) : null}
+
+                {item.checkpoint_gate ? (
+                  <div className="mt-3 space-y-1 text-xs" style={metaTextStyle()}>
+                    <p>{item.checkpoint_gate.code || item.checkpoint_gate.status}</p>
+                    {item.checkpoint_gate.message ? <p>{item.checkpoint_gate.message}</p> : null}
+                    {item.checkpoint_gate.remediation ? (
+                      <p>{item.checkpoint_gate.remediation}</p>
+                    ) : null}
+                    {item.checkpoint_gate.checkpoint ? (
+                      <p>
+                        commit={item.checkpoint_gate.checkpoint.commit || 'none'} · worktree=
+                        {item.checkpoint_gate.checkpoint.worktree || 'unknown'}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </article>
             ))}
       </div>

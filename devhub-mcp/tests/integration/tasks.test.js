@@ -20,6 +20,19 @@ describe('MCP Task Tools', () => {
   let createdTaskId;
   let isolatedProjectId;
 
+  async function createCheckpointProject(name) {
+    const result = await harness.callTool('create_project', { name });
+    return result.project.id;
+  }
+
+  async function findTaskById(targetTaskId, targetProjectId = isolatedProjectId) {
+    const result = await harness.callTool('list_tasks', {
+      project_id: targetProjectId,
+      status: 'all',
+    });
+    return result.tasks.find((task) => task.id === targetTaskId) || null;
+  }
+
   beforeAll(async () => {
     harness = await createTestHarness();
     await harness.initialize();
@@ -150,6 +163,12 @@ describe('MCP Task Tools', () => {
         console.log('SKIP: no task created');
         return;
       }
+      await harness.callTool('add_task_comment', {
+        task_id: createdTaskId,
+        content:
+          '[git:checkpoint] commit=abc1234 worktree=clean summary="task completed" docs=[none] checks=[targeted-review]',
+        author_type: 'agent',
+      });
       const result = await harness.callTool('update_task', {
         task_id: createdTaskId,
         status: 'completed',
@@ -168,6 +187,156 @@ describe('MCP Task Tools', () => {
       expect(result.updated).toBe(true);
       expect(result.task.title).toBe('Updated Title');
       expect(result.task.priority).toBe('high');
+    });
+
+    it('rejects completed without an auditable git checkpoint comment', async () => {
+      const testProjectId = await createCheckpointProject('Checkpoint gate rejection project');
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: testProjectId,
+        user_id: userId,
+        title: 'Implement gate without checkpoint',
+        description: 'Normal code task with file changes expected.',
+      });
+
+      const result = await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'completed',
+      });
+
+      expect(result.raw || JSON.stringify(result)).toMatch(/checkpoint/i);
+      expect(result.raw || JSON.stringify(result)).toMatch(/git:checkpoint/i);
+
+      const storedTask = await findTaskById(taskResult.task.id, testProjectId);
+      expect(storedTask?.status).toBe('pending');
+    });
+
+    it('accepts completed when the latest git checkpoint is complete and auditable', async () => {
+      const testProjectId = await createCheckpointProject('Checkpoint gate acceptance project');
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: testProjectId,
+        user_id: userId,
+        title: 'Implement durable checkpoint gate',
+        description: 'Normal implementation task with changed files.',
+      });
+
+      await harness.callTool('add_task_comment', {
+        task_id: taskResult.task.id,
+        content:
+          '[git:checkpoint] commit=abc1234 worktree=clean summary="durable gate ready" docs=[docs/24_Politica_Git_y_Versionado_Agentes.md] checks=[npm test -- src/app/api/agent/qa-result/route.test.js]',
+        author_type: 'agent',
+      });
+
+      const result = await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'completed',
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.task.status).toBe('completed');
+      expect(result.task.checkpoint_gate).toEqual(
+        expect.objectContaining({
+          status: 'accepted',
+          code: 'checkpoint-accepted',
+          checkpoint: expect.objectContaining({
+            commit: 'abc1234',
+            worktree: 'clean',
+          }),
+        })
+      );
+    });
+
+    it('rejects completed when the latest git checkpoint omits a required field and names it', async () => {
+      const testProjectId = await createCheckpointProject('Checkpoint incomplete evidence project');
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: testProjectId,
+        user_id: userId,
+        title: 'Implement checkpoint docs reminder',
+        description: 'Normal implementation task with changed files.',
+      });
+
+      await harness.callTool('add_task_comment', {
+        task_id: taskResult.task.id,
+        content:
+          '[git:checkpoint] commit=abc1234 worktree=clean summary="docs omitted on purpose" checks=[npm test -- tests/integration/tasks.test.js]',
+        author_type: 'agent',
+      });
+
+      const result = await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'completed',
+      });
+
+      expect(result.raw || JSON.stringify(result)).toMatch(/checkpoint est[aá] incompleto/i);
+      expect(result.raw || JSON.stringify(result)).toMatch(/docs/i);
+
+      const storedTask = await findTaskById(taskResult.task.id, testProjectId);
+      expect(storedTask?.status).toBe('pending');
+    });
+
+    it('accepts commit=none only for zero-change analysis tasks', async () => {
+      const testProjectId = await createCheckpointProject('Checkpoint analysis-only project');
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: testProjectId,
+        user_id: userId,
+        title: 'Queue latency analysis',
+        description: 'Analysis only investigation with zero file changes.',
+      });
+
+      await harness.callTool('add_task_comment', {
+        task_id: taskResult.task.id,
+        content:
+          '[git:checkpoint] commit=none worktree=clean summary="analysis only" docs=[none] checks=[targeted-review] reason="sin cambios de archivos"',
+        author_type: 'agent',
+      });
+
+      const result = await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'completed',
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.task.status).toBe('completed');
+      expect(result.task.checkpoint_gate).toEqual(
+        expect.objectContaining({
+          status: 'accepted',
+          checkpoint: expect.objectContaining({ commit: 'none' }),
+        })
+      );
+    });
+
+    it('rejects commit=none when the checkpoint shows changed work and explains the remediation', async () => {
+      const testProjectId = await createCheckpointProject(
+        'Checkpoint changed work rejection project'
+      );
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: testProjectId,
+        user_id: userId,
+        title: 'Implement queue remediation UI',
+        description: 'Normal implementation task with changed files.',
+      });
+
+      await harness.callTool('add_task_comment', {
+        task_id: taskResult.task.id,
+        content:
+          '[git:checkpoint] commit=none worktree=clean summary="changed work attempted" docs=[src/views/SwarmControl.jsx] checks=[npm test -- src/views/__tests__/SwarmControl.test.jsx] reason="forgot local commit"',
+        author_type: 'agent',
+      });
+
+      const result = await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'completed',
+      });
+
+      expect(result.raw || JSON.stringify(result)).toMatch(/commit=none/i);
+      expect(result.raw || JSON.stringify(result)).toMatch(/local checkpoint commit/i);
+
+      const storedTask = await findTaskById(taskResult.task.id, testProjectId);
+      expect(storedTask?.status).toBe('pending');
     });
   });
 

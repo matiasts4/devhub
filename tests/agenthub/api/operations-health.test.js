@@ -363,6 +363,277 @@ describe('GET /api/agenthub/operations/health', () => {
     });
   });
 
+  test('projects pending approvals only while checkpoint status remains pending', async () => {
+    const {
+      gatherOperationalHealth,
+    } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const snapshot = await gatherOperationalHealth({
+      now: '2026-05-21T10:00:00.000Z',
+      getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+      getQueueStatus: () => ({ length: 0, items: [] }),
+      getActiveAgentCount: () => 1,
+      getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+      getSessionsHealth: async () => ({
+        active_sessions: [],
+        stale_sessions: [],
+        aborted_count: 0,
+        live_check_available: true,
+        checked_at: '2026-05-21T10:00:00.000Z',
+      }),
+      getTelegramStatus: async () => ({
+        bot_connected: true,
+        active_chats: 0,
+        recent_errors: 0,
+        last_activity: '2026-05-21T10:00:00.000Z',
+      }),
+      getMissionSnapshot: async () => ({
+        mission: {
+          mission_id: 'mission-approval-1',
+          task_id: 'task-approval-1',
+          workspace_id: 'ws-approval-1',
+          run_id: 'run-approval-1',
+          status: 'active',
+        },
+        participants: [],
+        recent_messages: [],
+        pending_deliveries: [],
+        presence: { active: [], stale: [], offline: [] },
+        supervisor_snapshots: [
+          {
+            task_id: 'task-approval-1',
+            workspace_id: 'ws-approval-1',
+            run_id: 'run-approval-1',
+            supervisor_state: 'awaiting_approval',
+            outcome: 'wait',
+            approval_checkpoint_key: 'checkpoint-approval-1',
+            evidence_ref: 'evidence://supervisor/task-approval-1',
+            updated_at: '2026-05-21T10:00:00.000Z',
+          },
+        ],
+        approval_checkpoints: [
+          {
+            checkpoint_key: 'checkpoint-approval-1',
+            task_id: 'task-approval-1',
+            workspace_id: 'ws-approval-1',
+            run_id: 'run-approval-1',
+            reason_class: 'approval_required',
+            status: 'pending',
+            requested_at: '2026-05-21T09:59:00.000Z',
+            evidence_ref: 'evidence://approval/checkpoint-approval-1',
+          },
+        ],
+      }),
+    });
+
+    expect(snapshot.control_room_snapshot_input.supervisor.approvals).toEqual([
+      expect.objectContaining({
+        checkpoint_key: 'checkpoint-approval-1',
+        task_id: 'task-approval-1',
+        status: 'pending',
+        linked_supervisor_state: 'awaiting_approval',
+        linked_supervisor_outcome: 'wait',
+      }),
+    ]);
+  });
+
+  test('drops approvals from projected pending list after checkpoint closes', async () => {
+    const {
+      gatherOperationalHealth,
+    } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const snapshot = await gatherOperationalHealth({
+      now: '2026-05-21T10:05:00.000Z',
+      getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+      getQueueStatus: () => ({ length: 0, items: [] }),
+      getActiveAgentCount: () => 1,
+      getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+      getSessionsHealth: async () => ({
+        active_sessions: [],
+        stale_sessions: [],
+        aborted_count: 0,
+        live_check_available: true,
+        checked_at: '2026-05-21T10:05:00.000Z',
+      }),
+      getTelegramStatus: async () => ({
+        bot_connected: true,
+        active_chats: 0,
+        recent_errors: 0,
+        last_activity: '2026-05-21T10:05:00.000Z',
+      }),
+      getMissionSnapshot: async () => ({
+        mission: {
+          mission_id: 'mission-approval-1',
+          task_id: 'task-approval-1',
+          workspace_id: 'ws-approval-1',
+          run_id: 'run-approval-1',
+          status: 'active',
+        },
+        participants: [],
+        recent_messages: [],
+        pending_deliveries: [],
+        presence: { active: [], stale: [], offline: [] },
+        supervisor_snapshots: [
+          {
+            task_id: 'task-approval-1',
+            workspace_id: 'ws-approval-1',
+            run_id: 'run-approval-1',
+            supervisor_state: 'dispatch_pending',
+            outcome: 'dispatch',
+            approval_checkpoint_key: 'checkpoint-approval-1',
+            evidence_ref: 'evidence://supervisor/task-approval-1',
+            updated_at: '2026-05-21T10:05:00.000Z',
+          },
+        ],
+        approval_checkpoints: [
+          {
+            checkpoint_key: 'checkpoint-approval-1',
+            task_id: 'task-approval-1',
+            workspace_id: 'ws-approval-1',
+            run_id: 'run-approval-1',
+            reason_class: 'approval_required',
+            status: 'approved',
+            requested_at: '2026-05-21T09:59:00.000Z',
+            decided_at: '2026-05-21T10:04:30.000Z',
+            evidence_ref: 'evidence://approval/checkpoint-approval-1',
+          },
+        ],
+      }),
+    });
+
+    expect(snapshot.control_room_snapshot_input.supervisor.approvals).toEqual([]);
+  });
+
+  test('projects blocked checkpoint gate remediation into snapshot errors and director queue items', async () => {
+    const {
+      gatherOperationalHealth,
+    } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const snapshot = await gatherOperationalHealth({
+      now: '2026-05-21T10:10:00.000Z',
+      projectId: '550e8400-e29b-41d4-a716-446655440000',
+      getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+      getQueueStatus: () => ({ length: 0, items: [] }),
+      getActiveAgentCount: () => 1,
+      getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+      getSessionsHealth: async () => ({
+        active_sessions: [],
+        stale_sessions: [],
+        aborted_count: 0,
+        live_check_available: true,
+        checked_at: '2026-05-21T10:10:00.000Z',
+      }),
+      getTelegramStatus: async () => ({
+        bot_connected: true,
+        active_chats: 0,
+        recent_errors: 0,
+        last_activity: '2026-05-21T10:10:00.000Z',
+      }),
+      getExecutionQueue: async () => ({
+        total: 1,
+        queue: [
+          {
+            id: 'task-gate-1',
+            title: 'Cerrar task sin checkpoint',
+            status: 'pending',
+            priority: 'high',
+            blocked: true,
+            blocked_reason: 'missing-git-checkpoint',
+            checkpoint_gate: {
+              status: 'blocked',
+              code: 'missing-git-checkpoint',
+              message: 'Falta comentario [git:checkpoint] para este handoff.',
+              remediation:
+                'Agregá [git:checkpoint] con commit=<sha|none>, docs=[...], checks=[...] y worktree=<clean|dirty-excluded>.',
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(snapshot.control_room_snapshot_input.director_queue.items).toEqual([
+      expect.objectContaining({
+        id: 'task-gate-1',
+        status: 'blocked',
+        blocked_reason: 'missing-git-checkpoint',
+        checkpoint_gate: expect.objectContaining({
+          code: 'missing-git-checkpoint',
+          status: 'blocked',
+        }),
+      }),
+    ]);
+    expect(snapshot.control_room_snapshot_input.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'missing-git-checkpoint',
+          source: 'checkpoint_gate',
+        }),
+      ])
+    );
+  });
+
+  test('projects accepted checkpoint summaries into the snapshot read model', async () => {
+    const {
+      gatherOperationalHealth,
+    } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const snapshot = await gatherOperationalHealth({
+      now: '2026-05-21T10:12:00.000Z',
+      projectId: '550e8400-e29b-41d4-a716-446655440000',
+      getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+      getQueueStatus: () => ({ length: 0, items: [] }),
+      getActiveAgentCount: () => 1,
+      getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+      getSessionsHealth: async () => ({
+        active_sessions: [],
+        stale_sessions: [],
+        aborted_count: 0,
+        live_check_available: true,
+        checked_at: '2026-05-21T10:12:00.000Z',
+      }),
+      getTelegramStatus: async () => ({
+        bot_connected: true,
+        active_chats: 0,
+        recent_errors: 0,
+        last_activity: '2026-05-21T10:12:00.000Z',
+      }),
+      getExecutionQueue: async () => ({
+        total: 1,
+        queue: [
+          {
+            id: 'task-gate-2',
+            title: 'Cerrar task con checkpoint',
+            status: 'pending',
+            priority: 'high',
+            blocked: false,
+            checkpoint_gate: {
+              status: 'accepted',
+              code: 'checkpoint-accepted',
+              message: 'Checkpoint válido para completed.',
+              checkpoint: {
+                commit: 'abc1234',
+                worktree: 'clean',
+                docs: ['docs/24_Politica_Git_y_Versionado_Agentes.md'],
+                checks: ['npm test -- tests/integration/tasks.test.js'],
+              },
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(snapshot.control_room_snapshot_input.director_queue.items).toEqual([
+      expect.objectContaining({
+        id: 'task-gate-2',
+        status: 'pending',
+        checkpoint_gate: expect.objectContaining({
+          code: 'checkpoint-accepted',
+          checkpoint: expect.objectContaining({ commit: 'abc1234', worktree: 'clean' }),
+        }),
+      }),
+    ]);
+  });
+
   test('projects evidence_timeline from durable mission snapshot truth only', async () => {
     const { GET } = require('../../../src/app/api/agenthub/operations/health/route');
 
@@ -691,6 +962,126 @@ describe('GET /api/agenthub/operations/health', () => {
     expect(getNextTask).not.toHaveBeenCalled();
     expect(getWorkspaceEvidence).not.toHaveBeenCalled();
     expect(claimNextTask).not.toHaveBeenCalled();
+  });
+
+  test('projects workspace and recovery durable refs as link-only QA evidence classes', async () => {
+    const {
+      gatherOperationalHealth,
+    } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const snapshot = await gatherOperationalHealth({
+      now: '2026-05-21T11:00:00.000Z',
+      getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+      getQueueStatus: () => ({ length: 0, items: [] }),
+      getActiveAgentCount: () => 1,
+      getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+      getSessionsHealth: async () => ({
+        active_sessions: [],
+        stale_sessions: [],
+        aborted_count: 0,
+        live_check_available: true,
+        checked_at: '2026-05-21T11:00:00.000Z',
+      }),
+      getTelegramStatus: async () => ({
+        bot_connected: true,
+        active_chats: 0,
+        recent_errors: 0,
+        last_activity: '2026-05-21T11:00:00.000Z',
+      }),
+      getMissionSnapshot: async () => ({
+        mission: {
+          mission_id: 'mission-qa-1',
+          task_id: 'task-qa-1',
+          workspace_id: 'ws-qa-1',
+          run_id: 'run-qa-1',
+          status: 'active',
+        },
+        participants: [],
+        recent_messages: [],
+        pending_deliveries: [],
+        presence: { active: [], stale: [], offline: [] },
+        approval_checkpoints: [
+          {
+            checkpoint_key: 'checkpoint-qa-1',
+            task_id: 'task-qa-1',
+            workspace_id: 'ws-qa-1',
+            run_id: 'run-qa-1',
+            status: 'pending',
+            reason_class: 'approval_required',
+            requested_at: '2026-05-21T10:59:00.000Z',
+            evidence_ref: 'evidence://approval/checkpoint-qa-1',
+          },
+        ],
+        supervisor_snapshots: [
+          {
+            task_id: 'task-qa-1',
+            workspace_id: 'ws-qa-1',
+            run_id: 'run-qa-1',
+            supervisor_state: 'recovering_orphan',
+            outcome: 'recover_orphan',
+            updated_at: '2026-05-21T10:59:30.000Z',
+            evidence_ref: 'evidence://supervisor/task-qa-1',
+          },
+        ],
+        runs: [
+          {
+            run_id: 'run-qa-1',
+            task_id: 'task-qa-1',
+            workspace_id: 'ws-qa-1',
+            status: 'running',
+            summary: 'Run active for QA matrix',
+            started_at: '2026-05-21T10:58:30.000Z',
+            evidence_ref: 'evidence://run/run-qa-1',
+          },
+        ],
+        artifacts: [
+          {
+            artifact_id: 'artifact-qa-workspace',
+            task_id: 'task-qa-1',
+            workspace_id: 'ws-qa-1',
+            run_id: 'run-qa-1',
+            kind: 'workspace.prepared',
+            summary: 'Workspace ready for QA',
+            observed_at: '2026-05-21T10:59:20.000Z',
+            evidence_ref: 'evidence://workspace/ws-qa-1',
+          },
+          {
+            artifact_id: 'artifact-qa-recovery',
+            task_id: 'task-qa-1',
+            workspace_id: 'ws-qa-1',
+            run_id: 'run-qa-1',
+            kind: 'workspace.cleanup',
+            summary: 'Recovery checkpoint available',
+            observed_at: '2026-05-21T10:59:40.000Z',
+            evidence_ref: 'evidence://recovery/ws-qa-1',
+          },
+        ],
+      }),
+    });
+
+    expect(snapshot.control_room_snapshot_input.evidence_timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'artifact',
+          item_id: 'artifact-qa-workspace',
+          summary: 'Workspace ready for QA',
+          evidence_ref: 'evidence://workspace/ws-qa-1',
+          linked_ids: expect.objectContaining({ workspace_id: 'ws-qa-1', run_id: 'run-qa-1' }),
+        }),
+        expect.objectContaining({
+          kind: 'artifact',
+          item_id: 'artifact-qa-recovery',
+          summary: 'Recovery checkpoint available',
+          evidence_ref: 'evidence://recovery/ws-qa-1',
+          linked_ids: expect.objectContaining({ workspace_id: 'ws-qa-1', run_id: 'run-qa-1' }),
+        }),
+      ])
+    );
+    expect(
+      snapshot.control_room_snapshot_input.evidence_timeline.find(
+        (item) => item.item_id === 'artifact-qa-workspace'
+      )?.secondary_session_evidence
+    ).toEqual([]);
   });
 
   test('creates a local mission message with pending local deliveries only', async () => {
@@ -1293,5 +1684,151 @@ describe('GET /api/agenthub/operations/health', () => {
       artifact: null,
       supervisor: null,
     });
+  });
+
+  test('launches a local swarm into durable mission, workspace, run, and session records', async () => {
+    jest.resetModules();
+
+    const Database = require('better-sqlite3');
+    const actualLocalDb = jest.requireActual('../../../src/lib/db/localDb.js');
+    const db = new Database(':memory:');
+    actualLocalDb.ensureRuntimeSchema(db);
+    db.prepare('INSERT INTO projects (id, name, local_path) VALUES (?, ?, ?)').run(
+      'project-launch',
+      'Project Launch',
+      '/workspace/devhub'
+    );
+
+    jest.doMock('@/lib/db/localDb.js', () => ({
+      ...jest.requireActual('@/lib/db/localDb.js'),
+      getDb: () => db,
+    }));
+
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await POST({
+      json: async () => ({
+        action: 'launch_swarm_local',
+        project_id: 'project-launch',
+        draft: {
+          mode: 'template',
+          category: 'delivery',
+          templateId: 'clean-slate',
+          swarmTypeId: 'delivery-swarm',
+          teamId: 'feature-delivery-team',
+          providerId: 'github-copilot/gpt-5.4-mini',
+          workspacePath: '/workspace/devhub',
+          rolePrograms: {
+            director: 'codex',
+            coder: 'hermes',
+            auditor: 'opencode',
+            devops: 'opencode',
+            architect: 'opencode',
+          },
+          mission:
+            'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect.',
+        },
+      }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.launch_result).toEqual(
+      expect.objectContaining({
+        launchLabel: 'Lanzar Arranque limpio guiado',
+        runtime_requests: expect.arrayContaining([
+          expect.objectContaining({
+            selectedAgent: 'codex',
+            taskId: expect.stringContaining('director'),
+            command: expect.stringContaining(
+              '/home/matias/.nvm/versions/node/v24.14.0/bin/codex exec --sandbox workspace-write'
+            ),
+          }),
+          expect.objectContaining({
+            selectedAgent: 'hermes',
+            taskId: expect.stringContaining('coder'),
+            command: expect.stringContaining('/home/matias/.local/bin/hermes chat -q'),
+          }),
+          expect.objectContaining({
+            selectedAgent: 'opencode',
+            taskId: expect.stringContaining('auditor'),
+            command: expect.stringContaining(
+              '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt'
+            ),
+          }),
+          expect.objectContaining({
+            selectedAgent: 'opencode',
+            taskId: expect.stringContaining('devops'),
+            command: expect.stringContaining(
+              '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt'
+            ),
+          }),
+          expect.objectContaining({
+            selectedAgent: 'opencode',
+            taskId: expect.stringContaining('architect'),
+            command: expect.stringContaining(
+              '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt'
+            ),
+          }),
+        ]),
+      })
+    );
+    expect(payload.control_room_snapshot_input).toEqual(
+      expect.objectContaining({
+        supervisor: expect.objectContaining({
+          supervisor_state: 'lease_active',
+          active_agents: 5,
+          authority: 'authoritative',
+          freshness: 'current',
+        }),
+        workspaces: expect.arrayContaining([expect.objectContaining({ status: 'ready' })]),
+        runs: expect.arrayContaining([expect.objectContaining({ status: 'running' })]),
+        artifacts: [],
+        evidence_timeline: expect.arrayContaining([
+          expect.objectContaining({ kind: 'mission_message' }),
+          expect.objectContaining({ kind: 'presence' }),
+          expect.objectContaining({ kind: 'delivery' }),
+        ]),
+        mission_control: expect.objectContaining({
+          mission: expect.objectContaining({
+            status: 'active',
+            title: 'Lanzar Arranque limpio guiado',
+          }),
+        }),
+      })
+    );
+
+    expect(db.prepare('SELECT COUNT(*) as count FROM swarm_missions').get().count).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) as count FROM mission_participants').get().count).toBe(5);
+    expect(db.prepare('SELECT COUNT(*) as count FROM agent_workspaces').get().count).toBe(5);
+    expect(db.prepare('SELECT COUNT(*) as count FROM agent_runs').get().count).toBe(5);
+    expect(db.prepare('SELECT COUNT(*) as count FROM agent_hub_sessions').get().count).toBe(5);
+
+    const directorSession = db
+      .prepare("SELECT * FROM agent_hub_sessions WHERE agent_model = 'codex' LIMIT 1")
+      .get();
+    const builderSession = db
+      .prepare(
+        "SELECT * FROM agent_hub_sessions WHERE agent_model = 'opencode' ORDER BY title ASC LIMIT 1"
+      )
+      .get();
+    const directorPresence = db
+      .prepare("SELECT * FROM agent_presence WHERE agent_id LIKE '%director' LIMIT 1")
+      .get();
+
+    expect(directorSession).toEqual(
+      expect.objectContaining({
+        project_id: 'project-launch',
+        status: 'active',
+        directory: '/workspace/devhub',
+      })
+    );
+    expect(builderSession?.opencode_session_id).toBeTruthy();
+    expect(directorPresence).toEqual(
+      expect.objectContaining({ presence_state: 'busy', runtime_surface: 'swarm-control-launch' })
+    );
+
+    db.close();
+    jest.resetModules();
   });
 });

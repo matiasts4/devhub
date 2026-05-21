@@ -2234,6 +2234,12 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
   const recentMessages = listRecentMissionMessages(db, missionId, 20);
   const latestMessage = recentMessages[0] || null;
   const pendingDeliveries = listPendingMessageDeliveriesForMission(db, missionId, 20);
+  const supervisorSnapshots = mission.task_id
+    ? listSupervisorSnapshots(db, { task_id: mission.task_id, limit: 20 })
+    : [];
+  const approvalCheckpoints = mission.task_id
+    ? listSupervisorApprovalCheckpoints(db, { task_id: mission.task_id, limit: 20 })
+    : [];
   const presenceRows = listAgentPresenceForMission(db, missionId).map((presence) => ({
     ...presence,
     ...getAgentPresenceStatus(presence, { ...options, now: snapshotAt }),
@@ -2252,6 +2258,8 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
     recent_messages: recentMessages,
     latest_message: latestMessage,
     pending_deliveries: pendingDeliveries,
+    supervisor_snapshots: supervisorSnapshots,
+    approval_checkpoints: approvalCheckpoints,
     snapshot_at: snapshotAt,
     watermark,
     presence: {
@@ -2684,6 +2692,20 @@ function getSupervisorSnapshot(dbOrTaskId, maybeTaskId) {
   if (!taskId) return null;
   return (
     db.prepare('SELECT * FROM supervisor_snapshots WHERE task_id = ? LIMIT 1').get(taskId) || null
+  );
+}
+
+function getLatestTaskComment(dbOrTaskId, maybeTaskId) {
+  const hasDb = dbOrTaskId && typeof dbOrTaskId.prepare === 'function';
+  const db = hasDb ? dbOrTaskId : getDb();
+  const taskId = hasDb ? maybeTaskId : dbOrTaskId;
+  if (!taskId) return null;
+  return (
+    db
+      .prepare(
+        'SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
+      )
+      .get(taskId) || null
   );
 }
 
@@ -3729,6 +3751,7 @@ module.exports = {
   getAgentPresenceStatus,
   getSwarmMissionDirectorSnapshot,
   buildSupervisorApprovalCheckpointKey,
+  getLatestTaskComment,
   getSupervisorSnapshot,
   listSupervisorSnapshots,
   upsertSupervisorSnapshot,

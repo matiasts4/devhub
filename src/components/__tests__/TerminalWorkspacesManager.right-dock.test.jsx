@@ -3,7 +3,10 @@ const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 const { buildRightDockStorageKey } = require('../workspace/rightDockState');
-const { buildBrowserWindowStorageKey, buildBrowserWindowLabel } = require('../workspace/browserWindowState');
+const {
+  buildBrowserWindowStorageKey,
+  buildBrowserWindowLabel,
+} = require('../workspace/browserWindowState');
 
 jest.mock('framer-motion', () => ({
   motion: {
@@ -63,8 +66,16 @@ jest.mock('../TerminalTTY', () => ({
     const React = require('react');
     return React.createElement('div', { 'data-testid': `terminal-${id}` }, [
       React.createElement('span', { key: 'id' }, id),
-      React.createElement('span', { key: 'suspend', 'data-testid': `terminal-suspend-${id}` }, suspendNativeSurface ? 'suspended' : 'live'),
-      React.createElement('span', { key: 'policy', 'data-testid': `terminal-native-policy-${id}` }, nativeSurfacePolicy),
+      React.createElement(
+        'span',
+        { key: 'suspend', 'data-testid': `terminal-suspend-${id}` },
+        suspendNativeSurface ? 'suspended' : 'live'
+      ),
+      React.createElement(
+        'span',
+        { key: 'policy', 'data-testid': `terminal-native-policy-${id}` },
+        nativeSurfacePolicy
+      ),
     ]);
   },
 }));
@@ -130,11 +141,10 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
     const React = require('react');
     return React.createElement('div', null, children);
   },
-  DropdownMenuItem: ({ children, onSelect }) =>
-    {
-      const React = require('react');
-      return React.createElement('button', { type: 'button', onClick: onSelect }, children);
-    },
+  DropdownMenuItem: ({ children, onSelect }) => {
+    const React = require('react');
+    return React.createElement('button', { type: 'button', onClick: onSelect }, children);
+  },
   DropdownMenuLabel: ({ children }) => {
     const React = require('react');
     return React.createElement('div', null, children);
@@ -160,41 +170,57 @@ jest.mock('date-fns', () => ({
 let sharedEditorPaneMountCount = 0;
 let sharedEditorPaneUnmountCount = 0;
 
-jest.mock('../workspace/FileExplorerEditorPane', () => ({
-  __esModule: true,
-  default: ({ workspaceId }) => {
-    const React = require('react');
+jest.mock(
+  '../workspace/FileExplorerEditorPane',
+  () => ({
+    __esModule: true,
+    default: ({ workspaceId }) => {
+      const React = require('react');
 
-    React.useEffect(() => {
-      sharedEditorPaneMountCount += 1;
-      return () => {
-        sharedEditorPaneUnmountCount += 1;
-      };
-    }, []);
+      React.useEffect(() => {
+        sharedEditorPaneMountCount += 1;
+        return () => {
+          sharedEditorPaneUnmountCount += 1;
+        };
+      }, []);
 
-    return React.createElement(
-      'div',
-      { 'data-testid': 'shared-editor-pane', 'data-workspace-id': workspaceId || 'missing-workspace-id' },
-      React.createElement('div', { 'data-testid': 'editor-pane-title' }, 'Workspace files')
-    );
-  },
-}), { virtual: true });
+      return React.createElement(
+        'div',
+        {
+          'data-testid': 'shared-editor-pane',
+          'data-workspace-id': workspaceId || 'missing-workspace-id',
+        },
+        React.createElement('div', { 'data-testid': 'editor-pane-title' }, 'Workspace files')
+      );
+    },
+  }),
+  { virtual: true }
+);
 
-jest.mock('../workspace/WorkspaceBridgePane', () => ({
-  __esModule: true,
-  default: ({ dockState }) => {
-    const React = require('react');
-    return React.createElement(
-      'div',
-      { 'data-testid': 'shared-bridge-pane' },
-      React.createElement('div', { 'data-testid': 'bridge-pane-url' }, dockState?.browserUrl || 'no-url')
-    );
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/WorkspaceBridgePane',
+  () => ({
+    __esModule: true,
+    default: ({ dockState }) => {
+      const React = require('react');
+      return React.createElement(
+        'div',
+        { 'data-testid': 'shared-bridge-pane' },
+        React.createElement(
+          'div',
+          { 'data-testid': 'bridge-pane-url' },
+          dockState?.browserUrl || 'no-url'
+        )
+      );
+    },
+  }),
+  { virtual: true }
+);
 
 const TerminalWorkspacesManagerModule = require('../TerminalWorkspacesManager');
 const TerminalWorkspacesManager = TerminalWorkspacesManagerModule.default;
-const { resolveMeasuredRightDockBounds, resolveRightDockLayerStyle } = TerminalWorkspacesManagerModule;
+const { resolveMeasuredRightDockBounds, resolveRightDockLayerStyle } =
+  TerminalWorkspacesManagerModule;
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -308,13 +334,17 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    expect(view.container.textContent).toContain('Terminals');
+    expect(view.container.textContent).not.toContain('Terminals');
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="right-dock-toggle"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="right-dock-toolbar-switch"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="right-dock-toolbar-switch"]')
+    ).not.toBeNull();
     expect(view.container.querySelector('[data-testid="right-dock-tab-browser"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="right-dock-tab-editor"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-maximize"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-maximize"]')
+    ).toBeNull();
   });
 
   test('toolbar toggle shows the dock shell and keeps the switch in the top toolbar', async () => {
@@ -328,11 +358,19 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-shell"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-description"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="right-dock-toolbar-switch"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-shell"]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-description"]')
+    ).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="right-dock-toolbar-switch"]')
+    ).not.toBeNull();
     expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-maximize"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-maximize"]')
+    ).not.toBeNull();
   });
 
   test('opening right dock browser side-by-side switches the visible terminal panel into dock fallback policy', async () => {
@@ -344,18 +382,88 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    expect(view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent).toBe('live');
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+    ).toBe('live');
 
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
 
-    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe('suspended');
-    expect(view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent).toBe('dock-side-by-side');
+    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+      'suspended'
+    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+    ).toBe('dock-side-by-side');
 
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
 
-    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe('live');
-    expect(view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent).toBe('live');
+    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+      'live'
+    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+    ).toBe('live');
+  });
+
+  test('opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+      'live'
+    );
+    expect(document.getElementById('devhub-hide-next-dev-overlay-on-terminals')).not.toBeNull();
+
+    await click(view.container.querySelector('[data-testid="workspace-swarm-launch-button"]'));
+
+    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+      'suspended'
+    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+    ).toBe('transient-overlay');
+    expect(document.body.textContent).toContain('Launch wizard');
+  });
+
+  test('batches swarm runtime requests into a dedicated workspace instead of replacing the same split', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    ['director', 'coder', 'auditor', 'devops', 'architect'].forEach((role) => {
+      window.dispatchEvent(
+        new window.CustomEvent('devhub:run-agent', {
+          detail: {
+            taskId: `launch-1:${role}`,
+            selectedAgent: 'opencode',
+            command: `opencode --prompt ${role}`,
+            launchOrigin: 'swarm-control-launch',
+            taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
+          },
+        })
+      );
+    });
+
+    await flushEffects();
+    await flushEffects();
+
+    const visibleShell = getVisibleWorkspaceShell(view.container);
+    expect(visibleShell?.textContent).toContain('p2');
+    expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
+    expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+
+    const persistedRuns = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+    expect(Object.keys(persistedRuns)).toHaveLength(5);
   });
 
   test('opening right dock editor side-by-side applies the same dock fallback policy without mutating fullscreen state', async () => {
@@ -370,8 +478,12 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
-    expect(view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent).toBe('dock-side-by-side');
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+    ).toBe('dock-side-by-side');
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-panel"]')
+    ).not.toBeNull();
   });
 
   test('switching to editor reveals the shared pane with contextual subtitle', async () => {
@@ -386,7 +498,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="editor-pane-title"]')?.textContent).toContain('Workspace files');
+    expect(
+      view.container.querySelector('[data-testid="editor-pane-title"]')?.textContent
+    ).toContain('Workspace files');
   });
 
   test('legacy bridge state hydrates as browser edit mode and persists normalized state', async () => {
@@ -414,13 +528,16 @@ describe('TerminalWorkspacesManager right dock', () => {
     await flushEffects();
 
     expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).not.toBeNull();
-    const iframeSrc = view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src') || '';
+    const iframeSrc =
+      view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src') || '';
     expect(iframeSrc).toContain('/api/preview-proxy/?url=');
     expect(iframeSrc).toContain('http%3A%2F%2Flocalhost%3A3200%2F');
     expect(view.container.querySelector('[data-testid="browser-edit-toggle"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="bridge-selection-summary"]')).not.toBeNull();
 
-    const persistedState = JSON.parse(window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws1')));
+    const persistedState = JSON.parse(
+      window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws1'))
+    );
     expect(persistedState.activeTab).toBe('browser');
     expect(persistedState.editMode).toBe(true);
   });
@@ -449,7 +566,11 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')?.getAttribute('data-panel-size')).toBe('44');
+    expect(
+      view.container
+        .querySelector('[data-testid="workspace-right-dock-panel"]')
+        ?.getAttribute('data-panel-size')
+    ).toBe('44');
   });
 
   test('right dock visibility and tab state stay isolated per workspace', async () => {
@@ -470,7 +591,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     await flushEffects();
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.className).toContain('hidden');
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.className
+    ).toContain('hidden');
 
     await click(view.container.querySelector('[title="Workspace 1"]'));
     await flushEffects();
@@ -478,8 +601,12 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
 
-    const ws1State = JSON.parse(window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws1')));
-    const ws2State = JSON.parse(window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws2')));
+    const ws1State = JSON.parse(
+      window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws1'))
+    );
+    const ws2State = JSON.parse(
+      window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws2'))
+    );
 
     expect(ws1State.visible).toBe(true);
     expect(ws1State.activeTab).toBe('editor');
@@ -502,7 +629,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(editorPane).not.toBeNull();
     expect(editorPane?.getAttribute('data-workspace-id')).toBe('ws1');
     expect(view.container.querySelectorAll('[data-testid="shared-editor-pane"]')).toHaveLength(1);
-    expect(view.container.querySelectorAll('[data-testid="workspace-right-dock-layer"]')).toHaveLength(1);
+    expect(
+      view.container.querySelectorAll('[data-testid="workspace-right-dock-layer"]')
+    ).toHaveLength(1);
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
     await flushEffects();
@@ -511,12 +640,16 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(editorPaneAfterAdd).toBe(editorPane);
     expect(editorPaneAfterAdd?.getAttribute('data-workspace-id')).toBe('ws2');
     expect(view.container.querySelectorAll('[data-testid="shared-editor-pane"]')).toHaveLength(1);
-    expect(view.container.querySelectorAll('[data-testid="workspace-right-dock-layer"]')).toHaveLength(1);
+    expect(
+      view.container.querySelectorAll('[data-testid="workspace-right-dock-layer"]')
+    ).toHaveLength(1);
 
     await click(view.container.querySelector('[title="Workspace 1"]'));
     await flushEffects();
 
-    const editorPaneAfterReturn = view.container.querySelector('[data-testid="shared-editor-pane"]');
+    const editorPaneAfterReturn = view.container.querySelector(
+      '[data-testid="shared-editor-pane"]'
+    );
     expect(editorPaneAfterReturn).toBe(editorPane);
     expect(editorPaneAfterReturn?.getAttribute('data-workspace-id')).toBe('ws1');
     expect(sharedEditorPaneMountCount).toBe(1);
@@ -544,19 +677,35 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    expect(view.container.querySelector('[data-testid="workspace-browser-indicator-ws1"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-browser-close-ws1"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-browser-window-close"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-browser-indicator-ws1"]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-browser-close-ws1"]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-browser-window-close"]')
+    ).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="workspace-browser-window-close"]'));
 
-    expect(view.container.querySelector('[data-testid="workspace-browser-indicator-ws1"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-browser-indicator-ws1"]')
+    ).toBeNull();
     expect(view.container.querySelector('[data-testid="workspace-browser-close-ws1"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-browser-window-close"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')
+    ).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-browser-window-close"]')
+    ).toBeNull();
 
-    const persisted = JSON.parse(window.localStorage.getItem(buildBrowserWindowStorageKey('project-1')));
+    const persisted = JSON.parse(
+      window.localStorage.getItem(buildBrowserWindowStorageKey('project-1'))
+    );
     expect(persisted.ws1.open).toBe(false);
     expect(persisted.ws1.url).toBe('');
   });
@@ -584,21 +733,19 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     const iframeAfterNavigation = view.container.querySelector('[data-testid="browser-iframe"]');
     expect(iframeAfterNavigation).toBe(firstIframe);
-    expect(iframeAfterNavigation?.getAttribute('src')).toBe(
-      'http://localhost:52827/#community'
-    );
+    expect(iframeAfterNavigation?.getAttribute('src')).toBe('http://localhost:52827/#community');
 
     await click(view.container.querySelector('[data-testid="browser-back"]'));
     expect(view.container.querySelector('[data-testid="browser-iframe"]')).toBe(firstIframe);
-    expect(view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src')).toBe(
-      'http://localhost:4173/'
-    );
+    expect(
+      view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src')
+    ).toBe('http://localhost:4173/');
 
     await click(view.container.querySelector('[data-testid="browser-forward"]'));
     expect(view.container.querySelector('[data-testid="browser-iframe"]')).toBe(firstIframe);
-    expect(view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src')).toBe(
-      'http://localhost:52827/#community'
-    );
+    expect(
+      view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src')
+    ).toBe('http://localhost:52827/#community');
 
     const iframeBeforeReload = view.container.querySelector('[data-testid="browser-iframe"]');
     await click(view.container.querySelector('[data-testid="browser-reload"]'));
@@ -607,7 +754,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(iframeAfterReload).not.toBe(iframeBeforeReload);
     expect(iframeAfterReload?.getAttribute('src')).toBe('http://localhost:52827/#community');
 
-    const persistedState = JSON.parse(window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws1')));
+    const persistedState = JSON.parse(
+      window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws1'))
+    );
     expect(persistedState.browserHistory).toEqual([
       'http://localhost:3200/',
       'http://localhost:4173/',
@@ -626,7 +775,10 @@ describe('TerminalWorkspacesManager right dock', () => {
     );
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
-    await changeInput(view.container.querySelector('[data-testid="browser-url-input"]'), 'http://localhost:3100/');
+    await changeInput(
+      view.container.querySelector('[data-testid="browser-url-input"]'),
+      'http://localhost:3100/'
+    );
     await submitForm(view.container.querySelector('[data-testid="workspace-browser-pane"] form'));
 
     expect(view.container.querySelector('[data-testid="browser-frame-warning"]')).toBeNull();
@@ -665,16 +817,24 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
 
-    const maximizeFromBrowser = view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]');
+    const maximizeFromBrowser = view.container.querySelector(
+      '[data-testid="browser-toggle-workspace-maximize"]'
+    );
     expect(maximizeFromBrowser).not.toBeNull();
 
     await click(maximizeFromBrowser);
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width).toBe('100%');
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width
+    ).toBe('100%');
 
     await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width).toBe('44%');
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-panel"]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width
+    ).toBe('44%');
   });
 
   test('keeps the same browser iframe mounted when switching between browser and editor tabs', async () => {
@@ -714,7 +874,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="browser-iframe"]')).toBe(browserIframe);
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width).toBe('100%');
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width
+    ).toBe('100%');
 
     await click(view.container.querySelector('[data-testid="browser-workspace-window-tab-1"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
@@ -723,7 +885,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="panel-tab-browser"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="browser-iframe"]')).toBe(browserIframe);
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width).toBe('100%');
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width
+    ).toBe('100%');
   });
 
   test('browser maximized mode exposes workspace window tabs so terminal views remain reachable', async () => {
@@ -738,15 +902,25 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
 
-    const browserToolbar = view.container.querySelector('[data-testid="workspace-browser-toolbar"]');
+    const browserToolbar = view.container.querySelector(
+      '[data-testid="workspace-browser-toolbar"]'
+    );
     expect(browserToolbar).not.toBeNull();
     expect(browserToolbar.className).toContain('h-11');
-    expect(view.container.querySelector('[data-testid="browser-workspace-window-selector"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="browser-workspace-window-tab-1"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="browser-workspace-window-browser"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="browser-workspace-window-selector"]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="browser-workspace-window-tab-1"]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="browser-workspace-window-browser"]')
+    ).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="browser-workspace-window-add"]'));
-    expect(view.container.querySelector('[data-testid="browser-workspace-window-tab-2"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="browser-workspace-window-tab-2"]')
+    ).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="browser-workspace-window-tab-2"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
@@ -776,8 +950,18 @@ describe('TerminalWorkspacesManager right dock', () => {
         activePanelIds: { ws1: 'p1' },
         workspaceWindows: {
           ws1: [
-            { id: 'v6', name: 'V1', columns: [{ id: 'c1', panels: [{ id: 'p1' }] }], activePanelId: 'p1' },
-            { id: 'v6', name: 'V2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }], activePanelId: 'p2' },
+            {
+              id: 'v6',
+              name: 'V1',
+              columns: [{ id: 'c1', panels: [{ id: 'p1' }] }],
+              activePanelId: 'p1',
+            },
+            {
+              id: 'v6',
+              name: 'V2',
+              columns: [{ id: 'c2', panels: [{ id: 'p2' }] }],
+              activePanelId: 'p2',
+            },
           ],
         },
         activeWindowIds: { ws1: 'v6' },
@@ -841,14 +1025,22 @@ describe('TerminalWorkspacesManager right dock', () => {
     );
 
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')?.getAttribute('data-panel-size')).toBe('44');
+    expect(
+      view.container
+        .querySelector('[data-testid="workspace-right-dock-panel"]')
+        ?.getAttribute('data-panel-size')
+    ).toBe('44');
 
     await click(view.container.querySelector('[data-testid="workspace-right-dock-maximize"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="workspace-right-dock-maximize"]'));
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')?.getAttribute('data-panel-size')).toBe('44');
+    expect(
+      view.container
+        .querySelector('[data-testid="workspace-right-dock-panel"]')
+        ?.getAttribute('data-panel-size')
+    ).toBe('44');
   });
 
   test('dock drag overlay never blocks editor interactions and clears after pointer release', async () => {
@@ -863,13 +1055,17 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
-    const resizeHandle = view.container.querySelector('[data-testid="workspace-right-dock-resize-handle"]');
+    const resizeHandle = view.container.querySelector(
+      '[data-testid="workspace-right-dock-resize-handle"]'
+    );
     expect(resizeHandle).not.toBeNull();
 
     resizeHandle.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
     await flushEffects();
 
-    const overlayWhileDragging = view.container.querySelector('[data-testid="workspace-right-dock-drag-overlay"]');
+    const overlayWhileDragging = view.container.querySelector(
+      '[data-testid="workspace-right-dock-drag-overlay"]'
+    );
     expect(overlayWhileDragging).not.toBeNull();
     expect(overlayWhileDragging?.className).toContain('pointer-events-none');
 
@@ -878,7 +1074,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     });
     await flushEffects();
 
-    expect(view.container.querySelector('[data-testid="workspace-right-dock-drag-overlay"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-drag-overlay"]')
+    ).toBeNull();
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
   });
 
@@ -894,8 +1092,12 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
-    const dockPanelPlaceholder = view.container.querySelector('[data-testid="workspace-right-dock-panel"]');
-    const dockPlaceholderAnchor = view.container.querySelector('[data-testid="workspace-right-dock-placeholder"]');
+    const dockPanelPlaceholder = view.container.querySelector(
+      '[data-testid="workspace-right-dock-panel"]'
+    );
+    const dockPlaceholderAnchor = view.container.querySelector(
+      '[data-testid="workspace-right-dock-placeholder"]'
+    );
     const dockLayer = view.container.querySelector('[data-testid="workspace-right-dock-layer"]');
 
     expect(dockPanelPlaceholder).not.toBeNull();
@@ -934,19 +1136,27 @@ describe('TerminalWorkspacesManager right dock', () => {
       bottom: 0,
       left: 'auto',
       width: '44%',
-      });
+    });
   });
 
   test('resolveMeasuredRightDockBounds derives exact left and width from the real placeholder rect', () => {
     expect(
-      resolveMeasuredRightDockBounds({ left: 40, right: 1000, width: 960 }, { left: 620, right: 1000, width: 380 })
+      resolveMeasuredRightDockBounds(
+        { left: 40, right: 1000, width: 960 },
+        { left: 620, right: 1000, width: 380 }
+      )
     ).toEqual({
       left: 580,
       right: 0,
       width: 380,
     });
 
-    expect(resolveMeasuredRightDockBounds({ left: 40, right: 1000, width: 960 }, { left: 1000, right: 1000, width: 0 })).toBeNull();
+    expect(
+      resolveMeasuredRightDockBounds(
+        { left: 40, right: 1000, width: 960 },
+        { left: 1000, right: 1000, width: 0 }
+      )
+    ).toBeNull();
   });
 
   test('measured right dock bounds realign the absolute dock layer after workspace switches', async () => {
@@ -963,11 +1173,27 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     const workspaceGrid = view.container.querySelector('.flex-1.relative.min-w-0');
     const getActivePlaceholder = () =>
-      getVisibleWorkspaceShell(view.container)?.querySelector('[data-testid="workspace-right-dock-placeholder"]') || null;
+      getVisibleWorkspaceShell(view.container)?.querySelector(
+        '[data-testid="workspace-right-dock-placeholder"]'
+      ) || null;
     const dockLayer = view.container.querySelector('[data-testid="workspace-right-dock-layer"]');
 
-    workspaceGrid.getBoundingClientRect = () => ({ left: 40, right: 1000, width: 960, top: 0, bottom: 700, height: 700 });
-    getActivePlaceholder().getBoundingClientRect = () => ({ left: 620, right: 1000, width: 380, top: 0, bottom: 700, height: 700 });
+    workspaceGrid.getBoundingClientRect = () => ({
+      left: 40,
+      right: 1000,
+      width: 960,
+      top: 0,
+      bottom: 700,
+      height: 700,
+    });
+    getActivePlaceholder().getBoundingClientRect = () => ({
+      left: 620,
+      right: 1000,
+      width: 380,
+      top: 0,
+      bottom: 700,
+      height: 700,
+    });
     window.dispatchEvent(new window.Event('resize'));
     await flushEffects();
 
@@ -981,9 +1207,23 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
     await flushEffects();
 
-    workspaceGrid.getBoundingClientRect = () => ({ left: 40, right: 1000, width: 960, top: 0, bottom: 700, height: 700 });
+    workspaceGrid.getBoundingClientRect = () => ({
+      left: 40,
+      right: 1000,
+      width: 960,
+      top: 0,
+      bottom: 700,
+      height: 700,
+    });
     const latestPlaceholder = getActivePlaceholder();
-    latestPlaceholder.getBoundingClientRect = () => ({ left: 700, right: 1000, width: 300, top: 0, bottom: 700, height: 700 });
+    latestPlaceholder.getBoundingClientRect = () => ({
+      left: 700,
+      right: 1000,
+      width: 300,
+      top: 0,
+      bottom: 700,
+      height: 700,
+    });
     window.dispatchEvent(new window.Event('resize'));
     await flushEffects();
 
@@ -1005,9 +1245,9 @@ describe('TerminalWorkspacesManager right dock', () => {
     await submitForm(view.container.querySelector('[data-testid="workspace-browser-pane"] form'));
 
     expect(view.container.querySelector('[data-testid="browser-frame-warning"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="browser-open-external"]')?.getAttribute('href')).toBe(
-      'https://duckduckgo.com/?q=cocleo'
-    );
+    expect(
+      view.container.querySelector('[data-testid="browser-open-external"]')?.getAttribute('href')
+    ).toBe('https://duckduckgo.com/?q=cocleo');
   });
 
   test('browser tab defaults plain domains to https navigation', async () => {
@@ -1020,13 +1260,18 @@ describe('TerminalWorkspacesManager right dock', () => {
     );
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
-    await changeInput(view.container.querySelector('[data-testid="browser-url-input"]'), 'arxonlabs.com');
+    await changeInput(
+      view.container.querySelector('[data-testid="browser-url-input"]'),
+      'arxonlabs.com'
+    );
     await submitForm(view.container.querySelector('[data-testid="workspace-browser-pane"] form'));
 
-    expect(view.container.querySelector('[data-testid="browser-url-input"]')?.value).toBe('https://arxonlabs.com/');
-    expect(view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src')).toBe(
+    expect(view.container.querySelector('[data-testid="browser-url-input"]')?.value).toBe(
       'https://arxonlabs.com/'
     );
+    expect(
+      view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src')
+    ).toBe('https://arxonlabs.com/');
   });
 
   test('shows a visible localhost error state instead of leaving the browser blank', async () => {
@@ -1050,13 +1295,20 @@ describe('TerminalWorkspacesManager right dock', () => {
     );
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
-    await changeInput(view.container.querySelector('[data-testid="browser-url-input"]'), 'localhost:5999');
+    await changeInput(
+      view.container.querySelector('[data-testid="browser-url-input"]'),
+      'localhost:5999'
+    );
     await submitForm(view.container.querySelector('[data-testid="workspace-browser-pane"] form'));
     await flushEffects();
 
     expect(view.container.querySelector('[data-testid="browser-error-state"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="browser-error-title"]')?.textContent).toContain('localhost');
-    expect(view.container.querySelector('[data-testid="browser-error-copy"]')?.textContent).toContain('5999');
+    expect(
+      view.container.querySelector('[data-testid="browser-error-title"]')?.textContent
+    ).toContain('localhost');
+    expect(
+      view.container.querySelector('[data-testid="browser-error-copy"]')?.textContent
+    ).toContain('5999');
   });
 
   test('rendering the visible right dock does not emit React key warnings', async () => {

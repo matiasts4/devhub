@@ -217,7 +217,9 @@ export function shouldAutoReconnectTerminal(connectionState, autoFocus) {
 export function getTerminalRuntimePlatform(explicitPlatform) {
   if (explicitPlatform) return String(explicitPlatform).toLowerCase();
   if (typeof navigator !== 'undefined') {
-    return String(navigator.userAgentData?.platform || navigator.platform || 'unknown').toLowerCase();
+    return String(
+      navigator.userAgentData?.platform || navigator.platform || 'unknown'
+    ).toLowerCase();
   }
   return 'unknown';
 }
@@ -251,12 +253,12 @@ export function shouldOpenNativeVtePanel({
 } = {}) {
   return Boolean(
     isVisibleInLayout &&
-      !suspendNativeSurface &&
-      requestedRendererMode === 'vte-experimental' &&
-      tauriAvailable &&
-      getTerminalRuntimePlatform(runtimePlatform).includes('linux') &&
-      nativeVteProbe?.ready &&
-      !nativeVteOpenFailure
+    !suspendNativeSurface &&
+    requestedRendererMode === 'vte-experimental' &&
+    tauriAvailable &&
+    getTerminalRuntimePlatform(runtimePlatform).includes('linux') &&
+    nativeVteProbe?.ready &&
+    !nativeVteOpenFailure
   );
 }
 
@@ -274,15 +276,16 @@ export function resolveTerminalRuntimePhase({
 } = {}) {
   const nativeCandidate = Boolean(
     requestedRendererMode === 'vte-experimental' &&
-      tauriAvailable &&
-      getTerminalRuntimePlatform(runtimePlatform).includes('linux')
+    tauriAvailable &&
+    getTerminalRuntimePlatform(runtimePlatform).includes('linux')
   );
 
   if (!nativeCandidate) return 'xterm';
   if (!isVisibleInLayout) return nativeVteOpened ? 'native-hidden' : 'xterm';
   if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') return 'fallback-xterm';
   if (suspendNativeSurface) return nativeVteOpened ? 'native-suspended' : 'xterm';
-  if (!isActivePanel) return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';
+  if (!isActivePanel)
+    return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';
   if (nativeVteOpened) return 'native-opened';
   if (nativeVteOpenFailure) return 'fallback-xterm';
   if (nativeVteProbe?.ready) return 'native-opening';
@@ -418,6 +421,7 @@ export default function TerminalTTY({
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
   const initTimeoutRef = useRef(null);
+  const autoScrollRafRef = useRef(null);
   const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
@@ -461,6 +465,11 @@ export default function TerminalTTY({
       clearTimeout(nativeVteProbeRetryTimerRef.current);
       nativeVteProbeRetryTimerRef.current = null;
       nativeVteProbeRetryDelayRef.current = null;
+    }
+
+    if (autoScrollRafRef.current) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
     }
   }, []);
 
@@ -603,17 +612,20 @@ export default function TerminalTTY({
     };
   }, [hideNativeLease]);
 
-  const handleNativeLeaseCommandError = useCallback((error) => {
-    const reason = String(error?.message || error || '');
-    if (!reason.includes('panel-not-active')) return;
+  const handleNativeLeaseCommandError = useCallback(
+    (error) => {
+      const reason = String(error?.message || error || '');
+      if (!reason.includes('panel-not-active')) return;
 
-    nativeLeaseRef.current = false;
-    setNativeVteOpened(false);
-    setNativeVteOpenFailure(null);
-    nativeVteProbeRetryCountRef.current = 0;
-    clearNativeVteProbeRetryTimer();
-    setNativeVteRecoveryAttempt((attempt) => attempt + 1);
-  }, [clearNativeVteProbeRetryTimer]);
+      nativeLeaseRef.current = false;
+      setNativeVteOpened(false);
+      setNativeVteOpenFailure(null);
+      nativeVteProbeRetryCountRef.current = 0;
+      clearNativeVteProbeRetryTimer();
+      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
+    },
+    [clearNativeVteProbeRetryTimer]
+  );
 
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
@@ -659,18 +671,39 @@ export default function TerminalTTY({
     logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
   }, [logViewportDiagnostic]);
 
+  const scrollTerminalToBottom = useCallback(() => {
+    if (!termRef.current) return;
+
+    if (autoScrollRafRef.current) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+    }
+
+    autoScrollRafRef.current = requestAnimationFrame(() => {
+      autoScrollRafRef.current = null;
+      termRef.current?.scrollToBottom?.();
+    });
+  }, []);
+
   const sendResize = useCallback(() => {
     if (!termRef.current || !fitRef.current) return;
     fitAndResize();
+    scrollTerminalToBottom();
     clearTimers();
-    rafRef.current = requestAnimationFrame(() => fitAndResize());
-    timeoutRef.current = setTimeout(() => fitAndResize(), 120);
-  }, [fitAndResize, clearTimers]);
+    rafRef.current = requestAnimationFrame(() => {
+      fitAndResize();
+      scrollTerminalToBottom();
+    });
+    timeoutRef.current = setTimeout(() => {
+      fitAndResize();
+      scrollTerminalToBottom();
+    }, 120);
+  }, [fitAndResize, clearTimers, scrollTerminalToBottom]);
 
   const reactivateTerminalViewport = useCallback(() => {
     logViewportDiagnostic('reactivate-start');
     const repaint = () => {
       stabilizeTerminalRenderer(termRef.current);
+      scrollTerminalToBottom();
     };
 
     sendResize();
@@ -689,7 +722,7 @@ export default function TerminalTTY({
         logViewportDiagnostic('reactivate-settled');
       }, 120);
     });
-  }, [autoFocus, logViewportDiagnostic, sendResize]);
+  }, [autoFocus, logViewportDiagnostic, scrollTerminalToBottom, sendResize]);
 
   useEffect(() => {
     let cancelled = false;
@@ -761,7 +794,15 @@ export default function TerminalTTY({
     return () => {
       cancelled = true;
     };
-  }, [clearNativeVteProbeRetryTimer, closeNativeLease, id, isActivePanel, nativeVteProbeAttempt, requestedRendererMode, tauriAvailable]);
+  }, [
+    clearNativeVteProbeRetryTimer,
+    closeNativeLease,
+    id,
+    isActivePanel,
+    nativeVteProbeAttempt,
+    requestedRendererMode,
+    tauriAvailable,
+  ]);
 
   useEffect(() => {
     if (!shouldRetryNativeVteProbe) return undefined;
@@ -774,13 +815,13 @@ export default function TerminalTTY({
     let cancelled = false;
 
     if (
-        !shouldOpenNativeVtePanel({
-          isActivePanel,
-          isVisibleInLayout,
-          suspendNativeSurface,
-          nativeVteOpenFailure,
-          nativeVteProbe: nativeVteProbeResult,
-          requestedRendererMode,
+      !shouldOpenNativeVtePanel({
+        isActivePanel,
+        isVisibleInLayout,
+        suspendNativeSurface,
+        nativeVteOpenFailure,
+        nativeVteProbe: nativeVteProbeResult,
+        requestedRendererMode,
         runtimePlatform: resolvedRuntimePlatform,
         tauriAvailable,
       })
@@ -889,7 +930,9 @@ export default function TerminalTTY({
           panelId: id,
           visible: false,
           reason: suspendNativeSurface
-            ? (nativeSurfacePolicy === 'dock-side-by-side' ? 'dock-side-by-side' : 'suspended')
+            ? nativeSurfacePolicy === 'dock-side-by-side'
+              ? 'dock-side-by-side'
+              : 'suspended'
             : undefined,
         });
       } catch (error) {
@@ -898,14 +941,29 @@ export default function TerminalTTY({
     })();
 
     return undefined;
-  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, nativeSurfacePolicy, nativeVteOpened, requestedRendererMode, suspendNativeSurface]);
+  }, [
+    handleNativeLeaseCommandError,
+    id,
+    isVisibleInLayout,
+    nativeSurfacePolicy,
+    nativeVteOpened,
+    requestedRendererMode,
+    suspendNativeSurface,
+  ]);
 
   useEffect(() => {
     if (!nativeVteOpened || suspendNativeSurface || !autoFocus || !isActivePanel) return undefined;
 
     Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
     return undefined;
-  }, [autoFocus, handleNativeLeaseCommandError, id, isActivePanel, nativeVteOpened, suspendNativeSurface]);
+  }, [
+    autoFocus,
+    handleNativeLeaseCommandError,
+    id,
+    isActivePanel,
+    nativeVteOpened,
+    suspendNativeSurface,
+  ]);
 
   useEffect(() => {
     if (!nativeVteOpened || !isVisibleInLayout || suspendNativeSurface) return undefined;
@@ -913,7 +971,9 @@ export default function TerminalTTY({
     const sendNativeResize = () => {
       const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
       if (!bounds) return;
-      Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(handleNativeLeaseCommandError);
+      Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(
+        handleNativeLeaseCommandError
+      );
     };
     const clearNativeResizeSettleTimers = () => {
       nativeResizeSettleTimersRef.current.forEach((timerId) => clearTimeout(timerId));
@@ -1089,6 +1149,7 @@ export default function TerminalTTY({
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
             termRef.current?.write(event.data);
+            scrollTerminalToBottom();
           }
           return;
         }
@@ -1098,6 +1159,7 @@ export default function TerminalTTY({
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
             termRef.current?.write(payload.data);
+            scrollTerminalToBottom();
             return;
           }
 
@@ -1137,6 +1199,7 @@ export default function TerminalTTY({
         } catch {
           if (typeof event.data === 'string' && event.data.length > 0) {
             termRef.current?.write(event.data);
+            scrollTerminalToBottom();
           }
         }
       };
@@ -1165,7 +1228,7 @@ export default function TerminalTTY({
       cliLog(`CLIENT:${id}`, 'connect() catch', { error: error?.message });
       setConnectionState('error');
     }
-  }, [sendResize, cwd, initialCommand, id]);
+  }, [scrollTerminalToBottom, sendResize, cwd, initialCommand, id]);
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
@@ -1358,11 +1421,12 @@ export default function TerminalTTY({
 
     const focusTimer = setTimeout(() => {
       termRef.current?.focus?.();
+      scrollTerminalToBottom();
       reactivateTerminalViewport();
     }, 50);
 
     return () => clearTimeout(focusTimer);
-  }, [autoFocus, reactivateTerminalViewport]);
+  }, [autoFocus, reactivateTerminalViewport, scrollTerminalToBottom]);
 
   // Auto-reconnect when disconnected or error, with exponential backoff.
   // No hard attempt limit — the EBADF server fix prevents infinite hammering.
@@ -1460,7 +1524,13 @@ export default function TerminalTTY({
       return;
     }
     termRef.current?.focus?.();
-  }, [handleNativeLeaseCommandError, id, nativeVteOpened, onActivatePanel, shouldUseNativeRenderer]);
+  }, [
+    handleNativeLeaseCommandError,
+    id,
+    nativeVteOpened,
+    onActivatePanel,
+    shouldUseNativeRenderer,
+  ]);
 
   const handleCopyFromMenu = useCallback(async () => {
     if (contextMenu?.text) {
@@ -1517,7 +1587,8 @@ export default function TerminalTTY({
   }, []);
 
   const isConnected = connectionState === 'connected';
-  const showTerminalViewport = shouldShowTerminalViewport(isInitializing, initError) && !shouldUseNativeRenderer;
+  const showTerminalViewport =
+    shouldShowTerminalViewport(isInitializing, initError) && !shouldUseNativeRenderer;
   const showTerminalStatusOverlay = shouldShowTerminalStatusOverlay(
     isInitializing,
     initError,
@@ -1609,10 +1680,7 @@ export default function TerminalTTY({
                 className="absolute inset-0 z-10 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.18)] bg-[var(--surface-app)]"
                 data-testid="terminal-native-placeholder"
               >
-                <div className="flex h-full w-full items-start justify-between px-3 py-2 text-[11px] font-mono text-[var(--text-secondary)]">
-                  <span>GTK VTE · misma ventana · panel visible</span>
-                  <span>Linux/Tauri spike</span>
-                </div>
+                <div className="h-full w-full" aria-hidden="true" />
               </div>
             )}
 
@@ -1622,136 +1690,137 @@ export default function TerminalTTY({
               {...getXtermContainerAnimProps(showTerminalViewport)}
             />
           </div>
-        {/* Restored session toast */}
-        {restoredToast && (
-          <div
-            className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-md border text-xs font-mono pointer-events-none"
-            style={{
-              background: 'color-mix(in oklch, var(--accent-primary) 15%, var(--surface-elevated))',
-              borderColor: 'var(--accent-primary)',
-              color: 'var(--accent-primary)',
-            }}
-          >
-            ↺ Restored shell at {cwd}
-          </div>
-        )}
-
-        {rendererViewModel.showRecoveryBanner && (
-          <div
-            className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 rounded-md border border-amber-400/40 bg-[#1e1a12]/90 px-3 py-2 text-xs text-amber-100 backdrop-blur-sm"
-            data-testid="terminal-renderer-fallback-banner"
-          >
-            <div className="min-w-0">
-              <div className="font-semibold" data-testid="terminal-renderer-fallback-title">
-                Renderer en fallback: {rendererViewModel.requestedLabel}
-              </div>
-              <div className="truncate" data-testid="terminal-renderer-fallback-copy">
-                {rendererStatusCopy}
-              </div>
+          {/* Restored session toast */}
+          {restoredToast && (
+            <div
+              className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-md border text-xs font-mono pointer-events-none"
+              style={{
+                background:
+                  'color-mix(in oklch, var(--accent-primary) 15%, var(--surface-elevated))',
+                borderColor: 'var(--accent-primary)',
+                color: 'var(--accent-primary)',
+              }}
+            >
+              ↺ Restored shell at {cwd}
             </div>
-            <button
-              type="button"
-              onClick={() => onResetRendererToXterm?.()}
-              className="shrink-0 rounded-md border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-black/30"
-              data-testid="terminal-renderer-reset"
+          )}
+
+          {rendererViewModel.showRecoveryBanner && (
+            <div
+              className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 rounded-md border border-amber-400/40 bg-[#1e1a12]/90 px-3 py-2 text-xs text-amber-100 backdrop-blur-sm"
+              data-testid="terminal-renderer-fallback-banner"
             >
-              {getTerminalRendererRecoveryActionLabel()}
-            </button>
-          </div>
-        )}
+              <div className="min-w-0">
+                <div className="font-semibold" data-testid="terminal-renderer-fallback-title">
+                  Renderer en fallback: {rendererViewModel.requestedLabel}
+                </div>
+                <div className="truncate" data-testid="terminal-renderer-fallback-copy">
+                  {rendererStatusCopy}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onResetRendererToXterm?.()}
+                className="shrink-0 rounded-md border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-black/30"
+                data-testid="terminal-renderer-reset"
+              >
+                {getTerminalRendererRecoveryActionLabel()}
+              </button>
+            </div>
+          )}
 
-        {/* Loading overlay — only during init or connecting */}
-        {(isInitializing || connectionState === 'connecting') && (
-          <div className="absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
-            <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
-            {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
-          </div>
-        )}
+          {/* Loading overlay — only during init or connecting */}
+          {(isInitializing || connectionState === 'connecting') && (
+            <div className="absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
+              <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
+              {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
+            </div>
+          )}
 
-        {/* Error/Disconnected overlay */}
-        {showTerminalStatusOverlay && (
-          <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
-            <WifiOff className="w-8 h-8 text-red-400" />
-            <span className="text-red-400 font-semibold">
-              {initError
-                ? 'Terminal no visible todavía'
-                : connectionState === 'error'
-                  ? 'Error de conexión'
-                  : connectionState === 'terminated'
-                    ? 'Sesión finalizada'
-                    : 'Desconectado'}
-            </span>
-            <span className="text-gray-500 text-center max-w-xs">
-              {initError ||
-                (connectionState === 'error'
-                  ? 'No se pudo conectar al servidor de terminal. Verificá que el servidor esté corriendo.'
-                  : connectionState === 'terminated'
-                    ? 'La sesión terminó. Reconectá para iniciar una shell nueva sin relanzar el comando inicial.'
-                    : 'La conexión con la terminal se perdió.')}
-            </span>
+          {/* Error/Disconnected overlay */}
+          {showTerminalStatusOverlay && (
+            <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
+              <WifiOff className="w-8 h-8 text-red-400" />
+              <span className="text-red-400 font-semibold">
+                {initError
+                  ? 'Terminal no visible todavía'
+                  : connectionState === 'error'
+                    ? 'Error de conexión'
+                    : connectionState === 'terminated'
+                      ? 'Sesión finalizada'
+                      : 'Desconectado'}
+              </span>
+              <span className="text-gray-500 text-center max-w-xs">
+                {initError ||
+                  (connectionState === 'error'
+                    ? 'No se pudo conectar al servidor de terminal. Verificá que el servidor esté corriendo.'
+                    : connectionState === 'terminated'
+                      ? 'La sesión terminó. Reconectá para iniciar una shell nueva sin relanzar el comando inicial.'
+                      : 'La conexión con la terminal se perdió.')}
+              </span>
+              <button
+                onClick={reconnect}
+                className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reconectar
+              </button>
+            </div>
+          )}
+
+          {/* Copy button — top-right corner */}
+          {isConnected && showQuickCopyButton && (
             <button
-              onClick={reconnect}
-              className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reconectar
-            </button>
-          </div>
-        )}
-
-        {/* Copy button — top-right corner */}
-        {isConnected && showQuickCopyButton && (
-          <button
-            onClick={async () => {
-              if (termRef.current) {
-                try {
-                  const text = termRef.current.getSelection();
-                  if (text) {
-                    await navigator.clipboard.writeText(text);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
+              onClick={async () => {
+                if (termRef.current) {
+                  try {
+                    const text = termRef.current.getSelection();
+                    if (text) {
+                      await navigator.clipboard.writeText(text);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    }
+                  } catch {
+                    // Clipboard API may not be available
                   }
-                } catch {
-                  // Clipboard API may not be available
                 }
-              }
-            }}
-            className="absolute top-2 right-2 z-20 p-1.5 rounded-md bg-[#1e1e1e]/90 border border-white/10 hover:bg-white/10 transition-colors"
-            title="Copiar selección"
-          >
-            <Copy className={`w-3.5 h-3.5 ${copied ? 'text-[#3fb950]' : 'text-gray-400'}`} />
-          </button>
-        )}
+              }}
+              className="absolute top-2 right-2 z-20 p-1.5 rounded-md bg-[#1e1e1e]/90 border border-white/10 hover:bg-white/10 transition-colors"
+              title="Copiar selección"
+            >
+              <Copy className={`w-3.5 h-3.5 ${copied ? 'text-[#3fb950]' : 'text-gray-400'}`} />
+            </button>
+          )}
 
-        {/* Custom context menu */}
-        {contextMenu && (
-          <div
-            className="fixed z-50 min-w-[160px] rounded-lg border shadow-xl animate-in fade-in zoom-in-95 duration-100"
-            style={{
-              left: contextMenu.x,
-              top: contextMenu.y,
-              background: '#1e1e1e',
-              borderColor: '#3a3a3a',
-            }}
-          >
-            <button
-              onClick={handleCopyFromMenu}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+          {/* Custom context menu */}
+          {contextMenu && (
+            <div
+              className="fixed z-50 min-w-[160px] rounded-lg border shadow-xl animate-in fade-in zoom-in-95 duration-100"
+              style={{
+                left: contextMenu.x,
+                top: contextMenu.y,
+                background: '#1e1e1e',
+                borderColor: '#3a3a3a',
+              }}
             >
-              <Copy className="w-3.5 h-3.5 text-gray-400" />
-              Copiar selección
-              <span className="ml-auto text-[10px] text-gray-500 font-mono">Ctrl+Shift+C</span>
-            </button>
-            <div className="h-px bg-[#3a3a3a] mx-2 my-1" />
-            <button
-              onClick={() => setContextMenu(null)}
-              className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-lg"
-            >
-              Cerrar
-            </button>
-          </div>
-        )}
-      </div>
+              <button
+                onClick={handleCopyFromMenu}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+              >
+                <Copy className="w-3.5 h-3.5 text-gray-400" />
+                Copiar selección
+                <span className="ml-auto text-[10px] text-gray-500 font-mono">Ctrl+Shift+C</span>
+              </button>
+              <div className="h-px bg-[#3a3a3a] mx-2 my-1" />
+              <button
+                onClick={() => setContextMenu(null)}
+                className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+              >
+                Cerrar
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -45,4 +45,20 @@ describe('playwright.config.ts', () => {
     assert.equal(config.webServer.url, 'http://127.0.0.1:4010');
     assert.match(config.webServer.command, /next\s+dev\s+--port\s+4010/);
   });
+
+  it('scopes browser artifacts under the desktop QA bundle when QA_RUN_ID is present', () => {
+    const config = loadPlaywrightConfig({ QA_RUN_ID: 'qa-20260521-001' });
+
+    assert.equal(config.outputDir, 'test-results/desktop-qa/qa-20260521-001/browser/artifacts');
+    assert.equal(config.reporter[0][0], 'html');
+    assert.equal(
+      config.reporter[0][1].outputFolder,
+      'test-results/desktop-qa/qa-20260521-001/browser/playwright-report'
+    );
+    assert.equal(config.reporter[1][0], 'json');
+    assert.equal(
+      config.reporter[1][1].outputFile,
+      'test-results/desktop-qa/qa-20260521-001/browser/results.json'
+    );
+  });
 });

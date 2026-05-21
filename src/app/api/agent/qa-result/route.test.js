@@ -16,6 +16,8 @@ const mockGetSupervisorSnapshot = jest.fn();
 const mockGetSupervisorApprovalCheckpoint = jest.fn();
 const mockUpsertSupervisorApprovalCheckpoint = jest.fn();
 const mockUpsertSupervisorSnapshot = jest.fn();
+const mockGetLatestTaskComment = jest.fn();
+const mockValidateCheckpointHandoff = jest.fn();
 
 jest.mock('@/lib/db/localDb', () => ({
   getDb: jest.fn(() => ({
@@ -40,6 +42,19 @@ jest.mock('@/lib/db/localDb', () => ({
   getSupervisorApprovalCheckpoint: (...args) => mockGetSupervisorApprovalCheckpoint(...args),
   upsertSupervisorApprovalCheckpoint: (...args) => mockUpsertSupervisorApprovalCheckpoint(...args),
   upsertSupervisorSnapshot: (...args) => mockUpsertSupervisorSnapshot(...args),
+  getLatestTaskComment: (...args) => mockGetLatestTaskComment(...args),
+}));
+
+jest.mock('@/lib/gitCheckpointHandoff.js', () => ({
+  parseGitCheckpointComment: jest.fn((content) => ({
+    raw: content,
+    commit: 'abc1234',
+    worktree: 'clean',
+    docs: ['docs/24_Politica_Git_y_Versionado_Agentes.md'],
+    checks: ['npm test -- src/app/api/agent/qa-result/route.test.js'],
+    reason: null,
+  })),
+  validateCheckpointHandoff: (...args) => mockValidateCheckpointHandoff(...args),
 }));
 
 const { NextResponse } = require('next/server');
@@ -102,6 +117,25 @@ describe('POST /api/agent/qa-result', () => {
       created_at: '2026-05-19T01:00:00.000Z',
       ...input,
     }));
+    mockGetLatestTaskComment.mockReturnValue({
+      id: 'comment-1',
+      task_id: 'task-1',
+      content:
+        '[git:checkpoint] commit=abc1234 worktree=clean summary="qa approved" docs=[docs/24_Politica_Git_y_Versionado_Agentes.md] checks=[npm test -- src/app/api/agent/qa-result/route.test.js]',
+      created_at: '2026-05-19T01:04:00.000Z',
+    });
+    mockValidateCheckpointHandoff.mockReturnValue({
+      ok: true,
+      status: 'accepted',
+      code: 'checkpoint-accepted',
+      message: 'Checkpoint válido para qa-ready.',
+      checkpoint: {
+        commit: 'abc1234',
+        worktree: 'clean',
+        docs: ['docs/24_Politica_Git_y_Versionado_Agentes.md'],
+        checks: ['npm test -- src/app/api/agent/qa-result/route.test.js'],
+      },
+    });
   });
 
   test('records explicit approval decision before cleanup intent when supervisor outcome is request_approval', async () => {
@@ -228,6 +262,89 @@ describe('POST /api/agent/qa-result', () => {
     );
     expect(response.status).toBe(200);
     expect(response.body.message).toMatch(/approval rejected/i);
+  });
+
+  test('rejects QA approval when git checkpoint evidence is missing for the current handoff', async () => {
+    mockGetLatestTaskComment.mockReturnValue(null);
+    mockValidateCheckpointHandoff.mockReturnValue({
+      ok: false,
+      status: 'blocked',
+      code: 'missing-git-checkpoint',
+      message: 'Falta comentario [git:checkpoint] para este handoff.',
+      remediation:
+        'Agregá [git:checkpoint] con commit=<sha|none>, docs=[...], checks=[...] y worktree=<clean|dirty-excluded>.',
+    });
+    const { POST } = require('./route.js');
+
+    const response = await POST({
+      json: async () => ({
+        task_id: 'task-1',
+        result: 'approved',
+        reasons: ['Looks good'],
+        workspace_id: 'workspace-task-1-agent-1',
+        evidence_ref: 'evidence://qa-approved-1',
+      }),
+    });
+
+    expect(mockTaskUpdate).not.toHaveBeenCalled();
+    expect(mockWorkspaceUpdate).not.toHaveBeenCalled();
+    expect(mockUpsertSupervisorApprovalCheckpoint).not.toHaveBeenCalled();
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/git:checkpoint/i);
+    expect(response.body.code).toBe('missing-git-checkpoint');
+  });
+
+  test('rejects QA approval when the linked checkpoint is stale', async () => {
+    mockValidateCheckpointHandoff.mockReturnValue({
+      ok: false,
+      status: 'blocked',
+      code: 'checkpoint-stale',
+      message: 'El último [git:checkpoint] quedó viejo para el handoff qa-ready.',
+      remediation:
+        'Registrá un nuevo [git:checkpoint] ligado al intento actual antes de finalizar QA o cerrar la tarea.',
+    });
+    const { POST } = require('./route.js');
+
+    const response = await POST({
+      json: async () => ({
+        task_id: 'task-1',
+        result: 'approved',
+        reasons: ['Looks good'],
+        workspace_id: 'workspace-task-1-agent-1',
+        evidence_ref: 'evidence://qa-approved-1',
+      }),
+    });
+
+    expect(mockTaskUpdate).not.toHaveBeenCalled();
+    expect(mockWorkspaceUpdate).not.toHaveBeenCalled();
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('checkpoint-stale');
+    expect(response.body.error).toMatch(/viejo/i);
+  });
+
+  test('passes approved QA finalization only when the linked checkpoint gate accepts the handoff', async () => {
+    const { POST } = require('./route.js');
+
+    const response = await POST({
+      json: async () => ({
+        task_id: 'task-1',
+        result: 'approved',
+        reasons: ['Looks good'],
+        workspace_id: 'workspace-task-1-agent-1',
+        evidence_ref: 'evidence://qa-approved-1',
+      }),
+    });
+
+    expect(mockValidateCheckpointHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: expect.objectContaining({ id: 'task-1' }),
+        handoffKind: 'qa-ready',
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(response.body.checkpoint_gate).toEqual(
+      expect.objectContaining({ code: 'checkpoint-accepted', status: 'accepted' })
+    );
   });
 
   test('rejects QA approval when supervisor is not awaiting human approval', async () => {

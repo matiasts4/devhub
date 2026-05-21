@@ -2,11 +2,17 @@ import { NextResponse } from 'next/server';
 import processManager from '@/lib/swarm/processManager';
 import swarmQueue from '@/lib/swarm/queue';
 import {
+  AGENT_WORKSPACE_BASE_COMMIT,
   createMissionMessage,
+  createAgentRun,
+  createSwarmMission,
   getActiveAgentCount as getDbActiveAgentCount,
   getDb,
   getSwarmMissionDirectorSnapshot,
   listMissionParticipants,
+  prepareAgentWorkspaceLease,
+  registerMissionParticipant,
+  upsertAgentPresence,
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
 import {
@@ -17,12 +23,19 @@ import {
   buildSessionStreamHealthSource,
   buildTelegramHealthSource,
 } from '@/lib/operations/health';
-import { buildControlRoomSnapshotInputFromHealth } from '@/lib/operations/swarmControl';
+import {
+  buildControlRoomSnapshotInputFromHealth,
+  createSwarmLaunchDraft,
+  deriveSwarmLaunchPreview,
+  selectSwarmLaunchCatalog,
+} from '@/lib/operations/swarmControl';
+import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
 
 export const runtime = 'nodejs';
 
 const LOCAL_MISSION_DELIVERY_CHANNEL = 'local_snapshot';
 const LOCAL_MISSION_MESSAGE_KIND = 'directive';
+const LOCAL_SWARM_RUNTIME_SURFACE = 'swarm-control-launch';
 const EMPTY_DIRECTOR_QUEUE_HANDOFF = Object.freeze({
   status: 'idle',
   recipient_agent_id: null,
@@ -39,6 +52,501 @@ const DIRECTOR_HANDOFF_DISABLED_MESSAGES = Object.freeze({
   multiple: 'Hay más de un executor activo; el handoff seguro sigue deshabilitado.',
 });
 
+function mapLaunchRoleToParticipantRole(roleKey = '') {
+  if (roleKey === 'director') return 'director';
+  if (roleKey === 'qa' || roleKey === 'reviewer' || roleKey === 'evidence') return 'reviewer';
+  return 'executor';
+}
+
+function describeLaunchRole(roleKey = '') {
+  const descriptions = {
+    director:
+      'Coordina la misión, asigna foco a cada agente, verifica evidencia y decide cuándo cerrar/hacer handoff.',
+    coder:
+      'Implementa cambios de código pequeños y verificables siguiendo el foco que entregue el Director.',
+    auditor:
+      'Revisa riesgos, regresiones, errores visibles y criterios de aceptación antes del handoff.',
+    devops:
+      'Valida entorno, comandos, procesos, consumo de recursos y estado operativo de la ejecución.',
+    architect:
+      'Cuida estructura, límites técnicos, coherencia del diseño y próximos pasos durables.',
+  };
+
+  return (
+    descriptions[roleKey] || 'Ejecuta tu parte de la misión y reporta estado/evidencia al Director.'
+  );
+}
+
+function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = [] }) {
+  const normalizedRoleKey = String(roleKey || '')
+    .trim()
+    .toLowerCase();
+  const isDirector = normalizedRoleKey === 'director';
+  const workerRoles = hierarchy.filter((entry) => entry && entry.toLowerCase() !== 'director');
+
+  return [
+    `Rol: ${role}`,
+    `Workspace: ${workspacePath}`,
+    `Misión: ${mission}`,
+    '',
+    'Jerarquía operativa:',
+    `- Director: autoridad de coordinación y handoff final.`,
+    workerRoles.length
+      ? `- Agentes trabajadores: ${workerRoles.join(', ')} reportan avances, bloqueos y evidencia al Director.`
+      : '- Agentes trabajadores: reportan avances, bloqueos y evidencia al Director.',
+    '',
+    'Tu responsabilidad:',
+    `- ${describeLaunchRole(normalizedRoleKey)}`,
+    '',
+    'Reglas de ejecución:',
+    '- No asumas que otro agente completó tu parte: deja evidencia concreta.',
+    '- Mantén cambios acotados y evita pisar trabajo de otros roles.',
+    isDirector
+      ? '- Como Director, primero confirma roster, reparte foco y pide reportes; no ejecutes como worker salvo desbloqueo puntual.'
+      : '- Como worker, no cierres la misión: entrega resultado, pruebas/observaciones y próximos pasos al Director.',
+  ].join('\n');
+}
+
+function buildLaunchCommand(programId, prompt) {
+  return buildAgentLaunchCommand(programId, prompt, { opencodeAgent: 'sdd-orchestrator' });
+}
+
+function uniqueBy(items = [], getKey) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = getKey(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildInClause(values = []) {
+  return values.map(() => '?').join(', ');
+}
+
+function listMissionWorkspaces(db, missionControl = {}) {
+  const participantAgentIds = uniqueBy(
+    missionControl.participants || [],
+    (participant) => participant?.agent_id
+  )
+    .map((participant) => participant.agent_id)
+    .filter(Boolean);
+
+  if (participantAgentIds.length === 0) {
+    return Array.isArray(missionControl.workspaces) ? missionControl.workspaces : [];
+  }
+
+  return db
+    .prepare(
+      `SELECT *
+       FROM agent_workspaces
+       WHERE agent_id IN (${buildInClause(participantAgentIds)})
+       ORDER BY updated_at DESC, rowid DESC`
+    )
+    .all(...participantAgentIds);
+}
+
+function listMissionRuns(db, missionControl = {}, workspaces = []) {
+  const workspaceIds = uniqueBy(workspaces, (workspace) => workspace?.id)
+    .map((workspace) => workspace.id)
+    .filter(Boolean);
+
+  if (workspaceIds.length === 0) {
+    return Array.isArray(missionControl.runs) ? missionControl.runs : [];
+  }
+
+  return db
+    .prepare(
+      `SELECT *
+       FROM agent_runs
+       WHERE workspace_id IN (${buildInClause(workspaceIds)})
+       ORDER BY created_at DESC, rowid DESC`
+    )
+    .all(...workspaceIds);
+}
+
+function listMissionArtifacts(db, missionControl = {}, runs = []) {
+  const runIds = uniqueBy(runs, (run) => run?.run_id)
+    .map((run) => run.run_id)
+    .filter(Boolean);
+
+  if (runIds.length === 0) {
+    return Array.isArray(missionControl.artifacts) ? missionControl.artifacts : [];
+  }
+
+  return db
+    .prepare(
+      `SELECT *
+       FROM agent_artifacts
+       WHERE run_id IN (${buildInClause(runIds)})
+       ORDER BY seq DESC, created_at DESC, rowid DESC`
+    )
+    .all(...runIds);
+}
+
+function deriveMissionAgentSupervisorState({
+  participant,
+  workspace,
+  run,
+  presence,
+  latestSupervisorSnapshot,
+}) {
+  if (latestSupervisorSnapshot?.supervisor_state) return latestSupervisorSnapshot.supervisor_state;
+  if (run?.status === 'running') return 'lease_active';
+  if (workspace?.status === 'active' || workspace?.status === 'ready') return 'lease_active';
+  if (presence?.effective_state === 'stale') return 'stale';
+  if (presence?.effective_state === 'offline') return 'offline';
+  if (participant?.status === 'active') return 'lease_active';
+  return 'idle';
+}
+
+function buildMissionSupervisorSlice({
+  missionControl = {},
+  workspaces = [],
+  runs = [],
+  directorQueue = null,
+}) {
+  const latestSupervisorSnapshot = Array.isArray(missionControl.supervisor_snapshots)
+    ? missionControl.supervisor_snapshots[0] || null
+    : null;
+  const approvals = buildSupervisorApprovalProjection(missionControl)?.approvals || [];
+  const presenceRows = [
+    ...(Array.isArray(missionControl.presence?.active) ? missionControl.presence.active : []),
+    ...(Array.isArray(missionControl.presence?.stale) ? missionControl.presence.stale : []),
+    ...(Array.isArray(missionControl.presence?.offline) ? missionControl.presence.offline : []),
+  ];
+  const presenceByAgentId = new Map(
+    presenceRows.filter((row) => row?.agent_id).map((row) => [row.agent_id, row])
+  );
+  const workspacesByAgentId = new Map(
+    uniqueBy(workspaces, (workspace) => workspace?.agent_id)
+      .filter((workspace) => workspace?.agent_id)
+      .map((workspace) => [workspace.agent_id, workspace])
+  );
+  const runsByWorkspaceId = new Map(
+    uniqueBy(runs, (run) => run?.workspace_id)
+      .filter((run) => run?.workspace_id)
+      .map((run) => [run.workspace_id, run])
+  );
+  const agentRows = (missionControl.participants || []).map((participant) => {
+    const workspace = workspacesByAgentId.get(participant.agent_id) || null;
+    const run = workspace ? runsByWorkspaceId.get(workspace.id) || null : null;
+    const presence = presenceByAgentId.get(participant.agent_id) || null;
+    const evidenceRef =
+      presence?.evidence_ref || run?.evidence_ref || workspace?.evidence_ref || null;
+
+    return {
+      agent_id: participant.agent_id || null,
+      task_id: workspace?.current_task_id || run?.task_id || null,
+      lease_expires_at: presence?.expires_at || null,
+      workspace_id: workspace?.id || null,
+      run_id: run?.run_id || null,
+      supervisor_state: deriveMissionAgentSupervisorState({
+        participant,
+        workspace,
+        run,
+        presence,
+        latestSupervisorSnapshot,
+      }),
+      authority: 'authoritative',
+      freshness: 'current',
+      evidence_ref: evidenceRef,
+    };
+  });
+  const activeAgents = agentRows.filter((agent) => agent.supervisor_state !== 'offline').length;
+  const supervisorEvidenceRef =
+    latestSupervisorSnapshot?.evidence_ref ||
+    agentRows.find((agent) => agent.evidence_ref)?.evidence_ref ||
+    workspaces.find((workspace) => workspace?.evidence_ref)?.evidence_ref ||
+    runs.find((run) => run?.evidence_ref)?.evidence_ref ||
+    null;
+
+  return {
+    supervisor_state:
+      latestSupervisorSnapshot?.supervisor_state ||
+      (missionControl.mission?.status === 'active' ? 'lease_active' : 'idle'),
+    active_agents: activeAgents,
+    max_agents: Math.max(activeAgents, agentRows.length),
+    queue_depth: Array.isArray(directorQueue?.items) ? directorQueue.items.length : 0,
+    authority: 'authoritative',
+    freshness: 'current',
+    evidence_ref: supervisorEvidenceRef,
+    agents: agentRows,
+    approvals,
+  };
+}
+
+function buildMissionControlRoomSnapshotInput({
+  db = null,
+  missionControl = null,
+  directorQueue = null,
+}) {
+  if (!missionControl) return {};
+
+  const workspaces = db
+    ? listMissionWorkspaces(db, missionControl)
+    : missionControl.workspaces || [];
+  const runs = db ? listMissionRuns(db, missionControl, workspaces) : missionControl.runs || [];
+  const artifacts = db
+    ? listMissionArtifacts(db, missionControl, runs)
+    : missionControl.artifacts || [];
+
+  return {
+    mission_control: missionControl,
+    supervisor: buildMissionSupervisorSlice({ missionControl, workspaces, runs, directorQueue }),
+    workspaces,
+    runs,
+    artifacts,
+    evidence_timeline: buildMissionEvidenceTimeline(missionControl),
+  };
+}
+
+function insertAgentHubSession(
+  db,
+  {
+    id,
+    project_id,
+    title,
+    agent_model,
+    parent_id = null,
+    directory = null,
+    status = 'active',
+    opencode_session_id = null,
+    now,
+  }
+) {
+  db.prepare(
+    `INSERT INTO agent_hub_sessions (
+      id, project_id, title, agent_model, parent_id, created_at, updated_at, directory, status, opencode_session_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    project_id,
+    title,
+    agent_model,
+    parent_id,
+    now,
+    now,
+    directory,
+    status,
+    opencode_session_id
+  );
+
+  return db.prepare('SELECT * FROM agent_hub_sessions WHERE id = ? LIMIT 1').get(id);
+}
+
+function activatePreparedWorkspace(
+  db,
+  { workspaceId, sessionId, branchName, workspacePath, observedHead, now }
+) {
+  db.prepare(
+    `UPDATE agent_workspaces
+     SET run_id_or_session_id = ?,
+         status = 'ready',
+         branch_name = ?,
+         worktree_path = ?,
+         observed_branch = ?,
+         observed_head = ?,
+         observed_dirty = 'clean',
+         claimed_at = ?,
+         started_at = ?,
+         updated_at = ?
+     WHERE id = ?`
+  ).run(
+    sessionId,
+    branchName,
+    `${workspacePath}/.worktrees/${branchName}`,
+    branchName,
+    observedHead,
+    now,
+    now,
+    now,
+    workspaceId
+  );
+
+  return db.prepare('SELECT * FROM agent_workspaces WHERE id = ? LIMIT 1').get(workspaceId);
+}
+
+function launchSwarmLocal({ projectId, draft, now = new Date().toISOString() } = {}) {
+  const db = getDb();
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? LIMIT 1').get(projectId);
+
+  if (!project) {
+    throw new Error('project_id inválido para launch local.');
+  }
+
+  const catalog = selectSwarmLaunchCatalog();
+  const resolvedDraft = createSwarmLaunchDraft({ catalog, project, draft });
+  const preview = deriveSwarmLaunchPreview({ catalog, draft: resolvedDraft });
+
+  if (!preview.isReady) {
+    throw new Error('Launch incompleto: faltan defaults obligatorios.');
+  }
+
+  const launchId = `launch-${crypto.randomUUID().slice(0, 8)}`;
+  const missionTitle = preview.launchLabel;
+  const directorAgentId = `${launchId}-director`;
+  const mission = createSwarmMission(db, {
+    mission_id: launchId,
+    project_id: projectId,
+    owner_agent_id: directorAgentId,
+    kind: 'coordination',
+    status: 'active',
+    title: missionTitle,
+    summary: resolvedDraft.mission,
+    started_at: now,
+    updated_at: now,
+  });
+
+  let parentSessionId = null;
+  const runtimeRequests = [];
+
+  for (const roleEntry of preview.rolePrograms || []) {
+    const roleKey = roleEntry.role_key;
+    const agentId = `${launchId}-${roleKey}`;
+    const taskId = `${launchId}:${roleKey}`;
+    const sessionId = `${launchId}-${roleKey}-session`;
+    const branchName = `swarm/${launchId}/${roleKey}`;
+    const observedHead = `${launchId}-${roleKey}-head`;
+    const prompt = buildLaunchPrompt({
+      role: roleEntry.role,
+      roleKey,
+      mission: resolvedDraft.mission,
+      workspacePath: resolvedDraft.workspacePath,
+      hierarchy: preview.topology?.roles || [],
+    });
+    const workspaceLease = prepareAgentWorkspaceLease(
+      db,
+      {
+        task_id: taskId,
+        agent_id: agentId,
+        correlation_id: `${launchId}:${roleKey}`,
+        requested_base_ref: AGENT_WORKSPACE_BASE_COMMIT,
+        workspace_path: resolvedDraft.workspacePath,
+      },
+      {
+        repoRoot: resolvedDraft.workspacePath,
+        baseBranch: 'main',
+        acceptedAt: now,
+      }
+    );
+
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: agentId,
+      role_in_mission: mapLaunchRoleToParticipantRole(roleKey),
+      status: 'active',
+      joined_at: now,
+      updated_at: now,
+    });
+
+    const session = insertAgentHubSession(db, {
+      id: sessionId,
+      project_id: projectId,
+      title: `${missionTitle} · ${roleEntry.role}`,
+      agent_model: roleEntry.program_id,
+      parent_id: parentSessionId,
+      directory: resolvedDraft.workspacePath,
+      status: 'active',
+      opencode_session_id: roleEntry.program_id === 'opencode' ? sessionId : null,
+      now,
+    });
+
+    if (roleKey === 'director') {
+      parentSessionId = session.id;
+    }
+
+    const workspace = activatePreparedWorkspace(db, {
+      workspaceId: workspaceLease.workspace.id,
+      sessionId: session.id,
+      branchName,
+      workspacePath: resolvedDraft.workspacePath,
+      observedHead,
+      now,
+    });
+
+    const run = createAgentRun(db, {
+      workspace_id: workspace.id,
+      task_id: taskId,
+      agent_id: agentId,
+      requested_base_ref: workspace.base_commit,
+      baseline_commit: workspace.base_commit,
+      status: 'running',
+      observed_start: {
+        branch: branchName,
+        head: observedHead,
+        dirty: 'clean',
+        path: resolvedDraft.workspacePath,
+      },
+      started_at: now,
+    });
+
+    upsertAgentPresence(db, {
+      mission_id: mission.mission_id,
+      agent_id: agentId,
+      workspace_id: workspace.id,
+      run_id: run.run_id,
+      runtime_surface: LOCAL_SWARM_RUNTIME_SURFACE,
+      presence_state: 'busy',
+      status_summary: `${roleEntry.role} listo para launch`,
+      evidence_ref: `evidence://launch/${launchId}/${roleKey}`,
+      last_seen_at: now,
+      updated_at: now,
+    });
+
+    runtimeRequests.push({
+      taskId,
+      selectedAgent: roleEntry.program_id,
+      command: buildLaunchCommand(roleEntry.program_id, prompt),
+      launchOrigin: 'swarm-control-launch',
+      roleKey,
+      roleLabel: roleEntry.role,
+      roleAbbrev: roleEntry.role_abbrev || null,
+      promptSummary: `${roleEntry.role} · ${preview.template?.label || missionTitle}`,
+      taskTitle: `${missionTitle} · ${roleEntry.role}`,
+    });
+  }
+
+  const kickoffMessage = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: directorAgentId,
+    message_kind: LOCAL_MISSION_MESSAGE_KIND,
+    body_summary: resolvedDraft.mission,
+    created_at: now,
+    updated_at: now,
+  });
+
+  for (const roleEntry of preview.rolePrograms || []) {
+    if (roleEntry.role_key === 'director') continue;
+
+    upsertMessageDelivery(db, {
+      message_id: kickoffMessage.message_id,
+      recipient_agent_id: `${launchId}-${roleEntry.role_key}`,
+      channel: LOCAL_MISSION_DELIVERY_CHANNEL,
+      status: 'pending',
+      last_attempt_at: now,
+      updated_at: now,
+    });
+  }
+
+  const missionSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, { now });
+
+  return {
+    control_room_snapshot_input: buildMissionControlRoomSnapshotInput({
+      db,
+      missionControl: missionSnapshot,
+    }),
+    launch_result: {
+      launchId,
+      mission_id: mission.mission_id,
+      launchLabel: missionTitle,
+      summaryLines: preview.summaryLines,
+      runtime_requests: runtimeRequests,
+    },
+  };
+}
+
 const EVIDENCE_TIMELINE_KIND_RANK = Object.freeze({
   approval_checkpoint: 0,
   supervisor_snapshot: 1,
@@ -53,6 +561,54 @@ export function buildMissionControlSnapshotInput(missionControl) {
   if (!missionControl) return {};
   return {
     mission_control: missionControl,
+  };
+}
+
+function buildSupervisorApprovalProjection(missionControl = {}) {
+  const snapshots = Array.isArray(missionControl.supervisor_snapshots)
+    ? missionControl.supervisor_snapshots
+    : [];
+  const approvals = Array.isArray(missionControl.approval_checkpoints)
+    ? missionControl.approval_checkpoints
+    : [];
+  const latestSnapshot = snapshots[0] || null;
+  const pendingApprovals = approvals
+    .filter((checkpoint) => checkpoint?.status === 'pending')
+    .filter((checkpoint) => {
+      if (!latestSnapshot) return true;
+      return (
+        latestSnapshot.supervisor_state === 'awaiting_approval' &&
+        latestSnapshot.approval_checkpoint_key === checkpoint.checkpoint_key
+      );
+    })
+    .map((checkpoint) => ({
+      checkpoint_key: checkpoint.checkpoint_key || null,
+      task_id: checkpoint.task_id || null,
+      workspace_id: checkpoint.workspace_id || null,
+      run_id: checkpoint.run_id || null,
+      status: checkpoint.status || 'pending',
+      reason_class: checkpoint.reason_class || null,
+      decision_note: checkpoint.decision_note || null,
+      decided_at: checkpoint.decided_at || null,
+      authority: checkpoint.authority || 'authoritative',
+      freshness: checkpoint.freshness || 'current',
+      evidence_ref: checkpoint.evidence_ref || null,
+      linked_supervisor_state: latestSnapshot?.supervisor_state || null,
+      linked_supervisor_outcome: latestSnapshot?.outcome || null,
+    }));
+
+  if (!latestSnapshot && pendingApprovals.length === 0) return null;
+
+  return {
+    supervisor_state: latestSnapshot?.supervisor_state || 'unavailable',
+    outcome: latestSnapshot?.outcome || null,
+    reason_class: latestSnapshot?.reason_class || null,
+    task_id: latestSnapshot?.task_id || missionControl?.mission?.task_id || null,
+    workspace_id: latestSnapshot?.workspace_id || missionControl?.mission?.workspace_id || null,
+    run_id: latestSnapshot?.run_id || missionControl?.mission?.run_id || null,
+    approval_checkpoint_key: latestSnapshot?.approval_checkpoint_key || null,
+    evidence_ref: latestSnapshot?.evidence_ref || null,
+    approvals: pendingApprovals,
   };
 }
 
@@ -271,6 +827,7 @@ function createDirectorQueueItem(entry = {}, index = 0) {
     priority: entry.priority || null,
     blocked_reason: entry.blocked_reason || blockingDependencies[0] || null,
     supervisor: entry.supervisor || null,
+    ...(entry.checkpoint_gate ? { checkpoint_gate: entry.checkpoint_gate } : {}),
   };
 }
 
@@ -288,6 +845,18 @@ function createDirectorQueueSnapshot(queue = [], handoff = EMPTY_DIRECTOR_QUEUE_
     items: Array.isArray(queue) ? queue.map(createDirectorQueueItem) : [],
     handoff: createDirectorQueueHandoff(handoff),
   };
+}
+
+function buildCheckpointGateErrors(queue = []) {
+  return (Array.isArray(queue) ? queue : [])
+    .map((entry) => entry?.checkpoint_gate)
+    .filter((gate) => gate && gate.status === 'blocked')
+    .map((gate) => ({
+      code: gate.code || 'checkpoint-gate-blocked',
+      message: gate.message || 'Checkpoint gate blocked the handoff.',
+      source: 'checkpoint_gate',
+      remediation: gate.remediation || null,
+    }));
 }
 
 async function callDevhubTool(toolName, args, { request, fetchImpl = fetch } = {}) {
@@ -316,11 +885,11 @@ async function callDevhubTool(toolName, args, { request, fetchImpl = fetch } = {
   return JSON.parse(textContent);
 }
 
-function getRouteMissionSnapshot(now, getMissionSnapshot) {
+function getRouteMissionSnapshot(now, getMissionSnapshot, projectId = null) {
   if (getMissionSnapshot) return getMissionSnapshot();
 
   const db = getDb();
-  const missionId = getActiveMissionId(db);
+  const missionId = getActiveMissionId(db, projectId);
   return missionId ? getSwarmMissionDirectorSnapshot(db, missionId, { now }) : null;
 }
 
@@ -335,6 +904,7 @@ async function readDirectorQueueEntries({ projectId, request, getExecutionQueue,
         { request, fetchImpl }
       );
 
+  if (Array.isArray(queuePayload)) return queuePayload;
   return queuePayload?.queue || [];
 }
 
@@ -421,12 +991,18 @@ function buildDirectorHandoffFromClaim({
   });
 }
 
-function getActiveMissionId(db) {
-  const mission = db
-    .prepare(
-      "SELECT mission_id FROM swarm_missions WHERE status = 'active' ORDER BY updated_at DESC, rowid DESC LIMIT 1"
-    )
-    .get();
+function getActiveMissionId(db, projectId = null) {
+  const mission = projectId
+    ? db
+        .prepare(
+          "SELECT mission_id FROM swarm_missions WHERE status = 'active' AND project_id = ? ORDER BY updated_at DESC, rowid DESC LIMIT 1"
+        )
+        .get(projectId)
+    : db
+        .prepare(
+          "SELECT mission_id FROM swarm_missions WHERE status = 'active' ORDER BY updated_at DESC, rowid DESC LIMIT 1"
+        )
+        .get();
 
   return mission?.mission_id || null;
 }
@@ -544,7 +1120,7 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
       getTelegramStatus(),
     ]);
   const [missionSnapshot, directorQueue] = await Promise.all([
-    getRouteMissionSnapshot(now, getMissionSnapshot),
+    getRouteMissionSnapshot(now, getMissionSnapshot, projectId),
     getDirectorQueueSnapshot({
       projectId,
       request,
@@ -569,11 +1145,27 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
 
   const controlRoomSnapshotInput = {
     ...(buildControlRoomSnapshotInputFromHealth(snapshot) || {}),
-    ...buildMissionControlSnapshotInput(missionSnapshot),
+    ...((!getMissionSnapshot || dependencies.enrichMissionSnapshot === true) && missionSnapshot
+      ? buildMissionControlRoomSnapshotInput({
+          db: getDb(),
+          missionControl: missionSnapshot,
+          directorQueue,
+        })
+      : buildMissionControlSnapshotInput(missionSnapshot)),
+    ...(() => {
+      const supervisorProjection = missionSnapshot
+        ? buildSupervisorApprovalProjection(missionSnapshot)
+        : null;
+      return supervisorProjection ? { supervisor: supervisorProjection } : {};
+    })(),
     ...(missionSnapshot
       ? { evidence_timeline: buildMissionEvidenceTimeline(missionSnapshot) }
       : {}),
     ...(directorQueue ? { director_queue: directorQueue } : {}),
+    ...(() => {
+      const checkpointErrors = buildCheckpointGateErrors(directorQueue?.items || []);
+      return checkpointErrors.length > 0 ? { errors: checkpointErrors } : {};
+    })(),
   };
 
   return {
@@ -612,7 +1204,7 @@ export async function POST(request, _context, dependencies = {}) {
         return NextResponse.json({ error: 'project_id es requerido.' }, { status: 400 });
       }
 
-      const missionSnapshot = await getRouteMissionSnapshot(now, getMissionSnapshot);
+      const missionSnapshot = await getRouteMissionSnapshot(now, getMissionSnapshot, projectId);
       const eligibleExecutors = getEligibleMissionExecutors(missionSnapshot);
 
       if (eligibleExecutors.length !== 1) {
@@ -673,6 +1265,19 @@ export async function POST(request, _context, dependencies = {}) {
           ),
         },
       });
+    }
+
+    if (payload?.action === 'launch_swarm_local') {
+      if (!payload?.project_id) {
+        return NextResponse.json({ error: 'project_id es requerido.' }, { status: 400 });
+      }
+
+      const launchPayload = launchSwarmLocal({
+        projectId: payload.project_id,
+        draft: payload.draft || {},
+      });
+
+      return NextResponse.json(launchPayload);
     }
 
     if (payload?.action !== 'create_local_mission_message') {

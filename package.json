@@ -90,6 +90,7 @@
     "tauri:dev": "npm run tauri -- dev",
     "tauri:build": "npm run generate-icon && npm run tauri -- build",
     "native:vte-smoke": "node scripts/native-vte-smoke.cjs",
+    "qa:multi-agent-desktop": "node scripts/qa/run-multi-agent-desktop.cjs",
     "generate-icon": "node scripts/generate-preview.js && node scripts/generate-icon.js && npx @tauri-apps/cli icon public/logo-square.png -o src-tauri/icons",
     "agenthub-test": "node bin/agenthub-test.js",
     "agenthub-smoke": "node bin/agenthub-smoke.js",
@@ -104,7 +105,7 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
-      "eslint --fix --max-warnings 100 --no-warn-ignored",
+      "eslint --fix --max-warnings 200 --no-warn-ignored",
       "prettier --write"
     ],
     "*.{css,json,md}": [

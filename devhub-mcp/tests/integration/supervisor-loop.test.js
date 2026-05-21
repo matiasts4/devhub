@@ -621,6 +621,192 @@ describe('Supervisor loop integration', () => {
     expect(queue.queue[0].supervisor_snapshot).toEqual(queue.queue[0].supervisor);
   });
 
+  it('prefers the latest orphaned workspace over a stale healthy snapshot linkage', async () => {
+    const projectId = await createProject(harness, 'Supervisor Latest Orphan Workspace Project');
+    const task = await createTask(harness, projectId, 'Latest orphan workspace wins');
+    const healthyWorkspaceId = uniqueId('ws-healthy-old');
+    const orphanedWorkspaceId = uniqueId('ws-orphaned-new');
+    const healthyRunId = uniqueId('run-healthy-old');
+    const healthyAgentId = 'agent-latest-workspace-healthy';
+    const orphanedAgentId = 'agent-latest-workspace-orphaned';
+
+    await createReadyWorkspace(harness, {
+      projectId,
+      taskId: task.id,
+      agentId: healthyAgentId,
+      workspaceId: healthyWorkspaceId,
+    });
+    await harness.callTool('create_agent_run', {
+      run_id: healthyRunId,
+      workspace_id: healthyWorkspaceId,
+      task_id: task.id,
+      agent_id: healthyAgentId,
+      requested_base_ref: BASE_REF,
+      baseline_commit: BASE_REF,
+      status: 'running',
+    });
+
+    const db = openDb(harness);
+    db.prepare(
+      `INSERT INTO supervisor_snapshots (
+        task_id,
+        supervisor_state,
+        outcome,
+        reason_class,
+        task_retry_count,
+        attempt_count,
+        unchanged_failure_count,
+        approval_request_count,
+        orphan_recovery_count,
+        workspace_id,
+        run_id,
+        evidence_ref,
+        approval_checkpoint_key,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      task.id,
+      'dispatch_pending',
+      'dispatch',
+      null,
+      0,
+      0,
+      0,
+      0,
+      0,
+      healthyWorkspaceId,
+      healthyRunId,
+      'evidence://supervisor/healthy-old',
+      null,
+      '2026-05-19T09:00:00.000Z',
+      '2026-05-19T09:00:00.000Z'
+    );
+    db.close();
+
+    await harness.callTool('create_agent_workspace', {
+      workspace_id: orphanedWorkspaceId,
+      project_id: projectId,
+      agent_id: orphanedAgentId,
+      current_task_id: task.id,
+      run_id_or_session_id: uniqueId('session-orphaned-new'),
+      repo_root: '/repo/devhub',
+      workspace_path: `workspace://devhub/${orphanedWorkspaceId}`,
+      base_branch: 'main',
+      status: 'orphaned',
+      recovery_reason: 'executor_missing',
+      evidence_ref: 'evidence://workspace/orphaned-new',
+    });
+
+    const queue = await harness.callTool('get_execution_queue', {
+      project_id: projectId,
+      limit: 10,
+    });
+
+    expect(queue.queue[0].supervisor).toEqual(
+      expect.objectContaining({
+        supervisor_state: 'recovering_orphan',
+        outcome: 'recover_orphan',
+        reason_class: 'orphaned_workspace',
+        workspace_id: orphanedWorkspaceId,
+        evidence_ref: 'evidence://workspace/orphaned-new',
+      })
+    );
+  });
+
+  it('clears stale orphan recovery after the latest healthy workspace and run relink the task', async () => {
+    const projectId = await createProject(harness, 'Supervisor Healthy Relink Project');
+    const task = await createTask(harness, projectId, 'Healthy relink clears orphan state');
+    const orphanedWorkspaceId = uniqueId('ws-orphaned-old');
+    const healthyWorkspaceId = uniqueId('ws-healthy-new');
+    const healthyRunId = uniqueId('run-healthy-new');
+    const orphanedAgentId = 'agent-healthy-relink-orphaned';
+    const healthyAgentId = 'agent-healthy-relink-healthy';
+
+    await harness.callTool('create_agent_workspace', {
+      workspace_id: orphanedWorkspaceId,
+      project_id: projectId,
+      agent_id: orphanedAgentId,
+      current_task_id: task.id,
+      run_id_or_session_id: uniqueId('session-orphaned-old'),
+      repo_root: '/repo/devhub',
+      workspace_path: `workspace://devhub/${orphanedWorkspaceId}`,
+      base_branch: 'main',
+      status: 'orphaned',
+      recovery_reason: 'executor_missing',
+      evidence_ref: 'evidence://workspace/orphaned-old',
+    });
+
+    const db = openDb(harness);
+    db.prepare(
+      `INSERT INTO supervisor_snapshots (
+        task_id,
+        supervisor_state,
+        outcome,
+        reason_class,
+        task_retry_count,
+        attempt_count,
+        unchanged_failure_count,
+        approval_request_count,
+        orphan_recovery_count,
+        workspace_id,
+        run_id,
+        evidence_ref,
+        approval_checkpoint_key,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      task.id,
+      'recovering_orphan',
+      'recover_orphan',
+      'orphaned_workspace',
+      0,
+      0,
+      0,
+      0,
+      1,
+      orphanedWorkspaceId,
+      null,
+      'evidence://workspace/orphaned-old',
+      null,
+      '2026-05-19T09:00:00.000Z',
+      '2026-05-19T09:00:00.000Z'
+    );
+    db.close();
+
+    await createReadyWorkspace(harness, {
+      projectId,
+      taskId: task.id,
+      agentId: healthyAgentId,
+      workspaceId: healthyWorkspaceId,
+    });
+    await harness.callTool('create_agent_run', {
+      run_id: healthyRunId,
+      workspace_id: healthyWorkspaceId,
+      task_id: task.id,
+      agent_id: healthyAgentId,
+      requested_base_ref: BASE_REF,
+      baseline_commit: BASE_REF,
+      status: 'running',
+    });
+
+    const queue = await harness.callTool('get_execution_queue', {
+      project_id: projectId,
+      limit: 10,
+    });
+
+    expect(queue.queue[0].supervisor).toEqual(
+      expect.objectContaining({
+        supervisor_state: 'dispatch_pending',
+        outcome: 'dispatch',
+        reason_class: null,
+        workspace_id: healthyWorkspaceId,
+        run_id: healthyRunId,
+      })
+    );
+  });
+
   it('emits recover_orphan for missing durable run while workspace points to a run/session', async () => {
     const projectId = await createProject(harness, 'Supervisor Orphaned Run Project');
     const task = await createTask(harness, projectId, 'Recover orphan run');

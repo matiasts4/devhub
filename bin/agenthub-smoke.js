@@ -7,6 +7,7 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const Database = require('better-sqlite3');
 const { resolveDbPath } = require('../src/lib/db/pathResolver');
@@ -19,6 +20,31 @@ const DEFAULT_ABORT_SLA_MS = Number(process.env.AGENTHUB_SMOKE_ABORT_SLA_MS || 5
 const DEFAULT_POLL_MS = Number(process.env.AGENTHUB_SMOKE_POLL_MS || 750);
 const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.AGENTHUB_SMOKE_REQUEST_TIMEOUT_MS || 10000);
 const DEFAULT_OPENCODE_PORT = Number(process.env.AGENTHUB_SMOKE_OPENCODE_PORT || 4154);
+
+function normalizeDurableRefs(input = {}) {
+  return {
+    approvals: Array.isArray(input.approvals) ? input.approvals.filter(Boolean) : [],
+    runs: Array.isArray(input.runs) ? input.runs.filter(Boolean) : [],
+    workspaces: Array.isArray(input.workspaces) ? input.workspaces.filter(Boolean) : [],
+    recovery: Array.isArray(input.recovery) ? input.recovery.filter(Boolean) : [],
+  };
+}
+
+function buildIncompleteDurableRefClasses(durableRefs = {}) {
+  return Object.entries(normalizeDurableRefs(durableRefs))
+    .filter(([, refs]) => refs.length === 0)
+    .map(([key]) => `durable_refs.${key}`);
+}
+
+function buildQaMetadata({ qaRunId = null, scenarioId = null, durableRefs = {} } = {}) {
+  const normalizedRefs = normalizeDurableRefs(durableRefs);
+  return {
+    qa_run_id: qaRunId,
+    scenario_id: scenarioId,
+    durable_refs: normalizedRefs,
+    incomplete: buildIncompleteDurableRefClasses(normalizedRefs),
+  };
+}
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -213,6 +239,16 @@ async function main() {
     auditTrail: null,
     finalSession: null,
     traceCounts: null,
+    qa: buildQaMetadata({
+      qaRunId: flags['qa-run-id'] || process.env.QA_RUN_ID || null,
+      scenarioId: flags.scenario || process.env.SCENARIO_ID || null,
+      durableRefs: {
+        approvals: flags['approval-evidence-ref'] ? [flags['approval-evidence-ref']] : [],
+        runs: flags['run-evidence-ref'] ? [flags['run-evidence-ref']] : [],
+        workspaces: flags['workspace-evidence-ref'] ? [flags['workspace-evidence-ref']] : [],
+        recovery: flags['recovery-evidence-ref'] ? [flags['recovery-evidence-ref']] : [],
+      },
+    }),
   };
 
   const full = Boolean(flags.full || flags['wait-completion']);
@@ -445,7 +481,15 @@ async function main() {
   process.exit(report.ok ? 0 : 3);
 }
 
-main().catch((err) => {
-  console.error(JSON.stringify({ ok: false, error: err.message, stack: err.stack }, null, 2));
-  process.exit(1);
-});
+module.exports = {
+  buildQaMetadata,
+  buildIncompleteDurableRefClasses,
+  normalizeDurableRefs,
+};
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(JSON.stringify({ ok: false, error: err.message, stack: err.stack }, null, 2));
+    process.exit(1);
+  });
+}

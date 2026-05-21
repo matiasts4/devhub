@@ -58,6 +58,10 @@ must handle Git outside DevHub MCP and then record the evidence back in DevHub:
 Without that checkpoint evidence, the task should stay `in_progress`/`blocked`,
 not `completed`.
 
+This is now durably enforced in the server mutation path: attempts to close a
+task or finalize a QA handoff without a valid `[git:checkpoint]` are rejected
+with remediation text.
+
 ## Engram + DevHub MCP
 
 Use both systems together:

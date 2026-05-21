@@ -40,4 +40,31 @@ describe('native vte smoke wrapper', () => {
       })
     );
   });
+
+  test('runNativeVteSmoke writes a machine-readable summary when QA metadata is provided', () => {
+    const fs = { mkdirSync: jest.fn(), writeFileSync: jest.fn() };
+    const spawnSync = jest.fn(() => ({ status: 0 }));
+
+    const exitCode = api.runNativeVteSmoke({
+      args: ['--command', 'pwd'],
+      env: { PKG_CONFIG_PATH: '/tmp/pkgconfig' },
+      spawnSync,
+      fs,
+      qaContext: {
+        qaRunId: 'qa-20260521-001',
+        scenarioId: 'approval-closure',
+        summaryPath: '/tmp/native-summary.json',
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(fs.mkdirSync).toHaveBeenCalledWith('/tmp', { recursive: true });
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      '/tmp/native-summary.json',
+      expect.stringContaining('"qa_run_id": "qa-20260521-001"'),
+      'utf8'
+    );
+    expect(fs.writeFileSync.mock.calls[0][1]).toContain('"scenario_id": "approval-closure"');
+    expect(fs.writeFileSync.mock.calls[0][1]).toContain('"status": "passed"');
+  });
 });

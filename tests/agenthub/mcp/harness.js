@@ -284,6 +284,7 @@ class McpTestHarness extends TestHarness {
           ...task,
           blocked,
           blocking_dependencies: blockingDeps.map((dep) => dep.depends_on),
+          blocked_reason: blocked ? blockingDeps[0]?.depends_on || null : null,
           priority_score: blocked ? 0 : score,
         };
       })
@@ -1236,6 +1237,7 @@ class McpTestHarness extends TestHarness {
     });
 
     this._tools.set('release_task', async ({ task_id, agent_id, claim_token, outcome }) => {
+      this._cleanupExpiredLeases(null, agent_id);
       const task = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(task_id);
       if (!task) return this._err('Task not found');
       if (

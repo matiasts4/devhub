@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   formatEvidence,
   formatMissingSource,
@@ -8,7 +7,12 @@ import {
   renderEmptyCopy,
 } from './utils';
 
-export default function ApprovalsErrorsPanel({ approvals = [], errors = [] }) {
+export default function ApprovalsErrorsPanel({
+  approvals = [],
+  errors = [],
+  mutationState = { submittingKey: null, error: null, errorKey: null },
+  onDecision = null,
+}) {
   return (
     <section
       className="rounded-2xl border p-4"
@@ -18,7 +22,8 @@ export default function ApprovalsErrorsPanel({ approvals = [], errors = [] }) {
       <header className="mb-4">
         <h2 className="text-lg font-semibold">Aprobaciones y errores</h2>
         <p className="text-sm" style={metaTextStyle()}>
-          Aprobaciones pendientes y faltantes explícitos de evidencia. Sin controles de mutación.
+          Aprobaciones pendientes y faltantes explícitos de evidencia. Las decisiones del Director
+          se revalidan contra el estado durable antes de mutar.
         </p>
       </header>
 
@@ -45,9 +50,44 @@ export default function ApprovalsErrorsPanel({ approvals = [], errors = [] }) {
                   <p className="mt-2 text-xs" style={metaTextStyle()}>
                     {formatToken(approval.freshness)} · {formatEvidence(approval.evidence_refs)}
                   </p>
+                  {approval.checkpoint_key ? (
+                    <p className="mt-1 text-xs" style={metaTextStyle()}>
+                      Checkpoint {approval.checkpoint_key}
+                    </p>
+                  ) : null}
                   {approval.missing_source ? (
                     <p className="mt-1 text-xs" style={metaTextStyle()}>
                       {formatMissingSource(approval.missing_source)}
+                    </p>
+                  ) : null}
+                  {onDecision && approval.status === 'pending' ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+                        style={panelShellStyle()}
+                        disabled={mutationState.submittingKey === approval.checkpoint_key}
+                        onClick={() => onDecision(approval, 'approve')}
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+                        style={panelShellStyle()}
+                        disabled={mutationState.submittingKey === approval.checkpoint_key}
+                        onClick={() => onDecision(approval, 'reject')}
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  ) : null}
+                  {mutationState.error && mutationState.errorKey === approval.checkpoint_key ? (
+                    <p
+                      className="mt-2 text-xs"
+                      style={{ ...metaTextStyle(), color: 'var(--text-danger)' }}
+                    >
+                      {mutationState.error}
                     </p>
                   ) : null}
                 </article>
@@ -70,6 +110,11 @@ export default function ApprovalsErrorsPanel({ approvals = [], errors = [] }) {
                   <p className="mt-2 text-xs" style={metaTextStyle()}>
                     {formatToken(error.source || 'unknown source')}
                   </p>
+                  {error.remediation ? (
+                    <p className="mt-1 text-xs" style={metaTextStyle()}>
+                      {error.remediation}
+                    </p>
+                  ) : null}
                 </article>
               ))}
         </div>

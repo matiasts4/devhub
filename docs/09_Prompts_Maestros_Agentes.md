@@ -136,6 +136,7 @@ Si `worktree=dirty-excluded`, agregá `excluded=[...]` y `reason="..."`.
 - Si tocaste archivos, tiene que existir al menos un commit final local y trazable.
 - `commit=none` sólo es válido para análisis/investigación sin cambios de archivos.
 - Registrá `[git:checkpoint]` con SHA, docs, checks y estado del working tree antes del cambio de estado.
+- Si ese checkpoint falta o queda inválido, el server rechaza durablemente `completed` y el cierre QA hasta que lo remedies.
 - Si hace falta dejar la rama lista para QA remoto, recién ahí publicala y registrá `[git:qa-ready]`.
 - No hagas el merge vos.
 

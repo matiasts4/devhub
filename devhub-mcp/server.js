@@ -24,6 +24,10 @@ config({ path: resolve(__dirname, '../.env.local') });
 
 const require = createRequire(import.meta.url);
 const localDb = require('../src/lib/db/localDb.js');
+const {
+  parseGitCheckpointComment,
+  validateCheckpointHandoff,
+} = require('../src/lib/gitCheckpointHandoff.js');
 const { evaluateSupervisorSnapshot } = require('../src/lib/swarm/supervisorLoop.js');
 const { createTeamTell } = require('../src/lib/swarm/teamTell.js');
 const { createOpencodeTargetResolver } = require('../src/lib/swarm/opencodeTargetResolver.js');
@@ -116,6 +120,25 @@ function buildReleaseFields(outcome, nowMs = Date.now()) {
 
 function claimResponseMessage({ reused = false } = {}) {
   return reused ? 'El agente ya tiene una tarea activa.' : 'Tarea reclamada.';
+}
+
+function parseRecordTimeMs(
+  record,
+  keys = ['updated_at', 'created_at', 'requested_at', 'started_at']
+) {
+  for (const key of keys) {
+    const ms = parseIsoMs(record?.[key]);
+    if (ms !== null) return ms;
+  }
+  return Number.NEGATIVE_INFINITY;
+}
+
+function pickLatestRecord(...records) {
+  return (
+    records
+      .filter(Boolean)
+      .sort((left, right) => parseRecordTimeMs(right) - parseRecordTimeMs(left))[0] || null
+  );
 }
 
 function generateLegacyId(prefix) {
@@ -659,6 +682,49 @@ function ok(data) {
 }
 function err(msg) {
   return { content: [{ type: 'text', text: `ERROR: ${msg}` }], isError: true };
+}
+
+async function listTaskComments(taskId) {
+  if (!taskId) return [];
+  if (DB_DRIVER !== 'supabase') {
+    const db = localDb.getDb();
+    return db
+      .prepare('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at DESC, rowid DESC')
+      .all(taskId);
+  }
+
+  const { data, error } = await supabase
+    .from('task_comments')
+    .select('*')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+async function getLatestGitCheckpointComment(taskId) {
+  const comments = await listTaskComments(taskId);
+  for (const comment of comments) {
+    const checkpoint = parseGitCheckpointComment(comment.content);
+    if (checkpoint) {
+      return { comment, checkpoint };
+    }
+  }
+  return { comment: null, checkpoint: null };
+}
+
+async function enforceTaskCheckpointGate(
+  task,
+  { handoffKind = 'completed', minCreatedAt = null } = {}
+) {
+  const { comment, checkpoint } = await getLatestGitCheckpointComment(task?.id);
+  return validateCheckpointHandoff({
+    task,
+    checkpoint,
+    latestComment: comment,
+    handoffKind,
+    minCreatedAt,
+  });
 }
 
 const TELEGRAM_ADAPTER_ACTIONS = [
@@ -1524,18 +1590,21 @@ async function evaluateSupervisorForTask(task, { staleLeaseObserved = false } = 
   if (!task?.id) return null;
 
   const existingSnapshot = await getSupervisorSnapshot(task.id);
-  const workspace = existingSnapshot?.workspace_id
-    ? (await getAgentWorkspaceById(existingSnapshot.workspace_id)) ||
-      (await getLatestAgentWorkspaceForTask(task.id))
-    : await getLatestAgentWorkspaceForTask(task.id);
+  const latestWorkspaceForTask = await getLatestAgentWorkspaceForTask(task.id);
+  const snapshotWorkspace = existingSnapshot?.workspace_id
+    ? await getAgentWorkspaceById(existingSnapshot.workspace_id)
+    : null;
+  const workspace = pickLatestRecord(latestWorkspaceForTask, snapshotWorkspace);
   const latestRun = workspace?.id
     ? await getLatestAgentRunForWorkspace(workspace.id)
     : await getLatestAgentRunForTask(task.id);
   const latestArtifact = latestRun ? await getLatestAgentArtifactForRun(latestRun.run_id) : null;
   const runFacts = await getRunFactsForTask(task.id);
-  const approvalCheckpoint = existingSnapshot?.approval_checkpoint_key
+  const snapshotApprovalCheckpoint = existingSnapshot?.approval_checkpoint_key
     ? await getSupervisorApprovalCheckpoint(existingSnapshot.approval_checkpoint_key)
-    : await getLatestSupervisorApprovalCheckpointForTask(task.id);
+    : null;
+  const latestApprovalCheckpoint = await getLatestSupervisorApprovalCheckpointForTask(task.id);
+  const approvalCheckpoint = pickLatestRecord(latestApprovalCheckpoint, snapshotApprovalCheckpoint);
 
   const snapshotInput = evaluateSupervisorSnapshot({
     task,
@@ -1808,6 +1877,7 @@ function buildQueue(tasks = [], deps = [], allTasks = [], { includeBlocked = fal
         business_value: task.business_value ?? 5,
         blocked,
         blocking_dependencies: blockingDeps.map((d) => d.depends_on),
+        blocked_reason: blocked ? blockingDeps[0]?.depends_on || null : null,
         priority_score: blocked ? 0 : scoreTask(task, unlockCounts[task.id] || 0),
       };
     })
@@ -2540,6 +2610,24 @@ server.tool(
       .describe('UUID del usuario o agente asignado'),
   },
   async ({ task_id, status, ...rest }) => {
+    let existingTask = null;
+    if (status === 'completed') {
+      const { data: currentTask, error: currentTaskError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', task_id)
+        .single();
+      if (currentTaskError) return err(currentTaskError.message);
+      if (!currentTask) return err(`Tarea ${task_id} no encontrada.`);
+      existingTask = currentTask;
+
+      const checkpointGate = await enforceTaskCheckpointGate(existingTask, {
+        handoffKind: 'completed',
+      });
+      if (!checkpointGate.ok)
+        return err(`${checkpointGate.message} ${checkpointGate.remediation || ''}`.trim());
+    }
+
     const updates = {
       ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)),
     };
@@ -2555,7 +2643,18 @@ server.tool(
       .single();
     if (error) return err(error.message);
     if (!data) return err(`Tarea ${task_id} no encontrada.`);
-    return ok({ updated: true, task: data });
+
+    let checkpointGate = null;
+    if (status === 'completed') {
+      checkpointGate = await enforceTaskCheckpointGate(existingTask || data, {
+        handoffKind: 'completed',
+      });
+    }
+
+    return ok({
+      updated: true,
+      task: { ...data, ...(checkpointGate ? { checkpoint_gate: checkpointGate } : {}) },
+    });
   }
 );
 
@@ -2948,6 +3047,7 @@ server.tool(
 
       if (DB_DRIVER !== 'supabase') {
         const db = localDb.getDb();
+        await cleanupExpiredLeases(null, agent_id, nowMs);
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task_id);
         if (!task) return err(`Tarea ${task_id} no encontrada.`);
         if (

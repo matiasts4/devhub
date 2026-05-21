@@ -121,6 +121,7 @@ Regla mínima: toda tarea/slice que cambie archivos debe terminar con **al menos
 3. Si la tarea cambió archivos, debe existir **al menos un commit final local y trazable**.
 4. Si no hubo cambios de archivos, el único caso válido es `commit=none` y debe aclarar que fue **análisis/investigación sin modificaciones**.
 5. Antes de actualizar la tarea a `completed` o `qa-ready`, registrar `[git:checkpoint]` con `commit=<sha|none>`, docs afectadas, checks ejecutados y estado del working tree.
+6. El server rechaza de forma durable cualquier intento de `completed` o cierre de QA sin ese checkpoint válido; no es sólo una convención de prompt/UI.
 
 Hacer commit obligatoriamente:
 

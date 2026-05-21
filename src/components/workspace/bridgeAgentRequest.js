@@ -1,7 +1,7 @@
 'use client';
 
 import { ATTRS } from '@emergentbase/visual-edits';
-import { shellQuotePrompt } from '@/lib/docopsPrompts';
+import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
 
 export const BRIDGE_AGENT_OPTIONS = [
   {
@@ -35,8 +35,12 @@ function normalizeClassName(className = '') {
 }
 
 export function deriveSelectionLabel(elementInfo = {}) {
-  const tagName = String(elementInfo?.tagName || elementInfo?.element?.tagName || 'div').toLowerCase();
-  const className = normalizeClassName(elementInfo?.className || elementInfo?.element?.className || '');
+  const tagName = String(
+    elementInfo?.tagName || elementInfo?.element?.tagName || 'div'
+  ).toLowerCase();
+  const className = normalizeClassName(
+    elementInfo?.className || elementInfo?.element?.className || ''
+  );
   return className ? `${tagName}.${className}` : tagName;
 }
 
@@ -98,31 +102,16 @@ export function buildBridgePrompt({ browserUrl, selectedElement, changeRequest }
     .join('\n');
 }
 
-function buildHermesCommand(prompt) {
-  return `hermes chat -q ${shellQuotePrompt(prompt)}`;
-}
-
-function buildCodexCommand(prompt) {
-  return `codex exec --sandbox workspace-write ${shellQuotePrompt(prompt)}`;
-}
-
-function buildOpenCodeCommand(prompt) {
-  return `opencode --agent sdd-orchestrator --prompt ${shellQuotePrompt(prompt)}`;
-}
-
 function buildAgentCommand(agentId, prompt) {
-  switch (agentId) {
-    case 'codex':
-      return buildCodexCommand(prompt);
-    case 'opencode':
-      return buildOpenCodeCommand(prompt);
-    case 'hermes':
-    default:
-      return buildHermesCommand(prompt);
-  }
+  return buildAgentLaunchCommand(agentId, prompt, { opencodeAgent: 'sdd-orchestrator' });
 }
 
-export function buildBridgeAgentRequest({ browserUrl, selectedElement, changeRequest, agentId = 'hermes' }) {
+export function buildBridgeAgentRequest({
+  browserUrl,
+  selectedElement,
+  changeRequest,
+  agentId = 'hermes',
+}) {
   const agent = AGENT_MAP[agentId];
   if (!agent || !agent.enabled) {
     throw new Error(`Bridge agent '${agentId}' is not enabled in this MVP.`);

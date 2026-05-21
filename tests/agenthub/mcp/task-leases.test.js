@@ -185,6 +185,84 @@ describe('MCP task lease tools', () => {
     expect(pausedBody.task.claim_token).toBeNull();
   });
 
+  test('release_task rejects non-owner and stale lease mutations while preserving durable truth', async () => {
+    seedProject(harness.db, { id: 'proj-1', name: 'Lease Project' });
+    seedTask(harness.db, 'proj-1', {
+      id: 'task-1',
+      title: 'Protected lease',
+      status: 'pending',
+      priority: 'critical',
+      business_value: 10,
+    });
+
+    await harness.invokeTool('register_agent', {
+      agent_id: 'agent-owner',
+      project_id: 'proj-1',
+      nombre: 'Owner Agent',
+    });
+    await harness.invokeTool('register_agent', {
+      agent_id: 'agent-other',
+      project_id: 'proj-1',
+      nombre: 'Other Agent',
+    });
+
+    const claimed = harness.assertToolResponse(
+      await harness.invokeTool('claim_next_task', {
+        project_id: 'proj-1',
+        agent_id: 'agent-owner',
+      }),
+      ['task']
+    );
+
+    const nonOwnerRelease = await harness.invokeTool('release_task', {
+      task_id: 'task-1',
+      agent_id: 'agent-other',
+      claim_token: claimed.task.claim_token,
+      outcome: 'paused',
+    });
+
+    expect(nonOwnerRelease.isError).toBe(true);
+    assertDbRow(
+      harness.db,
+      'tasks',
+      { id: 'task-1' },
+      {
+        status: 'in_progress',
+        assigned_to: 'agent-owner',
+        claim_token: claimed.task.claim_token,
+      }
+    );
+
+    harness.db
+      .prepare(
+        `UPDATE tasks
+         SET lease_expires_at = ?, updated_at = ?
+         WHERE id = 'task-1'`
+      )
+      .run('2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+
+    const staleRelease = await harness.invokeTool('release_task', {
+      task_id: 'task-1',
+      agent_id: 'agent-owner',
+      claim_token: claimed.task.claim_token,
+      outcome: 'paused',
+    });
+
+    expect(staleRelease).toEqual(expect.objectContaining({ isError: true }));
+    assertDbRow(
+      harness.db,
+      'tasks',
+      { id: 'task-1' },
+      {
+        status: 'pending',
+        assigned_to: null,
+        claimed_at: null,
+        lease_expires_at: null,
+        claim_token: null,
+      }
+    );
+  });
+
   test('get_execution_queue releases expired leases before scoring pending work', async () => {
     seedProject(harness.db, { id: 'proj-1', name: 'Lease Project' });
     seedTask(harness.db, 'proj-1', {
@@ -229,6 +307,66 @@ describe('MCP task lease tools', () => {
         lease_expires_at: null,
       }
     );
+  });
+
+  test('get_execution_queue keeps blocked tasks visible with a blocked_reason and claim_next_task skips them', async () => {
+    seedProject(harness.db, { id: 'proj-1', name: 'Lease Project' });
+    seedTask(harness.db, 'proj-1', {
+      id: 'task-dependency',
+      title: 'Dependency still pending',
+      status: 'blocked',
+      priority: 'critical',
+      business_value: 10,
+    });
+    seedTask(harness.db, 'proj-1', {
+      id: 'task-blocked',
+      title: 'Blocked by dependency',
+      status: 'pending',
+      priority: 'high',
+      business_value: 8,
+    });
+
+    harness.db
+      .prepare('INSERT INTO task_dependencies (id, task_id, depends_on, tipo) VALUES (?, ?, ?, ?)')
+      .run('dep-1', 'task-blocked', 'task-dependency', 'blocks');
+
+    await harness.invokeTool('register_agent', {
+      agent_id: 'agent-1',
+      project_id: 'proj-1',
+      nombre: 'Queue Agent',
+    });
+
+    const queueBody = harness.assertToolResponse(
+      await harness.invokeTool('get_execution_queue', {
+        project_id: 'proj-1',
+        limit: 10,
+        include_blocked: true,
+      }),
+      ['queue']
+    );
+
+    expect(queueBody.queue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'task-blocked',
+          blocked: true,
+          blocking_dependencies: ['task-dependency'],
+          blocked_reason: 'task-dependency',
+        }),
+      ])
+    );
+
+    const claimBody = harness.assertToolResponse(
+      await harness.invokeTool('claim_next_task', {
+        project_id: 'proj-1',
+        agent_id: 'agent-1',
+      }),
+      ['claimed', 'task', 'message']
+    );
+
+    expect(claimBody.claimed).toBe(false);
+    expect(claimBody.task).toBeNull();
+    expect(claimBody.message).toMatch(/sin tareas/i);
   });
 
   test('get_next_task is a compatibility wrapper over tokenized claims and unregister_agent releases ownership', async () => {
