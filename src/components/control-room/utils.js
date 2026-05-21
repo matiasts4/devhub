@@ -23,6 +23,7 @@ const TOKEN_LABELS = Object.freeze({
   authoritative: 'canónica',
   inferred: 'inferida',
   cached: 'en caché',
+  blocked: 'Bloqueada',
   lease_active: 'lease activo',
   awaiting_approval: 'esperando aprobación',
   approval_required: 'aprobación requerida',
