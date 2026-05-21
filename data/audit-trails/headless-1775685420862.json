@@ -1,0 +1,361 @@
+{
+  "sessionID": "headless-1775685420862",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Por favor, revisa el codebase de devhub y busca code smells. Reporta cualquier problema que encuentres, como código duplicado, funciones demasiado largas, o nombres de variables poco claros.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775685420862,
+    "completedAt": 1775685631409,
+    "duration": 210547
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775685420862,
+      "timeStr": "21:57:00"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775685420867,
+      "timeStr": "21:57:00"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_290e6b8b5ffe5F4Rs1CYdNigCr"
+      },
+      "timestamp": 1775685420881,
+      "timeStr": "21:57:00"
+    },
+    {
+      "type": "model_resolved",
+      "data": {
+        "raw": "agent-default"
+      },
+      "timestamp": 1775685420881,
+      "timeStr": "21:57:00"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 232,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775685420881,
+      "timeStr": "21:57:00"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775685420889,
+      "timeStr": "21:57:00"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "[Tú eres el sub-agente. Instrucciones: \"Por favor, revisa el codebase de devhub y busca code smells. Reporta cualquier problema que encuentres, como código duplicado, funciones demasiado largas, o nom"
+      },
+      "timestamp": 1775685420996,
+      "timeStr": "21:57:00"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775685426321,
+      "timeStr": "21:57:06"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775685427294,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775685427295,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775685427296,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775685427319,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775685427319,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "pending"
+      },
+      "timestamp": 1775685427319,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775685427320,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "running"
+      },
+      "timestamp": 1775685427320,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775685427320,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "../.config/opencode/skills/sdd-explore/SKILL.md",
+        "status": "completed"
+      },
+      "timestamp": 1775685427328,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775685427329,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775685427487,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775685427488,
+      "timeStr": "21:57:07"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775685430461,
+      "timeStr": "21:57:10"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 10
+      },
+      "timestamp": 1775685430462,
+      "timeStr": "21:57:10"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775685432634,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775685432679,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775685432679,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775685432680,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775685432680,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775685432680,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775685432681,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/.config/opencode",
+        "status": "running"
+      },
+      "timestamp": 1775685432682,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775685432683,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775685432689,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775685432690,
+      "timeStr": "21:57:12"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/.config/opencode",
+        "status": "error"
+      },
+      "timestamp": 1775685631408,
+      "timeStr": "22:00:31"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "error",
+        "duration": 1
+      },
+      "timestamp": 1775685631409,
+      "timeStr": "22:00:31"
+    },
+    {
+      "type": "session_error",
+      "data": {
+        "error": {
+          "name": "MessageAbortedError",
+          "data": {
+            "message": "Aborted"
+          }
+        }
+      },
+      "timestamp": 1775685631409,
+      "timeStr": "22:00:31"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "LONG_GAP",
+      "severity": "warning",
+      "message": "Long gap between events: 3m 18s between \"tool_complete\" and \"tool_call\"",
+      "timestamp": 1775685631408
+    },
+    {
+      "type": "ANY_ERROR",
+      "severity": "error",
+      "message": "Error detected: [object Object]",
+      "timestamp": 1775685631409
+    }
+  ],
+  "completed": true
+}

@@ -16,6 +16,16 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const { resolveSidecarSessionCwd } = require('./sessionCwd');
+const {
+  buildHistoryReplay,
+  buildServerMessage,
+  detectOpenCodeSessionId,
+  filterTerminalOutputForSession,
+  getTransportMode,
+  parseClientMessage,
+  updateSessionModeFromInput,
+} = require('./sessionTransport');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
 const DEVHUB_DIR = path.join(os.homedir(), '.devhub');
@@ -28,38 +38,58 @@ if (!fs.existsSync(DEVHUB_DIR)) {
   fs.mkdirSync(DEVHUB_DIR, { recursive: true });
 }
 
-// ─── Escribir PID y Puerto al arrancar ────────────────────────────────────────
-fs.writeFileSync(PID_FILE, String(process.pid), 'utf8');
-fs.writeFileSync(PORT_FILE, String(PORT), 'utf8');
-console.log(`[Sidecar] PID ${process.pid} → ${PID_FILE}`);
-console.log(`[Sidecar] Port ${PORT} → ${PORT_FILE}`);
-
 // Limpiar archivos al salir (cualquier señal)
-function cleanup() {
+let isCleaningUp = false;
+
+function writeRuntimeFiles() {
+  fs.writeFileSync(PID_FILE, String(process.pid), 'utf8');
+  fs.writeFileSync(PORT_FILE, String(PORT), 'utf8');
+  console.log(`[Sidecar] PID ${process.pid} → ${PID_FILE}`);
+  console.log(`[Sidecar] Port ${PORT} → ${PORT_FILE}`);
+}
+
+function cleanup(exitCode = 0) {
+  if (isCleaningUp) return;
+  isCleaningUp = true;
   try { fs.unlinkSync(PID_FILE); } catch (_) {}
   try { fs.unlinkSync(PORT_FILE); } catch (_) {}
   console.log('[Sidecar] Archivos PID/port eliminados. Bye.');
-  process.exit(0);
+  process.exit(exitCode);
 }
 
-process.on('SIGTERM', cleanup);
-process.on('SIGINT', cleanup);
+process.on('SIGTERM', () => cleanup(0));
+process.on('SIGINT', () => cleanup(0));
 
 // ─── Sesiones PTY persistentes ────────────────────────────────────────────────
 // Clave: sessionId → { ptyProcess, history: string[], clients: Set<WebSocket> }
 const sessions = new Map();
+
+function sendToClient(ws, payload) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  try {
+    ws.send(buildServerMessage(ws.__devhubTransport || 'raw', payload));
+  } catch (_) {}
+}
+
+function broadcastSessionPayload(session, payload) {
+  for (const ws of session.clients) {
+    sendToClient(ws, payload);
+  }
+}
 
 function getOrCreateSession(sessionId, cwd) {
   if (sessions.has(sessionId)) {
     return sessions.get(sessionId);
   }
 
+  const cwdResolution = resolveSidecarSessionCwd(cwd || os.homedir());
+  const effectiveCwd = cwdResolution.effectiveCwd;
   const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || 'bash');
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-256color',
     cols: 120,
     rows: 36,
-    cwd: cwd || os.homedir(),
+    cwd: effectiveCwd,
     env: { ...process.env, TERM: 'xterm-256color' },
   });
 
@@ -67,37 +97,65 @@ function getOrCreateSession(sessionId, cwd) {
     ptyProcess,
     history: [],     // Buffer de los últimos 5000 chars para replay al reconectar
     clients: new Set(),
-    cwd: cwd || os.homedir(),
+    cwd: effectiveCwd,
     createdAt: Date.now(),
+    mode: 'shell',
+    historyEnabled: true,
+    opencodeSessionId: null,
+    pendingInput: '',
   };
 
   // Capturar output del PTY y enviarlo a todos los clientes conectados
   ptyProcess.on('data', (data) => {
+    const filteredData = filterTerminalOutputForSession(session, data);
+
+    if (typeof filteredData === 'string' && filteredData.length === 0) {
+      return;
+    }
+
     // Guardar en buffer (máx 10000 chars)
-    session.history.push(data);
+    if (session.historyEnabled) {
+      session.history.push(filteredData);
+    }
     const totalLen = session.history.reduce((acc, s) => acc + s.length, 0);
     while (session.history.length > 1 && totalLen > 10000) {
       session.history.shift();
     }
 
     // Enviar a todos los clientes activos
-    for (const ws of session.clients) {
-      if (ws.readyState === WebSocket.OPEN) {
-        try { ws.send(data); } catch (_) {}
-      }
+    const detectedSessionId = detectOpenCodeSessionId(filteredData);
+    if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
+      session.opencodeSessionId = detectedSessionId;
+      broadcastSessionPayload(session, {
+        type: 'opencode-session-detected',
+        sessionId: detectedSessionId,
+      });
     }
+
+    broadcastSessionPayload(session, { type: 'output', data: filteredData });
   });
 
   ptyProcess.on('exit', () => {
     console.log(`[Sidecar] Session ${sessionId} exited.`);
+    broadcastSessionPayload(session, { type: 'exit', exitCode: 0, signal: null });
+    for (const client of session.clients) {
+      try {
+        client.close();
+      } catch (_) {}
+    }
     sessions.delete(sessionId);
   });
 
   sessions.set(sessionId, session);
-  console.log(`[Sidecar] Nueva sesión PTY: ${sessionId} (${shell}) en ${cwd || os.homedir()}`);
+  console.log('[Sidecar] Nueva sesión PTY', {
+    sessionId,
+    shell,
+    requestedCwd: cwdResolution.requestedCwd,
+    effectiveCwd,
+    usedFallback: cwdResolution.usedFallback,
+  });
   return session;
 }
-
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
@@ -121,6 +179,29 @@ app.get('/sessions', (_req, res) => {
     createdAt: s.createdAt,
   }));
   res.json({ sessions: list });
+});
+
+app.delete('/sessions/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  for (const client of session.clients) {
+    try {
+      client.close();
+    } catch (_) {}
+  }
+
+  try {
+    session.ptyProcess.kill();
+  } catch (_) {}
+
+  sessions.delete(sessionId);
+  console.log(`[Sidecar] Session ${sessionId} terminada por cierre explícito.`);
+  return res.json({ success: true, sessionId });
 });
 
 // Endpoint de shutdown graceful — llamado por Tauri al cerrar la app
@@ -149,34 +230,53 @@ wss.on('connection', (ws, req) => {
   const urlParams = new URL(req.url || '/', `http://localhost:${PORT}`).searchParams;
   const sessionId = urlParams.get('sessionId') || 'default';
   const cwd       = urlParams.get('cwd') || os.homedir();
+  ws.__devhubTransport = getTransportMode(req.url || '/');
 
   const session = getOrCreateSession(sessionId, cwd);
   session.clients.add(ws);
 
-  console.log(`[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes)`);
+  console.log(`[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport})`);
 
   // Replay del historial al reconectar
   if (session.history.length > 0) {
-    const replay = session.history.join('');
-    try { ws.send(replay); } catch (_) {}
+    const replay = buildHistoryReplay(session);
+    if (replay) {
+      sendToClient(ws, { type: 'output', data: replay });
+    }
+  }
+
+  if (session.opencodeSessionId) {
+    sendToClient(ws, {
+      type: 'opencode-session-detected',
+      sessionId: session.opencodeSessionId,
+    });
   }
 
   ws.on('message', (msg) => {
-    const msgStr = typeof msg === 'string' ? msg : msg.toString();
-    
-    // Comandos de control (JSON)
-    if (msgStr.startsWith('{')) {
-      try {
-        const cmd = JSON.parse(msgStr);
-        if (cmd.type === 'resize' && cmd.cols && cmd.rows) {
-          session.ptyProcess.resize(cmd.cols, cmd.rows);
-        }
-        return;
-      } catch (_) { /* no es JSON, tratar como input */ }
+    const payload = parseClientMessage(msg, ws.__devhubTransport || 'raw');
+
+    if (payload.type === 'resize' && payload.cols && payload.rows) {
+      session.ptyProcess.resize(payload.cols, payload.rows);
+      return;
+    }
+
+    if (payload.type !== 'input') {
+      return;
+    }
+
+    updateSessionModeFromInput(session, payload.data);
+
+    const detectedSessionId = detectOpenCodeSessionId(payload.data);
+    if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
+      session.opencodeSessionId = detectedSessionId;
+      broadcastSessionPayload(session, {
+        type: 'opencode-session-detected',
+        sessionId: detectedSessionId,
+      });
     }
 
     // Input de teclado al PTY
-    try { session.ptyProcess.write(msgStr); } catch (_) {}
+    try { session.ptyProcess.write(payload.data); } catch (_) {}
   });
 
   ws.on('close', () => {
@@ -192,7 +292,13 @@ wss.on('connection', (ws, req) => {
 });
 
 // ─── Arrancar servidor ────────────────────────────────────────────────────────
+server.on('error', (error) => {
+  console.error('[Sidecar] Error de arranque del servidor:', error);
+  cleanup(1);
+});
+
 server.listen(PORT, '127.0.0.1', () => {
+  writeRuntimeFiles();
   console.log(`[Sidecar] ✅ Sidecar escuchando en http://127.0.0.1:${PORT}`);
   console.log(`[Sidecar]    PID: ${process.pid}`);
   console.log(`[Sidecar]    Shell: ${process.env.SHELL || 'bash'}`);

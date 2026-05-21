@@ -1,0 +1,70 @@
+{
+  "sessionID": "headless-1775514868092",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Explorar el codebase de DevHub en busca de code smells y problemas de calidad del código.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775514868092
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775514868092,
+      "timeStr": "22:34:28"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4153
+      },
+      "timestamp": 1775514868096,
+      "timeStr": "22:34:28"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_29b11267affel5Swyiugfwefgs"
+      },
+      "timestamp": 1775514868108,
+      "timeStr": "22:34:28"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 131,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775514868109,
+      "timeStr": "22:34:28"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775514868120,
+      "timeStr": "22:34:28"
+    },
+    {
+      "type": "prompt_send_error",
+      "data": {
+        "error": "The operation was aborted due to timeout"
+      },
+      "timestamp": 1775514898111,
+      "timeStr": "22:34:58"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "NO_TOOLS",
+      "severity": "warning",
+      "message": "No tool calls detected"
+    },
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

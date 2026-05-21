@@ -1,0 +1,2174 @@
+{
+  "sessionID": "headless-1775611563328",
+  "metadata": {
+    "prompt": "Explora el codebase y detecta code smells",
+    "agent": "sdd-explore",
+    "project_id": "devhub",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775611563328,
+    "completedAt": 1775612262458,
+    "duration": 699130
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775611563328,
+      "timeStr": "01:26:03"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775611563331,
+      "timeStr": "01:26:03"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_2954db2b8ffeAG6Hsakk83aCy3"
+      },
+      "timestamp": 1775611563338,
+      "timeStr": "01:26:03"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 41,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775611563338,
+      "timeStr": "01:26:03"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775611563341,
+      "timeStr": "01:26:03"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "Explora el codebase y detecta code smells"
+      },
+      "timestamp": 1775611563347,
+      "timeStr": "01:26:03"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775611566033,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775611566034,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "status": "pending"
+      },
+      "timestamp": 1775611566035,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775611566035,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "status": "running"
+      },
+      "timestamp": 1775611566038,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775611566038,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "pending"
+      },
+      "timestamp": 1775611566038,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775611566039,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "running"
+      },
+      "timestamp": 1775611566040,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775611566041,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "pending"
+      },
+      "timestamp": 1775611566041,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775611566041,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775611566046,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775611566047,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "file": "Loaded skill: sdd-explore",
+        "status": "completed"
+      },
+      "timestamp": 1775611566048,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775611566048,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 10
+      },
+      "timestamp": 1775611566048,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "running"
+      },
+      "timestamp": 1775611566195,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775611566196,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775611566323,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775611566324,
+      "timeStr": "01:26:06"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775611569489,
+      "timeStr": "01:26:09"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775611570537,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775611570538,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 2
+      },
+      "timestamp": 1775611570540,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775611570546,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775611570547,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775611570547,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775611570548,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775611570555,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775611570556,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775611570560,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775611570561,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "../.config/opencode/skills/sdd-explore/SKILL.md",
+        "status": "completed"
+      },
+      "timestamp": 1775611570564,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775611570564,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 20
+      },
+      "timestamp": 1775611570565,
+      "timeStr": "01:26:10"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775611575747,
+      "timeStr": "01:26:15"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612204849,
+      "timeStr": "01:36:44"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612206930,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612206932,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612206933,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612206940,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612206941,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612206942,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612206943,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612206944,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612206945,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612206947,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612206947,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612206949,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612206950,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612206951,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612206952,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 30
+      },
+      "timestamp": 1775612206953,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612206963,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612206964,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612206967,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775612206967,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612206969,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612206970,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612206976,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775612206976,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612206985,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612206986,
+      "timeStr": "01:36:46"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612207111,
+      "timeStr": "01:36:47"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612210088,
+      "timeStr": "01:36:50"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612212471,
+      "timeStr": "01:36:52"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612215204,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612215206,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 40
+      },
+      "timestamp": 1775612215206,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612215215,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 2
+      },
+      "timestamp": 1775612215217,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612215221,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775612215223,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "package.json",
+        "status": "completed"
+      },
+      "timestamp": 1775612215242,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 2
+      },
+      "timestamp": 1775612215244,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612215422,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612215423,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612215428,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775612215428,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612215429,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612215430,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612215431,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775612215431,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612215432,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612215432,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612215433,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612215434,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "telegram-bot/package.json",
+        "status": "completed"
+      },
+      "timestamp": 1775612215436,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612215437,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 50
+      },
+      "timestamp": 1775612215437,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "sidecar-backend/package.json",
+        "status": "completed"
+      },
+      "timestamp": 1775612215438,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775612215438,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "devhub-mcp/package.json",
+        "status": "completed"
+      },
+      "timestamp": 1775612215440,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612215441,
+      "timeStr": "01:36:55"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612218580,
+      "timeStr": "01:36:58"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612220724,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612220724,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 4
+      },
+      "timestamp": 1775612220728,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612220730,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612220731,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612220731,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612220732,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub/opencode/packages/app",
+        "status": "running"
+      },
+      "timestamp": 1775612220733,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775612220733,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612220734,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612220735,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612220736,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775612220736,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 60
+      },
+      "timestamp": 1775612220737,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775612220737,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612220738,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612220740,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612220741,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub/opencode/packages/app",
+        "status": "completed"
+      },
+      "timestamp": 1775612220747,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612220748,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612220749,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775612220749,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612220781,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612220782,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612220810,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612220811,
+      "timeStr": "01:37:00"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612224141,
+      "timeStr": "01:37:04"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612226262,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612226265,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 2
+      },
+      "timestamp": 1775612226267,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612226272,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612226273,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 70
+      },
+      "timestamp": 1775612226273,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612226274,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612226274,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612226276,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612226277,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612226277,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612226278,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612226279,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612226280,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612226282,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612226282,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "README.md",
+        "status": "completed"
+      },
+      "timestamp": 1775612226288,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612226289,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "telegram-bot/README.md",
+        "status": "completed"
+      },
+      "timestamp": 1775612226291,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612226292,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "sdd/explore/code-smells/exploration.md",
+        "status": "completed"
+      },
+      "timestamp": 1775612226293,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612226294,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612226318,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612226319,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "devhub-mcp/README.md",
+        "status": "completed"
+      },
+      "timestamp": 1775612226322,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612226323,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 80
+      },
+      "timestamp": 1775612226323,
+      "timeStr": "01:37:06"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612229756,
+      "timeStr": "01:37:09"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612234421,
+      "timeStr": "01:37:14"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612236047,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612236048,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775612236068,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 2
+      },
+      "timestamp": 1775612236070,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775612236085,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 3
+      },
+      "timestamp": 1775612236088,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775612236091,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 2
+      },
+      "timestamp": 1775612236093,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/opencode/packages/app/src",
+        "status": "running"
+      },
+      "timestamp": 1775612236099,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775612236101,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775612236104,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 2
+      },
+      "timestamp": 1775612236106,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/telegram-bot",
+        "status": "running"
+      },
+      "timestamp": 1775612236108,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775612236110,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 90
+      },
+      "timestamp": 1775612236110,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775612236112,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612236113,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775612236116,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612236117,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/telegram-bot",
+        "status": "completed"
+      },
+      "timestamp": 1775612236124,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612236125,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/opencode/packages/app/src",
+        "status": "completed"
+      },
+      "timestamp": 1775612236126,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 2
+      },
+      "timestamp": 1775612236128,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/telegram-bot",
+        "status": "running"
+      },
+      "timestamp": 1775612236209,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612236210,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/telegram-bot",
+        "status": "completed"
+      },
+      "timestamp": 1775612236218,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775612236218,
+      "timeStr": "01:37:16"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612240918,
+      "timeStr": "01:37:20"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612244430,
+      "timeStr": "01:37:24"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612246529,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612246531,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 100
+      },
+      "timestamp": 1775612246532,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612246532,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612246533,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612246535,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612246536,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612246536,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775612246537,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612246538,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775612246538,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612246539,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612246539,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612246540,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775612246540,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775612246541,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612246541,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "telegram-bot/bot.js",
+        "status": "completed"
+      },
+      "timestamp": 1775612246548,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612246549,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775612246550,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612246551,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/views/AgentHub.jsx",
+        "status": "completed"
+      },
+      "timestamp": 1775612246553,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775612246553,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 110
+      },
+      "timestamp": 1775612246554,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/views/SwarmControl.jsx",
+        "status": "completed"
+      },
+      "timestamp": 1775612246555,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612246556,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "devhub-mcp/server.js",
+        "status": "completed"
+      },
+      "timestamp": 1775612246568,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612246569,
+      "timeStr": "01:37:26"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612251343,
+      "timeStr": "01:37:31"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612254924,
+      "timeStr": "01:37:34"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612257032,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775612257034,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_save",
+        "status": "pending"
+      },
+      "timestamp": 1775612257035,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_save",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612257035,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_save",
+        "status": "running"
+      },
+      "timestamp": 1775612257037,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_save",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775612257038,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_summary",
+        "status": "pending"
+      },
+      "timestamp": 1775612257039,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_summary",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775612257039,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_save",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775612257044,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_save",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775612257045,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 120
+      },
+      "timestamp": 1775612257046,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_summary",
+        "status": "running"
+      },
+      "timestamp": 1775612257188,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_summary",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775612257190,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_summary",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775612257209,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_summary",
+        "status": "completed",
+        "duration": 3
+      },
+      "timestamp": 1775612257212,
+      "timeStr": "01:37:37"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": ""
+      },
+      "timestamp": 1775612259857,
+      "timeStr": "01:37:39"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "## Exploration: code smells en DevHub\n\n### Current State\nEl codebase está bastante fragmentado por producto, pero hay focos claros de deuda técnica: views enormes en el frontend, entrypoints monolític"
+      },
+      "timestamp": 1775612262268,
+      "timeStr": "01:37:42"
+    },
+    {
+      "type": "session_idle",
+      "data": {
+        "eventsProcessed": 3807,
+        "tracesPersisted": 124
+      },
+      "timestamp": 1775612262458,
+      "timeStr": "01:37:42"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "LONG_GAP",
+      "severity": "warning",
+      "message": "Long gap between events: 10m 29s between \"reasoning\" and \"reasoning\"",
+      "timestamp": 1775612204849
+    },
+    {
+      "type": "SLOW_TOOL",
+      "severity": "warning",
+      "message": "Slow tool execution: \"read\" took 10m 44s",
+      "timestamp": 1775611570564
+    }
+  ],
+  "completed": true
+}

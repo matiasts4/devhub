@@ -19,6 +19,7 @@ import AgentTracePanel from '@/components/chat/AgentTracePanel';
 import MCPAccordion from '@/components/chat/MCPAccordion';
 import SubagentBadge from '@/components/chat/SubagentBadge';
 import { Button } from '@/components/ui/button';
+import { normalizeSubagentStatus } from '@/lib/agenthubSubagentState';
 
 // ─── User Turn ────────────────────────────────────────────────────────────────
 // Estilo OpenCode: prompt compacto con línea izquierda, sin burbuja
@@ -103,7 +104,7 @@ function UserTurn({
           </div>
         </div>
 
-        {/* Contenido — edición o texto */}
+        {/* Contenido — edición o texto con fondo diferenciado */}
         {isEditing ? (
           <div className="space-y-2">
             <textarea
@@ -146,12 +147,16 @@ function UserTurn({
             </div>
           </div>
         ) : (
-          <p
-            className="text-sm leading-relaxed whitespace-pre-wrap"
-            style={{ color: 'var(--text-primary)' }}
+          <div
+            className="text-sm leading-relaxed whitespace-pre-wrap rounded-lg px-3 py-2.5"
+            style={{
+              color: 'var(--text-primary)',
+              background: 'color-mix(in srgb, var(--surface-hover) 60%, transparent)',
+              border: '1px solid var(--border-subtle)',
+            }}
           >
             {message.content}
-          </p>
+          </div>
         )}
       </div>
     </div>
@@ -240,23 +245,7 @@ function AssistantTurn({
         </div>
 
         {/* Contenido markdown */}
-        <div
-          className="prose prose-invert max-w-none
-                      prose-pre:border
-                      prose-a:text-[color:var(--accent-primary)]
-                      prose-blockquote:border-l-[color:var(--accent-primary)]
-                      prose-blockquote:py-1 prose-blockquote:pr-4"
-          style={{
-            '--tw-prose-pre-bg': 'var(--surface-elevated)',
-            '--tw-prose-pre-border': 'var(--border-strong)',
-            '--tw-prose-code-text': 'var(--accent-primary)',
-            '--tw-prose-bold-text': 'var(--text-primary)',
-            '--tw-prose-headings-text': 'var(--text-primary)',
-            '--tw-prose-body-text': 'var(--text-secondary)',
-            fontSize: '14px',
-            lineHeight: '1.75',
-          }}
-        >
+        <div className="chat-markdown">
           <ChatMarkdown>{renderedContent}</ChatMarkdown>
         </div>
 
@@ -273,22 +262,23 @@ function AssistantTurn({
 // Estilo OpenCode: colapsado por defecto, 1 línea de summary expandible.
 // Running: auto-expandido, muestra última tarea activa.
 // Completado/Error: colapsado — click para ver el trace.
-function SubagentTurn({ message, trace, onCancel, onViewInContext }) {
+// compact=true: nunca auto-expande (usado cuando el panel Live muestra el detalle).
+function SubagentTurn({ message, trace, onCancel, onViewInContext, compact = false }) {
   let meta = {};
   try {
     meta = message.meta ? JSON.parse(message.meta) : {};
   } catch {}
 
-  const status = meta.status || 'success';
+  const status = normalizeSubagentStatus(meta.status || 'success');
   const isRunning = status === 'running';
   const isSuccess = status === 'success';
   const isError = status === 'error' || status === 'aborted';
 
-  // Running: auto-expandido; completado: colapsado
-  const [expanded, setExpanded] = useState(isRunning);
+  // Running: auto-expandido (salvo en modo compact donde el panel Live ya muestra el detalle)
+  const [expanded, setExpanded] = useState(isRunning && !compact);
   useEffect(() => {
-    if (isRunning) setExpanded(true);
-  }, [isRunning]);
+    if (isRunning && !compact) setExpanded(true);
+  }, [isRunning, compact]);
 
   const toolCount = trace.filter((p) => p.type === 'tool').length;
   const doneTools = trace.filter((p) => p.type === 'tool' && p.toolStatus === 'completed').length;
@@ -377,11 +367,24 @@ function SubagentTurn({ message, trace, onCancel, onViewInContext }) {
             >
               {/* Status icon */}
               {isRunning ? (
-                <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: statusColor }} />
+                <Loader2
+                  className="w-3 h-3 animate-spin flex-shrink-0"
+                  style={{ color: statusColor }}
+                />
               ) : isSuccess ? (
-                <span className="flex-shrink-0 text-[12px] font-bold" style={{ color: statusColor }}>✓</span>
+                <span
+                  className="flex-shrink-0 text-[12px] font-bold"
+                  style={{ color: statusColor }}
+                >
+                  ✓
+                </span>
               ) : (
-                <span className="flex-shrink-0 text-[12px] font-bold" style={{ color: statusColor }}>✗</span>
+                <span
+                  className="flex-shrink-0 text-[12px] font-bold"
+                  style={{ color: statusColor }}
+                >
+                  ✗
+                </span>
               )}
 
               {/* Agent name */}
@@ -395,7 +398,9 @@ function SubagentTurn({ message, trace, onCancel, onViewInContext }) {
               {/* Active task — visible mientras corre */}
               {isRunning && activeTask ? (
                 <>
-                  <span className="text-[11px]" style={{ color: 'var(--border-strong)' }}>–</span>
+                  <span className="text-[11px]" style={{ color: 'var(--border-strong)' }}>
+                    –
+                  </span>
                   <span
                     className="text-[11px] font-mono truncate flex-1 italic"
                     style={{ color: 'var(--text-muted)' }}
@@ -492,7 +497,6 @@ function SubagentTurn({ message, trace, onCancel, onViewInContext }) {
   );
 }
 
-
 // ─── Separador entre turnos ───────────────────────────────────────────────────
 function TurnDivider() {
   return (
@@ -575,7 +579,6 @@ function McpTurn({ message, detectMcpOutput }) {
   );
 }
 
-
 // ─── Typing Indicator ─────────────────────────────────────────────────────────
 function TypingIndicator() {
   return (
@@ -633,6 +636,7 @@ export default function ChatMessageList({
   detectMcpOutput,
   onViewSubagent,
   onViewSubagentInContext,
+  compactSubagentTurns = false,
 }) {
   // ── Scroll container ref + smart auto-scroll ─────────────────────────────
   const scrollContainerRef = useRef(null);
@@ -687,7 +691,7 @@ export default function ChatMessageList({
         map[lastAssistantId].push({
           id: m.id,
           agentProfile: meta.agentProfile || 'Sub-Agent',
-          status: meta.status || 'success',
+          status: normalizeSubagentStatus(meta.status || 'success'),
           sessionId: meta.sessionId,
           toolCount,
           doneTools,
@@ -732,6 +736,7 @@ export default function ChatMessageList({
                     <SubagentTurn
                       message={m}
                       trace={tracesMap?.[m.id] || []}
+                      compact={compactSubagentTurns}
                       onCancel={(() => {
                         try {
                           return JSON.parse(m.meta || '{}').status === 'running'

@@ -180,8 +180,8 @@ function formatHelp() {
   const lines = [
     '*🤖 DevHub Bot — Ayuda*',
     '',
-    '*💬 Chat con OpenCode:*',
-    'Escribime cualquier cosa y hablo con el agente configurado',
+    '*Canal externo de DevHub:*',
+    'Telegram muestra estado durable, detalle y respuestas acotadas.',
     '',
     '*Consultas:*',
     '/estado — Dashboard de todos los proyectos',
@@ -189,16 +189,11 @@ function formatHelp() {
     '/progreso \\[proyecto\\] — Barra de progreso',
     '/agentes — Estado del swarm',
     '',
-    '*Acciones:*',
-    '/pausar \\[agente\\] — Pausar agente\\(s\\)',
-    '/reanudar \\[agente\\] — Reanudar agente\\(s\\)',
-    '/continuar \\[proyecto\\] — Next task \\+ lanzar agente',
-    '/spawn \\[tarea\\] \\[perfil\\] — Lanzar con tarea custom',
+    '*Canales seguros:*',
     '/sesiones — Sesiones activas de OpenCode',
     '',
     '*Gestión de chat:*',
-    '/agente \\[nombre\\] — Ver/cambiar agente actual',
-    '/reset — Limpiar historial de conversación',
+    '/agente — Ver agente actual',
     '/nueva_sesion \\[full\\] — Nueva sesión \\(mantener o resetear agente\\)',
     '/historial — Ver últimos mensajes',
     '',
@@ -212,13 +207,45 @@ function formatHelp() {
     '/project switch <nombre> — Cambiar proyecto',
     '/status — Estado de sesión y tokens',
     '',
+    '_Comandos de orquestación local \\(/spawn, /continuar, /pausar, /reanudar, /reset\\) quedaron en cuarentena\\._',
+    '_Usá DevHub UI o MCP para mutaciones durables\\._',
+    '',
     '*Ejemplos:*',
     '`¿Cuál es el estado del proyecto devhub\\?`',
     '`/tareas veloce`',
-    '`/agente sdd-orchestrator`',
-    '`/continuar veloce`',
+    '`/agente`',
   ];
   return lines.join('\n');
+}
+
+function formatCommandQuarantined(commandName, intent = null, options = {}) {
+  const auditRef = intent?.intent_id ? `audit: ${'`'}${esc(intent.intent_id)}${'`'}` : null;
+  const outcomeRef = intent?.result_ref ? `outcome: ${esc(intent.result_ref)}` : null;
+  const refs = [auditRef, outcomeRef].filter(Boolean).join(' · ');
+
+  if (options.degraded) {
+    return [
+      '⚠️ *Modo degradado*',
+      '',
+      `No pude validar duramente el comando /${esc(commandName)}.`,
+      'No voy a inventar estado local desde Telegram.',
+      refs ? '' : null,
+      refs || null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return [
+    `🚫 *Fuera de alcance: /${esc(commandName)}*`,
+    '',
+    'Telegram es canal/adaptador. No ejecuta orquestación, queue, git ni mutaciones locales.',
+    'Usá DevHub control plane \(UI/MCP\) para esa acción.',
+    refs ? '' : null,
+    refs || null,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -264,6 +291,7 @@ module.exports = {
   formatProgress,
   formatAgents,
   formatHelp,
+  formatCommandQuarantined,
   formatError,
   formatSuccess,
   formatLaunch,

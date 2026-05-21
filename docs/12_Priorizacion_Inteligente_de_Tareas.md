@@ -1,8 +1,9 @@
 ---
 Fecha de Modificación: 28 de marzo de 2026
 Changelog:
+  - 2026-05-15 v2: Añadida nota de alineación Git/versionado para evitar prompts legacy que impliquen Git dentro del MCP.
   - 2026-03-28 v1: Creación del documento. Cubre las 8 tareas del Milestone "Fase 4 — Sistema de Priorización Inteligente de Tareas".
-Milestone: "Fase 4 — Sistema de Priorización Inteligente de Tareas"
+Milestone: 'Fase 4 — Sistema de Priorización Inteligente de Tareas'
 Due Date: 2026-04-25
 ---
 
@@ -10,16 +11,20 @@ Due Date: 2026-04-25
 
 El cuello de botella más doloroso del flujo DevHub actual no es ejecutar tareas, sino saber **cuál ejecutar primero**. Este documento especifica el motor de priorización: un sistema de scoring multidimensional que permite al desarrollador y a los agentes Worker conocer en todo momento la tarea de mayor impacto disponible.
 
+> **Nota Git/versionado — 2026-05-15:** Los prompts históricos que dicen “abre una rama Git” o “haz commit” deben ejecutarse según [24_Politica_Git_y_Versionado_Agentes.md](./24_Politica_Git_y_Versionado_Agentes.md): la rama, commit y push los realiza la capability/skill del ejecutor; DevHub MCP sólo conserva estado, cola y comentarios. Cualquier lectura antigua que ubique Git dentro del MCP general es legacy/deprecated.
+
 ---
 
 ## ¿Por qué es necesario?
 
 Actualmente el flujo es:
+
 1. El usuario abre el Kanban.
 2. Ve las tareas sin orden de importancia real.
 3. Elige manualmente cuál pegar al agente.
 
 Con este sistema el flujo pasa a ser:
+
 1. El usuario abre la pestaña "Cola de Agente".
 2. Ve las tareas ordenadas por score descendente.
 3. Hace clic en "Ejecutar" → el prompt correcto se genera solo.
@@ -49,6 +54,7 @@ Prioridad_Score = (urgencia × 0.4) + (valor_negocio × 0.3) + (dependencias_des
 - **tiempo_estancada**: horas desde la última actualización de `updated_at` cuando `status = 'in_progress'`.
 
 **Decisiones de implementación a evaluar:**
+
 - El score no se persistirá en DB, sino que será calculado en tiempo real en `get_next_task()` del MCP para asegurar frescura de los datos (sin desincronización de horas de estancamiento). El frontend también lo calculará on-the-fly para la "Vista Cola de Agente" recibiendo las dependencias vía API.
 - Se implementará la fórmula estándar propuesta.
 
@@ -88,6 +94,7 @@ CREATE POLICY "Los miembros del proyecto pueden ver dependencias"
 ```
 
 **Actualizar en el MCP (`devhub-mcp/server.js`):**
+
 - `create_task_dependency({ task_id, depends_on, tipo })` — tool nueva
 - `get_task_dependencies({ task_id })` — devuelve tareas que bloquea y que lo bloquean
 - Incluir dependencias en la respuesta de `get_project_context()`
@@ -104,6 +111,7 @@ CREATE POLICY "Los miembros del proyecto pueden ver dependencias"
 Crear una nueva pestaña/tab en `src/pages/Tareas.jsx` llamada **"Cola de Agente"** que reemplaza la vista Kanban para el flujo de ejecución de Workers.
 
 **Especificación de la vista:**
+
 - Lista ordenada por `priority_score` descendente.
 - Solo muestra tareas con `status = 'pending'` y que no estén bloqueadas por dependencias incompletas.
 - Cada fila de la lista muestra:
@@ -116,6 +124,7 @@ Crear una nueva pestaña/tab en `src/pages/Tareas.jsx` llamada **"Cola de Agente
 - Botón de recarga manual + auto-refresh cada 60s.
 
 **Prompt generado al hacer clic en "Ejecutar":**
+
 ```
 Tarea: [título]
 Milestone: [milestone]
@@ -123,7 +132,7 @@ Descripción completa: [descripción]
 Archivos de referencia en /docs: [lista de docs relevantes detectados]
 Dependencias completadas: [lista]
 ---
-Ejecuta esta tarea siguiendo el System Prompt del Worker Agent (ver docs/09_Prompts_Maestros_Agentes.md). Abre una rama Git, implementa el cambio, actualiza /docs, y haz commit.
+Ejecuta esta tarea siguiendo el System Prompt del Worker Agent (ver docs/09_Prompts_Maestros_Agentes.md). Usá la capability del ejecutor para abrir la rama de tarea, implementar el cambio, actualizar /docs y registrar commit/push según la política vigente.
 ```
 
 ---
@@ -137,13 +146,13 @@ Ejecuta esta tarea siguiendo el System Prompt del Worker Agent (ver docs/09_Prom
 **Descripción completa:**
 Ampliar el panel de filtros ya existente en `Tareas.jsx` con los siguientes controles:
 
-| Control | Tipo | Descripción |
-|---------|------|-------------|
-| Filtrar por Milestone | `<select>` multi | Lista de milestones del proyecto |
-| Rango de Due Date | Date picker range | Filtra tareas por fecha de vencimiento |
-| Ordenar por | `<select>` | Opciones: `score desc`, `created_at desc`, `due_date asc`, `priority desc` |
-| Solo desbloqueadas | Toggle | Oculta tareas cuyas dependencias no están completadas |
-| Solo asignadas a mí | Toggle | Filtra por `assigned_to = auth.uid()` |
+| Control               | Tipo              | Descripción                                                                |
+| --------------------- | ----------------- | -------------------------------------------------------------------------- |
+| Filtrar por Milestone | `<select>` multi  | Lista de milestones del proyecto                                           |
+| Rango de Due Date     | Date picker range | Filtra tareas por fecha de vencimiento                                     |
+| Ordenar por           | `<select>`        | Opciones: `score desc`, `created_at desc`, `due_date asc`, `priority desc` |
+| Solo desbloqueadas    | Toggle            | Oculta tareas cuyas dependencias no están completadas                      |
+| Solo asignadas a mí   | Toggle            | Filtra por `assigned_to = auth.uid()`                                      |
 
 **Persistencia:** guardar el estado de todos los filtros en `localStorage` bajo la clave `devhub_kanban_filters_[project_id]`. Restaurar al montar el componente.
 
@@ -159,6 +168,7 @@ Ampliar el panel de filtros ya existente en `Tareas.jsx` con los siguientes cont
 Muchas tareas quedan "in_progress" y nadie las retoma. Este job las detecta y alerta.
 
 **Implementación — Opción A (Supabase Edge Function programada):**
+
 ```typescript
 // supabase/functions/stale-task-detector/index.ts
 // Scheduled: every day at 08:00 UTC
@@ -176,6 +186,7 @@ await supabase.from('tasks').update({ stale_alert: true }).in('id', staleIds);
 ```
 
 **Migración SQL requerida:**
+
 ```sql
 ALTER TABLE tasks ADD COLUMN stale_alert BOOLEAN DEFAULT FALSE;
 ```
@@ -195,22 +206,28 @@ Al montar `Dashboard.jsx`, hacer una query de `tasks` con `stale_alert = true`. 
 Esta tool es el punto de entrada del Swarm autónomo. Un Worker Agent la llama al arrancar para saber qué tarea ejecutar.
 
 **Firma de la tool:**
+
 ```javascript
 // devhub-mcp/server.js
-server.tool("get_next_task", {
-  project_id: z.string().uuid(),
-  agent_id: z.string()  // identificador del agente, ej. "worker-1"
-}, async ({ project_id, agent_id }) => {
-  // 1. Calcular scores de todas las tareas pending del proyecto
-  // 2. Filtrar las que no tienen dependencias bloqueantes incompletas
-  // 3. Filtrar las que NO están asignadas a otro agent_id activo
-  // 4. Devolver la de mayor score
-  // 5. Actualizar: status = 'in_progress', assigned_to = agent_id
-  // 6. Devolver objeto completo: { task, milestone, dependencies, related_docs }
-});
+server.tool(
+  'get_next_task',
+  {
+    project_id: z.string().uuid(),
+    agent_id: z.string(), // identificador del agente, ej. "worker-1"
+  },
+  async ({ project_id, agent_id }) => {
+    // 1. Calcular scores de todas las tareas pending del proyecto
+    // 2. Filtrar las que no tienen dependencias bloqueantes incompletas
+    // 3. Filtrar las que NO están asignadas a otro agent_id activo
+    // 4. Devolver la de mayor score
+    // 5. Actualizar: status = 'in_progress', assigned_to = agent_id
+    // 6. Devolver objeto completo: { task, milestone, dependencies, related_docs }
+  }
+);
 ```
 
 **La respuesta debe incluir:**
+
 - Descripción completa de la tarea
 - Nombre del milestone al que pertenece
 - Lista de dependencias ya completadas (contexto)
@@ -231,11 +248,13 @@ server.tool("get_next_task", {
 El modal de creación/edición de tarea (probablemente en `Tareas.jsx` o un componente `TaskModal.jsx`) debe incluir:
 
 **Nuevos campos a añadir:**
+
 1. **"Depende de"** — `<Select isMulti>` con lista de tareas del proyecto. Al seleccionar, crea registros en `task_dependencies` con `tipo = 'blocks'`.
 2. **"Valor de Negocio"** — Slider de 1 a 10 con etiqueta textual (1=mínimo, 5=moderado, 10=core del negocio). Persiste en columna `business_value INTEGER` en tabla `tasks`.
 3. **"Bloquea a"** — Campo de solo lectura (calculado) que muestra qué otras tareas dependen de esta.
 
 **Migración SQL:**
+
 ```sql
 ALTER TABLE tasks ADD COLUMN business_value INTEGER DEFAULT 5
   CHECK (business_value >= 1 AND business_value <= 10);
@@ -255,6 +274,7 @@ Vista alternativa en el Roadmap (`Roadmap.jsx`) que muestra un **grafo dirigido 
 **Librería recomendada:** `@xyflow/react` (react-flow v12) — ya es popular en el ecosistema React y tiene layouts automáticos.
 
 **Especificación visual:**
+
 - **Nodos**: cada tarea es un nodo con color por estado:
   - 🟢 Verde: `completed`
   - 🔵 Azul: `in_progress`

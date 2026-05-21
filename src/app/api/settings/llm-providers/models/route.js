@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getCopilotToken } from '@/lib/copilot-token';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 function normalizeBaseUrl(url) {
   if (!url) return null;
@@ -46,6 +50,11 @@ function getProviderRequest(provider, config = {}) {
         headers: {},
       };
     }
+    case 'opencode': {
+      return {
+        isOpenCode: true,
+      };
+    }
     case 'zen': {
       return {
         baseUrl: config.ZEN_BASE_URL || 'https://zen.opencode.ai/v1',
@@ -76,6 +85,21 @@ export async function POST(request) {
     const reqConfig = getProviderRequest(provider, config || {});
     if (!reqConfig) {
       return NextResponse.json({ error: 'Proveedor desconocido' }, { status: 400 });
+    }
+
+    if (reqConfig.isOpenCode) {
+      try {
+        const { stdout } = await execAsync('opencode models');
+        const models = stdout
+          .split('\n')
+          .map((m) => m.trim())
+          .filter((m) => m.length > 0);
+        return NextResponse.json({
+          models: [...new Set(models)].sort((a, b) => a.localeCompare(b)),
+        });
+      } catch (err) {
+        return NextResponse.json({ models: [], error: `Error al obtener modelos: ${err.message}` });
+      }
     }
 
     const baseUrl = normalizeBaseUrl(reqConfig.baseUrl);
@@ -143,7 +167,7 @@ export async function POST(request) {
         'GPT-5.3-Codex',
         'GPT-5.4 mini',
         'Grok Code Fast 1',
-        'Raptor mini (Preview)'
+        'Raptor mini (Preview)',
       ];
       models = [...new Set([...models, ...openCodeModels])];
     }

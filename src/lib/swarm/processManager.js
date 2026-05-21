@@ -9,7 +9,7 @@
  * - Orphan detection and cleanup
  */
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -21,9 +21,56 @@ const {
   removeSwarmProcess,
 } = require('@/lib/db/localDb.js');
 
-const SERVER_PORT = process.env.OPENCODE_PORT ? parseInt(process.env.OPENCODE_PORT, 10) : 4153;
+const SERVER_PORT = process.env.OPENCODE_PORT ? parseInt(process.env.OPENCODE_PORT, 10) : 4154;
 const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
-const PID_FILE = path.join(process.cwd(), 'data', '.opencode.pid');
+const PID_FILE = path.join(process.cwd(), 'data', '.opencode_4154.pid');
+const OPENCODE_ROOTS = [
+  process.env.OPENCODE_WORKSPACE,
+  path.resolve(process.cwd(), 'opencode'),
+  path.resolve(__dirname, '../../../opencode'),
+].filter(Boolean);
+
+function isFile(file) {
+  try {
+    return fs.existsSync(file) && fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function getOpenCode() {
+  for (const root of OPENCODE_ROOTS) {
+    const bin = path.join(root, 'packages', 'opencode', 'bin', 'opencode');
+    if (isFile(bin)) {
+      return { cmd: bin, args: ['serve', '--port', String(SERVER_PORT)], root };
+    }
+  }
+
+  for (const root of OPENCODE_ROOTS) {
+    const src = path.join(root, 'packages', 'opencode', 'src', 'index.ts');
+    if (process.env.OPENCODE_USE_LOCAL_SOURCE === 'true' && isFile(src)) {
+      const bun = (() => {
+        try {
+          return spawnSync('bun', ['--version'], { stdio: 'ignore' }).status === 0;
+        } catch {
+          return false;
+        }
+      })();
+
+      if (bun) {
+        return { cmd: 'bun', args: [src, 'serve', '--port', String(SERVER_PORT)], root };
+      }
+    }
+  }
+
+  return {
+    error: [
+      '[ProcessManager] Missing workspace-local OpenCode binary.',
+      `Checked: ${OPENCODE_ROOTS.map((root) => path.join(root, 'packages', 'opencode', 'bin', 'opencode')).join(', ')}`,
+      'Install the opencode workspace dependencies (including opencode-linux-x64) so the local wrapper exists.',
+    ].join(' '),
+  };
+}
 
 class ProcessManager {
   constructor() {
@@ -33,6 +80,7 @@ class ProcessManager {
     this.activeSessions = new Map(); // sessionId -> { startTime, agent, project }
     this.processId = null; // DB tracking ID for swarm_processes
     this._signalHandlersRegistered = false;
+    this.lastSpawnError = null;
   }
 
   // ── Singleton Access ────────────────────────────────────────────
@@ -164,6 +212,12 @@ class ProcessManager {
     }
     if (this.launchPromise) return this.launchPromise;
 
+    try {
+      await this.cleanupOrphans();
+    } catch {
+      // Non-fatal: continue startup even if cleanup fails
+    }
+
     // Try to adopt existing process first
     if (await this.adoptExisting()) {
       return { pid: this.readPidFile(), port: SERVER_PORT };
@@ -185,7 +239,7 @@ class ProcessManager {
     this.launchPromise = this.spawnServer(cwd);
     const ok = await this.launchPromise;
     this.launchPromise = null;
-    if (!ok) throw new Error('Failed to start OpenCode serve');
+    if (!ok) throw new Error(this.lastSpawnError || 'Failed to start OpenCode serve');
     return { pid: this.serverProcess?.pid || this.readPidFile(), port: SERVER_PORT };
   }
 
@@ -197,11 +251,47 @@ class ProcessManager {
 
     return new Promise((resolve) => {
       const workingDir = cwd || process.cwd();
-      this.serverProcess = spawn('opencode', ['serve', '--port', String(SERVER_PORT)], {
+      this.lastSpawnError = null;
+
+      // Ensure logs directory exists
+      const logDir = path.join(process.cwd(), 'data', 'logs');
+      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+      const logFilePath = path.join(logDir, `opencode_${Date.now()}.log`);
+      const logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+
+      const finish = (ok) => {
+        if (finish.done) return;
+        finish.done = true;
+        resolve(ok);
+      };
+      finish.done = false;
+
+      // Prefer the workspace-local OpenCode binary when available.
+      // This avoids depending on PATH, which may not include `opencode`.
+      const local = getOpenCode();
+      if (local.error) {
+        this.lastSpawnError = local.error;
+        logStream.write(`[${new Date().toISOString()}] ${local.error}\n`);
+        logStream.end();
+        this.launchPromise = null;
+        resolve(false);
+        return;
+      }
+
+      logStream.write(
+        `[${new Date().toISOString()}] launch cmd=${local.cmd} args=${local.args.join(' ')} cwd=${workingDir} root=${local.root}\n`
+      );
+
+      this.serverProcess = spawn(local.cmd, local.args, {
         cwd: workingDir,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env },
+        env: { ...process.env, BUN_CONFIG_VERBOSE: '0' },
       });
+
+      // Pipe stdout and stderr to log file
+      this.serverProcess.stdout.pipe(logStream);
+      this.serverProcess.stderr.pipe(logStream);
 
       this.savePid(this.serverProcess.pid);
 
@@ -224,36 +314,48 @@ class ProcessManager {
             this.serverReady = true;
             updateSwarmProcess(this.processId, { status: 'running' });
             console.log(`[ProcessManager] OpenCode ready on port ${SERVER_PORT}`);
-            resolve(true);
+            finish(true);
           }
         }
       });
 
       this.serverProcess.stderr.on('data', (d) => {
         const msg = d.toString().trim();
-        if (msg) console.debug(`[opencode stderr] ${msg}`);
+        if (!msg) return;
+        this.lastSpawnError = msg;
+        console.debug(`[opencode stderr] ${msg}`);
       });
 
       this.serverProcess.on('error', (err) => {
         console.error('[ProcessManager] OpenCode spawn error:', err.message);
+        this.lastSpawnError = err.message;
+        logStream.write(`[${new Date().toISOString()}] spawn_error=${err.message}\n`);
+        logStream.end();
         this.serverProcess = null;
         this.serverReady = false;
         this.launchPromise = null;
         if (this.processId) {
           updateSwarmProcess(this.processId, { status: 'error' });
         }
-        resolve(false);
+        finish(false);
       });
 
       this.serverProcess.on('exit', (code, signal) => {
         console.warn(`[ProcessManager] OpenCode exited (code=${code}, signal=${signal})`);
+        if (!ready) {
+          const reason = `OpenCode exited before ready (code=${code}, signal=${signal})`;
+          this.lastSpawnError = this.lastSpawnError || reason;
+          logStream.write(`[${new Date().toISOString()}] ${reason}\n`);
+        }
+        logStream.end();
         this.serverProcess = null;
         this.serverReady = false;
         this.launchPromise = null;
         this.removePidFile();
         if (this.processId) {
-          updateSwarmProcess(this.processId, { status: 'stopped' });
+          updateSwarmProcess(this.processId, { status: ready ? 'stopped' : 'error' });
         }
+        if (!ready) finish(false);
       });
 
       // Timeout fallback
@@ -263,12 +365,15 @@ class ProcessManager {
           if (healthy) {
             this.serverReady = true;
             updateSwarmProcess(this.processId, { status: 'running' });
-            resolve(true);
+            finish(true);
           } else {
-            console.warn('[ProcessManager] Server startup timeout, assuming ready');
-            this.serverReady = true;
-            updateSwarmProcess(this.processId, { status: 'running' });
-            resolve(true);
+            const reason = 'Server startup timeout: health check failed';
+            this.lastSpawnError = this.lastSpawnError || reason;
+            console.warn(`[ProcessManager] ${reason}`);
+            if (this.processId) {
+              updateSwarmProcess(this.processId, { status: 'error' });
+            }
+            finish(false);
           }
         }
       }, 15000);

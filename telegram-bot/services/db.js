@@ -1,7 +1,7 @@
 const Database = require('better-sqlite3');
-const path = require('path');
+const { resolveDbPath } = require('../../src/lib/db/pathResolver');
 
-const DB_PATH = path.resolve(__dirname, '../../data/devhub.db');
+const DB_PATH = resolveDbPath({ moduleDir: __dirname });
 
 const priorityMap = { critical: 4, high: 3, medium: 2, low: 1 };
 

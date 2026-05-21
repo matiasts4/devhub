@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { resolveContextUsage } from '@/lib/agenthub/contextUsage';
 
 /**
  * useSessionUsage — React hook for managing session token usage state.
@@ -102,19 +103,7 @@ export function useSessionUsage(sessionId) {
 
   // Calculate context utilization percentage if not provided by the API
   const displayUsage = useMemo(() => {
-    if (usage.context_utilization > 0) return usage;
-
-    // Fallback calculation: if we have context_window_size, compute utilization
-    if (usage.context_window_size && usage.context_window_size > 0) {
-      const estimatedTokens = usage.prompt_tokens + usage.completion_tokens;
-      const utilization = (estimatedTokens / usage.context_window_size) * 100;
-      return {
-        ...usage,
-        context_utilization: Math.min(utilization, 100),
-      };
-    }
-
-    return usage;
+    return resolveContextUsage(usage);
   }, [usage]);
 
   return {

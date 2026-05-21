@@ -1,5 +1,6 @@
 [package]
-name = "app"
+name = "devhub"
+default-run = "devhub"
 version = "0.1.0"
 description = "DevHub — Autonomous Dev Workspace"
 authors = ["DevHub Contributors"]
@@ -11,7 +12,7 @@ rust-version = "1.77.2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "app_lib"
+name = "devhub_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -22,6 +23,12 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.10.3", features = [] }
+glib = "0.18.5"
+libc = "0.2"
+gtk = "0.18.2"
+webkit2gtk = "2.0.2"
+zoha-vte = "0.6.0"
+tauri-plugin-single-instance = "2"
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2.3.5"
 tauri-plugin-notification = "2"

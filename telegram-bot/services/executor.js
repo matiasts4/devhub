@@ -18,6 +18,7 @@ const logger = require('../utils/logger');
 const { logAgentEvent } = require('./activityLogger');
 const opencode = require('./opencode');
 const sessionBridge = require('./session-bridge');
+const { classifyTaskIntent, shouldUseMultiTurn, isMultiTurnTask } = require('../utils/task');
 
 // ---------------------------------------------------------------------------
 // Deny-list configuration
@@ -136,7 +137,7 @@ class MultiTurnExecutor {
    * @param {TelegramBot} bot - Telegram bot instance
    * @param {object} db - Database bridge instance
    * @param {object} options
-   * @param {number} [options.progressIntervalMs=600000] - Progress notification interval (10 min)
+   * @param {number} [options.progressIntervalMs=45000] - Progress notification interval (45s)
    * @param {Array<string>} [options.denyList] - Permission deny-list
    */
   constructor(bot, db, options = {}) {
@@ -236,6 +237,7 @@ class MultiTurnExecutor {
       lastProgressSummary: new Date(),
       cwd: directory,
       onEvent: options.onEvent || null,
+      originalPrompt: prompt,
     };
 
     this.tasks.set(chatIdStr, taskState);
@@ -272,7 +274,7 @@ class MultiTurnExecutor {
    * @param {string|number} chatId
    * @returns {Promise<object>} Task state snapshot
    */
-  async pauseTask(chatId) {
+  async pauseTask(chatId, reason = 'paused by user') {
     const chatIdStr = String(chatId);
     const task = this.tasks.get(chatIdStr);
 
@@ -359,6 +361,10 @@ class MultiTurnExecutor {
         lastProgressSummary: new Date(),
         cwd: session.directory || process.cwd(),
         onEvent: null,
+        originalPrompt:
+          session.original_prompt ||
+          session.initial_prompt ||
+          'Retomá la tarea en progreso y reconstruí el contexto necesario antes de seguir.',
       };
       this.tasks.set(chatIdStr, taskState);
     } else {
@@ -689,32 +695,26 @@ class MultiTurnExecutor {
    * @private
    */
   _evaluateCompletion(taskState, output, events) {
-    // 1. Check for completion keywords in output
     const lowerOutput = (output || '').toLowerCase();
     const hasCompletionKeyword = this.options.completionKeywords.some((kw) =>
       lowerOutput.includes(kw)
     );
-
-    // 2. Check if any tools were executed in the last turn
     const turnToolEvents = events.filter(
       (e) => e.type === 'tool.start' || e.type === 'tool.execute'
     );
-    const noToolsCalled = turnToolEvents.length === 0;
+    const usedToolsThisTurn = turnToolEvents.length > 0;
+    const usedToolsAcrossTask = (taskState.toolsExecuted?.size || 0) > 0 || usedToolsThisTurn;
+    const substantiveOutput = _isSubstantiveCompletionOutput(output);
 
-    // 3. Check if output is minimal (agent just said "done" or similar)
-    const isMinimalOutput = output && output.trim().length < 200;
+    if (!hasCompletionKeyword) {
+      return false;
+    }
 
-    // Completion: (keyword found AND no tools called) OR (minimal output AND no tools called)
-    if (noToolsCalled && (hasCompletionKeyword || isMinimalOutput)) {
+    if (usedToolsAcrossTask) {
       return true;
     }
 
-    // Safety valve: 2+ consecutive turns with no tools and minimal output
-    if (taskState.turnCount >= 2 && noToolsCalled && isMinimalOutput) {
-      return true;
-    }
-
-    return false;
+    return substantiveOutput;
   }
 
   /**
@@ -726,10 +726,21 @@ class MultiTurnExecutor {
    * @private
    */
   _buildContinuationPrompt(taskState, lastOutput) {
-    return (
-      `Continuá trabajando en la tarea. Turno ${taskState.turnCount + 1}. ` +
-      `Seguí con lo que estabas haciendo hasta completar el objetivo.`
-    );
+    const originalObjective =
+      taskState.originalPrompt ||
+      'Retomá la tarea en progreso y reconstruí el objetivo antes de seguir trabajando.';
+    const previousOutput = String(lastOutput || '').trim();
+    const summarizedOutput = previousOutput
+      ? previousOutput.substring(0, 600)
+      : 'Sin salida útil todavía.';
+
+    return [
+      `Continuá trabajando en la tarea. Turno ${taskState.turnCount + 1}.`,
+      `Objetivo original: ${originalObjective}`,
+      `Último resultado observado: ${summarizedOutput}`,
+      'Instrucciones: seguí con el objetivo original, verificá resultados concretos y no pierdas el contexto.',
+      'No marques la tarea como completa hasta tener un resultado concreto y verificable. Si todavía falta trabajo, explicá qué falta y seguí ejecutándolo.',
+    ].join('\n\n');
   }
 
   // -----------------------------------------------------------------------
@@ -854,7 +865,14 @@ class MultiTurnExecutor {
  */
 function getExecutor(bot, db, options = {}) {
   if (!_instance) {
-    _instance = new MultiTurnExecutor(bot, db, options);
+    const envProgressIntervalMs = parseInt(process.env.TELEGRAM_PROGRESS_INTERVAL_MS, 10);
+
+    _instance = new MultiTurnExecutor(bot, db, {
+      progressIntervalMs:
+        options.progressIntervalMs ??
+        (Number.isFinite(envProgressIntervalMs) ? envProgressIntervalMs : 45_000),
+      ...options,
+    });
   }
   return _instance;
 }
@@ -879,37 +897,23 @@ module.exports = {
   resetExecutor,
   createSimpleApprovalHandler,
   _checkDenyList,
+  classifyTaskIntent,
+  shouldUseMultiTurn,
   isMultiTurnTask,
 };
 
-/**
- * Heuristic to determine if a message is likely a multi-turn task.
- * Checks for: length > 100 chars OR SDD/implementation keywords.
- *
- * @param {string} text - User message text
- * @returns {boolean}
- */
-function isMultiTurnTask(text) {
+function _isSubstantiveCompletionOutput(output) {
+  const text = String(output || '').trim();
+
   if (!text) return false;
+  if (text.length >= 240) return true;
 
-  // Long messages are likely complex tasks
-  if (text.length > 100) return true;
+  const lines = text.split(/\n+/).filter(Boolean);
+  if (lines.length >= 4 && text.length >= 120) return true;
 
-  const lower = text.toLowerCase();
-  const keywords = [
-    'implement',
-    'create',
-    'following',
-    'build',
-    'fix',
-    'refactor',
-    'sdd',
-    'spec',
-    'design',
-    'proposal',
-    'task',
-    'feature',
-  ];
-
-  return keywords.some((kw) => lower.includes(kw));
+  return (
+    /(`[^`]+`|\/[\w./-]+|\b(archivo|archivos|resultado|resultados|verific|test|tests|comando|comandos|cambio|cambios|updated|created|fixed|implemented|ran)\b)/i.test(
+      text
+    ) && text.length >= 120
+  );
 }

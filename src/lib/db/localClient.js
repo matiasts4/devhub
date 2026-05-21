@@ -113,7 +113,7 @@ class LocalQueryClient {
       params.set('limit', String(this._limitVal));
     }
 
-    const response = await fetch(`/api/db/query/?${params.toString()}`, {
+    const response = await fetch(`/api/db/query?${params.toString()}`, {
       cache: 'no-store',
     });
 
@@ -155,7 +155,7 @@ class LocalQueryClient {
 
   // Override execute to handle mutations
   async _executeMutation() {
-    const response = await fetch('/api/db/mutate/', {
+    const response = await fetch('/api/db/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

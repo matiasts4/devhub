@@ -677,7 +677,7 @@ class ToolRegistry {
    */
   constructor(options = {}) {
     this.enabledTiers = options.enabledTiers || [1]; // Only T1 by default
-    this.mcpBaseUrl = options.mcpBaseUrl || process.env.DEVHUB_API_URL || 'http://localhost:3000';
+    this.mcpBaseUrl = options.mcpBaseUrl || process.env.DEVHUB_API_URL || 'http://127.0.0.1:3400';
     this.maxToolCalls = options.maxToolCalls || 5;
     this.maxToolResultChars = options.maxToolResultChars || 2000;
   }

@@ -8,7 +8,6 @@ import {
   User,
   Palette,
   Trash2,
-  Monitor,
   Loader2,
   AlertTriangle,
   Check,
@@ -33,6 +32,20 @@ import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import { getStoredTheme, setTheme, THEMES, THEME_OPTIONS } from '@/lib/theme/themes';
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
+import {
+  DOCUMENTATION_POLICY_OPTIONS,
+  PROJECT_TYPE_OPTIONS,
+  buildProjectUpdatePayload,
+  DEFAULT_DOCUMENTATION_POLICY,
+  DEFAULT_PROJECT_TYPE,
+} from '@/lib/projectClassification';
+import {
+  MonitorSmartphone,
+  GraduationCap,
+  FlaskConical,
+  BarChart3,
+  Palette as ProjectPalette,
+} from 'lucide-react';
 
 const ACCENT_COLORS = [
   '#58A6FF',
@@ -231,7 +244,7 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center px-4"
+      className="fixed inset-x-0 bottom-0 top-[46px] z-40 flex items-center justify-center px-4"
       style={{ background: 'rgba(0,0,0,0.45)' }}
     >
       <div
@@ -325,6 +338,11 @@ export default function Ajustes() {
   const [color, setColor] = useState(project?.color || '#6366f1');
   const [status, setProjectStatus] = useState(project?.status || 'active');
   const [localPath, setLocalPath] = useState(project?.local_path || '');
+  const [projectType, setProjectType] = useState(project?.project_type || DEFAULT_PROJECT_TYPE);
+  const [planningPrompt, setPlanningPrompt] = useState(project?.planning_prompt || '');
+  const [documentationPolicy, setDocumentationPolicy] = useState(
+    project?.documentation_policy || DEFAULT_DOCUMENTATION_POLICY
+  );
   const [savingProject, setSaving] = useState(false);
 
   // Profile settings
@@ -422,7 +440,18 @@ export default function Ajustes() {
     setSaving(true);
     const { error } = await db
       .from('projects')
-      .update({ name, description, color, status, local_path: localPath })
+      .update(
+        buildProjectUpdatePayload({
+          name,
+          description,
+          color,
+          status,
+          local_path: localPath,
+          project_type: projectType,
+          planning_prompt: planningPrompt,
+          documentation_policy: documentationPolicy,
+        })
+      )
       .eq('id', project?.id);
     setSaving(false);
     if (error) {
@@ -445,12 +474,10 @@ export default function Ajustes() {
 
   async function deleteProject() {
     setDeleting(true);
-    await db.from('tasks').delete().eq('project_id', project?.id);
-    await db.from('milestones').delete().eq('project_id', project?.id);
     const { error } = await db.from('projects').delete().eq('id', project?.id);
     setDeleting(false);
     if (error) {
-      toast.error('Error al eliminar');
+      toast.error(error.message || 'Error al eliminar');
       return;
     }
     toast.success('Proyecto eliminado');
@@ -594,6 +621,126 @@ export default function Ajustes() {
                 <option value="archived">Archivado</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label
+                className="block text-xs mb-1.5 font-medium"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Tipo de proyecto
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {PROJECT_TYPE_OPTIONS.map(({ value, label }) => {
+                  const spec = {
+                    software: { Icon: MonitorSmartphone, color: '#58A6FF' },
+                    university: { Icon: GraduationCap, color: '#D2A8FF' },
+                    research: { Icon: FlaskConical, color: '#3FB950' },
+                    security: { Icon: ProjectPalette, color: '#E3B341' },
+                    business: { Icon: BarChart3, color: '#F78166' },
+                    creative: { Icon: ProjectPalette, color: '#FF79C6' },
+                  }[value];
+                  const selected = projectType === value;
+                  const Icon = spec?.Icon || MonitorSmartphone;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setProjectType(value)}
+                      className="rounded-lg border px-3 py-2 text-left transition-all"
+                      style={{
+                        borderColor: selected
+                          ? 'color-mix(in srgb, var(--accent-primary) 35%, transparent)'
+                          : 'var(--border-subtle)',
+                        background: selected ? 'var(--surface-elevated)' : 'var(--surface-muted)',
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon
+                          className="w-3.5 h-3.5"
+                          style={{
+                            color: selected ? 'var(--accent-primary)' : 'var(--text-muted)',
+                          }}
+                        />
+                        <span
+                          className="text-xs font-medium"
+                          style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                        >
+                          {label}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label
+                className="block text-xs mb-1.5 font-medium"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Política de documentación
+              </label>
+              <div className="space-y-2">
+                {DOCUMENTATION_POLICY_OPTIONS.map(({ value, label, description }) => {
+                  const selected = documentationPolicy === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setDocumentationPolicy(value)}
+                      className="w-full rounded-lg border px-3 py-2.5 text-left transition-all"
+                      style={{
+                        borderColor: selected
+                          ? 'color-mix(in srgb, var(--accent-primary) 35%, transparent)'
+                          : 'var(--border-subtle)',
+                        background: selected ? 'var(--surface-elevated)' : 'var(--surface-muted)',
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span
+                          className="text-xs font-medium"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {label}
+                        </span>
+                        <span
+                          className="text-[10px] uppercase tracking-wide"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {selected ? 'Activa' : 'Disponible'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {description}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label
+              className="block text-xs mb-1.5 font-medium"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Planning prompt
+            </label>
+            <textarea
+              rows={3}
+              value={planningPrompt}
+              onChange={(e) => setPlanningPrompt(e.target.value)}
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
+              style={{
+                background: 'var(--surface-muted)',
+                border: '1px solid var(--border-strong)',
+                color: 'var(--text-primary)',
+              }}
+            />
           </div>
 
           <div>

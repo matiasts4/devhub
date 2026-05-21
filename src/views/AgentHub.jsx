@@ -32,10 +32,14 @@ import {
   Database,
   Server,
   Command,
-  Settings,
-  X,
+  Terminal,
+  Activity,
+  LayoutPanelLeft,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { createClient } from '@/lib/db/localClient';
 
 const db = createClient();
@@ -45,6 +49,12 @@ import ChatMessageList from '@/components/chat/ChatMessageList';
 import { enforceDocOpsGateOnLaunchCommand, shellQuotePrompt } from '@/lib/docopsPrompts';
 import { detectMcpOutput } from '@/components/chat/utils/detectMcpOutput';
 import { slashCommands, filterSlashCommands, groupByCategory } from '@/lib/slashSkills';
+import { createAgentHubStreamParser } from '@/lib/agenthubStream';
+import {
+  DEFAULT_COMPRESSION_KEEP_LAST_N,
+  formatCompressionResultMessage,
+  MIN_MESSAGES_FOR_COMPRESSION,
+} from '@/lib/agenthubCompression';
 
 // Phase 4: Trace Enhancement components
 import OutputViewerModal from '@/components/chat/OutputViewerModal';
@@ -54,6 +64,14 @@ import MCPStatusPanel from '@/components/chat/MCPStatusPanel';
 import SessionListModal from '@/components/chat/SessionListModal';
 import ChatCommandPalette from '@/components/chat/ChatCommandPalette';
 import { useSessionUsage } from '@/hooks/useSessionUsage';
+import { mergeSessionUsage } from '@/lib/agenthub/contextUsage';
+import {
+  getSubagentFinalStatusFromChild,
+  isStaleSessionForSubagentMessage,
+  getSubagentMeta,
+  normalizeSubagentName,
+} from '@/lib/agenthubSubagentState';
+import { emitSubagentOperationalFeedback } from '@/lib/operations/agenthubFeedback';
 // Phase 5: UX Polish components
 import { Skeleton, SkeletonText, SkeletonCard, SkeletonAvatar } from '@/components/chat/Skeleton';
 import KeyboardShortcutsHelp from '@/components/chat/KeyboardShortcutsHelp';
@@ -62,6 +80,7 @@ import OnboardingTour from '@/components/chat/OnboardingTour';
 // Subagent navigation components
 import AgentStatusBar from '@/components/chat/AgentStatusBar';
 import SubagentBreadcrumbs from '@/components/chat/SubagentBreadcrumbs';
+import TerminalTTY from '@/components/TerminalTTY';
 
 // UI Components
 import { Button } from '@/components/ui/button';
@@ -131,13 +150,161 @@ export default function AgentHub() {
 
   const [llmConfig, setLlmConfig] = useState(null);
   const [activeProviderName, setActiveProviderName] = useState(null);
-  const [activeModelOverride, setActiveModelOverride] = useState('');
+  const [activeModelOverride, setActiveModelOverride] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('agenthub_model_override') || '';
+    }
+    return '';
+  });
+
+  // Persist model override to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('agenthub_model_override', activeModelOverride);
+    }
+  }, [activeModelOverride]);
   const [favoriteModels, setFavoriteModels] = useState([]);
   const [slashFilter, setSlashFilter] = useState(''); // filter text after /
 
   // Header auto-collapse during agent execution
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  // Right panel view mode: 'live' = Markdown-rendered OC output, 'traces' = structured trace list
+  const [rightPanelView, setRightPanelView] = useState('live');
   const prevWaitingRef = useRef(false);
+  const subagentRunRef = useRef(null);
+
+  // Chat panel width (drag-resizable)
+  const [chatWidth, setChatWidth] = useState(() => {
+    try {
+      return parseInt(localStorage.getItem('agenthub_chat_width') || '380', 10);
+    } catch {
+      return 380;
+    }
+  });
+  const dragStateRef = useRef({ isDragging: false, startX: 0, startWidth: 0 });
+
+  // Live view: OC message data fetched directly from OpenCode HTTP API.
+  // childSessionIds accumulates ALL subagent session IDs for the current chat — never reset on
+  // each new dispatch so the Live panel shows cumulative history within a conversation.
+  const [childSessionIds, setChildSessionIds] = useState([]);
+  const [ocMessages, setOcMessages] = useState([]);
+  const ocPollRef = useRef(null);
+  const ocLiveScrollRef = useRef(null);
+  const ocLiveIsAtBottomRef = useRef(true);
+
+  const resetSubagentUiState = useCallback(() => {
+    setIsWaitingForSubagent(false);
+    setHeaderCollapsed(false);
+    prevWaitingRef.current = false;
+    if (subagentAbortControllerRef.current?.abort) {
+      subagentAbortControllerRef.current.abort();
+    }
+    subagentAbortControllerRef.current = null;
+    subagentSessionIdRef.current = null;
+  }, []);
+
+  const updateSubagentMessageState = useCallback(async (subagentMsgId, nextMeta) => {
+    const metaString = JSON.stringify(nextMeta);
+    setMessages((prev) =>
+      prev.map((m) => (m.id === subagentMsgId ? { ...m, meta: metaString } : m))
+    );
+    try {
+      await db.from('agent_hub_messages').update({ meta: metaString }).eq('id', subagentMsgId);
+    } catch {
+      // Non-critical local persistence failure.
+    }
+  }, []);
+
+  const finalizeSubagentRun = useCallback(
+    async ({
+      subagentMsgId,
+      selectedAgent,
+      sessionID,
+      childSessionId,
+      status,
+      errorMessage,
+      traces = [],
+      textOutput = '',
+    }) => {
+      const terminalStatus = status === 'success' ? 'completed' : status;
+      let feedback = null;
+
+      if (childSessionId) {
+        try {
+          await fetch(`/api/agenthub/sessions/${childSessionId}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: terminalStatus }),
+          });
+        } catch {
+          // Child status sync best effort only.
+        }
+      }
+
+      if (subagentMsgId) {
+        await updateSubagentMessageState(subagentMsgId, {
+          agentProfile: selectedAgent,
+          status,
+          sessionId: sessionID,
+          childSessionId,
+          ...(errorMessage ? { errorMessage } : {}),
+        });
+      }
+
+      try {
+        feedback = await emitSubagentOperationalFeedback({
+          projectId: project?.id,
+          agentName: selectedAgent,
+          status,
+          sessionID,
+          childSessionId,
+          messageId: subagentMsgId,
+          errorMessage,
+          traces,
+          textOutput,
+        });
+      } catch (notificationError) {
+        console.warn('Failed to emit operational feedback:', notificationError);
+      }
+
+      resetSubagentUiState();
+      subagentRunRef.current = null;
+      return feedback;
+    },
+    [project?.id, resetSubagentUiState, updateSubagentMessageState]
+  );
+
+  const clearStaleSubagentMessages = useCallback((staleSessions) => {
+    if (!Array.isArray(staleSessions) || staleSessions.length === 0) return;
+    const run = subagentRunRef.current;
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.role !== 'subagent') return m;
+        if (
+          !staleSessions.some((staleSession) => isStaleSessionForSubagentMessage(staleSession, m))
+        ) {
+          return m;
+        }
+        const meta = getSubagentMeta(m);
+        if (meta.status !== 'running') return m;
+        return {
+          ...m,
+          meta: JSON.stringify({
+            ...meta,
+            status: 'aborted',
+          }),
+        };
+      })
+    );
+
+    if (
+      run &&
+      staleSessions.some((staleSession) => staleSession.session_id === run.childSessionId)
+    ) {
+      resetSubagentUiState();
+      subagentRunRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (isWaitingForSubagent && !prevWaitingRef.current) {
@@ -145,6 +312,26 @@ export default function AgentHub() {
     }
     prevWaitingRef.current = isWaitingForSubagent;
   }, [isWaitingForSubagent]);
+
+  // Lifecycle OpenCode Start/Stop
+  useEffect(() => {
+    fetch('/api/agenthub/opencode/start', { method: 'POST' }).catch((err) =>
+      console.error('Failed to start OpenCode:', err)
+    );
+
+    const handleBeforeUnload = () => {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/agenthub/opencode/stop');
+      } else {
+        fetch('/api/agenthub/opencode/stop', { method: 'POST', keepalive: true }).catch(() => {});
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   // Load LLM config, detect active provider, and load its favorites
   useEffect(() => {
@@ -192,6 +379,34 @@ export default function AgentHub() {
     }
   }, [project?.id]); // eslint-disable-line
 
+  // Auto-kickoff Planning mode when ?plan=1 is in the URL
+  const planningAutoStartedRef = useRef(false);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (!params.get('plan') || planningAutoStartedRef.current || !project?.id) return;
+
+    // Small delay to ensure sessions + LLM config are initialized
+    const timer = setTimeout(() => {
+      planningAutoStartedRef.current = true;
+      // Clean the URL query param without navigation
+      window.history.replaceState({}, '', location.pathname);
+
+      const kickoff = `Estoy creando un nuevo proyecto en DevHub y necesito que me ayudes con la **planificación completa**.
+
+Por favor, seguí este flujo:
+1. Usá \`execute_devhub\` con \`get_project_context\` (project_id: "${project.id}") para leer el contexto, los documentos y el planning_prompt que ya cargué
+2. Haceme las preguntas que necesites para entender bien qué quiero construir (alcance, tecnologías, prioridades)
+3. Una vez que quede claro el alcance, armá un plan exhaustivo: creá los **hitos** (milestones) y las **tareas** usando las herramientas MCP de DevHub
+4. Al terminar, marcá el proyecto como planificado con \`update_project\` usando \`planning_status: "completed"\`
+
+Dale, empezá leyendo el contexto del proyecto.`;
+
+      handleSend(kickoff);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [project?.id, location.search]); // eslint-disable-line
+
   // Stale subagent detection — poll health endpoint every 30s
   useEffect(() => {
     const checkStale = async () => {
@@ -202,25 +417,7 @@ export default function AgentHub() {
         if (data.aborted_count > 0) {
           // Reload sessions to reflect status changes
           loadSessions();
-          // Update any running subagent messages in the UI
-          setMessages((prev) =>
-            prev.map((m) => {
-              if (m.role === 'subagent') {
-                try {
-                  const meta = m.meta ? JSON.parse(m.meta) : {};
-                  if (
-                    meta.status === 'running' &&
-                    data.stale_sessions.some((s) => s.session_id === m.session_id)
-                  ) {
-                    return { ...m, meta: JSON.stringify({ ...meta, status: 'aborted' }) };
-                  }
-                } catch {
-                  /* skip — meta parse failure is non-critical */
-                }
-              }
-              return m;
-            })
-          );
+          clearStaleSubagentMessages(data.stale_sessions || []);
         }
       } catch (err) {
         // Silently fail — health check is non-critical
@@ -229,7 +426,7 @@ export default function AgentHub() {
 
     const interval = setInterval(checkStale, 30_000);
     return () => clearInterval(interval);
-  }, []); // eslint-disable-line
+  }, [clearStaleSubagentMessages]);
 
   // Phase 4: Trace Enhancement state
   const [traceSearch, setTraceSearch] = useState('');
@@ -285,9 +482,11 @@ export default function AgentHub() {
       if (data) {
         setSessions(data);
 
-        // Auto-load last active session so state recovers on page switch
+        // Auto-load last active session so state recovers on page switch.
+        // Uses sessionStorage (not localStorage) so a fresh browser/tab start always
+        // begins with a new session instead of restoring the last one.
         if (!currentSessionId && data.length > 0) {
-          const lastId = localStorage.getItem('agenthub_last_session_' + project.id);
+          const lastId = sessionStorage.getItem('agenthub_last_session_' + project.id);
           const targetId = forceLoadId || lastId;
           const sessionToLoad = data.find((s) => s.id === targetId) || data[0];
           loadMessages(sessionToLoad.id);
@@ -304,6 +503,10 @@ export default function AgentHub() {
   const loadMessages = async (sessionId) => {
     if (!sessionId) return;
     setIsLoadingMessages(true);
+    setSessionUsage({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
+    // Clear accumulated Live view state from previous chat
+    setChildSessionIds([]);
+    setOcMessages([]);
     try {
       const { data } = await db
         .from('agent_hub_messages')
@@ -314,7 +517,7 @@ export default function AgentHub() {
         setMessages(data);
         setCurrentSessionId(sessionId);
         if (project?.id) {
-          localStorage.setItem('agenthub_last_session_' + project.id, sessionId);
+          sessionStorage.setItem('agenthub_last_session_' + project.id, sessionId);
         }
 
         // Trust health endpoint for stale detection — do NOT forcibly abort running subagents.
@@ -340,7 +543,9 @@ export default function AgentHub() {
                 tracesRef.current[mid] = parts;
               }
             }
-          } catch {}
+          } catch {
+            // Ignore trace hydration failures for partial history.
+          }
         }
       }
     } catch (err) {
@@ -418,12 +623,10 @@ export default function AgentHub() {
     setAttachedFiles([]); // Clear attached files after sending
     setIsTyping(true);
 
-    db
-      .from('agent_hub_messages')
+    db.from('agent_hub_messages')
       .insert(userMessage)
       .then(() => {
-        db
-          .from('agent_hub_sessions')
+        db.from('agent_hub_sessions')
           .update({ updated_at: new Date().toISOString() })
           .eq('id', sessionId);
       });
@@ -567,7 +770,8 @@ export default function AgentHub() {
   };
 
   const handleCompressContext = async () => {
-    if (!currentSessionId || isCompressing || messages.length <= 3) return;
+    if (!currentSessionId || isCompressing || messages.length < MIN_MESSAGES_FOR_COMPRESSION)
+      return;
 
     setIsCompressing(true);
     const toastId = toast.loading('Comprimiendo espacio de contexto...');
@@ -580,7 +784,7 @@ export default function AgentHub() {
           session_id: currentSessionId,
           project_id: project?.id,
           model: activeModelOverride || 'gpt-4o-mini',
-          keep_last_n: 3,
+          keep_last_n: DEFAULT_COMPRESSION_KEEP_LAST_N,
         }),
       });
 
@@ -589,8 +793,15 @@ export default function AgentHub() {
         throw new Error(errJson.error || 'Error comprimiendo');
       }
 
+      const result = await res.json();
       await loadMessages(currentSessionId);
-      toast.success('Contexto comprimido exitosamente', { id: toastId });
+
+      if (!result.compressed) {
+        toast.info(formatCompressionResultMessage(result), { id: toastId });
+        return;
+      }
+
+      toast.success(formatCompressionResultMessage(result), { id: toastId });
     } catch (e) {
       toast.error(`Error de compresión: ${e.message}`, { id: toastId });
     } finally {
@@ -632,41 +843,35 @@ export default function AgentHub() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      const handleStreamEvent = (parsed) => {
+        if (parsed.type === 'meta') {
+          activeModel = parsed.model_used;
+          setStreamingModel(activeModel);
+        } else if (parsed.type === 'error') {
+          throw new Error(parsed.error);
+        } else if (parsed.type === 'usage') {
+          setSessionUsage(
+            parsed.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+          );
+        } else if (parsed.type === 'chunk') {
+          activeMessage += parsed.content;
+          streamingContentRef.current = activeMessage;
+        }
+      };
+
+      const parser = createAgentHubStreamParser({
+        onEvent: handleStreamEvent,
+      });
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        // Mantener la última línea incompleta en el buffer
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.type === 'meta') {
-              activeModel = parsed.model_used;
-              setStreamingModel(activeModel);
-            } else if (parsed.type === 'error') {
-              throw new Error(parsed.error);
-            } else if (parsed.type === 'usage') {
-              setSessionUsage(
-                parsed.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
-              );
-            } else if (parsed.type === 'chunk') {
-              activeMessage += parsed.content;
-              // KEY OPTIMIZATION: Update ref only — NO state change, NO re-render of message list
-              streamingContentRef.current = activeMessage;
-            }
-          } catch (e) {
-            // Ignorar líneas malformadas temporales
-          }
-        }
+        parser.push(decoder.decode(value, { stream: true }));
       }
+
+      parser.push(decoder.decode());
+      parser.flush();
 
       // Streaming complete — flush to messages state (single update)
       setIsStreaming(false);
@@ -702,7 +907,7 @@ export default function AgentHub() {
       /<execute_opencode agent="([^"]+)">(.*?)<\/execute_opencode>/is
     );
     if (matchOpenCode) {
-      const agentProfile = matchOpenCode[1];
+      const agentProfile = normalizeSubagentName(matchOpenCode[1]);
       const agentGoal = matchOpenCode[2].trim();
       toast.info(`Delegando tarea a: ${agentProfile}`);
       dispatchOpenCode(agentProfile, agentGoal);
@@ -757,6 +962,56 @@ export default function AgentHub() {
       } finally {
         setIsWaitingForSubagent(false);
       }
+      return;
+    }
+
+    // 3. Interceptar Herramientas de DevHub (DevHub MCP)
+    const matchDevHub = replyContent.match(
+      /<execute_devhub tool="([^"]+)" args='(.*?)'><\/execute_devhub>/is
+    );
+    if (matchDevHub) {
+      const toolName = matchDevHub[1];
+      let args = {};
+      try {
+        args = JSON.parse(matchDevHub[2]);
+      } catch (e) {
+        toast.error('Error al parsear argumentos de DevHub MCP (JSON inválido)');
+        return;
+      }
+
+      toast.info(`MCP: Ejecutando DevHub -> ${toolName}`);
+      setIsWaitingForSubagent(true);
+
+      try {
+        const res = await fetch('/api/mcp/devhub', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ toolName, args }),
+        });
+
+        if (!res.ok) {
+          const textData = await res.text();
+          throw new Error(textData);
+        }
+
+        const mcpResult = await res.json();
+
+        let inyectedOutput = `[Respuesta del Sistema DevHub MCP - ${toolName}]:\n${mcpResult.content || 'Sin resultados'}`;
+        if (mcpResult.error || mcpResult.success === false) {
+          inyectedOutput = `[Error del Sistema DevHub MCP - ${toolName}]:\n${mcpResult.error || mcpResult.content || 'Fallo en la ejecución de la herramienta'}`;
+        }
+
+        // skipParse=true para evitar loop
+        handleSendInjection(inyectedOutput, true);
+      } catch (e) {
+        toast.error(`Fallo de red llamando a DevHub MCP: ${e.message}`);
+        handleSendInjection(
+          `[Error del Sistema DevHub MCP - ${toolName}]:\nEl servidor local falló al conectar o ejecutar la herramienta: ${e.message}`,
+          true
+        );
+      } finally {
+        setIsWaitingForSubagent(false);
+      }
     }
   };
 
@@ -785,9 +1040,20 @@ export default function AgentHub() {
   useEffect(() => {
     let raf;
     let lastSnap = '';
+
+    const buildTraceSnap = (traceMap) =>
+      Object.entries(traceMap)
+        .map(([msgId, parts]) => {
+          const list = Array.isArray(parts) ? parts : [];
+          const last = list[list.length - 1] || {};
+          const contentLen = typeof last.content === 'string' ? last.content.length : 0;
+          return `${msgId}:${list.length}:${last.id || ''}:${last.toolStatus || ''}:${contentLen}`;
+        })
+        .join('|');
+
     const sync = () => {
-      const snap = JSON.stringify(Object.keys(tracesRef.current));
-      // Only re-render when trace keys actually changed
+      const snap = buildTraceSnap(tracesRef.current);
+      // Re-render when trace structure/content changes (not just keys)
       if (snap !== lastSnap) {
         setTracesMap({ ...tracesRef.current });
         lastSnap = snap;
@@ -809,7 +1075,7 @@ export default function AgentHub() {
         es = null;
       }
       try {
-        es = new EventSource('/api/agenthub/sessions/stream');
+        es = new EventSource('/api/agenthub/sessions/stream/');
         es.addEventListener('trace-event', (e) => {
           let data;
           try {
@@ -897,6 +1163,7 @@ export default function AgentHub() {
   };
 
   const dispatchOpenCode = async (selectedAgent, commandPrompt) => {
+    const normalizedAgent = normalizeSubagentName(selectedAgent);
     setIsWaitingForSubagent(true);
     let sessionID = null;
     let subagentMsgId = null;
@@ -907,19 +1174,34 @@ export default function AgentHub() {
       subagentMsgId = crypto.randomUUID();
 
       // POST to headless — server handles SSE consumption + persistence in background
+      // Only forward model if user explicitly selected a fully-qualified 'provider/model' path.
+      // Sub-agents have their own model configured in opencode.json — don't override unless explicit.
+      const headlessModel = activeModelOverride?.includes('/') ? activeModelOverride : null;
       const res = await fetch('/api/agenthub/headless', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          agent: selectedAgent,
+          agent: normalizedAgent,
           prompt: `[Tú eres el sub-agente. Instrucciones: "${commandPrompt}"]`,
           subagentMsgId,
           project_id: project.id,
+          ...(headlessModel ? { model: headlessModel } : {}),
         }),
       });
 
       if (!res.ok) {
-        throw new Error('Fallo al conectar con OpenCode Headless');
+        let detail = '';
+        try {
+          const err = await res.json();
+          detail = err?.detail || err?.error || '';
+        } catch {
+          // Ignore parse errors and keep generic message
+        }
+        throw new Error(
+          detail
+            ? `Fallo al conectar con OpenCode Headless: ${detail}`
+            : 'Fallo al conectar con OpenCode Headless'
+        );
       }
 
       const data = await res.json();
@@ -932,8 +1214,8 @@ export default function AgentHub() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: project.id,
-          title: `${selectedAgent}: ${commandPrompt.slice(0, 40)}${commandPrompt.length > 40 ? '…' : ''}`,
-          agent_model: selectedAgent,
+          title: `${normalizedAgent}: ${commandPrompt.slice(0, 40)}${commandPrompt.length > 40 ? '…' : ''}`,
+          agent_model: normalizedAgent,
           parent_id: currentSessionId,
           opencode_session_id: sessionID,
         }),
@@ -950,7 +1232,7 @@ export default function AgentHub() {
         role: 'subagent',
         content: '',
         meta: JSON.stringify({
-          agentProfile: selectedAgent,
+          agentProfile: normalizedAgent,
           status: 'running',
           sessionId: sessionID,
           childSessionId,
@@ -959,11 +1241,21 @@ export default function AgentHub() {
       };
       setMessages((prev) => [...prev, subagentMessage]);
       tracesRef.current = { ...tracesRef.current, [subagentMsgId]: [] };
+      // Auto-show live Markdown view when a sub-agent starts.
+      // Append session ID so the Live panel accumulates history across dispatches in this chat.
+      setRightPanelView('live');
+      setChildSessionIds((prev) => (prev.includes(sessionID) ? prev : [...prev, sessionID]));
       await db.from('agent_hub_messages').insert(subagentMessage);
+      subagentRunRef.current = {
+        subagentMsgId,
+        selectedAgent: normalizedAgent,
+        sessionID,
+        childSessionId,
+      };
 
       // No reader.read() loop — server handles SSE in background.
       // Real-time traces arrive via global SSE subscription (see useEffect below).
-      // Poll for completion via health endpoint + periodic status check.
+      // Poll the child session status route — source of truth for completion.
 
       // Clear any previous interval before creating a new one
       if (subagentAbortControllerRef.current?.abort) {
@@ -976,70 +1268,49 @@ export default function AgentHub() {
           return;
         }
         try {
-          const healthRes = await fetch('/api/agenthub/sessions/health');
-          if (!healthRes.ok) return;
-          const health = await healthRes.json();
-          // Check if our session is still active
-          const isActive = health.active_sessions?.some(
-            (s) => s.session_id === sessionID && !s.is_stale
-          );
-          if (!isActive) {
-            // Session completed — check if it was success or error
-            const isStale = health.stale_sessions?.some((s) => s.session_id === sessionID);
-            const finalStatus = isStale ? 'aborted' : 'success';
-            const finalMeta = JSON.stringify({
-              agentProfile: selectedAgent,
-              status: finalStatus,
-              sessionId: sessionID,
-              childSessionId,
-            });
-            setMessages((prev) =>
-              prev.map((m) => (m.id === subagentMsgId ? { ...m, meta: finalMeta } : m))
-            );
-            await db
-              .from('agent_hub_messages')
-              .update({ meta: finalMeta })
-              .eq('id', subagentMsgId);
-            if (childSessionId) {
-              try {
-                await fetch(`/api/agenthub/sessions/${childSessionId}/status`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    status: finalStatus === 'success' ? 'completed' : finalStatus,
-                  }),
-                });
-              } catch {}
-            }
-            if (finalStatus === 'success') {
-              handleSendInjection(
-                `[SYSTEM NOTIFICATION]: El sub-agente headless "${selectedAgent}" ha finalizado su ejecución.`
-              );
-            }
-            clearInterval(pollInterval);
-            setIsWaitingForSubagent(false);
-            subagentAbortControllerRef.current = null;
+          if (!sessionID) return;
+          const statusRes = await fetch(`/api/agenthub/sessions/${sessionID}/status`);
+          if (!statusRes.ok) return;
+          const statusData = await statusRes.json();
+          const normalizedStatus = getSubagentFinalStatusFromChild(statusData.status);
+          if (normalizedStatus === 'running') return;
+
+          const currentTraces = tracesRef.current[subagentMsgId] || [];
+          const feedback = await finalizeSubagentRun({
+            subagentMsgId,
+            selectedAgent: normalizedAgent,
+            sessionID,
+            childSessionId,
+            status: normalizedStatus,
+            errorMessage: statusData.error_message || null,
+            traces: currentTraces,
+            textOutput: statusData.text_output || '',
+          });
+
+          if (feedback?.injectionMessage) {
+            handleSendInjection(feedback.injectionMessage);
           }
         } catch {
           // Poll error — non-critical, keep polling
         }
-      }, 5000);
+      }, 2000);
 
       // Store interval ref for cleanup
       subagentAbortControllerRef.current = { abort: () => clearInterval(pollInterval) };
     } catch (e) {
+      const normalizedAgent = normalizeSubagentName(selectedAgent);
       const errorMeta = JSON.stringify({
-        agentProfile: selectedAgent,
+        agentProfile: normalizedAgent,
         status: 'error',
         sessionId: sessionID,
         childSessionId,
+        errorMessage: e.message,
       });
       if (subagentMsgId) {
         setMessages((prev) =>
           prev.map((m) => (m.id === subagentMsgId ? { ...m, meta: errorMeta } : m))
         );
-        db
-          .from('agent_hub_messages')
+        db.from('agent_hub_messages')
           .update({ meta: errorMeta })
           .eq('id', subagentMsgId)
           .catch(() => {});
@@ -1051,16 +1322,19 @@ export default function AgentHub() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'error' }),
           });
-        } catch {}
+        } catch {
+          // Child error sync best effort only.
+        }
       }
       toast.error(`Headless Error: ${e.message}`);
       handleSendInjection(`[Error]: Fallo al conectar con el sub-agente: ${e.message}`);
-      setIsWaitingForSubagent(false);
-      subagentAbortControllerRef.current = null;
+      resetSubagentUiState();
+      subagentRunRef.current = null;
     }
   };
 
   const cancelSubagent = async () => {
+    const run = subagentRunRef.current;
     const sessionId = subagentSessionIdRef.current;
 
     // 1. Tell OpenCode to abort via Next.js API (uses correct server-side port)
@@ -1086,9 +1360,18 @@ export default function AgentHub() {
       subagentAbortControllerRef.current = null;
     }
 
+    if (run?.subagentMsgId) {
+      await updateSubagentMessageState(run.subagentMsgId, {
+        agentProfile: run.selectedAgent,
+        status: 'aborted',
+        sessionId: run.sessionID,
+        childSessionId: run.childSessionId,
+      });
+    }
+
     // 3. Clear state
-    subagentSessionIdRef.current = null;
-    setIsWaitingForSubagent(false);
+    resetSubagentUiState();
+    subagentRunRef.current = null;
   };
 
   // Phase 4: Permission handlers — use Next.js API route (correct server-side port)
@@ -1166,7 +1449,7 @@ export default function AgentHub() {
   // Phase 4: MCP server refresh
   const handleMCPRefresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/mcp/servers');
+      const res = await fetch('/api/agenthub/mcp/status');
       if (res.ok) {
         const data = await res.json();
         setMcpServers(data);
@@ -1248,6 +1531,51 @@ export default function AgentHub() {
   };
 
   // Phase 5: Global keyboard shortcuts (Ctrl+? for help, Ctrl+N for new session)
+
+  // OC Message polling: fetch OpenCode messages from ALL child sessions and merge into a
+  // single chronological list. Re-runs whenever a new session ID is added to the array.
+  useEffect(() => {
+    if (childSessionIds.length === 0) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const allMessages = [];
+        await Promise.all(
+          childSessionIds.map(async (sid) => {
+            const res = await fetch(`/api/agenthub/sessions/${sid}/opencode-messages`);
+            if (res.ok) {
+              const data = await res.json();
+              allMessages.push(...(data.messages || []));
+            }
+          })
+        );
+        // Sort by OpenCode creation timestamp so multi-session history is chronological
+        allMessages.sort((a, b) => (a.info?.time?.created || 0) - (b.info?.time?.created || 0));
+        if (!cancelled) setOcMessages(allMessages);
+      } catch {
+        /* non-critical */
+      }
+    };
+
+    poll();
+    ocPollRef.current = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(ocPollRef.current);
+      ocPollRef.current = null;
+    };
+  }, [childSessionIds.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-scroll the Live panel to the bottom as new OC messages arrive.
+  // Respects manual scroll: if the user scrolled up to read, don't hijack their position.
+  useEffect(() => {
+    const el = ocLiveScrollRef.current;
+    if (!el || !ocLiveIsAtBottomRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [ocMessages.length]);
+
   useEffect(() => {
     const handler = (e) => {
       // Ctrl+? — Keyboard shortcuts help
@@ -1271,278 +1599,1091 @@ export default function AgentHub() {
     return () => document.removeEventListener('keydown', handler);
   }, []); // eslint-disable-line
   const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const { usage: persistedSessionUsage } = useSessionUsage(currentSessionId);
+  const mergedSessionUsage = useMemo(() => {
+    return mergeSessionUsage(persistedSessionUsage, sessionUsage);
+  }, [persistedSessionUsage, sessionUsage]);
 
   return (
     <div
-      className="flex flex-col h-full text-gray-200 overflow-hidden"
+      className="flex h-full text-gray-200 overflow-hidden"
       style={{ background: 'var(--surface-app)' }}
     >
-      {/* Collapsible Header — auto-hides during agent execution */}
+      {/* ══════════════════════════════════════════════
+          LEFT PANEL — Chat (session + messages + input)
+          ══════════════════════════════════════════════ */}
       <div
-        className={`transition-all duration-300 ease-in-out overflow-hidden ${
-          headerCollapsed ? 'max-h-0 opacity-0' : 'max-h-40 opacity-100'
-        }`}
+        className="flex flex-col shrink-0 overflow-hidden"
+        style={{
+          width: chatWidth + 'px',
+          minWidth: '260px',
+          maxWidth: '680px',
+          borderRight: '1px solid var(--border-subtle)',
+        }}
       >
-        <SessionHeader
-          currentSession={currentSession}
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          mergedUsage={sessionUsage}
-          showMCPPanel={showMCPPanel}
-          isCompressing={isCompressing}
-          messagesCount={messages.length}
-          onToggleMCP={() => setShowMCPPanel((v) => !v)}
-          onCompress={handleCompressContext}
-          onShowSessionList={() => setShowSessionList(true)}
-          onLoadSession={loadMessages}
-          onDeleteSession={deleteSession}
-          onCreateSession={createNewSession}
-        />
+        {/* Collapsible Header */}
+        <div
+          className={`transition-all duration-300 ease-in-out overflow-hidden ${
+            headerCollapsed ? 'max-h-0 opacity-0' : 'max-h-80 opacity-100'
+          }`}
+        >
+          <SessionHeader
+            currentSession={currentSession}
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            showMCPPanel={showMCPPanel}
+            isCompressing={isCompressing}
+            messagesCount={messages.length}
+            onToggleMCP={() => setShowMCPPanel((v) => !v)}
+            onCompress={handleCompressContext}
+            onShowSessionList={() => setShowSessionList(true)}
+            onLoadSession={loadMessages}
+            onDeleteSession={deleteSession}
+            onCreateSession={createNewSession}
+          />
+        </div>
+
+        {/* Minimal expand bar */}
+        {headerCollapsed && (
+          <div
+            className="flex items-center justify-between px-3 py-1 border-b"
+            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-card)' }}
+          >
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+              <span className="text-[10px] uppercase tracking-wider font-bold text-amber-400/70">
+                Agente ejecutando
+              </span>
+            </div>
+            <button
+              onClick={() => setHeaderCollapsed(false)}
+              className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              <ChevronDown className="w-3 h-3" />
+              Expandir
+            </button>
+          </div>
+        )}
+
+        {/* Messages or skeleton */}
+        {isLoadingSessions || (isLoadingMessages && messages.length === 0) ? (
+          <div className="flex-1 overflow-y-auto p-4" role="status" aria-live="polite">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <SkeletonAvatar size={34} />
+                <Skeleton className="h-4 w-40" />
+              </div>
+              <SkeletonCard />
+              <SkeletonCard />
+            </div>
+          </div>
+        ) : (
+          <>
+            <SubagentBreadcrumbs
+              chain={[]}
+              currentSessionId={currentSessionId}
+              onNavigate={(sessionId) => loadMessages(sessionId)}
+            />
+
+            <ChatMessageList
+              messages={messages}
+              tracesMap={tracesMap}
+              isTyping={isTyping}
+              isWaitingForSubagent={isWaitingForSubagent}
+              isStreaming={isStreaming}
+              streamingContentRef={streamingContentRef}
+              streamingModel={streamingModel}
+              messagesEndRef={messagesEndRef}
+              editingMessageId={editingMessageId}
+              editDraft={editDraft}
+              onEditChange={setEditDraft}
+              onSaveEdit={handleSaveEdit}
+              compactSubagentTurns={rightPanelView === 'live'}
+              onCancelEdit={() => {
+                setEditingMessageId(null);
+                setEditDraft('');
+              }}
+              onRegenerate={handleRegenerate}
+              onCopyMessage={handleCopyMessage}
+              onStartEdit={handleStartEdit}
+              onCancelSubagent={cancelSubagent}
+              onSetPrompt={setPrompt}
+              formatMessage={formatMessage}
+              detectMcpOutput={detectMcpOutput}
+              onViewSubagent={(sa) => {
+                const panelId = `oc-view-${sa.sessionId || Date.now()}`;
+                window.dispatchEvent(
+                  new CustomEvent('devhub:run-agent', {
+                    detail: {
+                      taskId: panelId,
+                      command: `opencode`,
+                      selectedAgent: sa.agentProfile || 'opencode',
+                      promptSummary: `Ver sesión: ${sa.agentProfile || 'Agent'}`,
+                      taskTitle: `Ver: ${sa.agentProfile || 'Agent'}`,
+                    },
+                  })
+                );
+                navigate(`/project/${project.id}/terminales`);
+              }}
+              onViewSubagentInContext={(subagentMsg) => {
+                navigate(`/agent/swarm`);
+                toast.info(
+                  `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control`
+                );
+              }}
+            />
+
+            <ChatInput
+              isWaitingForSubagent={isWaitingForSubagent}
+              isTyping={isTyping}
+              isStreaming={isStreaming}
+              prompt={prompt}
+              textareaRef={textareaRef}
+              showSlashMenu={showSlashMenu}
+              slashFilter={slashFilter}
+              slashIndex={slashIndex}
+              favoriteModels={favoriteModels}
+              activeModelOverride={activeModelOverride}
+              activeProviderName={activeProviderName}
+              abortControllerRef={abortControllerRef}
+              onPromptChange={handlePromptChange}
+              onKeyDown={handleKeyDown}
+              onSlashSelect={handleSlashSelect}
+              onOpenCommandPalette={() => setShowCommandPalette(true)}
+              onModelOverrideChange={setActiveModelOverride}
+              onStopGenerating={handleStopGenerating}
+              onSend={handleSend}
+            />
+          </>
+        )}
       </div>
 
-      {/* Minimal expand bar — shown only when header is collapsed */}
-      {headerCollapsed && (
-        <div
-          className="flex items-center justify-between px-3 py-1 border-b"
-          style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-card)' }}
-        >
-          <div className="flex items-center gap-2">
-            <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
-            <span className="text-[10px] uppercase tracking-wider font-bold text-amber-400/70">
-              Agente ejecutando
-            </span>
-          </div>
-          <button
-            onClick={() => setHeaderCollapsed(false)}
-            className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
-            title="Expandir header"
-          >
-            <ChevronDown className="w-3 h-3" />
-            Expandir
-          </button>
-        </div>
-      )}
-
-      {isLoadingSessions || (isLoadingMessages && messages.length === 0) ? (
-        <div className="flex-1 overflow-y-auto p-4 md:p-8" role="status" aria-live="polite">
-          <div className="max-w-4xl mx-auto space-y-4">
-            <div className="flex items-center gap-3">
-              <SkeletonAvatar size={34} />
-              <Skeleton className="h-4 w-40" />
-            </div>
-            <SkeletonCard />
-            <SkeletonCard />
-            <div className="pt-1">
-              <SkeletonText lines={3} />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Breadcrumbs de navegación jerárquica */}
-          <SubagentBreadcrumbs
-            chain={[]}
-            currentSessionId={currentSessionId}
-            onNavigate={(sessionId) => loadMessages(sessionId)}
-          />
-
-          <ChatMessageList
-            messages={messages}
-            tracesMap={tracesMap}
-            isTyping={isTyping}
-            isWaitingForSubagent={isWaitingForSubagent}
-            isStreaming={isStreaming}
-            streamingContentRef={streamingContentRef}
-            streamingModel={streamingModel}
-            messagesEndRef={messagesEndRef}
-            editingMessageId={editingMessageId}
-            editDraft={editDraft}
-            onEditChange={setEditDraft}
-            onSaveEdit={handleSaveEdit}
-            onCancelEdit={() => {
-              setEditingMessageId(null);
-              setEditDraft('');
-            }}
-            onRegenerate={handleRegenerate}
-            onCopyMessage={handleCopyMessage}
-            onStartEdit={handleStartEdit}
-            onCancelSubagent={cancelSubagent}
-            onSetPrompt={setPrompt}
-            formatMessage={formatMessage}
-            detectMcpOutput={detectMcpOutput}
-            onViewSubagent={(sa) => {
-              // Navigate to subagent session if it has a sessionId
-              if (sa.sessionId) {
-                // TODO: load subagent session
-                toast.info(`Navegando a subagente: ${sa.agentProfile}`);
-              }
-            }}
-            onViewSubagentInContext={(subagentMsg) => {
-              // Open subagent in dedicated view (SwarmControl)
-              navigate(`/agent/swarm`);
-              toast.info(
-                `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control`
+      {/* ═══════════════ DRAG HANDLE ═══════════════ */}
+      <div
+        title="Arrastrar para redimensionar"
+        style={{
+          width: '5px',
+          cursor: 'col-resize',
+          background: 'var(--border-subtle)',
+          flexShrink: 0,
+          transition: 'background 0.15s',
+          position: 'relative',
+          zIndex: 10,
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'var(--accent-primary)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = dragStateRef.current.isDragging
+            ? 'var(--accent-primary)'
+            : 'var(--border-subtle)';
+        }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          dragStateRef.current = { isDragging: true, startX: e.clientX, startWidth: chatWidth };
+          const onMove = (ev) => {
+            if (!dragStateRef.current.isDragging) return;
+            const delta = ev.clientX - dragStateRef.current.startX;
+            const newWidth = Math.max(260, Math.min(680, dragStateRef.current.startWidth + delta));
+            dragStateRef.current.lastWidth = newWidth;
+            setChatWidth(newWidth);
+          };
+          const onUp = () => {
+            dragStateRef.current.isDragging = false;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            try {
+              localStorage.setItem(
+                'agenthub_chat_width',
+                String(dragStateRef.current.lastWidth ?? dragStateRef.current.startWidth)
               );
-            }}
-          />
-
-          <ChatInput
-            isWaitingForSubagent={isWaitingForSubagent}
-            isTyping={isTyping}
-            isStreaming={isStreaming}
-            prompt={prompt}
-            textareaRef={textareaRef}
-            showSlashMenu={showSlashMenu}
-            slashFilter={slashFilter}
-            slashIndex={slashIndex}
-            favoriteModels={favoriteModels}
-            activeModelOverride={activeModelOverride}
-            activeProviderName={activeProviderName}
-            abortControllerRef={abortControllerRef}
-            onPromptChange={handlePromptChange}
-            onKeyDown={handleKeyDown}
-            onSlashSelect={handleSlashSelect}
-            onOpenCommandPalette={() => setShowCommandPalette(true)}
-            onModelOverrideChange={setActiveModelOverride}
-            onStopGenerating={handleStopGenerating}
-            onSend={handleSend}
-          />
-
-          {/* AgentStatusBar — debajo del input, al pie absoluto (OpenCode style) */}
-          {(() => {
-            const isActive = isWaitingForSubagent || isTyping || isStreaming;
-            if (!isActive) return null;
-
-            const runningSubagent = messages.findLast?.((m) => {
-              try {
-                return m.role === 'subagent' && JSON.parse(m.meta || '{}').status === 'running';
-              } catch {
-                return false;
-              }
-            });
-
-            let agentName = 'Orquestador';
-            // Para el modelo: preferir el del subagente activo, luego streaming, luego override
-            let agentModel = streamingModel || activeModelOverride || '';
-            let toolCallCount = 0;
-
-            if (runningSubagent) {
-              let meta = {};
-              try {
-                meta = JSON.parse(runningSubagent.meta || '{}');
-              } catch {}
-              agentName = meta.agentProfile
-                ? meta.agentProfile
-                    .replace(/^openai\/|^anthropic\/|^google\//i, '')
-                    .replace(/-\d{4}-\d{2}-\d{2}$/, '')
-                : 'Sub-Agente';
-              // El modelo del subagente viene del meta (guardado por el dispatch)
-              if (meta.model) agentModel = meta.model;
-              const trace = tracesMap?.[runningSubagent.id] || [];
-              toolCallCount = trace.filter((p) => p.type === 'tool').length;
+            } catch {
+              // Persisted panel width is optional.
             }
+          };
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        }}
+      />
+
+      {/* ══════════════════════════════════════════════
+          RIGHT PANEL — Execution view (live + traces)
+          ══════════════════════════════════════════════ */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* Execution panel header */}
+        <div
+          className="flex items-center justify-between px-4 border-b shrink-0"
+          style={{
+            height: '52px',
+            borderColor: 'var(--border-subtle)',
+            background: 'var(--surface-card)',
+          }}
+        >
+          {/* Left: title + status badge + active model */}
+          <div className="flex items-center gap-2 min-w-0">
+            <Activity className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+            <span
+              className="text-xs font-semibold tracking-wide shrink-0"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Ejecución del Agente
+            </span>
+            {isWaitingForSubagent || isStreaming ? (
+              <span
+                className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0"
+                style={{
+                  background: 'color-mix(in srgb, #34d399 15%, transparent)',
+                  color: '#34d399',
+                  border: '1px solid color-mix(in srgb, #34d399 30%, transparent)',
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                Activo
+              </span>
+            ) : (
+              <span
+                className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0"
+                style={{
+                  background: 'color-mix(in srgb, var(--text-muted) 10%, transparent)',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                Inactivo
+              </span>
+            )}
+            {(streamingModel || activeModelOverride) && (
+              <span
+                className="text-[10px] font-mono truncate"
+                style={{ color: 'var(--text-muted)', maxWidth: '120px' }}
+                title={streamingModel || activeModelOverride}
+              >
+                {(streamingModel || activeModelOverride)
+                  .replace(/^(openai|anthropic|google)\//i, '')
+                  .replace(/-\d{4}-\d{2}-\d{2}$/, '')}
+              </span>
+            )}
+          </div>
+
+          {/* Right: context usage + view toggle + abort (when running) + terminal link */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Context usage badge — compact inline */}
+            <TokenUsageBadge usage={mergedSessionUsage} compact />
+            {/* Terminal / Trazas toggle */}
+            <div
+              className="flex items-center rounded-md overflow-hidden"
+              style={{
+                border: '1px solid var(--border-subtle)',
+                background: 'var(--surface-elevated, var(--surface-card))',
+              }}
+            >
+              <button
+                onClick={() => setRightPanelView('live')}
+                className="flex items-center gap-1 h-6 px-2.5 text-[11px] font-medium transition-all"
+                style={{
+                  background: rightPanelView === 'live' ? 'var(--accent-primary)' : 'transparent',
+                  color: rightPanelView === 'live' ? '#fff' : 'var(--text-muted)',
+                }}
+                title="Vista en vivo del agente (Markdown renderizado)"
+              >
+                <Monitor className="w-3 h-3" />
+                Live
+              </button>
+              <button
+                onClick={() => setRightPanelView('traces')}
+                className="flex items-center gap-1 h-6 px-2.5 text-[11px] font-medium transition-all"
+                style={{
+                  background: rightPanelView === 'traces' ? 'var(--accent-primary)' : 'transparent',
+                  color: rightPanelView === 'traces' ? '#fff' : 'var(--text-muted)',
+                }}
+                title="Ver trazas de herramientas"
+              >
+                <Activity className="w-3 h-3" />
+                Trazas
+              </button>
+            </div>
+
+            {(isWaitingForSubagent || isStreaming || isTyping) && (
+              <button
+                onClick={handleStopGenerating}
+                className="flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium transition-all hover:opacity-90"
+                style={{
+                  background: 'color-mix(in srgb, #f87171 12%, transparent)',
+                  color: '#f87171',
+                  border: '1px solid color-mix(in srgb, #f87171 25%, transparent)',
+                }}
+                title="Detener ejecución"
+              >
+                <Slash className="w-3 h-3" />
+                Detener
+              </button>
+            )}
+            <button
+              onClick={() => navigate(`/project/${project.id}/terminales`)}
+              className="flex items-center gap-1 h-7 px-2.5 rounded-md text-[11px] font-medium transition-all hover:opacity-90"
+              style={{
+                background: 'var(--surface-elevated, var(--surface-card))',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-subtle)',
+              }}
+              title="Abrir terminal completa"
+            >
+              <ExternalLink className="w-2.5 h-2.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Execution content: shared IIFE resolves lastSubagentMsg, then renders Terminal log OR Trazas */}
+        {(() => {
+          const runningSubagentMsg = [...messages].reverse().find((m) => {
+            try {
+              return m.role === 'subagent' && JSON.parse(m.meta || '{}').status === 'running';
+            } catch {
+              return false;
+            }
+          });
+          const lastSubagentMsg =
+            runningSubagentMsg || [...messages].reverse().find((m) => m.role === 'subagent');
+          let meta = {};
+          try {
+            meta = JSON.parse(lastSubagentMsg?.meta || '{}');
+          } catch {
+            // Invalid persisted metadata should not break execution view rendering.
+          }
+          const isRunning = meta.status === 'running';
+          const traces = lastSubagentMsg ? tracesMap?.[lastSubagentMsg.id] || [] : [];
+          const toolTraces = traces.filter((t) => t.type === 'tool');
+          const textTraces = traces.filter((t) => t.type === 'text' || t.type === 'reasoning');
+
+          // ── Live tab: render messages from OpenCode HTTP API with Markdown ──
+          if (rightPanelView === 'live') {
+            const agentLabel = meta.agentProfile || 'opencode';
+            const statusColor = isRunning
+              ? '#3fb950'
+              : meta.status === 'error'
+                ? '#f85149'
+                : '#7d8590';
+
+            // Extract parts from OC messages: show all assistant turns
+            const assistantMsgs = ocMessages.filter((m) => m.info?.role === 'assistant');
+
+            // Helpers to render individual parts
+            const renderToolPart = (p, i) => {
+              const isErr = p.state?.status === 'error';
+              const isPending = !p.state?.status || p.state?.status === 'pending';
+              const inp = p.state?.input;
+              const argStr = inp
+                ? String(
+                    inp.path ||
+                      inp.file_path ||
+                      inp.pattern ||
+                      inp.command ||
+                      inp.query ||
+                      inp.content?.slice?.(0, 80) ||
+                      ''
+                  ).replace(/^\/home\/[^/]+/, '~')
+                : '';
+              return (
+                <div
+                  key={p.callID || i}
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    alignItems: 'baseline',
+                    fontSize: '11px',
+                    lineHeight: '1.7',
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: isErr ? '#f85149' : isPending ? '#d29922' : '#3fb950',
+                      width: '14px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isPending ? '◌' : isErr ? '✗' : '✓'}
+                  </span>
+                  <span style={{ color: '#79c0ff', minWidth: '140px', flexShrink: 0 }}>
+                    {p.tool || 'tool'}
+                  </span>
+                  {argStr && (
+                    <span
+                      style={{
+                        color: '#7d8590',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '260px',
+                      }}
+                      title={argStr}
+                    >
+                      {argStr}
+                    </span>
+                  )}
+                </div>
+              );
+            };
 
             return (
-              <AgentStatusBar
-                isActive={isActive}
-                agentName={agentName}
-                model={agentModel}
-                tokenCount={sessionUsage?.total_tokens || 0}
-                tokenLimit={200000}
-                toolCallCount={toolCallCount}
-                onInterrupt={handleStopGenerating}
-                onCommandPalette={() => setShowCommandPalette(true)}
-              />
-            );
-          })()}
-
-          {/* Phase 4: Session List Modal */}
-          <SessionListModal
-            isOpen={showSessionList}
-            onClose={() => setShowSessionList(false)}
-            sessions={sessions}
-            onSelect={(s) => loadMessages(s.id)}
-            projectId={project?.id}
-            onCreateNew={createNewSession}
-          />
-
-          {/* Command Palette (Ctrl+K) */}
-          <ChatCommandPalette
-            open={showCommandPalette}
-            onOpenChange={setShowCommandPalette}
-            sessions={sessions}
-            onSelectSession={(sessionId) => loadMessages(sessionId)}
-            onCreateNew={createNewSession}
-            onInsertCommand={(cmd) => setPrompt((prev) => prev + cmd + ' ')}
-            onNavigate={(path) => navigate(path)}
-          />
-
-          {/* Phase 4: Permission Modal */}
-          <PermissionModal
-            isOpen={!!permissionRequest}
-            onClose={() => setPermissionRequest(null)}
-            onApprove={handlePermissionApprove}
-            onReject={handlePermissionReject}
-            permission={permissionRequest}
-          />
-
-          {/* Phase 4: Output Viewer Modal */}
-          <OutputViewerModal
-            isOpen={outputViewer.isOpen}
-            onClose={() => setOutputViewer({ isOpen: false, title: '', content: '', language: '' })}
-            title={outputViewer.title}
-            content={outputViewer.content}
-            language={outputViewer.language}
-          />
-
-          {/* Phase 4: MCP Status Panel (slide-in drawer) */}
-          {showMCPPanel && (
-            <div
-              className="fixed inset-y-0 right-0 z-40 w-full sm:w-80 border-l shadow-2xl animate-in slide-in-from-right duration-200"
-              style={{ background: 'var(--surface-app)', borderColor: 'var(--border-subtle)' }}
-            >
               <div
-                className="flex items-center justify-between px-4 py-3 border-b"
-                style={{ borderColor: 'var(--border-subtle)' }}
+                className="flex-1 flex flex-col overflow-hidden"
+                style={{ background: '#0d1117' }}
               >
-                <h3
-                  className="text-sm font-semibold flex items-center gap-2"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  <Server className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-                  MCP Servers
-                </h3>
-                <button
-                  onClick={() => setShowMCPPanel(false)}
-                  className="p-1.5 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                  style={{ color: 'var(--text-muted)' }}
-                  aria-label="Cerrar panel MCP"
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--surface-hover)';
-                    e.currentTarget.style.color = 'var(--text-primary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.color = 'var(--text-muted)';
+                {/* Header bar */}
+                <div
+                  className="flex items-center gap-2 px-4 py-2 shrink-0"
+                  style={{
+                    borderBottom: '1px solid #21262d',
+                    background: '#161b22',
+                    fontFamily: "'JetBrains Mono', monospace",
                   }}
                 >
-                  <ChevronDown className="w-4 h-4 rotate-[-90deg]" />
-                </button>
+                  <span style={{ color: '#58a6ff', fontSize: '12px' }}>~/devhub</span>
+                  <span style={{ color: '#3fb950', fontSize: '12px' }}> ❯ </span>
+                  <span style={{ color: '#e6edf3', fontSize: '12px' }}>
+                    opencode --agent {agentLabel}
+                  </span>
+                  {isRunning ? (
+                    <span style={{ color: '#d29922', fontSize: '11px', marginLeft: '8px' }}>
+                      <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+                      running
+                    </span>
+                  ) : lastSubagentMsg ? (
+                    <span style={{ color: statusColor, fontSize: '11px', marginLeft: '8px' }}>
+                      {meta.status === 'error' ? '✗ error' : '✓ done'}
+                    </span>
+                  ) : null}
+                </div>
+
+                {/* Content: tool calls and Markdown text */}
+                <div
+                  ref={ocLiveScrollRef}
+                  className="flex-1 overflow-y-auto"
+                  style={{ scrollbarWidth: 'thin', padding: '16px 20px' }}
+                  onScroll={(e) => {
+                    const el = e.currentTarget;
+                    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+                    ocLiveIsAtBottomRef.current = distFromBottom < 80;
+                  }}
+                >
+                  {!lastSubagentMsg || assistantMsgs.length === 0 ? (
+                    <div
+                      style={{
+                        color: '#7d8590',
+                        marginTop: '24px',
+                        textAlign: 'center',
+                        fontSize: '12px',
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
+                      {isRunning
+                        ? '…esperando respuesta del agente'
+                        : 'No hay ejecución activa. Despacha un sub-agente para ver la respuesta aquí.'}
+                    </div>
+                  ) : (
+                    assistantMsgs.map((msg, msgIdx) => {
+                      const parts = msg.parts || [];
+                      const toolParts = parts.filter((p) => p.type === 'tool');
+                      const textPart = parts.find((p) => p.type === 'text');
+                      const reasonParts = parts.filter((p) => p.type === 'reasoning');
+
+                      return (
+                        <div
+                          key={msgIdx}
+                          style={{ marginBottom: msgIdx < assistantMsgs.length - 1 ? '24px' : 0 }}
+                        >
+                          {/* Tool calls — compact log */}
+                          {toolParts.length > 0 && (
+                            <div
+                              style={{
+                                marginBottom: '12px',
+                                padding: '8px 12px',
+                                background: '#161b22',
+                                borderRadius: '6px',
+                                border: '1px solid #21262d',
+                              }}
+                            >
+                              {toolParts.map((p, i) => renderToolPart(p, i))}
+                            </div>
+                          )}
+
+                          {/* Reasoning — collapsed italic block */}
+                          {reasonParts.length > 0 &&
+                            reasonParts.some((p) => (p.text || '').length > 10) && (
+                              <div
+                                style={{
+                                  marginBottom: '12px',
+                                  padding: '8px 12px',
+                                  background: '#161b22',
+                                  borderRadius: '6px',
+                                  border: '1px solid #21262d',
+                                  fontStyle: 'italic',
+                                  color: '#7d8590',
+                                  fontSize: '11px',
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                              >
+                                {reasonParts.map((p, i) => (
+                                  <div key={i}>
+                                    ✦ {(p.text || '').slice(0, 200)}
+                                    {(p.text || '').length > 200 ? '…' : ''}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                          {/* Text — Markdown rendered */}
+                          {textPart?.text && (
+                            <div
+                              className="oc-markdown"
+                              style={{
+                                color: '#c9d1d9',
+                                fontSize: '13px',
+                                lineHeight: '1.7',
+                              }}
+                            >
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  h1: ({ children }) => (
+                                    <h1
+                                      style={{
+                                        color: '#e6edf3',
+                                        fontSize: '17px',
+                                        fontWeight: 700,
+                                        margin: '12px 0 6px',
+                                        borderBottom: '1px solid #21262d',
+                                        paddingBottom: '4px',
+                                      }}
+                                    >
+                                      {children}
+                                    </h1>
+                                  ),
+                                  h2: ({ children }) => (
+                                    <h2
+                                      style={{
+                                        color: '#e6edf3',
+                                        fontSize: '14px',
+                                        fontWeight: 700,
+                                        margin: '10px 0 4px',
+                                      }}
+                                    >
+                                      {children}
+                                    </h2>
+                                  ),
+                                  h3: ({ children }) => (
+                                    <h3
+                                      style={{
+                                        color: '#cdd0d4',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        margin: '8px 0 3px',
+                                      }}
+                                    >
+                                      {children}
+                                    </h3>
+                                  ),
+                                  p: ({ children }) => (
+                                    <p
+                                      style={{
+                                        margin: '3px 0 8px',
+                                        color: '#c9d1d9',
+                                        lineHeight: 1.6,
+                                      }}
+                                    >
+                                      {children}
+                                    </p>
+                                  ),
+                                  ul: ({ children }) => (
+                                    <ul
+                                      style={{
+                                        paddingLeft: '18px',
+                                        margin: '2px 0 8px',
+                                        color: '#c9d1d9',
+                                      }}
+                                    >
+                                      {children}
+                                    </ul>
+                                  ),
+                                  ol: ({ children }) => (
+                                    <ol
+                                      style={{
+                                        paddingLeft: '18px',
+                                        margin: '2px 0 8px',
+                                        color: '#c9d1d9',
+                                      }}
+                                    >
+                                      {children}
+                                    </ol>
+                                  ),
+                                  li: ({ children }) => (
+                                    <li
+                                      style={{ margin: '1px 0', color: '#c9d1d9', lineHeight: 1.5 }}
+                                    >
+                                      {children}
+                                    </li>
+                                  ),
+                                  // pre wraps block code — renders the outer box
+                                  pre: ({ children }) => (
+                                    <pre
+                                      style={{
+                                        background: '#161b22',
+                                        border: '1px solid #30363d',
+                                        borderRadius: '5px',
+                                        padding: '10px 12px',
+                                        overflowX: 'auto',
+                                        margin: '6px 0',
+                                        fontSize: '12px',
+                                        lineHeight: 1.5,
+                                      }}
+                                    >
+                                      {children}
+                                    </pre>
+                                  ),
+                                  // code is called for both inline (inside p) and block (inside pre)
+                                  // className presence signals a fenced/block code
+                                  code: ({ className, children }) =>
+                                    className ? (
+                                      <code
+                                        style={{
+                                          color: '#c9d1d9',
+                                          fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
+                                          fontSize: '12px',
+                                        }}
+                                      >
+                                        {children}
+                                      </code>
+                                    ) : (
+                                      <code
+                                        style={{
+                                          background: '#21262d',
+                                          color: '#79c0ff',
+                                          padding: '1px 5px',
+                                          borderRadius: '3px',
+                                          fontFamily: "'JetBrains Mono', monospace",
+                                          fontSize: '12px',
+                                        }}
+                                      >
+                                        {children}
+                                      </code>
+                                    ),
+                                  blockquote: ({ children }) => (
+                                    <blockquote
+                                      style={{
+                                        borderLeft: '3px solid #3fb950',
+                                        paddingLeft: '10px',
+                                        margin: '6px 0',
+                                        color: '#8b949e',
+                                        fontStyle: 'italic',
+                                      }}
+                                    >
+                                      {children}
+                                    </blockquote>
+                                  ),
+                                  strong: ({ children }) => (
+                                    <strong style={{ color: '#e6edf3', fontWeight: 600 }}>
+                                      {children}
+                                    </strong>
+                                  ),
+                                  a: ({ href, children }) => (
+                                    <a
+                                      href={href}
+                                      style={{ color: '#58a6ff', textDecoration: 'underline' }}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      {children}
+                                    </a>
+                                  ),
+                                  hr: () => (
+                                    <hr
+                                      style={{
+                                        border: 'none',
+                                        borderTop: '1px solid #21262d',
+                                        margin: '10px 0',
+                                      }}
+                                    />
+                                  ),
+                                }}
+                              >
+                                {textPart.text}
+                              </ReactMarkdown>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Streaming indicator */}
+                  {isRunning && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        marginTop: '12px',
+                        color: '#7d8590',
+                        fontSize: '12px',
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      generando…
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="p-3 overflow-y-auto max-h-[calc(100vh-50px)]">
-                <MCPStatusPanel servers={mcpServers} onRefresh={handleMCPRefresh} />
-              </div>
+            );
+          }
+
+          // ── Trazas tab: categorized structured view ────────────────────────
+          return (
+            <div className="flex-1 overflow-y-auto p-4" style={{ scrollbarWidth: 'thin' }}>
+              {!lastSubagentMsg ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 opacity-40">
+                  <LayoutPanelLeft className="w-12 h-12" style={{ color: 'var(--text-muted)' }} />
+                  <div className="text-center">
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+                      Sin ejecuciones activas
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Las trazas aparecerán aquí en tiempo real
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Agent identity bar */}
+                  <div
+                    className="flex items-center gap-3 p-3 rounded-lg"
+                    style={{
+                      background: 'var(--surface-card)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{
+                        background: isRunning
+                          ? 'color-mix(in srgb, var(--success) 15%, transparent)'
+                          : 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+                        border: isRunning
+                          ? '1px solid color-mix(in srgb, var(--success) 30%, transparent)'
+                          : '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
+                      }}
+                    >
+                      {isRunning ? (
+                        <Loader2
+                          className="w-4 h-4 animate-spin"
+                          style={{ color: 'var(--success)' }}
+                        />
+                      ) : (
+                        <Cpu className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-xs font-semibold truncate"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {meta.agentProfile || 'Sub-Agente'}
+                      </p>
+                      <p className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                        {isRunning ? 'ejecutando…' : meta.status || 'completed'}
+                        {toolTraces.length > 0 && ` · ${toolTraces.length} herramientas`}
+                      </p>
+                      {meta.status === 'error' && meta.errorMessage && (
+                        <p
+                          className="text-[10px] font-mono mt-0.5 break-words"
+                          style={{ color: 'var(--danger)', opacity: 0.85 }}
+                          title={meta.errorMessage}
+                        >
+                          {meta.errorMessage.length > 120
+                            ? meta.errorMessage.slice(0, 120) + '…'
+                            : meta.errorMessage}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tool calls */}
+                  {toolTraces.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p
+                        className="text-[10px] font-semibold uppercase tracking-widest px-1"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Herramientas ({toolTraces.length})
+                      </p>
+                      <div className="space-y-1">
+                        {toolTraces.map((t, i) => {
+                          const isErr = t.toolStatus === 'error';
+                          const isPending =
+                            !t.toolStatus ||
+                            t.toolStatus === 'pending' ||
+                            t.toolStatus === 'running';
+                          const inp = t.toolInput;
+                          const inputLabel = inp
+                            ? inp.path ||
+                              inp.file_path ||
+                              inp.pattern ||
+                              inp.command ||
+                              inp.query ||
+                              inp.content?.slice?.(0, 60) ||
+                              null
+                            : null;
+                          const displayLabel = inputLabel
+                            ? String(inputLabel).replace(/^\/home\/[^/]+/, '~')
+                            : null;
+                          return (
+                            <div
+                              key={t.id || i}
+                              className="flex items-center gap-2.5 px-3 py-1.5 rounded-md"
+                              style={{
+                                background: 'var(--surface-card)',
+                                border: '1px solid var(--border-subtle)',
+                                opacity: isPending ? 0.75 : 1,
+                              }}
+                            >
+                              <div className="shrink-0 w-4 h-4 flex items-center justify-center">
+                                {isPending ? (
+                                  <Loader2
+                                    className="w-3 h-3 animate-spin"
+                                    style={{ color: 'var(--accent-primary)' }}
+                                  />
+                                ) : isErr ? (
+                                  <X className="w-3 h-3" style={{ color: 'var(--danger)' }} />
+                                ) : (
+                                  <CheckSquare
+                                    className="w-3 h-3"
+                                    style={{ color: 'var(--success)' }}
+                                  />
+                                )}
+                              </div>
+                              <div className="flex flex-col min-w-0 flex-1">
+                                <span
+                                  className="text-[11px] font-mono"
+                                  style={{ color: 'var(--text-secondary)' }}
+                                >
+                                  {t.toolName || t.content || 'tool'}
+                                </span>
+                                {displayLabel && (
+                                  <span
+                                    className="text-[9px] font-mono truncate"
+                                    style={{ color: 'var(--text-muted)' }}
+                                    title={String(inputLabel)}
+                                  >
+                                    {displayLabel}
+                                  </span>
+                                )}
+                              </div>
+                              {t.toolStatus && (
+                                <span
+                                  className="text-[9px] font-mono shrink-0"
+                                  style={{
+                                    color: isErr
+                                      ? 'var(--danger)'
+                                      : isPending
+                                        ? 'var(--accent-primary)'
+                                        : 'var(--text-muted)',
+                                  }}
+                                >
+                                  {t.toolStatus}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Text output */}
+                  {textTraces.length > 0 &&
+                    textTraces.some((t) => (t.content || '').length > 10) && (
+                      <div className="space-y-1.5">
+                        <p
+                          className="text-[10px] font-semibold uppercase tracking-widest px-1"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          Salida
+                        </p>
+                        <div
+                          className="rounded-lg p-3 text-[11px] font-mono whitespace-pre-wrap break-words max-h-[360px] overflow-y-auto"
+                          style={{
+                            background: 'var(--surface-card)',
+                            border: '1px solid var(--border-subtle)',
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {textTraces
+                            .map((t) => t.content || '')
+                            .join('\n\n')
+                            .slice(0, 4000)}
+                          {textTraces.map((t) => t.content || '').join('').length > 4000 && (
+                            <span style={{ color: 'var(--text-muted)' }}>{'\n…(truncado)'}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Empty */}
+                  {toolTraces.length === 0 && textTraces.length === 0 && (
+                    <div
+                      className="flex flex-col items-center justify-center py-10 gap-2 rounded-lg"
+                      style={{
+                        background: 'var(--surface-card)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      <Loader2
+                        className="w-5 h-5 animate-spin"
+                        style={{ color: 'var(--accent-primary)', opacity: 0.5 }}
+                      />
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {isRunning ? 'Esperando trazas…' : 'Sin trazas disponibles'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+          );
+        })()}
 
-          <KeyboardShortcutsHelp
-            isOpen={showShortcutsHelp}
-            onClose={() => setShowShortcutsHelp(false)}
-          />
+        {/* AgentStatusBar pinned at bottom of execution panel */}
+        {(() => {
+          const isActive = isWaitingForSubagent || isTyping || isStreaming;
+          if (!isActive) return null;
 
-          <OnboardingTour isActive={showOnboarding} onComplete={() => setShowOnboarding(false)} />
-        </>
+          const runningSubagent = messages.findLast?.((m) => {
+            try {
+              return m.role === 'subagent' && JSON.parse(m.meta || '{}').status === 'running';
+            } catch {
+              return false;
+            }
+          });
+
+          let agentName = 'Orquestador';
+          let agentModel = streamingModel || activeModelOverride || '';
+          let toolCallCount = 0;
+
+          if (runningSubagent) {
+            let meta = {};
+            try {
+              meta = JSON.parse(runningSubagent.meta || '{}');
+            } catch {
+              // Invalid subagent metadata should not break status bar rendering.
+            }
+            agentName = meta.agentProfile
+              ? meta.agentProfile
+                  .replace(/^openai\/|^anthropic\/|^google\//i, '')
+                  .replace(/-\d{4}-\d{2}-\d{2}$/, '')
+              : 'Sub-Agente';
+            if (meta.model) agentModel = meta.model;
+            const trace = tracesMap?.[runningSubagent.id] || [];
+            toolCallCount = trace.filter((p) => p.type === 'tool').length;
+          }
+
+          return (
+            <AgentStatusBar
+              isActive={isActive}
+              agentName={agentName}
+              model={agentModel}
+              tokenCount={mergedSessionUsage?.total_tokens || 0}
+              tokenLimit={mergedSessionUsage?.context_window_size || 200000}
+              toolCallCount={toolCallCount}
+              onInterrupt={handleStopGenerating}
+              onCommandPalette={() => setShowCommandPalette(true)}
+            />
+          );
+        })()}
+      </div>
+
+      {/* ══════════════════════════════════════════════
+          MODALS (full-screen overlays, outside split)
+          ══════════════════════════════════════════════ */}
+
+      {/* Session List Modal */}
+      <SessionListModal
+        isOpen={showSessionList}
+        onClose={() => setShowSessionList(false)}
+        sessions={sessions}
+        onSelect={(s) => loadMessages(s.id)}
+        projectId={project?.id}
+        onCreateNew={createNewSession}
+      />
+
+      {/* Command Palette (Ctrl+K) */}
+      <ChatCommandPalette
+        open={showCommandPalette}
+        onOpenChange={setShowCommandPalette}
+        sessions={sessions}
+        onSelectSession={(sessionId) => loadMessages(sessionId)}
+        onCreateNew={createNewSession}
+        onInsertCommand={(cmd) => setPrompt((prev) => prev + cmd + ' ')}
+        onNavigate={(path) => navigate(path)}
+      />
+
+      {/* Permission Modal */}
+      <PermissionModal
+        isOpen={!!permissionRequest}
+        onClose={() => setPermissionRequest(null)}
+        onApprove={handlePermissionApprove}
+        onReject={handlePermissionReject}
+        permission={permissionRequest}
+      />
+
+      {/* Output Viewer Modal */}
+      <OutputViewerModal
+        isOpen={outputViewer.isOpen}
+        onClose={() => setOutputViewer({ isOpen: false, title: '', content: '', language: '' })}
+        title={outputViewer.title}
+        content={outputViewer.content}
+        language={outputViewer.language}
+      />
+
+      {/* MCP Status Panel (slide-in drawer) */}
+      {showMCPPanel && (
+        <div
+          className="fixed inset-y-0 right-0 z-40 w-full sm:w-80 border-l shadow-2xl animate-in slide-in-from-right duration-200"
+          style={{ background: 'var(--surface-app)', borderColor: 'var(--border-subtle)' }}
+        >
+          <div
+            className="flex items-center justify-between px-4 py-3 border-b"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <h3
+              className="text-sm font-semibold flex items-center gap-2"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              <Server className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+              MCP Servers
+            </h3>
+            <button
+              onClick={() => setShowMCPPanel(false)}
+              className="p-1.5 rounded-lg transition-colors"
+              style={{ color: 'var(--text-muted)' }}
+              aria-label="Cerrar panel MCP"
+            >
+              <ChevronDown className="w-4 h-4 rotate-[-90deg]" />
+            </button>
+          </div>
+          <div className="p-3 overflow-y-auto max-h-[calc(100vh-50px)]">
+            <MCPStatusPanel servers={mcpServers} onRefresh={handleMCPRefresh} />
+          </div>
+        </div>
       )}
+
+      <KeyboardShortcutsHelp
+        isOpen={showShortcutsHelp}
+        onClose={() => setShowShortcutsHelp(false)}
+      />
+
+      <OnboardingTour isActive={showOnboarding} onComplete={() => setShowOnboarding(false)} />
     </div>
   );
 }

@@ -1,0 +1,221 @@
+{
+  "sessionID": "headless-1775581396384",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Investiga el codebase y detecta posibles code smells en el código.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775581396384
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775581396384,
+      "timeStr": "17:03:16"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775581396388,
+      "timeStr": "17:03:16"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_2971a0258ffe1NSjywdKrGvcTK"
+      },
+      "timestamp": 1775581396396,
+      "timeStr": "17:03:16"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 108,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775581396396,
+      "timeStr": "17:03:16"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775581396401,
+      "timeStr": "17:03:16"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 0
+      },
+      "timestamp": 1775581396491,
+      "timeStr": "17:03:16"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "[Tú eres el sub-agente. Instrucciones: \"Investiga el codebase y detecta posibles code smells en el código.\"]"
+      },
+      "timestamp": 1775581396492,
+      "timeStr": "17:03:16"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775581407168,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775581407169,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "status": "pending"
+      },
+      "timestamp": 1775581407170,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775581407171,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "status": "running"
+      },
+      "timestamp": 1775581407171,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775581407171,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "file": "Loaded skill: sdd-explore",
+        "status": "completed"
+      },
+      "timestamp": 1775581407182,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "completed",
+        "duration": 2
+      },
+      "timestamp": 1775581407184,
+      "timeStr": "17:03:27"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775581415805,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775581415806,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775581415807,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775581415808,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775581415875,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775581415876,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 10
+      },
+      "timestamp": 1775581415876,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775581415877,
+      "timeStr": "17:03:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775581415877,
+      "timeStr": "17:03:35"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

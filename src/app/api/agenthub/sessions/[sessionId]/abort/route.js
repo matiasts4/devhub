@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { updateSessionStatus } from '@/lib/db/localDb.js';
+import processManager from '@/lib/swarm/processManager';
 
-const OPENCODE_PORT = process.env.OPENCODE_PORT || 4153;
+const OPENCODE_PORT = process.env.OPENCODE_PORT || 4154;
 const OPENCODE_URL = `http://127.0.0.1:${OPENCODE_PORT}`;
 
 /**
@@ -24,6 +26,9 @@ export async function POST(_req, { params }) {
         { status: res.status }
       );
     }
+
+    updateSessionStatus(sessionId, 'aborted');
+    processManager.untrackSession(sessionId);
 
     return NextResponse.json({ success: true });
   } catch (err) {

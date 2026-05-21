@@ -1,5 +1,7 @@
 # Telegram LLM Bridge — Multi-Proveedor
 
+> **Nota de realidad — 2026-05-14:** Este documento describe una intención/arquitectura previa. El módulo Telegram/chatbot debe considerarse **parcial, con deuda y pendiente de refactor**, especialmente por los hallazgos de `docs/review/MODULO-06-telegram-bot.md`. En la dirección nueva, Telegram debe ser un adapter externo sobre Swarm Workspace, no el núcleo de orquestación.
+
 ## Overview
 
 El Telegram LLM Bridge reemplaza la cadena frágil `tmux → opencode run --agent → capture-pane → regex stripping` con llamadas directas a APIs de LLM. Soporta **4 proveedores con failover automático**.
@@ -23,7 +25,7 @@ Telegram → bot.js → chat.js → LLMBridge
                                     │   ├── OpenRouterAdapter (secundario)
                                     │   ├── OpenCodeZenAdapter (terciario)
                                     │   └── DirectApiAdapter (fallback)
-                                    ├── ToolRegistry (23 MCP tools)
+                                    ├── ToolRegistry (DevHub control plane + capabilities del cliente)
                                     └── ConversationManager (SQLite)
 ```
 
@@ -131,23 +133,20 @@ Cada proveedor trackea fallos consecutivos. El estado de salud se calcula así:
 
 El LLM puede llamar herramientas MCP durante la conversación. Están organizadas en **3 tiers** de seguridad:
 
+> **Alineación 2026-05-15:** La tabla siguiente debe leerse con el boundary vigente. DevHub MCP expone control plane operativo; Git/filesystem/terminal deben venir de la capability del ejecutor o de otra integración explícita, no del surface general del DevHub MCP.
+
 ### Tier 1 — Read-only (habilitadas por defecto)
 
-| Herramienta             | Descripción                                             |
-| ----------------------- | ------------------------------------------------------- |
-| `get_project_context`   | Contexto completo de planificación de un proyecto       |
-| `list_projects`         | Lista todos los proyectos (filtrable por estado)        |
-| `get_project`           | Detalles completos de un proyecto (tareas + milestones) |
-| `list_tasks`            | Tareas de un proyecto (filtrable por estado/prioridad)  |
-| `get_dashboard`         | Resumen global de todos los proyectos                   |
-| `list_milestones`       | Milestones del roadmap de un proyecto                   |
-| `get_next_task`         | Siguiente tarea priorizada de la cola                   |
-| `recall_memory`         | Búsqueda full-text en memoria del agente                |
-| `explore_files`         | Explorar archivos de un directorio                      |
-| `read_file`             | Leer contenido de un archivo                            |
-| `git_diff_review`       | Inspeccionar diff entre ramas                           |
-| `get_task_dependencies` | Dependencias de bloqueo entre tareas                    |
-| `validate_topic_key`    | Validar topic_key para retrieval documental             |
+| Herramienta           | Descripción                                             |
+| --------------------- | ------------------------------------------------------- |
+| `get_project_context` | Contexto completo de planificación de un proyecto       |
+| `list_projects`       | Lista todos los proyectos (filtrable por estado)        |
+| `get_project`         | Detalles completos de un proyecto (tareas + milestones) |
+| `list_tasks`          | Tareas de un proyecto (filtrable por estado/prioridad)  |
+| `get_dashboard`       | Resumen global de todos los proyectos                   |
+| `list_milestones`     | Milestones del roadmap de un proyecto                   |
+| `get_next_task`       | Siguiente tarea priorizada de la cola                   |
+| `get_execution_queue` | Cola priorizada de tareas y bloqueos                    |
 
 ### Tier 2 — Write (requieren opt-in)
 
@@ -159,18 +158,19 @@ El LLM puede llamar herramientas MCP durante la conversación. Están organizada
 | `create_milestone`    | Crear nuevo milestone en el roadmap  |
 | `update_milestone`    | Actualizar milestone existente       |
 | `update_project`      | Actualizar campos de un proyecto     |
-| `git_branch`          | Crear/cambiar a rama Git aislada     |
-| `git_commit`          | Realizar commit con cambios actuales |
+| `claim_next_task`     | Reclamar tarea de forma segura       |
+| `renew_task_lease`    | Renovar lease de tarea reclamada     |
+| `release_task`        | Liberar tarea con outcome operativo  |
 | `register_agent`      | Registrar Worker Agent en el swarm   |
 | `heartbeat_agent`     | Renovar señal de vida de un agente   |
 | `update_agent_status` | Actualizar estado visual del agente  |
 
 ### Tier 3 — Destructivas (deshabilitadas por defecto)
 
-| Herramienta        | Descripción                   |
-| ------------------ | ----------------------------- |
-| `delete_task`      | Eliminar tarea (irreversible) |
-| `unregister_agent` | Desregistrar agente del swarm |
+| Herramienta        | Descripción                      |
+| ------------------ | -------------------------------- |
+| `delete_project`   | Eliminar proyecto (irreversible) |
+| `unregister_agent` | Desregistrar agente del swarm    |
 
 ### Habilitar Tiers
 

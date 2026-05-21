@@ -21,6 +21,7 @@ import {
   LogOut,
   Copy,
   ExternalLink,
+  Terminal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,7 +29,8 @@ import { toast } from 'sonner';
 const PROVIDER_CONFIGS = {
   copilot: {
     name: 'GitHub Copilot',
-    description: 'Proveedor oficial de GitHub Copilot con acceso a la flota real (gpt-4o, gpt-4.1, gpt-5.2, Raptor) y soporte de reasoning_effort.',
+    description:
+      'Proveedor oficial de GitHub Copilot con acceso a la flota real (gpt-4o, gpt-4.1, gpt-5.2, Raptor) y soporte de reasoning_effort.',
     envVars: {
       COPILOT_MODEL: {
         label: 'Modelo',
@@ -45,6 +47,21 @@ const PROVIDER_CONFIGS = {
     },
     priority: 1,
     icon: Shield,
+  },
+  opencode: {
+    name: 'OpenCode Platform',
+    description:
+      'Usa el entorno local de OpenCode. Soporta modelos nativos, Gemini CLI, y proveedores configurados en tu sistema.',
+    envVars: {
+      OPENCODE_MODEL: {
+        label: 'Modelo',
+        type: 'select',
+        options: [],
+        default: 'opencode/gemini-3-flash',
+      },
+    },
+    priority: 2,
+    icon: Terminal,
   },
   openrouter: {
     name: 'OpenRouter',
@@ -130,7 +147,13 @@ export default function LLMProviderSettings({ embedded = false }) {
   });
   const copilotPollRef = useRef(null);
 
-  const [priorityOrder, setPriorityOrder] = useState(['copilot', 'openrouter', 'zen', 'direct']);
+  const [priorityOrder, setPriorityOrder] = useState([
+    'copilot',
+    'opencode',
+    'openrouter',
+    'zen',
+    'direct',
+  ]);
   const [globalTemperature, setGlobalTemperature] = useState(0.7);
   const [globalMaxTokens, setGlobalMaxTokens] = useState(4000);
   const [bridgeEnabled, setBridgeEnabled] = useState(true);
@@ -140,6 +163,7 @@ export default function LLMProviderSettings({ embedded = false }) {
 
   function getModelFieldKey(providerName) {
     if (providerName === 'copilot') return 'COPILOT_MODEL';
+    if (providerName === 'opencode') return 'OPENCODE_MODEL';
     if (providerName === 'openrouter') return 'OPENROUTER_MODEL';
     if (providerName === 'zen') return 'ZEN_MODEL';
     if (providerName === 'direct') return 'LLM_MODEL';
@@ -188,7 +212,11 @@ export default function LLMProviderSettings({ embedded = false }) {
       // Detectar si hay un OAuth token guardado
       const copilotData = data.providers?.copilot || {};
       if (copilotData.COPILOT_OAUTH_TOKEN) {
-        setCopilotAuth((prev) => ({ ...prev, state: 'success', username: copilotData._username || 'GitHub' }));
+        setCopilotAuth((prev) => ({
+          ...prev,
+          state: 'success',
+          username: copilotData._username || 'GitHub',
+        }));
       }
     } catch (err) {
       console.error('Failed to load LLM config:', err);
@@ -202,9 +230,20 @@ export default function LLMProviderSettings({ embedded = false }) {
   // ============================================================
 
   async function startCopilotLogin() {
-    setCopilotAuth({ state: 'loading', userCode: null, verificationUri: null, deviceCode: null, interval: 5, username: null, error: null, copied: false });
+    setCopilotAuth({
+      state: 'loading',
+      userCode: null,
+      verificationUri: null,
+      deviceCode: null,
+      interval: 5,
+      username: null,
+      error: null,
+      copied: false,
+    });
     try {
-      const res = await fetch('/api/settings/llm-providers/copilot/device-flow', { method: 'POST' });
+      const res = await fetch('/api/settings/llm-providers/copilot/device-flow', {
+        method: 'POST',
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error iniciando Device Flow');
       setCopilotAuth((prev) => ({
@@ -239,9 +278,17 @@ export default function LLMProviderSettings({ embedded = false }) {
           // Recargar config para que el provider vea el nuevo token
           await loadConfig();
         } else if (data.status === 'expired') {
-          setCopilotAuth((prev) => ({ ...prev, state: 'error', error: 'El código venció. Intentalo de nuevo.' }));
+          setCopilotAuth((prev) => ({
+            ...prev,
+            state: 'error',
+            error: 'El código venció. Intentalo de nuevo.',
+          }));
         } else {
-          setCopilotAuth((prev) => ({ ...prev, state: 'error', error: data.error || 'Error desconocido' }));
+          setCopilotAuth((prev) => ({
+            ...prev,
+            state: 'error',
+            error: data.error || 'Error desconocido',
+          }));
         }
       } catch (err) {
         setCopilotAuth((prev) => ({ ...prev, state: 'error', error: err.message }));
@@ -252,7 +299,16 @@ export default function LLMProviderSettings({ embedded = false }) {
 
   function logoutCopilot() {
     if (copilotPollRef.current) clearTimeout(copilotPollRef.current);
-    setCopilotAuth({ state: 'idle', userCode: null, verificationUri: null, deviceCode: null, interval: 5, username: null, error: null, copied: false });
+    setCopilotAuth({
+      state: 'idle',
+      userCode: null,
+      verificationUri: null,
+      deviceCode: null,
+      interval: 5,
+      username: null,
+      error: null,
+      copied: false,
+    });
     setProviders((prev) => {
       const next = { ...prev };
       if (next.copilot) {
@@ -309,7 +365,7 @@ export default function LLMProviderSettings({ embedded = false }) {
       const nextModelOptions = { ...modelOptions, [providerName]: models };
       setModelOptions(nextModelOptions);
       await persistConfig({ modelOptions: nextModelOptions });
-      
+
       toast.success(`Lista actualizada: ${models.length} modelos encontrados.`);
 
       const modelFieldKey = getModelFieldKey(providerName);
@@ -689,13 +745,22 @@ export default function LLMProviderSettings({ embedded = false }) {
                     <div
                       className="rounded-xl p-4 space-y-3"
                       style={{
-                        background: 'color-mix(in srgb, var(--accent-primary) 5%, var(--surface-sunken))',
-                        border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
+                        background:
+                          'color-mix(in srgb, var(--accent-primary) 5%, var(--surface-sunken))',
+                        border:
+                          '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
                       }}
                     >
                       <div className="flex items-center gap-2">
-                        <Loader2 size={14} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />
-                        <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                        <Loader2
+                          size={14}
+                          className="animate-spin"
+                          style={{ color: 'var(--accent-primary)' }}
+                        />
+                        <span
+                          className="text-xs font-semibold"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
                           Esperando autorización en GitHub...
                         </span>
                       </div>
@@ -711,7 +776,9 @@ export default function LLMProviderSettings({ embedded = false }) {
                           {copilotAuth.verificationUri} <ExternalLink size={11} />
                         </a>
                       </p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>2. Ingresá este código:</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        2. Ingresá este código:
+                      </p>
                       <div className="flex items-center gap-2">
                         <span
                           className="font-mono text-2xl font-bold tracking-widest px-4 py-2 rounded-xl"
@@ -728,11 +795,16 @@ export default function LLMProviderSettings({ embedded = false }) {
                           onClick={() => {
                             navigator.clipboard.writeText(copilotAuth.userCode || '');
                             setCopilotAuth((p) => ({ ...p, copied: true }));
-                            setTimeout(() => setCopilotAuth((p) => ({ ...p, copied: false })), 2000);
+                            setTimeout(
+                              () => setCopilotAuth((p) => ({ ...p, copied: false })),
+                              2000
+                            );
                           }}
                           className="p-2 rounded-lg transition-all"
                           style={{
-                            background: copilotAuth.copied ? 'color-mix(in srgb, #22c55e 15%, transparent)' : 'var(--surface-card)',
+                            background: copilotAuth.copied
+                              ? 'color-mix(in srgb, #22c55e 15%, transparent)'
+                              : 'var(--surface-card)',
                             border: '1px solid var(--border-subtle)',
                             color: copilotAuth.copied ? '#22c55e' : 'var(--text-muted)',
                           }}
@@ -771,7 +843,8 @@ export default function LLMProviderSettings({ embedded = false }) {
                         style={{
                           background: 'var(--accent-primary)',
                           color: 'white',
-                          boxShadow: '0 2px 8px color-mix(in srgb, var(--accent-primary) 30%, transparent)',
+                          boxShadow:
+                            '0 2px 8px color-mix(in srgb, var(--accent-primary) 30%, transparent)',
                         }}
                       >
                         {copilotAuth.state === 'loading' ? (
@@ -792,185 +865,189 @@ export default function LLMProviderSettings({ embedded = false }) {
               {(providerName !== 'copilot' || copilotAuth.state === 'success') && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full pt-2">
                   {Object.entries(config.envVars).map(([key, field]) => (
-                  <div key={key} className={field.type === 'select' ? 'md:col-span-2' : ''}>
-                    <label
-                      className="text-xs font-medium mb-1.5 block"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      {field.label} {field.required && <span className="text-red-400">*</span>}
-                    </label>
-                    {field.type === 'select' ? (
-                      <div className="space-y-2 mt-2 w-full">
-                        <div className="relative">
-                          <Search
-                            size={14}
-                            className="absolute left-3 top-1/2 -translate-y-1/2"
-                            style={{ color: 'var(--text-muted)' }}
-                          />
-                          <input
-                            value={modelSearch[providerName] || ''}
-                            onChange={(e) => updateModelSearch(providerName, e.target.value)}
-                            placeholder="Buscar modelo (ej: gpt-4, claude, sonnet)..."
-                            className="w-full bg-transparent text-sm pl-9 pr-3 py-2 rounded-xl outline-none"
-                            style={{
-                              border: '1px solid var(--border-subtle)',
-                              color: 'var(--text-primary)',
-                              background: 'var(--surface-sunken)',
-                            }}
-                          />
-                        </div>
-
-                        {/* Favorites filter toggle */}
-                        <div className="flex items-center gap-2 mt-2">
-                          <button
-                            onClick={() =>
-                              setShowFavoritesOnly((prev) => ({
-                                ...prev,
-                                [providerName]: !prev[providerName],
-                              }))
-                            }
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                            style={{
-                              background: showFavoritesOnly[providerName]
-                                ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
-                                : 'var(--surface-sunken)',
-                              border: `1px solid ${showFavoritesOnly[providerName] ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
-                              color: showFavoritesOnly[providerName]
-                                ? 'var(--accent-primary)'
-                                : 'var(--text-muted)',
-                            }}
-                          >
-                            <Star
-                              size={12}
-                              fill={showFavoritesOnly[providerName] ? 'currentColor' : 'none'}
+                    <div key={key} className={field.type === 'select' ? 'md:col-span-2' : ''}>
+                      <label
+                        className="text-xs font-medium mb-1.5 block"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {field.label} {field.required && <span className="text-red-400">*</span>}
+                      </label>
+                      {field.type === 'select' ? (
+                        <div className="space-y-2 mt-2 w-full">
+                          <div className="relative">
+                            <Search
+                              size={14}
+                              className="absolute left-3 top-1/2 -translate-y-1/2"
+                              style={{ color: 'var(--text-muted)' }}
                             />
-                            Solo Favoritos
-                          </button>
-                          {(favoriteModels[providerName] || []).length > 0 && (
-                            <span className="text-xs text-gray-500">
-                              {(favoriteModels[providerName] || []).length} favorito
-                              {(favoriteModels[providerName] || []).length !== 1 ? 's' : ''}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 mt-3 max-h-56 overflow-y-auto pr-2 custom-scrollbar">
-                          {(() => {
-                            const allModels = modelOptions[providerName] || field.options || [];
-                            const favs = favoriteModels[providerName] || [];
-
-                            // Sort: favorites first, then alphabetically
-                            const sorted = [...allModels].sort((a, b) => {
-                              const aFav = favs.includes(a);
-                              const bFav = favs.includes(b);
-                              if (aFav && !bFav) return -1;
-                              if (!aFav && bFav) return 1;
-                              return String(a).localeCompare(String(b));
-                            });
-
-                            const filtered = sorted.filter((opt) => {
-                              const q = (modelSearch[providerName] || '').trim().toLowerCase();
-                              if (q && !String(opt).toLowerCase().includes(q)) return false;
-                              if (showFavoritesOnly[providerName] && !favs.includes(opt))
-                                return false;
-                              return true;
-                            });
-
-                            if (filtered.length === 0) {
-                              return (
-                                <p
-                                  className="text-xs py-2 col-span-full"
-                                  style={{ color: 'var(--text-muted)' }}
-                                >
-                                  {showFavoritesOnly[providerName]
-                                    ? 'No tienes modelos favoritos. Haz clic en la ⭐ de un modelo.'
-                                    : 'No hay modelos que coincidan con la búsqueda.'}
-                                </p>
-                              );
-                            }
-
-                            return filtered.map((opt) => {
-                              const active = (providerData[key] || field.default || '') === opt;
-                              const fav = favs.includes(opt);
-                              return (
-                                <div
-                                  key={opt}
-                                  onClick={() => updateProviderConfig(providerName, key, opt)}
-                                  className="group relative border rounded-xl px-3 py-2 text-[11px] font-mono cursor-pointer transition-colors truncate"
-                                  title={opt}
-                                  style={{
-                                    borderColor: active
-                                      ? 'var(--accent-primary)'
-                                      : fav
-                                        ? 'var(--accent-warning, #f59e0b)'
-                                        : 'var(--border-subtle)',
-                                    background: active
-                                      ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
-                                      : fav
-                                        ? 'color-mix(in srgb, var(--accent-warning, #f59e0b) 5%, var(--surface-sunken))'
-                                        : 'var(--surface-sunken)',
-                                    color: active ? 'var(--accent-primary)' : 'var(--text-primary)',
-                                  }}
-                                >
-                                  {/* Star toggle */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleFavorite(providerName, opt);
-                                    }}
-                                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
-                                    title={fav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-                                  >
-                                    <Star
-                                      size={12}
-                                      fill={fav ? '#f59e0b' : 'none'}
-                                      style={{ color: fav ? '#f59e0b' : 'var(--text-muted)' }}
-                                    />
-                                  </button>
-                                  <div className="pr-4">{opt}</div>
-                                </div>
-                              );
-                            });
-                          })()}
-                        </div>
-                      </div>
-                    ) : field.type === 'button-group' ? (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {field.options?.map((opt) => {
-                          const active = (providerData[key] || field.default) === opt;
-                          return (
-                            <button
-                              key={opt}
-                              onClick={() => updateProviderConfig(providerName, key, opt)}
-                              className="font-mono text-[11px] px-3 py-1.5 rounded-lg border transition-all"
+                            <input
+                              value={modelSearch[providerName] || ''}
+                              onChange={(e) => updateModelSearch(providerName, e.target.value)}
+                              placeholder="Buscar modelo (ej: gpt-4, claude, sonnet)..."
+                              className="w-full bg-transparent text-sm pl-9 pr-3 py-2 rounded-xl outline-none"
                               style={{
-                                borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                                background: active
-                                  ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
+                                border: '1px solid var(--border-subtle)',
+                                color: 'var(--text-primary)',
+                                background: 'var(--surface-sunken)',
+                              }}
+                            />
+                          </div>
+
+                          {/* Favorites filter toggle */}
+                          <div className="flex items-center gap-2 mt-2">
+                            <button
+                              onClick={() =>
+                                setShowFavoritesOnly((prev) => ({
+                                  ...prev,
+                                  [providerName]: !prev[providerName],
+                                }))
+                              }
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                              style={{
+                                background: showFavoritesOnly[providerName]
+                                  ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
                                   : 'var(--surface-sunken)',
-                                color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                border: `1px solid ${showFavoritesOnly[providerName] ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+                                color: showFavoritesOnly[providerName]
+                                  ? 'var(--accent-primary)'
+                                  : 'var(--text-muted)',
                               }}
                             >
-                              {opt}
+                              <Star
+                                size={12}
+                                fill={showFavoritesOnly[providerName] ? 'currentColor' : 'none'}
+                              />
+                              Solo Favoritos
                             </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <input
-                        type={field.type}
-                        value={providerData[key] || ''}
-                        onChange={(e) => updateProviderConfig(providerName, key, e.target.value)}
-                        placeholder={field.placeholder}
-                        className="w-full bg-transparent text-sm px-3 py-2 rounded-xl transition-all outline-none"
-                        style={{
-                          border: '1px solid var(--border-subtle)',
-                          color: 'var(--text-primary)',
-                        }}
-                      />
-                    )}
-                  </div>
-                ))}
+                            {(favoriteModels[providerName] || []).length > 0 && (
+                              <span className="text-xs text-gray-500">
+                                {(favoriteModels[providerName] || []).length} favorito
+                                {(favoriteModels[providerName] || []).length !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 mt-3 max-h-56 overflow-y-auto pr-2 custom-scrollbar">
+                            {(() => {
+                              const allModels = modelOptions[providerName] || field.options || [];
+                              const favs = favoriteModels[providerName] || [];
+
+                              // Sort: favorites first, then alphabetically
+                              const sorted = [...allModels].sort((a, b) => {
+                                const aFav = favs.includes(a);
+                                const bFav = favs.includes(b);
+                                if (aFav && !bFav) return -1;
+                                if (!aFav && bFav) return 1;
+                                return String(a).localeCompare(String(b));
+                              });
+
+                              const filtered = sorted.filter((opt) => {
+                                const q = (modelSearch[providerName] || '').trim().toLowerCase();
+                                if (q && !String(opt).toLowerCase().includes(q)) return false;
+                                if (showFavoritesOnly[providerName] && !favs.includes(opt))
+                                  return false;
+                                return true;
+                              });
+
+                              if (filtered.length === 0) {
+                                return (
+                                  <p
+                                    className="text-xs py-2 col-span-full"
+                                    style={{ color: 'var(--text-muted)' }}
+                                  >
+                                    {showFavoritesOnly[providerName]
+                                      ? 'No tienes modelos favoritos. Haz clic en la ⭐ de un modelo.'
+                                      : 'No hay modelos que coincidan con la búsqueda.'}
+                                  </p>
+                                );
+                              }
+
+                              return filtered.map((opt) => {
+                                const active = (providerData[key] || field.default || '') === opt;
+                                const fav = favs.includes(opt);
+                                return (
+                                  <div
+                                    key={opt}
+                                    onClick={() => updateProviderConfig(providerName, key, opt)}
+                                    className="group relative border rounded-xl px-3 py-2 text-[11px] font-mono cursor-pointer transition-colors truncate"
+                                    title={opt}
+                                    style={{
+                                      borderColor: active
+                                        ? 'var(--accent-primary)'
+                                        : fav
+                                          ? 'var(--accent-warning, #f59e0b)'
+                                          : 'var(--border-subtle)',
+                                      background: active
+                                        ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
+                                        : fav
+                                          ? 'color-mix(in srgb, var(--accent-warning, #f59e0b) 5%, var(--surface-sunken))'
+                                          : 'var(--surface-sunken)',
+                                      color: active
+                                        ? 'var(--accent-primary)'
+                                        : 'var(--text-primary)',
+                                    }}
+                                  >
+                                    {/* Star toggle */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleFavorite(providerName, opt);
+                                      }}
+                                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+                                      title={fav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                                    >
+                                      <Star
+                                        size={12}
+                                        fill={fav ? '#f59e0b' : 'none'}
+                                        style={{ color: fav ? '#f59e0b' : 'var(--text-muted)' }}
+                                      />
+                                    </button>
+                                    <div className="pr-4">{opt}</div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        </div>
+                      ) : field.type === 'button-group' ? (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {field.options?.map((opt) => {
+                            const active = (providerData[key] || field.default) === opt;
+                            return (
+                              <button
+                                key={opt}
+                                onClick={() => updateProviderConfig(providerName, key, opt)}
+                                className="font-mono text-[11px] px-3 py-1.5 rounded-lg border transition-all"
+                                style={{
+                                  borderColor: active
+                                    ? 'var(--accent-primary)'
+                                    : 'var(--border-subtle)',
+                                  background: active
+                                    ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
+                                    : 'var(--surface-sunken)',
+                                  color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                }}
+                              >
+                                {opt}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <input
+                          type={field.type}
+                          value={providerData[key] || ''}
+                          onChange={(e) => updateProviderConfig(providerName, key, e.target.value)}
+                          placeholder={field.placeholder}
+                          className="w-full bg-transparent text-sm px-3 py-2 rounded-xl transition-all outline-none"
+                          style={{
+                            border: '1px solid var(--border-subtle)',
+                            color: 'var(--text-primary)',
+                          }}
+                        />
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 

@@ -1,0 +1,99 @@
+{
+  "sessionID": "headless-1775612029589",
+  "metadata": {
+    "prompt": "ok",
+    "agent": "sdd-explore",
+    "project_id": "devhub",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775612029589,
+    "completedAt": 1775612030513,
+    "duration": 924
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775612029589,
+      "timeStr": "01:33:49"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775612029591,
+      "timeStr": "01:33:49"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_295469563ffepTYK82Hr6SwLAw"
+      },
+      "timestamp": 1775612029601,
+      "timeStr": "01:33:49"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 2,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775612029602,
+      "timeStr": "01:33:49"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775612029605,
+      "timeStr": "01:33:49"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "ok"
+      },
+      "timestamp": 1775612029616,
+      "timeStr": "01:33:49"
+    },
+    {
+      "type": "session_error",
+      "data": {
+        "error": {
+          "name": "MessageAbortedError",
+          "data": {
+            "message": "Aborted"
+          }
+        }
+      },
+      "timestamp": 1775612030505,
+      "timeStr": "01:33:50"
+    },
+    {
+      "type": "session_idle",
+      "data": {
+        "eventsProcessed": 15,
+        "tracesPersisted": 1
+      },
+      "timestamp": 1775612030506,
+      "timeStr": "01:33:50"
+    },
+    {
+      "type": "session_idle",
+      "data": {
+        "eventsProcessed": 19,
+        "tracesPersisted": 1
+      },
+      "timestamp": 1775612030513,
+      "timeStr": "01:33:50"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "ANY_ERROR",
+      "severity": "error",
+      "message": "Error detected: [object Object]",
+      "timestamp": 1775612030505
+    }
+  ],
+  "completed": true
+}

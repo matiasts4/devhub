@@ -6,6 +6,7 @@ const { getLLMBridgeService, resetLLMBridgeService } = require('../services/prov
 const opencode = require('../services/opencode');
 const api = require('../services/api');
 const { createSimpleApprovalHandler } = require('../services/executor');
+const { shouldUseMultiTurn } = require('../utils/task');
 const fs = require('fs');
 const path = require('path');
 
@@ -15,6 +16,9 @@ const USE_MULTI_TURN = process.env.TELEGRAM_MULTI_TURN !== 'false'; // default: 
 const LLM_BRIDGE_ENABLED = process.env.LLM_BRIDGE_ENABLED !== 'false';
 const TRACE_PERSISTENCE = process.env.TRACE_PERSISTENCE_ENABLED !== 'false'; // default: true
 const SETTINGS_PATH = path.join(__dirname, '..', '..', 'data', 'llm-providers-config.json');
+const TOOL_EVENT_REGEX = /\[🔧 Ejecutando (.+?)\.\.\.\]/;
+const DEFAULT_PROGRESS_INTERVAL_MS =
+  parseInt(process.env.TELEGRAM_PROGRESS_INTERVAL_MS, 10) || 45_000;
 
 // Lazy-loaded bridge instance
 let llmBridge = null;
@@ -93,9 +97,297 @@ function sanitizeReply(text) {
   return cleaned || raw.trim();
 }
 
+function isTelegramStructuralLine(line) {
+  const trimmed = String(line || '').trim();
+
+  if (!trimmed) return false;
+
+  return (
+    /^#{1,6}\s+/.test(trimmed) ||
+    /^>\s+/.test(trimmed) ||
+    /^\|.*\|$/.test(trimmed) ||
+    /^[-=_]{3,}$/.test(trimmed) ||
+    /^(?:[-*•]|\d+[.)]|[a-zA-Z][.)])\s+/.test(trimmed)
+  );
+}
+
+function isLikelyCommandOrListingLine(line) {
+  const trimmed = String(line || '').trim();
+
+  if (!trimmed) return false;
+
+  return (
+    /^[~/$][^\n]*$/.test(trimmed) ||
+    /^[\w./-]+\/?$/.test(trimmed) ||
+    /^[\w.-]+:\s*$/.test(trimmed) ||
+    /^(?:total\s+\d+|drwx|[-dlcbps]r[-wx]{8,}|\d{1,3}%|[A-Z_]+=?[^\s]*)/.test(trimmed)
+  );
+}
+
+function shouldPreserveBlockLines(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return false;
+  if (lines.length === 1) return false;
+
+  return lines.every(
+    (line) => isLikelyCommandOrListingLine(line) || isTelegramStructuralLine(line)
+  );
+}
+
+function normalizeTelegramResponseLayout(text) {
+  const source = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  if (!source) return '';
+
+  const output = [];
+  const paragraph = [];
+  let inCodeFence = false;
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) return;
+
+    const lines = paragraph
+      .splice(0)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return;
+
+    if (shouldPreserveBlockLines(lines)) {
+      output.push(...lines);
+      return;
+    }
+
+    output.push(
+      lines
+        .join(' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+    );
+  };
+
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine.replace(/\s+$/g, '');
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      flushParagraph();
+      output.push(trimmed);
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+
+    if (inCodeFence) {
+      output.push(line);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      if (output[output.length - 1] !== '') {
+        output.push('');
+      }
+      continue;
+    }
+
+    if (isTelegramStructuralLine(trimmed)) {
+      flushParagraph();
+      output.push(trimmed);
+      continue;
+    }
+
+    paragraph.push(trimmed);
+  }
+
+  flushParagraph();
+
+  while (output[output.length - 1] === '') {
+    output.pop();
+  }
+
+  return output.join('\n');
+}
+
+function isTelegramFenceLine(line) {
+  return /^```/.test(String(line || '').trim());
+}
+
+function isListingTokenFragment(line) {
+  const trimmed = String(line || '').trim();
+
+  return Boolean(trimmed) && !/\s/.test(trimmed) && /^[A-Za-z0-9._/-]+$/.test(trimmed);
+}
+
+function isListingConnectorFragment(line) {
+  const trimmed = String(line || '').trim();
+
+  return /^[-_/]/.test(trimmed) || /^\.[A-Za-z0-9]+$/.test(trimmed);
+}
+
+function isShortUppercaseFragment(line) {
+  const trimmed = String(line || '').trim();
+
+  return /^[A-Z0-9]+$/.test(trimmed) && trimmed.length <= 8;
+}
+
+function looksLikeCompleteListingEntry(line) {
+  const trimmed = String(line || '').trim();
+
+  return /\/$/.test(trimmed) || /\.[A-Za-z0-9]{1,8}$/.test(trimmed);
+}
+
+function shouldRepairFragmentedListing(lines) {
+  const nonEmpty = lines.map((line) => String(line || '').trim()).filter(Boolean);
+  if (nonEmpty.length < 2) return false;
+
+  const tokenLikeCount = nonEmpty.filter(isListingTokenFragment).length;
+  const connectorCount = nonEmpty.filter(isListingConnectorFragment).length;
+  const uppercaseCount = nonEmpty.filter(isShortUppercaseFragment).length;
+  const shortWordCount = nonEmpty.filter(
+    (line) => /^[A-Za-z0-9]+$/.test(line) && line.length <= 6
+  ).length;
+
+  return (
+    connectorCount > 0 &&
+    tokenLikeCount >= Math.max(2, Math.ceil(nonEmpty.length * 0.75)) &&
+    connectorCount + uppercaseCount + shortWordCount >=
+      Math.max(3, Math.ceil(nonEmpty.length * 0.6))
+  );
+}
+
+function shouldMergeListingFragments(current, next) {
+  if (!current || !next) return false;
+
+  if (!isListingTokenFragment(current) || !isListingTokenFragment(next)) {
+    return false;
+  }
+
+  if (looksLikeCompleteListingEntry(current)) {
+    return false;
+  }
+
+  if (isListingConnectorFragment(next) || /[-_/]$/.test(current)) {
+    return true;
+  }
+
+  if (isShortUppercaseFragment(current) && isShortUppercaseFragment(next)) {
+    return true;
+  }
+
+  return true;
+}
+
+function repairFragmentedListingLines(lines) {
+  const repaired = [];
+  let current = '';
+
+  const flushCurrent = () => {
+    if (!current) return;
+    repaired.push(current);
+    current = '';
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = String(rawLine || '').trim();
+
+    if (!trimmed) {
+      flushCurrent();
+      if (repaired[repaired.length - 1] !== '') {
+        repaired.push('');
+      }
+      continue;
+    }
+
+    if (!isListingTokenFragment(trimmed)) {
+      flushCurrent();
+      repaired.push(trimmed);
+      continue;
+    }
+
+    if (shouldMergeListingFragments(current, trimmed)) {
+      current += trimmed;
+      continue;
+    }
+
+    flushCurrent();
+    current = trimmed;
+  }
+
+  flushCurrent();
+
+  while (repaired[repaired.length - 1] === '') {
+    repaired.pop();
+  }
+
+  return repaired;
+}
+
+function normalizeTelegramCodeAndListingBlocks(text) {
+  const lines = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const output = [];
+  let fencedLanguage = null;
+  let fencedLines = [];
+
+  const flushFencedBlock = () => {
+    if (fencedLanguage === null) return;
+
+    const normalizedLines = fencedLines
+      .map((line) => String(line || '').replace(/\s+$/g, ''))
+      .filter((line, index, arr) => line || index < arr.length - 1);
+
+    const blockLines = shouldRepairFragmentedListing(normalizedLines)
+      ? repairFragmentedListingLines(normalizedLines)
+      : normalizedLines;
+
+    while (output[output.length - 1] === '' && blockLines[0] === '') {
+      output.pop();
+    }
+
+    output.push(...blockLines);
+    fencedLanguage = null;
+    fencedLines = [];
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = String(rawLine || '').trim();
+
+    if (isTelegramFenceLine(trimmed)) {
+      if (fencedLanguage === null) {
+        fencedLanguage = trimmed.replace(/^```/, '').trim() || 'plain';
+        fencedLines = [];
+      } else {
+        flushFencedBlock();
+      }
+      continue;
+    }
+
+    if (fencedLanguage !== null) {
+      fencedLines.push(rawLine);
+      continue;
+    }
+
+    output.push(rawLine);
+  }
+
+  flushFencedBlock();
+
+  while (output[output.length - 1] === '') {
+    output.pop();
+  }
+
+  return output.join('\n');
+}
+
+function prepareTelegramPlainText(text) {
+  return normalizeTelegramCodeAndListingBlocks(
+    normalizeTelegramResponseLayout(sanitizeReply(String(text || 'Sin respuesta')))
+  );
+}
+
 function sendChunkedResponse(bot, chatId, text) {
   const TELEGRAM_LIMIT = 4096;
-  const plain = String(text || 'Sin respuesta');
+  const plain = prepareTelegramPlainText(text);
 
   if (plain.length <= TELEGRAM_LIMIT) {
     bot.sendMessage(chatId, plain);
@@ -106,11 +398,11 @@ function sendChunkedResponse(bot, chatId, text) {
     const chunks = [];
 
     for (const line of lines) {
-      if ((currentChunk.length + line.length + 1) > TELEGRAM_LIMIT) {
+      if (currentChunk.length + line.length + 1 > TELEGRAM_LIMIT) {
         if (currentChunk.trim()) {
           chunks.push(currentChunk.trim());
         }
-        
+
         // If a single line is too long, we must hard-chunk it
         if (line.length > TELEGRAM_LIMIT) {
           let remainder = line;
@@ -123,10 +415,10 @@ function sendChunkedResponse(bot, chatId, text) {
           currentChunk = line + '\n';
         }
       } else {
-         currentChunk += line + '\n';
+        currentChunk += line + '\n';
       }
     }
-    
+
     if (currentChunk.trim()) {
       chunks.push(currentChunk.trim());
     }
@@ -138,6 +430,58 @@ function sendChunkedResponse(bot, chatId, text) {
   }
 }
 
+function formatElapsedDuration(durationMs) {
+  const totalSeconds = Math.max(0, Math.round((durationMs || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+
+  return `${minutes}m ${seconds}s`;
+}
+
+function normalizeTrackedTool(info) {
+  const text = String(info || '');
+  const match = text.match(TOOL_EVENT_REGEX);
+  const toolName = match?.[1]?.trim();
+
+  if (toolName) {
+    return {
+      toolName,
+      displayInfo: text,
+    };
+  }
+
+  if (text.includes('[🔧 Ejecutando')) {
+    return {
+      toolName: 'desconocida',
+      displayInfo: '[🔧 Ejecutando desconocida...]',
+    };
+  }
+
+  return {
+    toolName: null,
+    displayInfo: text,
+  };
+}
+
+function buildProgressMessage(elapsedMs, toolsSeen) {
+  const elapsed = formatElapsedDuration(elapsedMs);
+  const toolList =
+    toolsSeen.length > 0 ? toolsSeen.map((tool) => `  • ${tool}`).join('\n') : '  (ninguna aún)';
+
+  return `⏳ Trabajando... (${elapsed})\n🔧 Herramientas usadas (${toolsSeen.length}):\n${toolList}`;
+}
+
+function buildFinalSummaryMessage(durationMs, toolsSeen) {
+  const duration = formatElapsedDuration(durationMs);
+  const toolSummary = toolsSeen.length > 0 ? toolsSeen.join(', ') : 'ninguna herramienta ejecutada';
+
+  return `✅ Listo en ${duration} • Tools: ${toolSummary}`;
+}
+
 /**
  * Handles regular text messages (non-command).
  * Routes user messages through OpenCode headless (default) or LLM Bridge (fallback).
@@ -146,7 +490,7 @@ function sendChunkedResponse(bot, chatId, text) {
  * @param {TelegramMessage} msg - Incoming message object.
  * @param {import('better-sqlite3').Database} db - SQLite database instance.
  */
-module.exports = async function chat(bot, msg, db) {
+async function chat(bot, msg, db) {
   const chatId = msg.chat.id;
   const text = msg.text || '';
   let thinkingMsg;
@@ -179,12 +523,13 @@ module.exports = async function chat(bot, msg, db) {
       }
     };
 
-    let response;
+    let responseText;
+    let finalSummaryText = null;
 
     if (USE_OPENCODE) {
       // === NEW PATH: OpenCode headless with persistent sessions ===
       // Check if this should be a multi-turn task
-      if (USE_MULTI_TURN && isMultiTurnTask(text)) {
+      if (USE_MULTI_TURN && shouldUseMultiTurn(text)) {
         const { getExecutor } = require('../services/executor');
         const dbBridge = require('../lib/db-bridge');
         const executor = getExecutor(bot, dbBridge);
@@ -197,9 +542,11 @@ module.exports = async function chat(bot, msg, db) {
             .catch(() => {});
         }
 
-        response = await executor.startMultiTurn(chatId, agent, text, { onEvent });
+        responseText = await executor.startMultiTurn(chatId, agent, text, { onEvent });
       } else {
-        response = await runOpenCodeHeadless(bot, agent, text, chatId, onEvent);
+        const singleTurnResult = await runOpenCodeHeadless(bot, agent, text, chatId, onEvent);
+        responseText = singleTurnResult.responseText;
+        finalSummaryText = singleTurnResult.finalSummaryText;
       }
     } else if (LLM_BRIDGE_ENABLED && db) {
       // === FALLBACK PATH: LLM Bridge with failover ===
@@ -209,35 +556,44 @@ module.exports = async function chat(bot, msg, db) {
       if (Object.keys(status.providers).length === 0) {
         // No providers configured — fall back to legacy
         logger.warn('No LLM providers configured, falling back to legacy opencode');
-        response = await runLegacyOpencode(agent, text, chatId, onEvent);
+        responseText = await runLegacyOpencode(agent, text, chatId, onEvent);
       } else {
-        response = await bridge.chat(chatId, text, {
+        responseText = await bridge.chat(chatId, text, {
           enableTools: true,
         });
       }
     } else {
       // === LEGACY PATH: tmux-based OpenCode ===
-      response = await runLegacyOpencode(agent, text, chatId, onEvent);
+      responseText = await runLegacyOpencode(agent, text, chatId, onEvent);
     }
-
-    // 3. Delete the "thinking" message
+    // 3. Replace the thinking message with a final summary when available
     if (thinkingMsg) {
       try {
-        await bot.deleteMessage(chatId, thinkingMsg.message_id);
+        if (finalSummaryText) {
+          await bot.editMessageText(finalSummaryText, {
+            chat_id: chatId,
+            message_id: thinkingMsg.message_id,
+          });
+        } else {
+          await bot.deleteMessage(chatId, thinkingMsg.message_id);
+        }
       } catch (err) {
-        logger.warn(`Could not delete thinking message: ${err.message}`);
+        logger.warn(`Could not finalize thinking message: ${err.message}`);
       }
     }
 
     // 4. Send response to Telegram
-    sendChunkedResponse(bot, chatId, response);
+    sendChunkedResponse(bot, chatId, responseText);
 
     logger.info(`Agent "${agent}" responded to chat ${chatId}`);
   } catch (err) {
-    // On error: delete thinking message and show error
+    // On error: update the thinking message and show error
     if (thinkingMsg) {
       try {
-        await bot.deleteMessage(chatId, thinkingMsg.message_id);
+        await bot.editMessageText(`⚠️ Falló la ejecución: ${err.message}`, {
+          chat_id: chatId,
+          message_id: thinkingMsg.message_id,
+        });
       } catch (_) {}
     }
 
@@ -249,44 +605,6 @@ module.exports = async function chat(bot, msg, db) {
       parse_mode: 'MarkdownV2',
     });
   }
-};
-
-/**
- * Heuristic to determine if a message should trigger multi-turn execution.
- * Multi-turn tasks are typically longer or contain SDD/implementation keywords.
- *
- * @param {string} text - User message text
- * @returns {boolean} True if this looks like a multi-turn task
- */
-function isMultiTurnTask(text) {
-  if (!text) return false;
-
-  // Long messages are likely complex tasks
-  if (text.length > 100) return true;
-
-  // SDD and implementation keywords
-  const keywords = [
-    'implement',
-    'create',
-    'following',
-    'build',
-    'fix',
-    'refactor',
-    'sdd',
-    'proposal',
-    'design',
-    'spec',
-    'task',
-    'workflow',
-    'implementar',
-    'crear',
-    'construir',
-    'arreglar',
-    'corregir',
-  ];
-
-  const lower = text.toLowerCase();
-  return keywords.some((kw) => lower.includes(kw));
 }
 
 /**
@@ -315,38 +633,62 @@ async function runOpenCodeHeadless(bot, agent, text, chatId, onEvent) {
 
   const MAX_RETRIES = 2;
   const BASE_DELAY_MS = 1_000;
+  const toolsSeen = [];
+  const startedAt = Date.now();
   let result;
   let lastError;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      if (attempt > 0) {
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
-        logger.info(`Retry attempt ${attempt}/${MAX_RETRIES} after ${delay}ms`);
-        await new Promise((r) => setTimeout(r, delay));
-      }
+  const onEventWithTracking = (info) => {
+    const { toolName, displayInfo } = normalizeTrackedTool(info);
 
-      result = await opencode.sendMessage(
-        session.id,
-        session.opencode_session_id,
-        agent,
-        contextPrompt,
-        {
-          cwd: directory,
-          chatId: String(chatId),
-          onEvent,
-          onApproval: createSimpleApprovalHandler(session.id, agent, String(chatId), { bot }),
-        }
-      );
-
-      lastError = null;
-      break;
-    } catch (err) {
-      lastError = err;
-      logger.warn(
-        `OpenCode sendMessage failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${err.message}`
-      );
+    if (toolName && !toolsSeen.includes(toolName)) {
+      toolsSeen.push(toolName);
     }
+
+    if (onEvent) {
+      onEvent(displayInfo);
+    }
+  };
+
+  const progressInterval = setInterval(() => {
+    bot
+      .sendMessage(chatId, buildProgressMessage(Date.now() - startedAt, toolsSeen))
+      .catch(() => {});
+  }, DEFAULT_PROGRESS_INTERVAL_MS);
+
+  try {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        if (attempt > 0) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          logger.info(`Retry attempt ${attempt}/${MAX_RETRIES} after ${delay}ms`);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+
+        result = await opencode.sendMessage(
+          session.id,
+          session.opencode_session_id,
+          agent,
+          contextPrompt,
+          {
+            cwd: directory,
+            chatId: String(chatId),
+            onEvent: onEventWithTracking,
+            onApproval: createSimpleApprovalHandler(session.id, agent, String(chatId), { bot }),
+          }
+        );
+
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        logger.warn(
+          `OpenCode sendMessage failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${err.message}`
+        );
+      }
+    }
+  } finally {
+    clearInterval(progressInterval);
   }
 
   if (lastError && !result) {
@@ -377,7 +719,13 @@ async function runOpenCodeHeadless(bot, agent, text, chatId, onEvent) {
   const output = result?.output || 'Sin respuesta del agente.';
   conversation.addMessage(chatId, 'assistant', output);
 
-  return sanitizeReply(output);
+  return {
+    responseText: sanitizeReply(output),
+    finalSummaryText: buildFinalSummaryMessage(
+      result?.durationMs ?? Date.now() - startedAt,
+      toolsSeen
+    ),
+  };
 }
 
 /**
@@ -422,7 +770,7 @@ async function persistTraces(sessionId, events, telegramChatId) {
 
   if (traces.length === 0) return;
 
-  const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://localhost:3000';
+  const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://127.0.0.1:3400';
 
   await fetch(`${NEXT_JS_URL}/api/agenthub/traces/persist`, {
     method: 'POST',
@@ -471,3 +819,17 @@ async function runLegacyOpencode(agent, text, chatId, onEvent) {
 
   return sanitizeReply(response);
 }
+
+module.exports = chat;
+module.exports.runOpenCodeHeadless = runOpenCodeHeadless;
+module.exports.__private__ = {
+  sanitizeReply,
+  normalizeTelegramResponseLayout,
+  normalizeTelegramCodeAndListingBlocks,
+  prepareTelegramPlainText,
+  sendChunkedResponse,
+  formatElapsedDuration,
+  normalizeTrackedTool,
+  buildProgressMessage,
+  buildFinalSummaryMessage,
+};

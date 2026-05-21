@@ -45,6 +45,7 @@ db.exec(`
     planning_prompt TEXT,
     planning_status TEXT DEFAULT 'none',
     project_type TEXT DEFAULT 'software',
+    documentation_policy TEXT DEFAULT 'personal',
     local_path TEXT
   );
 
@@ -140,6 +141,23 @@ db.exec(`
     tipo TEXT DEFAULT 'blocks',
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- Phase 5: Agent Logs (Traceability & Analytics)
+  CREATE TABLE IF NOT EXISTS agent_logs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    agent_name TEXT,
+    event_type TEXT NOT NULL,
+    tool_name TEXT,
+    status TEXT DEFAULT 'ok',
+    message TEXT,
+    metadata TEXT,
+    duration_ms INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_logs_session ON agent_logs(session_id);
+  CREATE INDEX IF NOT EXISTS idx_agent_logs_created ON agent_logs(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_agent_logs_event ON agent_logs(event_type);
 `);
 
 console.log('Schema created.');

@@ -19,6 +19,7 @@ export async function GET(req) {
     const sessionId = searchParams.get('session_id');
     const hierarchy = searchParams.get('hierarchy');
     const limit = parseInt(searchParams.get('limit'), 10) || 50;
+    const includeHidden = searchParams.get('include_hidden') || undefined;
 
     // Hierarchy endpoints
     if (hierarchy === 'chain' && sessionId) {
@@ -37,11 +38,11 @@ export async function GET(req) {
     let sessions;
 
     if (projectId) {
-      sessions = getSessionsByProject(projectId);
+      sessions = getSessionsByProject(projectId, { includeHidden });
     } else if (telegramChatId) {
       sessions = getSessionsByTelegramChat(telegramChatId, limit);
     } else {
-      sessions = getRecentSessions(limit);
+      sessions = getRecentSessions(limit, { includeHidden });
     }
 
     return NextResponse.json(sessions);

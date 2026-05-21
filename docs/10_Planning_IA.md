@@ -1,7 +1,8 @@
 ---
-Fecha de Modificación: 28 de marzo de 2026
+Fecha de Modificación: 15 de mayo de 2026
 Changelog:
   - 2026-03-28 v1: Creación del documento. Describe el flujo completo de Planning IA implementado en DevHub.
+  - 2026-05-15 v2: Se corrige el cierre de planning y se alinea la integración con Swarm/Git al boundary vigente.
 ---
 
 # 11 Planning IA — Flujo de Planificación Automática
@@ -20,34 +21,35 @@ El cuello de botella más costoso en cualquier proyecto de software no es la eje
 
 ### Base de Datos
 
-| Elemento | Descripción |
-|----------|-------------|
-| `projects.planning_prompt` | Texto libre con el contexto detallado del proyecto |
-| `projects.planning_status` | `none` · `pending` · `completed` |
-| `project_files` | Tabla de archivos de contexto (ver `03_Esquema_BaseDatos.md`) |
+| Elemento                        | Descripción                                                                                            |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `projects.planning_prompt`      | Texto libre con el contexto detallado del proyecto                                                     |
+| `projects.planning_status`      | `none` · `pending` · `completed`                                                                       |
+| `projects.documentation_policy` | `personal` · `shared_legacy` · `archive_only` — clasifica cómo se maneja la documentación del proyecto |
+| `project_files`                 | Tabla de archivos de contexto (ver `03_Esquema_BaseDatos.md`)                                          |
 
 ### API Routes (Next.js)
 
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/api/projects/[id]/files` | `POST` | Sube archivos de contexto como texto a Supabase |
-| `/api/projects/[id]/files` | `GET` | Lista archivos guardados (sin contenido, solo metadata) |
-| `/api/projects/[id]/files` | `DELETE` (query `?file_id=`) | Elimina un archivo del contexto |
+| Endpoint                   | Método                       | Descripción                                             |
+| -------------------------- | ---------------------------- | ------------------------------------------------------- |
+| `/api/projects/[id]/files` | `POST`                       | Sube archivos de contexto como texto a Supabase         |
+| `/api/projects/[id]/files` | `GET`                        | Lista archivos guardados (sin contenido, solo metadata) |
+| `/api/projects/[id]/files` | `DELETE` (query `?file_id=`) | Elimina un archivo del contexto                         |
 
 ### MCP Server (`devhub-mcp/server.js`)
 
-| Tool | Descripción |
-|------|-------------|
-| `get_project_context({ project_id })` | Devuelve `planning_prompt` + todos los `project_files` con su contenido completo |
-| `mark_planning_done({ project_id })` | Setea `planning_status = 'completed'` |
+| Tool                                                           | Descripción                                                                      |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `get_project_context({ project_id })`                          | Devuelve `planning_prompt` + todos los `project_files` con su contenido completo |
+| `update_project({ project_id, planning_status: "completed" })` | Marca `planning_status = 'completed'`                                            |
 
 ### Frontend
 
-| Componente | Ruta | Descripción |
-|------------|------|-------------|
-| `ProjectHub.jsx` | `/hub` | Modal mejorado con toggle Planning IA, textarea de prompt, dropzone de archivos |
-| `PlanningMode.jsx` | `/project/:id/planning` | Página completa de onboarding con upload, prompt, generación de contexto y copy prompt |
-| `WorkspaceSidebar.jsx` | — | Item "Planning IA" con dot púrpura pulsante cuando `planning_status = 'pending'` |
+| Componente             | Ruta                    | Descripción                                                                            |
+| ---------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
+| `ProjectHub.jsx`       | `/hub`                  | Modal mejorado con toggle Planning IA, textarea de prompt, dropzone de archivos        |
+| `PlanningMode.jsx`     | `/project/:id/planning` | Página completa de onboarding con upload, prompt, generación de contexto y copy prompt |
+| `WorkspaceSidebar.jsx` | —                       | Item "Planning IA" con dot púrpura pulsante cuando `planning_status = 'pending'`       |
 
 ---
 
@@ -62,6 +64,7 @@ Al hacer clic en **"Nuevo Proyecto"** en el Hub, el modal ahora incluye:
 - **Dropzone** para arrastrar archivos `.txt`, `.md`, `.json`, `.py`, `.js`, etc.
 
 Al confirmar:
+
 - El proyecto se crea con `planning_status = 'pending'`
 - Los archivos se suben a `project_files` vía API
 - El usuario es redirigido a `/project/:id/planning`
@@ -79,7 +82,7 @@ La página `PlanningMode.jsx` muestra:
    - `user_id` para los MCP tools
    - Lista de archivos subidos
    - Instrucción de mínimo 40 tareas
-   - Instrucción de llamar `mark_planning_done` al terminar
+   - Instrucción de cerrar el planning con `update_project({ planning_status: "completed" })`
 5. **Botón "Copiar Prompt"** — copia al clipboard con toast de confirmación
 6. **Contador en tiempo real** — polling cada 5s de milestones y tareas creados
 
@@ -89,7 +92,7 @@ El usuario pega el prompt en el chat con **Antigravity** (u otro agente MCP-comp
 
 ```
 1. get_project_context({ project_id: "..." })
-   → Lee planning_prompt + contenido de TODOS los archivos
+   → Lee planning_prompt + documentación policy + contenido de TODOS los archivos
 
 2. Analizar el contexto y definir la arquitectura del plan
 
@@ -115,16 +118,26 @@ El usuario pega el prompt en el chat con **Antigravity** (u otro agente MCP-comp
    - Performance y caching
    - Seguridad y pen-testing básico
 
-5. mark_planning_done({ project_id: "..." })
-   → Marca planning_status = 'completed'
+5. update_project({ project_id: "...", planning_status: "completed" })
+    → Marca planning_status = 'completed'
 ```
+
+Antes de generar o transformar documentación, el agente debe revisar `documentation_policy` en el contexto del proyecto y respetar el gate de clasificación:
+
+- `personal` / `DevHub` → aplicar el flujo DevHub de documentación y planning.
+- `shared_legacy` → preservar la documentación legacy y no transformarla por defecto.
+- `archive_only` → archivar primero la documentación legacy y recién después crear documentación nueva en formato DevHub.
+
+Si la policy falta o es ambigua, el agente debe preguntarle al usuario antes de seguir. Los proyectos compartidos no se fuerzan al formato DevHub por defecto.
+Los docs legacy importados se archivan, no se sobrescriben.
 
 > [!IMPORTANT]
 > **El plan NO debe ser superficial.** Si el proyecto es un e-commerce, las tareas deben cubrir: auth, catálogo, carrito, checkout, pagos (Stripe), emails transaccionales, panel de admin, gestión de inventario, reportes, SEO, rendimiento de imágenes, seguridad PCI, etc. Cada área = múltiples tareas.
 
 ### Paso 4 — Resultado Final
 
-Cuando `mark_planning_done` se ejecuta:
+Cuando `update_project({ planning_status: "completed" })` se ejecuta:
+
 - `planning_status` → `completed`
 - El sidebar cambia el dot de pulsante a estático
 - El usuario puede navegar a **Roadmap** → ver hitos con fechas
@@ -135,15 +148,15 @@ Cuando `mark_planning_done` se ejecuta:
 
 ## Tipos de Archivos Soportados para Contexto
 
-| Extensión | Casos de uso típicos |
-|-----------|---------------------|
-| `.md` | READMEs, specs funcionales, user stories, wireframes en texto |
-| `.txt` | Notas libres, listas de requerimientos |
-| `.json` | Esquemas de DB, configs, estructuras de datos |
-| `.yaml` / `.yml` | Configuraciones de servicios, OpenAPI specs |
-| `.js` / `.ts` / `.jsx` / `.tsx` | Código de referencia, tipos TypeScript |
-| `.py` | Scripts, modelos de datos en Python |
-| `.csv` | Datasets de ejemplo, catálogos de productos |
+| Extensión                       | Casos de uso típicos                                          |
+| ------------------------------- | ------------------------------------------------------------- |
+| `.md`                           | READMEs, specs funcionales, user stories, wireframes en texto |
+| `.txt`                          | Notas libres, listas de requerimientos                        |
+| `.json`                         | Esquemas de DB, configs, estructuras de datos                 |
+| `.yaml` / `.yml`                | Configuraciones de servicios, OpenAPI specs                   |
+| `.js` / `.ts` / `.jsx` / `.tsx` | Código de referencia, tipos TypeScript                        |
+| `.py`                           | Scripts, modelos de datos en Python                           |
+| `.csv`                          | Datasets de ejemplo, catálogos de productos                   |
 
 **Límite:** 2MB por archivo · Los archivos se guardan como texto en Supabase (no binarios)
 
@@ -159,7 +172,7 @@ Cuando `mark_planning_done` se ejecuta:
    - `medium` → Mejoras importantes
    - `low` → Nice-to-haves, optimizaciones futuras
 4. **Hitos con fecha**: Usar fechas razonables distribuidas a lo largo del tiempo de desarrollo estimado.
-5. **Siempre cerrar** llamando `mark_planning_done()`.
+5. **Siempre cerrar** actualizando el proyecto con `update_project({ planning_status: "completed" })`.
 6. **Si el contexto es insuficiente**: Crear tareas genéricas de investigación/definición como primeras tareas del primer milestone.
 
 ---
@@ -171,13 +184,17 @@ Una vez el planning está `completed`, el flujo natural continúa al **Swarm**:
 ```
 Plan exhaustivo (40-60+ tareas en Supabase)
        ↓
-Worker Agent → pick_up_task() → git_branch()
+Cola DevHub → get_execution_queue() / claim_next_task()
        ↓
-Ejecuta la tarea → git_commit()
+Worker Agent → capability del ejecutor prepara branch task/<id>-<slug>
        ↓
-QA Agent → git_diff_review() → aprueba/rechaza
+Ejecuta la tarea → commits semánticos + push al branch de tarea
        ↓
-Merge a main (Ver: 08_Enjambre_Agentes_y_Orquestacion.md)
+DevHub MCP → add_task_comment() / update_task() / leases
+       ↓
+QA Agent → revisa branch/PR/artifacts → aprueba/rechaza
+       ↓
+Merge por ruta aprobada del repo (sin push directo a main desde el agente)
 ```
 
-Ver [08 Orquestación de Enjambre](./08_Enjambre_Agentes_y_Orquestacion.md) y [09 Prompts Maestros de Agentes](./09_Prompts_Maestros_Agentes.md) para el flujo de Workers.
+Ver [08 Orquestación de Enjambre](./08_Enjambre_Agentes_y_Orquestacion.md), [09 Prompts Maestros de Agentes](./09_Prompts_Maestros_Agentes.md), [23 Swarm Workspace](./23_Swarm_Workspace_Intencion_y_Roadmap.md) y [24 Política Git y Versionado](./24_Politica_Git_y_Versionado_Agentes.md) para el flujo vigente.

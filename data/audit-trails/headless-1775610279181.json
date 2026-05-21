@@ -1,0 +1,99 @@
+{
+  "sessionID": "headless-1775610279181",
+  "metadata": {
+    "prompt": "Explora el codebase y detecta code smells",
+    "agent": "sdd-explore",
+    "project_id": "devhub",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775610279181,
+    "completedAt": 1775610280449,
+    "duration": 1268
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775610279181,
+      "timeStr": "01:04:39"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775610279184,
+      "timeStr": "01:04:39"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_295614aebffeknKJxWWM65mcgN"
+      },
+      "timestamp": 1775610279193,
+      "timeStr": "01:04:39"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 41,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775610279193,
+      "timeStr": "01:04:39"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775610279197,
+      "timeStr": "01:04:39"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "Explora el codebase y detecta code smells"
+      },
+      "timestamp": 1775610279211,
+      "timeStr": "01:04:39"
+    },
+    {
+      "type": "session_error",
+      "data": {
+        "error": {
+          "name": "MessageAbortedError",
+          "data": {
+            "message": "Aborted"
+          }
+        }
+      },
+      "timestamp": 1775610280445,
+      "timeStr": "01:04:40"
+    },
+    {
+      "type": "session_idle",
+      "data": {
+        "eventsProcessed": 15,
+        "tracesPersisted": 1
+      },
+      "timestamp": 1775610280448,
+      "timeStr": "01:04:40"
+    },
+    {
+      "type": "session_idle",
+      "data": {
+        "eventsProcessed": 19,
+        "tracesPersisted": 1
+      },
+      "timestamp": 1775610280449,
+      "timeStr": "01:04:40"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "ANY_ERROR",
+      "severity": "error",
+      "message": "Error detected: [object Object]",
+      "timestamp": 1775610280445
+    }
+  ],
+  "completed": true
+}

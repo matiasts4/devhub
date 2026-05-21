@@ -82,7 +82,7 @@ Estas rutas tienen `export const dynamic = 'force-static'` pero también tienen 
 
 ## 💀 Rutas Muertas (0 consumidores en frontend)
 
-### Grupo 1: Agentes legacy (6 rutas)
+### Grupo 1: Agentes legacy (5 rutas)
 
 | Ruta                        | Qué hace                         | Por qué está muerta              |
 | --------------------------- | -------------------------------- | -------------------------------- |
@@ -91,7 +91,6 @@ Estas rutas tienen `export const dynamic = 'force-static'` pero también tienen 
 | `/api/agent/qa-result`      | Procesa aprobación QA            | El frontend usa `/api/agenthub/` |
 | `/api/agents/launch`        | Lanza proceso OpenCode           | El frontend usa `/api/agenthub/` |
 | `/api/agents/profiles`      | Lista perfiles Gemini            | No se llama desde ningún lado    |
-| `/api/agents/quotas`        | Check cuotas Gemini              | No se llama desde ningún lado    |
 
 ### Grupo 2: Chat IA (2 rutas)
 
@@ -170,7 +169,7 @@ Estas rutas tienen `export const dynamic = 'force-static'` pero también tienen 
 | Categoría      | Total  | Funcionales | Muertas             | Críticas              |
 | -------------- | ------ | ----------- | ------------------- | --------------------- |
 | AgentHub       | 9      | 9           | 0                   | 0                     |
-| Agentes legacy | 6      | 0           | 6                   | 2 (command injection) |
+| Agentes legacy | 5      | 0           | 5                   | 2 (command injection) |
 | Chat IA        | 2      | 0           | 2                   | 0                     |
 | Filesystem     | 3      | 3           | 0                   | 3 (path traversal)    |
 | Terminal       | 3      | 1           | 2                   | 0                     |
@@ -179,7 +178,7 @@ Estas rutas tienen `export const dynamic = 'force-static'` pero también tienen 
 | MCP            | 2      | 0           | 1 (engram memories) | 0                     |
 | Telegram       | 2      | 2           | 0                   | 0                     |
 | Misc           | 10     | 4           | 6                   | 0                     |
-| **Total**      | **46** | **25**      | **15**              | **5**                 |
+| **Total**      | **45** | **25**      | **14**              | **5**                 |
 
 ---
 
@@ -192,7 +191,6 @@ Estas rutas tienen `export const dynamic = 'force-static'` pero también tienen 
 | `api/agent/qa-result/route.js`      | Muerta + command injection                  |
 | `api/agents/launch/route.js`        | Muerta                                      |
 | `api/agents/profiles/route.js`      | Muerta                                      |
-| `api/agents/quotas/route.js`        | Muerta + código muerto (`extractJsonBlock`) |
 | `api/ai/chat/route.js`              | Muerta + `force-static` en POST             |
 | `api/centro-ia/query/route.js`      | Muerta + spawn por request                  |
 | `api/terminal/processes/route.js`   | Stub muerto                                 |
@@ -203,7 +201,7 @@ Estas rutas tienen `export const dynamic = 'force-static'` pero también tienen 
 | `api/tasks/route.js`                | Duplicada + `force-static` en POST/PATCH    |
 | `api/mcp/connections/route.js`      | Duplicada + `force-static` en POST          |
 
-**Total a eliminar: 15 archivos**
+**Total a eliminar: 14 archivos**
 
 ## 🔧 Fixes requeridos en rutas activas
 

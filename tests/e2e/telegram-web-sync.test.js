@@ -13,10 +13,10 @@
  */
 
 const Database = require('better-sqlite3');
-const path = require('path');
 const crypto = require('crypto');
+const { resolveDbPath } = require('../../src/lib/db/pathResolver');
 
-const DB_PATH = path.join(process.cwd(), 'data', 'devhub.db');
+const DB_PATH = resolveDbPath({ moduleDir: __dirname, forceCanonicalInTests: true });
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

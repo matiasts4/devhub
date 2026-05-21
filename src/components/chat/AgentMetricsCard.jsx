@@ -7,6 +7,11 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Pencil,
+  Eye,
+  EyeOff,
+  Check,
+  X,
 } from 'lucide-react';
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
@@ -121,8 +126,11 @@ export default function AgentMetricsCard({
   onExpand,
   onViewTrace,
   onKill,
+  onRename,
+  onHide,
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [editingName, setEditingName] = useState(false);
 
   const status = (session?.status || agent?.status || 'idle').toLowerCase();
   const badge = STATUS_BADGE[status] || STATUS_BADGE.idle;
@@ -167,8 +175,26 @@ export default function AgentMetricsCard({
     session?.created_at || session?.started_at
   );
 
-  const agentName = session?.title || agent?.name || agent?.agent_name || 'Sin nombre';
+  const displayName =
+    session?.custom_name || session?.title || agent?.name || agent?.agent_name || 'Sin nombre';
   const agentModel = session?.agent_model || agent?.model || 'N/A';
+  const isHidden = session?.visibility === 'hidden_active';
+
+  const handleRename = useCallback(
+    (newName) => {
+      setEditingName(false);
+      if (onRename) {
+        onRename(session?.id, newName);
+      }
+    },
+    [onRename, session?.id]
+  );
+
+  const handleToggleHide = useCallback(() => {
+    if (onHide) {
+      onHide(session?.id, isHidden ? 'visible' : 'hidden_active');
+    }
+  }, [onHide, session?.id, isHidden]);
 
   return (
     <div
@@ -210,12 +236,20 @@ export default function AgentMetricsCard({
             )}
           </div>
           <div>
-            <h3
-              className="font-mono font-semibold text-sm"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              {agentName}
-            </h3>
+            {editingName ? (
+              <InlineRename
+                initialValue={displayName}
+                onSave={handleRename}
+                onCancel={() => setEditingName(false)}
+              />
+            ) : (
+              <h3
+                className="font-mono font-semibold text-sm"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {displayName}
+              </h3>
+            )}
             <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
               {agentModel}
             </p>
@@ -232,6 +266,34 @@ export default function AgentMetricsCard({
           >
             {badge.label}
           </span>
+          {onRename && !editingName && (
+            <button
+              onClick={() => setEditingName(true)}
+              className="p-1.5 rounded-lg transition-colors hover:text-[var(--accent-primary)] cursor-pointer"
+              style={{
+                background: 'transparent',
+                border: '1px solid transparent',
+                color: 'var(--text-muted)',
+              }}
+              title="Renombrar sesión"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onHide && (
+            <button
+              onClick={handleToggleHide}
+              className="p-1.5 rounded-lg transition-colors hover:text-[var(--accent-primary)] cursor-pointer"
+              style={{
+                background: 'transparent',
+                border: '1px solid transparent',
+                color: isHidden ? 'var(--warning)' : 'var(--text-muted)',
+              }}
+              title={isHidden ? 'Mostrar sesión' : 'Ocultar sesión'}
+            >
+              {isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          )}
           <button
             onClick={() => setExpanded((v) => !v)}
             className="p-1.5 rounded-lg transition-colors cursor-pointer"
