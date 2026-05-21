@@ -35,6 +35,7 @@ import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
+import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -249,7 +250,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development') return;
+    if (!isDevelopmentRuntime()) return;
     if (typeof window === 'undefined') return;
 
     const clearStalePwaState = async () => {

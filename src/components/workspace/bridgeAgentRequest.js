@@ -35,13 +35,12 @@ function normalizeClassName(className = '') {
 }
 
 export function deriveSelectionLabel(elementInfo = {}) {
-  const tagName = String(
-    elementInfo?.tagName || elementInfo?.element?.tagName || 'div'
-  ).toLowerCase();
-  const className = normalizeClassName(
-    elementInfo?.className || elementInfo?.element?.className || ''
-  );
-  return className ? `${tagName}.${className}` : tagName;
+  const tagName = String(elementInfo?.tagName || elementInfo?.element?.tagName || 'div').toLowerCase();
+  const className = normalizeClassName(elementInfo?.className || elementInfo?.element?.className || '');
+  const attributes = elementInfo?.attributes || elementInfo?.element?.attributes || {};
+  const id = String(elementInfo?.id || elementInfo?.element?.id || attributes.id || '').trim();
+  const baseLabel = id ? `${tagName}#${id}` : tagName;
+  return className ? `${baseLabel}.${className}` : baseLabel;
 }
 
 export function deriveElementDimensions(elementInfo = {}) {

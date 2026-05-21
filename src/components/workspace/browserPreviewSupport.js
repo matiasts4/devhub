@@ -7,6 +7,21 @@ export const PREVIEW_SUPPORT_MODE = {
   UNSUPPORTED: 'unsupported',
 };
 
+export const BROWSER_RUNTIME = {
+  IFRAME: 'iframe',
+  NATIVE_GTK: 'native-gtk',
+};
+
+export const BROWSER_RUNTIME_FALLBACK_REASON = {
+  EDIT_MODE_REQUIRES_IFRAME: 'edit-mode-requires-iframe',
+  PROBE_FAILED: 'probe-failed',
+  SELECTOR_UNAVAILABLE: 'selector-unavailable',
+};
+
+export function hasNativeSelectorInspectCapability(nativeCapability) {
+  return nativeCapability?.capabilities?.selector?.inspect === true;
+}
+
 export const SUPPORT_REASON = {
   SAME_ORIGIN_ACCESS: 'same-origin-access',
   PROXY_ACTIVE: 'proxy-active',
@@ -224,5 +239,71 @@ export function getUnsupportedCopy(reason) {
     case SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION:
     default:
       return 'This preview did not respond to supported visual-edit activation. If it runs on another origin, DevHub needs preview instrumentation or same-origin access to inspect it. Supported paths today: same-origin previews, localhost previews through the DevHub proxy, or remote previews that load the visual-edit protocol.';
+  }
+}
+
+export function normalizeBrowserRuntime(runtime) {
+  return runtime === BROWSER_RUNTIME.NATIVE_GTK ? BROWSER_RUNTIME.NATIVE_GTK : BROWSER_RUNTIME.IFRAME;
+}
+
+export function resolveBrowserRuntimeSelection({
+  requestedRuntime,
+  editMode = false,
+  nativeCapability = null,
+} = {}) {
+  const normalizedRequestedRuntime = normalizeBrowserRuntime(requestedRuntime);
+
+  if (normalizedRequestedRuntime !== BROWSER_RUNTIME.NATIVE_GTK) {
+    return {
+      requestedRuntime: normalizedRequestedRuntime,
+      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
+      fallbackReason: null,
+    };
+  }
+
+  if (nativeCapability && nativeCapability.ready === false) {
+    return {
+      requestedRuntime: normalizedRequestedRuntime,
+      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
+      fallbackReason: nativeCapability.reason || BROWSER_RUNTIME_FALLBACK_REASON.PROBE_FAILED,
+    };
+  }
+
+  if (editMode && !hasNativeSelectorInspectCapability(nativeCapability)) {
+    return {
+      requestedRuntime: normalizedRequestedRuntime,
+      effectiveRuntime: BROWSER_RUNTIME.IFRAME,
+      fallbackReason: nativeCapability?.reason || BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
+    };
+  }
+
+  return {
+    requestedRuntime: normalizedRequestedRuntime,
+    effectiveRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+    fallbackReason: null,
+  };
+}
+
+export function getBrowserRuntimeLabel(runtime) {
+  return normalizeBrowserRuntime(runtime) === BROWSER_RUNTIME.NATIVE_GTK ? 'native gtk' : 'iframe';
+}
+
+export function getBrowserRuntimeFallbackCopy(reason) {
+  switch (reason) {
+    case BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME:
+      return 'iframe fallback · edit mode';
+    case BROWSER_RUNTIME_FALLBACK_REASON.SELECTOR_UNAVAILABLE:
+      return 'iframe fallback · selector unavailable';
+    case 'unsupported-platform':
+      return 'iframe fallback · unsupported platform';
+    case 'tauri-unavailable':
+      return 'iframe fallback · tauri unavailable';
+    case 'missing-bounds':
+      return 'iframe fallback · missing bounds';
+    case 'open-failed':
+      return 'iframe fallback · native open failed';
+    case 'probe-failed':
+    default:
+      return reason ? `iframe fallback · ${reason}` : 'iframe fallback';
   }
 }

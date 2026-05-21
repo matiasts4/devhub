@@ -12,6 +12,11 @@ use gtk::prelude::*;
 #[cfg(target_os = "linux")]
 use zoha_vte::{traits::TerminalExt, PtyFlags, Terminal};
 
+#[cfg(target_os = "linux")]
+use crate::native_window_host::{
+    ensure_shared_native_overlay, widget_matches_native_overlay, widget_name_matches,
+};
+
 const NATIVE_VTE_EVENT_NAME: &str = "native-vte-event";
 const PROBE_FAILED_REASON: &str = "probe-failed";
 const PROBE_MISSING_MAIN_WINDOW_REASON: &str = "probe-missing-main-window";
@@ -108,8 +113,6 @@ pub struct NativeVteEventPayload {
     pub initial_command: Option<String>,
 }
 
-#[cfg(target_os = "linux")]
-const NATIVE_VTE_OVERLAY_NAME: &str = "devhub-native-vte-overlay";
 #[cfg(target_os = "linux")]
 const NATIVE_VTE_LAYOUT_NAME: &str = "devhub-native-vte-layout";
 
@@ -520,9 +523,7 @@ fn inspect_same_window_host(app: &AppHandle) -> Result<(), String> {
                 .default_vbox()
                 .map_err(|_| PROBE_MISSING_DEFAULT_VBOX_REASON.to_string())?;
             let children = default_vbox.children();
-            let overlay_present = children
-                .iter()
-                .any(|child| widget_name_matches(child, NATIVE_VTE_OVERLAY_NAME));
+            let overlay_present = children.iter().any(widget_matches_native_overlay);
             let direct_webview_accessible = webview.is::<gtk::Widget>();
 
             resolve_same_window_probe_result(
@@ -545,9 +546,7 @@ fn prepare_same_window_host(app: &AppHandle, failure_reason: &str) -> Result<(),
         let _gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
         let default_vbox = window.default_vbox().map_err(|error| error.to_string())?;
         let children = default_vbox.children();
-        let overlay_present = children
-            .iter()
-            .any(|child| widget_name_matches(child, NATIVE_VTE_OVERLAY_NAME));
+        let overlay_present = children.iter().any(widget_matches_native_overlay);
         let direct_webview_accessible = webview.is::<gtk::Widget>();
 
         resolve_same_window_host_prep_result(
@@ -571,52 +570,11 @@ fn with_native_vte_registry<T>(
 }
 
 #[cfg(target_os = "linux")]
-fn widget_name_matches(widget: &gtk::Widget, expected: &str) -> bool {
-    widget.widget_name().as_str() == expected
-}
-
-#[cfg(target_os = "linux")]
 fn ensure_native_host(
     window: &tauri::WebviewWindow,
     direct_webview: Option<webkit2gtk::WebView>,
 ) -> Result<(gtk::Overlay, gtk::Fixed), String> {
-    use glib::object::Cast;
-
-    let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
-    let default_vbox = window.default_vbox().map_err(|error| error.to_string())?;
-    let overlay = if let Some(existing_overlay) = gtk_window
-        .children()
-        .into_iter()
-        .chain(default_vbox.children().into_iter())
-        .find(|child| widget_name_matches(child, NATIVE_VTE_OVERLAY_NAME))
-        .and_then(|child| child.downcast::<gtk::Overlay>().ok())
-    {
-        existing_overlay
-    } else {
-        let webview_widget = direct_webview
-            .map(|webview| webview.upcast::<gtk::Widget>())
-            .or_else(|| default_vbox.children().into_iter().last())
-            .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
-
-        if let Some(parent) = webview_widget.parent() {
-            if let Ok(container) = parent.downcast::<gtk::Container>() {
-                container.remove(&webview_widget);
-            }
-        }
-
-        let overlay = gtk::Overlay::new();
-        overlay.set_widget_name(NATIVE_VTE_OVERLAY_NAME);
-        overlay.add(&webview_widget);
-
-        if let Some(parent) = default_vbox.parent() {
-            if let Ok(container) = parent.downcast::<gtk::Container>() {
-                container.remove(&default_vbox);
-            }
-        }
-
-        gtk_window.add(&overlay);
-        overlay
-    };
+    let overlay = ensure_shared_native_overlay(window, direct_webview, OPEN_FAILED_REASON)?;
 
     install_native_vte_host_styles();
 
@@ -1964,6 +1922,13 @@ mod tests {
     #[test]
     fn native_vte_open_host_prep_accepts_direct_webview_handle_without_vbox_children() {
         assert_eq!(resolve_same_window_host_prep_result(0, false, true), Ok(()));
+    }
+
+    #[test]
+    fn native_vte_shared_host_recognizes_legacy_browser_overlay_name() {
+        assert!(crate::native_window_host::native_overlay_name_matches(
+            "devhub-native-browser-overlay"
+        ));
     }
 
     #[test]

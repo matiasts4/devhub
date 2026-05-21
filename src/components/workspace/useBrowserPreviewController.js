@@ -25,6 +25,10 @@ import {
   safeGetFrameHref,
   shouldUsePreviewProxy,
 } from './browserPreviewSupport';
+import {
+  nativeBrowserSelectorCommand,
+  subscribeNativeBrowserEvents,
+} from '@/lib/browser/nativeBrowserBridge';
 import { buildBrowserPreviewDiagnostic } from '@/lib/browserPreviewDiagnostics';
 
 const UNSUPPORTED_TIMEOUT_MS = 3500;
@@ -108,6 +112,9 @@ export default function useBrowserPreviewController({
   dockState,
   onDockStateChange,
   forceEditMode = false,
+  nativeRuntimeActive = false,
+  nativePanelId = null,
+  nativeSelectorReady = false,
 }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [isInspecting, setIsInspecting] = useState(false);
@@ -268,11 +275,12 @@ export default function useBrowserPreviewController({
     });
   }
 
-  function syncObservedBrowserUrl(nextUrl) {
+  function syncObservedBrowserUrl(nextUrl, options = {}) {
     const normalizedUrl = typeof nextUrl === 'string' ? nextUrl.trim() : '';
+    const immediate = options.immediate === true;
     if (!normalizedUrl) return;
 
-    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+    if (!immediate && typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
       window.setTimeout(() => {
         onDockStateChange((currentState) => {
           if (currentState?.browserUrl === normalizedUrl) {
@@ -552,6 +560,15 @@ export default function useBrowserPreviewController({
     });
   }
 
+  function resetNativeSelectorRuntime() {
+    if (!nativeRuntimeActive || !nativePanelId) {
+      return;
+    }
+
+    nativeBrowserSelectorCommand({ panelId: nativePanelId, action: 'deactivate' });
+    nativeBrowserSelectorCommand({ panelId: nativePanelId, action: 'clear-selection' });
+  }
+
   function handleEditModeToggle() {
     const nextEditMode = !dockState.editMode;
     const shouldPrimeProxyPreview = Boolean(nextEditMode && classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy);
@@ -579,6 +596,7 @@ export default function useBrowserPreviewController({
       protocolVerifiedRef.current = false;
       proxyPreviewRef.current = false;
       proxyPreviewPendingLoadRef.current = false;
+      resetNativeSelectorRuntime();
       setUseProxyPreview(false);
       commitObservedState({
         selector: SELECTOR_STATE.IDLE,
@@ -592,6 +610,48 @@ export default function useBrowserPreviewController({
   }
 
   function handleInspectToggle(shouldShowFrameWarning) {
+    if (nativeRuntimeActive) {
+      if (!nativeSelectorReady) {
+        downgradeToUnsupported('selector-unavailable', {
+          inspecting: false,
+        });
+        return;
+      }
+
+      if (isInspecting) {
+        nativeBrowserSelectorCommand({ panelId: nativePanelId, action: 'deactivate' });
+        nativeBrowserSelectorCommand({ panelId: nativePanelId, action: 'clear-selection' });
+        commitObservedState({
+          selector: SELECTOR_STATE.IDLE,
+          support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+          clearSelection: true,
+          clearTimer: true,
+          inspecting: false,
+        });
+        return;
+      }
+
+      setLastLaunchMeta(null);
+      setSelectedElement(null);
+      nativeBrowserSelectorCommand({ panelId: nativePanelId, action: 'activate', mode: 'select' })
+        .then((result) => {
+          if (result?.supported === false) {
+            downgradeToUnsupported(result.reason || 'selector-unavailable', {
+              inspecting: false,
+            });
+            return;
+          }
+
+          commitObservedState({
+            selector: SELECTOR_STATE.CONNECTING,
+            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            clearTimer: true,
+            inspecting: true,
+          });
+        });
+      return;
+    }
+
     if (shouldShowFrameWarning) {
       visualEditLog('warn', 'selector-activation-blocked', {
         reason: 'frame-warning-active',
@@ -721,6 +781,7 @@ export default function useBrowserPreviewController({
     setBrowserError(null);
     const currentIframeSrc = String(iframeRef.current?.getAttribute('src') || '');
     const isProxyFrame = currentIframeSrc.includes('/api/preview-proxy');
+    let loadedUrl = '';
     proxyPreviewPendingLoadRef.current = false;
 
     visualEditLog('info', 'iframe-load', {
@@ -732,13 +793,12 @@ export default function useBrowserPreviewController({
     });
 
     try {
-      const loadedUrl = safeGetFrameHref(getIframeContentWindow(iframeRef.current));
+      loadedUrl = safeGetFrameHref(getIframeContentWindow(iframeRef.current));
       if (loadedUrl && !isProxyFrame) {
         visualEditLog('debug', 'iframe-navigation-detected', {
           loadedUrl: parseUrlMeta(loadedUrl),
           browserUrl: parseUrlMeta(dockState.browserUrl),
         });
-        syncObservedBrowserUrl(loadedUrl);
       }
     } catch (error) {
       if (!isProxyFrame) {
@@ -751,13 +811,25 @@ export default function useBrowserPreviewController({
       }
     }
 
-    if (!effectiveEditMode) return;
+    if (!effectiveEditMode) {
+      if (loadedUrl && !isProxyFrame) {
+        syncObservedBrowserUrl(loadedUrl);
+      }
+      return;
+    }
     unsupportedAttemptsRef.current = 0;
     const nextSupport = classifyCurrentPreview({ iframeOverride: currentIframeSrc });
 
     if (nextSupport.reason === SUPPORT_REASON.PROXY_ESCAPED) {
       downgradeToUnsupported(SUPPORT_REASON.PROXY_ESCAPED);
+      if (loadedUrl) {
+        syncObservedBrowserUrl(loadedUrl, { immediate: true });
+      }
       return;
+    }
+
+    if (loadedUrl && !isProxyFrame) {
+      syncObservedBrowserUrl(loadedUrl);
     }
 
     const shouldKeepStableLocalReadyState = isProxyFrame
@@ -881,10 +953,27 @@ export default function useBrowserPreviewController({
   }, [selectorState]);
 
   useEffect(() => {
+    if (!nativeRuntimeActive) {
+      return undefined;
+    }
+
+    commitObservedState({
+      support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+      selector: selectedElement ? SELECTOR_STATE.SELECTED : SELECTOR_STATE.IDLE,
+      clearTimer: true,
+      detachInspector: true,
+      inspecting: isInspecting,
+    });
+
+    return undefined;
+  }, [isInspecting, nativeRuntimeActive, selectedElement]);
+
+  useEffect(() => {
     if (!effectiveEditMode) {
       protocolVerifiedRef.current = false;
       proxyPreviewRef.current = false;
       proxyPreviewPendingLoadRef.current = false;
+      resetNativeSelectorRuntime();
       setUseProxyPreview(false);
       commitObservedState({
         selector: SELECTOR_STATE.IDLE,
@@ -897,10 +986,30 @@ export default function useBrowserPreviewController({
       return;
     }
 
+    if (nativeRuntimeActive) {
+      updateSupportClassification(
+        createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+        selectedElement ? SELECTOR_STATE.SELECTED : SELECTOR_STATE.IDLE,
+        { clearTimer: true, detachInspector: true }
+      );
+      return;
+    }
+
     const shouldPrimeProxyPreview = classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy;
     proxyPreviewRef.current = shouldPrimeProxyPreview;
     proxyPreviewPendingLoadRef.current = shouldPrimeProxyPreview;
     setUseProxyPreview(shouldPrimeProxyPreview);
+    if (
+      supportStateRef.current?.mode === PREVIEW_SUPPORT_MODE.UNSUPPORTED
+      && supportStateRef.current?.reason === SUPPORT_REASON.PROXY_ESCAPED
+    ) {
+      updateSupportClassification(
+        createSupportState(PREVIEW_SUPPORT_MODE.UNSUPPORTED, SUPPORT_REASON.PROXY_ESCAPED),
+        SELECTOR_STATE.UNSUPPORTED,
+        { clearTimer: true }
+      );
+      return;
+    }
     const preserveInspectingState = isInspecting && supportStateRef.current?.mode !== PREVIEW_SUPPORT_MODE.UNSUPPORTED;
     if (preserveInspectingState) {
       updateSupportClassification(
@@ -921,7 +1030,72 @@ export default function useBrowserPreviewController({
       selectedElement ? SELECTOR_STATE.SELECTED : SELECTOR_STATE.IDLE,
       { clearTimer: true }
     );
-  }, [dockState.browserUrl, effectiveEditMode]);
+  }, [dockState.browserUrl, effectiveEditMode, nativeRuntimeActive, nativePanelId, selectedElement]);
+
+  useEffect(() => {
+    if (!nativeRuntimeActive || !nativePanelId) {
+      return undefined;
+    }
+
+    let unlistenWindow = null;
+    let teardownBridge = null;
+
+    const handleNativeBrowserEvent = (event) => {
+      const payload = event.detail || {};
+      if (payload.panelId && payload.panelId !== nativePanelId) {
+        return;
+      }
+
+      switch (payload.type) {
+        case 'selector-ready':
+        case 'selector-hover':
+          commitObservedState({
+            selector: SELECTOR_STATE.ARMED,
+            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            clearTimer: true,
+            inspecting: true,
+          });
+          break;
+        case 'selector-selected':
+          setSelectedElement(payload.element || null);
+          commitObservedState({
+            selector: SELECTOR_STATE.SELECTED,
+            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            clearTimer: true,
+            inspecting: true,
+          });
+          break;
+        case 'selector-cleared':
+          setSelectedElement(null);
+          commitObservedState({
+            selector: SELECTOR_STATE.ARMED,
+            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            clearTimer: true,
+            inspecting: true,
+          });
+          break;
+        case 'selector-error':
+          downgradeToUnsupported(payload.reason || 'selector-unavailable', {
+            inspecting: false,
+          });
+          break;
+        default:
+          break;
+      }
+    };
+
+    subscribeNativeBrowserEvents().then((teardown) => {
+      teardownBridge = teardown;
+    });
+
+    window.addEventListener('devhub:native-browser-event', handleNativeBrowserEvent);
+    unlistenWindow = () => window.removeEventListener('devhub:native-browser-event', handleNativeBrowserEvent);
+
+    return () => {
+      unlistenWindow?.();
+      teardownBridge?.();
+    };
+  }, [nativePanelId, nativeRuntimeActive]);
 
   useEffect(() => {
     if (!effectiveEditMode || !isInspecting || !classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy) {
