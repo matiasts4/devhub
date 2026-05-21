@@ -1,61 +1,90 @@
 ---
-Fecha de Modificación: 28 de marzo de 2026
+Fecha de Modificación: 18 de mayo de 2026
+Estado: PARCIAL / FUNDACIONAL
 Changelog:
   - 2026-03-28 v1: Fundación de la Arquitectura Inteligente de Enjambre (Swarm) para prevención de degradación documental y manejo de colisiones por IA.
+  - 2026-05-15 v2: Alineación con la separación actual entre DevHub MCP (control plane) y Git del ejecutor. Se deriva la política operativa al doc 24 y se reclasifican referencias Git-MCP como históricas.
+  - 2026-05-18 v3: Alineado con SW-2.1A: `agent_workspaces` ya congela lifecycle básico y `devhub_agent_runs` queda observer-only.
 ---
 
 # 08 Orquestación de Enjambre (Ai Swarm) y Memoria Git
 
-## El Problema Central: Degradación de la Documentación
-En ciclos rápidos de desarrollo asistidos por Inteligencia Artificial, el código evoluciona a un ritmo vertiginoso, superando la capacidad del programador (o la de un agente singular) de documentar las decisiones de diseño. A mediano plazo, el directorio `/docs` o los `README` quedan obsoletos, destruyendo el contexto funcional del proyecto.
+> [!WARNING]
+> Este documento queda como base conceptual del Swarm. Para operación vigente leer junto con:
+>
+> - [`04_Protocolo_MCP_y_Agentes.md`](./04_Protocolo_MCP_y_Agentes.md)
+> - [`23_Swarm_Workspace_Intencion_y_Roadmap.md`](./23_Swarm_Workspace_Intencion_y_Roadmap.md)
+> - [`24_Politica_Git_y_Versionado_Agentes.md`](./24_Politica_Git_y_Versionado_Agentes.md)
+>
+> Las referencias antiguas a Git como surface general del MCP deben leerse como **históricas**.
 
-Este documento asienta las bases y reglas estrictas para el **Ecosistema Multi-Agente (Swarm)** de DevHub. Este sistema abstrae el desarrollo aislando a agentes en tareas específicas con una **obligación inherente de mantener la memoria documental sincronizada.**
+## El problema central: degradación de la documentación
 
----
+En ciclos rápidos de desarrollo asistidos por IA, el código evoluciona más rápido que la documentación. Si no existe una regla explícita de branch, commit, push, comentarios y QA, `/docs` se desincroniza y el historial operativo queda opaco.
 
-## 🏗️ Flujo de Trabajo Tripartito (Swarm Workflow)
-
-La arquitectura de agentes se divide en **tres roles inmutables**, interactuando entre sí a través del Kanban (Supabase) y el Servidor MCP local de DevHub.
-
-### 1. El Despachador (Manager / Controller Agent)
-* **Objetivo:** Recibir la idea bruta humana, estructurar y subdividir.
-* **Comportamiento:**
-  - Toma las riendas al crear un "Nuevo Proyecto" en DevHub.
-  - Define la Arquitectura inicial en un `documento maestro` y lo graba en `docs/`.
-  - Usando la MCP tool `mcp_devhub_create_task`, divide el trabajo en *Sub-Tareas Granulares* y bloquea el alcance.
-  - Asigna las tareas al Kanban. **Jamás programa ni toca código.**
-
-### 2. El Obrero Especializado (Worker Agent)
-* **Objetivo:** Bajar al barro, ejecutar código y actualizar invariablemente la Wiki del sistema. Funciona bajo estrictas reglas de Anti-Colisión.
-* **Comportamiento (Reglas de Oro del Prompt PTY):**
-  1. **Aislamiento Git (`Branching`):** Al leer su tarea asignada, el agente DEBE ejecutar `git checkout -b task/[id-tarea]`. Está estrictamente prohibido que un worker programe sobre la rama `main` temporal.
-  2. **Ejecución Técnica:** Utiliza `FS-Worker` para escribir código.
-  3. **Auto-Documentación Forzada:** Antes de finalizar, el agente *TIENE* que editar un archivo correspondiente en `docs/` o un `Changelog` describiendo la lógica abstracta de lo que acaba de escribir, por qué lo hizo y cualquier nuevo endpoint.
-  4. **Entrega (`Commit & Push`):** El Worker debe empaquetar todo con `git add .` y `git commit -m "[TAREA] Detalle - Docs Actualizados"`.
-  5. Cierra su tarea a `Completed` a través de MCP.
-
-### 3. El Revisor y Validador (QA / Test Agent)
-* **Objetivo:** Auditar la rama de Git terminada y el cierre de la tarea antes de unirla al núcleo.
-* **Comportamiento:**
-  - Inspecciona el Diff (los cambios hechos) entre la rama `task/` y `main`.
-  - Verifica si verdaderamente la documentación fue escalada.
-  - *Si hay error:* Reescribe/Corrige y rechaza la validación.
-  - *Si es correcto:* Solicita permiso al Usuario Humano (UI) para hacer el `git merge master`.
+Este documento mantiene las bases del **Ecosistema Multi-Agente (Swarm)**: el trabajo debe seguir aislado, auditable y con obligación de mantener la memoria documental sincronizada.
 
 ---
 
-## 🛡️ Protocolos Anti-Colisión y Memoria Temporal
+## 🏗️ Flujo de trabajo tripartito (visión base)
 
-Evitar que dos IAs corrompan un mismo archivo a la vez requiere control transaccional de estados. Puesto que no podemos tener *file-locks* tradicionales asíncronos en texto plano de manera confiable:
-- **La única fuente de verdad transaccional será Git.** 
-- Si un agente de backend y uno de frontend son despachados en paralelo, **ambos trabajarán en ramas Git distintas.** El Agente QA será el encargado de gestionar los *Git Merge Conflicts* y resolverlos consultando el contexto general creado por el *Manager Agent*.
+La arquitectura sigue teniendo tres roles base, pero su interpretación vigente es la siguiente:
 
-> **Hito Técnico Desarrollado:**
-> Para forzar las reglas de aislamiento (Regla de Oro 1), se implementaron *Git Hooks* centralizados (en `.githooks/pre-commit` y `.githooks/pre-push`). Todo intento de `commit` o `push` directo contra las ramas `main` o `master` es cancelado instintivamente en la máquina del humano y de los agentes trabajadores. La configuración global del repositorio usa la ruta personalizada ` core.hooksPath`.
+### 1. El despachador (Manager / Controller Agent)
 
-> **Hito Técnico para el Servidor MCP:** 
-> La próxima expansión arquitectónica del `devhub-mcp` debe exponer las herramientas nativas: `git_create_branch`, `git_commit_and_push`, `git_get_diff_to_main`, y `git_merge`. De esta manera, el LLM opera bajo comandos seguros en lugar de terminales sueltas que podrían desencadenar scripts peligrosos.
+- **Objetivo:** recibir la idea humana, estructurarla y subdividirla.
+- **Comportamiento:**
+  - organiza tareas e hitos en DevHub;
+  - delimita alcance;
+  - asigna trabajo;
+  - **no toca código ni Git**.
 
+### 2. El obrero especializado (Worker Agent)
 
-### Changelog
-- 2026-03-28: [DOC-08 | Tarea 3.2] Se agregó el componente `DiffViewer.jsx` para la UI del Agente QA, exponiendo el visor de Diffs (delta) y los botones de 'Aprobar a Main' y 'Rechazar al Worker'.
+- **Objetivo:** ejecutar código/docs dentro de una tarea concreta.
+- **Comportamiento vigente:**
+  1. reclama o recibe la tarea vía **DevHub MCP**;
+  2. prepara una rama corta `task/<id>-<slug>` usando la **capability Git del ejecutor**;
+  3. escribe código y docs usando su runtime/skill, no el MCP general;
+  4. hace commits chicos y pushes frecuentes al branch de tarea según el doc 24;
+  5. registra checkpoints, bloqueos y `qa-ready` con `add_task_comment`;
+  6. no mergea a `main`.
+
+### 3. El revisor y validador (QA / Test Agent)
+
+- **Objetivo:** auditar branch, diff, docs y evidencia técnica antes de integrar.
+- **Comportamiento vigente:**
+  - revisa el branch/PR/artifacts del Worker;
+  - valida documentación, checks y ausencia de secretos;
+  - registra veredicto en DevHub;
+  - solicita aprobación humana para merge/release;
+  - **no hace push directo a `main`**.
+
+---
+
+## 🛡️ Protocolos anti-colisión y memoria temporal
+
+Evitar colisiones entre agentes sigue requiriendo aislamiento transaccional.
+
+Reglas vigentes:
+
+- **Git + comentarios/artifacts en DevHub** son la fuente de verdad operativa, pero el ownership durable del workspace ahora vive en `agent_workspaces`.
+- Si dos agentes trabajan en paralelo, deben hacerlo en **ramas/task branches distintas** y en workspaces aislados reservados por `agent_workspaces`.
+- La bitácora cronológica vive en `add_task_comment`, no en mensajes efímeros.
+
+Freeze actual de SW-2.1A:
+
+- `agent_workspaces` es el registro canónico para `workspace_id`, baseline, lifecycle, `observed_*`, `last_error`, `recovery_reason` y `evidence_ref`.
+- `cleanup_pending` significa cleanup solicitado al ejecutor; DevHub no hace branch/worktree/merge/delete.
+- `observed_dirty='dirty-excluded'` debe preservarse textual; no se puede reinterpretar como limpio.
+- `devhub_agent_runs` y otros mirrors runtime/UI quedan **observer-only** y no pueden usarse como ownership truth.
+
+> **Estado real del repo:**
+> El proyecto incluye `.githooks/pre-commit` y `.githooks/pre-push` para bloquear commits/pushes directos a `main`/`master`. La activación efectiva del `hooksPath` debe verificarse en cada entorno de ejecución; no debe asumirse por documentación solamente.
+
+> **Dirección vigente:**
+> DevHub MCP no debe exponer Git como surface general. Git/workspaces deben vivir como capability del ejecutor y formalizarse más adelante con `agent_workspaces`, artifacts y supervisor gates en Swarm Workspace.
+
+### Changelog histórico relevante
+
+- 2026-03-28: [DOC-08 | Tarea 3.2] Se agregó `DiffViewer.jsx` para la UI del Agente QA como parte de la visión temprana de Swarm Control.

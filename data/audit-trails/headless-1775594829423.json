@@ -1,0 +1,2390 @@
+{
+  "sessionID": "headless-1775594829423",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Explora el codebase de devhub y busca code smells, patrones de diseño inadecuados o cualquier área que requiera atención para mejorar la calidad del código.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775594829423
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775594829423,
+      "timeStr": "20:47:09"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775594829429,
+      "timeStr": "20:47:09"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_2964d08b1ffeoSvuXobz9T7NAt"
+      },
+      "timestamp": 1775594829653,
+      "timeStr": "20:47:09"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 198,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775594829654,
+      "timeStr": "20:47:09"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775594829676,
+      "timeStr": "20:47:09"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "[Tú eres el sub-agente. Instrucciones: \"Explora el codebase de devhub y busca code smells, patrones de diseño inadecuados o cualquier área que requiera atención para mejorar la calidad del código.\"]"
+      },
+      "timestamp": 1775594829774,
+      "timeStr": "20:47:09"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594837965,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594837966,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "status": "pending"
+      },
+      "timestamp": 1775594837967,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594837967,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "status": "running"
+      },
+      "timestamp": 1775594837968,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594837968,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "skill",
+        "file": "Loaded skill: sdd-explore",
+        "status": "completed"
+      },
+      "timestamp": 1775594837971,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "skill",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594837972,
+      "timeStr": "20:47:17"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "pending"
+      },
+      "timestamp": 1775594838124,
+      "timeStr": "20:47:18"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "pending",
+        "duration": 2
+      },
+      "timestamp": 1775594838126,
+      "timeStr": "20:47:18"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "running"
+      },
+      "timestamp": 1775594838127,
+      "timeStr": "20:47:18"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594838128,
+      "timeStr": "20:47:18"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_search",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775594838238,
+      "timeStr": "20:47:18"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_search",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594838239,
+      "timeStr": "20:47:18"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594841950,
+      "timeStr": "20:47:21"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 10
+      },
+      "timestamp": 1775594841951,
+      "timeStr": "20:47:21"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594841951,
+      "timeStr": "20:47:21"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "pending"
+      },
+      "timestamp": 1775594841952,
+      "timeStr": "20:47:21"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594841952,
+      "timeStr": "20:47:21"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "running"
+      },
+      "timestamp": 1775594842083,
+      "timeStr": "20:47:22"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594842084,
+      "timeStr": "20:47:22"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775594842089,
+      "timeStr": "20:47:22"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "engram_mem_session_start",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594842090,
+      "timeStr": "20:47:22"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594848249,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594848249,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594848250,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594848251,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594848345,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594848345,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "",
+        "status": "completed"
+      },
+      "timestamp": 1775594848345,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594848346,
+      "timeStr": "20:47:28"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594855672,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 20
+      },
+      "timestamp": 1775594855672,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594855683,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775594855708,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594855709,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775594855709,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594855710,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775594855710,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594855711,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "running"
+      },
+      "timestamp": 1775594855711,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594855712,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775594855712,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594855712,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "running"
+      },
+      "timestamp": 1775594855713,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594855713,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775594855713,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594855713,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "running"
+      },
+      "timestamp": 1775594855714,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594855714,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775594855714,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594855714,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 30
+      },
+      "timestamp": 1775594855714,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "completed"
+      },
+      "timestamp": 1775594855715,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775594855715,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "completed"
+      },
+      "timestamp": 1775594855715,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775594855715,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "completed"
+      },
+      "timestamp": 1775594855715,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594855716,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775594855716,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775594855716,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "running"
+      },
+      "timestamp": 1775594855810,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594855811,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub/src",
+        "status": "completed"
+      },
+      "timestamp": 1775594855816,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594855817,
+      "timeStr": "20:47:35"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594861857,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594861858,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594861859,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594861860,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594861860,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594861860,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 40
+      },
+      "timestamp": 1775594861861,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594861861,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594861861,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594861861,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594861862,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594861862,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594861862,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594861862,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594861863,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594861863,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594861863,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594861863,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594861863,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594861864,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594861864,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "package.json",
+        "status": "completed"
+      },
+      "timestamp": 1775594861864,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594861865,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/App.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594861865,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775594861865,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/index.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594861866,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775594861866,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 50
+      },
+      "timestamp": 1775594861866,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/app/layout.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594861868,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 0
+      },
+      "timestamp": 1775594861868,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594861989,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594861990,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/app/page.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594861992,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594861993,
+      "timeStr": "20:47:41"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594870078,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594870079,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594870080,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594870080,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594870081,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594870081,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594870081,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594870082,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594870082,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594870082,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594870083,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594870083,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 60
+      },
+      "timestamp": 1775594870083,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594870083,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594870083,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594870084,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594870084,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594870084,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594870084,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594870085,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594870085,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/views/AgentHub.jsx",
+        "status": "completed"
+      },
+      "timestamp": 1775594870093,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 2
+      },
+      "timestamp": 1775594870095,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/views/AgentHub.jsx",
+        "status": "completed"
+      },
+      "timestamp": 1775594870095,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594870096,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/views/AgentHub.jsx",
+        "status": "completed"
+      },
+      "timestamp": 1775594870096,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594870097,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/views/SwarmControl.jsx",
+        "status": "completed"
+      },
+      "timestamp": 1775594870097,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594870098,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594870221,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594870222,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/app/api/agenthub/headless/route.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594870226,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 2
+      },
+      "timestamp": 1775594870227,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 70
+      },
+      "timestamp": 1775594870228,
+      "timeStr": "20:47:50"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594874531,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594874532,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594874585,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594874586,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594874587,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 4
+      },
+      "timestamp": 1775594874591,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594874592,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594874593,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594874594,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594874594,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594874594,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594874595,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594874595,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594874595,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594874596,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594874596,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594874596,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594874597,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/lib/swarm/processManager.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594874603,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594874604,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 80
+      },
+      "timestamp": 1775594874604,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/lib/swarm/queue.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594874605,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594874606,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/lib/swarm/processManager.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594874607,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594874608,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/app/api/agenthub/headless/route.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594874614,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 6
+      },
+      "timestamp": 1775594874620,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594874664,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775594874666,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "eslint.config.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594874670,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594874671,
+      "timeStr": "20:47:54"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594883241,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594883242,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594883243,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594883244,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594883244,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594883245,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594883245,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 0
+      },
+      "timestamp": 1775594883245,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 90
+      },
+      "timestamp": 1775594883245,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594883246,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594883246,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594883246,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594883247,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594883247,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594883247,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594883247,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594883248,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594883248,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594883248,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "status": "pending"
+      },
+      "timestamp": 1775594883248,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594883249,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/lib/db/localDb.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594883249,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594883250,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/lib/db/localDb.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594883251,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594883252,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/lib/db/localClient.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594883252,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594883253,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/lib/db/localClient.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594883253,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594883254,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 100
+      },
+      "timestamp": 1775594883254,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775594883385,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775594883387,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "grep",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775594883395,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "grep",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594883396,
+      "timeStr": "20:48:03"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594890165,
+      "timeStr": "20:48:10"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594890166,
+      "timeStr": "20:48:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "bash",
+        "status": "pending"
+      },
+      "timestamp": 1775594890166,
+      "timeStr": "20:48:10"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "bash",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594890167,
+      "timeStr": "20:48:10"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "bash",
+        "status": "running"
+      },
+      "timestamp": 1775594891832,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "bash",
+        "status": "running",
+        "duration": 2
+      },
+      "timestamp": 1775594891834,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "bash",
+        "status": "running"
+      },
+      "timestamp": 1775594891894,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "bash",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594891895,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "bash",
+        "status": "running"
+      },
+      "timestamp": 1775594891914,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "bash",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594891914,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "bash",
+        "file": "Lists largest source files by line count",
+        "status": "completed"
+      },
+      "timestamp": 1775594891916,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "bash",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594891917,
+      "timeStr": "20:48:11"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594899890,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 110
+      },
+      "timestamp": 1775594899890,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594899892,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594899892,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594899893,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594899894,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 0
+      },
+      "timestamp": 1775594899894,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594899895,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594899896,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594899897,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594899898,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775594899898,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594899899,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775594899899,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594899900,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "status": "pending"
+      },
+      "timestamp": 1775594899900,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594899901,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/app/api/agenthub/chat/route.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594899902,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594899903,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "file": "src/app/api/agenthub/chat/route.js",
+        "status": "completed"
+      },
+      "timestamp": 1775594899903,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594899904,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 120
+      },
+      "timestamp": 1775594899904,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775594899904,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 1
+      },
+      "timestamp": 1775594899905,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "running"
+      },
+      "timestamp": 1775594899936,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594899937,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "glob",
+        "file": "/home/matias/devhub",
+        "status": "completed"
+      },
+      "timestamp": 1775594899954,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "glob",
+        "status": "completed",
+        "duration": 2
+      },
+      "timestamp": 1775594899956,
+      "timeStr": "20:48:19"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594907631,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "reasoning",
+      "data": {},
+      "timestamp": 1775594907633,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594907634,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594907635,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594907636,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594907637,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "pending"
+      },
+      "timestamp": 1775594907638,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "pending",
+        "duration": 1
+      },
+      "timestamp": 1775594907639,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "tool": "read",
+        "status": "running"
+      },
+      "timestamp": 1775594907764,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "tool_complete",
+      "data": {
+        "tool": "read",
+        "status": "running",
+        "duration": 1
+      },
+      "timestamp": 1775594907765,
+      "timeStr": "20:48:27"
+    },
+    {
+      "type": "prompt_send_error",
+      "data": {
+        "error": "fetch failed",
+        "timeoutMs": null
+      },
+      "timestamp": 1775595129961,
+      "timeStr": "20:52:09"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "LONG_GAP",
+      "severity": "warning",
+      "message": "Long gap between events: 3m 42s between \"tool_complete\" and \"prompt_send_error\"",
+      "timestamp": 1775595129961
+    },
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

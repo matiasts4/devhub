@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
+/**
+ * POST /api/mcp/engram
+ * Proxies MCP tool calls to the running OpenCode server.
+ * This ensures that both DevHub and OpenCode share the same Engram instance.
+ */
 export async function POST(req) {
-  let transport = null;
-  let client = null;
-
   try {
     const body = await req.json();
     const { toolName, args } = body;
@@ -14,35 +14,50 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Missing toolName parameter' }, { status: 400 });
     }
 
-    // Initialize the MCP Client
-    client = new Client(
-      { name: 'devhub-agent-hub', version: '1.0.0' },
-      { capabilities: {} }
-    );
+    // Use the same port logic as processManager.js
+    const SERVER_PORT = process.env.OPENCODE_PORT ? parseInt(process.env.OPENCODE_PORT, 10) : 4154;
+    const SERVER_URL = process.env.OPENCODE_URL || `http://127.0.0.1:${SERVER_PORT}`;
 
-    // Provide the CLI command for Engram
-    transport = new StdioClientTransport({
-      command: 'engram',
-      args: ['mcp', '--tools=agent'],
+    const response = await fetch(`${SERVER_URL}/mcp/engram/call`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ toolName, args }),
     });
 
-    // Connect to the child process MCP
-    await client.connect(transport);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[MCP Engram Proxy Error]', response.status, errorText);
 
-    // Call the specific tool
-    const result = await client.callTool({
-      name: toolName,
-      arguments: args || {},
-    });
+      // If 404, it means the 'engram' client is not connected to OpenCode
+      if (response.status === 404) {
+        return NextResponse.json(
+          {
+            error: `MCP client 'engram' not found in OpenCode. Ensure it is configured and connected.`,
+          },
+          { status: 404 }
+        );
+      }
 
+      return NextResponse.json(
+        { error: `OpenCode server error (${response.status}): ${errorText}` },
+        { status: 503 }
+      );
+    }
+
+    const result = await response.json();
+
+    // Result mapping to maintain compatibility with existing frontend
+    // Frontend expects: { success, toolName, content, raw }
     let finalText = '';
-    let isError = false;
+    const isError = result.isError || false;
 
-    if (result.isError) {
-      isError = true;
-      finalText = result.content.map((c) => c.text).join('\n');
-    } else {
-      finalText = result.content.map((c) => c.text).join('\n');
+    if (result.content && Array.isArray(result.content)) {
+      finalText = result.content
+        .filter((c) => c.type === 'text')
+        .map((c) => c.text || '')
+        .join('\n');
     }
 
     return NextResponse.json({
@@ -52,16 +67,12 @@ export async function POST(req) {
       raw: result,
     });
   } catch (err) {
-    console.error('[MCP Engram Error]', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  } finally {
-    // ALWAYS close the connection so the child process doesn't leak
-    if (transport) {
-      try {
-        await transport.close();
-      } catch (e) {
-        // ignore close errors
-      }
-    }
+    console.error('[MCP Engram Proxy Connection Error]', err);
+    return NextResponse.json(
+      {
+        error: `Could not connect to OpenCode server: ${err.message}. Make sure 'opencode serve' is running.`,
+      },
+      { status: 503 }
+    );
   }
 }

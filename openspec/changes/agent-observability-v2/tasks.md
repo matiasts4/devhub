@@ -153,7 +153,7 @@
   - **Details**: Props: isOpen, onClose, permission, onApprove, onReject, isProcessing. Shows tool name, args, risk. Approve/Reject buttons. 60s countdown timer with auto-reject. Keyboard shortcuts (Enter=approve, Esc=reject).
   - **Verify**: Modal appears with permission details; approve/reject call correct callbacks; timeout auto-rejects.
 
-- [ ] 4.4 Create `TokenUsageBadge.jsx` component
+- [x] 4.4 Create `TokenUsageBadge.jsx` component
   - **File**: `src/components/chat/TokenUsageBadge.jsx` (NEW)
   - **Details**: Props: promptTokens, completionTokens, totalTokens, model, size, showModel. Color-coded: green (<10k), yellow (10k-50k), red (>50k). Hover tooltip with breakdown. Context utilization percentage with color indicator.
   - **Verify**: Badge shows correct colors for different token ranges; tooltip shows breakdown.
@@ -232,7 +232,7 @@
   - **Details**: Migrate `ai_interactions` to `agent_traces` as best-effort. Map each interaction to a trace with part_type='text', source metadata. Run as separate optional step.
   - **Verify**: Legacy interactions appear in traces with correct metadata.
 
-- [ ] 6.4 Write unit tests for SessionBridge
+- [x] 6.4 Write unit tests for SessionBridge
   - **File**: `tests/unit/session-bridge.test.js` (NEW)
   - **Details**: Test `findOrCreateSession` (existing vs new), `switchSession`, `syncMessage`, `getSessions`, `switchProject`. Use mock DB and mock OpenCode service.
   - **Verify**: All tests pass with mock data.

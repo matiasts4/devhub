@@ -23,6 +23,7 @@
 # === Misc ===
 .DS_Store
 Thumbs.db
+.atl/
 
 # === Logs ===
 npm-debug.log*
@@ -56,6 +57,10 @@ yarn.lock
 
 # === MCP ===
 devhub-mcp/node_modules/
+devhub-mcp/coverage/
+devhub-mcp/data/*.db
+devhub-mcp/data/*.db-shm
+devhub-mcp/data/*.db-wal
 
 # === Sidecar backend ===
 sidecar-backend/node_modules/
@@ -83,3 +88,26 @@ src-tauri/resources/standalone.zip
 # Bundle analyzer output
 /.next/analyze/
 tmp/
+
+# === OpenCode ===
+opencode/
+.opencode/
+opencode.json
+.claude/
+.plyrium-forge/
+data/logs/opencode_*.log
+# Git hygiene additions
+.hermes/
+.codex/
+.impeccable.md
+.verify-coverage/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/logs/
+graphify-out/
+data/audit-trails/
+.codex
+
+# Research externals vendored locally, not tracked
+research/external/

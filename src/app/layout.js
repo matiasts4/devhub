@@ -1,10 +1,16 @@
 import './globals.css';
 import { Providers } from './providers';
+import { ClientErrorLogger } from '@/components/ClientErrorLogger';
 
 export const metadata = {
   title: 'DevHub – Gestión Personal',
   description: 'Tu espacio central para proyectos, tareas y cronología personal con IA integrada',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+    shortcut: '/logo.png',
+  },
 };
 
 export const viewport = {
@@ -15,7 +21,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -24,6 +30,7 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body>
+        <ClientErrorLogger />
         <Providers>{children}</Providers>
       </body>
     </html>

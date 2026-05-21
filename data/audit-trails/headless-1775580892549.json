@@ -1,0 +1,73 @@
+{
+  "sessionID": "headless-1775580892549",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Explora el codebase de devhub y detecta code smells, como código duplicado, funciones largas, clases que hacen demasiado, etc.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775580892549
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775580892549,
+      "timeStr": "16:54:52"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775580892561,
+      "timeStr": "16:54:52"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_29721b196ffeCihGlTckCoOvgh"
+      },
+      "timestamp": 1775580892793,
+      "timeStr": "16:54:52"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 168,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775580892794,
+      "timeStr": "16:54:52"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775580892809,
+      "timeStr": "16:54:52"
+    },
+    {
+      "type": "trace_persisted",
+      "data": {
+        "count": 0
+      },
+      "timestamp": 1775580892901,
+      "timeStr": "16:54:52"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "[Tú eres el sub-agente. Instrucciones: \"Explora el codebase de devhub y detecta code smells, como código duplicado, funciones largas, clases que hacen demasiado, etc.\"]"
+      },
+      "timestamp": 1775580892901,
+      "timeStr": "16:54:52"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

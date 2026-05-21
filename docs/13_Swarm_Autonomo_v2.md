@@ -2,12 +2,19 @@
 Fecha de Modificación: 28 de marzo de 2026
 Changelog:
   - 2026-03-28 v1: Creación del documento. Cubre las 7 tareas del Milestone "Fase 5 — Ejecución Autónoma del Agente (Swarm v2)".
-Milestone: "Fase 5 — Ejecución Autónoma del Agente (Swarm v2)"
+  - 2026-05-15 v2: Marcadas explícitamente como legacy/deprecated las referencias a tools Git dentro del MCP y los merges automáticos a main; ver política canónica de Git/versionado.
+Milestone: 'Fase 5 — Ejecución Autónoma del Agente (Swarm v2)'
 Status: COMPLETADO
 Due Date: 2026-05-05
 ---
 
 # 13 Swarm Autónomo v2 — Ejecución Real por LLM
+
+> **Nota de realidad — 2026-05-14:** Este documento queda como antecedente histórico/conceptual. Aunque el frontmatter marca `Status: COMPLETADO`, el estado real del producto debe tratarse como **parcial y pendiente de auditoría**. La nueva dirección canónica es [23_Swarm_Workspace_Intencion_y_Roadmap.md](./23_Swarm_Workspace_Intencion_y_Roadmap.md), que propone rehacer/alinear Swarm, MCP UI, workspaces, artifacts y Telegram como canal externo.
+
+> **Nota Git/versionado — 2026-05-15:** Las menciones a `git_branch`, `git_commit`, `git_diff_review` o merge automático a `main` en este documento son **legacy/deprecated**. La política vigente está en [24_Politica_Git_y_Versionado_Agentes.md](./24_Politica_Git_y_Versionado_Agentes.md): Git vive en la capability/skill del ejecutor; DevHub MCP queda como control plane.
+
+> **Seguimiento post SW-4.1 — 2026-05-19:** Queda pendiente un cambio separado para eliminar los side effects legacy que todavía sobreviven en `src/app/api/agent/execute/route.js` y `src/app/api/agent/qa-result/route.js`. SW-4.1 congeló el contrato del supervisor como capa de orquestación, pero la remoción final de esos efectos del ejecutor NO forma parte de este documento histórico ni debe mezclarse con el rollout actual.
 
 El Swarm Control actual tiene la UI construida y los endpoints de ramas Git funcionando, pero **los Workers son cáscaras vacías** — no ejecutan nada sin intervención manual del humano. Esta fase cierra esa brecha: al final, un Worker Agent podrá recibir una tarea, crear su rama, ejecutar el código con un LLM real, y someter el resultado al QA de forma completamente autónoma.
 
@@ -26,12 +33,12 @@ El Swarm Control actual tiene la UI construida y los endpoints de ramas Git func
           ↓
 [SWARM-07] Prompt Builder → context window completo
           ↓
-[SWARM-02] Orquestador LLM → llama al API, aplica cambios, git_commit
+[SWARM-02] Orquestador LLM → llama al API, aplica cambios, usa Git vía capability del ejecutor
           ↓
 [SWARM-04] QA Agent evalúa el diff automáticamente
           ↓
    ¿Aprobado?
-   Sí → Merge a main. Tarea = completed.
+   Sí → Queda qa-ready para PR/merge por ruta aprobada del repo. Tarea = completed/review-ready según supervisor.
    No → [SWARM-06] Feedback al Worker. Reintento (max 3 veces).
 ```
 
@@ -51,6 +58,7 @@ El Swarm Control actual tiene la UI construida y los endpoints de ramas Git func
 Para que múltiples Workers puedan operar en paralelo sin colisionar, necesitamos saber en todo momento qué agentes están vivos, en qué tarea trabajan, y cuándo fue su última señal de vida.
 
 **Migración SQL:**
+
 ```sql
 CREATE TABLE agent_registry (
   agent_id TEXT PRIMARY KEY,           -- ej. "worker-claude-1", "worker-gpt-2"
@@ -68,25 +76,41 @@ CREATE TABLE agent_registry (
 
 ```javascript
 // Lllamada al iniciar el agente
-server.tool("register_agent", {
-  agent_id: z.string(),
-  project_id: z.string().uuid(),
-  nombre: z.string(),
-  modelo_llm: z.string().optional()
-}, async (params) => { /* INSERT en agent_registry */ });
+server.tool(
+  'register_agent',
+  {
+    agent_id: z.string(),
+    project_id: z.string().uuid(),
+    nombre: z.string(),
+    modelo_llm: z.string().optional(),
+  },
+  async (params) => {
+    /* INSERT en agent_registry */
+  }
+);
 
 // Llamada cada 30 segundos mientras trabaja
-server.tool("heartbeat_agent", {
-  agent_id: z.string()
-}, async ({ agent_id }) => {
-  // UPDATE last_heartbeat = NOW()
-  // Si no existe el agent_id, devolver error → el Worker debe re-registrarse
-});
+server.tool(
+  'heartbeat_agent',
+  {
+    agent_id: z.string(),
+  },
+  async ({ agent_id }) => {
+    // UPDATE last_heartbeat = NOW()
+    // Si no existe el agent_id, devolver error → el Worker debe re-registrarse
+  }
+);
 
 // Llamada al terminar o cuando el Worker es interrumpido
-server.tool("unregister_agent", {
-  agent_id: z.string()
-}, async ({ agent_id }) => { /* DELETE de agent_registry */ });
+server.tool(
+  'unregister_agent',
+  {
+    agent_id: z.string(),
+  },
+  async ({ agent_id }) => {
+    /* DELETE de agent_registry */
+  }
+);
 ```
 
 **Job de limpieza:** Supabase Edge Function programada que detecta agentes con `last_heartbeat > 2 minutos` y los marca como `status = 'error'`, liberando su `current_task_id` para que otro Worker lo tome.
@@ -105,6 +129,7 @@ El corazón del Swarm v2. Este endpoint recibe una tarea y la ejecuta de princip
 **Ruta:** `POST /api/agent/execute`
 
 **Body esperado:**
+
 ```json
 {
   "task_id": "uuid-de-la-tarea",
@@ -115,16 +140,17 @@ El corazón del Swarm v2. Este endpoint recibe una tarea y la ejecuta de princip
 ```
 
 **Flujo interno del endpoint (pseudocódigo):**
+
 ```
 1. Verificar que el agent_id está registrado y es el asignado a esta tarea.
 2. Llamar get_next_task() para obtener contexto completo.
-3. Llamar git_branch({ name: `agent/${agent_id}/${task_id}` }) para crear rama aislada.
+3. Pedir a la capability del ejecutor que cree/cambie a una rama aislada `task/<task-id>-<slug>`.
 4. Llamar Prompt Builder [SWARM-07] para construir el context window.
 5. Invocar la API del LLM con el context window.
    → El LLM responde con un plan de cambios (archivos a crear/modificar).
 6. Aplicar los cambios de código al sistema de archivos.
 7. Actualizar el directorio /docs según las instrucciones del Worker Prompt.
-8. Llamar git_commit({ message: `[AGENT] ${task_id}: ${task_title}` }).
+8. Pedir a la capability del ejecutor que haga commit en el branch de tarea con la convención vigente.
 9. Actualizar tarea en DB: status = 'in_progress', añadir metadata de la ejecución.
 10. Emitir evento para que el QA Agent [SWARM-04] evalúe el diff.
 ```
@@ -161,27 +187,33 @@ Sección dentro de `Ajustes.jsx` (o nueva ruta `/ajustes/agentes`) para gestiona
 **Responsable:** MCP-Worker / Backend-Worker
 
 **Descripción completa:**
-El QA Agent evalúa automáticamente si el trabajo del Worker es aceptable antes de hacer merge a main. Usa un LLM (puede ser distinto al del Worker, incluso uno más barato/rápido) para analizar el diff.
+El QA Agent evalúa automáticamente si el trabajo del Worker es aceptable antes de habilitar PR/merge por la ruta aprobada del repo. Usa un LLM (puede ser distinto al del Worker, incluso uno más barato/rápido) para analizar el diff.
 
 **Nueva tool en el MCP:**
+
 ```javascript
-server.tool("qa_evaluate_branch", {
-  task_id: z.string().uuid(),
-  branch_name: z.string(),
-  qa_agent_id: z.string()
-}, async ({ task_id, branch_name, qa_agent_id }) => {
-  // 1. git_diff_review({ branch: branch_name }) → obtiene el diff completo
-  // 2. Carga la descripción original de la tarea
-  // 3. Construye prompt de evaluación para el LLM QA
-  // 4. Llama al LLM con el diff + descripción de la tarea
-  // 5. El LLM devuelve: { result: 'approved'|'rejected', score: 0-10, reasons: string[] }
-  // 6. Guarda el resultado en la DB (tabla qa_results o campo en tasks)
-  // 7. Si approved: trigger merge a main
-  // 8. Si rejected: trigger ciclo de feedback [SWARM-06]
-});
+server.tool(
+  'qa_evaluate_branch',
+  {
+    task_id: z.string().uuid(),
+    branch_name: z.string(),
+    qa_agent_id: z.string(),
+  },
+  async ({ task_id, branch_name, qa_agent_id }) => {
+    // 1. Leer diff/PR/artifacts desde la capability del ejecutor o el workspace supervisor
+    // 2. Carga la descripción original de la tarea
+    // 3. Construye prompt de evaluación para el LLM QA
+    // 4. Llama al LLM con el diff + descripción de la tarea
+    // 5. El LLM devuelve: { result: 'approved'|'rejected', score: 0-10, reasons: string[] }
+    // 6. Guarda el resultado en la DB (tabla qa_results o campo en tasks)
+    // 7. Si approved: marcar qa-ready y pedir aprobación humana/maintainer merge path
+    // 8. Si rejected: trigger ciclo de feedback [SWARM-06]
+  }
+);
 ```
 
 **Checklist que debe validar el LLM QA:**
+
 ```
 [ ] ¿El código implementa lo que describe la tarea?
 [ ] ¿Se actualizó algún archivo en /docs?
@@ -205,27 +237,32 @@ Ampliar `src/pages/SwarmControl.jsx` con una vista completa de control del Swarm
 **Secciones del panel:**
 
 **1. Estado del Swarm (cabecera):**
+
 - Indicador global: 🟢 Activo / ⏸️ Pausado / 🔴 Error
 - Botón "⏸️ Pause Swarm" — detiene la cola. Workers en progreso terminan su tarea actual.
 - Contador: `[3 workers activos] [12 tareas en cola] [85 completadas hoy]`
 
 **2. Workers Activos (cards en tiempo real):**
+
 - Nombre del agente, modelo LLM, tarea actual, tiempo transcurrido
 - Barra de progreso estimada
 - Botón "Ver Logs" → panel lateral con output en tiempo real
 - Botón "Interrumpir" → libera la tarea y mata el proceso
 
 **3. Cola de Ejecución (tabla):**
+
 - Siguiente tarea que será tomada por el próximo Worker libre
 - Score de prioridad visible
 - Botón "Saltar al frente" (redirección de prioridad)
 
 **4. Historial de Ejecuciones (tabla):**
+
 - Tarea, agente, timestamp inicio/fin, resultado QA, tiempo total
 - Filtros por fecha, agente, resultado
 - Click en fila → abre DiffViewer con los cambios de esa ejecución
 
 **5. Aprobar/Rechazar manual:**
+
 - Cuando el QA rechaza pero el humano quiere aprobar igual: botón "Force Merge"
 - Cuando el QA aprueba pero el humano quiere revisar: botón "Hold for Review"
 
@@ -263,6 +300,7 @@ Evitar que un Worker quede en un loop infinito cuando su trabajo siempre es rech
 ```
 
 **Migración SQL:**
+
 ```sql
 ALTER TABLE tasks ADD COLUMN retry_count INTEGER DEFAULT 0;
 ALTER TABLE tasks ADD COLUMN last_qa_feedback TEXT;
@@ -299,15 +337,21 @@ async function buildWorkerPrompt({ task, project, milestone, dependencies }) {
 
   // 5. Dependencias completadas (contexto de lo que ya existe)
   if (dependencies.length > 0) {
-    sections.push(`## Dependencias ya completadas:\n${dependencies.map(d => `- ${d.title}`).join('\n')}`);
+    sections.push(
+      `## Dependencias ya completadas:\n${dependencies.map((d) => `- ${d.title}`).join('\n')}`
+    );
   }
 
   // 6. Documentos relevantes del /docs (búsqueda por keywords de la tarea)
   const relevantDocs = await searchDocsByKeywords(task.title + ' ' + task.description);
-  sections.push(`## Documentación relevante:\n${relevantDocs.map(d => d.content).join('\n\n---\n\n')}`);
+  sections.push(
+    `## Documentación relevante:\n${relevantDocs.map((d) => d.content).join('\n\n---\n\n')}`
+  );
 
   // 7. Instrucciones de cierre
-  sections.push(`## Al terminar:\n- Actualiza /docs con los cambios realizados.\n- Haz git commit con el mensaje: [AGENT] ${task.id}: ${task.title}\n- Llama a complete_task({ task_id: "${task.id}" }) en el MCP.`);
+  sections.push(
+    `## Al terminar:\n- Actualiza /docs con los cambios realizados.\n- Usá la capability del ejecutor para branch/commit/push según la política vigente.\n- Registrá checkpoint/qa-ready en DevHub y luego llamá a complete_task({ task_id: "${task.id}" }) o al cierre equivalente del supervisor.`
+  );
 
   return sections.join('\n\n');
 }

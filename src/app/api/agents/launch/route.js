@@ -4,17 +4,20 @@ import { getProfileHome } from '@/utils/geminiProfiles';
 import { getDb } from '@/lib/db/localDb';
 import { enforceDocOpsGateOnText, isDocOpsPlanningPrompt } from '@/lib/docopsPrompts';
 
+const DEFAULT_PROFILE_NAME = 'default';
+
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { task, profileName, projectId } = body;
+    const { task, projectId } = body;
+    let { profileName } = body;
 
     if (!task) {
       return NextResponse.json({ error: 'Task description is required' }, { status: 400 });
     }
 
-    if (!profileName) {
-      return NextResponse.json({ error: 'Profile name is required' }, { status: 400 });
+    if (!profileName || profileName === 'auto') {
+      profileName = DEFAULT_PROFILE_NAME;
     }
 
     if (isDocOpsPlanningPrompt(task) && !projectId) {

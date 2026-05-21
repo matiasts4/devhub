@@ -33,7 +33,7 @@ function buildSnapshot(sinceTimestamp) {
   const sessions = db
     .prepare(
       `
-      SELECT id, project_id, title, agent_model, status, opencode_session_id,
+      SELECT id, project_id, title, custom_name, agent_model, status, visibility, opencode_session_id,
              created_at, updated_at
       FROM agent_hub_sessions
       ORDER BY updated_at DESC
@@ -108,6 +108,23 @@ function buildSnapshot(sinceTimestamp) {
     });
   }
 
+  // Total text content length per session — text traces are UPSERTED (not inserted),
+  // so created_at never changes and they won't appear in sinceTimestamp queries.
+  // By tracking total text length, we can detect when the assistant is streaming output
+  // and fire a trace-event even though traceCount hasn't changed.
+  const textLengths = db
+    .prepare(
+      `SELECT session_id, SUM(length(content)) as total_len
+       FROM agent_traces
+       WHERE trace_type IN ('text', 'reasoning')
+       GROUP BY session_id`
+    )
+    .all();
+  const textLengthMap = {};
+  for (const tl of textLengths) {
+    textLengthMap[tl.session_id] = tl.total_len || 0;
+  }
+
   // Usage per session
   const usages = db
     .prepare(
@@ -129,11 +146,17 @@ function buildSnapshot(sinceTimestamp) {
       ...s,
       traceCount: traceMap[s.id]?.count || 0,
       lastTraceAt: traceMap[s.id]?.last_trace || null,
+      textLength: textLengthMap[s.id] || 0,
       usage: usageMap[s.id] || null,
     })),
     traceMap,
     tracesBySession,
+    textLengthMap,
     usageMap,
+    _safeParse: (str) => { // expose for use in computeDelta
+      if (!str) return null;
+      try { return JSON.parse(str); } catch { return null; }
+    },
   };
 }
 
@@ -161,13 +184,46 @@ function computeDelta(prev, curr) {
     }
   }
 
-  // New traces: sessions whose trace count increased — emit full trace data
+  // New traces: sessions whose trace count increased OR whose text content changed.
+  // Text traces are UPSERTED (no new rows = count stays same), so we also track textLength.
   const traceEvents = [];
   for (const [id, s] of currMap) {
     const prevS = prevMap.get(id);
-    if (prevS && s.traceCount > prevS.traceCount) {
-      // Get full trace rows for this session from the current snapshot
-      const sessionTraces = curr.tracesBySession?.[id] || [];
+    const traceCountChanged = prevS && s.traceCount > prevS.traceCount;
+    const textLengthChanged = prevS && s.textLength !== prevS.textLength;
+
+    if (traceCountChanged || textLengthChanged) {
+      // Get full trace rows for this session from the current incremental snapshot
+      let sessionTraces = curr.tracesBySession?.[id] || [];
+
+      // If only text content changed (no new tool traces), the incremental snapshot
+      // won't include the updated text trace (its created_at didn't change).
+      // Fetch the latest text/reasoning traces directly from DB to include them.
+      if (textLengthChanged) {
+        try {
+          const db = getDb();
+          const safeParse = curr._safeParse;
+          const textTraces = db
+            .prepare(
+              `SELECT id, session_id, message_id, part_id, trace_type, agent_name,
+                      tool_name, tool_input, tool_output, tool_status, content,
+                      duration_ms, time_start, time_end, metadata, created_at
+               FROM agent_traces
+               WHERE session_id = ? AND trace_type IN ('text', 'reasoning')`
+            )
+            .all(id)
+            .map((t) => ({ ...t, tool_input: safeParse(t.tool_input), metadata: safeParse(t.metadata) }));
+          // Merge: replace existing text traces by id, add new ones
+          const existingIds = new Set(textTraces.map((t) => t.id));
+          sessionTraces = [
+            ...sessionTraces.filter((t) => !existingIds.has(t.id)),
+            ...textTraces,
+          ];
+        } catch {
+          // Non-critical — fall back to incremental traces
+        }
+      }
+
       traceEvents.push({
         session_id: id,
         message_id:

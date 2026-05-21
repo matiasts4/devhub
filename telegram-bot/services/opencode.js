@@ -23,6 +23,35 @@ const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
 const SERVER_READY_TIMEOUT = 15_000; // 15s max wait for server startup
 const SSE_RECONNECT_DELAY = 1_000;
 
+function normalizeSessionId(sessionId) {
+  if (typeof sessionId !== 'string') return null;
+
+  const normalized = sessionId.trim();
+  if (!normalized) return null;
+
+  const lower = normalized.toLowerCase();
+  if (lower === 'null' || lower === 'undefined') return null;
+
+  return normalized;
+}
+
+function closeReadableStream(reader) {
+  if (!reader || typeof reader.cancel !== 'function') return Promise.resolve();
+  return reader.cancel().catch(() => {});
+}
+
+async function ensureOkResponse(response, errorPrefix) {
+  if (response?.ok) return response;
+
+  const status = response?.status ?? 'unknown';
+  const details = await response
+    ?.text()
+    .then((text) => text.trim())
+    .catch(() => '');
+
+  throw new Error(`${errorPrefix}: ${status}${details ? ` ${details}` : ''}`);
+}
+
 // ---------------------------------------------------------------------------
 // Server lifecycle
 // ---------------------------------------------------------------------------
@@ -551,16 +580,21 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
   const cwd = options.cwd || process.cwd();
   const chatId = options.chatId || 'unknown';
   const startTime = Date.now();
+  const normalizedOpenCodeSessionId = normalizeSessionId(opencodeSessionId);
   const events = [];
   let finalOutput = [];
   let toolStartTimes = {};
   let sessionDone = false;
   let errorCount = 0;
 
+  if (!normalizedOpenCodeSessionId) {
+    throw new Error(`OpenCode session ID is required for AgentHub session ${sessionId}`);
+  }
+
   await ensureServer(cwd);
 
   return new Promise(async (resolve, reject) => {
-    let sseAbort = null;
+    let reader = null;
 
     try {
       // Start SSE event stream
@@ -569,22 +603,31 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
         fetchOptions.signal = options.signal;
       }
       const streamRes = await fetch(`${SERVER_URL}/event`, fetchOptions);
-      const reader = streamRes.body.getReader();
+      await ensureOkResponse(streamRes, 'Failed to open OpenCode event stream');
+
+      if (!streamRes.body || typeof streamRes.body.getReader !== 'function') {
+        throw new Error('OpenCode event stream did not return a readable body');
+      }
+
+      reader = streamRes.body.getReader();
       const decoder = new TextDecoder();
 
-      sseAbort = () => {
-        reader.cancel().catch(() => {});
-      };
-
       // Send prompt
-      fetch(`${SERVER_URL}/session/${opencodeSessionId}/message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agent,
-          parts: [{ type: 'text', text: prompt }],
-        }),
-      }).catch((err) => logger.error(`Error enviando prompt: ${err.message}`));
+      const messageRes = await fetch(
+        `${SERVER_URL}/session/${normalizedOpenCodeSessionId}/message`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent,
+            parts: [{ type: 'text', text: prompt }],
+          }),
+        }
+      );
+      await ensureOkResponse(
+        messageRes,
+        `Failed to send message to OpenCode session ${normalizedOpenCodeSessionId}`
+      );
 
       // Process SSE stream
       while (true) {
@@ -600,7 +643,7 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
           const props = event.properties || {};
           const evtSessionID = props.sessionID || event.sessionID;
 
-          if (evtSessionID && evtSessionID !== opencodeSessionId) continue;
+          if (evtSessionID && evtSessionID !== normalizedOpenCodeSessionId) continue;
 
           const eventType = event.type || '';
           events.push(event);
@@ -655,11 +698,11 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
               options.onApproval({
                 action,
                 permissionID,
-                sessionId: opencodeSessionId,
+                sessionId: normalizedOpenCodeSessionId,
                 approve: () => {
                   if (permissionID) {
                     return fetch(
-                      `${SERVER_URL}/session/${opencodeSessionId}/permissions/${permissionID}`,
+                      `${SERVER_URL}/session/${normalizedOpenCodeSessionId}/permissions/${permissionID}`,
                       {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -667,14 +710,14 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
                       }
                     );
                   }
-                  return fetch(`${SERVER_URL}/session/${opencodeSessionId}/approve`, {
+                  return fetch(`${SERVER_URL}/session/${normalizedOpenCodeSessionId}/approve`, {
                     method: 'POST',
                   }).catch(() => {});
                 },
                 reject: () => {
                   if (permissionID) {
                     return fetch(
-                      `${SERVER_URL}/session/${opencodeSessionId}/permissions/${permissionID}`,
+                      `${SERVER_URL}/session/${normalizedOpenCodeSessionId}/permissions/${permissionID}`,
                       {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -682,7 +725,7 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
                       }
                     );
                   }
-                  return fetch(`${SERVER_URL}/session/${opencodeSessionId}/abort`, {
+                  return fetch(`${SERVER_URL}/session/${normalizedOpenCodeSessionId}/abort`, {
                     method: 'POST',
                   }).catch(() => {});
                 },
@@ -696,7 +739,7 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
             const errMsg =
               props.error?.message || props.message || props.error || 'Error desconocido';
 
-            logger.error(`OpenCode error en sesión ${opencodeSessionId}: ${errMsg}`);
+            logger.error(`OpenCode error en sesión ${normalizedOpenCodeSessionId}: ${errMsg}`);
           }
 
           // --- Assistant text output ---
@@ -738,7 +781,7 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
     } catch (err) {
       if (err.name === 'AbortError') {
         // Expected during pause/cancel — don't treat as error
-        logger.debug(`SSE stream aborted for session ${opencodeSessionId}`);
+        logger.debug(`SSE stream aborted for session ${normalizedOpenCodeSessionId}`);
         resolve({
           output: finalOutput.join('\n').trim() || 'Sesión cancelada.',
           events,
@@ -748,6 +791,7 @@ async function sendMessage(sessionId, opencodeSessionId, agent, prompt, options 
         });
         return;
       }
+      await closeReadableStream(reader);
       reject(err);
     }
   });
@@ -829,5 +873,10 @@ module.exports = {
   ensureServer,
   isServerRunning,
   parseSSE,
+  __private__: {
+    normalizeSessionId,
+    ensureOkResponse,
+    closeReadableStream,
+  },
   getServerStatus: () => ({ running: !!serverProcess, ready: serverReady }),
 };

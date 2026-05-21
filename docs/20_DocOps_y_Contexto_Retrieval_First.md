@@ -6,6 +6,8 @@ Definir un modelo estable para que la documentacion del proyecto evolucione con 
 
 Este documento formaliza el Camino A (implementacion incremental sobre DevHub actual).
 
+> **Boundary vigente (2026-05-15):** DevHub MCP es control plane de proyectos/tareas/cola/agentes. Git, filesystem, terminal, tests y PRs pertenecen a la capability del ejecutor. La cronologia operativa debe preservarse con comments/artifacts, no mezclando Git dentro del MCP general.
+
 ## Problema que resolvemos
 
 - La documentacion tiende a duplicarse o reescribirse sin lineage explicito.
@@ -37,6 +39,7 @@ Este documento formaliza el Camino A (implementacion incremental sobre DevHub ac
 
 - DocOps no reemplaza el orquestador actual.
 - Los gates MCP agregan validacion, registro y cronologia encima del flujo existente.
+- El orquestador debe respetar `documentation_policy` antes de planificar o reescribir docs.
 
 5. Promocion controlada
 
@@ -48,21 +51,22 @@ Fuente: devhub-mcp/server.js
 
 ### Ya disponible
 
-- Proyectos: list_projects, get_project, update_project
-- Tareas: list_tasks, create_task, update_task, delete_task, add_task_comment
-- Dependencias: create_task_dependency, get_task_dependencies, get_next_task
-- Hitos: list_milestones, create_milestone, update_milestone
+- Proyectos: create_project, list_projects, get_project, update_project, delete_project
+- Tareas: create_task, bulk_create_tasks, list_tasks, update_task, add_task_comment
+- Cola/leases: get_next_task, get_execution_queue, claim_next_task, renew_task_lease, release_task
+- Hitos: create_milestone, bulk_create_milestones, list_milestones, update_milestone
 - Dashboard: get_dashboard
-- Planning: get_project_context, mark_planning_done
+- Planning: get_project_context, update_project(planning_status)
 - Swarm: register_agent, heartbeat_agent, unregister_agent, update_agent_status
-- Memoria: save_memory, recall_memory, recall_memory_semantic
-- Git/Files: git_branch, git_commit, git_diff_review, explore_files, read_file, write_file, mkdir_p
+- Memoria durable: Engram (fuera de DevHub MCP)
+- Git/Files/Terminal: capability del ejecutor (fuera de DevHub MCP)
 
 ### Gap funcional para DocOps largo plazo
 
 - No hay entidad explicita de documento canonico por tema.
 - No hay relacion de reemplazo entre versiones documentales.
 - No hay tools MCP dedicadas a ciclo de vida documental.
+- La cronologia Git/documental todavia depende de comments, artifacts y disciplina del ejecutor mientras Swarm Workspace formaliza workspaces, runs y evidence packs.
 
 ### Telemetria operativa viva
 
@@ -136,7 +140,21 @@ budget:
 ```
 
 Regla: si falta informacion, el agente pide retrieval adicional; no rellena con suposiciones.
-Pendiente: la policy de presupuesto debe centralizarse para que no dependa de cada launcher.
+La policy de presupuesto ya quedó centralizada y debe consumirse desde prompts y MCP.
+
+### 2.1 Gate de clasificación documental
+
+Antes de transformar documentación, el agente debe clasificar el proyecto con `documentation_policy`.
+Ese gate decide si el flujo es DevHub, legacy-preserve o archive-first:
+
+- `personal` / `DevHub` → aplica el flujo DevHub de documentación y planning.
+- `shared_legacy` → preserva la documentación legacy y no la transforma por defecto.
+- `archive_only` → archiva primero la documentación legacy y luego crea docs DevHub nuevas.
+
+Si la policy falta o es ambigua, el agente debe preguntar al usuario antes de seguir.
+Los proyectos compartidos no se fuerzan al formato DevHub por defecto.
+Los docs legacy importados se archivan, no se sobrescriben.
+En `archive_only`, primero se archiva el material legado y recién después se genera la nueva documentación.
 
 ## 3) Pipeline operativo
 
@@ -176,6 +194,16 @@ Presupuesto:
 - Maximo por expansion: +1k tokens por solicitud justificada.
 - Tope de iteraciones de expansion por ciclo: 2.
 - Esta politica se esta endureciendo en runtime; hoy ya no debe quedar solo en texto de prompt.
+
+### 4.1 Schema / metadata en proyectos
+
+Cuando un documento describa `projects`, debe mencionar explícitamente estos campos:
+
+- `planning_prompt`
+- `planning_status`
+- `project_type`
+- `local_path`
+- `documentation_policy`
 
 ## 5) Tools MCP nuevas recomendadas
 

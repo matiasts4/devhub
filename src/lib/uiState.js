@@ -4,6 +4,9 @@ const DEFAULT_PREFS = {
   sidebarCollapsed: false,
   historialExpandedMonths: [],
   editorExpandedPaths: [],
+  editorMarkdownViewMode: 'preview',
+  editorLatexViewMode: 'preview',
+  editorFileTreeCollapsed: false,
 };
 
 function getStorageKey(projectId) {

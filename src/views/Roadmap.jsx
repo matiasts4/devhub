@@ -51,7 +51,7 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-x-0 bottom-0 top-[46px] bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div
         className="rounded-2xl p-6 w-full max-w-md shadow-2xl fade-in-up"
         style={{

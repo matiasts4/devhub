@@ -1,0 +1,684 @@
+
+> frontend@0.1.0 lint
+> eslint src --ext .js,.jsx,.ts,.tsx --max-warnings 30
+
+(node:15740) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/matias/devhub/eslint.config.js?mtime=1775082684816 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /home/matias/devhub/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+/home/matias/devhub/src/App.js
+    3:3   warning  'HashRouter' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+    4:3   warning  'Routes' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+    5:3   warning  'Route' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+    6:3   warning  'Navigate' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+    7:3   warning  'Outlet' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   11:10  warning  'Toaster' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   13:8   warning  'WorkspaceSidebar' is defined but never used. Allowed unused vars must match /^_/u                             no-unused-vars
+   14:8   warning  'ProjectHub' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   15:8   warning  'ProjectDashboard' is defined but never used. Allowed unused vars must match /^_/u                             no-unused-vars
+   16:8   warning  'Tareas' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   17:8   warning  'CodeEditor' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   18:8   warning  'Scaffolding' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   19:8   warning  'Roadmap' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   20:8   warning  'Historial' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   21:8   warning  'Conexiones' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   22:8   warning  'Ajustes' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   23:8   warning  'AgentHub' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   24:8   warning  'SwarmControl' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+   25:8   warning  'TelegramMonitor' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+   27:10  warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   35:8   warning  'TerminalWorkspacesManager' is defined but never used. Allowed unused vars must match /^_/u                    no-unused-vars
+   37:8   warning  'NotificationCenter' is defined but never used. Allowed unused vars must match /^_/u                           no-unused-vars
+   38:10  warning  'Sparkles' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   38:20  warning  'ChevronLeft' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   38:33  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+   40:10  warning  'WorkspaceLayout' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+   59:6   warning  React Hook useCallback has a missing dependency: 'supabase'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  271:9   error    'process' is not defined                                                                                       no-undef
+
+/home/matias/devhub/src/app/api/agent/execute/route.js
+  11:32  warning  'llm_provider' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  11:46  warning  'llm_model' is assigned a value but never used. Allowed unused vars must match /^_/u     no-unused-vars
+
+/home/matias/devhub/src/app/api/agent/prompt-builder/route.js
+  36:39  error    'process' is not defined       no-undef
+  39:14  warning  'e' is defined but never used  no-unused-vars
+
+/home/matias/devhub/src/app/api/agenthub/chat/route.js
+  9:33  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/agents/launch/route.js
+  60:10  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/agents/quotas/route.js
+    7:56  error  Unnecessary escape character: \.  no-useless-escape
+   57:17  error  'process' is not defined          no-undef
+  103:17  error  'process' is not defined          no-undef
+
+/home/matias/devhub/src/app/api/ai/chat/route.js
+  75:18  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/centro-ia/query/route.js
+  7:35  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/engram/memories/route.js
+  8:35  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/fs/file/route.js
+   3:10  warning  'createReadStream' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  24:50  error    'process' is not defined                                                            no-undef
+
+/home/matias/devhub/src/app/api/fs/read/route.js
+  9:50  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/fs/tree/route.js
+  48:49  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/invite/[token]/route.js
+  6:11  warning  'token' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/app/api/mcp/connections/route.js
+  11:7  error  'process' is not defined  no-undef
+  32:7  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/mcp/engram/route.js
+  62:16  warning  'e' is defined but never used  no-unused-vars
+
+/home/matias/devhub/src/app/api/projects/[id]/invite/route.js
+  15:26  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/realtime/route.js
+   9:23  error  'process' is not defined  no-undef
+  23:7   error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/settings/llm-providers/copilot/poll/route.js
+  11:31  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/settings/llm-providers/route.js
+  5:31  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/tasks/route.js
+  26:7  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/terminal/processes/route.js
+  6:7  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/terminal/session/route.js
+  7:7  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/api/terminal/sessions/route.js
+  7:7  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/app/layout.js
+  2:10  warning  'Providers' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/app/page.js
+  6:7  warning  'App' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/app/settings/appearance/page.jsx
+  4:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  4:17  warning  'Palette' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+  6:10  warning  'Minus' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  6:17  warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  6:23  warning  'RotateCcw' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  6:34  warning  'Monitor' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+
+/home/matias/devhub/src/app/settings/layout.jsx
+   3:8   warning  'Link' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  14:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  15:3   warning  'Settings' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  16:3   warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u            no-unused-vars
+  98:19  warning  'Icon' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/app/settings/llm-providers/page.jsx
+  3:8  warning  'LLMProviderSettings' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/BannerIA.jsx
+  3:10  warning  'Bot' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:15  warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/DiffViewer.jsx
+  1:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  2:10  warning  'Card' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+  2:16  warning  'CardHeader' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+  2:28  warning  'CardTitle' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  2:39  warning  'CardContent' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+  2:52  warning  'CardFooter' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+  3:10  warning  'Button' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  4:10  warning  'ScrollArea' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+  5:10  warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  5:24  warning  'XCircle' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  5:33  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  5:47  warning  'FileDiff' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+
+/home/matias/devhub/src/components/EquipoSettings.jsx
+   1:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   2:10  warning  'Users' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   2:17  warning  'Mail' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   2:23  warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   2:32  warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   2:40  warning  'userPlus' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+  16:6   warning  React Hook useEffect has a missing dependency: 'fetchMembers'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/matias/devhub/src/components/HistorialCommits.jsx
+  2:10  warning  'GitCommit' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  2:21  warning  'GitBranch' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  2:32  warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  2:46  warning  'Clock' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+
+/home/matias/devhub/src/components/MetricCard.jsx
+  3:31  warning  'icon' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/NotificationCenter.jsx
+  4:10  warning  'AlertTriangle' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  4:25  warning  'Bell' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  4:31  warning  'Clock3' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  4:39  warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  4:50  warning  'Terminal' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  4:60  warning  'Wifi' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  4:66  warning  'WifiOff' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  5:10  warning  'Link' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+
+/home/matias/devhub/src/components/PresenceAvatars.jsx
+   1:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  20:21  warning  'key' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/RealtimeBridge.jsx
+  39:11  warning  Unexpected console statement. Only these console methods are allowed: error, warn  no-console
+  48:13  warning  Unexpected console statement. Only these console methods are allowed: error, warn  no-console
+
+/home/matias/devhub/src/components/Sidebar.jsx
+   1:10  warning  'NavLink' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+   5:3   warning  'Layers' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  10:3   warning  'ChevronLeft' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+  11:3   warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  12:3   warning  'Cpu' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  59:37  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u          no-unused-vars
+  88:39  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u          no-unused-vars
+
+/home/matias/devhub/src/components/TaskComments.jsx
+   1:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u                                                            no-unused-vars
+   3:10  warning  'Bot' is defined but never used. Allowed unused vars must match /^_/u                                                              no-unused-vars
+   3:23  warning  'UserIcon' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+   3:33  warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                                          no-unused-vars
+   3:42  warning  'Send' is defined but never used. Allowed unused vars must match /^_/u                                                             no-unused-vars
+   4:8   warning  'ReactMarkdown' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+  32:6   warning  React Hook useEffect has missing dependencies: 'fetchComments' and 'supabase'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/matias/devhub/src/components/TerminalTTY.jsx
+    4:10  warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                no-unused-vars
+    4:19  warning  'RotateCcw' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+    4:30  warning  'Wifi' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+    4:36  warning  'WifiOff' is defined but never used. Allowed unused vars must match /^_/u                                no-unused-vars
+    4:45  warning  'X' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+  151:6   warning  React Hook useCallback has a missing dependency: 'id'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  174:13  warning  'style' is assigned a value but never used. Allowed unused vars must match /^_/u                         no-unused-vars
+
+/home/matias/devhub/src/components/TerminalTabsManager.jsx
+  1:28  warning  'useEffect' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  2:10  warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u            no-unused-vars
+  2:16  warning  'X' is defined but never used. Allowed unused vars must match /^_/u               no-unused-vars
+  2:19  warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  2:32  warning  'TerminalSquare' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:8   warning  'TerminalTTY' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+
+/home/matias/devhub/src/components/TerminalWorkspacesManager.jsx
+   1:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u                  no-unused-vars
+   3:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                   no-unused-vars
+   4:3   warning  'X' is defined but never used. Allowed unused vars must match /^_/u                      no-unused-vars
+   5:3   warning  'LayoutGrid' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+   6:3   warning  'SplitSquareHorizontal' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+   7:3   warning  'SplitSquareVertical' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+   8:3   warning  'TerminalSquare' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+   9:3   warning  'Folder' is defined but never used. Allowed unused vars must match /^_/u                 no-unused-vars
+  10:3   warning  'Bot' is defined but never used. Allowed unused vars must match /^_/u                    no-unused-vars
+  11:3   warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u            no-unused-vars
+  12:3   warning  'History' is defined but never used. Allowed unused vars must match /^_/u                no-unused-vars
+  13:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u              no-unused-vars
+  14:3   warning  'Clock3' is defined but never used. Allowed unused vars must match /^_/u                 no-unused-vars
+  15:3   warning  'ExternalLink' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  17:8   warning  'TerminalTTY' is defined but never used. Allowed unused vars must match /^_/u            no-unused-vars
+  18:10  warning  'Panel' is defined but never used. Allowed unused vars must match /^_/u                  no-unused-vars
+  18:17  warning  'PanelGroup' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+  18:29  warning  'PanelResizeHandle' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  20:10  warning  'Button' is defined but never used. Allowed unused vars must match /^_/u                 no-unused-vars
+  22:3   warning  'DropdownMenu' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  23:3   warning  'DropdownMenuContent' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+  24:3   warning  'DropdownMenuItem' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  25:3   warning  'DropdownMenuLabel' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  26:3   warning  'DropdownMenuSeparator' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  27:3   warning  'DropdownMenuTrigger' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+
+/home/matias/devhub/src/components/UltimasInteracciones.jsx
+  29:19  warning  'Icon' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/WorkspaceSidebar.jsx
+    3:36  warning  'Link' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   11:3   warning  'ArrowLeft' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   12:3   warning  'Code2' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+   15:3   warning  'Terminal' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+   19:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   20:3   warning  'Sparkles' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+   21:3   warning  'Radar' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+   24:8   warning  'StatusSignal' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+   66:10  warning  'ProgressRing' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+  202:25  warning  'Icon' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  463:62  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u           no-unused-vars
+
+/home/matias/devhub/src/components/chat/ChatMarkdown.jsx
+  1:8  warning  'MarkdownReact' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/chat/CodeBlock.jsx
+  2:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  2:17  warning  'Copy' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  9:30  warning  'className' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/chat/MCPAccordion.jsx
+   3:3   warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+   4:3   warning  'Terminal' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+   5:3   warning  'AlertTriangle' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+   6:3   warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   7:3   warning  'Info' is defined but never used. Allowed unused vars must match /^_/u              no-unused-vars
+   8:3   warning  'Copy' is defined but never used. Allowed unused vars must match /^_/u              no-unused-vars
+   9:3   warning  'Check' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+  12:3   warning  'Accordion' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  13:3   warning  'AccordionItem' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  14:3   warning  'AccordionTrigger' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  15:3   warning  'AccordionContent' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  66:10  warning  'TerminalContent' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+
+/home/matias/devhub/src/components/chat/StreamingMessage.jsx
+  1:39  warning  'useMemo' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  2:8   warning  'ChatMarkdown' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/settings/LLMProviderSettings.jsx
+    6:3   warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+    7:3   warning  'XCircle' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+    8:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+    9:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   10:3   warning  'Search' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+   11:3   warning  'ArrowUp' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+   12:3   warning  'ArrowDown' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   13:3   warning  'TestTube2' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   14:3   warning  'Save' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   18:3   warning  'Cpu' is defined but never used. Allowed unused vars must match /^_/u            no-unused-vars
+   19:3   warning  'Star' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   20:3   warning  'LogIn' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+   21:3   warning  'LogOut' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+   22:3   warning  'Copy' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   23:3   warning  'ExternalLink' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+  168:12  warning  'isFavorite' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  551:15  warning  'Icon' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/accordion.jsx
+  3:10  warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/badge.jsx
+  1:13  warning  'React' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/breadcrumb.jsx
+   3:10  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+   3:24  warning  'MoreHorizontal' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  32:9   warning  'Comp' is assigned a value but never used. Allowed unused vars must match /^_/u   no-unused-vars
+
+/home/matias/devhub/src/components/ui/button.jsx
+  38:9  warning  'Comp' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/calendar.jsx
+  1:13  warning  'React' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  2:10  warning  'ChevronLeft' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+  2:23  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:10  warning  'DayPicker' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+
+/home/matias/devhub/src/components/ui/carousel.jsx
+  3:10  warning  'ArrowLeft' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+  3:21  warning  'ArrowRight' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  6:10  warning  'Button' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+
+/home/matias/devhub/src/components/ui/checkbox.jsx
+  3:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/command.jsx
+   3:10  warning  'Search' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+   6:10  warning  'Dialog' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+   6:18  warning  'DialogContent' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  36:52  error    Unknown property 'cmdk-input-wrapper' found                                      react/no-unknown-property
+
+/home/matias/devhub/src/components/ui/context-menu.jsx
+  3:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  3:17  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:31  warning  'Circle' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+
+/home/matias/devhub/src/components/ui/date-picker.jsx
+   1:13  warning  'React' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   4:22  warning  'CalendarIcon' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+   7:10  warning  'Button' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+   8:10  warning  'Calendar' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  10:3   warning  'Popover' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  11:3   warning  'PopoverContent' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  12:3   warning  'PopoverTrigger' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/dialog.jsx
+  3:10  warning  'X' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/dropdown-menu.jsx
+  3:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  3:17  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:31  warning  'Circle' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+
+/home/matias/devhub/src/components/ui/form.jsx
+  2:10  warning  'Slot' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  3:10  warning  'Controller' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  6:10  warning  'Label' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+
+/home/matias/devhub/src/components/ui/input-otp.jsx
+  2:10  warning  'OTPInput' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:10  warning  'Minus' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+
+/home/matias/devhub/src/components/ui/menubar.jsx
+  3:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  3:17  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:31  warning  'Circle' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+
+/home/matias/devhub/src/components/ui/navigation-menu.jsx
+  4:10  warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/pagination.jsx
+  2:10  warning  'ChevronLeft' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  2:23  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+  2:37  warning  'MoreHorizontal' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/radio-group.jsx
+  3:10  warning  'Circle' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/resizable.jsx
+  1:10  warning  'GripVertical' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/select.jsx
+  3:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  3:17  warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3:30  warning  'ChevronUp' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+
+/home/matias/devhub/src/components/ui/sheet.jsx
+  4:10  warning  'X' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/sonner.jsx
+  2:21  warning  'Sonner' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/toast.jsx
+  4:10  warning  'X' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/components/ui/toaster.jsx
+  3:3  warning  'Toast' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+  4:3  warning  'ToastClose' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  5:3  warning  'ToastDescription' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  6:3  warning  'ToastProvider' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  7:3  warning  'ToastTitle' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  8:3  warning  'ToastViewport' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+
+/home/matias/devhub/src/hooks/use-toast.js
+  8:7  warning  'actionTypes' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/index.js
+  1:8  warning  'React' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  4:8  warning  'App' is defined but never used. Allowed unused vars must match /^_/u    no-unused-vars
+
+/home/matias/devhub/src/lib/db/localDb.js
+    6:18  error  'require' is not defined    no-undef
+    7:14  error  'require' is not defined    no-undef
+    8:12  error  'require' is not defined    no-undef
+   12:15  error  'process' is not defined    no-undef
+   13:15  error  '__dirname' is not defined  no-undef
+  298:1   error  'module' is not defined     no-undef
+
+/home/matias/devhub/src/lib/realtime/devhub-realtime.js
+   23:17  error    'process' is not defined                                                           no-undef
+   60:40  error    'process' is not defined                                                           no-undef
+   71:25  error    'process' is not defined                                                           no-undef
+   72:18  error    'process' is not defined                                                           no-undef
+   96:7   warning  Unexpected console statement. Only these console methods are allowed: error, warn  no-console
+  129:5   warning  Unexpected console statement. Only these console methods are allowed: error, warn  no-console
+  145:3   warning  Unexpected console statement. Only these console methods are allowed: error, warn  no-console
+  146:3   warning  Unexpected console statement. Only these console methods are allowed: error, warn  no-console
+
+/home/matias/devhub/src/lib/terminal/ttyServer.js
+   16:7   error  'process' is not defined  no-undef
+   16:33  error  'process' is not defined  no-undef
+   21:10  error  'process' is not defined  no-undef
+   21:30  error  'process' is not defined  no-undef
+  127:27  error  'process' is not defined  no-undef
+  155:37  error  'process' is not defined  no-undef
+
+/home/matias/devhub/src/proxy.ts
+  4:13  error  Parsing error: Unexpected token {
+
+/home/matias/devhub/src/views/AgentHub.jsx
+    3:39  warning  'useCallback' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+    7:3   warning  'Bot' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+    8:3   warning  'Send' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   10:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   11:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   12:3   warning  'Slash' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   13:3   warning  'MessageSquarePlus' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+   14:3   warning  'History' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   15:3   warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   16:3   warning  'Cpu' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+   18:3   warning  'Sparkles' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   19:3   warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   35:3   warning  'Database' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   39:8   warning  'ChatMarkdown' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   40:8   warning  'StreamingMessage' is defined but never used. Allowed unused vars must match /^_/u                               no-unused-vars
+   42:8   warning  'MCPAccordion' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   44:10  warning  'slashCommands' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   70:3   warning  'DropdownMenu' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   71:3   warning  'DropdownMenuContent' is defined but never used. Allowed unused vars must match /^_/u                            no-unused-vars
+   72:3   warning  'DropdownMenuItem' is defined but never used. Allowed unused vars must match /^_/u                               no-unused-vars
+   73:3   warning  'DropdownMenuLabel' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+   74:3   warning  'DropdownMenuSeparator' is defined but never used. Allowed unused vars must match /^_/u                          no-unused-vars
+   75:3   warning  'DropdownMenuTrigger' is defined but never used. Allowed unused vars must match /^_/u                            no-unused-vars
+   76:3   warning  'DropdownMenuRadioGroup' is defined but never used. Allowed unused vars must match /^_/u                         no-unused-vars
+   77:3   warning  'DropdownMenuRadioItem' is defined but never used. Allowed unused vars must match /^_/u                          no-unused-vars
+   79:10  warning  'Button' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+  114:9   warning  'navigate' is assigned a value but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+  134:10  warning  'llmConfig' is assigned a value but never used. Allowed unused vars must match /^_/u                             no-unused-vars
+  150:6   warning  React Hook useEffect has a missing dependency: 'loadSessions'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  233:15  warning  'id' is assigned a value but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+  443:20  warning  'e' is defined but never used                                                                                    no-unused-vars
+  495:16  warning  'e' is defined but never used                                                                                    no-unused-vars
+  950:37  warning  'IconComponent' is assigned a value but never used. Allowed unused vars must match /^_/u                         no-unused-vars
+
+/home/matias/devhub/src/views/Ajustes.jsx
+     7:3   warning  'Save' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+    10:3   warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+    11:3   warning  'Monitor' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+    12:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+    14:3   warning  'Check' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+    15:3   warning  'Sparkles' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+    16:3   warning  'ArrowLeft' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+    17:3   warning  'ArrowRight' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+    18:3   warning  'Rocket' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+    19:3   warning  'FolderOpen' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+    26:3   warning  'Hash' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+    32:8   warning  'LLMProviderSettings' is defined but never used. Allowed unused vars must match /^_/u                        no-unused-vars
+   119:10  warning  'Toggle' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   139:10  warning  'ThemeOptionCard' is defined but never used. Allowed unused vars must match /^_/u                            no-unused-vars
+   224:10  warning  'OnboardingWizard' is defined but never used. Allowed unused vars must match /^_/u                           no-unused-vars
+   378:6   warning  React Hook useEffect has a missing dependency: 'supabase'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+   699:38  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u                                       no-unused-vars
+   888:44  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u                                       no-unused-vars
+  1077:42  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u                                       no-unused-vars
+
+/home/matias/devhub/src/views/CodeEditor.jsx
+   4:8   warning  'Editor' is defined but never used. Allowed unused vars must match /^_/u               no-unused-vars
+   6:3   warning  'AlertTriangle' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  12:3   warning  'Folder' is defined but never used. Allowed unused vars must match /^_/u               no-unused-vars
+  13:3   warning  'FolderOpen' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  14:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u              no-unused-vars
+  17:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u            no-unused-vars
+  20:10  warning  'ResizableHandle' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  20:27  warning  'ResizablePanel' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  20:43  warning  'ResizablePanelGroup' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  61:10  warning  'TreeNode' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+  67:17  warning  'FileIcon' is assigned a value but never used. Allowed unused vars must match /^_/u    no-unused-vars
+
+/home/matias/devhub/src/views/Conexiones.jsx
+   4:3   warning  'Plug2' is defined but never used. Allowed unused vars must match /^_/u               no-unused-vars
+   5:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                no-unused-vars
+   6:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   7:3   warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+   8:3   warning  'XCircle' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+   9:3   warning  'AlertCircle' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  10:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+  11:3   warning  'X' is defined but never used. Allowed unused vars must match /^_/u                   no-unused-vars
+  12:3   warning  'Wifi' is defined but never used. Allowed unused vars must match /^_/u                no-unused-vars
+  13:3   warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u              no-unused-vars
+  14:3   warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  15:3   warning  'ChevronUp' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  21:3   warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u                 no-unused-vars
+  22:3   warning  'Info' is defined but never used. Allowed unused vars must match /^_/u                no-unused-vars
+  23:3   warning  'Hash' is defined but never used. Allowed unused vars must match /^_/u                no-unused-vars
+  38:10  warning  'AddConnectionModal' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/views/Dashboard.jsx
+    1:10  warning  'useState' is defined but never used. Allowed unused vars must match /^_/u                                                            no-unused-vars
+    3:10  warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                                                no-unused-vars
+    3:16  warning  'AlertCircle' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+    6:8   warning  'MetricCard' is defined but never used. Allowed unused vars must match /^_/u                                                          no-unused-vars
+    7:8   warning  'BannerIA' is defined but never used. Allowed unused vars must match /^_/u                                                            no-unused-vars
+    8:8   warning  'HistorialCommits' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+    9:8   warning  'UltimasInteracciones' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+  159:6   warning  React Hook useEffect has missing dependencies: 'handleStaleTasks' and 'supabase'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/matias/devhub/src/views/Historial.jsx
+    6:3  warning  'History' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+    7:3  warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+    8:3  warning  'Calendar' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+    9:3  warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   10:3  warning  'Download' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   11:3  warning  'BarChart3' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   12:3  warning  'Flag' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   13:3  warning  'Hash' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   92:6  warning  React Hook useCallback has a missing dependency: 'supabase'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  126:6  warning  React Hook useEffect has a missing dependency: 'supabase'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+
+/home/matias/devhub/src/views/ProjectDashboard.jsx
+    5:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+    9:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   10:3   warning  'MapPin' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   12:3   warning  'CalendarClock' is defined but never used. Allowed unused vars must match /^_/u                                no-unused-vars
+   13:3   warning  'Hash' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   14:3   warning  'LayoutDashboard' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+   15:3   warning  'Trophy' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   18:8   warning  'BannerIA' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   43:6   warning  React Hook useCallback has a missing dependency: 'supabase'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  208:25  warning  'Icon' is assigned a value but never used. Allowed unused vars must match /^_/u                                no-unused-vars
+
+/home/matias/devhub/src/views/ProjectHub.jsx
+    7:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+    8:3   warning  'Search' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+    9:3   warning  'Code2' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   10:3   warning  'Clock' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   11:3   warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   12:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   13:3   warning  'X' is defined but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+   14:3   warning  'Brain' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   15:3   warning  'Upload' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   16:3   warning  'FileText' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   17:3   warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   18:3   warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u                                             no-unused-vars
+   25:3   warning  'Cpu' is defined but never used. Allowed unused vars must match /^_/u                                             no-unused-vars
+   26:3   warning  'FolderOpen' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+  116:6   warning  React Hook useEffect has a missing dependency: 'fetchProjects'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  562:65  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u                                            no-unused-vars
+
+/home/matias/devhub/src/views/Proyectos.jsx
+  2:10  warning  'FolderKanban' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  2:24  warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+  2:30  warning  'Star' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+  2:36  warning  'GitBranch' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  2:47  warning  'Clock' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  2:54  warning  'ExternalLink' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/views/Roadmap.jsx
+    5:3   warning  'MapPin' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+    6:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+    7:3   warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+    8:3   warning  'Circle' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+    9:3   warning  'Clock' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   10:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   11:3   warning  'X' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+   12:3   warning  'AlertTriangle' is defined but never used. Allowed unused vars must match /^_/u                                no-unused-vars
+   13:3   warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   14:3   warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   15:3   warning  'Hash' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   16:3   warning  'Flag' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   20:10  warning  'DatePicker' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   29:10  warning  'MilestoneModal' is defined but never used. Allowed unused vars must match /^_/u                               no-unused-vars
+  194:5   warning  React Hook useCallback has a missing dependency: 'supabase'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/matias/devhub/src/views/Scaffolding.jsx
+    4:3   warning  'AlertTriangle' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+    8:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+    9:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   13:3   warning  'Hash' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  334:10  warning  'CardHeader' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  334:29  warning  'Icon' is defined but never used. Allowed unused args must match /^_/u           no-unused-vars
+  544:27  warning  'Icon' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+/home/matias/devhub/src/views/SwarmControl.jsx
+   1:8  warning  'React' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+   7:3  warning  'Activity' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   8:3  warning  'Cpu' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   9:3  warning  'AlertCircle' is defined but never used. Allowed unused vars must match /^_/u   no-unused-vars
+  10:3  warning  'Clock' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+  11:3  warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  12:3  warning  'XCircle' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  13:3  warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+  14:3  warning  'ListTodo' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  15:3  warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  16:3  warning  'Info' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+  17:3  warning  'Hash' is defined but never used. Allowed unused vars must match /^_/u          no-unused-vars
+  20:8  warning  'StatusSignal' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  81:9  warning  'tasksDict' is never reassigned. Use 'const' instead                            prefer-const
+
+/home/matias/devhub/src/views/Tareas.jsx
+    2:8   warning  'TaskComments' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+    3:8   warning  'PresenceAvatars' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+    7:3   warning  'ListTodo' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+    8:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+    9:3   warning  'X' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+   10:3   warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   11:3   warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   12:3   warning  'Flag' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   13:3   warning  'Calendar' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   14:3   warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   15:3   warning  'Copy' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   16:3   warning  'Check' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   17:3   warning  'Filter' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   18:3   warning  'Bot' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   19:3   warning  'LayoutDashboard' is defined but never used. Allowed unused vars must match /^_/u                              no-unused-vars
+   20:3   warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u                                          no-unused-vars
+   21:3   warning  'ShieldAlert' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   22:3   warning  'Search' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   23:3   warning  'Milestone' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   24:3   warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+   28:8   warning  'Select' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   29:10  warning  'DatePicker' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+   90:10  warning  'StyledSelect' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+  118:10  warning  'TaskModal' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+  430:10  warning  'AgentQueueView' is defined but never used. Allowed unused vars must match /^_/u                               no-unused-vars
+  534:29  warning  'i' is defined but never used. Allowed unused args must match /^_/u                                            no-unused-vars
+  658:6   warning  React Hook useCallback has a missing dependency: 'supabase'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  676:6   warning  React Hook useEffect has a missing dependency: 'supabase'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+
+/home/matias/devhub/src/views/TelegramMonitor.jsx
+    9:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u      no-unused-vars
+   12:3   warning  'Wrench' is defined but never used. Allowed unused vars must match /^_/u         no-unused-vars
+   13:3   warning  'Wifi' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   14:3   warning  'WifiOff' is defined but never used. Allowed unused vars must match /^_/u        no-unused-vars
+  302:25  warning  'Icon' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+✖ 488 problems (42 errors, 446 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

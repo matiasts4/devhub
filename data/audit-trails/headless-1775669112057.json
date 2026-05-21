@@ -1,0 +1,90 @@
+{
+  "sessionID": "headless-1775669112057",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Explorar el codebase de devhub y detectar code smells en el código.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775669112058,
+    "completedAt": 1775669113202,
+    "duration": 1144
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775669112058,
+      "timeStr": "17:25:12"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775669112072,
+      "timeStr": "17:25:12"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_291df9203ffe89Mq88lhURBvGs"
+      },
+      "timestamp": 1775669112323,
+      "timeStr": "17:25:12"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 109,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775669112323,
+      "timeStr": "17:25:12"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775669112355,
+      "timeStr": "17:25:12"
+    },
+    {
+      "type": "text_response",
+      "data": {
+        "text": "[Tú eres el sub-agente. Instrucciones: \"Explorar el codebase de devhub y detectar code smells en el código.\"]"
+      },
+      "timestamp": 1775669112437,
+      "timeStr": "17:25:12"
+    },
+    {
+      "type": "session_error",
+      "data": {
+        "error": {
+          "name": "UnknownError",
+          "data": {
+            "message": "Model not found: github-copilot/gpt-5.4-mini."
+          }
+        }
+      },
+      "timestamp": 1775669113202,
+      "timeStr": "17:25:13"
+    },
+    {
+      "type": "session_finished",
+      "data": {
+        "status": "error",
+        "traces": 1
+      },
+      "timestamp": 1775669113203,
+      "timeStr": "17:25:13"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "ANY_ERROR",
+      "severity": "error",
+      "message": "Error detected: [object Object]",
+      "timestamp": 1775669113202
+    }
+  ],
+  "completed": true
+}

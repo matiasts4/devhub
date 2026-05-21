@@ -1,20 +1,33 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Tauri window styling - rounded corners and border */
+html,
+body {
+  overflow: hidden;
+}
+
+#root {
+  border-radius: 22px;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
 body {
   margin: 0;
   font-family:
-    'Inter',
+    'Geist',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #0d1117;
+  background: transparent;
   color: #f0f6fc;
 }
 
@@ -328,4 +341,32 @@ code {
   background: var(--surface-card);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-soft);
+}
+
+/* ─── Tauri custom titlebar drag region ─── */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+  cursor: default;
+}
+
+[data-tauri-drag-region] * {
+  user-select: none;
+}
+
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] [style*='no-drag'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* ─── No scrollbar utility ─── */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

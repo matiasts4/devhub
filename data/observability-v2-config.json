@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "flags": {
+    "telegram_use_opencode": true,
+    "trace_persistence": true,
+    "sse_realtime": true,
+    "llm_bridge_fallback": true,
+    "mcp_status_panel": true
+  },
+  "opencode": {
+    "port": 4153,
+    "timeout_ms": 30000,
+    "auto_approve_permissions": true
+  },
+  "telegram": {
+    "default_project": null,
+    "default_directory": "/home/matias/devhub"
+  }
+}

@@ -1,11 +1,3 @@
-/** @type {import('next').NextConfig} */
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  disable: true, // Desactivado para evitar conflictos con entorno Tauri
-  register: true,
-  skipWaiting: true,
-});
-
 /**
  * QA-07 — Bundle Analyzer
  * Comando de análisis: ANALYZE=true npm run build
@@ -49,7 +41,10 @@ const nextConfig = {
   serverExternalPackages: ['node-pty', 'ws', 'better-sqlite3'],
   output: 'standalone',
   // Next.js 16: Turbopack es el bundler por defecto
-  turbopack: {},
+  // root explícito para evitar que Turbopack tome /home/matias como workspace root
+  turbopack: {
+    root: __dirname,
+  },
 };
 
-module.exports = withBundleAnalyzer(withPWA(nextConfig));
+module.exports = withBundleAnalyzer(nextConfig);

@@ -123,7 +123,7 @@ export default function AgentLaunchModal({ isOpen, onClose, onLaunch, projects =
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

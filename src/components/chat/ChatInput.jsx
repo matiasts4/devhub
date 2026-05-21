@@ -96,9 +96,12 @@ export default function ChatInput({
   // Label corto del modelo activo (sin prefijo de proveedor ni fecha)
   const modelLabel = activeModelOverride
     ? activeModelOverride
-        .replace(/^openai\/|^anthropic\/|^google\//, '')
+        .split('/')
+        .pop()
         .replace(/-\d{4}-\d{2}-\d{2}$/, '')
         .replace(/-latest$/, '')
+        .replace(/-preview$/, '')
+        .replace(/:free$/, '')
     : 'Auto';
 
   return (
@@ -321,7 +324,7 @@ export default function ChatInput({
               </button>
 
               {/* Model selector — pill compacto inline dentro del box */}
-              {favoriteModels.length > 0 ? (
+              {activeProviderName ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -369,6 +372,21 @@ export default function ChatInput({
                       >
                         Auto (proveedor activo)
                       </DropdownMenuRadioItem>
+                      {/* Ensure current override is in the list even if not in favorites */}
+                      {activeModelOverride && !favoriteModels.includes(activeModelOverride) && (
+                        <DropdownMenuRadioItem
+                          value={activeModelOverride}
+                          className="text-[12px] cursor-pointer font-mono"
+                          style={{ '--highlight-bg': 'var(--surface-hover)' }}
+                        >
+                          {activeModelOverride
+                            .split('/')
+                            .pop()
+                            .replace(/-\d{4}-\d{2}-\d{2}$/, '')
+                            .replace(/-latest$/, '')
+                            .replace(/-preview$/, '')}
+                        </DropdownMenuRadioItem>
+                      )}
                       {favoriteModels.map((mId) => (
                         <DropdownMenuRadioItem
                           key={mId}
@@ -377,9 +395,11 @@ export default function ChatInput({
                           style={{ '--highlight-bg': 'var(--surface-hover)' }}
                         >
                           {mId
-                            .replace(/^openai\/|^anthropic\/|^google\//, '')
+                            .split('/')
+                            .pop()
                             .replace(/-\d{4}-\d{2}-\d{2}$/, '')
-                            .replace(/-latest$/, '')}
+                            .replace(/-latest$/, '')
+                            .replace(/-preview$/, '')}
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>

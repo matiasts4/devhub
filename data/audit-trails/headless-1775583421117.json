@@ -1,0 +1,56 @@
+{
+  "sessionID": "headless-1775583421117",
+  "metadata": {
+    "prompt": "Explora 3 code smells y termina en bullets",
+    "agent": "sdd-explore",
+    "project_id": "debug",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775583421117
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775583421117,
+      "timeStr": "17:37:01"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4154
+      },
+      "timestamp": 1775583421121,
+      "timeStr": "17:37:01"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_296fb1d3affeXTAYrC5VvlPM83"
+      },
+      "timestamp": 1775583421135,
+      "timeStr": "17:37:01"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 42,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775583421135,
+      "timeStr": "17:37:01"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "NO_TOOLS",
+      "severity": "warning",
+      "message": "No tool calls detected"
+    },
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}

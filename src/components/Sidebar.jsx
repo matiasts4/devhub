@@ -1,16 +1,17 @@
 import { NavLink } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   FolderKanban,
-  Layers,
   MapPin,
   Bot,
   Plug2,
   Settings,
   ChevronLeft,
   ChevronRight,
-  Cpu,
 } from 'lucide-react';
+import { getNavItemClasses, getCollapsedWidth } from './sidebarUtils';
+import { Button } from '@/components/ui/button';
 
 const navMain = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -24,38 +25,67 @@ const navConfig = [
   { path: '/ajustes', icon: Settings, label: 'Ajustes locales' },
 ];
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function Sidebar({ collapsed, onToggle }) {
+  const collapsedWidth = getCollapsedWidth();
+
   return (
-    <aside
+    <motion.aside
       data-testid="sidebar"
-      className={`flex-shrink-0 bg-[#070A10] border-r border-white/10 flex flex-col h-full transition-all duration-300 overflow-hidden ${
-        collapsed ? 'w-16' : 'w-64'
-      }`}
+      initial={false}
+      animate={{ width: collapsed ? 48 : 256 }}
+      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+      className="flex-shrink-0 bg-[#0d0d0d] border-r border-white/[0.07] flex flex-col h-full overflow-hidden"
+      style={{ minWidth: collapsed ? 48 : 256 }}
     >
       {/* Logo */}
       <div
-        className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-4 border-b border-white/10 h-16`}
+        className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
+          collapsed ? 'px-0 py-3' : 'px-4 py-3'
+        } border-b border-white/[0.07] h-12`}
       >
-        <div className="w-8 h-8 rounded-lg bg-[#00F0FF]/15 border border-[#00F0FF]/30 flex items-center justify-center flex-shrink-0">
-          <Cpu className="w-4 h-4 text-[#00F0FF]" strokeWidth={1.5} />
+        <div className="w-6 h-6 rounded-md bg-amber-500/15 border border-amber-500/25 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <img src="/logo.png" alt="DevHub Logo" className="w-full h-full object-cover" />
         </div>
-        {!collapsed && (
-          <div>
-            <p className="font-mono font-bold text-white text-sm tracking-wider leading-tight">
-              DevNexus
-            </p>
-            <p className="font-mono text-[#00F0FF] text-xs tracking-[0.25em] uppercase">AI v2.0</p>
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {!collapsed && (
+            <motion.div
+              key="logo-text"
+              initial={{ opacity: 0, width: 0 }}
+              animate={{ opacity: 1, width: 'auto' }}
+              exit={{ opacity: 0, width: 0 }}
+              transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+              className="overflow-hidden"
+            >
+              <p className="font-mono font-bold text-white text-sm tracking-wider leading-tight whitespace-nowrap">
+                DevHub
+              </p>
+              <p className="font-mono text-amber-400/70 text-[10px] tracking-[0.2em] uppercase whitespace-nowrap">
+                cockpit
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-0.5">
-        {!collapsed && (
-          <p className="px-3 mb-2 text-[11px] uppercase tracking-[0.15em] text-slate-500 font-semibold">
-            Navegación
-          </p>
-        )}
+      <nav className={`flex-1 overflow-y-auto py-3 ${collapsed ? 'px-1.5' : 'px-2'} space-y-0.5`}>
+        <AnimatePresence initial={false}>
+          {!collapsed && (
+            <motion.p
+              key="nav-label"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              className="px-3 mb-2 text-[10px] uppercase tracking-[0.15em] text-slate-600 font-semibold"
+            >
+              Navegación
+            </motion.p>
+          )}
+        </AnimatePresence>
+
         {navMain.map(({ path, icon: Icon, label }) => (
           <NavLink
             key={path}
@@ -63,28 +93,46 @@ export default function Sidebar({ collapsed, onToggle }) {
             data-testid={`nav-${path.slice(1)}`}
             title={collapsed ? label : undefined}
             aria-label={collapsed ? label : undefined}
-            className={({ isActive }) =>
-              `flex items-center ${
-                collapsed ? 'justify-center' : 'gap-3'
-              } px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer ${
-                isActive
-                  ? 'bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/25'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-              }`
-            }
+            className={({ isActive }) => getNavItemClasses(collapsed, isActive)}
           >
-            <Icon className="w-4 h-4 flex-shrink-0" strokeWidth={1.5} />
-            {!collapsed && <span>{label}</span>}
+            <Icon
+              className={`flex-shrink-0 ${collapsed ? 'w-3.5 h-3.5' : 'w-3.5 h-3.5'}`}
+              strokeWidth={1.6}
+            />
+            <AnimatePresence initial={false}>
+              {!collapsed && (
+                <motion.span
+                  key="label"
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.18, delay: 0.06 }}
+                  className="overflow-hidden whitespace-nowrap"
+                >
+                  {label}
+                </motion.span>
+              )}
+            </AnimatePresence>
           </NavLink>
         ))}
 
-        <div className="my-3 border-t border-white/10" />
+        <div className={`border-t border-white/[0.07] ${collapsed ? 'my-2' : 'my-2.5'}`} />
 
-        {!collapsed && (
-          <p className="px-3 mb-2 text-[11px] uppercase tracking-[0.15em] text-slate-500 font-semibold">
-            Configuración
-          </p>
-        )}
+        <AnimatePresence initial={false}>
+          {!collapsed && (
+            <motion.p
+              key="config-label"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              className="px-3 mb-2 text-[10px] uppercase tracking-[0.15em] text-slate-600 font-semibold"
+            >
+              Configuración
+            </motion.p>
+          )}
+        </AnimatePresence>
+
         {navConfig.map(({ path, icon: Icon, label }) => (
           <NavLink
             key={path}
@@ -92,51 +140,70 @@ export default function Sidebar({ collapsed, onToggle }) {
             data-testid={`nav-${path.slice(1)}`}
             title={collapsed ? label : undefined}
             aria-label={collapsed ? label : undefined}
-            className={({ isActive }) =>
-              `flex items-center ${
-                collapsed ? 'justify-center' : 'gap-3'
-              } px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer ${
-                isActive
-                  ? 'bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/25'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-              }`
-            }
+            className={({ isActive }) => getNavItemClasses(collapsed, isActive)}
           >
-            <Icon className="w-4 h-4 flex-shrink-0" strokeWidth={1.5} />
-            {!collapsed && <span>{label}</span>}
+            <Icon
+              className={`flex-shrink-0 ${collapsed ? 'w-3.5 h-3.5' : 'w-3.5 h-3.5'}`}
+              strokeWidth={1.6}
+            />
+            <AnimatePresence initial={false}>
+              {!collapsed && (
+                <motion.span
+                  key="label"
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.18, delay: 0.06 }}
+                  className="overflow-hidden whitespace-nowrap"
+                >
+                  {label}
+                </motion.span>
+              )}
+            </AnimatePresence>
           </NavLink>
         ))}
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-white/10">
-        {!collapsed && (
-          <div className="flex items-center gap-3 px-4 py-3">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#00F0FF] to-[#FF007F] flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-              DA
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-white font-medium truncate">Dev Admin</p>
-              <p className="text-[11px] text-slate-500 truncate">admin@devnexus.ai</p>
-            </div>
-          </div>
-        )}
-        <button
+      <div className="border-t border-white/[0.07]">
+        <AnimatePresence initial={false}>
+          {!collapsed && (
+            <motion.div
+              key="footer-user"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.18 }}
+              className="flex items-center gap-3 px-4 py-2.5 overflow-hidden"
+            >
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400/80 to-amber-600 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+                DA
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-white font-medium truncate">Dev Admin</p>
+                <p className="text-[10px] text-slate-500 truncate">admin@devhub.local</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <Button
           data-testid="sidebar-toggle"
           onClick={onToggle}
           aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
-          className="w-full flex items-center justify-center py-2.5 text-slate-500 hover:text-[#00F0FF] hover:bg-white/5 transition-all duration-200 border-t border-white/5 cursor-pointer"
+          variant="devhubGhost"
+          size={collapsed ? 'icon' : 'toolbar'}
+          className={`m-2 ${collapsed ? 'w-8 h-8 p-0 rounded-full' : 'w-[calc(100%-1rem)] justify-center'} border-t-0`}
         >
           {collapsed ? (
-            <ChevronRight className="w-4 h-4" strokeWidth={1.5} />
+            <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.6} />
           ) : (
-            <div className="flex items-center gap-1.5 text-xs">
-              <ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.5} />
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <ChevronLeft className="w-3 h-3" strokeWidth={1.6} />
               <span>Colapsar</span>
             </div>
           )}
-        </button>
+        </Button>
       </div>
-    </aside>
+    </motion.aside>
   );
 }

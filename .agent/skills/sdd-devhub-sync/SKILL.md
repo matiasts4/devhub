@@ -1,17 +1,22 @@
-# DevHub Sync Skill
+# DevHub Sync Protocol
 
-This skill allows the agent to interact seamlessly with the DevHub Project Management ecosystem via MCP tools.
+## Canonical source
 
-## Core Directives
-1. **Passive Execution**: You are the worker. You do not spawn shells via DevHub. You use the DevHub MCP tools to pull work and report status.
-2. **Fetch Work**: Use `devhub_get_next_task` to get the next high-priority task.
-3. **Acknowledge Work**: Update the task status to `in_progress` using `devhub_update_task` before modifying code.
-4. **Log Progress**: If a task requires multiple steps, leave technical notes via `devhub_add_task_comment`.
-5. **Close Task**: When the task is implemented and tested, mark it as `completed` via `devhub_update_task`.
+- OpenCode (`/home/matias/.config/opencode/skills/sdd-devhub-sync/SKILL.md`) is the source of truth.
+- Mirror every change to every IDE skill copy on this machine; keep copies identical unless a tiny path-specific adapter is unavoidable.
 
-## Integration with SDD (Spec-Driven Development)
-- If you are running an `sdd-propose` or `sdd-tasks` phase, take the generated task checklist and push it to DevHub using `devhub_create_task`.
-- Assign proper priorities based on the architectural spec.
+## DevHub documentation gate
 
-## Trigger
-Load this skill when the user says "trabaja con devhub", "sync devhub", or "devhub worker".
+- Before planning or docs work, classify the project first: `personal/devhub`, `shared/legacy`, or `archive-only`.
+- `personal/devhub`: use the DevHub docs flow.
+- `shared/legacy`: preserve existing docs; do not convert by default.
+- `archive-only`: archive legacy docs first, then create new DevHub docs.
+- If the policy is missing or ambiguous, stop and ask before proceeding.
+
+## Worker contract
+
+- Pull with `get_next_task`; it assigns the task and moves it to `in_progress`.
+- Read the task `title` and `description`; do not ask for selection if you can fetch it.
+- Complete work with `add_task_comment` + `update_task`; `update_agent_status` reports telemetry.
+- `sdd-tasks` persists tasks with `create_task`.
+- Never complete a task without an audit trail.

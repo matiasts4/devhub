@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { ChevronUp, ChevronLeft, ChevronRight, Loader2, Cpu } from 'lucide-react';
+import { normalizeSubagentStatus } from '@/lib/agenthubSubagentState';
 
 /**
  * SubagentFooter — Panel compacto estilo OpenCode que aparece cuando un subagente está activo.
@@ -27,12 +28,13 @@ export default function SubagentFooter({
   siblingIndex = 0,
   siblingTotal = 0,
 }) {
-  const isRunning = status === 'running';
+  const normalizedStatus = normalizeSubagentStatus(status);
+  const isRunning = normalizedStatus === 'running';
 
   // Color de acento según estado
   const accentColor = isRunning
     ? 'var(--warning, #f59e0b)'
-    : status === 'success'
+    : normalizedStatus === 'success'
       ? 'var(--success, #34d399)'
       : 'var(--danger, #f87171)';
 

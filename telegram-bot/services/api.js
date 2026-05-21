@@ -1,4 +1,4 @@
-const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://localhost:3000';
+const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://127.0.0.1:3400';
 
 async function api(path, options = {}, retries = 2) {
   const url = `${NEXT_JS_URL}${path}`;

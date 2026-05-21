@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { validateCopilotOAuth } from '@/lib/copilot-token';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 export async function POST(request) {
   try {
@@ -14,6 +18,9 @@ export async function POST(request) {
           (config.OPENROUTER_API_KEY || '').trim(),
           config.OPENROUTER_MODEL || 'qwen/qwen-2.5-72b-instruct'
         );
+        break;
+      case 'opencode':
+        result = await testOpenCode(config.OPENCODE_MODEL || 'opencode/gemini-3-flash');
         break;
       case 'zen':
         result = await testOpenAICompatible(
@@ -84,4 +91,14 @@ async function testCopilot(oauthToken) {
     return { valid: true };
   }
   return { valid: false, error: result.error };
+}
+
+async function testOpenCode(model) {
+  try {
+    // Just try to get models list as a connectivity test
+    await execAsync('opencode models');
+    return { valid: true };
+  } catch (err) {
+    return { valid: false, error: `CLI error: ${err.message}` };
+  }
 }

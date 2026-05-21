@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, Palette } from 'lucide-react';
 import { getStoredTheme, setTheme, THEME_OPTIONS, THEMES, getStoredZoom, setZoom } from '@/lib/theme/themes';
 import { Minus, Plus, RotateCcw, Monitor } from 'lucide-react';
+import {
+  readTerminalRendererDefaultModeSetting,
+  writeTerminalRendererDefaultModeSetting,
+} from '@/components/terminal/terminalRendererPreferences';
 
 
 const PREVIEW_BY_THEME = {
@@ -40,10 +44,14 @@ const PREVIEW_BY_THEME = {
 export default function AppearancePage() {
   const [activeTheme, setActiveTheme] = useState(THEMES.DEEP_SEA);
   const [currentZoom, setCurrentZoom] = useState(1);
+  const [terminalRendererMode, setTerminalRendererMode] = useState('vte-experimental');
 
   useEffect(() => {
     setActiveTheme(getStoredTheme());
     setCurrentZoom(getStoredZoom());
+    if (typeof window !== 'undefined') {
+      setTerminalRendererMode(readTerminalRendererDefaultModeSetting(window.localStorage));
+    }
   }, []);
 
   const handleZoomChange = (newZoom) => {
@@ -59,6 +67,14 @@ export default function AppearancePage() {
   const handleSelectTheme = (themeId) => {
     const normalized = setTheme(themeId);
     setActiveTheme(normalized);
+  };
+
+  const handleTerminalRendererChange = (event) => {
+    const nextMode = event.target.value;
+    if (typeof window !== 'undefined') {
+      writeTerminalRendererDefaultModeSetting(window.localStorage, nextMode);
+    }
+    setTerminalRendererMode(nextMode);
   };
 
   return (
@@ -177,8 +193,63 @@ export default function AppearancePage() {
             color: 'var(--text-muted)',
           }}
         >
-        Your current platform shortcuts and components adapt to this theme automatically.
+          Your current platform shortcuts and components adapt to this theme automatically.
         </div>
+      </section>
+
+      <section
+        className="rounded-2xl border p-6"
+        style={{
+          background: 'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 94%, transparent), color-mix(in srgb, var(--surface-elevated) 45%, transparent))',
+          borderColor: 'var(--border-subtle)',
+          boxShadow: 'var(--shadow-soft)',
+        }}
+      >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
+              Terminal renderer
+            </h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              GTK VTE stays as the preferred Linux/Tauri path. xterm remains the stable fallback.
+            </p>
+          </div>
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
+            style={{
+              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <Monitor size={12} style={{ color: 'var(--accent-primary)' }} />
+            Active: {terminalRendererMode === 'vte-experimental' ? 'GTK VTE' : 'xterm'}
+          </div>
+        </div>
+
+        <label className="flex flex-col gap-2 max-w-sm">
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            Default renderer
+          </span>
+          <select
+            data-testid="settings-terminal-renderer-select"
+            value={terminalRendererMode}
+            onChange={handleTerminalRendererChange}
+            className="h-11 rounded-xl border px-3 text-sm"
+            style={{
+              borderColor: 'var(--border-subtle)',
+              background: 'var(--surface-muted)',
+              color: 'var(--text-primary)',
+            }}
+          >
+            <option value="vte-experimental">GTK VTE</option>
+            <option value="xterm">xterm</option>
+          </select>
+        </label>
+
+        <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+          This preference applies to new terminal views. Existing fallbacks and explicit panel recoveries keep working.
+        </p>
       </section>
 
       <section

@@ -1,4 +1,15 @@
-import { getDocOpsContextBudgetPolicy } from './docopsPolicy.js';
+import {
+  buildDocumentationPolicySummary,
+  buildPolicyConstraints,
+  getDocOpsContextBudgetPolicy,
+  getDocumentationPolicyMetadata,
+} from './docopsPolicy.js';
+
+export { buildDocumentationPolicySummary } from './docopsPolicy.js';
+
+export function buildDocumentationPolicyMetadata(policy) {
+  return getDocumentationPolicyMetadata(policy);
+}
 
 const DOCOPS_RETRIEVAL_FIRST_ORDER = [
   '1. Identificá primero el topic exacto a trabajar.',
@@ -16,6 +27,19 @@ function buildDocOpsContextBudgetLanguage() {
     `- max_tokens_context: ${policy.max_tokens_context}`,
     `- max_expansions: ${policy.max_expansions}`,
     `- expansion_step_tokens: ${policy.expansion_step_tokens}`,
+  ].join('\n');
+}
+
+function buildDocOpsDocumentationPolicyLanguage() {
+  return [
+    'Clasificación documental obligatoria:',
+    `- personal/devhub → ${buildDocumentationPolicySummary('personal')}`,
+    `- shared/legacy → ${buildDocumentationPolicySummary('shared_legacy')}`,
+    `- archive-only → ${buildDocumentationPolicySummary('archive_only')}`,
+    `- Si la policy falta o es ambigua, preguntale al usuario antes de seguir.`,
+    `- shared projects no se fuerzan al formato DevHub por defecto.`,
+    `- Los docs legacy importados se archivan, no se sobrescriben.`,
+    `- archive-only = archivar primero, luego crear docs DevHub nuevas.`,
   ].join('\n');
 }
 
@@ -49,6 +73,8 @@ export function buildDocOpsGateLanguage() {
     'Aplicá este gate DocOps como una mejora del sdd-orchestrator existente, no como reemplazo:',
     DOCOPS_RETRIEVAL_FIRST_ORDER,
     '',
+    buildDocOpsDocumentationPolicyLanguage(),
+    '',
     buildDocOpsContextBudgetLanguage(),
     '',
     DOCOPS_REFUSAL_RULES,
@@ -56,12 +82,27 @@ export function buildDocOpsGateLanguage() {
   ].join('\n');
 }
 
-export function buildDocOpsGatePrompt({ agentId, objective, topicKey, projectId, telemetryId }) {
+export function buildDocOpsGatePrompt({
+  agentId,
+  objective,
+  topicKey,
+  projectId,
+  telemetryId,
+  documentationPolicy,
+}) {
+  const policyMetadata = buildDocumentationPolicyMetadata(documentationPolicy);
+  const policyConstraints = buildPolicyConstraints(documentationPolicy);
   return [
     `[Eres el Orquestador SDD. Tu agent_id es '${agentId}'.`,
     `Antes de cualquier trabajo de documentacion o planificacion:`,
     buildDocOpsGateLanguage(),
     '',
+    `documentation_policy: ${documentationPolicy || 'missing'}`,
+    `policy_metadata: ${JSON.stringify(policyMetadata)}`,
+    `policy_constraints: ${JSON.stringify(policyConstraints)}`,
+    policyMetadata.requires_user_clarification
+      ? 'Si documentation_policy falta o es ambigua, preguntale al usuario antes de proceder.'
+      : null,
     `Si el usuario no proporciono un topic_key, proponer uno breve y canonico antes de llamar a validate_topic_key.`,
     `Si el usuario si proporciono un objetivo, usalo para \`objective\`; si no, extraelo del pedido original.`,
     projectId ? `project_id: ${projectId}` : null,
@@ -114,6 +155,7 @@ export function buildDocOpsOrchestratorLaunchPrompt({
   telemetryId,
   topicKey,
   objective,
+  documentationPolicy,
 }) {
   const safePrompt = (prompt || '').trim();
   return `${buildDocOpsGatePrompt({
@@ -122,6 +164,7 @@ export function buildDocOpsOrchestratorLaunchPrompt({
     telemetryId,
     topicKey,
     objective,
+    documentationPolicy,
   })}\n\n/sdd-new ${safePrompt}`;
 }
 
@@ -147,12 +190,14 @@ export function buildDocOpsTaskPrompt({
   telemetryId,
   taskTitle,
   taskDescription,
+  documentationPolicy,
 }) {
   const taskContext = [taskTitle, taskDescription].filter(Boolean).join(' — ');
   const docOpsGate = isDocOpsPlanningPrompt(taskContext)
     ? [
         'Antes de tocar cualquier artefacto documental o de planning, aplicá el gate DocOps.',
         buildDocOpsGateLanguage(),
+        `documentation_policy: ${documentationPolicy || 'missing'}`,
       ].join('\n')
     : null;
 

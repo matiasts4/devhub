@@ -1,0 +1,2489 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const Database = require('better-sqlite3');
+const {
+  AGENT_WORKSPACE_BASE_COMMIT,
+  buildPrepareAgentWorkspaceAck,
+  createMissionMessage,
+  resolveAgentRuntimeBinding,
+  createSwarmMission,
+  buildSupervisorApprovalCheckpointKey,
+  ensureRuntimeSchema,
+  getAgentPresenceStatus,
+  getVerifiedMissionRecipientBinding,
+  getSwarmMissionDirectorSnapshot,
+  getSupervisorApprovalCheckpoint,
+  getSupervisorSnapshot,
+  listSupervisorApprovalCheckpoints,
+  registerMissionParticipant,
+  upsertAgentPresence,
+  upsertMessageDelivery,
+  prepareAgentWorkspaceLease,
+  upsertSupervisorApprovalCheckpoint,
+  upsertSupervisorSnapshot,
+} = require('./localDb.js');
+const { applyTestSchema } = require('../../../lib/test-schema.js');
+
+const FROZEN_BASE_COMMIT = AGENT_WORKSPACE_BASE_COMMIT;
+
+function createWorkspaceRow(overrides = {}) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(overrides, key);
+  return {
+    id: overrides.id || 'ws-1',
+    project_id: overrides.project_id || 'project-1',
+    agent_id: overrides.agent_id || 'agent-1',
+    current_task_id: overrides.current_task_id || 'task-1',
+    run_id_or_session_id: overrides.run_id_or_session_id || 'run-1',
+    repo_root: overrides.repo_root || '/repo/devhub',
+    workspace_path: overrides.workspace_path || 'workspace://project-1/ws-1',
+    worktree_path: has('worktree_path') ? overrides.worktree_path : '.worktrees/devhub/ws-1',
+    base_branch: overrides.base_branch || 'main',
+    base_commit: overrides.base_commit || FROZEN_BASE_COMMIT,
+    branch_name: has('branch_name') ? overrides.branch_name : 'agent/agent-1/task-1--ws-1',
+    status: overrides.status || 'planned',
+    observed_branch: overrides.observed_branch ?? null,
+    observed_head: overrides.observed_head ?? null,
+    observed_dirty: overrides.observed_dirty ?? null,
+    last_error: overrides.last_error ?? null,
+    last_error_class: overrides.last_error_class ?? null,
+    recovery_reason: overrides.recovery_reason ?? null,
+    evidence_ref: overrides.evidence_ref ?? null,
+    reservation_token: overrides.reservation_token ?? null,
+    correlation_id: overrides.correlation_id ?? null,
+    accepted_at: overrides.accepted_at ?? null,
+    claimed_at: overrides.claimed_at ?? null,
+    started_at: overrides.started_at ?? null,
+    updated_at: overrides.updated_at ?? null,
+    completed_at: overrides.completed_at ?? null,
+  };
+}
+
+function insertWorkspace(db, overrides = {}) {
+  const row = createWorkspaceRow(overrides);
+  const keys = Object.keys(row);
+  const values = keys.map((key) => row[key]);
+  db.prepare(
+    `INSERT INTO agent_workspaces (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+  ).run(...values);
+  return row;
+}
+
+function insertAgentRun(db, overrides = {}) {
+  const row = {
+    run_id: overrides.run_id || 'run-1',
+    workspace_id: overrides.workspace_id || 'ws-1',
+    task_id: overrides.task_id ?? 'task-1',
+    agent_id: overrides.agent_id || 'agent-1',
+    requested_base_ref: overrides.requested_base_ref || FROZEN_BASE_COMMIT,
+    baseline_commit: overrides.baseline_commit || FROZEN_BASE_COMMIT,
+    status: overrides.status || 'running',
+  };
+
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    row.run_id,
+    row.workspace_id,
+    row.task_id,
+    row.agent_id,
+    row.requested_base_ref,
+    row.baseline_commit,
+    row.status
+  );
+
+  return row;
+}
+
+function createLegacyProjectsDb() {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE projects (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT DEFAULT '#58A6FF',
+      status TEXT DEFAULT 'active',
+      progress INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      planning_prompt TEXT,
+      planning_status TEXT DEFAULT 'none',
+      project_type TEXT DEFAULT 'software',
+      local_path TEXT
+    );
+  `);
+  return db;
+}
+
+test('adds documentation_policy to legacy projects tables', () => {
+  const db = createLegacyProjectsDb();
+
+  assert.doesNotThrow(() => ensureRuntimeSchema(db));
+
+  const columns = db.prepare('PRAGMA table_info(projects)').all();
+  const documentationPolicy = columns.find((column) => column.name === 'documentation_policy');
+
+  assert.ok(documentationPolicy);
+  assert.equal(documentationPolicy.dflt_value, "'personal'");
+
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run('project-1', 'Legacy Project');
+  const row = db.prepare('SELECT documentation_policy FROM projects WHERE id = ?').get('project-1');
+
+  assert.equal(row.documentation_policy, 'personal');
+
+  db.close();
+});
+
+test('adds documentation_policy to legacy projects tables via test schema helper', () => {
+  const db = createLegacyProjectsDb();
+
+  assert.doesNotThrow(() => applyTestSchema(db));
+
+  const columns = db.prepare('PRAGMA table_info(projects)').all();
+  const documentationPolicy = columns.find((column) => column.name === 'documentation_policy');
+
+  assert.ok(documentationPolicy);
+  assert.equal(documentationPolicy.dflt_value, "'personal'");
+
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run('project-2', 'Helper Project');
+  const row = db.prepare('SELECT documentation_policy FROM projects WHERE id = ?').get('project-2');
+
+  assert.equal(row.documentation_policy, 'personal');
+
+  db.close();
+});
+
+test('creates agent_workspaces schema with frozen baseline and logical workspace path', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const columns = db.prepare('PRAGMA table_info(agent_workspaces)').all();
+  const columnNames = columns.map((column) => column.name);
+
+  assert.equal(
+    JSON.stringify(columnNames),
+    JSON.stringify([
+      'id',
+      'project_id',
+      'agent_id',
+      'current_task_id',
+      'run_id_or_session_id',
+      'repo_root',
+      'workspace_path',
+      'worktree_path',
+      'base_branch',
+      'base_commit',
+      'branch_name',
+      'status',
+      'observed_branch',
+      'observed_head',
+      'observed_dirty',
+      'last_error',
+      'last_error_class',
+      'recovery_reason',
+      'evidence_ref',
+      'reservation_token',
+      'correlation_id',
+      'accepted_at',
+      'claimed_at',
+      'started_at',
+      'updated_at',
+      'completed_at',
+      'created_at',
+    ])
+  );
+
+  const row = insertWorkspace(db, {
+    status: 'planned',
+    workspace_path: 'workspace://project-1/ws-1',
+    worktree_path: null,
+  });
+
+  const stored = db.prepare('SELECT * FROM agent_workspaces WHERE id = ?').get(row.id);
+
+  assert.equal(stored.base_commit, FROZEN_BASE_COMMIT);
+  assert.equal(stored.workspace_path, 'workspace://project-1/ws-1');
+  assert.equal(stored.worktree_path, null);
+
+  db.close();
+});
+
+test('preserves observed_dirty dirty-excluded verbatim', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-dirty',
+    status: 'active',
+    observed_branch: 'agent/agent-1/task-1--ws-dirty',
+    observed_head: 'abc123',
+    observed_dirty: 'dirty-excluded',
+  });
+
+  const stored = db
+    .prepare('SELECT observed_dirty FROM agent_workspaces WHERE id = ?')
+    .get('ws-dirty');
+
+  assert.equal(stored.observed_dirty, 'dirty-excluded');
+
+  db.close();
+});
+
+test('guards non-terminal agent task ownership and reserved names', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-owner-a',
+    agent_id: 'agent-1',
+    current_task_id: 'task-1',
+    branch_name: 'agent/agent-1/task-1--aaaa1111',
+    worktree_path: '.worktrees/devhub/ws-owner-a',
+  });
+
+  assert.throws(
+    () =>
+      insertWorkspace(db, {
+        id: 'ws-owner-b',
+        agent_id: 'agent-1',
+        current_task_id: 'task-1',
+        branch_name: 'agent/agent-1/task-2--bbbb2222',
+        worktree_path: '.worktrees/devhub/ws-owner-b',
+      }),
+    /UNIQUE constraint failed: agent_workspaces\.agent_id, agent_workspaces\.current_task_id/
+  );
+
+  assert.throws(
+    () =>
+      insertWorkspace(db, {
+        id: 'ws-branch-collision',
+        agent_id: 'agent-2',
+        current_task_id: 'task-2',
+        branch_name: 'agent/agent-1/task-1--aaaa1111',
+        worktree_path: '.worktrees/devhub/ws-branch-collision',
+      }),
+    /UNIQUE constraint failed: agent_workspaces\.branch_name/
+  );
+
+  assert.throws(
+    () =>
+      insertWorkspace(db, {
+        id: 'ws-worktree-collision',
+        agent_id: 'agent-3',
+        current_task_id: 'task-3',
+        branch_name: 'agent/agent-3/task-3--cccc3333',
+        worktree_path: '.worktrees/devhub/ws-owner-a',
+      }),
+    /UNIQUE constraint failed: agent_workspaces\.worktree_path/
+  );
+
+  db.close();
+});
+
+test('requires observed fields before ready or active states', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  assert.throws(
+    () =>
+      insertWorkspace(db, {
+        id: 'ws-ready-invalid',
+        status: 'ready',
+        observed_branch: null,
+        observed_head: null,
+      }),
+    /CHECK constraint failed/
+  );
+
+  assert.doesNotThrow(() =>
+    insertWorkspace(db, {
+      id: 'ws-ready-valid',
+      status: 'ready',
+      observed_branch: 'agent/agent-1/task-1--ready',
+      observed_head: 'def456',
+      worktree_path: '.worktrees/devhub/ws-ready-valid',
+      branch_name: 'agent/agent-1/task-1--ready',
+    })
+  );
+
+  db.close();
+});
+
+test('prevents mutation after terminal outcome', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-terminal',
+    status: 'completed',
+    observed_branch: 'agent/agent-1/task-1--terminal',
+    observed_head: '987654',
+    observed_dirty: 'dirty-excluded',
+    completed_at: '2026-05-18T20:00:00.000Z',
+  });
+
+  assert.throws(
+    () =>
+      db
+        .prepare('UPDATE agent_workspaces SET observed_head = ?, last_error = ? WHERE id = ?')
+        .run('new-head', 'should not mutate', 'ws-terminal'),
+    /agent_workspaces_terminal_immutable/
+  );
+
+  const stored = db
+    .prepare('SELECT observed_head, last_error FROM agent_workspaces WHERE id = ?')
+    .get('ws-terminal');
+
+  assert.equal(stored.observed_head, '987654');
+  assert.equal(stored.last_error, null);
+
+  db.close();
+});
+
+test('prepareAgentWorkspaceLease rejects ambiguous identity forms', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  assert.throws(
+    () =>
+      prepareAgentWorkspaceLease(db, {
+        task_id: 'task-1',
+        correlation_id: 'corr-missing-agent',
+      }),
+    /task_id y agent_id deben enviarse juntos/i
+  );
+
+  assert.throws(
+    () =>
+      prepareAgentWorkspaceLease(db, {
+        workspace_id: 'ws-1',
+        task_id: 'task-1',
+        agent_id: 'agent-1',
+        correlation_id: 'corr-mixed',
+      }),
+    /workspace_id no puede combinarse/i
+  );
+
+  db.close();
+});
+
+test('prepareAgentWorkspaceLease defaults baseline and stores durable-only metadata', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.exec('CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL)');
+  db.prepare('INSERT INTO tasks (id, project_id) VALUES (?, ?)').run(
+    'task-prepare-1',
+    'project-prepare'
+  );
+
+  const result = prepareAgentWorkspaceLease(db, {
+    task_id: 'task-prepare-1',
+    agent_id: 'agent-prepare-1',
+    correlation_id: 'corr-prepare-1',
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(result.ack.requested_base_ref, FROZEN_BASE_COMMIT);
+  assert.equal(result.ack.status, 'provisioning');
+  assert.equal(result.workspace.last_error_class, null);
+  assert.equal(result.workspace.reservation_token.startsWith('rsv-'), true);
+  assert.equal(result.workspace.correlation_id, 'corr-prepare-1');
+  assert.equal(result.workspace.accepted_at, result.ack.accepted_at);
+  assert.equal(result.workspace.observed_branch, null);
+  assert.equal(result.workspace.observed_head, null);
+  assert.equal(result.workspace.observed_dirty, null);
+  assert.equal(result.workspace.worktree_path, null);
+  assert.equal(
+    result.workspace.workspace_path,
+    'workspace://project-prepare/workspace-task-prepare-1-agent-prepare-1'
+  );
+
+  db.close();
+});
+
+test('prepareAgentWorkspaceLease is idempotent by workspace_id plus correlation_id', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-idempotent',
+    project_id: 'project-1',
+    agent_id: 'agent-1',
+    current_task_id: 'task-1',
+    status: 'provisioning',
+    branch_name: null,
+    worktree_path: null,
+    reservation_token: 'rsv-fixed',
+    correlation_id: 'corr-fixed',
+    accepted_at: '2026-05-18T22:00:00.000Z',
+  });
+
+  const result = prepareAgentWorkspaceLease(db, {
+    workspace_id: 'ws-idempotent',
+    correlation_id: 'corr-fixed',
+  });
+
+  assert.equal(result.reused, true);
+  assert.equal(result.ack.workspace_id, 'ws-idempotent');
+  assert.equal(result.ack.correlation_id, 'corr-fixed');
+  assert.equal(result.ack.reservation_token, 'rsv-fixed');
+
+  db.close();
+});
+
+test('buildPrepareAgentWorkspaceAck exposes opaque correlation fields only', () => {
+  const ack = buildPrepareAgentWorkspaceAck({
+    id: 'ws-ack-1',
+    current_task_id: 'task-ack-1',
+    agent_id: 'agent-ack-1',
+    base_commit: FROZEN_BASE_COMMIT,
+    reservation_token: 'rsv-ack-1',
+    correlation_id: 'corr-ack-1',
+    status: 'ready',
+    accepted_at: '2026-05-18T22:10:00.000Z',
+    observed_branch: 'agent/ack',
+    observed_head: 'abc123',
+    worktree_path: '.worktrees/ack',
+    evidence_ref: 'evidence://ack',
+  });
+
+  assert.deepEqual(Object.keys(ack).sort(), [
+    'accepted_at',
+    'agent_id',
+    'correlation_id',
+    'requested_base_ref',
+    'reservation_token',
+    'status',
+    'task_id',
+    'workspace_id',
+  ]);
+  assert.equal(ack.workspace_id, 'ws-ack-1');
+  assert.equal(ack.task_id, 'task-ack-1');
+  assert.equal(ack.agent_id, 'agent-ack-1');
+  assert.equal(ack.requested_base_ref, FROZEN_BASE_COMMIT);
+});
+
+test('creates supervisor snapshot projection tables without git ownership fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const snapshotColumns = db
+    .prepare('PRAGMA table_info(supervisor_snapshots)')
+    .all()
+    .map((column) => column.name);
+  const approvalColumns = db
+    .prepare('PRAGMA table_info(supervisor_approval_checkpoints)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(
+    JSON.stringify(snapshotColumns),
+    JSON.stringify([
+      'task_id',
+      'supervisor_state',
+      'outcome',
+      'reason_class',
+      'task_retry_count',
+      'attempt_count',
+      'unchanged_failure_count',
+      'approval_request_count',
+      'orphan_recovery_count',
+      'workspace_id',
+      'run_id',
+      'evidence_ref',
+      'approval_checkpoint_key',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(approvalColumns),
+    JSON.stringify([
+      'checkpoint_key',
+      'task_id',
+      'workspace_id',
+      'run_id',
+      'reason_class',
+      'evidence_ref',
+      'status',
+      'requested_at',
+      'decided_at',
+      'decision_note',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(snapshotColumns.includes('branch_name'), false);
+  assert.equal(snapshotColumns.includes('worktree_path'), false);
+  assert.equal(snapshotColumns.includes('repo_root'), false);
+  assert.equal(approvalColumns.includes('branch_name'), false);
+  assert.equal(approvalColumns.includes('worktree_path'), false);
+
+  db.close();
+});
+
+test('applyTestSchema mirrors supervisor snapshot projection tables', () => {
+  const db = new Database(':memory:');
+
+  applyTestSchema(db);
+
+  const snapshotColumns = db
+    .prepare('PRAGMA table_info(supervisor_snapshots)')
+    .all()
+    .map((column) => column.name);
+  const approvalColumns = db
+    .prepare('PRAGMA table_info(supervisor_approval_checkpoints)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(snapshotColumns.length > 0, true);
+  assert.equal(approvalColumns.length > 0, true);
+  assert.equal(snapshotColumns.includes('approval_checkpoint_key'), true);
+  assert.equal(approvalColumns.includes('checkpoint_key'), true);
+
+  db.close();
+});
+
+test('SW-8.2A creates canonical localDb-first registry tables', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const tables = [
+    'agent_profiles',
+    'registered_agents',
+    'workflow_phases',
+    'capabilities',
+    'profile_capability_bindings',
+    'profile_phase_bindings',
+  ];
+
+  for (const tableName of tables) {
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(tableName);
+    assert.equal(row?.name, tableName);
+  }
+
+  db.close();
+});
+
+test('SW-8.2A keeps registered_agents free from heartbeat and runtime presence fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const columns = db
+    .prepare('PRAGMA table_info(registered_agents)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(columns.includes('last_heartbeat'), false);
+  assert.equal(columns.includes('current_task_id'), false);
+  assert.equal(columns.includes('session_id'), false);
+  assert.equal(columns.includes('terminal_id'), false);
+  assert.equal(columns.includes('workspace_id'), false);
+  assert.equal(columns.includes('run_id'), false);
+
+  db.close();
+});
+
+test('SW-8.2A enforces identity and binding constraints in localDb schema', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  db.prepare(
+    `INSERT INTO agent_profiles (
+      profile_key,
+      display_name,
+      runtime_role,
+      provider,
+      app,
+      runtime_package,
+      authority_scope,
+      prohibited_actions,
+      evidence_contract,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'coder',
+    'Coder',
+    'executor',
+    'opencode',
+    'agenthub-headless',
+    'opencode-agent',
+    '{"scope":"repo"}',
+    '[]',
+    '{"artifacts":["diff.patch"]}',
+    'active'
+  );
+
+  db.prepare(
+    `INSERT INTO workflow_phases (phase_key, kind, requires_artifacts, status)
+     VALUES (?, ?, ?, ?)`
+  ).run('sdd-apply', 'apply', '[]', 'active');
+
+  db.prepare(
+    `INSERT INTO capabilities (
+      capability_key,
+      kind,
+      surface,
+      allowed_tools,
+      requires_permissions,
+      approval_required_for,
+      side_effect_class,
+      owner_system,
+      output_contract,
+      evidence_contract,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'write_repo',
+    'filesystem',
+    'repo',
+    '["apply_patch"]',
+    '[]',
+    '[]',
+    'repo_write',
+    'devhub',
+    '{"type":"patch"}',
+    '{"artifacts":["diff.patch"]}',
+    'active'
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO agent_profiles (
+          profile_key,
+          display_name,
+          runtime_role,
+          provider,
+          app,
+          runtime_package,
+          authority_scope,
+          prohibited_actions,
+          evidence_contract,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          'reviewer',
+          'Reviewer',
+          'reviewer',
+          'opencode',
+          'agenthub-headless',
+          'opencode-agent',
+          '{"scope":"repo"}',
+          '[]',
+          '{"artifacts":[]}',
+          'active'
+        ),
+    /CHECK constraint failed/
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO workflow_phases (phase_key, kind, requires_artifacts, status)
+         VALUES (?, ?, ?, ?)`
+        )
+        .run('/sdd-design', 'design', '[]', 'active'),
+    /CHECK constraint failed/
+  );
+
+  db.prepare(
+    `INSERT INTO profile_capability_bindings (
+      profile_key,
+      capability_key,
+      permission_level,
+      approval_required,
+      status
+    ) VALUES (?, ?, ?, ?, ?)`
+  ).run('coder', 'write_repo', 'allow', 0, 'active');
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_capability_bindings (
+          profile_key,
+          capability_key,
+          permission_level,
+          approval_required,
+          status
+        ) VALUES (?, ?, ?, ?, ?)`
+        )
+        .run('coder', 'write_repo', 'allow', 0, 'active'),
+    /UNIQUE constraint failed: profile_capability_bindings\.profile_key, profile_capability_bindings\.capability_key/
+  );
+
+  db.prepare(
+    `INSERT INTO profile_phase_bindings (
+      profile_key,
+      phase_key,
+      is_default,
+      status
+    ) VALUES (?, ?, ?, ?)`
+  ).run('coder', 'sdd-apply', 1, 'active');
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_phase_bindings (
+          profile_key,
+          phase_key,
+          is_default,
+          status
+        ) VALUES (?, ?, ?, ?)`
+        )
+        .run('coder', 'sdd-apply', 0, 'active'),
+    /UNIQUE constraint failed: profile_phase_bindings\.profile_key, profile_phase_bindings\.phase_key/
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_capability_bindings (
+          profile_key,
+          capability_key,
+          permission_level,
+          approval_required,
+          status
+        ) VALUES (?, ?, ?, ?, ?)`
+        )
+        .run('missing-profile', 'write_repo', 'allow', 0, 'active'),
+    /FOREIGN KEY constraint failed/
+  );
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO profile_phase_bindings (
+          profile_key,
+          phase_key,
+          is_default,
+          status
+        ) VALUES (?, ?, ?, ?)`
+        )
+        .run('coder', 'missing-phase', 0, 'active'),
+    /FOREIGN KEY constraint failed/
+  );
+
+  db.close();
+});
+
+test('SW-8.2A does not allow canonical schema to absorb runtime-only durability', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const canonicalTables = [
+    'agent_profiles',
+    'registered_agents',
+    'workflow_phases',
+    'capabilities',
+    'profile_capability_bindings',
+    'profile_phase_bindings',
+  ];
+  const forbiddenColumns = [
+    'terminal_log',
+    'logs',
+    'transcript',
+    'stdout',
+    'stderr',
+    'tool_output',
+    'raw_output',
+  ];
+
+  for (const tableName of canonicalTables) {
+    const columns = db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all()
+      .map((column) => column.name);
+    for (const columnName of forbiddenColumns) {
+      assert.equal(columns.includes(columnName), false, `${tableName} leaked ${columnName}`);
+    }
+  }
+
+  const participantColumns = db
+    .prepare('PRAGMA table_info(mission_participants)')
+    .all()
+    .map((column) => column.name);
+  assert.equal(participantColumns.includes('profile_key'), false);
+  assert.equal(participantColumns.includes('runtime_role'), false);
+
+  db.close();
+});
+
+test('stores supervisor snapshots with reason and evidence fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-1',
+    current_task_id: 'task-supervisor-1',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-1',
+    'ws-supervisor-1',
+    'task-supervisor-1',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  const snapshot = upsertSupervisorSnapshot(db, {
+    task_id: 'task-supervisor-1',
+    supervisor_state: 'awaiting_approval',
+    outcome: 'request_approval',
+    reason_class: 'approval_required',
+    task_retry_count: 2,
+    attempt_count: 3,
+    unchanged_failure_count: 1,
+    approval_request_count: 1,
+    orphan_recovery_count: 0,
+    workspace_id: 'ws-supervisor-1',
+    run_id: 'run-supervisor-1',
+    evidence_ref: 'evidence://supervisor/task-supervisor-1',
+  });
+
+  const stored = getSupervisorSnapshot(db, 'task-supervisor-1');
+
+  assert.equal(snapshot.task_id, 'task-supervisor-1');
+  assert.equal(stored.supervisor_state, 'awaiting_approval');
+  assert.equal(stored.outcome, 'request_approval');
+  assert.equal(stored.reason_class, 'approval_required');
+  assert.equal(stored.workspace_id, 'ws-supervisor-1');
+  assert.equal(stored.run_id, 'run-supervisor-1');
+  assert.equal(stored.evidence_ref, 'evidence://supervisor/task-supervisor-1');
+  assert.equal(stored.task_retry_count, 2);
+  assert.equal(stored.attempt_count, 3);
+  assert.equal(stored.unchanged_failure_count, 1);
+  assert.equal(stored.approval_request_count, 1);
+
+  db.close();
+});
+
+test('builds deterministic approval checkpoint keys from task workspace run and evidence', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-2',
+    current_task_id: 'task-supervisor-2',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-2',
+    'ws-supervisor-2',
+    'task-supervisor-2',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  const checkpointKey = buildSupervisorApprovalCheckpointKey({
+    task_id: 'task-supervisor-2',
+    workspace_id: 'ws-supervisor-2',
+    run_id: 'run-supervisor-2',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-2',
+  });
+
+  const checkpoint = upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-2',
+    workspace_id: 'ws-supervisor-2',
+    run_id: 'run-supervisor-2',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-2',
+  });
+
+  const stored = getSupervisorApprovalCheckpoint(db, checkpointKey);
+
+  assert.equal(checkpoint.checkpoint_key, checkpointKey);
+  assert.equal(stored.checkpoint_key, checkpointKey);
+  assert.equal(stored.status, 'pending');
+  assert.equal(stored.reason_class, 'approval_required');
+  assert.equal(stored.workspace_id, 'ws-supervisor-2');
+  assert.equal(stored.run_id, 'run-supervisor-2');
+  assert.equal(stored.evidence_ref, 'evidence://supervisor/task-supervisor-2');
+
+  db.close();
+});
+
+test('persists approval decisions with auditable timestamps', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-3',
+    current_task_id: 'task-supervisor-3',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-3',
+    'ws-supervisor-3',
+    'task-supervisor-3',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  const pending = upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-3',
+    workspace_id: 'ws-supervisor-3',
+    run_id: 'run-supervisor-3',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-3',
+    status: 'pending',
+    requested_at: '2026-05-19T01:00:00.000Z',
+    updated_at: '2026-05-19T01:00:00.000Z',
+  });
+
+  const approved = upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-3',
+    workspace_id: 'ws-supervisor-3',
+    run_id: 'run-supervisor-3',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-3',
+    status: 'approved',
+    decision_note: 'Approved by human supervisor',
+    updated_at: '2026-05-19T01:05:00.000Z',
+  });
+
+  assert.equal(approved.checkpoint_key, pending.checkpoint_key);
+  assert.equal(approved.status, 'approved');
+  assert.equal(approved.requested_at, '2026-05-19T01:00:00.000Z');
+  assert.equal(approved.decided_at, '2026-05-19T01:05:00.000Z');
+  assert.equal(approved.decision_note, 'Approved by human supervisor');
+
+  db.close();
+});
+
+test('lists approval checkpoints newest-first so pending and approved audit records stay queryable', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-4',
+    current_task_id: 'task-supervisor-4',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-4',
+    'ws-supervisor-4',
+    'task-supervisor-4',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+
+  upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-4',
+    workspace_id: 'ws-supervisor-4',
+    run_id: 'run-supervisor-4',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-4/pending',
+    status: 'pending',
+    requested_at: '2026-05-19T02:00:00.000Z',
+    updated_at: '2026-05-19T02:00:00.000Z',
+  });
+  upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-supervisor-4',
+    workspace_id: 'ws-supervisor-4',
+    run_id: 'run-supervisor-4',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://supervisor/task-supervisor-4/approved',
+    status: 'approved',
+    decision_note: 'Approved after review',
+    requested_at: '2026-05-19T02:05:00.000Z',
+    updated_at: '2026-05-19T02:06:00.000Z',
+    decided_at: '2026-05-19T02:06:00.000Z',
+  });
+
+  const checkpoints = listSupervisorApprovalCheckpoints(db, {
+    task_id: 'task-supervisor-4',
+    limit: 2,
+  });
+
+  assert.equal(checkpoints.length, 2);
+  assert.equal(checkpoints[0].status, 'approved');
+  assert.equal(checkpoints[0].decision_note, 'Approved after review');
+  assert.equal(checkpoints[1].status, 'pending');
+  assert.equal(checkpoints[1].evidence_ref, 'evidence://supervisor/task-supervisor-4/pending');
+
+  db.close();
+});
+
+test('stores unchanged_failure supervisor snapshots with durable counters and evidence refs', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  insertWorkspace(db, {
+    id: 'ws-supervisor-5',
+    current_task_id: 'task-supervisor-5',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status, terminal_reason_class
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-supervisor-5',
+    'ws-supervisor-5',
+    'task-supervisor-5',
+    'agent-1',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'failed',
+    'recoverable_failure'
+  );
+
+  upsertSupervisorSnapshot(db, {
+    task_id: 'task-supervisor-5',
+    supervisor_state: 'blocked',
+    outcome: 'block',
+    reason_class: 'unchanged_failure',
+    task_retry_count: 2,
+    attempt_count: 3,
+    unchanged_failure_count: 1,
+    approval_request_count: 0,
+    orphan_recovery_count: 0,
+    workspace_id: 'ws-supervisor-5',
+    run_id: 'run-supervisor-5',
+    evidence_ref: 'evidence://supervisor/task-supervisor-5/repeat',
+  });
+
+  const stored = getSupervisorSnapshot(db, 'task-supervisor-5');
+
+  assert.equal(stored.supervisor_state, 'blocked');
+  assert.equal(stored.outcome, 'block');
+  assert.equal(stored.reason_class, 'unchanged_failure');
+  assert.equal(stored.attempt_count, 3);
+  assert.equal(stored.task_retry_count, 2);
+  assert.equal(stored.unchanged_failure_count, 1);
+  assert.equal(stored.evidence_ref, 'evidence://supervisor/task-supervisor-5/repeat');
+
+  db.close();
+});
+
+test('creates swarm mission kernel tables with compact coordination-only fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const missionColumns = db
+    .prepare('PRAGMA table_info(swarm_missions)')
+    .all()
+    .map((column) => column.name);
+  const participantColumns = db
+    .prepare('PRAGMA table_info(mission_participants)')
+    .all()
+    .map((column) => column.name);
+  const messageColumns = db
+    .prepare('PRAGMA table_info(mission_messages)')
+    .all()
+    .map((column) => column.name);
+  const deliveryColumns = db
+    .prepare('PRAGMA table_info(message_deliveries)')
+    .all()
+    .map((column) => column.name);
+  const presenceColumns = db
+    .prepare('PRAGMA table_info(agent_presence)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(
+    JSON.stringify(missionColumns),
+    JSON.stringify([
+      'mission_id',
+      'project_id',
+      'task_id',
+      'workspace_id',
+      'run_id',
+      'approval_checkpoint_key',
+      'owner_agent_id',
+      'kind',
+      'status',
+      'title',
+      'summary',
+      'evidence_ref',
+      'started_at',
+      'updated_at',
+      'completed_at',
+      'created_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(participantColumns),
+    JSON.stringify([
+      'participant_id',
+      'mission_id',
+      'agent_id',
+      'role_in_mission',
+      'status',
+      'joined_at',
+      'left_at',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(messageColumns),
+    JSON.stringify([
+      'message_id',
+      'mission_id',
+      'sender_agent_id',
+      'message_kind',
+      'body_summary',
+      'evidence_ref',
+      'related_task_id',
+      'related_workspace_id',
+      'related_run_id',
+      'related_artifact_id',
+      'related_approval_checkpoint_key',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(deliveryColumns),
+    JSON.stringify([
+      'delivery_id',
+      'message_id',
+      'recipient_agent_id',
+      'channel',
+      'status',
+      'delivery_ref',
+      'evidence_ref',
+      'last_error',
+      'attempt_count',
+      'last_attempt_at',
+      'acked_at',
+      'created_at',
+      'updated_at',
+    ])
+  );
+  assert.equal(
+    JSON.stringify(presenceColumns),
+    JSON.stringify([
+      'presence_id',
+      'mission_id',
+      'agent_id',
+      'workspace_id',
+      'run_id',
+      'runtime_surface',
+      'presence_state',
+      'status_summary',
+      'evidence_ref',
+      'last_seen_at',
+      'expires_at',
+      'created_at',
+      'updated_at',
+    ])
+  );
+
+  assert.equal(missionColumns.includes('branch_name'), false);
+  assert.equal(missionColumns.includes('observed_head'), false);
+  assert.equal(messageColumns.includes('log_content'), false);
+  assert.equal(messageColumns.includes('session_id'), false);
+  assert.equal(deliveryColumns.includes('tool_output'), false);
+  assert.equal(presenceColumns.includes('terminal_log'), false);
+
+  db.close();
+});
+
+test('creates mission, participant, message, delivery and presence with compact durable refs only', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-mission',
+    'Mission Project'
+  );
+  insertWorkspace(db, {
+    id: 'ws-mission-1',
+    project_id: 'project-mission',
+    current_task_id: 'task-mission-1',
+  });
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'run-mission-1',
+    'ws-mission-1',
+    'task-mission-1',
+    'agent-director',
+    FROZEN_BASE_COMMIT,
+    FROZEN_BASE_COMMIT,
+    'running'
+  );
+  db.prepare(
+    `INSERT INTO agent_artifacts (
+      artifact_id, run_id, seq, phase, kind, producer, summary, evidence_ref, observed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'artifact-mission-1',
+    'run-mission-1',
+    1,
+    'execute',
+    'decision.note',
+    'executor',
+    'Mission evidence',
+    'evidence://mission/artifact-1',
+    '2026-05-19T10:00:00.000Z'
+  );
+  upsertSupervisorApprovalCheckpoint(db, {
+    task_id: 'task-mission-1',
+    workspace_id: 'ws-mission-1',
+    run_id: 'run-mission-1',
+    reason_class: 'approval_required',
+    evidence_ref: 'evidence://mission/approval-1',
+    status: 'pending',
+    requested_at: '2026-05-19T10:01:00.000Z',
+    updated_at: '2026-05-19T10:01:00.000Z',
+  });
+
+  const mission = createSwarmMission(db, {
+    project_id: 'project-mission',
+    task_id: 'task-mission-1',
+    workspace_id: 'ws-mission-1',
+    run_id: 'run-mission-1',
+    approval_checkpoint_key:
+      'task-mission-1|ws-mission-1|run-mission-1|approval_required|evidence://mission/approval-1',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    title: 'SW-8.1C mission',
+    summary: 'Minimal mission kernel',
+    evidence_ref: 'evidence://mission/root',
+    started_at: '2026-05-19T10:00:00.000Z',
+    updated_at: '2026-05-19T10:00:00.000Z',
+  });
+  const participant = registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-19T10:02:00.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'directive',
+    body_summary: 'Implement durable mission kernel',
+    evidence_ref: 'evidence://mission/message-1',
+    related_task_id: 'task-mission-1',
+    related_workspace_id: 'ws-mission-1',
+    related_run_id: 'run-mission-1',
+    related_artifact_id: 'artifact-mission-1',
+    related_approval_checkpoint_key:
+      'task-mission-1|ws-mission-1|run-mission-1|approval_required|evidence://mission/approval-1',
+    created_at: '2026-05-19T10:03:00.000Z',
+    updated_at: '2026-05-19T10:03:00.000Z',
+  });
+  const delivery = upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'pending',
+    delivery_ref: 'receipt://mission/message-1/agent-worker-1',
+    evidence_ref: 'evidence://mission/delivery-1',
+    last_attempt_at: '2026-05-19T10:03:30.000Z',
+  });
+  const presence = upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    workspace_id: 'ws-mission-1',
+    run_id: 'run-mission-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    status_summary: 'Working on mission kernel',
+    evidence_ref: 'evidence://mission/presence-1',
+    last_seen_at: '2026-05-19T10:04:00.000Z',
+  });
+
+  assert.equal(mission.project_id, 'project-mission');
+  assert.equal(mission.workspace_id, 'ws-mission-1');
+  assert.equal(mission.run_id, 'run-mission-1');
+  assert.equal(participant.agent_id, 'agent-worker-1');
+  assert.equal(message.related_artifact_id, 'artifact-mission-1');
+  assert.equal(delivery.status, 'pending');
+  assert.equal(presence.expires_at, '2026-05-19T10:06:00.000Z');
+
+  const storedMission = db
+    .prepare('SELECT * FROM swarm_missions WHERE mission_id = ?')
+    .get(mission.mission_id);
+  const storedMessage = db
+    .prepare('SELECT * FROM mission_messages WHERE message_id = ?')
+    .get(message.message_id);
+
+  assert.equal('branch_name' in storedMission, false);
+  assert.equal('observed_start_head' in storedMission, false);
+  assert.equal('baseline_commit' in storedMission, false);
+  assert.equal('tool_output' in storedMessage, false);
+  assert.equal('content' in storedMessage, false);
+
+  db.close();
+});
+
+test('updates delivery receipts and computes active versus stale presence in mission snapshot', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run('project-snapshot', 'Snapshot');
+  const mission = createSwarmMission(db, {
+    project_id: 'project-snapshot',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    title: 'Snapshot mission',
+    status: 'active',
+    started_at: '2026-05-19T11:00:00.000Z',
+    updated_at: '2026-05-19T11:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-director',
+    role_in_mission: 'director',
+    status: 'active',
+    joined_at: '2026-05-19T11:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-19T11:00:05.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-reviewer-1',
+    role_in_mission: 'reviewer',
+    status: 'active',
+    joined_at: '2026-05-19T11:00:10.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'handoff',
+    body_summary: 'Take over execution',
+    created_at: '2026-05-19T11:01:00.000Z',
+    updated_at: '2026-05-19T11:01:00.000Z',
+  });
+  upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'pending',
+    last_attempt_at: '2026-05-19T11:01:10.000Z',
+  });
+  const sentDelivery = upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'sent',
+    last_attempt_at: '2026-05-19T11:01:20.000Z',
+  });
+  upsertMessageDelivery(db, {
+    message_id: message.message_id,
+    recipient_agent_id: 'agent-reviewer-1',
+    channel: 'telegram',
+    status: 'retry_pending',
+    last_error: 'adapter timeout',
+    last_attempt_at: '2026-05-19T11:01:30.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-director',
+    runtime_surface: 'agenthub',
+    presence_state: 'online',
+    last_seen_at: '2026-05-19T11:01:40.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    last_seen_at: '2026-05-19T10:58:00.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-reviewer-1',
+    runtime_surface: 'telegram',
+    presence_state: 'offline',
+    last_seen_at: '2026-05-19T11:01:00.000Z',
+  });
+
+  assert.equal(sentDelivery.status, 'sent');
+  assert.equal(sentDelivery.acked_at, null);
+  assert.equal(
+    getAgentPresenceStatus(
+      { presence_state: 'busy', last_seen_at: '2026-05-19T10:58:00.000Z' },
+      { now: '2026-05-19T11:01:40.000Z' }
+    ).effective_state,
+    'stale'
+  );
+  assert.equal(
+    getAgentPresenceStatus(
+      { presence_state: 'offline', last_seen_at: '2026-05-19T11:01:00.000Z' },
+      { now: '2026-05-19T11:01:40.000Z' }
+    ).effective_state,
+    'offline'
+  );
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-19T11:01:40.000Z',
+  });
+
+  assert.equal(snapshot.mission.mission_id, mission.mission_id);
+  assert.equal(snapshot.participants.length, 3);
+  assert.equal(snapshot.latest_message.message_id, message.message_id);
+  assert.equal(snapshot.pending_deliveries.length, 1);
+  assert.equal(snapshot.pending_deliveries[0].status, 'retry_pending');
+  assert.equal(snapshot.presence.active.length, 1);
+  assert.equal(snapshot.presence.stale.length, 1);
+  assert.equal(snapshot.presence.offline.length, 1);
+
+  db.close();
+});
+
+test('returns recent_messages newest-first capped at 20 with latest_message alias preserved', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-recent-messages',
+    'Recent Messages'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-recent-messages',
+    project_id: 'project-recent-messages',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Recent messages mission',
+    started_at: '2026-05-20T17:00:00.000Z',
+    updated_at: '2026-05-20T17:00:00.000Z',
+  });
+
+  for (let index = 0; index < 25; index += 1) {
+    const seconds = String(index).padStart(2, '0');
+    createMissionMessage(db, {
+      message_id: `message-${index}`,
+      mission_id: mission.mission_id,
+      sender_agent_id: 'agent-director',
+      message_kind: 'status',
+      body_summary: `Message ${index}`,
+      created_at: `2026-05-20T17:00:${seconds}.000Z`,
+      updated_at: `2026-05-20T17:00:${seconds}.000Z`,
+    });
+  }
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T17:01:00.000Z',
+  });
+
+  assert.equal(snapshot.recent_messages.length, 20);
+  assert.equal(snapshot.recent_messages[0].message_id, 'message-24');
+  assert.equal(snapshot.recent_messages[19].message_id, 'message-5');
+  assert.deepEqual(snapshot.latest_message, snapshot.recent_messages[0]);
+
+  db.close();
+});
+
+test('returns empty recent_messages and null latest_message when mission has no messages', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-empty-messages',
+    'Empty Messages'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-empty-messages',
+    project_id: 'project-empty-messages',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Empty messages mission',
+    started_at: '2026-05-20T18:00:00.000Z',
+    updated_at: '2026-05-20T18:00:00.000Z',
+  });
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T18:00:30.000Z',
+  });
+
+  assert.equal(Array.isArray(snapshot.recent_messages), true);
+  assert.equal(snapshot.recent_messages.length, 0);
+  assert.equal(snapshot.latest_message, null);
+
+  db.close();
+});
+
+test('returns pending_deliveries newest-first by latest durable activity capped at 20 and adds snapshot_at', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-pending-deliveries',
+    'Pending Deliveries'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-pending-deliveries',
+    project_id: 'project-pending-deliveries',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Pending deliveries mission',
+    started_at: '2026-05-20T19:00:00.000Z',
+    updated_at: '2026-05-20T19:00:00.000Z',
+  });
+
+  for (let index = 0; index < 25; index += 1) {
+    const seconds = String(index).padStart(2, '0');
+    const message = createMissionMessage(db, {
+      message_id: `delivery-message-${index}`,
+      mission_id: mission.mission_id,
+      sender_agent_id: 'agent-director',
+      message_kind: 'status',
+      body_summary: `Delivery message ${index}`,
+      created_at: `2026-05-20T19:00:${seconds}.000Z`,
+      updated_at: `2026-05-20T19:00:${seconds}.000Z`,
+    });
+    upsertMessageDelivery(db, {
+      message_id: message.message_id,
+      recipient_agent_id: `agent-worker-${index}`,
+      channel: 'runtime_bus',
+      status: index % 2 === 0 ? 'pending' : 'retry_pending',
+      updated_at: '2026-05-20T19:00:00.000Z',
+      last_attempt_at: `2026-05-20T19:01:${seconds}.000Z`,
+      evidence_ref: `evidence://delivery/${index}`,
+    });
+  }
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T19:05:00.000Z',
+  });
+
+  assert.equal(snapshot.snapshot_at, '2026-05-20T19:05:00.000Z');
+  assert.equal(snapshot.pending_deliveries.length, 20);
+  assert.equal(snapshot.pending_deliveries[0].message_id, 'delivery-message-24');
+  assert.equal(snapshot.pending_deliveries[19].message_id, 'delivery-message-5');
+  assert.equal(snapshot.pending_deliveries[0].status, 'pending');
+  assert.equal(snapshot.pending_deliveries[1].status, 'retry_pending');
+
+  db.close();
+});
+
+test('keeps watermark stable across no-op polls while TTL regrouping changes presence buckets', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-watermark-stable',
+    'Watermark Stable'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-watermark-stable',
+    project_id: 'project-watermark-stable',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Stable watermark mission',
+    started_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-director',
+    role_in_mission: 'director',
+    status: 'active',
+    joined_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+  createMissionMessage(db, {
+    message_id: 'stable-message-1',
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'status',
+    body_summary: 'Stable message',
+    created_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-ttl',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    status_summary: 'Working',
+    last_seen_at: '2026-05-20T20:00:00.000Z',
+    updated_at: '2026-05-20T20:00:00.000Z',
+  });
+
+  const firstSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T20:01:30.000Z',
+  });
+  const secondSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T20:02:30.000Z',
+  });
+
+  assert.equal(firstSnapshot.snapshot_at, '2026-05-20T20:01:30.000Z');
+  assert.equal(secondSnapshot.snapshot_at, '2026-05-20T20:02:30.000Z');
+  assert.equal(firstSnapshot.presence.active.length, 1);
+  assert.equal(firstSnapshot.presence.stale.length, 0);
+  assert.equal(secondSnapshot.presence.active.length, 0);
+  assert.equal(secondSnapshot.presence.stale.length, 1);
+  assert.equal(firstSnapshot.watermark, secondSnapshot.watermark);
+
+  db.close();
+});
+
+test('changes watermark when durable mission rows mutate', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-watermark-mutation',
+    'Watermark Mutation'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-watermark-mutation',
+    project_id: 'project-watermark-mutation',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Mutation watermark mission',
+    started_at: '2026-05-20T21:00:00.000Z',
+    updated_at: '2026-05-20T21:00:00.000Z',
+  });
+  const baselineMessage = createMissionMessage(db, {
+    message_id: 'mutation-message-0',
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'status',
+    body_summary: 'Baseline',
+    created_at: '2026-05-20T21:00:00.000Z',
+    updated_at: '2026-05-20T21:00:00.000Z',
+  });
+  upsertMessageDelivery(db, {
+    message_id: baselineMessage.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'pending',
+    last_attempt_at: '2026-05-20T21:00:10.000Z',
+    updated_at: '2026-05-20T21:00:10.000Z',
+  });
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'online',
+    status_summary: 'Ready',
+    last_seen_at: '2026-05-20T21:00:20.000Z',
+    updated_at: '2026-05-20T21:00:20.000Z',
+  });
+
+  const baselineSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:01:00.000Z',
+  });
+
+  createMissionMessage(db, {
+    message_id: 'mutation-message-1',
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'decision',
+    body_summary: 'Mutation happened',
+    created_at: '2026-05-20T21:01:10.000Z',
+    updated_at: '2026-05-20T21:01:10.000Z',
+  });
+  const afterMessageSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:01:30.000Z',
+  });
+
+  upsertMessageDelivery(db, {
+    message_id: baselineMessage.message_id,
+    recipient_agent_id: 'agent-worker-1',
+    channel: 'runtime_bus',
+    status: 'retry_pending',
+    last_error: 'network timeout',
+    last_attempt_at: '2026-05-20T21:01:40.000Z',
+    updated_at: '2026-05-20T21:01:40.000Z',
+  });
+  const afterDeliverySnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:01:50.000Z',
+  });
+
+  upsertAgentPresence(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'agent-worker-1',
+    runtime_surface: 'agenthub',
+    presence_state: 'busy',
+    status_summary: 'Executing',
+    last_seen_at: '2026-05-20T21:01:55.000Z',
+    updated_at: '2026-05-20T21:01:55.000Z',
+  });
+  const afterPresenceSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+    now: '2026-05-20T21:02:00.000Z',
+  });
+
+  assert.notEqual(afterMessageSnapshot.watermark, baselineSnapshot.watermark);
+  assert.notEqual(afterDeliverySnapshot.watermark, afterMessageSnapshot.watermark);
+  assert.notEqual(afterPresenceSnapshot.watermark, afterDeliverySnapshot.watermark);
+
+  db.close();
+});
+
+test('rejects runtime logs and operational identity metadata in mission kernel payloads', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-guardrails',
+    'Guardrails'
+  );
+  const mission = createSwarmMission(db, {
+    project_id: 'project-guardrails',
+    owner_agent_id: 'agent-director',
+    kind: 'coordination',
+    title: 'Guardrails mission',
+    started_at: '2026-05-19T12:00:00.000Z',
+    updated_at: '2026-05-19T12:00:00.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'agent-director',
+    message_kind: 'directive',
+    body_summary: 'Safe summary',
+    created_at: '2026-05-19T12:01:00.000Z',
+    updated_at: '2026-05-19T12:01:00.000Z',
+  });
+
+  assert.throws(
+    () =>
+      registerMissionParticipant(db, {
+        mission_id: mission.mission_id,
+        agent_id: 'agent-worker-2',
+        role_in_mission: 'executor',
+        profile_key: 'sdd-orchestrator',
+      }),
+    /identity metadata canónica/i
+  );
+  assert.throws(
+    () =>
+      createMissionMessage(db, {
+        mission_id: mission.mission_id,
+        sender_agent_id: 'agent-director',
+        message_kind: 'directive',
+        body_summary: 'Unsafe message',
+        terminal_log: 'raw terminal output',
+      }),
+    /runtime-only payload/i
+  );
+  assert.throws(
+    () =>
+      upsertMessageDelivery(db, {
+        message_id: message.message_id,
+        recipient_agent_id: 'agent-worker-2',
+        channel: 'runtime_bus',
+        status: 'delivered',
+      }),
+    /status inválido/i
+  );
+
+  db.close();
+});
+
+test('resolveAgentRuntimeBinding returns missing when no durable workspace exists', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-resolver-1',
+    'Binding Resolver'
+  );
+
+  const result = resolveAgentRuntimeBinding(db, {
+    project_id: 'project-binding-resolver-1',
+    agent_id: 'worker-missing',
+    preferred_task_id: 'task-binding-missing',
+  });
+
+  assert.deepEqual(result, {
+    classification: 'missing',
+    status: 'unbound',
+    reason: 'binding_missing',
+    agent_id: 'worker-missing',
+    workspace_id: null,
+    run_id: null,
+    run_id_or_session_id: null,
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: null,
+  });
+
+  db.close();
+});
+
+test('resolveAgentRuntimeBinding returns missing when workspace exists without durable latest run', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-resolver-2',
+    'Binding Resolver Missing Run'
+  );
+  insertWorkspace(db, {
+    id: 'ws-missing-run',
+    project_id: 'project-binding-resolver-2',
+    agent_id: 'worker-missing-run',
+    current_task_id: 'task-binding-missing-run',
+    run_id_or_session_id: 'runtime-session-42',
+    status: 'ready',
+    observed_branch: 'agent/worker-missing-run/task-binding-missing-run',
+    observed_head: 'head-missing-run',
+    observed_dirty: 'clean',
+  });
+
+  const result = resolveAgentRuntimeBinding(db, {
+    project_id: 'project-binding-resolver-2',
+    agent_id: 'worker-missing-run',
+    preferred_task_id: 'task-binding-missing-run',
+  });
+
+  assert.deepEqual(result, {
+    classification: 'missing',
+    status: 'unbound',
+    reason: 'binding_missing',
+    agent_id: 'worker-missing-run',
+    workspace_id: 'ws-missing-run',
+    run_id: null,
+    run_id_or_session_id: 'runtime-session-42',
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('resolveAgentRuntimeBinding returns bound from durable workspace and latest run without runtime session rows', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-resolver-3',
+    'Binding Resolver Bound'
+  );
+  insertWorkspace(db, {
+    id: 'ws-older',
+    project_id: 'project-binding-resolver-3',
+    agent_id: 'worker-bound',
+    current_task_id: 'task-other',
+    status: 'ready',
+    updated_at: '2026-05-20T16:05:00.000Z',
+    branch_name: 'agent/worker-bound/task-other--ws-older',
+    worktree_path: '.worktrees/devhub/ws-older',
+    observed_branch: 'agent/worker-bound/task-other',
+    observed_head: 'head-older',
+    observed_dirty: 'clean',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-older',
+    workspace_id: 'ws-older',
+    task_id: 'task-other',
+    agent_id: 'worker-bound',
+  });
+  insertWorkspace(db, {
+    id: 'ws-bound',
+    project_id: 'project-binding-resolver-3',
+    agent_id: 'worker-bound',
+    current_task_id: 'task-bound',
+    run_id_or_session_id: 'runtime-session-bound',
+    status: 'active',
+    updated_at: '2026-05-20T16:10:00.000Z',
+    branch_name: 'agent/worker-bound/task-bound--ws-bound',
+    worktree_path: '.worktrees/devhub/ws-bound',
+    observed_branch: 'agent/worker-bound/task-bound',
+    observed_head: 'head-bound',
+    observed_dirty: 'clean',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-bound',
+    workspace_id: 'ws-bound',
+    task_id: 'task-bound',
+    agent_id: 'worker-bound',
+  });
+
+  const result = resolveAgentRuntimeBinding(db, {
+    project_id: 'project-binding-resolver-3',
+    agent_id: 'worker-bound',
+    preferred_task_id: 'task-bound',
+    runtime_session_id: 'runtime-session-bound',
+  });
+
+  assert.deepEqual(result, {
+    classification: 'bound',
+    status: 'bound',
+    reason: 'binding_found',
+    agent_id: 'worker-bound',
+    workspace_id: 'ws-bound',
+    run_id: 'run-bound',
+    run_id_or_session_id: 'runtime-session-bound',
+    session_id: null,
+    opencode_session_id: null,
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('resolves verified mission recipient binding from participant workspace and active opencode session', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding',
+    'Binding Project'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-1',
+    project_id: 'project-binding',
+    task_id: 'task-binding-1',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-1',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-1',
+    project_id: 'project-binding',
+    agent_id: 'worker-1',
+    current_task_id: 'task-binding-1',
+    run_id_or_session_id: 'session-binding-1',
+    status: 'ready',
+    observed_branch: 'agent/worker-1/task-binding-1',
+    observed_head: 'head-binding-1',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-1/task-binding-1',
+    worktree_path: '.worktrees/ws-binding-1',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-1',
+    workspace_id: 'ws-binding-1',
+    task_id: 'task-binding-1',
+    agent_id: 'worker-1',
+  });
+  db.prepare(
+    `INSERT INTO agent_hub_sessions (
+      id, project_id, title, agent_model, status, visibility, opencode_session_id, directory, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'session-binding-1',
+    'project-binding',
+    'Worker Session',
+    'gpt-5.4',
+    'active',
+    'visible',
+    'oc-binding-1',
+    '/repo/devhub',
+    '2026-05-20T16:01:00.000Z',
+    '2026-05-20T16:01:00.000Z'
+  );
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-1',
+  });
+
+  assert.deepEqual(result, {
+    status: 'bound',
+    classification: 'bound',
+    agent_id: 'worker-1',
+    session_id: 'session-binding-1',
+    opencode_session_id: 'oc-binding-1',
+    workspace_id: 'ws-binding-1',
+    run_id: 'run-binding-1',
+    run_id_or_session_id: 'session-binding-1',
+    reason: 'binding_found',
+    agent_model: 'gpt-5.4',
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_missing when recipient has no verifiable workspace binding', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-miss',
+    'Binding Missing'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-miss',
+    project_id: 'project-binding-miss',
+    task_id: 'task-binding-miss',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding missing mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-2',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-2',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'missing',
+    agent_id: 'worker-2',
+    session_id: null,
+    opencode_session_id: null,
+    workspace_id: null,
+    run_id: null,
+    run_id_or_session_id: null,
+    reason: 'binding_missing',
+    agent_model: null,
+    cwd: null,
+  });
+
+  db.close();
+});
+
+test('returns binding_stale when workspace references a missing or unusable session binding', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-stale',
+    'Binding Stale'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-stale',
+    project_id: 'project-binding-stale',
+    task_id: 'task-binding-stale',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding stale mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-3',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-stale',
+    project_id: 'project-binding-stale',
+    agent_id: 'worker-3',
+    current_task_id: 'task-binding-stale',
+    run_id_or_session_id: 'session-binding-stale',
+    status: 'active',
+    observed_branch: 'agent/worker-3/task-binding-stale',
+    observed_head: 'head-binding-stale',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-3/task-binding-stale',
+    worktree_path: '.worktrees/ws-binding-stale',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-stale',
+    workspace_id: 'ws-binding-stale',
+    task_id: 'task-binding-stale',
+    agent_id: 'worker-3',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-3',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'stale',
+    agent_id: 'worker-3',
+    session_id: 'session-binding-stale',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-stale',
+    run_id: 'run-binding-stale',
+    run_id_or_session_id: 'session-binding-stale',
+    reason: 'binding_stale',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_stale when runtime session is inactive or missing opencode session id', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-stale-inactive',
+    'Binding Stale Inactive'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-stale-inactive',
+    project_id: 'project-binding-stale-inactive',
+    task_id: 'task-binding-stale-inactive',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding stale inactive mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-4',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-stale-inactive',
+    project_id: 'project-binding-stale-inactive',
+    agent_id: 'worker-4',
+    current_task_id: 'task-binding-stale-inactive',
+    run_id_or_session_id: 'session-binding-stale-inactive',
+    status: 'active',
+    observed_branch: 'agent/worker-4/task-binding-stale-inactive',
+    observed_head: 'head-binding-stale-inactive',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-4/task-binding-stale-inactive',
+    worktree_path: '.worktrees/ws-binding-stale-inactive',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-stale-inactive',
+    workspace_id: 'ws-binding-stale-inactive',
+    task_id: 'task-binding-stale-inactive',
+    agent_id: 'worker-4',
+  });
+  db.prepare(
+    `INSERT INTO agent_hub_sessions (
+      id, project_id, title, agent_model, status, visibility, opencode_session_id, directory, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    'session-binding-stale-inactive',
+    'project-binding-stale-inactive',
+    'Inactive Worker Session',
+    'gpt-5.4',
+    'error',
+    'visible',
+    null,
+    '/repo/devhub',
+    '2026-05-20T16:01:00.000Z',
+    '2026-05-20T16:01:00.000Z'
+  );
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-4',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'stale',
+    agent_id: 'worker-4',
+    session_id: 'session-binding-stale-inactive',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-stale-inactive',
+    run_id: 'run-binding-stale-inactive',
+    run_id_or_session_id: 'session-binding-stale-inactive',
+    reason: 'binding_stale',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_orphaned when workspace durable state is orphaned', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-orphaned',
+    'Binding Orphaned'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-orphaned',
+    project_id: 'project-binding-orphaned',
+    task_id: 'task-binding-orphaned',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding orphaned mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-5',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-orphaned',
+    project_id: 'project-binding-orphaned',
+    agent_id: 'worker-5',
+    current_task_id: 'task-binding-orphaned',
+    run_id_or_session_id: 'runtime-session-orphaned',
+    status: 'orphaned',
+    observed_branch: 'agent/worker-5/task-binding-orphaned',
+    observed_head: 'head-binding-orphaned',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-5/task-binding-orphaned',
+    worktree_path: '.worktrees/ws-binding-orphaned',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-orphaned',
+    workspace_id: 'ws-binding-orphaned',
+    task_id: 'task-binding-orphaned',
+    agent_id: 'worker-5',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-5',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'orphaned',
+    agent_id: 'worker-5',
+    session_id: 'runtime-session-orphaned',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-orphaned',
+    run_id: 'run-binding-orphaned',
+    run_id_or_session_id: 'runtime-session-orphaned',
+    reason: 'binding_orphaned',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('returns binding_orphaned when supervisor durable reason marks orphaned_run', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-binding-orphaned-supervisor',
+    'Binding Orphaned Supervisor'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-binding-orphaned-supervisor',
+    project_id: 'project-binding-orphaned-supervisor',
+    task_id: 'task-binding-orphaned-supervisor',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    status: 'active',
+    title: 'Binding orphaned supervisor mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  registerMissionParticipant(db, {
+    mission_id: mission.mission_id,
+    agent_id: 'worker-6',
+    role_in_mission: 'executor',
+    status: 'active',
+    joined_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  insertWorkspace(db, {
+    id: 'ws-binding-orphaned-supervisor',
+    project_id: 'project-binding-orphaned-supervisor',
+    agent_id: 'worker-6',
+    current_task_id: 'task-binding-orphaned-supervisor',
+    run_id_or_session_id: 'runtime-session-orphaned-supervisor',
+    status: 'active',
+    observed_branch: 'agent/worker-6/task-binding-orphaned-supervisor',
+    observed_head: 'head-binding-orphaned-supervisor',
+    observed_dirty: 'clean',
+    branch_name: 'agent/worker-6/task-binding-orphaned-supervisor',
+    worktree_path: '.worktrees/ws-binding-orphaned-supervisor',
+  });
+  insertAgentRun(db, {
+    run_id: 'run-binding-orphaned-supervisor',
+    workspace_id: 'ws-binding-orphaned-supervisor',
+    task_id: 'task-binding-orphaned-supervisor',
+    agent_id: 'worker-6',
+  });
+  upsertSupervisorSnapshot(db, {
+    task_id: 'task-binding-orphaned-supervisor',
+    supervisor_state: 'recovering_orphan',
+    outcome: 'recover_orphan',
+    reason_class: 'orphaned_run',
+    workspace_id: 'ws-binding-orphaned-supervisor',
+    run_id: 'run-binding-orphaned-supervisor',
+    evidence_ref: 'evidence://binding/orphaned-run',
+  });
+
+  const result = getVerifiedMissionRecipientBinding(db, {
+    mission_id: mission.mission_id,
+    recipient_agent_id: 'worker-6',
+  });
+
+  assert.deepEqual(result, {
+    status: 'unbound',
+    classification: 'orphaned',
+    agent_id: 'worker-6',
+    session_id: 'runtime-session-orphaned-supervisor',
+    opencode_session_id: null,
+    workspace_id: 'ws-binding-orphaned-supervisor',
+    run_id: 'run-binding-orphaned-supervisor',
+    run_id_or_session_id: 'runtime-session-orphaned-supervisor',
+    reason: 'binding_orphaned',
+    agent_model: null,
+    cwd: '/repo/devhub',
+  });
+
+  db.close();
+});
+
+test('rejects runtime session statuses as durable message delivery states', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+  db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
+    'project-delivery-guard',
+    'Delivery Guard'
+  );
+  const mission = createSwarmMission(db, {
+    mission_id: 'mission-delivery-guard',
+    project_id: 'project-delivery-guard',
+    owner_agent_id: 'director-1',
+    kind: 'coordination',
+    title: 'Delivery guard mission',
+    started_at: '2026-05-20T16:00:00.000Z',
+    updated_at: '2026-05-20T16:00:00.000Z',
+  });
+  const message = createMissionMessage(db, {
+    mission_id: mission.mission_id,
+    sender_agent_id: 'director-1',
+    message_kind: 'directive',
+    body_summary: 'No runtime leaks',
+    created_at: '2026-05-20T16:01:00.000Z',
+    updated_at: '2026-05-20T16:01:00.000Z',
+  });
+
+  for (const invalidStatus of ['running', 'completed', 'error']) {
+    assert.throws(
+      () =>
+        upsertMessageDelivery(db, {
+          message_id: message.message_id,
+          recipient_agent_id: `worker-${invalidStatus}`,
+          channel: 'opencode',
+          status: invalidStatus,
+          last_attempt_at: '2026-05-20T16:02:00.000Z',
+        }),
+      /status inválido/
+    );
+  }
+
+  db.close();
+});
+
+test('SW-8.2B keeps mission kernel free from team_messages and runtime-only mission fields', () => {
+  const db = new Database(':memory:');
+
+  ensureRuntimeSchema(db);
+
+  const teamMessages = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'team_messages'")
+    .get();
+  const missionMessageColumns = db
+    .prepare('PRAGMA table_info(mission_messages)')
+    .all()
+    .map((column) => column.name);
+  const deliveryColumns = db
+    .prepare('PRAGMA table_info(message_deliveries)')
+    .all()
+    .map((column) => column.name);
+
+  assert.equal(teamMessages, undefined);
+  for (const forbiddenColumn of [
+    'terminal_log',
+    'stdout',
+    'stderr',
+    'sse_event',
+    'sse_payload',
+    'transcript',
+    'transcripts',
+    'tool_output',
+    'raw_output',
+    'session_state',
+  ]) {
+    assert.equal(missionMessageColumns.includes(forbiddenColumn), false);
+    assert.equal(deliveryColumns.includes(forbiddenColumn), false);
+  }
+
+  db.close();
+});

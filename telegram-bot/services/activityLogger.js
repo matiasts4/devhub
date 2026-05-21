@@ -12,10 +12,10 @@
  */
 
 const Database = require('better-sqlite3');
-const path = require('path');
 const crypto = require('crypto');
+const { resolveDbPath } = require('../../src/lib/db/pathResolver');
 
-const DB_PATH = path.resolve(__dirname, '../../data/devhub.db');
+const DB_PATH = resolveDbPath({ moduleDir: __dirname });
 
 const db = new Database(DB_PATH, { fileMustExist: false, readonly: false });
 db.pragma('journal_mode = WAL');

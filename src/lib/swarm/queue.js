@@ -61,9 +61,9 @@ class SwarmQueue {
 
     this.pollingInterval = setInterval(() => {
       this._poll();
-    }, 2000);
+    }, 500);
 
-    console.log('[SwarmQueue] Polling started (2s interval)');
+    console.log('[SwarmQueue] Polling started (500ms interval)');
   }
 
   /**
@@ -137,6 +137,24 @@ class SwarmQueue {
         estimatedWaitMs: this.getEstimatedWait(idx),
       })),
     };
+  }
+
+  /**
+   * Remove an item from the queue by id.
+   * Returns true when removed, false when missing.
+   */
+  remove(itemId) {
+    const index = this.queue.findIndex((item) => item.id === itemId);
+    if (index === -1) return false;
+
+    const [item] = this.queue.splice(index, 1);
+    if (item?.reject) {
+      const error = new Error('Cancelled by user');
+      error.cancelled = true;
+      item.reject(error);
+    }
+
+    return true;
   }
 }
 

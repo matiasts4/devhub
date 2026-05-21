@@ -27,6 +27,7 @@ import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import Select from 'react-select';
 import { DatePicker } from '@/components/ui/date-picker';
+import { Button } from '@/components/ui/button';
 import {
   buildDocOpsTaskPrompt,
   enforceDocOpsGateOnLaunchCommand,
@@ -224,7 +225,7 @@ function TaskModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-x-0 bottom-0 top-[46px] bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       onClick={onClose}
     >
       <div
@@ -707,51 +708,46 @@ export default function Tareas() {
   const activeFiltersCount = [fMilestone, fSearch, fUnlocked, fMyTasks].filter(Boolean).length;
 
   return (
-    <div className="min-h-screen core-page-shell flex flex-col">
-      {/* Header */}
-      <div className="sticky top-0 z-10 core-sticky-header border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#58A6FF]/10 border border-[#58A6FF]/20 flex items-center justify-center">
-              <ListTodo className="w-3.5 h-3.5 text-[#58A6FF]" strokeWidth={1.5} />
+    <div className="h-full flex flex-col">
+      {/* Content */}
+      <div className="flex-1 overflow-hidden p-5 flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 backdrop-blur-xl">
+              <Button
+                onClick={() => setViewMode('kanban')}
+                variant={viewMode === 'kanban' ? 'devhubGlass' : 'devhubGhost'}
+                size="toolbar"
+                className={viewMode === 'kanban' ? 'text-text-primary border-white/16 bg-white/[0.09]' : ''}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" /> Kanban
+              </Button>
+              <Button
+                onClick={() => setViewMode('agent')}
+                variant={viewMode === 'agent' ? 'devhubGlass' : 'devhubGhost'}
+                size="toolbar"
+                className={viewMode === 'agent' ? 'text-[var(--text-primary)] border-white/16 bg-white/[0.09]' : ''}
+              >
+                <Bot className="w-3.5 h-3.5" /> Cola Agente
+              </Button>
             </div>
-            <h1 className="font-mono text-sm font-bold text-text-primary">Tareas</h1>
+
+            <PresenceAvatars projectId={project?.id} />
           </div>
 
-          {/* View mode toggle */}
-          <div className="flex bg-surface-elevated p-0.5 rounded-lg border border-borders-subtle">
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'kanban' ? 'bg-surface-card text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" /> Kanban
-            </button>
-            <button
-              onClick={() => setViewMode('agent')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'agent' ? 'bg-surface-card text-[#58A6FF] shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
-            >
-              <Bot className="w-3.5 h-3.5" /> Cola Agente
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <PresenceAvatars projectId={project?.id} />
-          <button
+          <Button
             onClick={() => {
               setEditingTask(null);
               setInitialStatus('pending');
               setModalOpen(true);
             }}
-            className="flex items-center gap-1.5 bg-[#2ea043] hover:bg-[#3FB950] text-white font-semibold px-3.5 py-2 rounded-lg text-xs transition-all active:scale-95"
+            variant="devhubPrimary"
+            size="toolbar"
           >
             <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Añadir Tarea
-          </button>
+          </Button>
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 p-5 flex flex-col gap-4">
         {/* Filter bar */}
         {viewMode === 'kanban' && (
           <div
@@ -979,21 +975,21 @@ export default function Tareas() {
             })}
           </div>
         )}
-      </div>
 
-      {modalOpen && (
-        <TaskModal
-          projectId={project?.id}
-          userId={user?.id || tasks[0]?.user_id}
-          initialStatus={initialStatusForNew}
-          existingTask={editingTask}
-          allTasks={tasks}
-          milestones={milestones}
-          dependencies={dependencies}
-          onClose={() => setModalOpen(false)}
-          onSaved={fetchData}
-        />
-      )}
+        {modalOpen && (
+          <TaskModal
+            projectId={project?.id}
+            userId={user?.id || tasks[0]?.user_id}
+            initialStatus={initialStatusForNew}
+            existingTask={editingTask}
+            allTasks={tasks}
+            milestones={milestones}
+            dependencies={dependencies}
+            onClose={() => setModalOpen(false)}
+            onSaved={fetchData}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -1,0 +1,85 @@
+{
+  "sessionID": "headless-1775511646322",
+  "metadata": {
+    "prompt": "[Tú eres el sub-agente. Instrucciones: \"Por favor, analiza el codebase y detecta code smells, como duplicación de código, funciones demasiado largas, o clases con múltiples responsabilidades.\"]",
+    "agent": "sdd-explore",
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "directory": "/home/matias/devhub",
+    "startedAt": 1775511646322
+  },
+  "entries": [
+    {
+      "type": "server_check",
+      "data": {},
+      "timestamp": 1775511646323,
+      "timeStr": "21:40:46"
+    },
+    {
+      "type": "server_ready",
+      "data": {
+        "port": 4153
+      },
+      "timestamp": 1775511646327,
+      "timeStr": "21:40:46"
+    },
+    {
+      "type": "session_create",
+      "data": {
+        "sessionID": "ses_29b424e97ffe8i6dUC69EigO4f"
+      },
+      "timestamp": 1775511646576,
+      "timeStr": "21:40:46"
+    },
+    {
+      "type": "prompt_sent",
+      "data": {
+        "length": 193,
+        "agent": "sdd-explore"
+      },
+      "timestamp": 1775511646577,
+      "timeStr": "21:40:46"
+    },
+    {
+      "type": "sse_connected",
+      "data": {},
+      "timestamp": 1775511646592,
+      "timeStr": "21:40:46"
+    },
+    {
+      "type": "prompt_send_error",
+      "data": {
+        "error": "The operation was aborted due to timeout"
+      },
+      "timestamp": 1775511676579,
+      "timeStr": "21:41:16"
+    },
+    {
+      "type": "sse_disconnected",
+      "data": {
+        "eventsProcessed": 268,
+        "tracesPersisted": 0
+      },
+      "timestamp": 1775511863026,
+      "timeStr": "21:44:23"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "LONG_GAP",
+      "severity": "warning",
+      "message": "Long gap between events: 3m 6s between \"prompt_send_error\" and \"sse_disconnected\"",
+      "timestamp": 1775511863026
+    },
+    {
+      "type": "NO_TOOLS",
+      "severity": "warning",
+      "message": "No tool calls detected"
+    },
+    {
+      "type": "NO_COMPLETION",
+      "severity": "warning",
+      "message": "Session never completed"
+    }
+  ],
+  "completed": false
+}
