@@ -138,6 +138,15 @@ function createEmptyDirectorQueue() {
   };
 }
 
+function createEmptyDirectorBriefingPreview(state = 'empty') {
+  return {
+    state,
+    recipientIds: [],
+    lines: [],
+    previewText: '',
+  };
+}
+
 function normalizeMission(mission = null) {
   if (!mission) return null;
 
@@ -162,6 +171,63 @@ function normalizeMissionParticipant(participant = {}) {
     status: participant.status || 'unknown',
     joined_at: participant.joined_at || null,
   };
+}
+
+function isEligibleDirectorBriefingParticipant(participant = {}) {
+  return Boolean(participant?.agent_id) && participant.role_in_mission !== 'director';
+}
+
+function canonicalizeDirectorBriefingRecipients(participants = [], recipientAgentIds = []) {
+  const selectedIds = new Set(asArray(recipientAgentIds).filter(Boolean));
+
+  return asArray(participants)
+    .filter((participant) => selectedIds.has(participant.agent_id))
+    .filter(isEligibleDirectorBriefingParticipant)
+    .map((participant) => participant.agent_id);
+}
+
+function pushDirectorBriefingLine(lines, label, value) {
+  if (value === undefined || value === null || value === '') return;
+  lines.push(`${label}: ${value}`);
+}
+
+function countMissionPresence(presence = {}) {
+  return {
+    active: asArray(presence.active).length,
+    stale: asArray(presence.stale).length,
+    offline: asArray(presence.offline).length,
+  };
+}
+
+function buildDirectorBriefingLines(missionControl = {}, recipientIds = []) {
+  const lines = [];
+  const presence = countMissionPresence(missionControl.presence);
+
+  pushDirectorBriefingLine(lines, 'Mission', missionControl.mission?.title || null);
+  pushDirectorBriefingLine(lines, 'Status', missionControl.mission?.status || null);
+  pushDirectorBriefingLine(lines, 'Summary', missionControl.mission?.summary || null);
+  pushDirectorBriefingLine(lines, 'Recipients', recipientIds.join(', '));
+  pushDirectorBriefingLine(
+    lines,
+    'Latest message',
+    missionControl.latest_message?.body_summary ||
+      missionControl.recent_messages?.[0]?.body_summary ||
+      null
+  );
+  pushDirectorBriefingLine(
+    lines,
+    'Pending deliveries',
+    String(asArray(missionControl.pending_deliveries).length)
+  );
+  pushDirectorBriefingLine(
+    lines,
+    'Presence',
+    `active ${presence.active} · stale ${presence.stale} · offline ${presence.offline}`
+  );
+  pushDirectorBriefingLine(lines, 'Snapshot', missionControl.snapshot_at || null);
+  pushDirectorBriefingLine(lines, 'Watermark', missionControl.watermark || null);
+
+  return lines;
 }
 
 function normalizeMissionMessage(message = {}) {
@@ -690,6 +756,29 @@ export function selectDirectorMissionSummary(snapshot = {}) {
     offlinePresenceCount: asArray(missionControl.presence?.offline).length,
     snapshotAt: missionControl.snapshot_at || null,
     watermark: missionControl.watermark || null,
+  };
+}
+
+export function selectDirectorBriefingPreview(missionControl = null, recipientAgentIds = []) {
+  if (!missionControl?.mission) return createEmptyDirectorBriefingPreview('empty');
+
+  const requestedRecipientIds = asArray(recipientAgentIds).filter(Boolean);
+  if (requestedRecipientIds.length === 0) return createEmptyDirectorBriefingPreview('empty');
+
+  const recipientIds = canonicalizeDirectorBriefingRecipients(
+    missionControl.participants,
+    requestedRecipientIds
+  );
+
+  if (recipientIds.length === 0) return createEmptyDirectorBriefingPreview('unavailable');
+
+  const lines = buildDirectorBriefingLines(missionControl, recipientIds);
+
+  return {
+    state: 'ready',
+    recipientIds,
+    lines,
+    previewText: lines.join('\n'),
   };
 }
 

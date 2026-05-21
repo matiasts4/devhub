@@ -2,6 +2,7 @@ const {
   composeControlRoomSnapshot,
   extractMissionControlPayload,
   persistMissionControlComposerMessage,
+  selectDirectorBriefingPreview,
   selectDirectorMissionSummary,
   selectDirectorQueue,
   selectControlRoomHeader,
@@ -17,6 +18,24 @@ const {
   selectControlRoomErrors,
 } = require('../swarmControl');
 const { buildControlRoomInput } = require('./fixtures/controlRoomSnapshot');
+
+function buildMissionControl(overrides = {}) {
+  const baseInput = buildControlRoomInput();
+
+  return selectControlRoomMission(
+    composeControlRoomSnapshot(
+      buildControlRoomInput({
+        mission_control: {
+          ...baseInput.mission_control,
+          recent_messages: [baseInput.mission_control.latest_message],
+          snapshot_at: '2026-05-19T11:01:40.000Z',
+          watermark: 'mission-watermark-1',
+          ...overrides,
+        },
+      })
+    )
+  );
+}
 
 describe('composeControlRoomSnapshot', () => {
   test('prefers durable supervisor authority over live hints and exposes panel selectors', () => {
@@ -739,6 +758,125 @@ describe('composeControlRoomSnapshot', () => {
         artifact: null,
         supervisor: null,
       },
+    });
+  });
+
+  test('selectDirectorBriefingPreview returns deterministic preview text from mission_control only', () => {
+    const missionControl = buildMissionControl({
+      ignored_queue: {
+        items: [{ title: 'NOPE' }],
+      },
+      approvals: [{ reason_class: 'approval_required' }],
+    });
+
+    const first = selectDirectorBriefingPreview(missionControl, ['agent-worker-1']);
+    const second = selectDirectorBriefingPreview(missionControl, ['agent-worker-1']);
+
+    expect(first).toEqual(second);
+    expect(first).toEqual({
+      state: 'ready',
+      recipientIds: ['agent-worker-1'],
+      lines: [
+        'Mission: Misión Director',
+        'Status: active',
+        'Summary: Coordinar la ejecución y QA',
+        'Recipients: agent-worker-1',
+        'Latest message: Tomá la ejecución del workspace principal',
+        'Pending deliveries: 1',
+        'Presence: active 1 · stale 1 · offline 1',
+        'Snapshot: 2026-05-19T11:01:40.000Z',
+        'Watermark: mission-watermark-1',
+      ],
+      previewText: [
+        'Mission: Misión Director',
+        'Status: active',
+        'Summary: Coordinar la ejecución y QA',
+        'Recipients: agent-worker-1',
+        'Latest message: Tomá la ejecución del workspace principal',
+        'Pending deliveries: 1',
+        'Presence: active 1 · stale 1 · offline 1',
+        'Snapshot: 2026-05-19T11:01:40.000Z',
+        'Watermark: mission-watermark-1',
+      ].join('\n'),
+    });
+    expect(first.previewText).not.toContain('approval_required');
+    expect(first.previewText).not.toContain('NOPE');
+  });
+
+  test('selectDirectorBriefingPreview canonicalizes selected recipients by participant order', () => {
+    const missionControl = buildMissionControl({
+      participants: [
+        {
+          participant_id: 'participant-1',
+          agent_id: 'agent-director',
+          role_in_mission: 'director',
+          status: 'active',
+          joined_at: '2026-05-19T11:00:00.000Z',
+        },
+        {
+          participant_id: 'participant-2',
+          agent_id: 'agent-worker-2',
+          role_in_mission: 'reviewer',
+          status: 'active',
+          joined_at: '2026-05-19T11:00:10.000Z',
+        },
+        {
+          participant_id: 'participant-3',
+          agent_id: 'agent-worker-1',
+          role_in_mission: 'executor',
+          status: 'active',
+          joined_at: '2026-05-19T11:00:05.000Z',
+        },
+      ],
+      pending_deliveries: [
+        {
+          delivery_id: 'delivery-1',
+          recipient_agent_id: 'agent-worker-1',
+          channel: 'telegram',
+          status: 'retry_pending',
+        },
+        {
+          delivery_id: 'delivery-2',
+          recipient_agent_id: 'agent-worker-2',
+          channel: 'local_snapshot',
+          status: 'pending',
+        },
+      ],
+    });
+
+    expect(
+      selectDirectorBriefingPreview(missionControl, [
+        'agent-worker-1',
+        'agent-worker-2',
+        'agent-worker-1',
+      ])
+    ).toMatchObject({
+      state: 'ready',
+      recipientIds: ['agent-worker-2', 'agent-worker-1'],
+      lines: expect.arrayContaining(['Recipients: agent-worker-2, agent-worker-1']),
+    });
+  });
+
+  test('selectDirectorBriefingPreview degrades safely for missing, empty, and ineligible states', () => {
+    expect(selectDirectorBriefingPreview(null, ['agent-worker-1'])).toEqual({
+      state: 'empty',
+      recipientIds: [],
+      lines: [],
+      previewText: '',
+    });
+
+    expect(selectDirectorBriefingPreview(buildMissionControl(), [])).toEqual({
+      state: 'empty',
+      recipientIds: [],
+      lines: [],
+      previewText: '',
+    });
+
+    expect(selectDirectorBriefingPreview(buildMissionControl(), ['agent-director'])).toEqual({
+      state: 'unavailable',
+      recipientIds: [],
+      lines: [],
+      previewText: '',
     });
   });
 

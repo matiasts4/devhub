@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { selectDirectorBriefingPreview } from '@/lib/operations/swarmControl';
 import { formatToken, metaTextStyle, panelShellStyle, renderEmptyCopy } from './utils';
 
 const STATUS_LABELS = Object.freeze({
@@ -74,6 +75,81 @@ function getEligibleParticipants(participants = [], mission = null) {
   );
 }
 
+function DirectorBriefingPreview({ preview }) {
+  return (
+    <section
+      className="rounded-lg border p-3"
+      style={panelShellStyle()}
+      aria-label="Vista previa para dirección"
+    >
+      <h4 className="text-sm font-semibold">Vista previa para dirección</h4>
+      <p className="mt-1 text-xs" style={metaTextStyle()}>
+        Derivada solo del snapshot durable actual y la selección local.
+      </p>
+
+      {preview.state === 'ready' ? (
+        <pre
+          className="mt-3 whitespace-pre-wrap text-xs leading-6"
+          style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono, monospace)' }}
+        >
+          {preview.previewText}
+        </pre>
+      ) : preview.state === 'unavailable' ? (
+        <div className="mt-3">
+          {renderEmptyCopy(
+            'La selección actual no tiene destinatarios elegibles en este snapshot.'
+          )}
+        </div>
+      ) : (
+        <div className="mt-3">
+          {renderEmptyCopy(
+            'Seleccioná al menos un destinatario activo para generar la vista previa.'
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function updateSelectedRecipientIds(current, agentId, checked) {
+  if (!agentId) return current;
+  if (checked) {
+    return current.includes(agentId) ? current : [...current, agentId];
+  }
+  return current.filter((value) => value !== agentId);
+}
+
+function handleRecipientToggle(setSubmitError, setSelectedRecipientIds, agentId, checked) {
+  setSubmitError('');
+  setSelectedRecipientIds((current) => updateSelectedRecipientIds(current, agentId, checked));
+}
+
+function orderSelectedRecipientIds(eligibleParticipants, selectedRecipientIds) {
+  const selectedIds = new Set(selectedRecipientIds.filter(Boolean));
+
+  return eligibleParticipants
+    .map((participant) => participant.agent_id)
+    .filter((agentId) => selectedIds.has(agentId));
+}
+
+function buildPreviewState(missionControl, selectedRecipientIds, eligibleParticipants) {
+  const selectedEligibleRecipientIds = orderSelectedRecipientIds(
+    eligibleParticipants,
+    selectedRecipientIds
+  );
+
+  if (selectedRecipientIds.length > 0 && selectedEligibleRecipientIds.length === 0) {
+    return {
+      state: 'unavailable',
+      recipientIds: [],
+      lines: [],
+      previewText: '',
+    };
+  }
+
+  return selectDirectorBriefingPreview(missionControl, selectedEligibleRecipientIds);
+}
+
 export default function MissionKernelPanel({ missionControl, onComposerSubmit = null }) {
   const mission = missionControl?.mission || null;
   const participants = missionControl?.participants || [];
@@ -120,6 +196,7 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
 
           <ComposerSection
             mission={mission}
+            missionControl={missionControl}
             eligibleParticipants={eligibleParticipants}
             onComposerSubmit={onComposerSubmit}
             composerFormRef={composerFormRef}
@@ -266,6 +343,7 @@ function ParticipantsSection({ participants }) {
 
 function ComposerSection({
   mission,
+  missionControl,
   eligibleParticipants,
   onComposerSubmit,
   composerFormRef,
@@ -275,6 +353,12 @@ function ComposerSection({
   setSubmitError,
   canSubmit,
 }) {
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState([]);
+  const preview = useMemo(
+    () => buildPreviewState(missionControl, selectedRecipientIds, eligibleParticipants),
+    [eligibleParticipants, missionControl, selectedRecipientIds]
+  );
+
   return (
     <section className="rounded-xl border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Composer local</h3>
@@ -298,10 +382,10 @@ function ComposerSection({
           onSubmit={async (event) => {
             event.preventDefault();
             const formData = new window.FormData(event.currentTarget);
-            const recipientAgentIds = formData
-              .getAll('recipient_agent_ids')
-              .map((value) => String(value).trim())
-              .filter(Boolean);
+            const recipientAgentIds = orderSelectedRecipientIds(
+              eligibleParticipants,
+              selectedRecipientIds
+            );
             const bodySummary = String(formData.get('body_summary') || '').trim();
 
             if (recipientAgentIds.length === 0) {
@@ -325,6 +409,7 @@ function ComposerSection({
                 body_summary: bodySummary,
               });
               composerFormRef.current?.reset();
+              setSelectedRecipientIds([]);
             } catch (error) {
               setSubmitError(error?.message || 'No se pudo guardar el mensaje local.');
             } finally {
@@ -346,6 +431,14 @@ function ComposerSection({
                       type="checkbox"
                       name="recipient_agent_ids"
                       value={participant.agent_id}
+                      onChange={(event) =>
+                        handleRecipientToggle(
+                          setSubmitError,
+                          setSelectedRecipientIds,
+                          participant.agent_id,
+                          event.currentTarget.checked
+                        )
+                      }
                     />
                     <span>{participant.agent_id}</span>
                     <span className="text-xs" style={metaTextStyle()}>
@@ -356,6 +449,8 @@ function ComposerSection({
               })}
             </div>
           </fieldset>
+
+          <DirectorBriefingPreview preview={preview} />
 
           <label className="flex flex-col gap-2 text-sm font-medium">
             <span>Mensaje breve</span>

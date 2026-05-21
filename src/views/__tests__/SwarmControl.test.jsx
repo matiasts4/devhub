@@ -101,10 +101,9 @@ async function changeField(element, value) {
 }
 
 async function toggleCheckbox(element, checked = true) {
-  element.checked = checked;
-  element.dispatchEvent(new window.Event('click', { bubbles: true }));
-  element.dispatchEvent(new window.Event('input', { bubbles: true }));
-  element.dispatchEvent(new window.Event('change', { bubbles: true }));
+  if (element.checked !== checked) {
+    element.click();
+  }
   await flushEffects();
 }
 
@@ -252,6 +251,59 @@ function buildDirectorQueueInput() {
       },
     },
   });
+}
+
+function buildPreviewInput(overrides = {}) {
+  const base = buildControlRoomInput();
+
+  return {
+    ...base,
+    mission_control: {
+      ...base.mission_control,
+      participants: [
+        {
+          participant_id: 'participant-1',
+          agent_id: 'agent-director',
+          role_in_mission: 'director',
+          status: 'active',
+          joined_at: '2026-05-19T11:00:00.000Z',
+        },
+        {
+          participant_id: 'participant-2',
+          agent_id: 'agent-worker-2',
+          role_in_mission: 'reviewer',
+          status: 'active',
+          joined_at: '2026-05-19T11:00:03.000Z',
+        },
+        {
+          participant_id: 'participant-3',
+          agent_id: 'agent-worker-1',
+          role_in_mission: 'executor',
+          status: 'active',
+          joined_at: '2026-05-19T11:00:05.000Z',
+        },
+      ],
+      recent_messages: [
+        {
+          message_id: 'message-1',
+          sender_agent_id: 'agent-director',
+          message_kind: 'handoff',
+          body_summary: 'Tomá la ejecución del workspace principal',
+          created_at: '2026-05-19T11:01:00.000Z',
+        },
+      ],
+      latest_message: {
+        message_id: 'message-1',
+        sender_agent_id: 'agent-director',
+        message_kind: 'handoff',
+        body_summary: 'Tomá la ejecución del workspace principal',
+        created_at: '2026-05-19T11:01:00.000Z',
+      },
+      snapshot_at: '2026-05-19T11:01:40.000Z',
+      watermark: 'mission-watermark-1',
+      ...overrides,
+    },
+  };
 }
 
 describe('SwarmControl control room composition', () => {
@@ -799,6 +851,118 @@ describe('SwarmControl control room composition', () => {
     expect(
       view.container.querySelector('textarea[aria-label="Mensaje breve para la misión"]')
     ).not.toBeNull();
+  });
+
+  test('renders empty and ready briefing preview states and updates them when recipient selection changes', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildPreviewInput() });
+    const worker1 = view.container.querySelector('input[type="checkbox"][value="agent-worker-1"]');
+    const worker2 = view.container.querySelector('input[type="checkbox"][value="agent-worker-2"]');
+
+    expect(view.container.textContent).toContain('Vista previa para dirección');
+    expect(view.container.textContent).toContain(
+      'Seleccioná al menos un destinatario activo para generar la vista previa.'
+    );
+
+    await toggleCheckbox(worker1, true);
+
+    expect(view.container.textContent).toContain('Mission: Misión Director');
+    expect(view.container.textContent).toContain('Recipients: agent-worker-1');
+    expect(view.container.textContent).toContain(
+      'Latest message: Tomá la ejecución del workspace principal'
+    );
+
+    await toggleCheckbox(worker2, true);
+
+    expect(view.container.textContent).toContain('Recipients: agent-worker-2, agent-worker-1');
+
+    await toggleCheckbox(worker1, false);
+
+    expect(view.container.textContent).toContain('Recipients: agent-worker-2');
+    expect(view.container.textContent).not.toContain('Recipients: agent-worker-2, agent-worker-1');
+  });
+
+  test('renders unavailable briefing preview when the local selection becomes ineligible after snapshot refresh', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildPreviewInput() });
+    const worker2 = view.container.querySelector('input[type="checkbox"][value="agent-worker-2"]');
+
+    await toggleCheckbox(worker2, true);
+    expect(view.container.textContent).toContain('Recipients: agent-worker-2');
+
+    await view.rerender(
+      React.createElement(SwarmControl, {
+        snapshotInput: buildPreviewInput({
+          participants: [
+            {
+              participant_id: 'participant-1',
+              agent_id: 'agent-director',
+              role_in_mission: 'director',
+              status: 'active',
+              joined_at: '2026-05-19T11:00:00.000Z',
+            },
+            {
+              participant_id: 'participant-2',
+              agent_id: 'agent-worker-2',
+              role_in_mission: 'reviewer',
+              status: 'paused',
+              joined_at: '2026-05-19T11:00:03.000Z',
+            },
+            {
+              participant_id: 'participant-3',
+              agent_id: 'agent-worker-1',
+              role_in_mission: 'executor',
+              status: 'active',
+              joined_at: '2026-05-19T11:00:05.000Z',
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(view.container.textContent).toContain('Vista previa para dirección');
+    expect(view.container.textContent).toContain(
+      'La selección actual no tiene destinatarios elegibles en este snapshot.'
+    );
+  });
+
+  test('keeps submit payload limited to the legacy contract even when preview data is visible', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        control_room_snapshot_input: {
+          mission_control: buildPreviewInput().mission_control,
+        },
+      }),
+    });
+
+    const view = await renderSwarmControl({ snapshotInput: buildPreviewInput() });
+    const worker1 = view.container.querySelector('input[type="checkbox"][value="agent-worker-1"]');
+    const worker2 = view.container.querySelector('input[type="checkbox"][value="agent-worker-2"]');
+    const textarea = view.container.querySelector(
+      'textarea[aria-label="Mensaje breve para la misión"]'
+    );
+    const submitButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Guardar mensaje local')
+    );
+    const form = submitButton?.closest('form');
+
+    await toggleCheckbox(worker1, true);
+    await toggleCheckbox(worker2, true);
+    await changeField(textarea, 'Necesito update del workspace hoy');
+
+    expect(view.container.textContent).toContain('Recipients: agent-worker-2, agent-worker-1');
+
+    await submitForm(form);
+
+    const payload = JSON.parse(global.fetch.mock.calls[0][1].body);
+
+    expect(payload).toEqual({
+      action: 'create_local_mission_message',
+      recipient_agent_ids: ['agent-worker-2', 'agent-worker-1'],
+      body_summary: 'Necesito update del workspace hoy',
+    });
+    expect(payload.previewText).toBeUndefined();
+    expect(payload.lines).toBeUndefined();
+    expect(payload.state).toBeUndefined();
   });
 
   test('persists a local mission message and reflects it in the current control room snapshot', async () => {
