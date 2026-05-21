@@ -54,17 +54,44 @@ describe('GET /api/agenthub/operations/health', () => {
           {
             message_id: 'message-1',
             body_summary: 'Tomá la ejecución del workspace principal',
+            created_at: '2026-04-10T17:24:30.000Z',
+            related_task_id: 'task-1',
+            related_workspace_id: 'ws-1',
+            related_run_id: 'run-1',
+            evidence_ref: 'evidence://mission-message/message-1',
           },
         ],
         latest_message: {
           message_id: 'message-1',
           body_summary: 'Tomá la ejecución del workspace principal',
+          created_at: '2026-04-10T17:24:30.000Z',
+          related_task_id: 'task-1',
+          related_workspace_id: 'ws-1',
+          related_run_id: 'run-1',
+          evidence_ref: 'evidence://mission-message/message-1',
         },
-        pending_deliveries: [{ delivery_id: 'delivery-1', status: 'retry_pending' }],
+        pending_deliveries: [
+          {
+            delivery_id: 'delivery-1',
+            status: 'retry_pending',
+            recipient_agent_id: 'agent-director',
+            channel: 'local_snapshot',
+            last_attempt_at: '2026-04-10T17:24:40.000Z',
+            evidence_ref: 'evidence://delivery/delivery-1',
+          },
+        ],
         snapshot_at: '2026-04-10T17:25:00.000Z',
         watermark: 'mission-control-watermark-1',
         presence: {
-          active: [{ agent_id: 'agent-director' }],
+          active: [
+            {
+              presence_id: 'presence-1',
+              agent_id: 'agent-director',
+              last_seen_at: '2026-04-10T17:24:50.000Z',
+              effective_state: 'online',
+              evidence_ref: 'evidence://presence/presence-1',
+            },
+          ],
           stale: [],
           offline: [],
         },
@@ -94,6 +121,23 @@ describe('GET /api/agenthub/operations/health', () => {
         telegram: expect.objectContaining({ key: 'telegram', status: 'healthy' }),
         session_stream: expect.objectContaining({ key: 'session-stream', status: 'degraded' }),
       },
+      evidence_timeline: [
+        expect.objectContaining({
+          item_id: 'presence-1',
+          kind: 'presence',
+          linked_ids: expect.objectContaining({ mission_id: 'mission-1' }),
+        }),
+        expect.objectContaining({
+          item_id: 'delivery-1',
+          kind: 'delivery',
+          linked_ids: expect.objectContaining({ mission_id: 'mission-1' }),
+        }),
+        expect.objectContaining({
+          item_id: 'message-1',
+          kind: 'mission_message',
+          linked_ids: expect.objectContaining({ mission_id: 'mission-1' }),
+        }),
+      ],
       mission_control: expect.objectContaining({
         mission: expect.objectContaining({ mission_id: 'mission-1', title: 'Misión Director' }),
         recent_messages: [
@@ -317,6 +361,336 @@ describe('GET /api/agenthub/operations/health', () => {
         supervisor: null,
       },
     });
+  });
+
+  test('projects evidence_timeline from durable mission snapshot truth only', async () => {
+    const { GET } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await GET(
+      new Request('http://localhost/api/agenthub/operations/health'),
+      undefined,
+      {
+        now: '2026-05-20T18:10:00.000Z',
+        getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+        getQueueStatus: () => ({ length: 0, items: [] }),
+        getActiveAgentCount: () => 0,
+        getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+        getSessionsHealth: async () => ({
+          active_sessions: [],
+          stale_sessions: [],
+          aborted_count: 0,
+          live_check_available: true,
+          checked_at: '2026-05-20T18:10:00.000Z',
+        }),
+        getTelegramStatus: async () => ({
+          bot_connected: true,
+          active_chats: 0,
+          recent_errors: 0,
+          last_activity: '2026-05-20T18:10:00.000Z',
+        }),
+        getMissionSnapshot: async () => ({
+          mission: {
+            mission_id: 'mission-ops-1',
+            task_id: 'task-ops-1',
+            workspace_id: 'ws-ops-1',
+            run_id: 'run-ops-1',
+            title: 'Mission Ops',
+            status: 'active',
+          },
+          recent_messages: [
+            {
+              message_id: 'message-ops-1',
+              body_summary: 'Director directive',
+              created_at: '2026-05-20T18:09:00.000Z',
+              evidence_ref: 'evidence://mission-message/message-ops-1',
+              related_task_id: 'task-ops-1',
+              related_workspace_id: 'ws-ops-1',
+              related_run_id: 'run-ops-1',
+            },
+          ],
+          pending_deliveries: [
+            {
+              delivery_id: 'delivery-ops-1',
+              status: 'retry_pending',
+              recipient_agent_id: 'agent-executor-1',
+              channel: 'telegram',
+              last_attempt_at: '2026-05-20T18:09:40.000Z',
+              evidence_ref: 'evidence://delivery/delivery-ops-1',
+            },
+          ],
+          presence: {
+            active: [
+              {
+                presence_id: 'presence-ops-1',
+                agent_id: 'agent-executor-1',
+                workspace_id: 'ws-ops-1',
+                run_id: 'run-ops-1',
+                effective_state: 'online',
+                status_summary: 'Executor online',
+                last_seen_at: '2026-05-20T18:09:20.000Z',
+                evidence_ref: 'evidence://presence/presence-ops-1',
+              },
+            ],
+            stale: [],
+            offline: [],
+          },
+          runs: [
+            {
+              run_id: 'run-ops-1',
+              task_id: 'task-ops-1',
+              workspace_id: 'ws-ops-1',
+              status: 'running',
+              summary: 'Run still active',
+              started_at: '2026-05-20T18:09:40.000Z',
+              evidence_ref: 'evidence://run/run-ops-1',
+            },
+          ],
+          artifacts: [
+            {
+              artifact_id: 'artifact-ops-1',
+              run_id: 'run-ops-1',
+              task_id: 'task-ops-1',
+              workspace_id: 'ws-ops-1',
+              kind: 'decision.note',
+              summary: 'Artifact captured',
+              observed_at: '2026-05-20T18:09:40.000Z',
+              evidence_ref: 'evidence://artifact/artifact-ops-1',
+              secondary_session_evidence: [
+                {
+                  source: 'agent_trace',
+                  observed_at: '2026-05-20T18:09:42.000Z',
+                  summary: 'TTY trace linked to artifact',
+                },
+              ],
+            },
+          ],
+          supervisor_snapshots: [
+            {
+              task_id: 'task-ops-1',
+              workspace_id: 'ws-ops-1',
+              run_id: 'run-ops-1',
+              supervisor_state: 'awaiting_evidence',
+              updated_at: '2026-05-20T18:09:40.000Z',
+              evidence_ref: 'evidence://supervisor/task-ops-1',
+            },
+          ],
+          approval_checkpoints: [
+            {
+              checkpoint_key: 'approval-ops-1',
+              task_id: 'task-ops-1',
+              workspace_id: 'ws-ops-1',
+              run_id: 'run-ops-1',
+              reason_class: 'approval_required',
+              requested_at: '2026-05-20T18:09:40.000Z',
+              evidence_ref: 'evidence://approval/approval-ops-1',
+            },
+          ],
+          agent_traces: [
+            {
+              id: 'trace-ops-1',
+              created_at: '2026-05-20T18:09:50.000Z',
+              summary: 'Runtime-only trace must not become primary truth',
+            },
+          ],
+        }),
+      }
+    );
+    const snapshot = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(snapshot.control_room_snapshot_input.evidence_timeline).toEqual([
+      {
+        item_id: 'approval-ops-1',
+        kind: 'approval_checkpoint',
+        occurred_at: '2026-05-20T18:09:40.000Z',
+        authority: 'authoritative',
+        freshness: 'current',
+        summary: 'approval_required',
+        linked_ids: {
+          mission_id: 'mission-ops-1',
+          task_id: 'task-ops-1',
+          workspace_id: 'ws-ops-1',
+          run_id: 'run-ops-1',
+          artifact_id: null,
+          approval_checkpoint_key: 'approval-ops-1',
+        },
+        evidence_ref: 'evidence://approval/approval-ops-1',
+      },
+      {
+        item_id: 'task-ops-1',
+        kind: 'supervisor_snapshot',
+        occurred_at: '2026-05-20T18:09:40.000Z',
+        authority: 'authoritative',
+        freshness: 'current',
+        summary: 'awaiting_evidence',
+        linked_ids: {
+          mission_id: 'mission-ops-1',
+          task_id: 'task-ops-1',
+          workspace_id: 'ws-ops-1',
+          run_id: 'run-ops-1',
+          artifact_id: null,
+          approval_checkpoint_key: null,
+        },
+        evidence_ref: 'evidence://supervisor/task-ops-1',
+      },
+      {
+        item_id: 'artifact-ops-1',
+        kind: 'artifact',
+        occurred_at: '2026-05-20T18:09:40.000Z',
+        authority: 'authoritative',
+        freshness: 'current',
+        summary: 'Artifact captured',
+        linked_ids: {
+          mission_id: 'mission-ops-1',
+          task_id: 'task-ops-1',
+          workspace_id: 'ws-ops-1',
+          run_id: 'run-ops-1',
+          artifact_id: 'artifact-ops-1',
+          approval_checkpoint_key: null,
+        },
+        evidence_ref: 'evidence://artifact/artifact-ops-1',
+        secondary_session_evidence: [
+          {
+            source: 'agent_trace',
+            observed_at: '2026-05-20T18:09:42.000Z',
+            summary: 'TTY trace linked to artifact',
+          },
+        ],
+      },
+      {
+        item_id: 'run-ops-1',
+        kind: 'run',
+        occurred_at: '2026-05-20T18:09:40.000Z',
+        authority: 'authoritative',
+        freshness: 'current',
+        summary: 'Run still active',
+        linked_ids: {
+          mission_id: 'mission-ops-1',
+          task_id: 'task-ops-1',
+          workspace_id: 'ws-ops-1',
+          run_id: 'run-ops-1',
+          artifact_id: null,
+          approval_checkpoint_key: null,
+        },
+        evidence_ref: 'evidence://run/run-ops-1',
+      },
+      {
+        item_id: 'delivery-ops-1',
+        kind: 'delivery',
+        occurred_at: '2026-05-20T18:09:40.000Z',
+        authority: 'authoritative',
+        freshness: 'current',
+        summary: 'retry_pending · agent-executor-1 · telegram',
+        linked_ids: {
+          mission_id: 'mission-ops-1',
+          task_id: 'task-ops-1',
+          workspace_id: 'ws-ops-1',
+          run_id: 'run-ops-1',
+          artifact_id: null,
+          approval_checkpoint_key: null,
+        },
+        evidence_ref: 'evidence://delivery/delivery-ops-1',
+      },
+      {
+        item_id: 'presence-ops-1',
+        kind: 'presence',
+        occurred_at: '2026-05-20T18:09:20.000Z',
+        authority: 'authoritative',
+        freshness: 'current',
+        summary: 'Executor online',
+        linked_ids: {
+          mission_id: 'mission-ops-1',
+          task_id: 'task-ops-1',
+          workspace_id: 'ws-ops-1',
+          run_id: 'run-ops-1',
+          artifact_id: null,
+          approval_checkpoint_key: null,
+        },
+        evidence_ref: 'evidence://presence/presence-ops-1',
+      },
+      {
+        item_id: 'message-ops-1',
+        kind: 'mission_message',
+        occurred_at: '2026-05-20T18:09:00.000Z',
+        authority: 'authoritative',
+        freshness: 'current',
+        summary: 'Director directive',
+        linked_ids: {
+          mission_id: 'mission-ops-1',
+          task_id: 'task-ops-1',
+          workspace_id: 'ws-ops-1',
+          run_id: 'run-ops-1',
+          artifact_id: null,
+          approval_checkpoint_key: null,
+        },
+        evidence_ref: 'evidence://mission-message/message-ops-1',
+      },
+    ]);
+  });
+
+  test('reads evidence_timeline without claim or workspace mutation side effects', async () => {
+    const getExecutionQueue = jest.fn().mockResolvedValue({ total: 0, queue: [] });
+    const getNextTask = jest.fn();
+    const getWorkspaceEvidence = jest.fn();
+    const claimNextTask = jest.fn();
+    const { GET } = require('../../../src/app/api/agenthub/operations/health/route');
+
+    const response = await GET(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=550e8400-e29b-41d4-a716-446655440000'
+      ),
+      undefined,
+      {
+        now: '2026-05-20T18:15:00.000Z',
+        getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+        getQueueStatus: () => ({ length: 0, items: [] }),
+        getActiveAgentCount: () => 0,
+        getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+        getSessionsHealth: async () => ({
+          active_sessions: [],
+          stale_sessions: [],
+          aborted_count: 0,
+          live_check_available: true,
+          checked_at: '2026-05-20T18:15:00.000Z',
+        }),
+        getTelegramStatus: async () => ({
+          bot_connected: true,
+          active_chats: 0,
+          recent_errors: 0,
+          last_activity: '2026-05-20T18:15:00.000Z',
+        }),
+        getMissionSnapshot: async () => ({
+          mission: { mission_id: 'mission-readonly-1', status: 'active' },
+          recent_messages: [
+            {
+              message_id: 'message-readonly-1',
+              body_summary: 'Read-only timeline item',
+              created_at: '2026-05-20T18:14:00.000Z',
+              evidence_ref: 'evidence://mission-message/message-readonly-1',
+            },
+          ],
+          pending_deliveries: [],
+          presence: { active: [], stale: [], offline: [] },
+        }),
+        getExecutionQueue,
+        getNextTask,
+        getWorkspaceEvidence,
+        claimNextTask,
+      }
+    );
+    const snapshot = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(snapshot.control_room_snapshot_input.evidence_timeline).toEqual([
+      expect.objectContaining({ item_id: 'message-readonly-1', kind: 'mission_message' }),
+    ]);
+    expect(getExecutionQueue).toHaveBeenCalledWith({
+      projectId: '550e8400-e29b-41d4-a716-446655440000',
+      includeBlocked: true,
+    });
+    expect(getNextTask).not.toHaveBeenCalled();
+    expect(getWorkspaceEvidence).not.toHaveBeenCalled();
+    expect(claimNextTask).not.toHaveBeenCalled();
   });
 
   test('creates a local mission message with pending local deliveries only', async () => {

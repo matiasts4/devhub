@@ -514,6 +514,155 @@ describe('SwarmControl control room composition', () => {
     expect(handoffButton.disabled).toBe(false);
   });
 
+  test('renders a read-only evidence timeline panel from the current normalized snapshot only', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    const panel = view.container.querySelector('[aria-label="Timeline de evidencia"]');
+    const text = panel?.textContent || '';
+
+    expect(panel).not.toBeNull();
+    expect(text).toContain('Timeline de evidencia');
+    expect(text).toContain('Solo lectura');
+    expect(text).toContain('Narrativa ordenada desde verdad durable ya normalizada.');
+    expect(text).toContain('QA artifact captured');
+    expect(text).toContain('Tomá la ejecución del workspace principal');
+    expect(text).not.toContain('Tomar siguiente durable');
+    expect(panel?.querySelector('button')).toBeNull();
+    expect(panel?.querySelector('form')).toBeNull();
+  });
+
+  test('renders evidence timeline rows in deterministic normalized order and ignores unlinked session truth', async () => {
+    const input = buildControlRoomInput({
+      evidence_timeline: [
+        {
+          item_id: 'message-1',
+          kind: 'mission_message',
+          occurred_at: '2026-05-19T11:01:00.000Z',
+          authority: 'authoritative',
+          freshness: 'current',
+          summary: 'Tomá la ejecución del workspace principal',
+          linked_ids: {
+            mission_id: 'mission-1',
+            task_id: 'task-1',
+            workspace_id: 'ws-1',
+            run_id: 'run-1',
+          },
+          evidence_ref: 'evidence://mission-message/message-1',
+        },
+        {
+          item_id: 'artifact-1',
+          kind: 'artifact',
+          occurred_at: '2026-05-19T11:01:40.000Z',
+          authority: 'authoritative',
+          freshness: 'current',
+          summary: 'QA artifact captured',
+          linked_ids: {
+            mission_id: 'mission-1',
+            task_id: 'task-1',
+            workspace_id: 'ws-1',
+            run_id: 'run-1',
+            artifact_id: 'artifact-1',
+          },
+          evidence_ref: 'evidence://artifact/artifact-1',
+        },
+        {
+          item_id: 'approval-task-1',
+          kind: 'approval_checkpoint',
+          occurred_at: '2026-05-19T11:01:40.000Z',
+          authority: 'authoritative',
+          freshness: 'current',
+          summary: 'Approval required for task-1',
+          linked_ids: {
+            mission_id: 'mission-1',
+            task_id: 'task-1',
+            workspace_id: 'ws-1',
+            run_id: 'run-1',
+            approval_checkpoint_key: 'task-1:run-1',
+          },
+          evidence_ref: 'evidence://approval/task-1',
+        },
+        {
+          item_id: 'session-trace-1',
+          kind: 'session_trace',
+          occurred_at: '2026-05-19T11:02:10.000Z',
+          authority: 'cached',
+          freshness: 'current',
+          summary: 'Unlinked session trace should stay secondary only',
+          linked_ids: {},
+          evidence_ref: 'session://trace/1',
+        },
+      ],
+    });
+    const view = await renderSwarmControl({ snapshotInput: input });
+    const panel = view.container.querySelector('[aria-label="Timeline de evidencia"]');
+    const cards = Array.from(panel?.querySelectorAll('article') || []);
+
+    expect(cards).toHaveLength(3);
+    expect(cards[0]?.textContent).toContain('Approval required for task-1');
+    expect(cards[1]?.textContent).toContain('QA artifact captured');
+    expect(cards[2]?.textContent).toContain('Tomá la ejecución del workspace principal');
+    expect(panel?.textContent).not.toContain('Unlinked session trace should stay secondary only');
+  });
+
+  test('renders durable empty state for evidence timeline without mutation prompts', async () => {
+    const view = await renderSwarmControl({
+      snapshotInput: buildControlRoomInput({
+        evidence_timeline: [],
+      }),
+    });
+    const panel = view.container.querySelector('[aria-label="Timeline de evidencia"]');
+    const text = panel?.textContent || '';
+
+    expect(text).toContain('Timeline de evidencia');
+    expect(text).toContain('Sin eventos durables en este snapshot.');
+    expect(panel?.querySelectorAll('article')).toHaveLength(0);
+    expect(text).not.toContain('approval_required');
+    expect(panel?.querySelector('button')).toBeNull();
+  });
+
+  test('labels linked secondary session evidence without promoting it to primary truth', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    const panel = view.container.querySelector('[aria-label="Timeline de evidencia"]');
+    const artifactCard = Array.from(panel?.querySelectorAll('article') || []).find((article) =>
+      article.textContent?.includes('QA artifact captured')
+    );
+    const text = artifactCard?.textContent || '';
+
+    expect(text).toContain('QA artifact captured');
+    expect(text).toContain('Secondary session evidence');
+    expect(text).toContain('secondary');
+    expect(text).toContain('Terminal showed QA completion locally');
+  });
+
+  test('renders missing linked evidence explicitly in the evidence timeline panel', async () => {
+    const view = await renderSwarmControl({
+      snapshotInput: buildControlRoomInput({
+        evidence_timeline: [
+          {
+            item_id: 'artifact-missing-link',
+            kind: 'artifact',
+            occurred_at: '2026-05-19T11:03:00.000Z',
+            authority: 'authoritative',
+            freshness: 'degraded',
+            summary: 'Artifact durable sin row enlazada',
+            linked_ids: {
+              mission_id: 'mission-1',
+              task_id: 'task-1',
+              workspace_id: 'ws-1',
+              run_id: 'run-1',
+            },
+            missing_source: 'artifact evidence',
+          },
+        ],
+      }),
+    });
+    const panel = view.container.querySelector('[aria-label="Timeline de evidencia"]');
+    const text = panel?.textContent || '';
+
+    expect(text).toContain('Artifact durable sin row enlazada');
+    expect(text).toContain('Fuente faltante: evidencia de artefacto');
+    expect(text).toContain('Sin evidencia');
+  });
+
   test('renders blocked queue badges and checkpoint-before-next-claim copy with bounded handoff control', async () => {
     const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
     const panel = view.container.querySelector('[aria-label="Cola del director"]');

@@ -15,9 +15,13 @@ const {
   selectControlRoomAgentTeams,
   selectControlRoomTeamMembers,
   selectControlRoomDiagnostics,
+  selectControlRoomEvidenceTimeline,
   selectControlRoomErrors,
 } = require('../swarmControl');
-const { buildControlRoomInput } = require('./fixtures/controlRoomSnapshot');
+const {
+  buildControlRoomInput,
+  buildEvidenceTimelineInput,
+} = require('./fixtures/controlRoomSnapshot');
 
 function buildMissionControl(overrides = {}) {
   const baseInput = buildControlRoomInput();
@@ -759,6 +763,117 @@ describe('composeControlRoomSnapshot', () => {
         supervisor: null,
       },
     });
+  });
+
+  test('selectControlRoomEvidenceTimeline returns deterministic durable order with stable tie-breakers', () => {
+    const input = buildEvidenceTimelineInput();
+    const shuffled = [input[2], input[3], input[1], input[0]];
+    const snapshot = composeControlRoomSnapshot({
+      ...buildControlRoomInput(),
+      evidence_timeline: shuffled,
+    });
+
+    expect(selectControlRoomEvidenceTimeline(snapshot)).toEqual([
+      expect.objectContaining({
+        item_id: 'approval-task-1',
+        kind: 'approval_checkpoint',
+        occurred_at: '2026-05-19T11:01:40.000Z',
+      }),
+      expect.objectContaining({
+        item_id: 'artifact-1',
+        kind: 'artifact',
+        occurred_at: '2026-05-19T11:01:40.000Z',
+      }),
+      expect.objectContaining({
+        item_id: 'message-1',
+        kind: 'mission_message',
+        occurred_at: '2026-05-19T11:01:00.000Z',
+      }),
+    ]);
+  });
+
+  test('selectControlRoomEvidenceTimeline returns stable empty state for missing or empty durable input', () => {
+    expect(selectControlRoomEvidenceTimeline(composeControlRoomSnapshot())).toEqual([]);
+    expect(
+      selectControlRoomEvidenceTimeline(
+        composeControlRoomSnapshot({
+          ...buildControlRoomInput(),
+          evidence_timeline: [],
+        })
+      )
+    ).toEqual([]);
+  });
+
+  test('selectControlRoomEvidenceTimeline keeps durable truth primary and labels linked session evidence as secondary', () => {
+    const snapshot = composeControlRoomSnapshot({
+      ...buildControlRoomInput(),
+      evidence_timeline: buildEvidenceTimelineInput(),
+    });
+
+    expect(selectControlRoomEvidenceTimeline(snapshot)).toEqual([
+      expect.objectContaining({
+        item_id: 'approval-task-1',
+        kind: 'approval_checkpoint',
+        secondary_session_evidence: [],
+      }),
+      expect.objectContaining({
+        item_id: 'artifact-1',
+        kind: 'artifact',
+        authority: 'authoritative',
+        evidence_ref: 'evidence://artifact/artifact-1',
+        secondary_session_evidence: [
+          {
+            source: 'agent_trace',
+            observed_at: '2026-05-19T11:01:42.000Z',
+            summary: 'Terminal showed QA completion locally',
+            authority: 'secondary',
+            label: 'Secondary session evidence',
+          },
+        ],
+      }),
+      expect.objectContaining({
+        item_id: 'message-1',
+        kind: 'mission_message',
+        secondary_session_evidence: [],
+      }),
+    ]);
+  });
+
+  test('selectControlRoomEvidenceTimeline keeps rows with missing linked evidence explicit instead of dropping them', () => {
+    const snapshot = composeControlRoomSnapshot({
+      ...buildControlRoomInput(),
+      evidence_timeline: [
+        {
+          item_id: 'artifact-missing-link',
+          kind: 'artifact',
+          occurred_at: '2026-05-19T11:03:00.000Z',
+          authority: 'authoritative',
+          freshness: 'degraded',
+          summary: 'Artifact durable sin row enlazada',
+          linked_ids: {
+            mission_id: 'mission-1',
+            task_id: 'task-1',
+            workspace_id: 'ws-1',
+            run_id: 'run-1',
+          },
+          missing_source: 'artifact evidence',
+        },
+      ],
+    });
+
+    expect(selectControlRoomEvidenceTimeline(snapshot)).toEqual([
+      expect.objectContaining({
+        item_id: 'artifact-missing-link',
+        kind: 'artifact',
+        freshness: 'degraded',
+        evidence_ref: null,
+        missing_source: 'artifact evidence',
+        linked_ids: expect.objectContaining({
+          run_id: 'run-1',
+          artifact_id: null,
+        }),
+      }),
+    ]);
   });
 
   test('selectDirectorBriefingPreview returns deterministic preview text from mission_control only', () => {

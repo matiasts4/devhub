@@ -84,6 +84,28 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+const PRIMARY_EVIDENCE_TIMELINE_KINDS = Object.freeze(
+  new Set([
+    'mission_message',
+    'delivery',
+    'presence',
+    'run',
+    'artifact',
+    'supervisor_snapshot',
+    'approval_checkpoint',
+  ])
+);
+
+const EVIDENCE_TIMELINE_KIND_RANK = Object.freeze({
+  approval_checkpoint: 0,
+  supervisor_snapshot: 1,
+  artifact: 2,
+  run: 3,
+  delivery: 4,
+  presence: 5,
+  mission_message: 6,
+});
+
 function createEmptyMissionSummary() {
   return {
     title: null,
@@ -264,6 +286,67 @@ function normalizeMissionPresenceRow(presence = {}) {
     expires_at: presence.expires_at || null,
     evidence_ref: presence.evidence_ref || null,
   };
+}
+
+function normalizeEvidenceTimelineLinkedIds(linkedIds = {}) {
+  return {
+    mission_id: linkedIds.mission_id || null,
+    task_id: linkedIds.task_id || null,
+    workspace_id: linkedIds.workspace_id || null,
+    run_id: linkedIds.run_id || null,
+    artifact_id: linkedIds.artifact_id || null,
+    approval_checkpoint_key: linkedIds.approval_checkpoint_key || null,
+  };
+}
+
+function normalizeSecondarySessionEvidence(item = {}) {
+  return {
+    source: item.source || null,
+    observed_at: item.observed_at || null,
+    summary: item.summary || null,
+    authority: 'secondary',
+    label: 'Secondary session evidence',
+  };
+}
+
+function normalizeEvidenceTimelineItem(item = {}) {
+  if (!PRIMARY_EVIDENCE_TIMELINE_KINDS.has(item.kind)) return null;
+
+  const status = statusFromRecord(item, {
+    authority: item.authority || 'authoritative',
+    freshness: item.freshness || 'degraded',
+  });
+
+  return {
+    item_id: item.item_id || null,
+    kind: item.kind,
+    occurred_at: item.occurred_at || null,
+    authority: status.authority,
+    freshness: status.freshness,
+    summary: item.summary || null,
+    linked_ids: normalizeEvidenceTimelineLinkedIds(item.linked_ids),
+    evidence_ref: status.evidence_ref,
+    evidence_refs: status.evidence_refs,
+    missing_source:
+      item.missing_source || (status.evidence_refs.length > 0 ? null : 'timeline evidence'),
+    secondary_session_evidence: asArray(item.secondary_session_evidence).map(
+      normalizeSecondarySessionEvidence
+    ),
+  };
+}
+
+function compareEvidenceTimelineItems(left = {}, right = {}) {
+  const leftTime = left.occurred_at ? Date.parse(left.occurred_at) : Number.NEGATIVE_INFINITY;
+  const rightTime = right.occurred_at ? Date.parse(right.occurred_at) : Number.NEGATIVE_INFINITY;
+
+  if (leftTime !== rightTime) return rightTime - leftTime;
+
+  const leftRank = EVIDENCE_TIMELINE_KIND_RANK[left.kind] ?? Number.MAX_SAFE_INTEGER;
+  const rightRank = EVIDENCE_TIMELINE_KIND_RANK[right.kind] ?? Number.MAX_SAFE_INTEGER;
+
+  if (leftRank !== rightRank) return leftRank - rightRank;
+
+  return String(left.item_id || '').localeCompare(String(right.item_id || ''));
 }
 
 function normalizeMissionControl(snapshot = null) {
@@ -708,6 +791,7 @@ export function composeControlRoomSnapshot(input = {}) {
     },
     director_queue: normalizeDirectorQueue(input.director_queue),
     mission_control: normalizeMissionControl(input.mission_control),
+    evidence_timeline: asArray(input.evidence_timeline),
     errors,
   };
 }
@@ -803,6 +887,13 @@ export function selectControlRoomDiagnostics(snapshot = {}) {
       session_stream: null,
     }
   );
+}
+
+export function selectControlRoomEvidenceTimeline(snapshot = {}) {
+  return asArray(snapshot.evidence_timeline)
+    .map(normalizeEvidenceTimelineItem)
+    .filter(Boolean)
+    .sort(compareEvidenceTimelineItems);
 }
 
 export function selectControlRoomErrors(snapshot = {}) {

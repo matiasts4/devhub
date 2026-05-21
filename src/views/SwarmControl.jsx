@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   composeControlRoomSnapshot,
@@ -6,6 +6,7 @@ import {
   selectControlRoomAgents,
   selectControlRoomApprovals,
   selectControlRoomDiagnostics,
+  selectControlRoomEvidenceTimeline,
   selectControlRoomErrors,
   selectControlRoomHeader,
   selectControlRoomMission,
@@ -22,6 +23,19 @@ import RunsArtifactsPanel from '@/components/control-room/RunsArtifactsPanel';
 import ApprovalsErrorsPanel from '@/components/control-room/ApprovalsErrorsPanel';
 import DiagnosticOverlay from '@/components/control-room/DiagnosticOverlay';
 import MissionKernelPanel from '@/components/control-room/MissionKernelPanel';
+import EvidenceTimelinePanel from '@/components/control-room/EvidenceTimelinePanel';
+
+void [
+  ControlRoomHeader,
+  DirectorQueuePanel,
+  AgentsClaimsPanel,
+  WorkspacesPanel,
+  RunsArtifactsPanel,
+  ApprovalsErrorsPanel,
+  DiagnosticOverlay,
+  MissionKernelPanel,
+  EvidenceTimelinePanel,
+];
 
 function buildSnapshotInput({ snapshotInput, fetchedInput, project }) {
   if (snapshotInput) return snapshotInput;
@@ -104,6 +118,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const runs = useMemo(() => selectControlRoomRuns(snapshot), [snapshot]);
   const approvals = useMemo(() => selectControlRoomApprovals(snapshot), [snapshot]);
   const diagnostics = useMemo(() => selectControlRoomDiagnostics(snapshot), [snapshot]);
+  const evidenceTimeline = useMemo(() => selectControlRoomEvidenceTimeline(snapshot), [snapshot]);
   const errors = useMemo(() => selectControlRoomErrors(snapshot), [snapshot]);
   const missionControl = useMemo(() => selectControlRoomMission(snapshot), [snapshot]);
   const directorQueue = useMemo(() => selectDirectorQueue(snapshot), [snapshot]);
@@ -188,24 +203,27 @@ export default function SwarmControl({ snapshotInput = null }) {
   };
 
   const normalizedFilter = filterText.trim().toLowerCase();
-  const matchesFilter = (record) => {
-    if (!normalizedFilter) return true;
-    return JSON.stringify(record || {})
-      .toLowerCase()
-      .includes(normalizedFilter);
-  };
+  const matchesFilter = useCallback(
+    (record) => {
+      if (!normalizedFilter) return true;
+      return JSON.stringify(record || {})
+        .toLowerCase()
+        .includes(normalizedFilter);
+    },
+    [normalizedFilter]
+  );
 
-  const filteredAgents = useMemo(() => agents.filter(matchesFilter), [agents, normalizedFilter]);
+  const filteredAgents = useMemo(() => agents.filter(matchesFilter), [agents, matchesFilter]);
   const filteredWorkspaces = useMemo(
     () => workspaces.filter(matchesFilter),
-    [workspaces, normalizedFilter]
+    [workspaces, matchesFilter]
   );
-  const filteredRuns = useMemo(() => runs.filter(matchesFilter), [runs, normalizedFilter]);
+  const filteredRuns = useMemo(() => runs.filter(matchesFilter), [runs, matchesFilter]);
   const filteredApprovals = useMemo(
     () => approvals.filter(matchesFilter),
-    [approvals, normalizedFilter]
+    [approvals, matchesFilter]
   );
-  const filteredErrors = useMemo(() => errors.filter(matchesFilter), [errors, normalizedFilter]);
+  const filteredErrors = useMemo(() => errors.filter(matchesFilter), [errors, matchesFilter]);
 
   return (
     <div
@@ -285,6 +303,7 @@ export default function SwarmControl({ snapshotInput = null }) {
         </div>
 
         <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
+          <EvidenceTimelinePanel items={evidenceTimeline} />
           <AgentsClaimsPanel agents={filteredAgents} />
           <WorkspacesPanel workspaces={filteredWorkspaces} />
           <RunsArtifactsPanel

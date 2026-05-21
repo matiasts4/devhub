@@ -172,10 +172,82 @@ function buildControlRoomInput(overrides = {}) {
         ],
       },
     },
+    evidence_timeline: buildEvidenceTimelineInput(),
     ...overrides,
   };
 }
 
+function buildEvidenceTimelineInput() {
+  return [
+    {
+      item_id: 'artifact-1',
+      kind: 'artifact',
+      occurred_at: '2026-05-19T11:01:40.000Z',
+      authority: 'authoritative',
+      freshness: 'current',
+      summary: 'QA artifact captured',
+      linked_ids: {
+        mission_id: 'mission-1',
+        task_id: 'task-1',
+        workspace_id: 'ws-1',
+        run_id: 'run-1',
+        artifact_id: 'artifact-1',
+      },
+      evidence_ref: 'evidence://artifact/artifact-1',
+      secondary_session_evidence: [
+        {
+          source: 'agent_trace',
+          observed_at: '2026-05-19T11:01:42.000Z',
+          summary: 'Terminal showed QA completion locally',
+          authority: 'cached',
+        },
+      ],
+    },
+    {
+      item_id: 'message-1',
+      kind: 'mission_message',
+      occurred_at: '2026-05-19T11:01:00.000Z',
+      authority: 'authoritative',
+      freshness: 'current',
+      summary: 'Tomá la ejecución del workspace principal',
+      linked_ids: {
+        mission_id: 'mission-1',
+        task_id: 'task-1',
+        workspace_id: 'ws-1',
+        run_id: 'run-1',
+      },
+      evidence_ref: 'evidence://mission-message/message-1',
+    },
+    {
+      item_id: 'approval-task-1',
+      kind: 'approval_checkpoint',
+      occurred_at: '2026-05-19T11:01:40.000Z',
+      authority: 'authoritative',
+      freshness: 'current',
+      summary: 'Approval required for task-1',
+      linked_ids: {
+        mission_id: 'mission-1',
+        task_id: 'task-1',
+        workspace_id: 'ws-1',
+        run_id: 'run-1',
+        approval_checkpoint_key: 'task-1:run-1',
+      },
+      evidence_ref: 'evidence://approval/task-1',
+    },
+    {
+      item_id: 'session-trace-1',
+      kind: 'session_trace',
+      occurred_at: '2026-05-19T11:02:10.000Z',
+      authority: 'cached',
+      freshness: 'current',
+      summary: 'Unlinked session trace should stay secondary only',
+      linked_ids: {},
+      evidence_ref: 'session://trace/1',
+    },
+  ];
+}
+
 module.exports = {
+  buildEvidenceTimelineInput,
   buildControlRoomInput,
 };
