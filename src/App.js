@@ -33,7 +33,7 @@ import {
 } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
-import PageHeader from './components/PageHeader';
+import { UiShell, UiHeader } from '@/components/ui/system';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
 import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
 
@@ -51,7 +51,7 @@ const PAGE_LABELS = {
   planning: 'planning',
 };
 
-function WorkspaceLayout() {
+export function WorkspaceLayout() {
   const { projectId } = useParams();
   const location = useLocation();
   const isTerminalRoute = location.pathname.includes('/terminales');
@@ -162,57 +162,77 @@ function WorkspaceLayout() {
   if (!project) return <Navigate to="/hub" replace />;
 
   return (
-    <div
-      className="relative flex h-screen overflow-hidden bg-surface-app text-text-primary flex-col"
+    <UiShell
+      className="relative h-screen overflow-hidden bg-surface-app text-text-primary flex-col"
       style={{
         borderRadius: '22px',
         boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
       }}
     >
+      {shouldShowGlobalHeader && (
+        <UiShell.Header>
+          <UiHeader sticky>
+            <UiHeader.Title>
+              DevHub <span className="opacity-40 font-normal mx-2">/</span> {project?.name || ''}
+            </UiHeader.Title>
+            <UiHeader.Actions>
+              <span
+                className="text-[11px] px-3 py-1.5 rounded-full border flex items-center gap-2"
+                style={{
+                  borderColor: 'rgba(255,255,255,0.1)',
+                  background:
+                    'linear-gradient(135deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0.03) 100%)',
+                  color: 'var(--text-secondary)',
+                  backdropFilter: 'blur(12px)',
+                }}
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-400/90 shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                {PAGE_LABELS[currentPage] || currentPage}
+              </span>
+            </UiHeader.Actions>
+          </UiHeader>
+        </UiShell.Header>
+      )}
+
       {/* ── Inner layout: sidebar + content ── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
         {/* Hide sidebar when terminal is maximized and visible */}
         {!(isTerminalMaximized && isTerminalRoute) && (
-          <WorkspaceSidebar
-            project={project}
-            collapsed={collapsed}
-            onToggleCollapse={setCollapsed}
-          />
+          <UiShell.Sidebar>
+            <WorkspaceSidebar
+              project={project}
+              collapsed={collapsed}
+              onToggleCollapse={setCollapsed}
+            />
+          </UiShell.Sidebar>
         )}
 
-        <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
-          {shouldShowGlobalHeader && (
-            <PageHeader project={project} pageName={PAGE_LABELS[currentPage] || currentPage} />
+        <UiShell.Content
+          className="relative bg-surface-app"
+          style={{
+            display: isTerminalRoute ? 'none' : 'block',
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'var(--border-subtle) transparent',
+          }}
+        >
+          <Outlet context={{ project }} />
+        </UiShell.Content>
+
+        {/* Persistent Terminal IDE Container */}
+        <div
+          className="absolute inset-0 z-10 bg-[#0d0d0d]"
+          style={{ display: isTerminalRoute ? 'block' : 'none' }}
+        >
+          {project && (
+            <TerminalWorkspacesManager
+              cwd={project.local_path}
+              isVisible={isTerminalRoute}
+              projectId={project.id}
+            />
           )}
-
-          {/* Main Routed Content */}
-          <main
-            className="flex-1 w-full overflow-y-auto"
-            style={{
-              display: isTerminalRoute ? 'none' : 'block',
-              scrollbarWidth: 'thin',
-              scrollbarColor: 'var(--border-subtle) transparent',
-            }}
-          >
-            <Outlet context={{ project }} />
-          </main>
-
-          {/* Persistent Terminal IDE Container */}
-          <div
-            className="absolute inset-0 z-10 bg-[#0d0d0d]"
-            style={{ display: isTerminalRoute ? 'block' : 'none' }}
-          >
-            {project && (
-              <TerminalWorkspacesManager
-                cwd={project.local_path}
-                isVisible={isTerminalRoute}
-                projectId={project.id}
-              />
-            )}
-          </div>
         </div>
       </div>
-    </div>
+    </UiShell>
   );
 }
 

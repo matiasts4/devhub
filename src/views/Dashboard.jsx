@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Plus, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/db/localClient';
+import { UiHeader } from '@/components/ui/system';
 import MetricCard from '../components/MetricCard';
 import HistorialCommits from '../components/HistorialCommits';
 import UltimasInteracciones from '../components/UltimasInteracciones';
@@ -95,10 +96,7 @@ export default function Dashboard() {
 
     const escalateTasks = async () => {
       for (const t of tasks) {
-        await db
-          .from('tasks')
-          .update({ priority: 'critical', stale_alert: false })
-          .eq('id', t.id);
+        await db.from('tasks').update({ priority: 'critical', stale_alert: false }).eq('id', t.id);
       }
       toast.success('Prioridad escalada a crítica');
     };
@@ -182,26 +180,19 @@ export default function Dashboard() {
   }, [project?.id]);
 
   return (
-    <div className="min-h-screen bg-surface-app dot-grid">
-      <div className="sticky top-0 z-10 bg-surface-app/95 backdrop-blur-md border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-text-muted font-semibold leading-none mb-0.5">
-              Proyecto Activo
-            </p>
-            <h1 className="font-mono text-base font-bold text-text-primary leading-none">
-              {project?.name || 'E-commerce V2'}
-            </h1>
-          </div>
-        </div>
-        <button
-          onClick={() => toast.success('Nueva tarea creada por IA')}
-          className="flex items-center gap-2 bg-accent-primary hover:bg-[#79C0FF] text-[#0d1117] font-semibold px-4 py-2 rounded-lg text-xs transition-all active:scale-95"
-        >
-          <Plus className="w-4 h-4" strokeWidth={2.5} /> Nueva Tarea IA
-        </button>
-      </div>
-      <div className="px-6 py-5 space-y-5">
+    <div className="h-full bg-surface-app dot-grid flex flex-col">
+      <UiHeader sticky>
+        <UiHeader.Title>{project?.name || 'E-commerce V2'}</UiHeader.Title>
+        <UiHeader.Actions>
+          <button
+            onClick={() => toast.success('Nueva tarea creada por IA')}
+            className="flex items-center gap-2 bg-accent-primary hover:bg-[#79C0FF] text-[#0d1117] font-semibold px-4 py-2 rounded-lg text-xs transition-all active:scale-95"
+          >
+            <Plus className="w-4 h-4" strokeWidth={2.5} /> Nueva Tarea IA
+          </button>
+        </UiHeader.Actions>
+      </UiHeader>
+      <div className="px-6 py-5 space-y-5 flex-1">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {metricCards.map((card, index) => (
             <MetricCard key={card.id} {...card} index={index} />
