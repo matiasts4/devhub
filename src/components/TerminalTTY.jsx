@@ -282,7 +282,15 @@ export function resolveTerminalRuntimePhase({
 
   if (!nativeCandidate) return 'xterm';
   if (!isVisibleInLayout) return nativeVteOpened ? 'native-hidden' : 'xterm';
-  if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') return 'fallback-xterm';
+  if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') {
+    return nativeVteOpened
+      ? 'native-opened'
+      : nativeVteProbe?.ready
+        ? 'native-opening'
+        : nativeVteProbe
+          ? 'native-probing'
+          : 'xterm';
+  }
   if (suspendNativeSurface) return nativeVteOpened ? 'native-suspended' : 'xterm';
   if (!isActivePanel)
     return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';

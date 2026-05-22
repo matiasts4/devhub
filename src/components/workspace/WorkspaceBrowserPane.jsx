@@ -81,7 +81,7 @@ function WorkspaceBrowserPane({
   const [nativeCapability, setNativeCapability] = useState(null);
   const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
   const previewEditMode = Boolean(dockState.editMode || forceEditMode);
-  const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.IFRAME;
+  const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK;
   const nativePanelId = useMemo(() => `browser-${projectId}-${workspaceId}`, [projectId, workspaceId]);
   const nativeSelectorReady = hasNativeSelectorInspectCapability(nativeCapability);
   const browserRuntimeSelection = useMemo(() => resolveBrowserRuntimeSelection({
@@ -180,7 +180,7 @@ function WorkspaceBrowserPane({
       : BROWSER_RUNTIME.IFRAME;
 
     onDockStateChange((currentState) => {
-      if ((currentState.browserRuntime || BROWSER_RUNTIME.IFRAME) === normalizedRuntime) {
+      if ((currentState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK) === normalizedRuntime) {
         return currentState;
       }
 
@@ -637,24 +637,7 @@ function WorkspaceBrowserPane({
               />
               <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
             </div>
-            {dockState.browserUrl ? (
-              <div
-                className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
-                  dedicatedBrowserOpen
-                    ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200'
-                    : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
-                }`}
-                data-testid="browser-window-status"
-                title={dedicatedBrowserOpen ? 'Dedicated browser window open' : 'No dedicated browser window open'}
-              >
-                <span
-                  className={`inline-flex h-1.5 w-1.5 rounded-full ${
-                    dedicatedBrowserOpen ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.65)]' : 'bg-white/30'
-                  }`}
-                />
-                Win
-              </div>
-            ) : null}
+
             {dedicatedBrowserOpen ? (
               <button
                 type="button"

@@ -6,7 +6,7 @@ const MAX_RIGHT_DOCK_SIZE = 82;
 const DEFAULT_RIGHT_DOCK_STATE = {
   visible: false,
   activeTab: 'browser',
-  browserRuntime: 'iframe',
+  browserRuntime: 'native-gtk',
   editMode: false,
   maximized: false,
   maximizedView: 'browser',
@@ -118,7 +118,7 @@ function sanitizeRightDockState(rawState = {}) {
   const visible = rawState.visible === true;
   const isLegacyBridgeTab = rawState.activeTab === 'bridge';
   const activeTab = ['browser', 'editor'].includes(rawState.activeTab) ? rawState.activeTab : 'browser';
-  const browserRuntime = rawState.browserRuntime === 'native-gtk' ? 'native-gtk' : 'iframe';
+  const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
   const maximizedView = ['browser', 'editor', 'window'].includes(rawState.maximizedView)
