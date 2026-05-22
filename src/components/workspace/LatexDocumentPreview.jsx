@@ -230,7 +230,7 @@ export default function LatexDocumentPreview({ content = '', filePath = '' }) {
 
   return (
     <div
-      className="h-full overflow-auto bg-[radial-gradient(circle_at_top,#162033_0%,#0b1220_58%,#09111b_100%)] p-4 md:p-6"
+      className="h-full overflow-auto overscroll-contain bg-[radial-gradient(circle_at_top,#162033_0%,#0b1220_58%,#09111b_100%)] p-4 md:p-6"
       data-testid="latex-document-preview"
     >
       <div className="mx-auto max-w-4xl rounded-2xl border border-white/8 bg-white/96 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">

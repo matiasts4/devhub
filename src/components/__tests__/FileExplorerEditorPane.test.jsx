@@ -55,34 +55,36 @@ jest.mock('@/components/ui/resizable', () => {
 
   const ResizablePanelGroup = ({ children }) => React.createElement('div', null, children);
 
-  const ResizablePanel = React.forwardRef(({ children, defaultSize, onCollapse, onExpand }, ref) => {
-    const [collapsed, setCollapsed] = React.useState(defaultSize === 0);
+  const ResizablePanel = React.forwardRef(
+    ({ children, defaultSize, onCollapse, onExpand }, ref) => {
+      const [collapsed, setCollapsed] = React.useState(defaultSize === 0);
 
-    React.useImperativeHandle(
-      ref,
-      () => ({
-        collapse: () => {
-          setCollapsed((previous) => {
-            if (!previous) onCollapse?.();
-            return true;
-          });
-        },
-        expand: () => {
-          setCollapsed((previous) => {
-            if (previous) onExpand?.();
-            return false;
-          });
-        },
-      }),
-      [onCollapse, onExpand]
-    );
+      React.useImperativeHandle(
+        ref,
+        () => ({
+          collapse: () => {
+            setCollapsed((previous) => {
+              if (!previous) onCollapse?.();
+              return true;
+            });
+          },
+          expand: () => {
+            setCollapsed((previous) => {
+              if (previous) onExpand?.();
+              return false;
+            });
+          },
+        }),
+        [onCollapse, onExpand]
+      );
 
-    return React.createElement(
-      'div',
-      { 'data-testid': 'mock-panel', 'data-collapsed': collapsed ? 'true' : 'false' },
-      collapsed ? null : children
-    );
-  });
+      return React.createElement(
+        'div',
+        { 'data-testid': 'mock-panel', 'data-collapsed': collapsed ? 'true' : 'false' },
+        collapsed ? null : children
+      );
+    }
+  );
 
   const ResizableHandle = () => React.createElement('div', { 'data-testid': 'mock-handle' });
 
@@ -177,7 +179,10 @@ async function waitForElement(getElement, attempts = 5) {
 }
 
 function findByText(container, text) {
-  return Array.from(container.querySelectorAll('*')).find((element) => element.textContent === text) || null;
+  return (
+    Array.from(container.querySelectorAll('*')).find((element) => element.textContent === text) ||
+    null
+  );
 }
 
 function queryLatexSurface(container) {
@@ -215,7 +220,11 @@ describe('FileExplorerEditorPane', () => {
                     path: 'src/components',
                     type: 'directory',
                     children: [
-                      { name: 'TerminalDock.jsx', path: 'src/components/TerminalDock.jsx', type: 'file' },
+                      {
+                        name: 'TerminalDock.jsx',
+                        path: 'src/components/TerminalDock.jsx',
+                        type: 'file',
+                      },
                     ],
                   },
                 ],
@@ -281,7 +290,9 @@ describe('FileExplorerEditorPane', () => {
       })
     );
 
-    const latexNode = await waitForElement(() => view.container.querySelector('[data-path="paper.tex"]'));
+    const latexNode = await waitForElement(() =>
+      view.container.querySelector('[data-path="paper.tex"]')
+    );
     await click(latexNode);
     await waitForElement(() => queryLatexSurface(view.container));
 
@@ -338,15 +349,18 @@ describe('FileExplorerEditorPane', () => {
       String(url).startsWith('/api/fs/tree')
     ).length;
 
-    await changeInput(view.container.querySelector('[data-testid="editor-tree-search-input"]'), 'terminaldock');
+    await changeInput(
+      view.container.querySelector('[data-testid="editor-tree-search-input"]'),
+      'terminaldock'
+    );
 
     expect(view.container.textContent).toContain('src');
     expect(view.container.textContent).toContain('components');
     expect(view.container.textContent).toContain('TerminalDock.jsx');
     expect(view.container.textContent).not.toContain('README.md');
-    expect(global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/fs/tree'))).toHaveLength(
-      treeFetchCallsBeforeSearch
-    );
+    expect(
+      global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/fs/tree'))
+    ).toHaveLength(treeFetchCallsBeforeSearch);
 
     await click(view.container.querySelector('[data-path="src/components/TerminalDock.jsx"]'));
     expect(view.container.querySelector('[data-testid="monaco-editor"]')?.textContent).toContain(
@@ -369,7 +383,9 @@ describe('FileExplorerEditorPane', () => {
     expect(view.container.querySelector('[data-testid="editor-pane-subtitle"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="editor-current-directory"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="editor-current-file"]')).toBeNull();
-    expect(view.container.querySelector('[aria-label="Recargar árbol de archivos"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[aria-label="Recargar árbol de archivos"]')
+    ).not.toBeNull();
   });
 
   test('renders explicit folder toggles and shows an empty-search message when nothing matches', async () => {
@@ -386,9 +402,58 @@ describe('FileExplorerEditorPane', () => {
     expect(srcToggle).not.toBeNull();
     expect(srcToggle?.getAttribute('aria-label')).toContain('src');
 
-    await changeInput(view.container.querySelector('[data-testid="editor-tree-search-input"]'), 'missing-file');
+    await changeInput(
+      view.container.querySelector('[data-testid="editor-tree-search-input"]'),
+      'missing-file'
+    );
 
     expect(view.container.querySelector('[data-testid="editor-tree-empty-search"]')).not.toBeNull();
     expect(view.container.textContent).toContain('missing-file');
+  });
+
+  test('keeps tree and preview regions locally scroll-contained', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-scroll', local_path: '/workspace/devhub' },
+      })
+    );
+
+    await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+
+    const pane = view.container.querySelector('[data-testid="shared-editor-pane"]');
+    expect(pane.classList.contains('overflow-hidden')).toBe(true);
+
+    const treePanel = view.container.querySelector('[data-testid="editor-tree-panel"]');
+    expect(treePanel.classList.contains('overflow-hidden')).toBe(true);
+
+    const treeScroll = view.container.querySelector('[data-testid="editor-tree-scroll-region"]');
+    expect(treeScroll.classList.contains('overscroll-contain')).toBe(true);
+  });
+
+  test('uses an empty state before any file is selected and avoids mounting monaco eagerly', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-empty', local_path: '/workspace/devhub' },
+      })
+    );
+
+    await waitForElement(() => view.container.querySelector('[data-testid="editor-empty-state"]'));
+
+    expect(view.container.querySelector('[data-testid="editor-empty-state"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('Select a file to start browsing');
+
+    expect(view.container.querySelector('[data-testid="monaco-editor"]')).toBeNull();
+  });
+
+  test('keeps a real h-full height contract in standalone mode', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-height', local_path: '/workspace/devhub' },
+      })
+    );
+
+    const pane = view.container.querySelector('[data-testid="shared-editor-pane"]');
+    expect(pane.classList.contains('h-full')).toBe(true);
+    expect(pane.classList.contains('w-full')).toBe(true);
   });
 });

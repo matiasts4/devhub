@@ -678,6 +678,7 @@ code {
 .filesystem-markdown-shell {
   height: 100%;
   overflow: auto;
+  overscroll-behavior: contain;
   background: var(--surface-app);
   padding: 24px 32px 40px;
 }
