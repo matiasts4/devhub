@@ -2984,9 +2984,56 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           </button>
         </div>
 
+        {/* Action Buttons: Browser, Editor, Swarm */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            data-testid="right-dock-tab-browser"
+            onClick={() => handleRightDockTabSelect('browser')}
+            className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'browser' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Show browser dock"
+          >
+            <Globe className="w-4 h-4" />
+            {activeBrowserWindowState?.open ? (
+              <span
+                className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                data-testid="right-dock-tab-browser-indicator"
+                title="Ventana browser activa en segundo plano"
+              />
+            ) : null}
+          </button>
+          <button
+            type="button"
+            data-testid="right-dock-tab-editor"
+            onClick={() => handleRightDockTabSelect('editor')}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'editor' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Show editor dock"
+          >
+            <FileCode2 className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={openTerminalSwarmLauncher}
+            className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
+            title="Lanzar swarm desde terminales"
+            aria-label="Lanzar swarm desde terminales"
+            data-testid="workspace-swarm-launch-button"
+          >
+            <Wand2 className="h-4 w-4" />
+          </button>
+        </div>
+
         {/* Window Controls */}
         <div
-          className="flex items-center h-full shrink-0 gap-2.5"
+          className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <button
