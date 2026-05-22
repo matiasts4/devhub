@@ -549,27 +549,28 @@ function renderWorkspacePanel(
         data-testid={`panel-safe-zone-${panel.id}`}
         data-native-safe-zone="floating-chrome"
         data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
-        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-1 pt-0.5"
+        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-2 pt-1"
         style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
       >
-        <div className="pointer-events-none absolute left-2 right-32 top-1 z-[1] min-w-0">
+        {/* Agent info bar — centered, prominent */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-center px-4">
           <div
             data-testid={`panel-semantic-header-${panel.id}`}
             data-panel-metadata-source={semanticMetadata.source}
-            className="flex min-w-0 items-center gap-1.5 pr-1.5 text-[10px] leading-none text-[rgba(226,232,240,0.66)]"
+            className="flex min-w-0 items-center gap-2 text-[11px] leading-none"
             title={semanticMetadata.fullText}
           >
             {swarmRole ? (
               <span
                 data-testid={`panel-role-badge-${panel.id}`}
-                className="inline-flex h-5 shrink-0 items-center rounded-md border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-1.5 text-[9px] font-black tracking-[0.08em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_16px_rgba(var(--swarm-role-rgb),0.12)]"
+                className="inline-flex h-5 shrink-0 items-center rounded-md border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-2 text-[9px] font-black tracking-[0.08em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_16px_rgba(var(--swarm-role-rgb),0.12)]"
               >
                 {swarmRole.abbrev}
               </span>
             ) : null}
             <span
               data-testid={`panel-semantic-primary-${panel.id}`}
-              className="truncate align-middle font-semibold text-[rgba(241,245,249,0.9)]"
+              className="truncate align-middle font-bold text-[rgba(241,245,249,0.95)]"
             >
               {semanticMetadata.primary}
             </span>
@@ -580,7 +581,7 @@ function renderWorkspacePanel(
                 </span>
                 <span
                   data-testid={`panel-semantic-secondary-${panel.id}`}
-                  className="truncate align-middle text-[rgba(148,163,184,0.88)]"
+                  className="max-w-[200px] truncate align-middle text-[rgba(148,163,184,0.85)]"
                 >
                   {semanticMetadata.secondary}
                 </span>
@@ -588,14 +589,16 @@ function renderWorkspacePanel(
             ) : null}
           </div>
         </div>
+        {/* Subtle gradient overlay */}
         <div
           aria-hidden="true"
-          className={`absolute inset-x-1 top-0.5 h-[calc(100%-0.125rem)] rounded-[14px] border border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.03))] transition-opacity ${
-            isActive ? 'opacity-100' : 'opacity-75'
+          className={`absolute inset-x-0 top-0 h-[calc(100%-0.125rem)] rounded-t-[14px] border-b border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.22),rgba(15,23,36,0.02))] transition-opacity ${
+            isActive ? 'opacity-100' : 'opacity-70'
           }`}
         />
+        {/* Panel controls — top-right */}
         <div
-          className="pointer-events-none absolute right-1 top-1 z-10"
+          className="pointer-events-none absolute right-1.5 top-1 z-10"
           data-testid={`panel-chrome-overlay-${panel.id}`}
           data-floating-placement="inside-top-right"
           aria-label={`Panel ${panelLabel || panel.id} controls`}
@@ -2265,7 +2268,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       });
                     }
                   }}
-                  className={`group h-6.5 shrink-0 px-3 rounded-xl text-[12px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
+                  className={`group h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
                     isActive
                       ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
                       : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
@@ -2301,7 +2304,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                     maximizedView: 'browser',
                   });
                 }}
-                className={`h-6.5 shrink-0 px-3 rounded-xl text-[12px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
+                className={`h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
                   isBrowserFullscreen
                     ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
                     : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
@@ -2315,7 +2318,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <button
               data-testid="panel-subtabs-add"
               onClick={() => addWindowToWorkspace(ws.id)}
-              className="h-6.5 w-6.5 shrink-0 flex items-center justify-center rounded-lg transition-colors text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]"
+              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-sm transition-colors text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]"
               title="Nueva vista"
               aria-label="Agregar vista"
             >
@@ -2327,7 +2330,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   type="button"
                   data-testid="panel-subtabs-split-right"
                   onClick={() => handleSplit('horizontal', activePanelId)}
-                  className="h-6.5 w-6.5 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                  className="h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-sm transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
                   title={splitRightLabel}
                   aria-label={splitRightLabel}
                 >
@@ -2337,7 +2340,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   type="button"
                   data-testid="panel-subtabs-split-down"
                   onClick={() => handleSplit('vertical', activePanelId)}
-                  className="h-6.5 w-6.5 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                  className="h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-sm transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
                   title={splitDownLabel}
                   aria-label={splitDownLabel}
                 >
@@ -2972,7 +2975,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <button
             type="button"
             onClick={addWorkspace}
-            className="inline-flex items-center justify-center w-9 h-9 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] rounded-xl border border-transparent hover:border-[var(--border-subtle)] transition-all ml-0.5 shrink-0"
+            className="inline-flex items-center justify-center w-5 h-5 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
             title="Nuevo workspace"
             aria-label="Nuevo workspace"
             data-testid="workspace-add-button"
@@ -2983,33 +2986,31 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
         {/* Global Toolbar + Window Controls */}
         <div
-          className="flex items-center h-[40px] gap-1 shrink-0"
+          className="flex items-center h-[36px] gap-0.5 shrink-0"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           {/* Agent Room Sidebar Toggle */}
           <button
             onClick={() => setIsAgentSidebarVisible((prev) => !prev)}
-            className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[11px] font-medium transition-all cursor-pointer select-none ${
+            className={`inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all cursor-pointer select-none ${
               isAgentSidebarVisible
-                ? 'text-[var(--accent-primary)] bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/25'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]'
+                ? 'text-[var(--accent-primary)] bg-[var(--accent-primary)]/10'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.06]'
             }`}
             title={isAgentSidebarVisible ? 'Hide Agent Room' : 'Show Agent Room'}
           >
             <PanelLeft className="w-3.5 h-3.5" />
-            <span>Agents</span>
           </button>
 
           <button
             type="button"
             onClick={openTerminalSwarmLauncher}
-            className="inline-flex h-7 items-center gap-1.5 rounded border border-orange-400/30 bg-orange-400/10 px-2.5 text-[11px] font-semibold text-orange-100 transition-all hover:border-orange-300/50 hover:bg-orange-400/16"
+            className="inline-flex items-center justify-center h-5 w-5 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
             title="Lanzar swarm desde terminales"
             aria-label="Lanzar swarm desde terminales"
             data-testid="workspace-swarm-launch-button"
           >
             <Wand2 className="h-3.5 w-3.5" />
-            <span>Swarm</span>
           </button>
 
           {swarmLaunchSubmitState.error ? (
@@ -3026,11 +3027,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <DropdownMenuTrigger asChild>
               <button
                 data-testid="workspace-grid-launcher-trigger"
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[11px] font-medium text-gray-400 hover:text-gray-200 hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)] transition-all cursor-pointer select-none"
+                className="inline-flex items-center justify-center h-5 w-5 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
                 title="Lanzar Cuadrícula"
               >
                 <Grip className="w-3.5 h-3.5" />
-                <span>Grid</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -3073,16 +3073,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           </DropdownMenu>
 
           {/* Notificaciones, estado y switch del dock */}
-          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-[var(--border-subtle)]">
+          <div className="flex items-center gap-0.5 ml-1 pl-1.5 border-l border-[var(--border-subtle)]">
             <NotificationCenter projectId={projectId} variant="topbar" />
             <button
               type="button"
               data-testid="right-dock-toggle"
               onClick={handleRightDockVisibilityToggle}
-              className={`inline-flex items-center justify-center h-7 w-7 rounded-lg border transition-all ${
+              className={`inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all ${
                 rightDockState.visible
-                  ? 'text-[var(--accent-primary)] border-[rgba(var(--accent-rgb,88,166,255),0.28)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
-                  : 'text-[var(--text-muted)] border-transparent hover:border-[var(--border-subtle)] hover:bg-white/[0.05]'
+                  ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
+                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
               }`}
               title={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
               aria-label={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
@@ -3090,26 +3090,25 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               <PanelLeft className="w-3.5 h-3.5" />
             </button>
             <div
-              className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1"
+              className="inline-flex items-center gap-0.5 rounded-sm p-0.5"
               data-testid="right-dock-toolbar-switch"
             >
-              <div className="inline-flex items-center gap-1">
+              <div className="inline-flex items-center gap-0.5">
                 <button
                   type="button"
                   data-testid="right-dock-tab-browser"
                   onClick={() => handleRightDockTabSelect('browser')}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
+                  className={`relative inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all ${
                     rightDockState.activeTab === 'browser' && rightDockState.visible
-                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.24)]'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]'
+                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
                   }`}
                   title="Show browser dock"
                 >
                   <Globe className="w-3.5 h-3.5" />
-                  <span>Browser</span>
                   {activeBrowserWindowState?.open ? (
                     <span
-                      className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.65)]"
+                      className="absolute -bottom-px -right-px h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
                       data-testid="right-dock-tab-browser-indicator"
                       title="Ventana browser activa en segundo plano"
                     />
@@ -3120,11 +3119,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                     type="button"
                     data-testid="workspace-browser-window-close"
                     onClick={() => closeWorkspaceBrowserWindow(activeWsId)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-emerald-100 transition-all hover:bg-emerald-400/14"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-emerald-300/70 transition-all hover:text-emerald-200 hover:bg-emerald-400/10"
                     title="Cerrar la ventana browser dedicada de este workspace"
                     aria-label="Cerrar la ventana browser dedicada de este workspace"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-3 h-3" />
                   </button>
                 ) : null}
               </div>
@@ -3132,51 +3131,23 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 type="button"
                 data-testid="right-dock-tab-editor"
                 onClick={() => handleRightDockTabSelect('editor')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
+                className={`inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all ${
                   rightDockState.activeTab === 'editor' && rightDockState.visible
-                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.24)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]'
+                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                    : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
                 }`}
                 title="Show editor dock"
               >
                 <FileCode2 className="w-3.5 h-3.5" />
-                <span>Editor</span>
               </button>
             </div>
-            {rightDockState.visible ? (
-              <button
-                type="button"
-                data-testid="workspace-right-dock-maximize"
-                onClick={() =>
-                  updateRightDockState((currentState) => ({
-                    ...currentState,
-                    visible: true,
-                    maximized: !currentState.maximized,
-                    maximizedView: currentState.maximized
-                      ? currentState.maximizedView || 'browser'
-                      : currentState.activeTab === 'editor'
-                        ? 'editor'
-                        : 'browser',
-                  }))
-                }
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition-all hover:border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-primary)]"
-                title={rightDockState.maximized ? 'Restaurar dock' : 'Maximizar dock'}
-                aria-label={rightDockState.maximized ? 'Restaurar dock' : 'Maximizar dock'}
-              >
-                {rightDockState.maximized ? (
-                  <Minimize2 className="h-3.5 w-3.5" />
-                ) : (
-                  <Maximize2 className="h-3.5 w-3.5" />
-                )}
-              </button>
-            ) : null}
           </div>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:text-gray-200 hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)] transition-all cursor-pointer select-none"
+                className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
                 title="Reopen sessions"
                 aria-label="Reopen sessions"
               >
@@ -3380,7 +3351,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               wsIndex,
               workspaceGridKeyCounts
             );
-            const wsDockState = activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
+            const wsDockState =
+              activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
             const updateWsDockState = updateRightDockState;
             const focusedPanelId = focusedPanelByWorkspace[ws.id];
             const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
@@ -3622,7 +3594,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
             <div
               data-testid="workspace-right-dock-layer"
-              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${(!effectiveRightDockState.visible || hideRightDockPanel) ? 'hidden' : 'flex flex-col'}`}
+              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
               style={rightDockLayerStyle}
             >
               <WorkspaceRightDock
