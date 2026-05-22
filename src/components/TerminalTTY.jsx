@@ -930,8 +930,23 @@ export default function TerminalTTY({
 
   useEffect(() => {
     if (!nativeVteOpened || requestedRendererMode !== 'vte-experimental') return undefined;
-    // dock-side-by-side: VTE coexists with the browser dock — do NOT hide the panel.
-    if (nativeSurfacePolicy === 'dock-side-by-side') return undefined;
+    // dock-side-by-side: VTE coexists with the browser dock, but still hide when not visible.
+    if (nativeSurfacePolicy === 'dock-side-by-side') {
+      if (isVisibleInLayout && !suspendNativeSurface) return undefined;
+      // Component lost visibility — hide the native panel even in dock-side-by-side mode.
+      (async () => {
+        try {
+          await setNativeVtePanelVisibility({
+            panelId: id,
+            visible: false,
+            reason: suspendNativeSurface ? 'suspended' : 'layout-hidden',
+          });
+        } catch (error) {
+          handleNativeLeaseCommandError(error);
+        }
+      })();
+      return undefined;
+    }
     if (isVisibleInLayout && !suspendNativeSurface) return undefined;
 
     (async () => {

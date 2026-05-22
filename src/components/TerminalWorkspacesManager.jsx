@@ -2975,42 +2975,29 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <button
             type="button"
             onClick={addWorkspace}
-            className="inline-flex items-center justify-center w-5 h-5 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
+            className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
             title="Nuevo workspace"
             aria-label="Nuevo workspace"
             data-testid="workspace-add-button"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4" />
           </button>
         </div>
 
         {/* Global Toolbar + Window Controls */}
         <div
-          className="flex items-center h-[36px] gap-0.5 shrink-0"
+          className="flex items-center h-[40px] gap-1 shrink-0"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
-          {/* Agent Room Sidebar Toggle */}
-          <button
-            onClick={() => setIsAgentSidebarVisible((prev) => !prev)}
-            className={`inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all cursor-pointer select-none ${
-              isAgentSidebarVisible
-                ? 'text-[var(--accent-primary)] bg-[var(--accent-primary)]/10'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.06]'
-            }`}
-            title={isAgentSidebarVisible ? 'Hide Agent Room' : 'Show Agent Room'}
-          >
-            <PanelLeft className="w-3.5 h-3.5" />
-          </button>
-
           <button
             type="button"
             onClick={openTerminalSwarmLauncher}
-            className="inline-flex items-center justify-center h-5 w-5 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
+            className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
             title="Lanzar swarm desde terminales"
             aria-label="Lanzar swarm desde terminales"
             data-testid="workspace-swarm-launch-button"
           >
-            <Wand2 className="h-3.5 w-3.5" />
+            <Wand2 className="h-4 w-4" />
           </button>
 
           {swarmLaunchSubmitState.error ? (
@@ -3027,10 +3014,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <DropdownMenuTrigger asChild>
               <button
                 data-testid="workspace-grid-launcher-trigger"
-                className="inline-flex items-center justify-center h-5 w-5 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
                 title="Lanzar Cuadrícula"
               >
-                <Grip className="w-3.5 h-3.5" />
+                <Grip className="w-4 h-4" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -3073,13 +3060,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           </DropdownMenu>
 
           {/* Notificaciones, estado y switch del dock */}
-          <div className="flex items-center gap-0.5 ml-1 pl-1.5 border-l border-[var(--border-subtle)]">
+          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-[var(--border-subtle)]">
             <NotificationCenter projectId={projectId} variant="topbar" />
             <button
               type="button"
               data-testid="right-dock-toggle"
               onClick={handleRightDockVisibilityToggle}
-              className={`inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all ${
+              className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
                 rightDockState.visible
                   ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
                   : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
@@ -3087,7 +3074,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               title={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
               aria-label={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
             >
-              <PanelLeft className="w-3.5 h-3.5" />
+              <PanelLeft className="w-4 h-4" />
             </button>
             <div
               className="inline-flex items-center gap-0.5 rounded-sm p-0.5"
@@ -3098,17 +3085,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   type="button"
                   data-testid="right-dock-tab-browser"
                   onClick={() => handleRightDockTabSelect('browser')}
-                  className={`relative inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all ${
+                  className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
                     rightDockState.activeTab === 'browser' && rightDockState.visible
                       ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
                       : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
                   }`}
                   title="Show browser dock"
                 >
-                  <Globe className="w-3.5 h-3.5" />
+                  <Globe className="w-4 h-4" />
                   {activeBrowserWindowState?.open ? (
                     <span
-                      className="absolute -bottom-px -right-px h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                      className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
                       data-testid="right-dock-tab-browser-indicator"
                       title="Ventana browser activa en segundo plano"
                     />
@@ -3119,11 +3106,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                     type="button"
                     data-testid="workspace-browser-window-close"
                     onClick={() => closeWorkspaceBrowserWindow(activeWsId)}
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-emerald-300/70 transition-all hover:text-emerald-200 hover:bg-emerald-400/10"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-emerald-300/70 transition-all hover:text-emerald-200 hover:bg-emerald-400/10"
                     title="Cerrar la ventana browser dedicada de este workspace"
                     aria-label="Cerrar la ventana browser dedicada de este workspace"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 ) : null}
               </div>
@@ -3131,14 +3118,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 type="button"
                 data-testid="right-dock-tab-editor"
                 onClick={() => handleRightDockTabSelect('editor')}
-                className={`inline-flex items-center justify-center h-5 w-5 rounded-sm transition-all ${
+                className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
                   rightDockState.activeTab === 'editor' && rightDockState.visible
                     ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
                     : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
                 }`}
                 title="Show editor dock"
               >
-                <FileCode2 className="w-3.5 h-3.5" />
+                <FileCode2 className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -3147,11 +3134,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
                 title="Reopen sessions"
                 aria-label="Reopen sessions"
               >
-                <History className="w-3.5 h-3.5" />
+                <History className="w-4 h-4" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
