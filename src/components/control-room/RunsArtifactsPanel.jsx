@@ -1,11 +1,15 @@
 import React from 'react';
 import {
+  CountBadge,
+  StatusPill,
   formatEvidence,
   formatMissingSource,
   formatToken,
   metaTextStyle,
+  panelListStyle,
   panelShellStyle,
   renderEmptyCopy,
+  truncateId,
 } from './utils';
 
 export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectRun }) {
@@ -16,13 +20,16 @@ export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectR
       aria-label="Ejecuciones y artefactos"
     >
       <header className="mb-4">
-        <h2 className="text-lg font-semibold">Ejecuciones y artefactos</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Ejecuciones y artefactos</h2>
+          <CountBadge count={runs.length} />
+        </div>
         <p className="text-sm" style={metaTextStyle()}>
           Resultado más reciente del run y línea de evidencia asociada.
         </p>
       </header>
 
-      <div className="space-y-3">
+      <div className="max-h-[420px] space-y-3 overflow-y-auto pr-0.5" style={panelListStyle()}>
         {runs.length === 0
           ? renderEmptyCopy('Sin ejecuciones durables en este snapshot.')
           : runs.map((run) => {
@@ -40,15 +47,21 @@ export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectR
                   }}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-medium">{run.run_id}</h3>
-                    <span className="text-xs" style={metaTextStyle()}>
-                      {formatToken(run.status)}
-                    </span>
+                    <div className="min-w-0">
+                      <h3 className="font-medium font-mono text-sm truncate" title={run.run_id}>
+                        {truncateId(run.run_id)}
+                      </h3>
+                    </div>
+                    <StatusPill status={run.status} />
                   </div>
 
                   <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                    <MetaRow label="Workspace" value={run.workspace_id || '—'} />
-                    <MetaRow label="Autoridad" value={formatToken(run.authority)} />
+                    <MetaRow
+                      label="Workspace"
+                      value={run.workspace_id ? truncateId(run.workspace_id) : '—'}
+                      title={run.workspace_id}
+                    />
+                    <MetaRow label="Autoridad" value={<StatusPill status={run.authority} />} />
                   </dl>
 
                   <p className="mt-3 text-xs" style={metaTextStyle()}>
@@ -66,9 +79,9 @@ export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectR
                       style={panelShellStyle()}
                     >
                       <div className="font-medium">Resultado riesgoso pendiente de aprobación</div>
-                      <div className="mt-1 text-xs" style={metaTextStyle()}>
-                        {formatToken(run.approval_gate.reason_class)} ·{' '}
-                        {run.approval_gate.evidence_ref || 'Sin evidencia'}
+                      <div className="mt-1 flex items-center gap-2 text-xs" style={metaTextStyle()}>
+                        <StatusPill status={run.approval_gate.reason_class} />
+                        <span>{run.approval_gate.evidence_ref || 'Sin evidencia'}</span>
                       </div>
                       <div className="mt-1 text-xs" style={metaTextStyle()}>
                         Resultado no aplicado hasta que exista evidencia de aprobación
@@ -95,13 +108,13 @@ export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectR
   );
 }
 
-function MetaRow({ label, value }) {
+function MetaRow({ label, value, title }) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-wide" style={metaTextStyle()}>
         {label}
       </dt>
-      <dd>{value}</dd>
+      <dd title={title}>{value}</dd>
     </div>
   );
 }

@@ -1,83 +1,81 @@
 import React from 'react';
 import {
+  CompactPanelShell,
+  CompactRow,
   formatEvidence,
   formatLiveHint,
   formatMissingSource,
+  formatRelativeTime,
   formatToken,
   metaTextStyle,
-  panelShellStyle,
-  renderEmptyCopy,
+  StatusPill,
+  truncateId,
 } from './utils';
 
 export default function AgentsClaimsPanel({ agents = [] }) {
   return (
-    <section
-      className="rounded-2xl border p-4"
-      style={panelShellStyle()}
-      aria-label="Agentes y asignaciones"
-    >
-      <header className="mb-4">
-        <h2 className="text-lg font-semibold">Agentes y asignaciones</h2>
-        <p className="text-sm" style={metaTextStyle()}>
-          Tareas reclamadas, ventanas de lease, enlaces a workspace y autoridad durable.
-        </p>
-      </header>
-
-      <div className="space-y-3">
-        {agents.length === 0
-          ? renderEmptyCopy('Sin agentes durables en este snapshot.')
-          : agents.map((agent) => (
-              <article
-                key={agent.agent_id}
-                className="rounded-xl border p-3"
-                style={panelShellStyle()}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="font-medium">{agent.agent_id}</h3>
-                    <p className="text-sm" style={metaTextStyle()}>
-                      {agent.task_id || 'Sin tarea reclamada'}
-                    </p>
-                  </div>
-                  <div className="text-xs" style={metaTextStyle()}>
-                    {formatToken(agent.supervisor_state)}
-                  </div>
-                </div>
-
-                <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                  <MetaRow label="Lease" value={agent.lease_expires_at || '—'} />
-                  <MetaRow label="Workspace" value={agent.workspace_id || '—'} />
-                  <MetaRow label="Run" value={agent.run_id || '—'} />
-                  <MetaRow label="Autoridad" value={formatToken(agent.authority)} />
-                </dl>
-
-                <p className="mt-3 text-xs" style={metaTextStyle()}>
-                  {formatToken(agent.freshness)} · {formatEvidence(agent.evidence_refs)}
-                </p>
-                {agent.missing_source ? (
-                  <p className="mt-1 text-xs" style={metaTextStyle()}>
-                    {formatMissingSource(agent.missing_source)}
-                  </p>
-                ) : null}
-                {agent.live_hint ? (
-                  <p className="mt-1 text-xs" style={metaTextStyle()}>
-                    {formatLiveHint(agent.live_hint)}
-                  </p>
-                ) : null}
-              </article>
-            ))}
-      </div>
-    </section>
+    <CompactPanelShell
+      title="Agentes y asignaciones"
+      description="Tareas reclamadas, lease, workspace y autoridad."
+      count={agents.length}
+      items={agents}
+      renderItem={renderAgent}
+      emptyMessage="Sin agentes durables en este snapshot."
+      ariaLabel="Agentes y asignaciones"
+    />
   );
 }
 
-function MetaRow({ label, value }) {
+function renderAgent(agent) {
+  const leaseText = agent.lease_expires_at
+    ? `Lease: ${formatRelativeTime(agent.lease_expires_at)}`
+    : 'Sin lease';
+
   return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide" style={metaTextStyle()}>
-        {label}
-      </dt>
-      <dd>{value}</dd>
+    <div
+      key={agent.agent_id}
+      className="rounded-lg border px-2 py-1.5"
+      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-default)' }}
+    >
+      <CompactRow
+        status={agent.supervisor_state}
+        primary={agent.agent_id}
+        secondary={`${agent.task_id ? truncateId(agent.task_id) : 'Sin tarea'} · ${leaseText}`}
+        badge={null}
+        timestamp={agent.freshness}
+      />
+
+      {/* Compact meta row */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 px-2">
+        <span className="text-[10px]" style={metaTextStyle()}>
+          WS: {agent.workspace_id ? truncateId(agent.workspace_id) : '—'}
+        </span>
+        <span className="text-[10px]" style={metaTextStyle()}>
+          Run: {agent.run_id ? truncateId(agent.run_id) : '—'}
+        </span>
+        <StatusPill status={agent.authority} />
+      </div>
+
+      {/* Evidence / hints */}
+      {(agent.evidence_refs || agent.missing_source || agent.live_hint) && (
+        <div className="mt-1 px-2">
+          <span className="text-[10px]" style={metaTextStyle()}>
+            {formatEvidence(agent.evidence_refs)}
+          </span>
+          {agent.missing_source && (
+            <span className="text-[10px]" style={metaTextStyle()}>
+              {' '}
+              · {formatMissingSource(agent.missing_source)}
+            </span>
+          )}
+          {agent.live_hint && (
+            <span className="text-[10px]" style={metaTextStyle()}>
+              {' '}
+              · {formatLiveHint(agent.live_hint)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -282,7 +282,15 @@ export function resolveTerminalRuntimePhase({
 
   if (!nativeCandidate) return 'xterm';
   if (!isVisibleInLayout) return nativeVteOpened ? 'native-hidden' : 'xterm';
-  if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') return 'fallback-xterm';
+  if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') {
+    return nativeVteOpened
+      ? 'native-opened'
+      : nativeVteProbe?.ready
+        ? 'native-opening'
+        : nativeVteProbe
+          ? 'native-probing'
+          : 'xterm';
+  }
   if (suspendNativeSurface) return nativeVteOpened ? 'native-suspended' : 'xterm';
   if (!isActivePanel)
     return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';
@@ -922,6 +930,23 @@ export default function TerminalTTY({
 
   useEffect(() => {
     if (!nativeVteOpened || requestedRendererMode !== 'vte-experimental') return undefined;
+    // dock-side-by-side: VTE coexists with the browser dock, but still hide when not visible.
+    if (nativeSurfacePolicy === 'dock-side-by-side') {
+      if (isVisibleInLayout && !suspendNativeSurface) return undefined;
+      // Component lost visibility — hide the native panel even in dock-side-by-side mode.
+      (async () => {
+        try {
+          await setNativeVtePanelVisibility({
+            panelId: id,
+            visible: false,
+            reason: suspendNativeSurface ? 'suspended' : 'layout-hidden',
+          });
+        } catch (error) {
+          handleNativeLeaseCommandError(error);
+        }
+      })();
+      return undefined;
+    }
     if (isVisibleInLayout && !suspendNativeSurface) return undefined;
 
     (async () => {
@@ -929,11 +954,7 @@ export default function TerminalTTY({
         await setNativeVtePanelVisibility({
           panelId: id,
           visible: false,
-          reason: suspendNativeSurface
-            ? nativeSurfacePolicy === 'dock-side-by-side'
-              ? 'dock-side-by-side'
-              : 'suspended'
-            : undefined,
+          reason: suspendNativeSurface ? 'suspended' : undefined,
         });
       } catch (error) {
         handleNativeLeaseCommandError(error);
@@ -966,7 +987,9 @@ export default function TerminalTTY({
   ]);
 
   useEffect(() => {
-    if (!nativeVteOpened || !isVisibleInLayout || suspendNativeSurface) return undefined;
+    if (!nativeVteOpened || !isVisibleInLayout) return undefined;
+    // dock-side-by-side: VTE coexists with dock — still resize, just skip hide.
+    if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
     const sendNativeResize = () => {
       const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);

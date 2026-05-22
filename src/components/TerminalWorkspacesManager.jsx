@@ -539,137 +539,82 @@ function renderWorkspacePanel(
         setActivePanelIds((prev) => ({ ...prev, [wsId]: panel.id }));
       }}
     >
-      {swarmRole ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-2 left-0 z-20 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
-        />
-      ) : null}
+      {/* Panel controls — top-right */}
       <div
-        data-testid={`panel-safe-zone-${panel.id}`}
-        data-native-safe-zone="floating-chrome"
-        data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
-        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-1 pt-0.5"
-        style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
+        className="pointer-events-none absolute right-1.5 top-1.5 z-10"
+        data-testid={`panel-chrome-overlay-${panel.id}`}
+        data-floating-placement="inside-top-right"
+        aria-label={`Panel ${panelLabel || panel.id} controls`}
       >
-        <div className="pointer-events-none absolute left-2 right-32 top-1 z-[1] min-w-0">
-          <div
-            data-testid={`panel-semantic-header-${panel.id}`}
-            data-panel-metadata-source={semanticMetadata.source}
-            className="flex min-w-0 items-center gap-1.5 pr-1.5 text-[10px] leading-none text-[rgba(226,232,240,0.66)]"
-            title={semanticMetadata.fullText}
-          >
-            {swarmRole ? (
-              <span
-                data-testid={`panel-role-badge-${panel.id}`}
-                className="inline-flex h-5 shrink-0 items-center rounded-md border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-1.5 text-[9px] font-black tracking-[0.08em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_16px_rgba(var(--swarm-role-rgb),0.12)]"
-              >
-                {swarmRole.abbrev}
-              </span>
-            ) : null}
-            <span
-              data-testid={`panel-semantic-primary-${panel.id}`}
-              className="truncate align-middle font-semibold text-[rgba(241,245,249,0.9)]"
-            >
-              {semanticMetadata.primary}
-            </span>
-            {semanticMetadata.secondary ? (
-              <>
-                <span aria-hidden="true" className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]">
-                  {' · '}
-                </span>
-                <span
-                  data-testid={`panel-semantic-secondary-${panel.id}`}
-                  className="truncate align-middle text-[rgba(148,163,184,0.88)]"
-                >
-                  {semanticMetadata.secondary}
-                </span>
-              </>
-            ) : null}
-          </div>
-        </div>
         <div
-          aria-hidden="true"
-          className={`absolute inset-x-1 top-0.5 h-[calc(100%-0.125rem)] rounded-[14px] border border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.03))] transition-opacity ${
-            isActive ? 'opacity-100' : 'opacity-75'
+          className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors ${
+            isActive
+              ? 'border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320]/92 shadow-[0_10px_24px_rgba(2,6,23,0.34)]'
+              : 'border-white/10 bg-[#0d1320]/82 shadow-[0_8px_20px_rgba(2,6,23,0.24)]'
           }`}
-        />
-        <div
-          className="pointer-events-none absolute right-1 top-1 z-10"
-          data-testid={`panel-chrome-overlay-${panel.id}`}
-          data-floating-placement="inside-top-right"
-          aria-label={`Panel ${panelLabel || panel.id} controls`}
+          data-testid={`panel-header-actions-${panel.id}`}
+          title={`Panel ${panelLabel || panel.id} actions`}
         >
-          <div
-            className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors ${
-              isActive
-                ? 'border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320]/92 shadow-[0_10px_24px_rgba(2,6,23,0.34)]'
-                : 'border-white/10 bg-[#0d1320]/82 shadow-[0_8px_20px_rgba(2,6,23,0.24)]'
-            }`}
-            data-testid={`panel-header-actions-${panel.id}`}
-            title={`Panel ${panelLabel || panel.id} actions`}
+          <button
+            type="button"
+            data-testid={`panel-split-right-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+            title="Dividir a la derecha"
+            aria-label="Dividir a la derecha"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSplitRight?.();
+            }}
           >
-            <button
-              type="button"
-              data-testid={`panel-split-right-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-              title="Dividir a la derecha"
-              aria-label="Dividir a la derecha"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSplitRight?.();
-              }}
-            >
-              <SplitSquareVertical className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              data-testid={`panel-split-down-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-              title="Dividir hacia abajo"
-              aria-label="Dividir hacia abajo"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSplitDown?.();
-              }}
-            >
-              <SplitSquareHorizontal className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              data-testid={`panel-focus-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-              title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
-              aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleFocus?.();
-              }}
-            >
-              {isFocusedPanel ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-            </button>
-            <button
-              type="button"
-              data-testid={`panel-close-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
-              title="Cerrar terminal"
-              aria-label="Cerrar terminal"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClosePanel?.();
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
+            <SplitSquareVertical className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid={`panel-split-down-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+            title="Dividir hacia abajo"
+            aria-label="Dividir hacia abajo"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSplitDown?.();
+            }}
+          >
+            <SplitSquareHorizontal className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid={`panel-focus-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+            title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
+            aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFocus?.();
+            }}
+          >
+            {isFocusedPanel ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            data-testid={`panel-close-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
+            title="Cerrar terminal"
+            aria-label="Cerrar terminal"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClosePanel?.();
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
       <div
@@ -2265,7 +2210,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       });
                     }
                   }}
-                  className={`group h-6.5 shrink-0 px-3 rounded-xl text-[12px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
+                  className={`group h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
                     isActive
                       ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
                       : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
@@ -2301,7 +2246,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                     maximizedView: 'browser',
                   });
                 }}
-                className={`h-6.5 shrink-0 px-3 rounded-xl text-[12px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
+                className={`h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
                   isBrowserFullscreen
                     ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
                     : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
@@ -2315,7 +2260,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <button
               data-testid="panel-subtabs-add"
               onClick={() => addWindowToWorkspace(ws.id)}
-              className="h-6.5 w-6.5 shrink-0 flex items-center justify-center rounded-lg transition-colors text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]"
+              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-sm transition-colors text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]"
               title="Nueva vista"
               aria-label="Agregar vista"
             >
@@ -2327,7 +2272,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   type="button"
                   data-testid="panel-subtabs-split-right"
                   onClick={() => handleSplit('horizontal', activePanelId)}
-                  className="h-6.5 w-6.5 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                  className="h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-sm transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
                   title={splitRightLabel}
                   aria-label={splitRightLabel}
                 >
@@ -2337,7 +2282,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   type="button"
                   data-testid="panel-subtabs-split-down"
                   onClick={() => handleSplit('vertical', activePanelId)}
-                  className="h-6.5 w-6.5 shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
+                  className="h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-sm transition-colors border text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06]"
                   title={splitDownLabel}
                   aria-label={splitDownLabel}
                 >
@@ -2972,65 +2917,26 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <button
             type="button"
             onClick={addWorkspace}
-            className="inline-flex items-center justify-center w-9 h-9 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] rounded-xl border border-transparent hover:border-[var(--border-subtle)] transition-all ml-0.5 shrink-0"
+            className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
             title="Nuevo workspace"
             aria-label="Nuevo workspace"
             data-testid="workspace-add-button"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Global Toolbar + Window Controls */}
-        <div
-          className="flex items-center h-[40px] gap-1 shrink-0"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          {/* Agent Room Sidebar Toggle */}
-          <button
-            onClick={() => setIsAgentSidebarVisible((prev) => !prev)}
-            className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[11px] font-medium transition-all cursor-pointer select-none ${
-              isAgentSidebarVisible
-                ? 'text-[var(--accent-primary)] bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/25'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)]'
-            }`}
-            title={isAgentSidebarVisible ? 'Hide Agent Room' : 'Show Agent Room'}
-          >
-            <PanelLeft className="w-3.5 h-3.5" />
-            <span>Agents</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={openTerminalSwarmLauncher}
-            className="inline-flex h-7 items-center gap-1.5 rounded border border-orange-400/30 bg-orange-400/10 px-2.5 text-[11px] font-semibold text-orange-100 transition-all hover:border-orange-300/50 hover:bg-orange-400/16"
-            title="Lanzar swarm desde terminales"
-            aria-label="Lanzar swarm desde terminales"
-            data-testid="workspace-swarm-launch-button"
-          >
-            <Wand2 className="h-3.5 w-3.5" />
-            <span>Swarm</span>
-          </button>
-
-          {swarmLaunchSubmitState.error ? (
-            <span
-              className="max-w-[260px] truncate text-[11px] text-red-300"
-              title={swarmLaunchSubmitState.error}
-            >
-              {swarmLaunchSubmitState.error}
-            </span>
-          ) : null}
-
+        {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
+        <div className="flex items-center gap-0.5 shrink-0">
           {/* Grid Launcher */}
           <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
             <DropdownMenuTrigger asChild>
               <button
                 data-testid="workspace-grid-launcher-trigger"
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[11px] font-medium text-gray-400 hover:text-gray-200 hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)] transition-all cursor-pointer select-none"
+                className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
                 title="Lanzar Cuadrícula"
               >
-                <Grip className="w-3.5 h-3.5" />
-                <span>Grid</span>
+                <Grip className="w-4 h-4" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -3072,115 +2978,77 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Notificaciones, estado y switch del dock */}
-          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-[var(--border-subtle)]">
-            <NotificationCenter projectId={projectId} variant="topbar" />
-            <button
-              type="button"
-              data-testid="right-dock-toggle"
-              onClick={handleRightDockVisibilityToggle}
-              className={`inline-flex items-center justify-center h-7 w-7 rounded-lg border transition-all ${
-                rightDockState.visible
-                  ? 'text-[var(--accent-primary)] border-[rgba(var(--accent-rgb,88,166,255),0.28)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
-                  : 'text-[var(--text-muted)] border-transparent hover:border-[var(--border-subtle)] hover:bg-white/[0.05]'
-              }`}
-              title={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
-              aria-label={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
-            >
-              <PanelLeft className="w-3.5 h-3.5" />
-            </button>
-            <div
-              className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1"
-              data-testid="right-dock-toolbar-switch"
-            >
-              <div className="inline-flex items-center gap-1">
-                <button
-                  type="button"
-                  data-testid="right-dock-tab-browser"
-                  onClick={() => handleRightDockTabSelect('browser')}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
-                    rightDockState.activeTab === 'browser' && rightDockState.visible
-                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.24)]'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]'
-                  }`}
-                  title="Show browser dock"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>Browser</span>
-                  {activeBrowserWindowState?.open ? (
-                    <span
-                      className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.65)]"
-                      data-testid="right-dock-tab-browser-indicator"
-                      title="Ventana browser activa en segundo plano"
-                    />
-                  ) : null}
-                </button>
-                {activeBrowserWindowState?.open ? (
-                  <button
-                    type="button"
-                    data-testid="workspace-browser-window-close"
-                    onClick={() => closeWorkspaceBrowserWindow(activeWsId)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-emerald-100 transition-all hover:bg-emerald-400/14"
-                    title="Cerrar la ventana browser dedicada de este workspace"
-                    aria-label="Cerrar la ventana browser dedicada de este workspace"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                data-testid="right-dock-tab-editor"
-                onClick={() => handleRightDockTabSelect('editor')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
-                  rightDockState.activeTab === 'editor' && rightDockState.visible
-                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.24)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]'
-                }`}
-                title="Show editor dock"
-              >
-                <FileCode2 className="w-3.5 h-3.5" />
-                <span>Editor</span>
-              </button>
-            </div>
-            {rightDockState.visible ? (
-              <button
-                type="button"
-                data-testid="workspace-right-dock-maximize"
-                onClick={() =>
-                  updateRightDockState((currentState) => ({
-                    ...currentState,
-                    visible: true,
-                    maximized: !currentState.maximized,
-                    maximizedView: currentState.maximized
-                      ? currentState.maximizedView || 'browser'
-                      : currentState.activeTab === 'editor'
-                        ? 'editor'
-                        : 'browser',
-                  }))
-                }
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition-all hover:border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-primary)]"
-                title={rightDockState.maximized ? 'Restaurar dock' : 'Maximizar dock'}
-                aria-label={rightDockState.maximized ? 'Restaurar dock' : 'Maximizar dock'}
-              >
-                {rightDockState.maximized ? (
-                  <Minimize2 className="h-3.5 w-3.5" />
-                ) : (
-                  <Maximize2 className="h-3.5 w-3.5" />
-                )}
-              </button>
+          <button
+            type="button"
+            data-testid="right-dock-tab-browser"
+            onClick={() => handleRightDockTabSelect('browser')}
+            className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'browser' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Show browser dock"
+          >
+            <Globe className="w-4 h-4" />
+            {activeBrowserWindowState?.open ? (
+              <span
+                className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                data-testid="right-dock-tab-browser-indicator"
+                title="Ventana browser activa en segundo plano"
+              />
             ) : null}
-          </div>
+          </button>
+          <button
+            type="button"
+            data-testid="right-dock-tab-editor"
+            onClick={() => handleRightDockTabSelect('editor')}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'editor' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Show editor dock"
+          >
+            <FileCode2 className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={openTerminalSwarmLauncher}
+            className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
+            title="Lanzar swarm desde terminales"
+            aria-label="Lanzar swarm desde terminales"
+            data-testid="workspace-swarm-launch-button"
+          >
+            <Wand2 className="h-4 w-4" />
+          </button>
+
+          <div className="w-px h-5 bg-white/10 mx-1" />
+
+          <NotificationCenter projectId={projectId} variant="topbar" />
+          <button
+            type="button"
+            data-testid="right-dock-toggle"
+            onClick={handleRightDockVisibilityToggle}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
+            aria-label={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:text-gray-200 hover:bg-white/[0.06] border border-transparent hover:border-[var(--border-subtle)] transition-all cursor-pointer select-none"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
                 title="Reopen sessions"
                 aria-label="Reopen sessions"
               >
-                <History className="w-3.5 h-3.5" />
+                <History className="w-4 h-4" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
@@ -3219,107 +3087,97 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        retryResumableSessions();
+                        refreshResumableSessions();
                       }}
-                      className="inline-flex items-center gap-1 rounded-md border border-red-300/30 px-2 py-1 text-[11px] font-semibold text-red-200 hover:text-white"
+                      className="inline-flex items-center gap-1 text-xs text-red-200 hover:text-white"
                     >
+                      <RefreshCw className="w-3 h-3" />
                       Retry
                     </button>
                   ) : null}
                 </div>
               )}
 
-              {!isLoadingResumableSessions && reopenActionError && (
+              {reopenActionError && (
                 <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
               )}
 
-              {resumableSessions.length > 0 && (
-                <DropdownMenuLabel
-                  key="opencode-sessions-label"
-                  className="text-[10px] text-gray-500 px-2 pt-2 pb-1 uppercase tracking-wide"
-                >
-                  OpenCode
-                </DropdownMenuLabel>
-              )}
-
               {!isLoadingResumableSessions &&
-                resumableStatus === 'empty' &&
-                resumableSessions.length === 0 &&
-                !reopenActionError && (
+                resumableStatus !== 'error' &&
+                resumableSessions.length === 0 && (
                   <div className="px-2 py-3 text-xs text-gray-400">No recent sessions found.</div>
                 )}
 
               {!isLoadingResumableSessions &&
-                resumableSessions.map((session, index) => (
+                resumableSessions.map((session) => (
                   <DropdownMenuItem
-                    key={getSessionRenderKey(session, 'opencode-session', index)}
-                    className="flex flex-col items-start gap-1 rounded-md px-2 py-2 cursor-pointer focus:bg-[#162038]"
-                    onSelect={(e) => {
+                    key={session.sessionId}
+                    className="flex flex-col items-start gap-1 px-2 py-2 cursor-pointer"
+                    onSelect={async (e) => {
                       e.preventDefault();
-                      reopenOpenCodeSession(session);
+                      e.stopPropagation();
+                      try {
+                        await reopenOpenCodeSession(session);
+                      } catch (err) {
+                        setReopenActionError(String(err?.message || err || 'Reopen failed'));
+                      }
                     }}
                   >
-                    <div className="flex w-full items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 shrink-0">
-                          OC
-                        </span>
-                        <span className="truncate text-sm font-medium text-white">
-                          {session.title || session.sessionId}
-                        </span>
-                      </div>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-xs text-gray-400 shrink-0">
-                        <ExternalLink className="w-3 h-3" />
-                        Resume
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="text-xs font-medium text-gray-200 truncate">
+                        {session.title || session.sessionId}
+                      </span>
+                      <span className="text-[10px] text-gray-500 ml-auto">
+                        {session.lastActiveAt
+                          ? new Date(session.lastActiveAt).toLocaleTimeString()
+                          : ''}
                       </span>
                     </div>
-                    <div className="w-full text-[11px] text-gray-400 flex items-center gap-2">
-                      <span>
-                        Updated{' '}
-                        {session.updatedAt
-                          ? formatDistanceToNow(new Date(session.updatedAt), { addSuffix: true })
-                          : 'recently'}
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="text-[10px] text-gray-500 truncate">
+                        {session.workspaceId}
                       </span>
-                      <span className="text-gray-600">•</span>
-                      <span className="truncate font-mono" title={session.cwd || cwd}>
-                        {shortPath(session.cwd || cwd)}
-                      </span>
+                      <span className="text-[10px] text-gray-600">·</span>
+                      <span className="text-[10px] text-gray-500 truncate">{session.agentId}</span>
                     </div>
                   </DropdownMenuItem>
                 ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
 
-          {/* Window Controls - Circular macOS style */}
-          <div className="flex items-center gap-2.5 ml-3 pl-3 border-l border-[#2a2a2a]">
-            <button
-              onClick={handleWinMinimize}
-              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
-              title="Minimize"
-            >
-              <Minus
-                className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                strokeWidth={3}
-              />
-            </button>
-            <button
-              onClick={handleWinToggleMaximize}
-              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
-              title={isWinMaximized ? 'Restore' : 'Maximize'}
-            >
-              <Plus
-                className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                strokeWidth={3}
-              />
-            </button>
-            <button
-              onClick={handleWinClose}
-              className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
-              title="Close"
-            >
-              <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
-            </button>
-          </div>
+        {/* Window Controls */}
+        <div
+          className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]"
+          style={{ WebkitAppRegion: 'no-drag' }}
+        >
+          <button
+            onClick={handleWinMinimize}
+            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+            title="Minimize"
+          >
+            <Minus
+              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+              strokeWidth={3}
+            />
+          </button>
+          <button
+            onClick={handleWinToggleMaximize}
+            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+            title={isWinMaximized ? 'Restore' : 'Maximize'}
+          >
+            <Plus
+              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+              strokeWidth={3}
+            />
+          </button>
+          <button
+            onClick={handleWinClose}
+            className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+            title="Close"
+          >
+            <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
+          </button>
         </div>
       </div>
 
@@ -3380,7 +3238,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               wsIndex,
               workspaceGridKeyCounts
             );
-            const wsDockState = activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
+            const wsDockState =
+              activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
             const updateWsDockState = updateRightDockState;
             const focusedPanelId = focusedPanelByWorkspace[ws.id];
             const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
@@ -3622,7 +3481,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
             <div
               data-testid="workspace-right-dock-layer"
-              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${(!effectiveRightDockState.visible || hideRightDockPanel) ? 'hidden' : 'flex flex-col'}`}
+              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
               style={rightDockLayerStyle}
             >
               <WorkspaceRightDock

@@ -21,9 +21,7 @@ import {
 } from 'lucide-react';
 import { moveBrowserHistory } from './browserHistory';
 import { buildBrowserWindowLabel } from './browserWindowState';
-import {
-  BRIDGE_AGENT_OPTIONS,
-} from './bridgeAgentRequest';
+import { BRIDGE_AGENT_OPTIONS } from './bridgeAgentRequest';
 import useBrowserPreviewController, { SELECTOR_STATE } from './useBrowserPreviewController';
 import {
   BROWSER_RUNTIME,
@@ -81,21 +79,32 @@ function WorkspaceBrowserPane({
   const [nativeCapability, setNativeCapability] = useState(null);
   const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
   const previewEditMode = Boolean(dockState.editMode || forceEditMode);
-  const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.IFRAME;
-  const nativePanelId = useMemo(() => `browser-${projectId}-${workspaceId}`, [projectId, workspaceId]);
+  const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK;
+  const nativePanelId = useMemo(
+    () => `browser-${projectId}-${workspaceId}`,
+    [projectId, workspaceId]
+  );
   const nativeSelectorReady = hasNativeSelectorInspectCapability(nativeCapability);
-  const browserRuntimeSelection = useMemo(() => resolveBrowserRuntimeSelection({
-    requestedRuntime: requestedBrowserRuntime,
-    editMode: previewEditMode,
-    nativeCapability,
-  }), [nativeCapability, previewEditMode, requestedBrowserRuntime]);
-  const nativeRuntimeActive = browserRuntimeSelection.effectiveRuntime === BROWSER_RUNTIME.NATIVE_GTK;
+  const browserRuntimeSelection = useMemo(
+    () =>
+      resolveBrowserRuntimeSelection({
+        requestedRuntime: requestedBrowserRuntime,
+        editMode: previewEditMode,
+        nativeCapability,
+      }),
+    [nativeCapability, previewEditMode, requestedBrowserRuntime]
+  );
+  const nativeRuntimeActive =
+    browserRuntimeSelection.effectiveRuntime === BROWSER_RUNTIME.NATIVE_GTK;
   const nativeRuntimeVisibleInLayout = useMemo(() => {
     const activeTab = dockState.activeTab || 'browser';
     const dockVisible = dockState.visible !== false;
-    const browserOwnsMaximizedLayout = !dockState.maximized || dockState.maximizedView === 'browser';
+    const browserOwnsMaximizedLayout =
+      !dockState.maximized || dockState.maximizedView === 'browser';
 
-    return nativeRuntimeActive && dockVisible && activeTab === 'browser' && browserOwnsMaximizedLayout;
+    return (
+      nativeRuntimeActive && dockVisible && activeTab === 'browser' && browserOwnsMaximizedLayout
+    );
   }, [
     dockState.activeTab,
     dockState.maximized,
@@ -145,12 +154,16 @@ function WorkspaceBrowserPane({
 
   const canGoBack = dockState.browserHistoryIndex > 0;
   const canGoForward = dockState.browserHistoryIndex < (dockState.browserHistory?.length || 0) - 1;
-  const iframeTitle = useMemo(() => `Workspace preview ${dockState.browserUrl || ''}`.trim(), [dockState.browserUrl]);
+  const iframeTitle = useMemo(
+    () => `Workspace preview ${dockState.browserUrl || ''}`.trim(),
+    [dockState.browserUrl]
+  );
   const hostLabel = useMemo(() => getHostnameLabel(dockState.browserUrl), [dockState.browserUrl]);
   const nativeInspectStatusCopy = useMemo(() => {
     if (!nativeRuntimeActive) return null;
     if (!nativeSelectorReady) return 'Native inspect unavailable · fallback required';
-    if (selectorState === SELECTOR_STATE.SELECTED) return 'Native inspect active · element selected';
+    if (selectorState === SELECTOR_STATE.SELECTED)
+      return 'Native inspect active · element selected';
     if (isInspecting) return 'Native inspect active · selecting';
     return 'Native inspect ready';
   }, [isInspecting, nativeRuntimeActive, nativeSelectorReady, selectorState]);
@@ -173,14 +186,19 @@ function WorkspaceBrowserPane({
     }
 
     return `Activo: ${getBrowserRuntimeLabel(BROWSER_RUNTIME.IFRAME)}`;
-  }, [browserRuntimeSelection.fallbackReason, browserRuntimeSelection.requestedRuntime, nativeRuntimeActive]);
+  }, [
+    browserRuntimeSelection.fallbackReason,
+    browserRuntimeSelection.requestedRuntime,
+    nativeRuntimeActive,
+  ]);
   const handleBrowserRuntimeChange = (nextRuntime) => {
-    const normalizedRuntime = nextRuntime === BROWSER_RUNTIME.NATIVE_GTK
-      ? BROWSER_RUNTIME.NATIVE_GTK
-      : BROWSER_RUNTIME.IFRAME;
+    const normalizedRuntime =
+      nextRuntime === BROWSER_RUNTIME.NATIVE_GTK
+        ? BROWSER_RUNTIME.NATIVE_GTK
+        : BROWSER_RUNTIME.IFRAME;
 
     onDockStateChange((currentState) => {
-      if ((currentState.browserRuntime || BROWSER_RUNTIME.IFRAME) === normalizedRuntime) {
+      if ((currentState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK) === normalizedRuntime) {
         return currentState;
       }
 
@@ -221,7 +239,9 @@ function WorkspaceBrowserPane({
   const hideActiveNativeLease = async () => {
     if (!nativeLeaseRef.current.opened) return;
     const bounds = measureNativeBounds();
-    await setNativeBrowserVisibility({ panelId: nativePanelId, visible: false, bounds }).catch(() => {});
+    await setNativeBrowserVisibility({ panelId: nativePanelId, visible: false, bounds }).catch(
+      () => {}
+    );
   };
 
   useEffect(() => {
@@ -277,7 +297,10 @@ function WorkspaceBrowserPane({
 
         if (cancelled || !nativeRuntimeVisibleInLayout) {
           if (result?.opened === true) {
-            await closeNativeBrowser({ panelId: nativePanelId, reason: 'stale-open-cancelled' }).catch(() => {});
+            await closeNativeBrowser({
+              panelId: nativePanelId,
+              reason: 'stale-open-cancelled',
+            }).catch(() => {});
           }
           return;
         }
@@ -307,7 +330,9 @@ function WorkspaceBrowserPane({
       }
 
       await resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
-      await setNativeBrowserVisibility({ panelId: nativePanelId, visible: true, bounds }).catch(() => {});
+      await setNativeBrowserVisibility({ panelId: nativePanelId, visible: true, bounds }).catch(
+        () => {}
+      );
       await focusNativeBrowser({ panelId: nativePanelId }).catch(() => {});
 
       if (!cancelled) setNativeRuntimeReady(true);
@@ -318,24 +343,38 @@ function WorkspaceBrowserPane({
     return () => {
       cancelled = true;
     };
-  }, [browserError, dockState.browserUrl, nativePanelId, nativeRuntimeActive, nativeRuntimeVisibleInLayout]);
+  }, [
+    browserError,
+    dockState.browserUrl,
+    nativePanelId,
+    nativeRuntimeActive,
+    nativeRuntimeVisibleInLayout,
+  ]);
 
-  useEffect(() => () => {
-    if (!nativeLeaseRef.current.opened) return;
-    closeNativeBrowser({ panelId: nativePanelId, reason: 'component-unmount' }).catch(() => {});
-    nativeLeaseRef.current = { opened: false, lastUrl: '' };
-  }, [nativePanelId]);
+  useEffect(
+    () => () => {
+      if (!nativeLeaseRef.current.opened) return;
+      closeNativeBrowser({ panelId: nativePanelId, reason: 'component-unmount' }).catch(() => {});
+      nativeLeaseRef.current = { opened: false, lastUrl: '' };
+    },
+    [nativePanelId]
+  );
 
   useEffect(() => {
     if (!nativeRuntimeActive || !nativeRuntimeReady) return undefined;
-    if (typeof window === 'undefined' || typeof window.ResizeObserver !== 'function') return undefined;
+    if (typeof window === 'undefined' || typeof window.ResizeObserver !== 'function')
+      return undefined;
     const node = viewportShellRef.current;
     if (!node) return undefined;
 
     const observer = new window.ResizeObserver(() => {
       const bounds = measureNativeBounds();
       resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
-      setNativeBrowserVisibility({ panelId: nativePanelId, visible: nativeRuntimeVisibleInLayout, bounds }).catch(() => {});
+      setNativeBrowserVisibility({
+        panelId: nativePanelId,
+        visible: nativeRuntimeVisibleInLayout,
+        bounds,
+      }).catch(() => {});
     });
 
     observer.observe(node);
@@ -450,7 +489,10 @@ function WorkspaceBrowserPane({
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-[linear-gradient(180deg,#09111b_0%,#060b12_100%)]" data-testid="workspace-browser-pane">
+    <div
+      className="h-full min-h-0 flex flex-col bg-[linear-gradient(180deg,#09111b_0%,#060b12_100%)]"
+      data-testid="workspace-browser-pane"
+    >
       <form
         className="flex h-11 items-center gap-2 border-b border-[var(--border-subtle)] bg-[#07111c] px-3"
         onSubmit={handleSubmit}
@@ -514,7 +556,9 @@ function WorkspaceBrowserPane({
           <button
             type="button"
             data-testid="browser-back"
-            onClick={() => onDockStateChange((currentState) => moveBrowserHistory(currentState, -1))}
+            onClick={() =>
+              onDockStateChange((currentState) => moveBrowserHistory(currentState, -1))
+            }
             disabled={!canGoBack}
             className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
             aria-label="Back"
@@ -540,36 +584,6 @@ function WorkspaceBrowserPane({
           >
             <RefreshCw className="w-4 h-4" />
           </button>
-        </div>
-
-        <div
-          className="order-2.5 inline-flex h-8 shrink-0 items-center rounded-xl border border-[var(--border-subtle)] bg-[#08101d] p-0.5"
-          data-testid="browser-runtime-toggle"
-          aria-label="Seleccionar runtime del browser"
-        >
-          {[BROWSER_RUNTIME.IFRAME, BROWSER_RUNTIME.NATIVE_GTK].map((runtimeOption) => {
-            const selected = requestedBrowserRuntime === runtimeOption;
-            return (
-              <button
-                key={runtimeOption}
-                type="button"
-                data-testid={`browser-runtime-option-${runtimeOption}`}
-                aria-pressed={selected ? 'true' : 'false'}
-                onClick={() => handleBrowserRuntimeChange(runtimeOption)}
-                className={`inline-flex h-7 items-center rounded-[10px] px-2.5 text-[11px] font-semibold transition-colors ${
-                  selected
-                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
-                    : 'text-[var(--text-secondary)] hover:bg-white/[0.05] hover:text-[var(--text-primary)]'
-                }`}
-                title={runtimeOption === BROWSER_RUNTIME.NATIVE_GTK
-                  ? 'Pedir runtime native GTK/WebKitGTK'
-                  : 'Usar runtime iframe'
-                }
-              >
-                {runtimeOption === BROWSER_RUNTIME.NATIVE_GTK ? 'native-gtk' : 'iframe'}
-              </button>
-            );
-          })}
         </div>
 
         <label className="flex-1 min-w-0 relative order-3">
@@ -603,11 +617,25 @@ function WorkspaceBrowserPane({
                 data-testid="browser-toggle-workspace-maximize"
                 onClick={handleWorkspaceMaximizeToggle}
                 className="inline-flex h-6 items-center justify-center gap-1 rounded-md px-2 text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
-                aria-label={dockState.maximized ? 'Restore browser with terminals' : 'Expand browser in workspace'}
-                title={dockState.maximized ? 'Restore browser with terminals' : 'Expand browser in workspace'}
+                aria-label={
+                  dockState.maximized
+                    ? 'Restore browser with terminals'
+                    : 'Expand browser in workspace'
+                }
+                title={
+                  dockState.maximized
+                    ? 'Restore browser with terminals'
+                    : 'Expand browser in workspace'
+                }
               >
-                {dockState.maximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                <span className="text-[10px] font-semibold">{dockState.maximized ? 'Terminales' : 'Expandir'}</span>
+                {dockState.maximized ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+                <span className="text-[10px] font-semibold">
+                  {dockState.maximized ? 'Terminales' : 'Expandir'}
+                </span>
               </button>
             ) : null}
             <div
@@ -619,11 +647,12 @@ function WorkspaceBrowserPane({
                     : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
               }`}
               data-testid="browser-native-runtime-chip"
-              title={nativeRuntimeActive
-                ? 'Native GTK/WebKitGTK runtime active'
-                : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                  ? 'Native GTK pedido, pero el browser cayó a iframe'
-                  : 'Iframe runtime active'
+              title={
+                nativeRuntimeActive
+                  ? 'Native GTK/WebKitGTK runtime active'
+                  : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                    ? 'Native GTK pedido, pero el browser cayó a iframe'
+                    : 'Iframe runtime active'
               }
             >
               <span
@@ -637,24 +666,7 @@ function WorkspaceBrowserPane({
               />
               <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
             </div>
-            {dockState.browserUrl ? (
-              <div
-                className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
-                  dedicatedBrowserOpen
-                    ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200'
-                    : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
-                }`}
-                data-testid="browser-window-status"
-                title={dedicatedBrowserOpen ? 'Dedicated browser window open' : 'No dedicated browser window open'}
-              >
-                <span
-                  className={`inline-flex h-1.5 w-1.5 rounded-full ${
-                    dedicatedBrowserOpen ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.65)]' : 'bg-white/30'
-                  }`}
-                />
-                Win
-              </div>
-            ) : null}
+
             {dedicatedBrowserOpen ? (
               <button
                 type="button"
@@ -685,12 +697,16 @@ function WorkspaceBrowserPane({
       </form>
 
       <div
-        className="flex min-h-0 flex-1 flex-col bg-[#050814] p-3"
+        className={`flex min-h-0 flex-1 flex-col bg-[#050814] ${nativeRuntimeActive ? '' : 'p-3'}`}
         data-testid="browser-pane-body"
         style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}
       >
         <div
-          className="relative min-h-0 flex-1 overflow-hidden rounded-[16px] border border-white/10 bg-[#0a111d] shadow-[0_18px_48px_rgba(3,7,18,0.28)]"
+          className={`relative min-h-0 flex-1 overflow-hidden border bg-[#0a111d] ${
+            nativeRuntimeActive
+              ? 'border-0'
+              : 'rounded-[16px] border border-white/10 shadow-[0_18px_48px_rgba(3,7,18,0.28)]'
+          }`}
           data-testid="browser-viewport-shell"
           style={{
             ...VIEWPORT_SHELL_STYLE,
@@ -708,9 +724,15 @@ function WorkspaceBrowserPane({
                 <TriangleAlert className="h-5 w-5" />
               </div>
               <div className="space-y-2 max-w-sm">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Esta vista no se puede embeber</h3>
-                <p className="text-sm leading-6 text-[var(--text-secondary)]" data-testid="browser-frame-warning-copy">
-                  {hostLabel} bloquea o limita el render embebido, así que acá puede verse en blanco. Abrilo en una ventana dedicada o afuera para seguir navegando.
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Esta vista no se puede embeber
+                </h3>
+                <p
+                  className="text-sm leading-6 text-[var(--text-secondary)]"
+                  data-testid="browser-frame-warning-copy"
+                >
+                  {hostLabel} bloquea o limita el render embebido, así que acá puede verse en
+                  blanco. Abrilo en una ventana dedicada o afuera para seguir navegando.
                 </p>
               </div>
               <a
@@ -740,11 +762,50 @@ function WorkspaceBrowserPane({
                 <TriangleAlert className="h-5 w-5" />
               </div>
               <div className="space-y-2 max-w-md">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]" data-testid="browser-error-title">{browserError.title}</h3>
-                <p className="text-sm leading-6 text-[var(--text-secondary)]" data-testid="browser-error-copy">
+                <h3
+                  className="text-sm font-semibold text-[var(--text-primary)]"
+                  data-testid="browser-error-title"
+                >
+                  {browserError.title}
+                </h3>
+                <p
+                  className="text-sm leading-6 text-[var(--text-secondary)]"
+                  data-testid="browser-error-copy"
+                >
                   {browserError.message}
                 </p>
               </div>
+
+              {/* Common localhost URLs for quick navigation */}
+              <div className="flex flex-wrap items-center justify-center gap-2 max-w-md">
+                {[
+                  'localhost:3000',
+                  'localhost:5173',
+                  'localhost:8080',
+                  'localhost:4200',
+                  'localhost:3001',
+                  'localhost:8000',
+                ].map((url) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => {
+                      onDockStateChange((currentState) => ({
+                        ...currentState,
+                        browserUrl: `http://${url}/`,
+                        browserHistory: [...(currentState.browserHistory || []), `http://${url}/`],
+                        browserHistoryIndex: currentState.browserHistory?.length || 0,
+                      }));
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-mono text-[var(--text-secondary)] transition-colors hover:border-[rgba(var(--accent-rgb,88,166,255),0.24)] hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] hover:text-[var(--accent-primary)]"
+                    title={`Navegar a ${url}`}
+                  >
+                    <Globe className="h-3 w-3" />
+                    {url}
+                  </button>
+                ))}
+              </div>
+
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"
@@ -775,7 +836,9 @@ function WorkspaceBrowserPane({
                 onMouseDown={() => focusNativeBrowser({ panelId: nativePanelId }).catch(() => {})}
               >
                 <div className="max-w-sm space-y-2 px-6">
-                  <div className="text-sm font-semibold text-[var(--text-primary)]">Native GTK/WebKitGTK runtime</div>
+                  <div className="text-sm font-semibold text-[var(--text-primary)]">
+                    Native GTK/WebKitGTK runtime
+                  </div>
                   <p className="text-sm leading-6">
                     {nativeRuntimeReady
                       ? 'El panel nativo está activo dentro de DevHub. Si falla, vuelve silenciosamente al iframe.'
@@ -818,7 +881,6 @@ function WorkspaceBrowserPane({
                   <RefreshCw className="h-5 w-5 animate-spin text-[var(--text-muted)]" />
                 </div>
               ) : null}
-
             </>
           )}
 
@@ -829,7 +891,7 @@ function WorkspaceBrowserPane({
                   <Sparkles className="h-3.5 w-3.5 text-[var(--accent-primary)]" />
                   <span data-testid="bridge-status-badge">{statusLabel}</span>
                 </div>
-                  <div className="pointer-events-auto rounded-full border border-white/10 bg-[#06101b]/95 px-3 py-1 text-[11px] text-[var(--text-muted)] shadow-[0_10px_26px_rgba(0,0,0,0.28)]">
+                <div className="pointer-events-auto rounded-full border border-white/10 bg-[#06101b]/95 px-3 py-1 text-[11px] text-[var(--text-muted)] shadow-[0_10px_26px_rgba(0,0,0,0.28)]">
                   {nativeInspectOnlyMode ? 'native inspect mode' : 'visual edit mode'}
                 </div>
               </div>
@@ -838,11 +900,19 @@ function WorkspaceBrowserPane({
                 <div className="pointer-events-auto mt-12 w-[320px] rounded-[20px] border border-white/10 bg-[#07111d]/96 p-4 text-[var(--text-primary)] shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1 min-w-0">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Edit</div>
-                      <div className="text-sm font-semibold leading-5" data-testid="bridge-selection-summary">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                        Edit
+                      </div>
+                      <div
+                        className="text-sm font-semibold leading-5"
+                        data-testid="bridge-selection-summary"
+                      >
                         {selectedSummary || 'Seleccioná un nodo en la preview'}
                       </div>
-                      <div className="text-[11px] leading-5 text-[var(--text-secondary)]" data-testid="bridge-source-hint">
+                      <div
+                        className="text-[11px] leading-5 text-[var(--text-secondary)]"
+                        data-testid="bridge-source-hint"
+                      >
                         {sourceHint || 'Esperando metadata del overlay o del DOM'}
                       </div>
                     </div>
@@ -870,9 +940,16 @@ function WorkspaceBrowserPane({
                   </div>
 
                   {nativeInspectOnlyMode ? (
-                    <div className="mt-4 space-y-3 rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] p-3" data-testid="bridge-native-inspect-panel">
-                      <p className="text-[11px] leading-5 text-sky-100" data-testid="bridge-native-unsupported-copy">
-                        Native mode is inspect/select only right now. Switch to iframe for the trustworthy visual edit/apply workflow.
+                    <div
+                      className="mt-4 space-y-3 rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] p-3"
+                      data-testid="bridge-native-inspect-panel"
+                    >
+                      <p
+                        className="text-[11px] leading-5 text-sky-100"
+                        data-testid="bridge-native-unsupported-copy"
+                      >
+                        Native mode is inspect/select only right now. Switch to iframe for the
+                        trustworthy visual edit/apply workflow.
                       </p>
                       <button
                         type="button"
@@ -887,7 +964,9 @@ function WorkspaceBrowserPane({
                   ) : (
                     <>
                       <div className="mt-4 rounded-2xl border border-white/8 bg-black/20 p-3">
-                        <label className="mb-2 block text-[11px] font-medium text-[var(--text-muted)]">Describe the change…</label>
+                        <label className="mb-2 block text-[11px] font-medium text-[var(--text-muted)]">
+                          Describe the change…
+                        </label>
                         <textarea
                           data-testid="bridge-change-input"
                           value={changeRequest}
@@ -941,13 +1020,19 @@ function WorkspaceBrowserPane({
                   )}
 
                   {unsupportedCopy && !nativeRuntimeActive ? (
-                    <p className="mt-4 text-[11px] leading-5 text-amber-200" data-testid="bridge-unsupported-copy">
+                    <p
+                      className="mt-4 text-[11px] leading-5 text-amber-200"
+                      data-testid="bridge-unsupported-copy"
+                    >
                       {unsupportedCopy}
                     </p>
                   ) : null}
 
                   {nativeRuntimeActive ? (
-                    <p className="mt-4 text-[11px] leading-5 text-sky-100" data-testid="bridge-native-inspect-status">
+                    <p
+                      className="mt-4 text-[11px] leading-5 text-sky-100"
+                      data-testid="bridge-native-inspect-status"
+                    >
                       {nativeInspectStatusCopy}
                     </p>
                   ) : null}
@@ -972,7 +1057,10 @@ function WorkspaceBrowserPane({
 
         {nativeInspectOnlyMode ? (
           <div className="mt-3 shrink-0" data-testid="bridge-native-inspect-dock">
-            <div className="rounded-[20px] border border-white/10 bg-[#07111d]/96 p-4 text-[var(--text-primary)] shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-sm" data-testid="bridge-native-inspect-panel">
+            <div
+              className="rounded-[20px] border border-white/10 bg-[#07111d]/96 p-4 text-[var(--text-primary)] shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-sm"
+              data-testid="bridge-native-inspect-panel"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-[rgba(var(--accent-rgb,88,166,255),0.18)] bg-[#06101b]/95 px-3 py-1 text-[11px] text-[var(--text-secondary)]">
                   <Sparkles className="h-3.5 w-3.5 text-[var(--accent-primary)]" />
@@ -985,11 +1073,19 @@ function WorkspaceBrowserPane({
 
               <div className="mt-4 flex items-start justify-between gap-3">
                 <div className="space-y-1 min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Edit</div>
-                  <div className="text-sm font-semibold leading-5" data-testid="bridge-selection-summary">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                    Edit
+                  </div>
+                  <div
+                    className="text-sm font-semibold leading-5"
+                    data-testid="bridge-selection-summary"
+                  >
                     {selectedSummary || 'Seleccioná un nodo en la preview'}
                   </div>
-                  <div className="text-[11px] leading-5 text-[var(--text-secondary)]" data-testid="bridge-source-hint">
+                  <div
+                    className="text-[11px] leading-5 text-[var(--text-secondary)]"
+                    data-testid="bridge-source-hint"
+                  >
                     {sourceHint || 'Esperando metadata del overlay o del DOM'}
                   </div>
                 </div>
@@ -1015,14 +1111,21 @@ function WorkspaceBrowserPane({
                   {isInspecting ? 'Selecting' : 'Inspect'}
                 </button>
 
-                <p className="text-[11px] leading-5 text-sky-100" data-testid="bridge-native-inspect-status">
+                <p
+                  className="text-[11px] leading-5 text-sky-100"
+                  data-testid="bridge-native-inspect-status"
+                >
                   {nativeInspectStatusCopy}
                 </p>
               </div>
 
               <div className="mt-4 space-y-3 rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] p-3">
-                <p className="text-[11px] leading-5 text-sky-100" data-testid="bridge-native-unsupported-copy">
-                  Native mode is inspect/select only right now. Switch to iframe for the trustworthy visual edit/apply workflow.
+                <p
+                  className="text-[11px] leading-5 text-sky-100"
+                  data-testid="bridge-native-unsupported-copy"
+                >
+                  Native mode is inspect/select only right now. Switch to iframe for the trustworthy
+                  visual edit/apply workflow.
                 </p>
                 <button
                   type="button"

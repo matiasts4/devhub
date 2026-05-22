@@ -1,5 +1,14 @@
 import React from 'react';
-import { formatToken, metaTextStyle, panelShellStyle, renderEmptyCopy } from './utils';
+import {
+  CountBadge,
+  StatusPill,
+  formatToken,
+  metaTextStyle,
+  panelListStyle,
+  panelShellStyle,
+  renderEmptyCopy,
+  truncateId,
+} from './utils';
 
 const MAX_VISIBLE_ITEMS = 5;
 
@@ -39,7 +48,10 @@ export default function DirectorQueuePanel({
       <header className="mb-4 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold">Cola del director</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold">Cola del director</h2>
+              <CountBadge count={items.length} />
+            </div>
             <p className="text-sm" style={metaTextStyle()}>
               Solo lectura. Proyección durable sin acciones de claim en esta etapa.
             </p>
@@ -75,7 +87,7 @@ export default function DirectorQueuePanel({
         ) : null}
       </header>
 
-      <div className="space-y-3">
+      <div className="max-h-[360px] space-y-3 overflow-y-auto pr-0.5" style={panelListStyle()}>
         {visibleItems.length === 0
           ? renderEmptyCopy('Sin tareas durables listas o bloqueadas en este snapshot.')
           : visibleItems.map((item) => (
@@ -85,21 +97,23 @@ export default function DirectorQueuePanel({
                 style={panelShellStyle()}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">{item.position}</span>
-                      <h3 className="font-medium">{item.title || 'Sin título durable'}</h3>
+                      <span className="text-sm font-semibold shrink-0">{item.position}</span>
+                      <h3 className="font-medium truncate">{item.title || 'Sin título durable'}</h3>
                     </div>
-                    <p className="text-sm" style={metaTextStyle()}>
-                      {item.id || 'Sin id'}
+                    <p
+                      className="text-xs truncate font-mono"
+                      style={metaTextStyle()}
+                      title={item.id}
+                    >
+                      {item.id ? truncateId(item.id) : 'Sin id'}
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <Badge
-                      label={item.status === 'blocked' ? 'Bloqueada' : formatToken(item.status)}
-                    />
-                    {item.priority ? <Badge label={String(item.priority)} /> : null}
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <StatusPill status={item.status === 'blocked' ? 'blocked' : item.status} />
+                    {item.priority ? <StatusPill status={String(item.priority)} /> : null}
                   </div>
                 </div>
 
@@ -146,19 +160,23 @@ export default function DirectorQueuePanel({
               {handoff.workspace?.workspace_id ? (
                 <div>
                   <dt className="font-medium">Workspace</dt>
-                  <dd>{handoff.workspace.workspace_id}</dd>
+                  <dd title={handoff.workspace.workspace_id}>
+                    {truncateId(handoff.workspace.workspace_id)}
+                  </dd>
                 </div>
               ) : null}
               {handoff.run?.run_id ? (
                 <div>
                   <dt className="font-medium">Run</dt>
-                  <dd>{handoff.run.run_id}</dd>
+                  <dd title={handoff.run.run_id}>{truncateId(handoff.run.run_id)}</dd>
                 </div>
               ) : null}
               {handoff.supervisor?.supervisor_state ? (
                 <div>
                   <dt className="font-medium">Supervisor</dt>
-                  <dd>{String(handoff.supervisor.supervisor_state).replace(/_/g, ' ')}</dd>
+                  <dd>
+                    <StatusPill status={handoff.supervisor.supervisor_state} />
+                  </dd>
                 </div>
               ) : null}
             </dl>
@@ -166,13 +184,5 @@ export default function DirectorQueuePanel({
         </section>
       ) : null}
     </section>
-  );
-}
-
-function Badge({ label }) {
-  return (
-    <span className="rounded-full border px-2.5 py-1" style={panelShellStyle()}>
-      {label}
-    </span>
   );
 }

@@ -1,11 +1,11 @@
 import React from 'react';
 import {
+  StatusPill,
   formatEvidence,
   formatMissingSource,
   formatToken,
   metaTextStyle,
   panelShellStyle,
-  renderEmptyCopy,
 } from './utils';
 
 const DIAGNOSTIC_ORDER = [
@@ -46,15 +46,17 @@ export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, o
 
             return (
               <article key={key} className="rounded-xl border p-3" style={panelShellStyle()}>
-                <h3 className="font-medium">{label}</h3>
-                <p className="mt-2 text-sm">{formatToken(record.status)}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-medium">{label}</h3>
+                  <StatusPill status={record?.status} />
+                </div>
                 <p className="mt-1 text-xs" style={metaTextStyle()}>
-                  {formatToken(record.authority)} · {formatToken(record.freshness)}
+                  {formatToken(record?.authority)} · {formatToken(record?.freshness)}
                 </p>
                 <p className="mt-2 text-xs" style={metaTextStyle()}>
-                  {formatEvidence(record.evidence_refs)}
+                  {formatEvidence(record?.evidence_refs)}
                 </p>
-                {record.missing_source ? (
+                {record?.missing_source ? (
                   <p className="mt-1 text-xs" style={metaTextStyle()}>
                     {formatMissingSource(record.missing_source)}
                   </p>
