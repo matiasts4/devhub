@@ -542,35 +542,7 @@ function WorkspaceBrowserPane({
           </button>
         </div>
 
-        <div
-          className="order-2.5 inline-flex h-8 shrink-0 items-center rounded-xl border border-[var(--border-subtle)] bg-[#08101d] p-0.5"
-          data-testid="browser-runtime-toggle"
-          aria-label="Seleccionar runtime del browser"
-        >
-          {[BROWSER_RUNTIME.IFRAME, BROWSER_RUNTIME.NATIVE_GTK].map((runtimeOption) => {
-            const selected = requestedBrowserRuntime === runtimeOption;
-            return (
-              <button
-                key={runtimeOption}
-                type="button"
-                data-testid={`browser-runtime-option-${runtimeOption}`}
-                aria-pressed={selected ? 'true' : 'false'}
-                onClick={() => handleBrowserRuntimeChange(runtimeOption)}
-                className={`inline-flex h-7 items-center rounded-[10px] px-2.5 text-[11px] font-semibold transition-colors ${
-                  selected
-                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
-                    : 'text-[var(--text-secondary)] hover:bg-white/[0.05] hover:text-[var(--text-primary)]'
-                }`}
-                title={runtimeOption === BROWSER_RUNTIME.NATIVE_GTK
-                  ? 'Pedir runtime native GTK/WebKitGTK'
-                  : 'Usar runtime iframe'
-                }
-              >
-                {runtimeOption === BROWSER_RUNTIME.NATIVE_GTK ? 'native-gtk' : 'iframe'}
-              </button>
-            );
-          })}
-        </div>
+
 
         <label className="flex-1 min-w-0 relative order-3">
           <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -728,6 +700,30 @@ function WorkspaceBrowserPane({
                   {browserError.message}
                 </p>
               </div>
+
+              {/* Common localhost URLs for quick navigation */}
+              <div className="flex flex-wrap items-center justify-center gap-2 max-w-md">
+                {['localhost:3000', 'localhost:5173', 'localhost:8080', 'localhost:4200', 'localhost:3001', 'localhost:8000'].map((url) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => {
+                      onDockStateChange((currentState) => ({
+                        ...currentState,
+                        browserUrl: `http://${url}/`,
+                        browserHistory: [...(currentState.browserHistory || []), `http://${url}/`],
+                        browserHistoryIndex: (currentState.browserHistory?.length || 0),
+                      }));
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-mono text-[var(--text-secondary)] transition-colors hover:border-[rgba(var(--accent-rgb,88,166,255),0.24)] hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] hover:text-[var(--accent-primary)]"
+                    title={`Navegar a ${url}`}
+                  >
+                    <Globe className="h-3 w-3" />
+                    {url}
+                  </button>
+                ))}
+              </div>
+
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"

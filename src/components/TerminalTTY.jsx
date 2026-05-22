@@ -930,6 +930,8 @@ export default function TerminalTTY({
 
   useEffect(() => {
     if (!nativeVteOpened || requestedRendererMode !== 'vte-experimental') return undefined;
+    // dock-side-by-side: VTE coexists with the browser dock — do NOT hide the panel.
+    if (nativeSurfacePolicy === 'dock-side-by-side') return undefined;
     if (isVisibleInLayout && !suspendNativeSurface) return undefined;
 
     (async () => {
@@ -937,11 +939,7 @@ export default function TerminalTTY({
         await setNativeVtePanelVisibility({
           panelId: id,
           visible: false,
-          reason: suspendNativeSurface
-            ? nativeSurfacePolicy === 'dock-side-by-side'
-              ? 'dock-side-by-side'
-              : 'suspended'
-            : undefined,
+          reason: suspendNativeSurface ? 'suspended' : undefined,
         });
       } catch (error) {
         handleNativeLeaseCommandError(error);
@@ -974,7 +972,9 @@ export default function TerminalTTY({
   ]);
 
   useEffect(() => {
-    if (!nativeVteOpened || !isVisibleInLayout || suspendNativeSurface) return undefined;
+    if (!nativeVteOpened || !isVisibleInLayout) return undefined;
+    // dock-side-by-side: VTE coexists with dock — still resize, just skip hide.
+    if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
     const sendNativeResize = () => {
       const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
