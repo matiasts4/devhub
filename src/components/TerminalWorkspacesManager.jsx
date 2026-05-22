@@ -2856,428 +2856,299 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       {...getWorkspaceAnimProps(isMaximized)}
       key={isMaximized ? 'maximized' : 'normal'}
     >
-      {/* Top Workspace Tab Bar */}
+      {/* Global Toolbar + Window Controls */}
       <div
-        key="workspace-top-tab-bar"
-        data-testid="workspace-top-tab-bar"
-        className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
+        className="flex items-center h-[40px] gap-1 shrink-0 border-b border-[var(--border-subtle)] px-3"
+        style={{ WebkitAppRegion: 'no-drag' }}
       >
-        <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
-          {workspaces.map((ws, wsIndex) => {
-            const totalPanels = getAllPanelIds(ws.columns).length;
-            const workspaceTabKey = buildUniqueRenderKey(
-              'workspace-tab',
-              ws.id,
-              wsIndex,
-              workspaceTabKeyCounts
-            );
-            const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
-            const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
-            return (
-              <div
-                key={workspaceTabKey}
-                onClick={() => setActiveWsId(ws.id)}
-                draggable
-                onDragStart={(e) => {
-                  setDraggedWsId(ws.id);
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                onDragEnd={() => {
-                  setDraggedWsId(null);
-                  setDragOverWsId(null);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (draggedWsId && draggedWsId !== ws.id) setDragOverWsId(ws.id);
-                }}
-                onDragLeave={() => setDragOverWsId(null)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  reorderWorkspaceTabs(draggedWsId, ws.id);
-                  setDraggedWsId(null);
-                  setDragOverWsId(null);
-                }}
-                className={`group flex items-center justify-between h-full px-4 rounded-xl transition-all cursor-grab active:cursor-grabbing select-none border ${
-                  draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
-                } ${
-                  activeWsId === ws.id
-                    ? 'text-[var(--text-primary)] border-[var(--border-subtle)]'
-                    : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
-                }`}
-                title={workspaceTabLabel}
-                style={{
-                  ...getWorkspaceTabStyle(workspaces.length),
-                  ...(activeWsId === ws.id
-                    ? {
-                        background: `rgba(var(--accent-rgb,88,166,255),0.08)`,
-                        borderColor: `rgba(var(--accent-rgb,88,166,255),0.22)`,
-                        boxShadow: `inset 0 -2px 0 rgba(var(--accent-rgb,88,166,255),0.55)`,
-                      }
-                    : dragOverWsId === ws.id && draggedWsId !== ws.id
-                      ? {
-                          background: 'rgba(var(--accent-rgb,88,166,255),0.07)',
-                          borderColor: 'rgba(var(--accent-rgb,88,166,255),0.35)',
-                        }
-                      : {}),
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <LayoutGrid
-                    className="w-3.5 h-3.5 shrink-0"
-                    style={{
-                      color:
-                        activeWsId === ws.id
-                          ? `rgba(var(--accent-rgb,88,166,255),0.9)`
-                          : 'currentColor',
-                    }}
-                  />
-                  <span className="text-[12px] font-semibold truncate">{workspaceTabLabel}</span>
-                  {hasOpenBrowserWindow ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
-                      <span
-                        className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
-                        data-testid={`workspace-browser-indicator-${ws.id}`}
-                        title="Dedicated browser window open"
-                      />
-                      <button
-                        type="button"
-                        data-testid={`workspace-browser-close-${ws.id}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          closeWorkspaceBrowserWindow(ws.id);
-                        }}
-                        className="inline-flex items-center justify-center rounded text-emerald-100/80 transition-colors hover:text-white"
-                        title="Cerrar browser dedicado de este workspace"
-                        aria-label="Cerrar browser dedicado de este workspace"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ) : null}
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
-                    style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)' }}
-                  >
-                    {totalPanels}
-                  </span>
-                </div>
-                {workspaces.length > 1 && (
-                  <button
-                    onClick={(e) => removeWorkspace(e, ws.id)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded ml-1.5 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={addWorkspace}
-            className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
-            title="Nuevo workspace"
-            aria-label="Nuevo workspace"
-            data-testid="workspace-add-button"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Global Toolbar + Window Controls */}
-        <div
-          className="flex items-center h-[40px] gap-1 shrink-0"
-          style={{ WebkitAppRegion: 'no-drag' }}
+        <button
+          type="button"
+          onClick={openTerminalSwarmLauncher}
+          className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
+          title="Lanzar swarm desde terminales"
+          aria-label="Lanzar swarm desde terminales"
+          data-testid="workspace-swarm-launch-button"
         >
+          <Wand2 className="h-4 w-4" />
+        </button>
+
+        {swarmLaunchSubmitState.error ? (
+          <span
+            className="max-w-[260px] truncate text-[11px] text-red-300"
+            title={swarmLaunchSubmitState.error}
+          >
+            {swarmLaunchSubmitState.error}
+          </span>
+        ) : null}
+
+        {/* Grid Launcher */}
+        <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              data-testid="workspace-grid-launcher-trigger"
+              className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+              title="Lanzar Cuadrícula"
+            >
+              <Grip className="w-4 h-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
+            data-testid="workspace-grid-launcher-content"
+          >
+            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
+              Grillas Predefinidas
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-white/10" />
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {[
+                { label: '2 Paneles', cols: 2, rows: 1 },
+                { label: '4 Paneles', cols: 2, rows: 2 },
+                { label: '6 Paneles', cols: 3, rows: 2 },
+              ].map((layout) => (
+                <button
+                  key={layout.label}
+                  onClick={() => handleApplyGrid(layout.cols, layout.rows)}
+                  className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                >
+                  <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
+                  <span className="text-[10px] font-semibold">{layout.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 px-1 mb-1">
+              <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
+                Comando Inicial
+              </label>
+              <input
+                type="text"
+                value={gridCommand}
+                onChange={(e) => setGridCommand(e.target.value)}
+                placeholder="ej. opencode"
+                className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
+              />
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Notificaciones, estado y switch del dock */}
+        <div className="flex items-center gap-1 ml-1 pl-2 border-l border-[var(--border-subtle)]">
+          <NotificationCenter projectId={projectId} variant="topbar" />
           <button
             type="button"
-            onClick={openTerminalSwarmLauncher}
-            className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
-            title="Lanzar swarm desde terminales"
-            aria-label="Lanzar swarm desde terminales"
-            data-testid="workspace-swarm-launch-button"
+            data-testid="right-dock-toggle"
+            onClick={handleRightDockVisibilityToggle}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
+            aria-label={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
           >
-            <Wand2 className="h-4 w-4" />
+            <PanelLeft className="w-4 h-4" />
           </button>
-
-          {swarmLaunchSubmitState.error ? (
-            <span
-              className="max-w-[260px] truncate text-[11px] text-red-300"
-              title={swarmLaunchSubmitState.error}
-            >
-              {swarmLaunchSubmitState.error}
-            </span>
-          ) : null}
-
-          {/* Grid Launcher */}
-          <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
-            <DropdownMenuTrigger asChild>
-              <button
-                data-testid="workspace-grid-launcher-trigger"
-                className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                title="Lanzar Cuadrícula"
-              >
-                <Grip className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
-              data-testid="workspace-grid-launcher-content"
-            >
-              <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
-                Grillas Predefinidas
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/10" />
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {[
-                  { label: '2 Paneles', cols: 2, rows: 1 },
-                  { label: '4 Paneles', cols: 2, rows: 2 },
-                  { label: '6 Paneles', cols: 3, rows: 2 },
-                ].map((layout) => (
-                  <button
-                    key={layout.label}
-                    onClick={() => handleApplyGrid(layout.cols, layout.rows)}
-                    className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                  >
-                    <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
-                    <span className="text-[10px] font-semibold">{layout.label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-3 px-1 mb-1">
-                <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
-                  Comando Inicial
-                </label>
-                <input
-                  type="text"
-                  value={gridCommand}
-                  onChange={(e) => setGridCommand(e.target.value)}
-                  placeholder="ej. opencode"
-                  className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
-                />
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Notificaciones, estado y switch del dock */}
-          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-[var(--border-subtle)]">
-            <NotificationCenter projectId={projectId} variant="topbar" />
-            <button
-              type="button"
-              data-testid="right-dock-toggle"
-              onClick={handleRightDockVisibilityToggle}
-              className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                rightDockState.visible
-                  ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
-                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-              }`}
-              title={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
-              aria-label={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
-            >
-              <PanelLeft className="w-4 h-4" />
-            </button>
-            <div
-              className="inline-flex items-center gap-0.5 rounded-sm p-0.5"
-              data-testid="right-dock-toolbar-switch"
-            >
-              <div className="inline-flex items-center gap-0.5">
-                <button
-                  type="button"
-                  data-testid="right-dock-tab-browser"
-                  onClick={() => handleRightDockTabSelect('browser')}
-                  className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                    rightDockState.activeTab === 'browser' && rightDockState.visible
-                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
-                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-                  }`}
-                  title="Show browser dock"
-                >
-                  <Globe className="w-4 h-4" />
-                  {activeBrowserWindowState?.open ? (
-                    <span
-                      className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
-                      data-testid="right-dock-tab-browser-indicator"
-                      title="Ventana browser activa en segundo plano"
-                    />
-                  ) : null}
-                </button>
-                {activeBrowserWindowState?.open ? (
-                  <button
-                    type="button"
-                    data-testid="workspace-browser-window-close"
-                    onClick={() => closeWorkspaceBrowserWindow(activeWsId)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-emerald-300/70 transition-all hover:text-emerald-200 hover:bg-emerald-400/10"
-                    title="Cerrar la ventana browser dedicada de este workspace"
-                    aria-label="Cerrar la ventana browser dedicada de este workspace"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                ) : null}
-              </div>
+          <div
+            className="inline-flex items-center gap-0.5 rounded-sm p-0.5"
+            data-testid="right-dock-toolbar-switch"
+          >
+            <div className="inline-flex items-center gap-0.5">
               <button
                 type="button"
-                data-testid="right-dock-tab-editor"
-                onClick={() => handleRightDockTabSelect('editor')}
-                className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                  rightDockState.activeTab === 'editor' && rightDockState.visible
+                data-testid="right-dock-tab-browser"
+                onClick={() => handleRightDockTabSelect('browser')}
+                className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                  rightDockState.activeTab === 'browser' && rightDockState.visible
                     ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
                     : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
                 }`}
-                title="Show editor dock"
+                title="Show browser dock"
               >
-                <FileCode2 className="w-4 h-4" />
+                <Globe className="w-4 h-4" />
+                {activeBrowserWindowState?.open ? (
+                  <span
+                    className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                    data-testid="right-dock-tab-browser-indicator"
+                    title="Ventana browser activa en segundo plano"
+                  />
+                ) : null}
               </button>
-            </div>
-          </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                title="Reopen sessions"
-                aria-label="Reopen sessions"
-              >
-                <History className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
-              <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
-                <span>Agent Sessions</span>
+              {activeBrowserWindowState?.open ? (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    refreshResumableSessions();
-                  }}
-                  className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                  data-testid="workspace-browser-window-close"
+                  onClick={() => closeWorkspaceBrowserWindow(activeWsId)}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-emerald-300/70 transition-all hover:text-emerald-200 hover:bg-emerald-400/10"
+                  title="Cerrar la ventana browser dedicada de este workspace"
+                  aria-label="Cerrar la ventana browser dedicada de este workspace"
                 >
-                  <RefreshCw
-                    className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
-                  />
-                  Refresh
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/10" />
-
-              {isLoadingResumableSessions && (
-                <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
-                  <Clock3 className="w-3.5 h-3.5 animate-pulse" />
-                  Loading recent sessions...
-                </div>
-              )}
-
-              {!isLoadingResumableSessions && resumableStatus === 'error' && resumableError && (
-                <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
-                  <span>{resumableError.message}</span>
-                  {resumableError.retryable !== false ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        retryResumableSessions();
-                      }}
-                      className="inline-flex items-center gap-1 rounded-md border border-red-300/30 px-2 py-1 text-[11px] font-semibold text-red-200 hover:text-white"
-                    >
-                      Retry
-                    </button>
-                  ) : null}
-                </div>
-              )}
-
-              {!isLoadingResumableSessions && reopenActionError && (
-                <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
-              )}
-
-              {resumableSessions.length > 0 && (
-                <DropdownMenuLabel
-                  key="opencode-sessions-label"
-                  className="text-[10px] text-gray-500 px-2 pt-2 pb-1 uppercase tracking-wide"
-                >
-                  OpenCode
-                </DropdownMenuLabel>
-              )}
-
-              {!isLoadingResumableSessions &&
-                resumableStatus === 'empty' &&
-                resumableSessions.length === 0 &&
-                !reopenActionError && (
-                  <div className="px-2 py-3 text-xs text-gray-400">No recent sessions found.</div>
-                )}
-
-              {!isLoadingResumableSessions &&
-                resumableSessions.map((session, index) => (
-                  <DropdownMenuItem
-                    key={getSessionRenderKey(session, 'opencode-session', index)}
-                    className="flex flex-col items-start gap-1 rounded-md px-2 py-2 cursor-pointer focus:bg-[#162038]"
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      reopenOpenCodeSession(session);
-                    }}
-                  >
-                    <div className="flex w-full items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 shrink-0">
-                          OC
-                        </span>
-                        <span className="truncate text-sm font-medium text-white">
-                          {session.title || session.sessionId}
-                        </span>
-                      </div>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-xs text-gray-400 shrink-0">
-                        <ExternalLink className="w-3 h-3" />
-                        Resume
-                      </span>
-                    </div>
-                    <div className="w-full text-[11px] text-gray-400 flex items-center gap-2">
-                      <span>
-                        Updated{' '}
-                        {session.updatedAt
-                          ? formatDistanceToNow(new Date(session.updatedAt), { addSuffix: true })
-                          : 'recently'}
-                      </span>
-                      <span className="text-gray-600">•</span>
-                      <span className="truncate font-mono" title={session.cwd || cwd}>
-                        {shortPath(session.cwd || cwd)}
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
-                ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Window Controls - Circular macOS style */}
-          <div className="flex items-center gap-2.5 ml-3 pl-3 border-l border-[#2a2a2a]">
+              ) : null}
+            </div>
             <button
-              onClick={handleWinMinimize}
-              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
-              title="Minimize"
+              type="button"
+              data-testid="right-dock-tab-editor"
+              onClick={() => handleRightDockTabSelect('editor')}
+              className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                rightDockState.activeTab === 'editor' && rightDockState.visible
+                  ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+              }`}
+              title="Show editor dock"
             >
-              <Minus
-                className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                strokeWidth={3}
-              />
-            </button>
-            <button
-              onClick={handleWinToggleMaximize}
-              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
-              title={isWinMaximized ? 'Restore' : 'Maximize'}
-            >
-              <Plus
-                className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                strokeWidth={3}
-              />
-            </button>
-            <button
-              onClick={handleWinClose}
-              className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
-              title="Close"
-            >
-              <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
+              <FileCode2 className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+              title="Reopen sessions"
+              aria-label="Reopen sessions"
+            >
+              <History className="w-4 h-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
+            <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
+              <span>Agent Sessions</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  refreshResumableSessions();
+                }}
+                className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+              >
+                <RefreshCw
+                  className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
+                />
+                Refresh
+              </button>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-white/10" />
+
+            {isLoadingResumableSessions && (
+              <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
+                <Clock3 className="w-3.5 h-3.5 animate-pulse" />
+                Loading recent sessions...
+              </div>
+            )}
+
+            {!isLoadingResumableSessions && resumableStatus === 'error' && resumableError && (
+              <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
+                <span>{resumableError.message}</span>
+                {resumableError.retryable !== false ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      retryResumableSessions();
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-red-300/30 px-2 py-1 text-[11px] font-semibold text-red-200 hover:text-white"
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            )}
+
+            {!isLoadingResumableSessions && reopenActionError && (
+              <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
+            )}
+
+            {resumableSessions.length > 0 && (
+              <DropdownMenuLabel
+                key="opencode-sessions-label"
+                className="text-[10px] text-gray-500 px-2 pt-2 pb-1 uppercase tracking-wide"
+              >
+                OpenCode
+              </DropdownMenuLabel>
+            )}
+
+            {!isLoadingResumableSessions &&
+              resumableStatus === 'empty' &&
+              resumableSessions.length === 0 &&
+              !reopenActionError && (
+                <div className="px-2 py-3 text-xs text-gray-400">No recent sessions found.</div>
+              )}
+
+            {!isLoadingResumableSessions &&
+              resumableSessions.map((session, index) => (
+                <DropdownMenuItem
+                  key={getSessionRenderKey(session, 'opencode-session', index)}
+                  className="flex flex-col items-start gap-1 rounded-md px-2 py-2 cursor-pointer focus:bg-[#162038]"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    reopenOpenCodeSession(session);
+                  }}
+                >
+                  <div className="flex w-full items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 shrink-0">
+                        OC
+                      </span>
+                      <span className="truncate text-sm font-medium text-white">
+                        {session.title || session.sessionId}
+                      </span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-xs text-gray-400 shrink-0">
+                      <ExternalLink className="w-3 h-3" />
+                      Resume
+                    </span>
+                  </div>
+                  <div className="w-full text-[11px] text-gray-400 flex items-center gap-2">
+                    <span>
+                      Updated{' '}
+                      {session.updatedAt
+                        ? formatDistanceToNow(new Date(session.updatedAt), { addSuffix: true })
+                        : 'recently'}
+                    </span>
+                    <span className="text-gray-600">•</span>
+                    <span className="truncate font-mono" title={session.cwd || cwd}>
+                      {shortPath(session.cwd || cwd)}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Window Controls - Circular macOS style */}
+        <div className="flex items-center gap-2.5 ml-3 pl-3 border-l border-[#2a2a2a]">
+          <button
+            onClick={handleWinMinimize}
+            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+            title="Minimize"
+          >
+            <Minus
+              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+              strokeWidth={3}
+            />
+          </button>
+          <button
+            onClick={handleWinToggleMaximize}
+            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+            title={isWinMaximized ? 'Restore' : 'Maximize'}
+          >
+            <Plus
+              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+              strokeWidth={3}
+            />
+          </button>
+          <button
+            onClick={handleWinClose}
+            className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+            title="Close"
+          >
+            <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
+          </button>
         </div>
       </div>
 
