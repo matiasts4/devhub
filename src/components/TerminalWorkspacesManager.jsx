@@ -539,6 +539,84 @@ function renderWorkspacePanel(
         setActivePanelIds((prev) => ({ ...prev, [wsId]: panel.id }));
       }}
     >
+      {/* Panel controls — top-right */}
+      <div
+        className="pointer-events-none absolute right-1.5 top-1.5 z-10"
+        data-testid={`panel-chrome-overlay-${panel.id}`}
+        data-floating-placement="inside-top-right"
+        aria-label={`Panel ${panelLabel || panel.id} controls`}
+      >
+        <div
+          className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors ${
+            isActive
+              ? 'border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320]/92 shadow-[0_10px_24px_rgba(2,6,23,0.34)]'
+              : 'border-white/10 bg-[#0d1320]/82 shadow-[0_8px_20px_rgba(2,6,23,0.24)]'
+          }`}
+          data-testid={`panel-header-actions-${panel.id}`}
+          title={`Panel ${panelLabel || panel.id} actions`}
+        >
+          <button
+            type="button"
+            data-testid={`panel-split-right-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+            title="Dividir a la derecha"
+            aria-label="Dividir a la derecha"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSplitRight?.();
+            }}
+          >
+            <SplitSquareVertical className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid={`panel-split-down-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+            title="Dividir hacia abajo"
+            aria-label="Dividir hacia abajo"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSplitDown?.();
+            }}
+          >
+            <SplitSquareHorizontal className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid={`panel-focus-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+            title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
+            aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFocus?.();
+            }}
+          >
+            {isFocusedPanel ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            data-testid={`panel-close-${panel.id}`}
+            data-size="comfortable"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
+            title="Cerrar terminal"
+            aria-label="Cerrar terminal"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClosePanel?.();
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
       <div
         className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
         data-testid={`panel-body-${panel.id}`}
