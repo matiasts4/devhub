@@ -32,8 +32,21 @@ program
     });
   });
 
+const agentsCommand = require('./commands/agents.js');
+program
+  .command('agents')
+  .description('Show registered swarm agents')
+  .option('--status <filter>', 'Filter by exact status match')
+  .option('--active', 'Show only active agents (active, working, running, thinking)')
+  .action((opts) => {
+    agentsCommand({
+      status: opts.status,
+      active: opts.active,
+    });
+  });
+
 // Stub commands — not yet implemented
-const STUB_COMMANDS = ['agents', 'swarm', 'task', 'ws', 'run'];
+const STUB_COMMANDS = ['swarm', 'task', 'ws', 'run'];
 
 STUB_COMMANDS.forEach((name) => {
   program

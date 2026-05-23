@@ -216,6 +216,87 @@ function readExecutionQueueSummary(dbOrNull, input = {}) {
   };
 }
 
+/**
+ * Compute a human-readable heartbeat age label.
+ * @param {string|null} lastHeartbeat - ISO 8601 timestamp
+ * @returns {string} "Nm ago", "Nh ago", "stale", or "unknown"
+ */
+function heartbeatLabel(lastHeartbeat) {
+  if (!lastHeartbeat) return 'unknown';
+  const ms = Date.parse(lastHeartbeat);
+  if (Number.isNaN(ms)) return 'unknown';
+  const ageMin = Math.round((Date.now() - ms) / 60000);
+  if (ageMin >= 5) return 'stale';
+  if (ageMin < 60) return `${ageMin}m ago`;
+  const ageH = Math.round(ageMin / 60);
+  if (ageH < 24) return `${ageH}h ago`;
+  return 'stale';
+}
+
+/**
+ * Query agent_registry with optional latest agent_workspaces LEFT JOIN.
+ * @param {Database} db - better-sqlite3 instance
+ * @param {object} opts
+ * @param {string} [opts.statusFilter] - exact status match
+ * @param {boolean} [opts.activeOnly] - filter to active statuses
+ * @returns {{ rows: Array, total: number }}
+ */
+function readAgentRegistrySummary(dbOrNull, opts = {}) {
+  const db = resolveDb(dbOrNull);
+  const { statusFilter, activeOnly } = opts;
+
+  const activeStatuses = ['active', 'working', 'running', 'thinking'];
+
+  let whereClauses = [];
+  let params = [];
+
+  if (statusFilter) {
+    whereClauses.push('ar.status = ?');
+    params.push(statusFilter);
+  }
+
+  if (activeOnly) {
+    whereClauses.push(`ar.status IN (${activeStatuses.map(() => '?').join(', ')})`);
+    params.push(...activeStatuses);
+  }
+
+  const whereSql = whereClauses.length > 0 ? ` AND ${whereClauses.join(' AND ')}` : '';
+
+  const sql = `
+    SELECT
+      ar.agent_id,
+      ar.nombre,
+      ar.modelo_llm,
+      ar.status,
+      ar.current_task_id,
+      ar.last_heartbeat,
+      aw.branch_name,
+      aw.status AS ws_status
+    FROM agent_registry ar
+    LEFT JOIN agent_workspaces aw
+      ON aw.agent_id = ar.agent_id
+      AND aw.updated_at = (
+        SELECT MAX(aw2.updated_at)
+        FROM agent_workspaces aw2
+        WHERE aw2.agent_id = ar.agent_id
+      )
+    WHERE 1=1${whereSql}
+    ORDER BY ar.agent_id
+  `;
+
+  const rows = db.prepare(sql).all(...params);
+
+  const enriched = rows.map(row => ({
+    ...row,
+    heartbeat_age_min: row.last_heartbeat
+      ? Math.round((Date.now() - Date.parse(row.last_heartbeat)) / 60000)
+      : null,
+    heartbeat_label: heartbeatLabel(row.last_heartbeat),
+  }));
+
+  return { rows: enriched, total: enriched.length };
+}
+
 function readWorkspaceEvidenceSummary(dbOrNull, input = {}) {
   const db = resolveDb(dbOrNull);
   const workspaceId = input.workspaceId || input.workspace_id;
@@ -242,6 +323,8 @@ function readWorkspaceEvidenceSummary(dbOrNull, input = {}) {
 module.exports = {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
+  readAgentRegistrySummary,
+  heartbeatLabel,
   presentExecutionQueue,
   presentWorkspaceEvidence,
   createDirectorQueueContract,
