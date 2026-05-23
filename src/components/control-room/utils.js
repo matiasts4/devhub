@@ -1,5 +1,3 @@
-import React from 'react';
-
 const TOKEN_LABELS = Object.freeze({
   unknown: 'desconocido',
   active: 'activo',
@@ -199,4 +197,118 @@ export function panelListStyle() {
     scrollbarWidth: 'thin',
     scrollbarColor: 'var(--border-subtle) transparent',
   };
+}
+
+// ── Compact layout components ─────────────────────────────────────────────────
+
+/**
+ * Shared panel shell used by compact list panels (AgentsClaimsPanel, etc).
+ */
+export function CompactPanelShell({
+  title,
+  description,
+  count,
+  items,
+  renderItem,
+  emptyMessage,
+  ariaLabel,
+}) {
+  return (
+    <div
+      className="rounded-xl border p-3"
+      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+      aria-label={ariaLabel}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-default)' }}>
+            {title}
+          </h3>
+          <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            {description}
+          </p>
+        </div>
+        {count > 0 && (
+          <span
+            className="rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums"
+            style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+          >
+            {count}
+          </span>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <div
+          className="rounded-lg border border-dashed px-3 py-4 text-sm"
+          style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+        >
+          {emptyMessage}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {items.map((item, idx) => (
+            <React.Fragment key={idx}>{renderItem(item)}</React.Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Compact row used inside list panels.
+ */
+export function CompactRow({ status, primary, secondary, badge, timestamp }) {
+  const theme = resolveStatusTheme(status);
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full"
+          style={{ background: theme.dot }}
+        />
+        <div className="flex flex-col">
+          <span className="text-xs font-medium" style={{ color: 'var(--text-default)' }}>
+            {primary}
+          </span>
+          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            {secondary}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {badge}
+        {timestamp && (
+          <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+            {timestamp}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Time formatting ───────────────────────────────────────────────────────────
+
+/**
+ * Formats a date as a relative Spanish string (e.g. "hace 2 minutos").
+ */
+export function formatRelativeTime(dateInput) {
+  if (!dateInput) return '—';
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(date.getTime())) return '—';
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  const diffMin = Math.round(diffSec / 60);
+  const diffHour = Math.round(diffMin / 60);
+  const diffDay = Math.round(diffHour / 24);
+
+  if (diffSec < 60) return 'hace unos segundos';
+  if (diffMin < 60) return `hace ${diffMin} min${diffMin === 1 ? 'uto' : 'utos'}`;
+  if (diffHour < 24) return `hace ${diffHour} hora${diffHour === 1 ? '' : 's'}`;
+  if (diffDay < 30) return `hace ${diffDay} día${diffDay === 1 ? '' : 's'}`;
+  return date.toLocaleDateString('es-AR');
 }
