@@ -36,8 +36,11 @@ export async function GET(request) {
     const limitStr = searchParams.get('limit');
 
     // Validate table name against allowlist BEFORE building any SQL
-    const ALLOWED_TABLES = Object.keys(localDb.tables);
+    const tables = localDb.tables || {};
+    const ALLOWED_TABLES = Object.keys(tables);
+
     if (!table || !ALLOWED_TABLES.includes(table)) {
+      console.error(`[db/query] Invalid table: ${table}. Allowed: ${ALLOWED_TABLES.join(', ')}`);
       return NextResponse.json(
         { error: `Invalid table: ${table}. Allowed: ${ALLOWED_TABLES.join(', ')}` },
         { status: 400 }
@@ -49,8 +52,9 @@ export async function GET(request) {
     const orderBy = orderByStr ? JSON.parse(orderByStr) : [];
     const limit = limitStr ? parseInt(limitStr) : null;
 
-    const tableOps = localDb.tables[table];
+    const tableOps = tables[table];
     if (!tableOps) {
+      console.error(`[db/query] Table ops not found for: ${table}`);
       return NextResponse.json({ error: `Table ${table} not found` }, { status: 404 });
     }
 
@@ -126,7 +130,7 @@ export async function GET(request) {
 
     return NextResponse.json(rows);
   } catch (error) {
-    console.error('DB query error:', error.message, error);
+    console.error('[db/query] Error:', error.message, error);
     return NextResponse.json({ error: error.message || 'Query failed' }, { status: 500 });
   }
 }

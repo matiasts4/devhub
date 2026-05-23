@@ -12,6 +12,8 @@ const { resolveTerminalSpawnCwd } = cwdGuard;
 // Writes to data/logs/terminal-debug.log (relative to project root / cwd).
 // Safe for concurrent calls — appendFileSync is atomic per call.
 const TTY_LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log');
+const CRASH_DUMP_DIR = path.resolve(process.cwd(), 'data', 'logs', 'crash-dumps');
+
 function ttyLog(tag, msg, extra = {}) {
   try {
     const ts = new Date().toISOString();
@@ -21,6 +23,51 @@ function ttyLog(tag, msg, extra = {}) {
     fs.appendFileSync(TTY_LOG_FILE, line);
   } catch {
     // Never crash the server because of logging
+  }
+}
+
+// ─── Crash dump writer ───────────────────────────────────────────────────────
+// Generates a JSON crash dump file when a terminal session exits abnormally.
+// Dumps are written to data/logs/crash-dumps/ with timestamped filenames.
+function writeCrashDump(session, exitCode, signal, reason = 'unknown') {
+  try {
+    fs.mkdirSync(CRASH_DUMP_DIR, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `crash-${session.id}-${timestamp}.json`;
+    const dumpPath = path.join(CRASH_DUMP_DIR, filename);
+
+    const dump = {
+      timestamp: new Date().toISOString(),
+      terminalId: session.id,
+      reason,
+      exitCode,
+      signal,
+      cwd: session.cwd,
+      shell: session.shell,
+      mode: session.mode,
+      createdAt: session.createdAt,
+      lastSeenAt: session.lastSeenAt,
+      lastActivityAt: session.lastActivityAt,
+      socketCount: session.sockets?.size ?? 0,
+      restored: session.restored,
+      title: session.title,
+      opencodeSessionId: session.opencodeSessionId,
+      hermesSessionId: session.hermesSessionId,
+      historyLength: session.history?.length ?? 0,
+      // Last 2KB of terminal history for context
+      recentHistory: session.history?.slice(-2000) || '',
+    };
+
+    fs.writeFileSync(dumpPath, JSON.stringify(dump, null, 2), 'utf8');
+    ttyLog('CRASH_DUMP', `crash dump written`, { path: dumpPath, terminalId: session.id, reason });
+    return dumpPath;
+  } catch (err) {
+    ttyLog('CRASH_DUMP', `failed to write crash dump`, {
+      error: err?.message,
+      terminalId: session.id,
+    });
+    return null;
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -599,6 +646,12 @@ function handleSessionExit(sessions, session, exitCode, signal) {
 
   if (!sessions.has(session.id)) return;
 
+  // Generate crash dump for abnormal exits
+  const isAbnormalExit = exitCode !== 0 || signal !== null;
+  if (isAbnormalExit) {
+    writeCrashDump(session, exitCode, signal, 'pty_abnormal_exit');
+  }
+
   if (session._saveDebounceTimer) {
     clearTimeout(session._saveDebounceTimer);
     session._saveDebounceTimer = null;
@@ -826,15 +879,28 @@ export async function ensureTTYServer() {
     });
 
     socket.on('close', (code, reason) => {
+      const closeCode = code ?? 0;
+      const isAbruptClose = closeCode === 1006 || closeCode === 1005; // 1006=abnormal, 1005=no status
+      const remainingSockets = session ? session.sockets.size - 1 : 0;
+
       ttyLog('WS_CLOSE', `socket closed`, {
         terminalId,
-        code,
+        code: closeCode,
+        abrupt: isAbruptClose,
         reason: reason?.toString?.() || '',
-        remainingSockets: session ? session.sockets.size - 1 : 0,
+        remainingSockets,
       });
+
       if (session) {
         session.sockets.delete(socket);
         session.lastActivityAt = Date.now();
+
+        // If this was the last socket and it closed abruptly, generate a crash dump
+        // The PTY is still running but has no connected clients
+        if (isAbruptClose && remainingSockets <= 0 && session.pty) {
+          writeCrashDump(session, null, null, 'ws_abrupt_close_no_clients');
+        }
+
         // Do NOT kill the pty process here. Let it run in background.
       }
     });
