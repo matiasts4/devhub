@@ -32,8 +32,8 @@ describe('CLI unknown command', () => {
 });
 
 describe('CLI stub command', () => {
-  it('exits 1 and stderr has "not yet implemented" for queue', () => {
-    const result = spawnSync('node', [CLI, 'queue'], { encoding: 'utf8' });
+  it('exits 1 and stderr has "not yet implemented" for agents', () => {
+    const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/not yet implemented/i);
   });

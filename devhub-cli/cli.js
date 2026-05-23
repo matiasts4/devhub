@@ -17,8 +17,23 @@ program
   .description('Show compact swarm dashboard')
   .action(statusCommand);
 
+const queueCommand = require('./commands/queue.js');
+program
+  .command('queue')
+  .description('Show prioritized execution queue')
+  .option('--limit <n>', 'Maximum number of rows to display', '20')
+  .option('--project <id>', 'Filter by project ID')
+  .option('--blocked', 'Show only blocked tasks')
+  .action((opts) => {
+    queueCommand({
+      limit: Number(opts.limit),
+      project: opts.project,
+      blocked: opts.blocked,
+    });
+  });
+
 // Stub commands — not yet implemented
-const STUB_COMMANDS = ['queue', 'agents', 'swarm', 'task', 'ws', 'run'];
+const STUB_COMMANDS = ['agents', 'swarm', 'task', 'ws', 'run'];
 
 STUB_COMMANDS.forEach((name) => {
   program

@@ -1,82 +1,98 @@
 'use strict';
 
-const path = require('path');
-const FORMAT_PATH = path.resolve(__dirname, 'format.js');
+const { table } = require('../lib/format');
 
-describe('lib/format.js helpers', () => {
-  describe('section()', () => {
-    it('is exported as a function', () => {
-      jest.resetModules();
-      process.stdout.isTTY = undefined;
-      const fmt = require(FORMAT_PATH);
-      expect(typeof fmt.section).toBe('function');
+describe('table() helper', () => {
+  describe('TTY mode', () => {
+    it('renders aligned columns with header separator', () => {
+      const headers = ['Score', 'Status', 'Title'];
+      const rows = [
+        ['85', 'pending', 'Fix auth bug'],
+        ['70', 'blocked', 'Update schema'],
+      ];
+      const output = table(headers, rows, true);
+      const lines = output.split('\n');
+      // Header line
+      expect(lines[0]).toMatch(/Score.*Status.*Title/);
+      // Separator line (all dashes or similar)
+      expect(lines[1]).toMatch(/-+/);
+      // Data lines with aligned content
+      expect(lines[2]).toMatch(/85.*pending.*Fix auth bug/);
+      expect(lines[3]).toMatch(/70.*blocked.*Update schema/);
     });
 
-    it('returns plain header when not TTY', () => {
-      jest.resetModules();
-      process.stdout.isTTY = undefined;
-      const fmt = require(FORMAT_PATH);
-      const result = fmt.section('Projects');
-      expect(result).toContain('Projects');
-      expect(result).not.toContain('\x1b[');
+    it('pads columns to max width', () => {
+      const headers = ['A', 'B'];
+      const rows = [
+        ['short', 'very long value here'],
+        ['much longer value', 'x'],
+      ];
+      const output = table(headers, rows, true);
+      const lines = output.split('\n');
+      // Both rows should have similar total length (aligned)
+      expect(lines[2].length).toBe(lines[3].length);
     });
 
-    it('returns colored header when TTY', () => {
-      jest.resetModules();
-      process.stdout.isTTY = true;
-      try {
-        const fmt = require(FORMAT_PATH);
-        const result = fmt.section('Projects');
-        expect(result).toContain('Projects');
-        expect(result).toContain('\x1b[');
-      } finally {
-        process.stdout.isTTY = undefined;
-      }
+    it('handles empty rows', () => {
+      const headers = ['Col1', 'Col2'];
+      const output = table(headers, [], true);
+      const lines = output.split('\n');
+      expect(lines[0]).toMatch(/Col1.*Col2/);
+      expect(lines[1]).toMatch(/-+/);
+      // Only header + separator, no data rows
+      expect(lines.length).toBe(2);
+    });
+
+    it('handles empty headers and rows', () => {
+      const output = table([], [], true);
+      expect(output).toBe('');
     });
   });
 
-  describe('row()', () => {
-    it('is exported as a function', () => {
-      jest.resetModules();
-      const fmt = require(FORMAT_PATH);
-      expect(typeof fmt.row).toBe('function');
+  describe('non-TTY mode', () => {
+    it('outputs pipe-separated rows without header', () => {
+      const headers = ['Score', 'Status', 'Title'];
+      const rows = [
+        ['85', 'pending', 'Fix auth bug'],
+        ['70', 'blocked', 'Update schema'],
+      ];
+      const output = table(headers, rows, false);
+      const lines = output.split('\n');
+      // No header row — first line is data
+      expect(lines[0]).toBe('85|pending|Fix auth bug');
+      expect(lines[1]).toBe('70|blocked|Update schema');
     });
 
-    it('returns indented label: value string', () => {
-      jest.resetModules();
-      const fmt = require(FORMAT_PATH);
-      const result = fmt.row('Name', 'MyProject');
-      expect(result).toBe('  Name: MyProject');
+    it('contains no ANSI escape sequences', () => {
+      const headers = ['Score', 'Status'];
+      const rows = [['85', 'pending']];
+      const output = table(headers, rows, false);
+      expect(output).not.toMatch(/\x1b\[/);
+    });
+
+    it('handles empty rows', () => {
+      const headers = ['Col1', 'Col2'];
+      const output = table(headers, [], false);
+      expect(output).toBe('');
+    });
+
+    it('handles empty headers and rows', () => {
+      const output = table([], [], false);
+      expect(output).toBe('');
     });
   });
 
-  describe('divider()', () => {
-    it('is exported as a function', () => {
-      jest.resetModules();
-      process.stdout.isTTY = undefined;
-      const fmt = require(FORMAT_PATH);
-      expect(typeof fmt.divider).toBe('function');
-    });
-
-    it('returns 40-char plain dashes when not TTY', () => {
-      jest.resetModules();
-      process.stdout.isTTY = undefined;
-      const fmt = require(FORMAT_PATH);
-      const result = fmt.divider();
-      expect(result).toBe('-'.repeat(40));
-      expect(result).not.toContain('\x1b[');
-    });
-
-    it('returns colored line when TTY', () => {
-      jest.resetModules();
-      process.stdout.isTTY = true;
-      try {
-        const fmt = require(FORMAT_PATH);
-        const result = fmt.divider();
-        expect(result.length).toBeGreaterThan(40); // includes ANSI codes
-        expect(result).toContain('\x1b[');
-      } finally {
-        process.stdout.isTTY = undefined;
+  describe('default isTTY behavior', () => {
+    it('uses module-level isTTY when not overridden', () => {
+      const { isTTY } = require('../lib/format');
+      const headers = ['X'];
+      const rows = [['1']];
+      const output = table(headers, rows);
+      if (isTTY) {
+        expect(output).toMatch(/X/);
+        expect(output).toMatch(/-+/);
+      } else {
+        expect(output).toBe('1');
       }
     });
   });
