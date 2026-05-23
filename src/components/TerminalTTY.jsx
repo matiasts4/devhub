@@ -282,15 +282,6 @@ export function resolveTerminalRuntimePhase({
 
   if (!nativeCandidate) return 'xterm';
   if (!isVisibleInLayout) return nativeVteOpened ? 'native-hidden' : 'xterm';
-  if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') {
-    return nativeVteOpened
-      ? 'native-opened'
-      : nativeVteProbe?.ready
-        ? 'native-opening'
-        : nativeVteProbe
-          ? 'native-probing'
-          : 'xterm';
-  }
   if (suspendNativeSurface) return nativeVteOpened ? 'native-suspended' : 'xterm';
   if (!isActivePanel)
     return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';
@@ -333,7 +324,7 @@ export function resolveTerminalRendererViewModel({
     ...selection,
     requestedLabel: getTerminalRendererOptionLabel(selection.requestedMode),
     effectiveLabel: getTerminalRendererOptionLabel(selection.effectiveMode),
-    showRecoveryBanner: selection.didFallback,
+    showRecoveryBanner: false,
   };
 }
 
@@ -423,7 +414,6 @@ export default function TerminalTTY({
     rendererCapabilities,
     nativeVteReady: requestedRendererMode === 'vte-experimental' && nativeVteOpened,
   });
-  const rendererStatusCopy = getTerminalRendererStatusCopy(rendererViewModel);
   const hasSentInitialCommand = useRef(false);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
@@ -897,7 +887,18 @@ export default function TerminalTTY({
 
     openNativeVtePanel(nativeOpenRequest)
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled) {
+          if (result?.opened) {
+            Promise.resolve(
+              setNativeVtePanelVisibility({
+                panelId: id,
+                visible: false,
+                reason: 'layout-hidden',
+              })
+            ).catch(handleNativeLeaseCommandError);
+          }
+          return;
+        }
         applyNativeOpenResult(result);
       })
       .catch((error) => {
@@ -939,7 +940,7 @@ export default function TerminalTTY({
           await setNativeVtePanelVisibility({
             panelId: id,
             visible: false,
-            reason: suspendNativeSurface ? 'suspended' : 'layout-hidden',
+            reason: suspendNativeSurface ? 'dock-side-by-side' : 'layout-hidden',
           });
         } catch (error) {
           handleNativeLeaseCommandError(error);
@@ -971,6 +972,20 @@ export default function TerminalTTY({
     requestedRendererMode,
     suspendNativeSurface,
   ]);
+
+  useEffect(() => {
+    if (requestedRendererMode !== 'vte-experimental' || isVisibleInLayout) return undefined;
+
+    Promise.resolve(
+      setNativeVtePanelVisibility({
+        panelId: id,
+        visible: false,
+        reason: 'layout-hidden',
+      })
+    ).catch(handleNativeLeaseCommandError);
+
+    return undefined;
+  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, requestedRendererMode]);
 
   useEffect(() => {
     if (!nativeVteOpened || suspendNativeSurface || !autoFocus || !isActivePanel) return undefined;
@@ -1157,11 +1172,13 @@ export default function TerminalTTY({
 
         // Only send initial command once per component lifecycle to avoid rerunning on fast reconnects
         if (initialCommand && !hasSentInitialCommand.current) {
-          console.log(`[TTY:${id}] Sending initial command: ${initialCommand}`);
+          // Strip recovery suffix if present (added by session recovery mechanism)
+          const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
+          console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
           if (transportRef.current === 'raw') {
-            socket.send(initialCommand + '\r');
+            socket.send(cleanCommand + '\r');
           } else {
-            socket.send(JSON.stringify({ type: 'input', data: initialCommand + '\r' }));
+            socket.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
           }
           hasSentInitialCommand.current = true;
         }
@@ -1725,30 +1742,6 @@ export default function TerminalTTY({
               }}
             >
               ↺ Restored shell at {cwd}
-            </div>
-          )}
-
-          {rendererViewModel.showRecoveryBanner && (
-            <div
-              className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 rounded-md border border-amber-400/40 bg-[#1e1a12]/90 px-3 py-2 text-xs text-amber-100 backdrop-blur-sm"
-              data-testid="terminal-renderer-fallback-banner"
-            >
-              <div className="min-w-0">
-                <div className="font-semibold" data-testid="terminal-renderer-fallback-title">
-                  Renderer en fallback: {rendererViewModel.requestedLabel}
-                </div>
-                <div className="truncate" data-testid="terminal-renderer-fallback-copy">
-                  {rendererStatusCopy}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onResetRendererToXterm?.()}
-                className="shrink-0 rounded-md border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-black/30"
-                data-testid="terminal-renderer-reset"
-              >
-                {getTerminalRendererRecoveryActionLabel()}
-              </button>
             </div>
           )}
 

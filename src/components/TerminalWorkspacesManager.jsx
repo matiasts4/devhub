@@ -539,82 +539,139 @@ function renderWorkspacePanel(
         setActivePanelIds((prev) => ({ ...prev, [wsId]: panel.id }));
       }}
     >
-      {/* Panel controls — top-right */}
-      <div
-        className="pointer-events-none absolute right-1.5 top-1.5 z-10"
-        data-testid={`panel-chrome-overlay-${panel.id}`}
-        data-floating-placement="inside-top-right"
-        aria-label={`Panel ${panelLabel || panel.id} controls`}
-      >
+      {swarmRole ? (
         <div
-          className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors ${
-            isActive
-              ? 'border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320]/92 shadow-[0_10px_24px_rgba(2,6,23,0.34)]'
-              : 'border-white/10 bg-[#0d1320]/82 shadow-[0_8px_20px_rgba(2,6,23,0.24)]'
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-2 left-0 z-20 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
+        />
+      ) : null}
+      <div
+        data-testid={`panel-safe-zone-${panel.id}`}
+        data-native-safe-zone="floating-chrome"
+        data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
+        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-2 pt-1"
+        style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
+      >
+        {/* Agent info bar — kept above the native terminal surface so VTE cannot cover it. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-center px-4">
+          <div
+            data-testid={`panel-semantic-header-${panel.id}`}
+            data-panel-metadata-source={semanticMetadata.source}
+            className="flex min-w-0 items-center gap-2 text-[11px] leading-none"
+            title={semanticMetadata.fullText}
+          >
+            {swarmRole ? (
+              <span
+                data-testid={`panel-role-badge-${panel.id}`}
+                className="inline-flex h-5 shrink-0 items-center rounded-md border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-2 text-[9px] font-black tracking-[0.08em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_16px_rgba(var(--swarm-role-rgb),0.12)]"
+              >
+                {swarmRole.abbrev}
+              </span>
+            ) : null}
+            <span
+              data-testid={`panel-semantic-primary-${panel.id}`}
+              className="truncate align-middle font-bold text-[rgba(241,245,249,0.95)]"
+            >
+              {semanticMetadata.primary}
+            </span>
+            {semanticMetadata.secondary ? (
+              <>
+                <span aria-hidden="true" className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]">
+                  {' · '}
+                </span>
+                <span
+                  data-testid={`panel-semantic-secondary-${panel.id}`}
+                  className="max-w-[200px] truncate align-middle text-[rgba(148,163,184,0.85)]"
+                >
+                  {semanticMetadata.secondary}
+                </span>
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div
+          aria-hidden="true"
+          className={`absolute inset-x-0 top-0 h-[calc(100%-0.125rem)] rounded-t-[14px] border-b border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.22),rgba(15,23,36,0.02))] transition-opacity ${
+            isActive ? 'opacity-100' : 'opacity-70'
           }`}
-          data-testid={`panel-header-actions-${panel.id}`}
-          title={`Panel ${panelLabel || panel.id} actions`}
+        />
+        {/* Panel controls — top-right, outside the native terminal body. */}
+        <div
+          className="pointer-events-none absolute right-1.5 top-1 z-10"
+          data-testid={`panel-chrome-overlay-${panel.id}`}
+          data-floating-placement="inside-top-right"
+          aria-label={`Panel ${panelLabel || panel.id} controls`}
         >
-          <button
-            type="button"
-            data-testid={`panel-split-right-${panel.id}`}
-            data-size="comfortable"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-            title="Dividir a la derecha"
-            aria-label="Dividir a la derecha"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSplitRight?.();
-            }}
+          <div
+            className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors ${
+              isActive
+                ? 'border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320]/92 shadow-[0_10px_24px_rgba(2,6,23,0.34)]'
+                : 'border-white/10 bg-[#0d1320]/82 shadow-[0_8px_20px_rgba(2,6,23,0.24)]'
+            }`}
+            data-testid={`panel-header-actions-${panel.id}`}
+            title={`Panel ${panelLabel || panel.id} actions`}
           >
-            <SplitSquareVertical className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            data-testid={`panel-split-down-${panel.id}`}
-            data-size="comfortable"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-            title="Dividir hacia abajo"
-            aria-label="Dividir hacia abajo"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSplitDown?.();
-            }}
-          >
-            <SplitSquareHorizontal className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            data-testid={`panel-focus-${panel.id}`}
-            data-size="comfortable"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-            title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
-            aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleFocus?.();
-            }}
-          >
-            {isFocusedPanel ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            data-testid={`panel-close-${panel.id}`}
-            data-size="comfortable"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
-            title="Cerrar terminal"
-            aria-label="Cerrar terminal"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClosePanel?.();
-            }}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+            <button
+              type="button"
+              data-testid={`panel-split-right-${panel.id}`}
+              data-size="comfortable"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              title="Dividir a la derecha"
+              aria-label="Dividir a la derecha"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSplitRight?.();
+              }}
+            >
+              <SplitSquareVertical className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              data-testid={`panel-split-down-${panel.id}`}
+              data-size="comfortable"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              title="Dividir hacia abajo"
+              aria-label="Dividir hacia abajo"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSplitDown?.();
+              }}
+            >
+              <SplitSquareHorizontal className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              data-testid={`panel-focus-${panel.id}`}
+              data-size="comfortable"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
+              aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleFocus?.();
+              }}
+            >
+              {isFocusedPanel ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              data-testid={`panel-close-${panel.id}`}
+              data-size="comfortable"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
+              title="Cerrar terminal"
+              aria-label="Cerrar terminal"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClosePanel?.();
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </div>
       <div
@@ -992,6 +1049,29 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           wsCounterRef.current = nextCounters.workspace;
           colCounterRef.current = nextCounters.column;
           panelCounterRef.current = nextCounters.panel;
+
+          // Session recovery: mark panels that need relaunch after TTY server restart
+          // This detects orphaned opencode processes and triggers clean relaunch
+          try {
+            const restoredPanelIds = new Set();
+            normalizedState.workspaces.forEach((ws) => {
+              ws.columns?.forEach((col) => {
+                col.panels?.forEach((panel) => {
+                  if (panel.initialCommand && /opencode/i.test(panel.initialCommand)) {
+                    restoredPanelIds.add(panel.id);
+                  }
+                });
+              });
+            });
+            if (restoredPanelIds.size > 0) {
+              localStorage.setItem(
+                'devhub_pending_session_recovery',
+                JSON.stringify({ panelIds: Array.from(restoredPanelIds), timestamp: Date.now() })
+              );
+            }
+          } catch {
+            // Ignore recovery tracking failures
+          }
         }
       }
     } catch (e) {
@@ -1054,6 +1134,92 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     if (!isClientLoaded) return;
     writeTerminalRendererPreferences(storage, projectId, terminalRendererPreferences, workspaces);
   }, [isClientLoaded, projectId, storage, terminalRendererPreferences, workspaces]);
+
+  // --- Session Recovery: detect orphaned opencode processes and trigger clean relaunch ---
+  useEffect(() => {
+    if (!isClientLoaded || !storage) return;
+
+    try {
+      const pendingRecovery = JSON.parse(
+        storage.getItem('devhub_pending_session_recovery') || 'null'
+      );
+      if (!pendingRecovery?.panelIds?.length) return;
+
+      // Check if recovery is still valid (within 5 minutes)
+      const age = Date.now() - pendingRecovery.timestamp;
+      if (age > 5 * 60 * 1000) {
+        storage.removeItem('devhub_pending_session_recovery');
+        return;
+      }
+
+      // Fetch active opencode sessions from TTY server to check which panels are still connected
+      fetch('/api/terminal/sessions')
+        .then((res) => res.json())
+        .then((data) => {
+          const activeSessionIds = new Set((data.sessions || []).map((s) => s.id || s.terminalId));
+
+          // Find panels that need recovery (have opencode command but no active session)
+          const panelsToRelaunch = [];
+          workspaces.forEach((ws) => {
+            ws.columns?.forEach((col) => {
+              col.panels?.forEach((panel) => {
+                if (
+                  pendingRecovery.panelIds.includes(panel.id) &&
+                  panel.initialCommand &&
+                  /opencode/i.test(panel.initialCommand) &&
+                  !activeSessionIds.has(panel.id)
+                ) {
+                  panelsToRelaunch.push({
+                    panelId: panel.id,
+                    command: panel.initialCommand,
+                    cwd: panel.cwd,
+                  });
+                }
+              });
+            });
+          });
+
+          // Clear recovery tracking
+          storage.removeItem('devhub_pending_session_recovery');
+
+          // Process panels: close orphaned sessions first, then relaunch
+          const processRelaunch = async () => {
+            for (const { panelId, command, cwd } of panelsToRelaunch) {
+              // Close any existing orphaned session for this panel
+              try {
+                await fetch('/api/terminal/processes', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ terminalId: panelId }),
+                });
+              } catch {
+                // Ignore close failures - the session might not exist
+              }
+
+              // Dispatch relaunch event
+              window.dispatchEvent(
+                new CustomEvent('devhub:relaunch-panel', {
+                  detail: { panelId, command, cwd, reason: 'orphaned-session' },
+                })
+              );
+            }
+          };
+
+          if (panelsToRelaunch.length > 0) {
+            console.log(
+              `[Session Recovery] Relaunching ${panelsToRelaunch.length} orphaned opencode sessions`
+            );
+            processRelaunch();
+          }
+        })
+        .catch(() => {
+          // If we can't check sessions, clear the recovery flag to avoid infinite loops
+          storage.removeItem('devhub_pending_session_recovery');
+        });
+    } catch {
+      // Ignore recovery failures
+    }
+  }, [isClientLoaded, storage, workspaces]);
 
   // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
@@ -1247,22 +1413,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     effectiveRightDockState.maximizedView === 'browser';
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
-  const shouldFallbackNativeSurfacesForRightDock =
-    effectiveRightDockState.visible &&
-    !effectiveRightDockState.maximized &&
-    (effectiveRightDockState.activeTab === 'browser' ||
-      effectiveRightDockState.activeTab === 'editor');
   const shouldSuspendNativeSurfaces =
-    shouldFallbackNativeSurfacesForRightDock ||
-    isGridLauncherOpen ||
-    swarmLaunchWizardOpen ||
-    isDraggingDock ||
-    isDraggingInternalSplit;
-  const nativeSurfacePolicy = shouldFallbackNativeSurfacesForRightDock
-    ? 'dock-side-by-side'
-    : shouldSuspendNativeSurfaces
-      ? 'transient-overlay'
-      : 'live';
+    isGridLauncherOpen || swarmLaunchWizardOpen || isDraggingDock || isDraggingInternalSplit;
+  const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
     size: effectiveRightDockState.size,
@@ -2191,7 +2344,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         <div
           ref={activeWsId === ws.id ? panelSubtabsBarRef : null}
           data-testid="panel-subtabs-bar"
-          className="h-10 flex items-center justify-between px-2.5 shrink-0 border-b border-[rgba(var(--accent-rgb,88,166,255),0.22)] bg-[var(--surface-card)] select-none"
+          aria-hidden="true"
+          className="hidden h-10 items-center justify-between px-2.5 shrink-0 border-b border-[rgba(var(--accent-rgb,88,166,255),0.22)] bg-[var(--surface-card)] select-none"
         >
           <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden pr-2">
             {viewTabs.map((view, idx) => {
@@ -2316,7 +2470,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       workspaceWindows,
       activeWindowIds,
       activeWsId,
-      activateWorkspacePanel,
       cwd,
       showWorkspacePathChip,
       switchWindowInWorkspace,
@@ -2324,8 +2477,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       addWindowToWorkspace,
       handleSplit,
       activePanelId,
-      activePanelIds,
-      terminalRendererPreferences,
     ]
   );
 
@@ -2711,11 +2862,60 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     window.addEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
     window.addEventListener('devhub:terminal-exit', handleTerminalExit);
+
+    // Session recovery: relaunch orphaned opencode sessions
+    const handleRelaunchPanel = (e) => {
+      const { panelId, command, cwd, reason } = e.detail || {};
+      if (!panelId || !command) return;
+
+      console.log(`[Session Recovery] Relaunching panel ${panelId}: ${reason}`);
+
+      // Update the panel's initialCommand to force TerminalTTY to reconnect
+      // We append a timestamp to ensure the command is "new" and triggers reconnection
+      const recoveryCommand = `${command} #recovery-${Date.now()}`;
+
+      setWorkspaces((prev) =>
+        prev.map((ws) => ({
+          ...ws,
+          columns: ws.columns.map((col) => ({
+            ...col,
+            panels: col.panels.map((p) => {
+              if (p.id !== panelId) return p;
+              return { ...p, initialCommand: recoveryCommand, cwd: cwd || p.cwd };
+            }),
+          })),
+        }))
+      );
+
+      // Also update localStorage immediately so the recovery persists
+      try {
+        const savedState = JSON.parse(storage?.getItem(terminalStateStorageKey) || '{}');
+        if (savedState.workspaces) {
+          savedState.workspaces = savedState.workspaces.map((ws) => ({
+            ...ws,
+            columns: ws.columns.map((col) => ({
+              ...col,
+              panels: col.panels.map((p) => {
+                if (p.id !== panelId) return p;
+                return { ...p, initialCommand: recoveryCommand, cwd: cwd || p.cwd };
+              }),
+            })),
+          }));
+          storage?.setItem(terminalStateStorageKey, JSON.stringify(savedState));
+        }
+      } catch {
+        // Ignore persistence failures
+      }
+    };
+
+    window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);
+
     return () => {
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
+      window.removeEventListener('devhub:relaunch-panel', handleRelaunchPanel);
     };
-  }, [failPendingReopen]);
+  }, [failPendingReopen, storage, terminalStateStorageKey]);
 
   // --- Agent Card Click → Focus Panel ---
   const handleAgentCardClick = useCallback(
