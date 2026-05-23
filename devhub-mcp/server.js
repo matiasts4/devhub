@@ -25,6 +25,13 @@ config({ path: resolve(__dirname, '../.env.local') });
 const require = createRequire(import.meta.url);
 const localDb = require('../src/lib/db/localDb.js');
 const {
+  readExecutionQueueSummary,
+  readWorkspaceEvidenceSummary,
+  presentExecutionQueue,
+  presentWorkspaceEvidence,
+  createDirectorQueueContract,
+} = require('../src/lib/db/compactReads.js');
+const {
   parseGitCheckpointComment,
   validateCheckpointHandoff,
 } = require('../src/lib/gitCheckpointHandoff.js');
@@ -1462,15 +1469,21 @@ async function appendAgentArtifactRow(input = {}) {
 }
 
 async function getWorkspaceEvidence(workspaceId) {
+  if (DB_DRIVER !== 'supabase') {
+    // SQLite: read from shared durable core
+    const summary = readWorkspaceEvidenceSummary(localDb.getDb(), { workspaceId });
+    return summary ? presentWorkspaceEvidence(summary) : null;
+  }
+
   const workspace = await getAgentWorkspaceById(workspaceId);
   if (!workspace) return null;
   const latestRun = await getLatestAgentRunForWorkspace(workspaceId);
   const latestArtifact = latestRun ? await getLatestAgentArtifactForRun(latestRun.run_id) : null;
-  return {
+  return presentWorkspaceEvidence({
     workspace,
     latest_run: latestRun,
     latest_artifact: latestArtifact,
-  };
+  });
 }
 
 async function getSupervisorSnapshot(taskId) {
@@ -2039,19 +2052,9 @@ async function getExecutionQueueData(projectId, { limit = 20, includeBlocked = f
     const staleTasks = await cleanupExpiredLeases(projectId);
     const staleTaskIds = new Set((staleTasks || []).map((task) => task.id));
     const db = localDb.getDb();
-    const tasks = db
-      .prepare(
-        "SELECT * FROM tasks WHERE project_id = ? AND status = 'pending' ORDER BY created_at ASC"
-      )
-      .all(projectId);
-    const allTasks = db.prepare('SELECT id, status FROM tasks WHERE project_id = ?').all(projectId);
-    const deps = db.prepare('SELECT * FROM task_dependencies').all();
-    const queue = buildQueue(tasks || [], deps || [], allTasks || [], { includeBlocked }).slice(
-      0,
-      limit
-    );
+    const { total, queue } = readExecutionQueueSummary(db, { projectId, limit, includeBlocked });
     return Promise.all(
-      queue.map((task) =>
+      presentExecutionQueue({ queue, total }).queue.map((task) =>
         attachSupervisorToTask(task, { staleLeaseObserved: staleTaskIds.has(task.id) })
       )
     );

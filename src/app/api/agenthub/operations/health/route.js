@@ -16,6 +16,13 @@ import {
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
 import {
+  readExecutionQueueSummary,
+  readWorkspaceEvidenceSummary,
+  presentExecutionQueue,
+  presentWorkspaceEvidence,
+  createDirectorQueueContract,
+} from '@/lib/db/compactReads.js';
+import {
   buildHealthSnapshot,
   buildMcpHealthSource,
   buildProcessHealthSource,
@@ -896,6 +903,21 @@ function getRouteMissionSnapshot(now, getMissionSnapshot, projectId = null) {
 async function readDirectorQueueEntries({ projectId, request, getExecutionQueue, fetchImpl }) {
   if (!projectId) return null;
 
+  // Try shared durable core first (SQLite local path)
+  if (!getExecutionQueue) {
+    try {
+      const db = getDb();
+      const { total, queue } = readExecutionQueueSummary(db, {
+        projectId,
+        limit: 20,
+        includeBlocked: true,
+      });
+      return presentExecutionQueue({ queue, total }).queue;
+    } catch {
+      // Fall through to MCP bounce if shared core fails
+    }
+  }
+
   const queuePayload = getExecutionQueue
     ? await getExecutionQueue({ projectId, includeBlocked: true })
     : await callDevhubTool(
@@ -916,7 +938,7 @@ async function getDirectorQueueSnapshot({ projectId, request, getExecutionQueue,
     fetchImpl,
   });
   if (!queue) return null;
-  return createDirectorQueueSnapshot(queue);
+  return createDirectorQueueContract({ queue });
 }
 
 function getEligibleMissionExecutors(missionSnapshot = null) {
@@ -942,6 +964,17 @@ async function getWorkspaceEvidenceResult({
   fetchImpl,
 }) {
   if (!workspaceId) return null;
+
+  // Try shared durable core first (local path)
+  if (!getWorkspaceEvidence) {
+    try {
+      const db = getDb();
+      const summary = readWorkspaceEvidenceSummary(db, { workspaceId });
+      return summary ? presentWorkspaceEvidence(summary) : null;
+    } catch {
+      // Fall through to MCP bounce
+    }
+  }
 
   return getWorkspaceEvidence
     ? getWorkspaceEvidence({ workspaceId })
