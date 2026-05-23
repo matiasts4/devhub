@@ -3,6 +3,18 @@ import localDb from '@/lib/db/localDb';
 
 export const dynamic = 'force-dynamic';
 
+// Debug: log DB path on first access
+let dbPathLogged = false;
+function logDbPath() {
+  if (!dbPathLogged) {
+    dbPathLogged = true;
+    const { resolveDbPath } = require('@/lib/db/pathResolver');
+    console.error(`[db/query] DB_PATH: ${resolveDbPath()}`);
+    console.error(`[db/query] NODE_ENV: ${process.env.NODE_ENV}`);
+    console.error(`[db/query] DEVHUB_DB_PATH: ${process.env.DEVHUB_DB_PATH || '(not set)'}`);
+  }
+}
+
 // Parse select string to extract relations like tasks(count)
 function parseSelect(selectStr) {
   if (!selectStr || selectStr === '*') return { fields: '*', relations: [] };
@@ -28,6 +40,7 @@ function parseSelect(selectStr) {
 
 export async function GET(request) {
   try {
+    logDbPath();
     const { searchParams } = new URL(request.url);
     const table = searchParams.get('table');
     const selectRaw = searchParams.get('select') || '*';
@@ -109,9 +122,23 @@ export async function GET(request) {
       whereParams.push(limit);
     }
 
+    // Force fresh DB connection to avoid stale cache
     const db = localDb.getDb();
+
+    console.error(`[db/query] DB path check:`, require('@/lib/db/pathResolver').resolveDbPath());
+    console.error(
+      `[db/query] Projects in DB:`,
+      db.prepare('SELECT count(*) as c FROM projects').get().c
+    );
+
     const stmt = db.prepare(sql);
     const rows = stmt.all(...whereParams);
+
+    console.error(`[db/query] Query: ${sql}`);
+    console.error(`[db/query] Rows returned: ${rows.length}`);
+    if (rows.length > 0) {
+      console.error(`[db/query] First row:`, JSON.stringify(rows[0]));
+    }
 
     // Process relations (e.g., tasks(count))
     if (relations.length > 0 && rows.length > 0) {

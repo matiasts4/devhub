@@ -1007,11 +1007,64 @@ function getDb() {
   if (!_db) {
     const dir = path.dirname(DB_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    // Backup before opening if DB exists and has data
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        const stats = fs.statSync(DB_PATH);
+        if (stats.size > 0) {
+          const backupPath = `${DB_PATH}.backup-${Date.now()}`;
+          fs.copyFileSync(DB_PATH, backupPath);
+          // Keep only last 5 backups
+          const backups = fs
+            .readdirSync(dir)
+            .filter((f) => f.startsWith('devhub.db.backup-'))
+            .sort()
+            .reverse();
+          backups.slice(5).forEach((f) => fs.unlinkSync(path.join(dir, f)));
+        }
+      } catch (err) {
+        console.error('[localDb] Backup failed:', err.message);
+      }
+    }
+
     _db = new Database(DB_PATH, { fileMustExist: false, readonly: false });
     _db.pragma('journal_mode = WAL');
     _db.pragma('foreign_keys = ON');
     _db.pragma('busy_timeout = 5000');
     ensureRuntimeSchema(_db);
+
+    // Check if DB is empty and try to recover from backup
+    const projectCount = _db.prepare('SELECT count(*) as c FROM projects').get().c;
+    if (projectCount === 0) {
+      console.error('[localDb] WARNING: Projects table is empty! Attempting recovery...');
+      try {
+        const backups = fs
+          .readdirSync(dir)
+          .filter((f) => f.startsWith('devhub.db.backup-') || f === 'devhub.db.pre-restore')
+          .map((f) => path.join(dir, f))
+          .filter((f) => fs.statSync(f).size > 0)
+          .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+
+        if (backups.length > 0) {
+          const latestBackup = backups[0];
+          console.error(`[localDb] Recovering from: ${latestBackup}`);
+          fs.copyFileSync(latestBackup, DB_PATH);
+          // Reopen with recovered data
+          _db.close();
+          _db = new Database(DB_PATH, { fileMustExist: true, readonly: false });
+          _db.pragma('journal_mode = WAL');
+          _db.pragma('foreign_keys = ON');
+          _db.pragma('busy_timeout = 5000');
+          ensureRuntimeSchema(_db);
+
+          const recoveredCount = _db.prepare('SELECT count(*) as c FROM projects').get().c;
+          console.error(`[localDb] Recovery result: ${recoveredCount} projects`);
+        }
+      } catch (err) {
+        console.error('[localDb] Recovery failed:', err.message);
+      }
+    }
   }
   if (!_db.tables) {
     _db.tables = tables;
