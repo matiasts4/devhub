@@ -32,7 +32,7 @@ describe('CLI unknown command', () => {
 });
 
 describe('CLI stub commands', () => {
-  it.each(['swarm', 'task', 'ws', 'run'])('exits 1 and stderr has "not yet implemented" for %s', (cmd) => {
+  it.each(['task', 'ws', 'run'])('exits 1 and stderr has "not yet implemented" for %s', (cmd) => {
     const result = spawnSync('node', [CLI, cmd], { encoding: 'utf8' });
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/not yet implemented/i);

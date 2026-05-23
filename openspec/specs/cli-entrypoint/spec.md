@@ -60,12 +60,11 @@ The CLI MUST use three exit codes: 0 for success, 1 for runtime errors, 2 for in
 - WHEN an unrecognized command is passed (e.g., `devhub nonexistent`)
 - THEN the process exits with code 2
 
-#### Scenario: Stub command exits 1
+#### Scenario: Agents command exits 0 on success
 
-- GIVEN a known stub command is invoked (e.g., `devhub status`)
-- WHEN the command has no implementation yet
-- THEN stderr contains a "not yet implemented" message
-- AND the process exits with code 1
+- GIVEN agents are registered in the database
+- WHEN `devhub agents` is executed successfully
+- THEN the process exits with code 0
 
 #### Scenario: Successful help exits 0
 
@@ -75,7 +74,7 @@ The CLI MUST use three exit codes: 0 for success, 1 for runtime errors, 2 for in
 
 ### Requirement: Shared Core Re-Export
 
-The CLI MUST provide `lib/db.js` as a barrel that re-exports all public functions from `../../src/lib/db/compactReads.js` AND also re-exports `getDb` from `../../src/lib/db/core.js` for commands that need direct database access.
+The CLI MUST provide `lib/db.js` as a barrel that re-exports all public functions from `../../src/lib/db/compactReads.js` AND also re-exports `getDb` from `../../src/lib/db/core.js` for commands that need direct database access, including the new `readAgentRegistrySummary` function.
 
 #### Scenario: Re-export resolves correctly
 
@@ -83,6 +82,7 @@ The CLI MUST provide `lib/db.js` as a barrel that re-exports all public function
 - WHEN imported
 - THEN all exports from `src/lib/db/compactReads.js` are available
 - AND `getDb` from `src/lib/db/core.js` is also available
+- AND `readAgentRegistrySummary` is available
 - AND no additional functions or transformations are introduced
 
 #### Scenario: Path resolution across worktrees
@@ -123,3 +123,25 @@ The CLI scaffold MUST include unit tests covering arg parsing, exit codes, forma
 - GIVEN strict TDD is enabled in `openspec/config.yaml`
 - WHEN implementation begins
 - THEN failing tests exist before corresponding production code is written
+
+### Requirement: Agents Command Registration
+
+The CLI MUST register the `agents` command in `cli.js` and remove `agents` from the stub commands list.
+
+#### Scenario: Agents command is recognized
+
+- GIVEN the `agents` command is registered in `cli.js`
+- WHEN `devhub agents` is executed
+- THEN the agents command handler is invoked (not a stub)
+
+#### Scenario: Agents command appears in help
+
+- GIVEN the `agents` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `agents` in the command list
+
+#### Scenario: Agents is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `agents` is NOT in the stub commands list

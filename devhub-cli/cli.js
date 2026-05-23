@@ -45,8 +45,15 @@ program
     });
   });
 
+const swarmCommand = require('./commands/swarm.js');
+program
+  .command('swarm')
+  .description('Show composite swarm overview (projects, queue, agents, milestones)')
+  .option('--compact', 'Show collapsed one-line summaries')
+  .action(swarmCommand);
+
 // Stub commands — not yet implemented
-const STUB_COMMANDS = ['swarm', 'task', 'ws', 'run'];
+const STUB_COMMANDS = ['task', 'ws', 'run'];
 
 STUB_COMMANDS.forEach((name) => {
   program
