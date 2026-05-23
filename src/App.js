@@ -8,6 +8,13 @@ import {
   useParams,
   useLocation,
 } from 'react-router-dom';
+
+function SettingsRedirect() {
+  useEffect(() => {
+    window.location.replace('/settings/appearance');
+  }, []);
+  return null;
+}
 import { Toaster } from 'sonner';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
@@ -19,7 +26,7 @@ import Scaffolding from './views/Scaffolding';
 import Roadmap from './views/Roadmap';
 import Historial from './views/Historial';
 import Conexiones from './views/Conexiones';
-import Ajustes from './views/Ajustes';
+
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
 import { createClient } from '@/lib/db/localClient';
@@ -30,6 +37,8 @@ import {
   applyZoomToDocument,
   getStoredZoom,
   setZoom,
+  applyAppearanceSettings,
+  getStoredAppearance,
 } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
@@ -247,6 +256,7 @@ function App() {
   useEffect(() => {
     applyThemeToDocument(getStoredTheme());
     applyZoomToDocument(getStoredZoom());
+    applyAppearanceSettings(getStoredAppearance());
   }, []);
 
   useEffect(() => {
@@ -319,7 +329,7 @@ function App() {
             <Route path="roadmap" element={<Roadmap />} />
             <Route path="historial" element={<Historial />} />
             <Route path="conexiones" element={<Conexiones />} />
-            <Route path="ajustes" element={<Ajustes />} />
+            <Route path="ajustes" element={<SettingsRedirect />} />
             <Route path="swarm" element={<SwarmControl />} />
             <Route path="telegram" element={<TelegramMonitor />} />
             <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
