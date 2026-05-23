@@ -111,3 +111,4 @@ data/audit-trails/
 
 # Research externals vendored locally, not tracked
 research/external/
+devhub-cli/node_modules/
