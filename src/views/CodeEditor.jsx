@@ -14,7 +14,7 @@ export default function CodeEditor() {
   });
 
   return (
-    <div className="h-full min-h-screen core-page-shell flex flex-col">
+    <div className="h-full min-h-0 overflow-hidden core-page-shell flex flex-col">
       <div className="sticky top-0 z-10 core-sticky-header border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <FileCode2 className="mt-0.5 w-4 h-4 text-accent-primary" strokeWidth={1.5} />
@@ -28,22 +28,40 @@ export default function CodeEditor() {
               )}
             </div>
             <div className="mt-1 flex min-w-0 flex-col gap-0.5 text-xs text-text-muted">
-              <span data-testid="code-editor-project-path" className="truncate" title={editorContext.projectPath || project?.local_path || ''}>
+              <span
+                data-testid="code-editor-project-path"
+                className="truncate"
+                title={editorContext.projectPath || project?.local_path || ''}
+              >
                 {editorContext.projectPath || project?.local_path || 'Project path unavailable'}
               </span>
-              <span data-testid="code-editor-current-file" className="truncate text-text-secondary" title={editorContext.currentFilePath || 'No file selected'}>
+              <span
+                data-testid="code-editor-current-file"
+                className="truncate text-text-secondary"
+                title={editorContext.currentFilePath || 'No file selected'}
+              >
                 {editorContext.currentFilePath || 'No file selected'}
               </span>
-              <span data-testid="code-editor-current-breadcrumb" className="truncate text-[11px] uppercase tracking-[0.14em] text-text-muted" title={(editorContext.breadcrumb || []).join(' / ')}>
-                {(editorContext.breadcrumb || []).length > 0 ? editorContext.breadcrumb.join(' / ') : 'Workspace context'}
+              <span
+                data-testid="code-editor-current-breadcrumb"
+                className="truncate text-[11px] uppercase tracking-[0.14em] text-text-muted"
+                title={(editorContext.breadcrumb || []).join(' / ')}
+              >
+                {(editorContext.breadcrumb || []).length > 0
+                  ? editorContext.breadcrumb.join(' / ')
+                  : 'Workspace context'}
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0">
-        <FileExplorerEditorPane project={project} embedded={false} onContextChange={setEditorContext} />
+      <div className="flex h-full w-full flex-1 min-h-0 overflow-hidden">
+        <FileExplorerEditorPane
+          project={project}
+          embedded={false}
+          onContextChange={setEditorContext}
+        />
       </div>
     </div>
   );

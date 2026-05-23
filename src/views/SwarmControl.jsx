@@ -20,7 +20,10 @@ import {
   selectSwarmControlPrimarySurface,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
-import ControlRoomHeader from '@/components/control-room/ControlRoomHeader';
+import { UiHeader } from '@/components/ui/system';
+import { formatToken } from '@/components/control-room/utils';
+import ControlRoomMetricsPanel from '@/components/control-room/ControlRoomMetricsPanel';
+import ControlRoomContextPanel from '@/components/control-room/ControlRoomContextPanel';
 import DirectorQueuePanel from '@/components/control-room/DirectorQueuePanel';
 import AgentsClaimsPanel from '@/components/control-room/AgentsClaimsPanel';
 import WorkspacesPanel from '@/components/control-room/WorkspacesPanel';
@@ -35,7 +38,6 @@ import SwarmTypeCatalogPanel from '@/components/control-room/SwarmTypeCatalogPan
 import SwarmLaunchWizardModal from '@/components/control-room/SwarmLaunchWizardModal';
 
 void [
-  ControlRoomHeader,
   DirectorQueuePanel,
   AgentsClaimsPanel,
   WorkspacesPanel,
@@ -452,12 +454,29 @@ export default function SwarmControl({ snapshotInput = null }) {
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <ControlRoomHeader
-          header={header}
-          loading={loading}
-          projectName={header.workspace_label}
-          missionSummary={missionSummary}
-        />
+        <UiHeader>
+          <UiHeader.Title>
+            <div className="flex flex-col">
+              <span
+                className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Swarm / Control Room
+              </span>
+              <span className="text-base font-semibold truncate">
+                {header.workspace_label || 'Swarm / Control Room'}
+              </span>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Supervisor {formatToken(header.supervisor_state)}
+                {loading ? ' · cargando snapshot…' : ''}
+              </span>
+            </div>
+          </UiHeader.Title>
+        </UiHeader>
+
+        <ControlRoomMetricsPanel header={header} />
+
+        <ControlRoomContextPanel header={header} missionSummary={missionSummary} />
 
         <SwarmPrimarySurface surface={primarySurface} onPrimaryAction={handlePrimaryAction} />
 

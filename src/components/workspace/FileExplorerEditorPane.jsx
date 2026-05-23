@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Editor from '@monaco-editor/react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+
+const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -112,7 +113,9 @@ function buildForcedExpandedPaths(nodes, collector = new Set()) {
 }
 
 function filterTreeNodes(nodes, query) {
-  const normalizedQuery = String(query || '').trim().toLowerCase();
+  const normalizedQuery = String(query || '')
+    .trim()
+    .toLowerCase();
   if (!normalizedQuery) return nodes;
 
   return nodes.reduce((result, node) => {
@@ -220,7 +223,12 @@ function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
   );
 }
 
-export default function FileExplorerEditorPane({ project, workspaceId = 'default', embedded = false, onContextChange }) {
+export default function FileExplorerEditorPane({
+  project,
+  workspaceId = 'default',
+  embedded = false,
+  onContextChange,
+}) {
   const explorerPanelRef = useRef(null);
   const workspaceSnapshotsRef = useRef(new Map());
   const [tree, setTree] = useState([]);
@@ -247,6 +255,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   );
   const activeDocumentViewMode = isMarkdown ? markdownViewMode : latexViewMode;
   const showPreviewToggle = (isMarkdown || isLatex) && !fileLoading && !fileError;
+  const hasSelectedFile = Boolean(selectedPath);
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
   const workspaceStateKey = `${project?.id || 'global'}:${workspaceId || 'default'}`;
   const filteredTree = useMemo(() => filterTreeNodes(tree, searchQuery), [tree, searchQuery]);
@@ -273,7 +282,9 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     setTreeLoading(true);
     setTreeError('');
     try {
-      const baseParam = project?.local_path ? `?base=${encodeURIComponent(project.local_path)}` : '';
+      const baseParam = project?.local_path
+        ? `?base=${encodeURIComponent(project.local_path)}`
+        : '';
       const response = await fetch(`/api/fs/tree${baseParam}`);
       const data = await response.json();
       if (!response.ok) {
@@ -296,7 +307,9 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
       setFileError('');
 
       try {
-        const baseParam = project?.local_path ? `&base=${encodeURIComponent(project.local_path)}` : '';
+        const baseParam = project?.local_path
+          ? `&base=${encodeURIComponent(project.local_path)}`
+          : '';
         const lower = path.toLowerCase();
         const isMedia = lower.match(/\.(png|jpe?g|gif|webp|svg|pdf|mp3|mp4|docx?|xlsx?)$/i);
 
@@ -329,19 +342,25 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
       ...persistedSnapshot,
       ...(inMemorySnapshot || {}),
       expandedPaths:
-        (inMemorySnapshot?.expandedPaths && inMemorySnapshot.expandedPaths.length > 0)
+        inMemorySnapshot?.expandedPaths && inMemorySnapshot.expandedPaths.length > 0
           ? inMemorySnapshot.expandedPaths
-          : (hasUIPref(project?.id, 'editorExpandedPaths') ? legacyPrefs.editorExpandedPaths : persistedSnapshot.expandedPaths),
+          : hasUIPref(project?.id, 'editorExpandedPaths')
+            ? legacyPrefs.editorExpandedPaths
+            : persistedSnapshot.expandedPaths,
       isTreeCollapsed:
         typeof inMemorySnapshot?.isTreeCollapsed === 'boolean'
           ? inMemorySnapshot.isTreeCollapsed
           : Boolean(legacyPrefs.editorFileTreeCollapsed ?? persistedSnapshot.isTreeCollapsed),
       markdownViewMode:
         inMemorySnapshot?.markdownViewMode ||
-        (legacyPrefs.editorMarkdownViewMode === DOCUMENT_VIEW_MODES.RAW ? DOCUMENT_VIEW_MODES.RAW : persistedSnapshot.markdownViewMode),
+        (legacyPrefs.editorMarkdownViewMode === DOCUMENT_VIEW_MODES.RAW
+          ? DOCUMENT_VIEW_MODES.RAW
+          : persistedSnapshot.markdownViewMode),
       latexViewMode:
         inMemorySnapshot?.latexViewMode ||
-        (legacyPrefs.editorLatexViewMode === DOCUMENT_VIEW_MODES.RAW ? DOCUMENT_VIEW_MODES.RAW : persistedSnapshot.latexViewMode),
+        (legacyPrefs.editorLatexViewMode === DOCUMENT_VIEW_MODES.RAW
+          ? DOCUMENT_VIEW_MODES.RAW
+          : persistedSnapshot.latexViewMode),
     };
 
     setExpanded(new Set(nextState.expandedPaths || DEFAULT_EDITOR_PANE_STATE.expandedPaths));
@@ -373,7 +392,20 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
 
     workspaceSnapshotsRef.current.set(workspaceStateKey, snapshot);
     writeEditorPaneState(storage, project?.id, workspaceId, snapshot);
-  }, [content, expanded, fileError, isTreeCollapsed, markdownViewMode, latexViewMode, project?.id, searchQuery, selectedPath, storage, workspaceId, workspaceStateKey]);
+  }, [
+    content,
+    expanded,
+    fileError,
+    isTreeCollapsed,
+    markdownViewMode,
+    latexViewMode,
+    project?.id,
+    searchQuery,
+    selectedPath,
+    storage,
+    workspaceId,
+    workspaceStateKey,
+  ]);
 
   useEffect(() => {
     onContextChange?.({
@@ -441,7 +473,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   return (
     <div
       data-testid="shared-editor-pane"
-      className={`flex flex-col min-h-0 ${embedded ? 'h-full bg-[linear-gradient(180deg,#0b1320_0%,#08101a_100%)]' : 'flex-1'}`}
+      className={`flex h-full w-full min-h-0 flex-col overflow-hidden ${embedded ? 'bg-[linear-gradient(180deg,#0b1320_0%,#08101a_100%)]' : ''}`}
     >
       <div className="px-4 py-2 border-b border-borders-subtle bg-[color-mix(in_srgb,var(--surface-app)_90%,#050914)] flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -460,8 +492,8 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
         </button>
       </div>
 
-      <div className="flex-1 min-h-0">
-        <ResizablePanelGroup direction="horizontal" className="h-full">
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ResizablePanelGroup direction="horizontal" className="h-full w-full">
           <ResizablePanel
             ref={explorerPanelRef}
             defaultSize={embedded ? 34 : 26}
@@ -480,7 +512,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
           >
             {!isTreeCollapsed ? (
               <aside
-                className="h-full border-r border-borders-subtle bg-surface-app flex flex-col"
+                className="h-full min-h-0 overflow-hidden border-r border-borders-subtle bg-surface-app flex flex-col"
                 data-testid="editor-tree-panel"
               >
                 <div className="border-b border-borders-subtle px-2 py-2">
@@ -507,7 +539,10 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                     ) : null}
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-2">
+                <div
+                  className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2"
+                  data-testid="editor-tree-scroll-region"
+                >
                   {treeLoading ? (
                     <div className="p-2 space-y-2">
                       {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -559,15 +594,19 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
           {!isTreeCollapsed && <ResizableHandle className="bg-surface-elevated" />}
 
           <ResizablePanel defaultSize={embedded ? 66 : 74} minSize={45}>
-            <section className="h-full flex flex-col">
+            <section className="h-full min-h-0 overflow-hidden flex flex-col">
               <div className="px-4 py-2.5 border-b border-borders-subtle bg-surface-app flex items-center justify-between gap-3">
                 <div className="min-w-0 flex items-center gap-2 flex-1">
                   <button
                     type="button"
                     onClick={handleTreeToggle}
                     className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-borders-subtle bg-surface-elevated text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary cursor-pointer flex-shrink-0"
-                    title={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
-                    aria-label={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
+                    title={
+                      isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'
+                    }
+                    aria-label={
+                      isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'
+                    }
                     data-testid="editor-tree-toggle"
                   >
                     {isTreeCollapsed ? (
@@ -577,7 +616,10 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                     )}
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[11px] font-medium text-text-primary" title={selectedPath || 'Ningún archivo seleccionado'}>
+                    <p
+                      className="truncate text-[11px] font-medium text-text-primary"
+                      title={selectedPath || 'Ningún archivo seleccionado'}
+                    >
                       {selectedPath || 'Ningún archivo seleccionado'}
                     </p>
                     <p
@@ -585,7 +627,9 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                       title={currentFileBreadcrumb.join(' / ') || project?.local_path || ''}
                       data-testid="editor-current-breadcrumb"
                     >
-                      {currentFileBreadcrumb.length > 0 ? currentFileBreadcrumb.join(' / ') : (project?.local_path || 'Workspace context')}
+                      {currentFileBreadcrumb.length > 0
+                        ? currentFileBreadcrumb.join(' / ')
+                        : project?.local_path || 'Workspace context'}
                     </p>
                   </div>
                 </div>
@@ -608,7 +652,9 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                       </button>
                     </div>
                   )}
-                  {fileLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-primary" />}
+                  {fileLoading && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-primary" />
+                  )}
                 </div>
               </div>
 
@@ -617,20 +663,48 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                   <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>{fileError}</span>
                 </div>
+              ) : !hasSelectedFile ? (
+                <div
+                  data-testid="editor-empty-state"
+                  className="flex h-full w-full items-center justify-center p-8"
+                >
+                  <div className="w-full max-w-3xl text-center space-y-4">
+                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-surface-elevated border border-borders-subtle">
+                      <FileText className="w-6 h-6 text-accent-primary" />
+                    </div>
+                    <h3 className="text-text-primary text-base font-semibold">
+                      Select a file to start browsing
+                    </h3>
+                    <p className="text-text-secondary text-sm max-w-lg mx-auto">
+                      The explorer stays interactive while the editor bundle waits off-screen.
+                    </p>
+                  </div>
+                </div>
               ) : (
-                <div className="flex-1 min-h-0 relative bg-[#0b1220]">
+                <div className="flex-1 min-h-0 overflow-hidden relative bg-[#0b1220]">
                   {(selectedPath || '').toLowerCase().match(/\.pdf$/) ? (
-                    <iframe src={content} className="w-full h-full border-none bg-[#0b1220] relative z-10" title="PDF Viewer" />
+                    <iframe
+                      src={content}
+                      className="w-full h-full border-none bg-[#0b1220] relative z-10"
+                      title="PDF Viewer"
+                    />
                   ) : (selectedPath || '').toLowerCase().match(/\.(png|jpe?g|gif|webp|svg)$/) ? (
-                    <div className="flex items-center justify-center h-full bg-surface-base/50 p-8 overflow-auto">
-                      <img src={content} className="max-w-full max-h-full object-contain shadow-xl rounded pointer-events-none" alt={selectedPath} />
+                    <div className="flex items-center justify-center h-full bg-surface-base/50 p-8 overflow-auto overscroll-contain">
+                      <img
+                        src={content}
+                        className="max-w-full max-h-full object-contain shadow-xl rounded pointer-events-none"
+                        alt={selectedPath}
+                      />
                     </div>
                   ) : (selectedPath || '').toLowerCase().match(/\.(docx?|xlsx?)$/) ? (
                     <div className="flex flex-col items-center justify-center h-full bg-surface-base text-text-secondary gap-4 p-8 text-center">
                       <FileText className="w-16 h-16 opacity-30" />
-                      <h3 className="text-text-primary text-lg font-medium">Archivo Office Detectado</h3>
+                      <h3 className="text-text-primary text-lg font-medium">
+                        Archivo Office Detectado
+                      </h3>
                       <p className="text-sm">
-                        Para ver documentos Word o Excel fluidamente, descárgalo o ábrelo en sus editores nativos.
+                        Para ver documentos Word o Excel fluidamente, descárgalo o ábrelo en sus
+                        editores nativos.
                       </p>
                       <a
                         href={content}
@@ -660,27 +734,35 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                   ) : isLatex && latexViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? (
                     <LatexDocumentPreview content={content} filePath={selectedPath} />
                   ) : (
-                    <Editor
-                      height="100%"
-                      language={language}
-                      theme="vs-dark"
-                      value={content}
-                      options={{
-                        readOnly: true,
-                        minimap: { enabled: false },
-                        fontSize: 13,
-                        fontFamily: 'Consolas, "Courier New", monospace',
-                        wordWrap: 'on',
-                        wrappingIndent: 'indent',
-                        scrollBeyondLastLine: false,
-                        padding: { top: 16 },
-                      }}
-                      loading={
+                    <Suspense
+                      fallback={
                         <div className="flex h-full w-full items-center justify-center bg-[#0b1220]">
                           <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
                         </div>
                       }
-                    />
+                    >
+                      <MonacoEditor
+                        height="100%"
+                        language={language}
+                        theme="vs-dark"
+                        value={content}
+                        options={{
+                          readOnly: true,
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          fontFamily: 'Consolas, "Courier New", monospace',
+                          wordWrap: 'on',
+                          wrappingIndent: 'indent',
+                          scrollBeyondLastLine: false,
+                          padding: { top: 16 },
+                        }}
+                        loading={
+                          <div className="flex h-full w-full items-center justify-center bg-[#0b1220]">
+                            <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
+                          </div>
+                        }
+                      />
+                    </Suspense>
                   )}
                 </div>
               )}

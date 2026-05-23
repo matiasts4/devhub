@@ -1,5 +1,55 @@
 export const THEME_STORAGE_KEY = 'devhub:theme';
 export const APP_ZOOM_STORAGE_KEY = 'devhub:zoom';
+export const APPEARANCE_STORAGE_KEY = 'devhub:appearance';
+
+const DEFAULT_APPEARANCE = {
+  fontFamily: 'Inter',
+  fontScale: 1,
+  density: 'comfortable',
+  zoom: 1,
+};
+
+export function normalizeAppearance(value) {
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+  if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_APPEARANCE };
+
+  const density = ['compact', 'comfortable'].includes(parsed.density)
+    ? parsed.density
+    : DEFAULT_APPEARANCE.density;
+
+  const fontFamily =
+    typeof parsed.fontFamily === 'string' ? parsed.fontFamily : DEFAULT_APPEARANCE.fontFamily;
+
+  const rawScale = Number(parsed.fontScale);
+  const fontScale = Number.isFinite(rawScale)
+    ? Math.min(Math.max(rawScale, 0.75), 1.5)
+    : DEFAULT_APPEARANCE.fontScale;
+
+  const rawZoom = Number(parsed.zoom);
+  const zoom = Number.isFinite(rawZoom) ? rawZoom : DEFAULT_APPEARANCE.zoom;
+
+  return { fontFamily, fontScale, density, zoom };
+}
+
+export function getStoredAppearance() {
+  if (typeof window === 'undefined') return { ...DEFAULT_APPEARANCE };
+  const stored = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
+  return normalizeAppearance(stored);
+}
+
+export function setStoredAppearance(appearance) {
+  if (typeof window === 'undefined') return;
+  const normalized = normalizeAppearance(appearance);
+  window.localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(normalized));
+}
+
+export function applyAppearanceSettings(appearance) {
+  if (typeof document === 'undefined') return;
+  const normalized = normalizeAppearance(appearance);
+  document.documentElement.style.setProperty('--font-scale', normalized.fontScale.toString());
+  document.documentElement.style.setProperty('--font-family-ui', normalized.fontFamily);
+  document.documentElement.setAttribute('data-density', normalized.density);
+}
 
 export function getStoredZoom() {
   if (typeof window === 'undefined') return 1;
@@ -23,7 +73,6 @@ export function setZoom(zoom) {
   setStoredZoom(rounded);
   return rounded;
 }
-
 
 export const THEMES = {
   DEEP_SEA: 'deep-sea',
