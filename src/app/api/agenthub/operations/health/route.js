@@ -821,36 +821,10 @@ function getProjectIdFromRequest(request) {
   }
 }
 
-function createDirectorQueueItem(entry = {}, index = 0) {
-  const blockingDependencies = Array.isArray(entry.blocking_dependencies)
-    ? entry.blocking_dependencies.filter(Boolean)
-    : [];
-
-  return {
-    id: entry.id || null,
-    title: entry.title || null,
-    status: entry.blocked ? 'blocked' : entry.status || 'unknown',
-    position: index + 1,
-    priority: entry.priority || null,
-    blocked_reason: entry.blocked_reason || blockingDependencies[0] || null,
-    supervisor: entry.supervisor || null,
-    ...(entry.checkpoint_gate ? { checkpoint_gate: entry.checkpoint_gate } : {}),
-  };
-}
-
 function createDirectorQueueHandoff(overrides = {}) {
   return {
     ...EMPTY_DIRECTOR_QUEUE_HANDOFF,
     ...overrides,
-  };
-}
-
-function createDirectorQueueSnapshot(queue = [], handoff = EMPTY_DIRECTOR_QUEUE_HANDOFF) {
-  return {
-    authority: 'authoritative',
-    freshness: 'current',
-    items: Array.isArray(queue) ? queue.map(createDirectorQueueItem) : [],
-    handoff: createDirectorQueueHandoff(handoff),
   };
 }
 
@@ -1250,16 +1224,16 @@ export async function POST(request, _context, dependencies = {}) {
 
         return NextResponse.json({
           control_room_snapshot_input: {
-            director_queue: createDirectorQueueSnapshot(
-              queueEntries,
-              createDirectorQueueHandoff({
+            director_queue: createDirectorQueueContract({
+              queue: queueEntries,
+              handoff: {
                 status: 'disabled',
                 message:
                   eligibleExecutors.length === 0
                     ? DIRECTOR_HANDOFF_DISABLED_MESSAGES.none
                     : DIRECTOR_HANDOFF_DISABLED_MESSAGES.multiple,
-              })
-            ),
+              },
+            }),
           },
         });
       }
@@ -1287,15 +1261,15 @@ export async function POST(request, _context, dependencies = {}) {
 
       return NextResponse.json({
         control_room_snapshot_input: {
-          director_queue: createDirectorQueueSnapshot(
-            queueEntries,
-            buildDirectorHandoffFromClaim({
+          director_queue: createDirectorQueueContract({
+            queue: queueEntries,
+            handoff: buildDirectorHandoffFromClaim({
               claimResult,
               recipientAgentId,
               queueEntries,
               workspaceEvidence,
-            })
-          ),
+            }),
+          }),
         },
       });
     }
