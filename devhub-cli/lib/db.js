@@ -2,7 +2,16 @@
 
 const compactReads = require('../../src/lib/db/compactReads.js');
 const { getDb, closeDb } = require('../../src/lib/db/core.js');
+const swarmMissions = require('../../src/lib/db/swarmMissions.js');
 const crypto = require('crypto');
+
+// Re-export mission message / delivery functions from swarmMissions barrel
+const {
+  createMissionMessage,
+  upsertMessageDelivery,
+  isMissionMessageKind,
+  MISSION_MESSAGE_KINDS,
+} = swarmMissions;
 
 /**
  * Claim the next available pending task for a given agent.
@@ -105,4 +114,4 @@ function ensureWriteSchema() {
   }
 }
 
-module.exports = { ...compactReads, getDb, closeDb, ensureWriteSchema, claimNextTask, releaseTask, crypto };
+module.exports = { ...compactReads, getDb, closeDb, ensureWriteSchema, claimNextTask, releaseTask, crypto, createMissionMessage, upsertMessageDelivery, isMissionMessageKind, MISSION_MESSAGE_KINDS };

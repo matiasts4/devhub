@@ -101,6 +101,17 @@ program
   .option('--outcome <value>', 'Outcome: completed, paused, failed, abandoned', 'completed')
   .action(releaseCommand);
 
+const tellCommand = require('./commands/tell.js');
+program
+  .command('tell')
+  .description('Send a mission message to a recipient')
+  .argument('[recipient]', 'Recipient agent ID')
+  .argument('[message]', 'Message body')
+  .option('--kind <kind>', 'Message kind (directive, status, handoff, decision, risk, approval_request, approval_result)', 'directive')
+  .option('--mission <id>', 'Mission ID (required)')
+  .option('--sender <id>', 'Sender agent ID (required)')
+  .action((recipient, message, opts) => tellCommand(recipient, message, opts));
+
 // Stub commands — not yet implemented
 const STUB_COMMANDS = [];
 
