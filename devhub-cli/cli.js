@@ -2,6 +2,10 @@
 
 const { Command } = require('commander');
 const pkg = require('./package.json');
+const { ensureWriteSchema } = require('./lib/db');
+
+// Ensure writable schema columns exist before any command executes
+ensureWriteSchema();
 
 const program = new Command();
 
@@ -65,8 +69,40 @@ program
   .description('Show workspace detail by ID')
   .action(wsCommand);
 
+const heartbeatCommand = require('./commands/heartbeat.js');
+program
+  .command('heartbeat')
+  .description('Record agent heartbeat (idempotent)')
+  .argument('[agent-id]', 'Agent ID')
+  .action(heartbeatCommand);
+
+const updateStatusCommand = require('./commands/updateStatus.js');
+program
+  .command('update-status')
+  .description('Update agent status with optional task description')
+  .argument('[agent-id]', 'Agent ID')
+  .argument('[status]', 'New status value')
+  .argument('[task-description]', 'Optional task description')
+  .action(updateStatusCommand);
+
+const claimCommand = require('./commands/claim.js');
+program
+  .command('claim')
+  .description('Claim next pending task for an agent')
+  .argument('[agent-id]', 'Agent ID')
+  .action(claimCommand);
+
+const releaseCommand = require('./commands/release.js');
+program
+  .command('release')
+  .description('Release a claimed task')
+  .argument('[task-id]', 'Task ID')
+  .argument('[claim-token]', 'Claim token')
+  .option('--outcome <value>', 'Outcome: completed, paused, failed, abandoned', 'completed')
+  .action(releaseCommand);
+
 // Stub commands — not yet implemented
-const STUB_COMMANDS = ['run'];
+const STUB_COMMANDS = [];
 
 STUB_COMMANDS.forEach((name) => {
   program

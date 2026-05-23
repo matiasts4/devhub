@@ -22,4 +22,14 @@ describe('lib/db.js barrel', () => {
     const db = require(DB_PATH);
     expect(typeof db.closeDb).toBe('function');
   });
+
+  it('exports claimNextTask function', () => {
+    const db = require(DB_PATH);
+    expect(typeof db.claimNextTask).toBe('function');
+  });
+
+  it('exports releaseTask function', () => {
+    const db = require(DB_PATH);
+    expect(typeof db.releaseTask).toBe('function');
+  });
 });
