@@ -52,8 +52,21 @@ program
   .option('--compact', 'Show collapsed one-line summaries')
   .action(swarmCommand);
 
+const taskCommand = require('./commands/task.js');
+program
+  .command('task')
+  .description('Show task detail by ID')
+  .option('--verbose', 'Show full description without truncation')
+  .action(taskCommand);
+
+const wsCommand = require('./commands/ws.js');
+program
+  .command('ws')
+  .description('Show workspace detail by ID')
+  .action(wsCommand);
+
 // Stub commands — not yet implemented
-const STUB_COMMANDS = ['task', 'ws', 'run'];
+const STUB_COMMANDS = ['run'];
 
 STUB_COMMANDS.forEach((name) => {
   program

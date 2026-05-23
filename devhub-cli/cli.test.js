@@ -32,8 +32,8 @@ describe('CLI unknown command', () => {
 });
 
 describe('CLI stub commands', () => {
-  it.each(['task', 'ws', 'run'])('exits 1 and stderr has "not yet implemented" for %s', (cmd) => {
-    const result = spawnSync('node', [CLI, cmd], { encoding: 'utf8' });
+  it('exits 1 and stderr has "not yet implemented" for run', () => {
+    const result = spawnSync('node', [CLI, 'run'], { encoding: 'utf8' });
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/not yet implemented/i);
   });
@@ -85,11 +85,12 @@ describe('lib/format.js', () => {
 // ── Shared Core Re-Export Tests ──────────────────────────────────
 
 describe('lib/db.js barrel', () => {
-  it('re-exports all 7 functions from compactReads.js', () => {
+  it('re-exports all 8 functions from compactReads.js', () => {
     const db = require('./lib/db.js');
     expect(typeof db.readExecutionQueueSummary).toBe('function');
     expect(typeof db.readWorkspaceEvidenceSummary).toBe('function');
     expect(typeof db.readAgentRegistrySummary).toBe('function');
+    expect(typeof db.readTaskById).toBe('function');
     expect(typeof db.heartbeatLabel).toBe('function');
     expect(typeof db.presentExecutionQueue).toBe('function');
     expect(typeof db.presentWorkspaceEvidence).toBe('function');

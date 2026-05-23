@@ -1,7 +1,8 @@
 'use strict';
 
-// Detects TTY once at module load
-const isTTY = process.stdout.isTTY === true;
+// Detects TTY once at module load, but also supports FORCE_TTY env var
+// for testing TTY output in non-TTY environments (e.g. spawnSync).
+const isTTY = process.stdout.isTTY === true || process.env.FORCE_TTY === '1';
 
 /**
  * Returns text as compact plain string.

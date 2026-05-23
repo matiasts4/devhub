@@ -320,10 +320,22 @@ function readWorkspaceEvidenceSummary(dbOrNull, input = {}) {
   };
 }
 
+/**
+ * Query a single task by ID.
+ * @param {Database} db - better-sqlite3 instance (or null for singleton)
+ * @param {string} taskId - Task UUID/legacy ID
+ * @returns {object|null} Task row or null if not found
+ */
+function readTaskById(dbOrNull, taskId) {
+  const db = resolveDb(dbOrNull);
+  return db.prepare('SELECT * FROM tasks WHERE id = ? LIMIT 1').get(taskId) || null;
+}
+
 module.exports = {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
   readAgentRegistrySummary,
+  readTaskById,
   heartbeatLabel,
   presentExecutionQueue,
   presentWorkspaceEvidence,
