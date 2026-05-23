@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { Bot } from 'lucide-react';
 import {
   composeControlRoomSnapshot,
   createSwarmLaunchDraft,
@@ -33,6 +34,8 @@ import SwarmPrimarySurface from '@/components/control-room/SwarmPrimarySurface';
 import LaunchpadTemplatesPanel from '@/components/control-room/LaunchpadTemplatesPanel';
 import SwarmTypeCatalogPanel from '@/components/control-room/SwarmTypeCatalogPanel';
 import SwarmLaunchWizardModal from '@/components/control-room/SwarmLaunchWizardModal';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import ActiveProcessesPanel from '@/components/control-room/ActiveProcessesPanel';
 
 void [
   ControlRoomHeader,
@@ -48,6 +51,7 @@ void [
   LaunchpadTemplatesPanel,
   SwarmTypeCatalogPanel,
   SwarmLaunchWizardModal,
+  ActiveProcessesPanel,
 ];
 
 function buildSnapshotInput({ snapshotInput, fetchedInput, project }) {
@@ -448,206 +452,306 @@ export default function SwarmControl({ snapshotInput = null }) {
 
   return (
     <div
-      className="min-h-full p-6"
+      className="h-full flex flex-col core-page-shell"
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <ControlRoomHeader
-          header={header}
-          loading={loading}
-          projectName={header.workspace_label}
-          missionSummary={missionSummary}
+      <div
+        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
+        style={{ borderColor: 'var(--border-subtle)' }}
+      >
+        <WorkspacePageTitle
+          icon={Bot}
+          title="Swarm Control"
+          projectName={project?.name || header.workspace_label}
         />
 
-        <SwarmPrimarySurface surface={primarySurface} onPrimaryAction={handlePrimaryAction} />
+        <span
+          className="text-xs px-2 py-0.5 rounded-full"
+          style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
+        >
+          Supervisor {String(header.supervisor_state || 'unknown').toUpperCase()}
+        </span>
+      </div>
 
-        {launchResult ? (
-          <section aria-label="Launch summary local">
-            <div
-              className="rounded-2xl border p-4"
-              style={{
-                background:
-                  'linear-gradient(180deg, rgba(255,176,64,0.14) 0%, rgba(255,176,64,0.04) 100%)',
-                borderColor: 'rgba(255,176,64,0.22)',
-              }}
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p
-                    className="text-xs font-semibold uppercase tracking-[0.18em]"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Launch snapshot durable
-                  </p>
-                  <h2 className="mt-2 text-lg font-semibold">
-                    {launchResult.summary?.launchLabel}
-                  </h2>
-                  <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {launchResult.summary?.summaryLines?.[4]}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openLaunchWizard({ step: 'launch' })}
-                  className="rounded-xl border px-4 py-2 text-sm font-medium"
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 md:p-6">
+          <div className="mx-auto flex max-w-[1400px] flex-col gap-5">
+            <ControlRoomHeader
+              header={header}
+              loading={loading}
+              projectName={header.workspace_label}
+              missionSummary={missionSummary}
+            />
+
+            <SwarmPrimarySurface surface={primarySurface} onPrimaryAction={handlePrimaryAction} />
+
+            {launchResult ? (
+              <section aria-label="Launch summary local">
+                <div
+                  className="rounded-2xl border p-4"
                   style={{
-                    borderColor: 'rgba(255,176,64,0.24)',
-                    background: 'rgba(255,176,64,0.12)',
+                    background:
+                      'linear-gradient(180deg, rgba(255,176,64,0.14) 0%, rgba(255,176,64,0.04) 100%)',
+                    borderColor: 'rgba(255,176,64,0.22)',
                   }}
                 >
-                  Reabrir summary
-                </button>
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
-                  <div
-                    key={line}
-                    className="rounded-xl border px-3 py-3 text-sm"
-                    style={{ borderColor: 'var(--border-subtle)' }}
-                  >
-                    {line}
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p
+                        className="text-xs font-semibold uppercase tracking-[0.18em]"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Launch snapshot durable
+                      </p>
+                      <h2 className="mt-2 text-lg font-semibold">
+                        {launchResult.summary?.launchLabel}
+                      </h2>
+                      <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        {launchResult.summary?.summaryLines?.[4]}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openLaunchWizard({ step: 'launch' })}
+                      className="rounded-xl border px-4 py-2 text-sm font-medium"
+                      style={{
+                        borderColor: 'rgba(255,176,64,0.24)',
+                        background: 'rgba(255,176,64,0.12)',
+                      }}
+                    >
+                      Reabrir summary
+                    </button>
                   </div>
-                ))}
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
+                      <div
+                        key={line}
+                        className="rounded-xl border px-3 py-3 text-sm"
+                        style={{ borderColor: 'var(--border-subtle)' }}
+                      >
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+
+                  {launchSubmitState.error ? (
+                    <p className="mt-3 text-sm" style={{ color: '#fca5a5' }}>
+                      {launchSubmitState.error}
+                    </p>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            {isIdleLaunchpad ? (
+              <section className="grid gap-5 xl:grid-cols-2" aria-label="Lanzador idle">
+                <LaunchpadTemplatesPanel
+                  catalog={launchCatalog}
+                  selectedTemplateId={launchPreview?.draft?.templateId}
+                  onSelectTemplate={(templateId) =>
+                    updateLaunchDraft({ templateId, mode: 'template' })
+                  }
+                  onLaunch={(templateId) =>
+                    openLaunchWizard({ templateId, step: 'team', mode: 'template' })
+                  }
+                />
+
+                <SwarmTypeCatalogPanel
+                  catalog={launchCatalog}
+                  selectedSwarmTypeId={launchPreview?.draft?.swarmTypeId}
+                  onSelectSwarmType={(swarmTypeId) =>
+                    updateLaunchDraft({ swarmTypeId, mode: 'custom' })
+                  }
+                  onLaunch={(swarmTypeId) =>
+                    openLaunchWizard({ swarmTypeId, step: 'configure', mode: 'custom' })
+                  }
+                />
+              </section>
+            ) : null}
+
+            <section
+              className="rounded-xl border p-4"
+              style={{
+                background: 'var(--surface-muted)',
+                borderColor: 'var(--border-subtle)',
+              }}
+              aria-label="Controles operativos"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <label className="flex flex-1 flex-col gap-2 text-xs font-medium">
+                  <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
+                  <input
+                    aria-label="Filtrar registros"
+                    className="rounded-lg border px-3 py-2 outline-none"
+                    style={{
+                      background: 'var(--surface-app)',
+                      borderColor: 'var(--border-subtle)',
+                      color: 'var(--text-primary)',
+                    }}
+                    placeholder="agente, workspace, run, evidencia…"
+                    value={filterText}
+                    onChange={(event) => setFilterText(event.target.value)}
+                  />
+                </label>
+
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setLayout('grid')}
+                    aria-pressed={layout === 'grid'}
+                    className="rounded-lg border px-3 py-2"
+                    style={{
+                      background: layout === 'grid' ? 'var(--surface-elevated)' : 'transparent',
+                      borderColor: 'var(--border-subtle)',
+                    }}
+                  >
+                    Grilla
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLayout('stack')}
+                    aria-pressed={layout === 'stack'}
+                    className="rounded-lg border px-3 py-2"
+                    style={{
+                      background: layout === 'stack' ? 'var(--surface-elevated)' : 'transparent',
+                      borderColor: 'var(--border-subtle)',
+                    }}
+                  >
+                    Pila
+                  </button>
+                </div>
               </div>
 
-              {launchSubmitState.error ? (
-                <p className="mt-3 text-sm" style={{ color: '#fca5a5' }}>
-                  {launchSubmitState.error}
-                </p>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
+              <div
+                className="mt-3 flex flex-wrap gap-2 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <span
+                  className="rounded-full border px-2.5 py-1"
+                  style={{ borderColor: 'var(--border-subtle)' }}
+                >
+                  {filteredAgents.length} agentes
+                </span>
+                <span
+                  className="rounded-full border px-2.5 py-1"
+                  style={{ borderColor: 'var(--border-subtle)' }}
+                >
+                  {filteredWorkspaces.length} workspaces
+                </span>
+                <span
+                  className="rounded-full border px-2.5 py-1"
+                  style={{ borderColor: 'var(--border-subtle)' }}
+                >
+                  {filteredRuns.length} runs
+                </span>
+                <span
+                  className="rounded-full border px-2.5 py-1"
+                  style={{ borderColor: 'var(--border-subtle)' }}
+                >
+                  {filteredApprovals.length} aprobaciones
+                </span>
+                <span
+                  className="rounded-full border px-2.5 py-1"
+                  style={{ borderColor: 'var(--border-subtle)' }}
+                >
+                  {filteredErrors.length} errores
+                </span>
+              </div>
+            </section>
 
-        {isIdleLaunchpad ? (
-          <LaunchpadTemplatesPanel
-            catalog={launchCatalog}
-            selectedTemplateId={launchPreview?.draft?.templateId}
-            onSelectTemplate={(templateId) => updateLaunchDraft({ templateId, mode: 'template' })}
-            onLaunch={(templateId) =>
-              openLaunchWizard({ templateId, step: 'team', mode: 'template' })
-            }
-          />
-        ) : null}
-        {isIdleLaunchpad ? (
-          <SwarmTypeCatalogPanel
-            catalog={launchCatalog}
-            selectedSwarmTypeId={launchPreview?.draft?.swarmTypeId}
-            onSelectSwarmType={(swarmTypeId) => updateLaunchDraft({ swarmTypeId, mode: 'custom' })}
-            onLaunch={(swarmTypeId) =>
-              openLaunchWizard({ swarmTypeId, step: 'configure', mode: 'custom' })
-            }
-          />
-        ) : null}
+            <section className="space-y-3" aria-label="Operaciones activas">
+              <p
+                className="text-xs font-semibold uppercase tracking-[0.18em]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Operaciones activas
+              </p>
+              <div
+                className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
+              >
+                <DirectorQueuePanel
+                  queue={effectiveDirectorQueue}
+                  handoffDisabled={handoffUnsafe}
+                  handoffDisabledReason={handoffDisabledReason}
+                  isSubmitting={handoffSubmitState.submitting}
+                  onClaimNext={handleClaimNext}
+                />
 
-        <div
-          className="flex flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
-          style={{
-            background: 'var(--surface-muted)',
-            borderColor: 'var(--border-subtle)',
-          }}
-        >
-          <label className="flex flex-1 flex-col gap-2 text-xs font-medium">
-            <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
-            <input
-              aria-label="Filtrar registros"
-              className="rounded-lg border px-3 py-2 outline-none"
-              style={{
-                background: 'var(--surface-app)',
-                borderColor: 'var(--border-subtle)',
-                color: 'var(--text-primary)',
-              }}
-              placeholder="agente, workspace, run, evidencia…"
-              value={filterText}
-              onChange={(event) => setFilterText(event.target.value)}
+                <ApprovalsErrorsPanel
+                  approvals={filteredApprovals}
+                  errors={filteredErrors}
+                  mutationState={approvalMutationState}
+                  onDecision={handleDirectorDecision}
+                />
+              </div>
+            </section>
+
+            <section className="space-y-3" aria-label="Procesos OpenCode">
+              <ActiveProcessesPanel />
+            </section>
+
+            <section className="space-y-3" aria-label="Mision y evidencia">
+              <p
+                className="text-xs font-semibold uppercase tracking-[0.18em]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Mision y evidencia
+              </p>
+              <div
+                className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
+              >
+                <MissionKernelPanel
+                  missionControl={effectiveMissionControl}
+                  onComposerSubmit={handleComposerSubmit}
+                />
+                <EvidenceTimelinePanel items={evidenceTimeline} />
+              </div>
+            </section>
+
+            <section className="space-y-3" aria-label="Inventario operativo">
+              <p
+                className="text-xs font-semibold uppercase tracking-[0.18em]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Inventario operativo
+              </p>
+              <div
+                className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-3' : 'flex flex-col gap-6'}
+              >
+                <AgentsClaimsPanel agents={filteredAgents} />
+                <WorkspacesPanel workspaces={filteredWorkspaces} />
+                <RunsArtifactsPanel
+                  runs={filteredRuns}
+                  selectedRunId={selectedRunId}
+                  onSelectRun={setSelectedRunId}
+                />
+              </div>
+            </section>
+
+            <DiagnosticOverlay
+              diagnostics={diagnostics}
+              expanded={expandedPanels.diagnostics}
+              onToggle={() =>
+                setExpandedPanels((current) => ({
+                  ...current,
+                  diagnostics: !current.diagnostics,
+                }))
+              }
             />
-          </label>
 
-          <div className="flex items-center gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setLayout('grid')}
-              aria-pressed={layout === 'grid'}
-              className="rounded-lg border px-3 py-2"
-              style={{
-                background: layout === 'grid' ? 'var(--surface-elevated)' : 'transparent',
-                borderColor: 'var(--border-subtle)',
-              }}
-            >
-              Grilla
-            </button>
-            <button
-              type="button"
-              onClick={() => setLayout('stack')}
-              aria-pressed={layout === 'stack'}
-              className="rounded-lg border px-3 py-2"
-              style={{
-                background: layout === 'stack' ? 'var(--surface-elevated)' : 'transparent',
-                borderColor: 'var(--border-subtle)',
-              }}
-            >
-              Pila
-            </button>
+            <SwarmLaunchWizardModal
+              open={launchWizardOpen}
+              catalog={launchCatalog}
+              preview={launchPreview}
+              currentStep={launchWizardStep}
+              onClose={() => setLaunchWizardOpen(false)}
+              onStepChange={setLaunchWizardStep}
+              onDraftChange={updateLaunchDraft}
+              onLaunch={handleLaunchSubmit}
+            />
           </div>
         </div>
-
-        <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
-          <DirectorQueuePanel
-            queue={effectiveDirectorQueue}
-            handoffDisabled={handoffUnsafe}
-            handoffDisabledReason={handoffDisabledReason}
-            isSubmitting={handoffSubmitState.submitting}
-            onClaimNext={handleClaimNext}
-          />
-
-          <ApprovalsErrorsPanel
-            approvals={filteredApprovals}
-            errors={filteredErrors}
-            mutationState={approvalMutationState}
-            onDecision={handleDirectorDecision}
-          />
-        </div>
-
-        <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
-          <EvidenceTimelinePanel items={evidenceTimeline} />
-          <MissionKernelPanel
-            missionControl={effectiveMissionControl}
-            onComposerSubmit={handleComposerSubmit}
-          />
-        </div>
-
-        <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-3' : 'flex flex-col gap-6'}>
-          <AgentsClaimsPanel agents={filteredAgents} />
-          <WorkspacesPanel workspaces={filteredWorkspaces} />
-          <RunsArtifactsPanel
-            runs={filteredRuns}
-            selectedRunId={selectedRunId}
-            onSelectRun={setSelectedRunId}
-          />
-        </div>
-
-        <DiagnosticOverlay
-          diagnostics={diagnostics}
-          expanded={expandedPanels.diagnostics}
-          onToggle={() =>
-            setExpandedPanels((current) => ({
-              ...current,
-              diagnostics: !current.diagnostics,
-            }))
-          }
-        />
-
-        <SwarmLaunchWizardModal
-          open={launchWizardOpen}
-          catalog={launchCatalog}
-          preview={launchPreview}
-          currentStep={launchWizardStep}
-          onClose={() => setLaunchWizardOpen(false)}
-          onStepChange={setLaunchWizardStep}
-          onDraftChange={updateLaunchDraft}
-          onLaunch={handleLaunchSubmit}
-        />
       </div>
     </div>
   );
