@@ -1008,23 +1008,82 @@ function getDb() {
     const dir = path.dirname(DB_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    // Backup before opening if DB exists and has data
+    // Check if DB exists and has data before opening
+    let needsRecovery = false;
     if (fs.existsSync(DB_PATH)) {
       try {
         const stats = fs.statSync(DB_PATH);
         if (stats.size > 0) {
-          const backupPath = `${DB_PATH}.backup-${Date.now()}`;
-          fs.copyFileSync(DB_PATH, backupPath);
-          // Keep only last 5 backups
-          const backups = fs
-            .readdirSync(dir)
-            .filter((f) => f.startsWith('devhub.db.backup-'))
-            .sort()
-            .reverse();
-          backups.slice(5).forEach((f) => fs.unlinkSync(path.join(dir, f)));
+          // Quick check if DB has projects
+          const tempDb = new Database(DB_PATH, { readonly: true });
+          const projectCount = tempDb.prepare('SELECT count(*) as c FROM projects').get().c;
+          tempDb.close();
+
+          if (projectCount === 0) {
+            console.error('[localDb] WARNING: DB exists but projects table is empty!');
+            needsRecovery = true;
+          } else {
+            // Backup before opening (only if DB has data)
+            const backupPath = `${DB_PATH}.backup-${Date.now()}`;
+            fs.copyFileSync(DB_PATH, backupPath);
+            // Keep only last 5 backups
+            const backups = fs
+              .readdirSync(dir)
+              .filter((f) => f.startsWith('devhub.db.backup-'))
+              .sort()
+              .reverse();
+            backups.slice(5).forEach((f) => fs.unlinkSync(path.join(dir, f)));
+          }
         }
       } catch (err) {
-        console.error('[localDb] Backup failed:', err.message);
+        console.error('[localDb] Pre-open check failed:', err.message);
+        needsRecovery = true;
+      }
+    } else {
+      needsRecovery = true;
+    }
+
+    // If DB is empty or missing, try to recover from backup
+    if (needsRecovery) {
+      console.error('[localDb] Attempting DB recovery...');
+      try {
+        const backups = fs
+          .readdirSync(dir)
+          .filter((f) => f.startsWith('devhub.db.backup-') || f === 'devhub.db.pre-restore')
+          .map((f) => path.join(dir, f))
+          .filter((f) => {
+            try {
+              if (!fs.existsSync(f)) return false;
+              const tempDb = new Database(f, { readonly: true });
+              const count = tempDb.prepare('SELECT count(*) as c FROM projects').get().c;
+              tempDb.close();
+              return count > 0;
+            } catch {
+              return false;
+            }
+          })
+          .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+
+        if (backups.length > 0) {
+          const latestGoodBackup = backups[0];
+          console.error(`[localDb] Recovering from: ${latestGoodBackup}`);
+          fs.copyFileSync(latestGoodBackup, DB_PATH);
+          // Remove WAL/SHM files to force fresh start
+          try {
+            fs.unlinkSync(`${DB_PATH}-wal`);
+          } catch {
+            /* ignore */
+          }
+          try {
+            fs.unlinkSync(`${DB_PATH}-shm`);
+          } catch {
+            /* ignore */
+          }
+        } else {
+          console.error('[localDb] No valid backups found. Creating fresh DB.');
+        }
+      } catch (err) {
+        console.error('[localDb] Recovery failed:', err.message);
       }
     }
 
@@ -1034,36 +1093,12 @@ function getDb() {
     _db.pragma('busy_timeout = 5000');
     ensureRuntimeSchema(_db);
 
-    // Check if DB is empty and try to recover from backup
-    const projectCount = _db.prepare('SELECT count(*) as c FROM projects').get().c;
-    if (projectCount === 0) {
-      console.error('[localDb] WARNING: Projects table is empty! Attempting recovery...');
-      try {
-        const backups = fs
-          .readdirSync(dir)
-          .filter((f) => f.startsWith('devhub.db.backup-') || f === 'devhub.db.pre-restore')
-          .map((f) => path.join(dir, f))
-          .filter((f) => fs.statSync(f).size > 0)
-          .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-
-        if (backups.length > 0) {
-          const latestBackup = backups[0];
-          console.error(`[localDb] Recovering from: ${latestBackup}`);
-          fs.copyFileSync(latestBackup, DB_PATH);
-          // Reopen with recovered data
-          _db.close();
-          _db = new Database(DB_PATH, { fileMustExist: true, readonly: false });
-          _db.pragma('journal_mode = WAL');
-          _db.pragma('foreign_keys = ON');
-          _db.pragma('busy_timeout = 5000');
-          ensureRuntimeSchema(_db);
-
-          const recoveredCount = _db.prepare('SELECT count(*) as c FROM projects').get().c;
-          console.error(`[localDb] Recovery result: ${recoveredCount} projects`);
-        }
-      } catch (err) {
-        console.error('[localDb] Recovery failed:', err.message);
-      }
+    // Final verification
+    const finalCount = _db.prepare('SELECT count(*) as c FROM projects').get().c;
+    if (finalCount === 0) {
+      console.error('[localDb] CRITICAL: Projects table is still empty after recovery!');
+    } else {
+      console.log(`[localDb] DB ready with ${finalCount} projects`);
     }
   }
   if (!_db.tables) {
