@@ -2682,7 +2682,7 @@ server.tool(
 
 server.tool(
   'get_next_task',
-  'Devuelve la siguiente tarea priorizada de la cola usando la fórmula de prioridad matemática.',
+  '[DEPRECATED] Use `devhub claim` instead. Devuelve la siguiente tarea priorizada de la cola usando la fórmula de prioridad matemática.',
   {
     project_id: z.string().uuid(),
     agent_id: z.string(),
@@ -3925,7 +3925,7 @@ server.tool(
 
 server.tool(
   'get_dashboard',
-  'Obtiene un resumen global del estado de todos los proyectos: contadores de tareas, progreso y próximos hitos.',
+  '[DEPRECATED] Use `devhub status` instead. Obtiene un resumen global del estado de todos los proyectos: contadores de tareas, progreso y próximos hitos.',
   {},
   async () => {
     const [{ data: projects }, { data: tasks }, { data: milestones }] = await Promise.all([
@@ -4021,7 +4021,7 @@ server.tool(
 
 server.tool(
   'register_agent',
-  'Registra un agente Worker en el swarm o actualiza su estado. Debe llamarse al iniciar o reanudar el agente.',
+  '[DEPRECATED] Use `devhub agents register` instead. Registra un agente Worker en el swarm o actualiza su estado. Debe llamarse al iniciar o reanudar el agente.',
   {
     agent_id: z.string().describe('Identificador único del agente, ej. worker-claude-1'),
     project_id: z.string().uuid().describe('UUID del proyecto al que se asigna'),
@@ -4056,7 +4056,7 @@ server.tool(
 
 server.tool(
   'heartbeat_agent',
-  'Renueva la señal de vida del agente. Si no se llama cada 1 minuto, el job de limpieza lo marcará como error.',
+  '[DEPRECATED] Use `devhub heartbeat` instead. Renueva la señal de vida del agente. Si no se llama cada 1 minuto, el job de limpieza lo marcará como error.',
   {
     agent_id: z.string().describe('ID del agente registrado'),
   },
@@ -4140,7 +4140,7 @@ server.tool(
 
 server.tool(
   'unregister_agent',
-  'Elimina un agente del registry, liberando su tarea actual si la tuviera.',
+  '[DEPRECATED] Use CLI instead. Elimina un agente del registry, liberando su tarea actual si la tuviera.',
   {
     agent_id: z.string().describe('ID del agente a desvincular'),
   },
@@ -4192,7 +4192,7 @@ server.tool(
 
 server.tool(
   'update_agent_status',
-  'Actualiza el estado del agente (visible en el Kanban de DevHub).',
+  '[DEPRECATED] Use `devhub update-status` instead. Actualiza el estado del agente (visible en el Kanban de DevHub).',
   {
     agent_id: z.string().describe('Tu identificador único de agente asignado'),
     status: z.enum([

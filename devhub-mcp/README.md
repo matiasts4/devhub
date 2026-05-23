@@ -46,67 +46,86 @@ Registrar el servidor en tu configuración MCP:
 
 ---
 
-## Herramientas disponibles (23 total)
+## Ownership Matrix (45 tools)
 
-Este catálogo es la superficie oficial actual del MCP. Las herramientas de
-filesystem, terminal, git y context packs no forman
-parte de este servidor todavía. Las operaciones bulk y la cola de ejecución sí
-están incluidas para planning/roadmap.
+Every MCP tool is classified into exactly one category. This table is the authoritative source for the MCP vs CLI ownership boundary.
 
-### Proyectos
+| Tool | Category | CLI Equivalent | Notes |
+|------|----------|----------------|-------|
+| `list_projects` | crud | — | MCP-owned |
+| `get_project` | crud | — | MCP-owned |
+| `create_project` | crud | — | MCP-owned |
+| `update_project` | crud | — | MCP-owned |
+| `delete_project` | crud | — | MCP-owned |
+| `list_tasks` | crud | — | MCP-owned |
+| `create_task` | crud | — | MCP-owned |
+| `bulk_create_tasks` | crud | — | MCP-owned |
+| `update_task` | crud | — | MCP-owned |
+| `add_task_comment` | crud | — | MCP-owned |
+| `list_milestones` | crud | — | MCP-owned |
+| `create_milestone` | crud | — | MCP-owned |
+| `bulk_create_milestones` | crud | — | MCP-owned |
+| `update_milestone` | crud | — | MCP-owned |
+| `get_execution_queue` | portable-contract | — | Stable across CLI changes |
+| `claim_next_task` | portable-contract | — | Stable across CLI changes |
+| `renew_task_lease` | portable-contract | — | Stable across CLI changes |
+| `release_task` | portable-contract | — | Stable across CLI changes |
+| `request_supervisor_approval` | portable-contract | — | Stable across CLI changes |
+| `team_tell` | portable-contract | — | Stable across CLI changes |
+| `get_dashboard` | deprecated | `devhub status` | Advisory — still functional |
+| `get_next_task` | deprecated | `devhub claim` | Advisory — still functional |
+| `register_agent` | deprecated | `devhub agents register` | Advisory — still functional |
+| `heartbeat_agent` | deprecated | `devhub heartbeat` | Advisory — still functional |
+| `unregister_agent` | deprecated | CLI (future) | Advisory — still functional |
+| `update_agent_status` | deprecated | `devhub update-status` | Advisory — still functional |
+| `record_telegram_adapter_intent` | external-integration | — | Telegram integration |
+| `record_telegram_delivery` | external-integration | — | Telegram integration |
+| `set_telegram_subscription` | external-integration | — | Telegram integration |
+| `respond_telegram_approval` | external-integration | — | Telegram integration |
+| `get_telegram_channel_snapshot` | external-integration | — | Telegram integration |
+| `prepare_agent_workspace` | external-integration | — | Workspace lifecycle |
+| `list_agent_workspaces` | external-integration | — | Workspace lifecycle |
+| `get_agent_workspace` | external-integration | — | Workspace lifecycle |
+| `create_agent_workspace` | external-integration | — | Workspace lifecycle |
+| `update_agent_workspace` | external-integration | — | Workspace lifecycle |
+| `report_agent_workspace` | external-integration | — | Workspace lifecycle |
+| `create_agent_run` | external-integration | — | Run lifecycle |
+| `get_agent_run` | external-integration | — | Run lifecycle |
+| `list_agent_runs` | external-integration | — | Run lifecycle |
+| `complete_agent_run` | external-integration | — | Run lifecycle |
+| `append_agent_artifact` | external-integration | — | Artifact tracking |
+| `list_agent_artifacts` | external-integration | — | Artifact tracking |
+| `get_workspace_evidence` | external-integration | — | Downstream consumers |
+| `get_project_context` | external-integration | — | Planning context |
 
-| Herramienta      | Descripción                                        |
-| ---------------- | -------------------------------------------------- |
-| `list_projects`  | Lista todos los proyectos (filtro por estado)      |
-| `get_project`    | Detalles completos de un proyecto + tareas + hitos |
-| `update_project` | Actualiza nombre, estado, progreso, color          |
-| `create_project` | Crea un nuevo proyecto                             |
-| `delete_project` | Elimina un proyecto con confirmación explícita     |
+### Category Definitions
 
-### Tareas
+- **crud**: MCP-owned project/task/milestone management. These tools wrap direct database operations and are the canonical surface for data access.
+- **portable-contract**: Stable integration points for portable clients (execution queue, claim/release, approvals, team communication). These remain stable across CLI changes.
+- **deprecated**: Duplicated by CLI commands. Still fully functional but clients should migrate to the CLI equivalent. No tools removed — deprecation is advisory only.
+- **external-integration**: Telegram, workspace, run, and artifact tracking tools. MCP-owned because they coordinate with external systems or internal control-plane state.
 
-| Herramienta           | Descripción                                         |
-| --------------------- | --------------------------------------------------- |
-| `list_tasks`          | Tareas de un proyecto (filtro por estado/prioridad) |
-| `create_task`         | Crea una nueva tarea                                |
-| `bulk_create_tasks`   | Crea múltiples tareas idempotentes para planning    |
-| `update_task`         | Cambia estado, prioridad, título de una tarea       |
-| `add_task_comment`    | Añade comentario a una tarea                        |
-| `get_next_task`       | Wrapper compatible que reclama la siguiente tarea   |
-| `get_execution_queue` | Cola scoreada de tareas disponibles                 |
-| `claim_next_task`     | Reclama la siguiente tarea con lease y token        |
-| `renew_task_lease`    | Renueva el lease activo de una tarea reclamada      |
-| `release_task`        | Libera el lease y aplica outcome operativo          |
+### Deprecation Policy
 
-### Hitos
+- **Advisory only**: No tools are removed, renamed, or have their signatures changed.
+- **Detection**: Clients can detect deprecated tools via `description.startsWith('[DEPRECATED]')`.
+- **Rollback**: A simple `git revert` restores original descriptions. No data migration required.
+- **Runtime**: Deprecated tools execute identically to before — no warnings, no errors, no behavioral changes.
 
-| Herramienta              | Descripción                       |
-| ------------------------ | --------------------------------- |
-| `list_milestones`        | Hitos del roadmap                 |
-| `create_milestone`       | Crea un nuevo hito                |
-| `bulk_create_milestones` | Crea múltiples hitos idempotentes |
-| `update_milestone`       | Actualiza estado/fecha de un hito |
+### Portable Client Contract
 
-### Dashboard
+If you are building a portable client that integrates with DevHub, these tools form the stable contract:
 
-| Herramienta     | Descripción                           |
-| --------------- | ------------------------------------- |
-| `get_dashboard` | Resumen global de todos los proyectos |
+| Tool | Purpose |
+|------|---------|
+| `get_execution_queue` | Get prioritized task queue with dependency blocking info |
+| `claim_next_task` | Atomically claim next task with lease token |
+| `renew_task_lease` | Extend lease on claimed task |
+| `release_task` | Release lease with outcome (completed/paused/failed) |
+| `request_supervisor_approval` | Create approval checkpoint for supervisor review |
+| `team_tell` | Send durable directives to team members |
 
-### Planning / Contexto
-
-| Herramienta           | Descripción                                  |
-| --------------------- | -------------------------------------------- |
-| `get_project_context` | Lee contexto de planificación de un proyecto |
-
-### Swarm v2 (Agentes)
-
-| Herramienta           | Descripción                           |
-| --------------------- | ------------------------------------- |
-| `register_agent`      | Registra un agente Worker en el swarm |
-| `heartbeat_agent`     | Renueva señal de vida del agente      |
-| `unregister_agent`    | Elimina un agente del registry        |
-| `update_agent_status` | Actualiza estado visual del agente    |
+These tools are stable across CLI changes and form the core execution coordination surface.
 
 ---
 

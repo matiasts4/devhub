@@ -44,8 +44,16 @@ function seedTestData() {
   // Disable FK for test cleanup
   db.pragma('foreign_keys = OFF');
 
-  // Clear existing test data (order matters for FK)
-  db.prepare('DELETE FROM agent_artifacts').run();
+  // Clear existing test data — agent_artifacts is append-only (trigger blocks DELETE)
+  db.exec('DROP TABLE IF EXISTS agent_artifacts');
+  db.exec(`
+    CREATE TABLE agent_artifacts (
+      artifact_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, seq INTEGER NOT NULL,
+      phase TEXT NOT NULL, kind TEXT NOT NULL, producer TEXT NOT NULL,
+      summary TEXT NOT NULL, evidence_ref TEXT NOT NULL, observed_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
   db.prepare('DELETE FROM agent_runs').run();
   db.prepare('DELETE FROM agent_workspaces').run();
   db.prepare('DELETE FROM milestones').run();

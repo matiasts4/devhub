@@ -126,7 +126,7 @@ The CLI scaffold MUST include unit tests covering arg parsing, exit codes, forma
 
 ### Requirement: Agents Command Registration
 
-The CLI MUST register the `agents` command and the `swarm` command in `cli.js` and remove both from the stub commands list.
+The CLI MUST register the `agents`, `swarm`, `task`, `ws`, `heartbeat`, and `update-status` commands in `cli.js` and remove all from the stub commands list.
 
 #### Scenario: Agents command is recognized
 
@@ -163,3 +163,141 @@ The CLI MUST register the `agents` command and the `swarm` command in `cli.js` a
 - GIVEN the CLI has a stub commands list
 - WHEN `cli.js` is loaded
 - THEN `swarm` is NOT in the stub commands list
+
+#### Scenario: Task command is recognized
+
+- GIVEN the `task` command is registered in `cli.js`
+- WHEN `devhub task <id>` is executed
+- THEN the task command handler is invoked (not a stub)
+
+#### Scenario: Task command appears in help
+
+- GIVEN the `task` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `task` in the command list
+
+#### Scenario: Task is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `task` is NOT in the stub commands list
+
+#### Scenario: Workspace command is recognized
+
+- GIVEN the `ws` command is registered in `cli.js`
+- WHEN `devhub ws <id>` is executed
+- THEN the ws command handler is invoked (not a stub)
+
+#### Scenario: Workspace command appears in help
+
+- GIVEN the `ws` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `ws` in the command list
+
+#### Scenario: Workspace is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `ws` is NOT in the stub commands list
+
+#### Scenario: Heartbeat command is recognized
+
+- GIVEN the `heartbeat` command is registered in `cli.js`
+- WHEN `devhub heartbeat test-agent-1` is executed
+- THEN the heartbeat command handler is invoked (not a stub)
+
+#### Scenario: Heartbeat command appears in help
+
+- GIVEN the `heartbeat` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `heartbeat` in the command list
+
+#### Scenario: Heartbeat is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `heartbeat` is NOT in the stub commands list
+
+#### Scenario: Update-status command is recognized
+
+- GIVEN the `update-status` command is registered in `cli.js`
+- WHEN `devhub update-status test-agent-1 active` is executed
+- THEN the update-status command handler is invoked (not a stub)
+
+#### Scenario: Update-status command appears in help
+
+- GIVEN the `update-status` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `update-status` in the command list
+
+#### Scenario: Update-status is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `update-status` is NOT in the stub commands list
+
+### Requirement: Claim Command Registration
+
+The CLI MUST register the `claim` command in `cli.js` and remove it from the stub commands list.
+
+#### Scenario: Claim command is recognized
+
+- GIVEN the `claim` command is registered in `cli.js`
+- WHEN `devhub claim agent-1` is executed
+- THEN the claim command handler is invoked (not a stub)
+
+#### Scenario: Claim command appears in help
+
+- GIVEN the `claim` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `claim` in the command list
+
+#### Scenario: Claim is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `claim` is NOT in the stub commands list
+
+### Requirement: Release Command Registration
+
+The CLI MUST register the `release` command in `cli.js` and remove it from the stub commands list.
+
+#### Scenario: Release command is recognized
+
+- GIVEN the `release` command is registered in `cli.js`
+- WHEN `devhub release task-123 token --outcome completed` is executed
+- THEN the release command handler is invoked (not a stub)
+
+#### Scenario: Release command appears in help
+
+- GIVEN the `release` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `release` in the command list
+
+#### Scenario: Release is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `release` is NOT in the stub commands list
+
+### Requirement: Tell Command Registration
+
+The CLI MUST register the `tell` command in `cli.js` and remove it from the stub commands list.
+
+#### Scenario: Tell command is recognized
+
+- GIVEN the `tell` command is registered in `cli.js`
+- WHEN `devhub tell worker-1 "msg" --mission m-1 --sender worker-2` is executed
+- THEN the tell command handler is invoked (not a stub)
+
+#### Scenario: Tell command appears in help
+
+- GIVEN the `tell` command is registered
+- WHEN `devhub --help` is executed
+- THEN the help output includes `tell` in the command list
+
+#### Scenario: Tell is not a stub
+
+- GIVEN the CLI has a stub commands list
+- WHEN `cli.js` is loaded
+- THEN `tell` is NOT in the stub commands list
