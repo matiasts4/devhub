@@ -200,3 +200,105 @@ export function panelListStyle() {
     scrollbarColor: 'var(--border-subtle) transparent',
   };
 }
+
+// ── Relative time formatting ──────────────────────────────────────────────────
+
+export function formatRelativeTime(dateString) {
+  if (!dateString) return '';
+  const s = String(dateString).trim();
+  const parsed = Date.parse(s);
+  if (Number.isNaN(parsed)) {
+    // non-ISO string fallback: last 8 chars when > 8 chars
+    return s.length > 8 ? s.slice(-8) : s;
+  }
+  const diffMs = Date.now() - parsed;
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHrs = Math.round(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  const diffDays = Math.round(diffHrs / 24);
+  return `${diffDays}d ago`;
+}
+
+// ── CompactRow component ─────────────────────────────────────────────────────
+
+export function CompactRow({ status, primary, secondary, badge, timestamp, icon }) {
+  const primaryText = primary ? truncateId(primary) : '—';
+  return (
+    <div data-testid="compact-row" className="flex items-center gap-2">
+      {icon}
+      <StatusPill status={status} />
+      <span data-testid="compact-row-primary" className="text-sm font-medium">
+        {primaryText}
+      </span>
+      {secondary !== undefined && secondary !== null && (
+        <span data-testid="compact-row-secondary" className="text-xs" style={metaTextStyle()}>
+          {secondary}
+        </span>
+      )}
+      {badge !== undefined && badge !== null && (
+        <span data-testid="compact-row-badge" className="text-xs font-medium tabular-nums">
+          {String(badge)}
+        </span>
+      )}
+      {timestamp && (
+        <span data-testid="compact-row-timestamp" className="text-xs" style={metaTextStyle()}>
+          {formatRelativeTime(timestamp)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── CompactPanelShell component ──────────────────────────────────────────────
+
+export function CompactPanelShell({
+  title,
+  description,
+  items,
+  renderItem,
+  emptyMessage,
+  count,
+  maxHeight,
+  headerExtra,
+  ariaLabel,
+}) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const showEmpty = safeItems.length === 0;
+  const bodyMaxHeight = maxHeight || '300px';
+  return (
+    <section
+      aria-label={ariaLabel || title}
+      className="rounded-lg border"
+      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-default)' }}
+    >
+      <div className="flex items-center justify-between px-3 py-2">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          {count > 0 && <CountBadge count={count} />}
+        </div>
+        {headerExtra}
+      </div>
+      {description && (
+        <div className="px-3 pb-1 text-xs" style={metaTextStyle()}>
+          {description}
+        </div>
+      )}
+      <div
+        data-testid="compact-panel-body"
+        style={{ maxHeight: bodyMaxHeight, overflowY: 'auto' }}
+        className="px-3 pb-3"
+      >
+        {showEmpty ? (
+          <div className="py-4 text-center text-xs" style={metaTextStyle()}>
+            {emptyMessage || 'Sin datos'}
+          </div>
+        ) : (
+          safeItems.map(renderItem)
+        )}
+      </div>
+    </section>
+  );
+}
