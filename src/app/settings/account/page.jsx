@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/db/localClient';
 import { UiHeader } from '@/components/ui/system';
-import { ProfileSection } from '@/views/settings/ProfileSection';
+import { ProfileSection } from '@/components/settings/ProfileSection';
 
 export default function AccountPage() {
   const db = createClient();

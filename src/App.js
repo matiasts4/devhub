@@ -26,7 +26,7 @@ import Scaffolding from './views/Scaffolding';
 import Roadmap from './views/Roadmap';
 import Historial from './views/Historial';
 import Conexiones from './views/Conexiones';
-import Ajustes from './views/Ajustes';
+
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
 import { createClient } from '@/lib/db/localClient';

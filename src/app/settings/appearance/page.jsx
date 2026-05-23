@@ -14,7 +14,7 @@ import {
   applyAppearanceSettings,
 } from '@/lib/theme/themes';
 import { UiHeader } from '@/components/ui/system';
-import { AppearanceSection } from '@/views/settings/AppearanceSection';
+import { AppearanceSection } from '@/components/settings/AppearanceSection';
 import { DENSITY, FONT_FAMILY, FONT_SCALE } from '@/components/ui/system/ui-tokens';
 import {
   readTerminalRendererDefaultModeSetting,
