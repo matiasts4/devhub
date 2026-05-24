@@ -112,6 +112,25 @@ program
   .option('--sender <id>', 'Sender agent ID (required)')
   .action((recipient, message, opts) => tellCommand(recipient, message, opts));
 
+const swarmLaunchCommand = require('./commands/swarm-launch.js');
+program
+  .command('swarm-launch')
+  .description('Launch a swarm from a project')
+  .argument('[project]', 'Project ID or name')
+  .option('--template <id>', 'Template ID (clean-slate, approval-recovery, queue-restart)')
+  .option('--swarm-type <id>', 'Swarm type ID (delivery-swarm, recovery-swarm, research-swarm)')
+  .option('--team <id>', 'Team ID')
+  .option('--provider <id>', 'Provider ID')
+  .option('--mission <text>', 'Mission summary')
+  .option('--workspace-path <path>', 'Workspace path override')
+  .action((project, opts) => {
+    if (!project) {
+      process.stderr.write('error: project ID or name is required.\n');
+      process.exit(1);
+    }
+    swarmLaunchCommand(project, opts);
+  });
+
 // Stub commands — not yet implemented
 const STUB_COMMANDS = [];
 

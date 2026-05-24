@@ -17,6 +17,16 @@ jest.mock(
   { virtual: true }
 );
 
+jest.mock('@/components/control-room/ActiveProcessesPanel', () => {
+  const React = require('react');
+  return function MockActiveProcessesPanel() {
+    return React.createElement('section', {
+      'aria-label': 'Procesos OpenCode',
+      'data-testid': 'mock-active-processes-panel',
+    });
+  };
+});
+
 const SwarmControl = require('../SwarmControl').default;
 const {
   buildControlRoomInput,
@@ -432,11 +442,11 @@ describe('SwarmControl control room composition', () => {
 
     expect(text).toContain('Agentes y asignaciones');
     expect(text).toContain(
-      'Tareas reclamadas, ventanas de lease, enlaces a workspace y autoridad durable.'
+'Tareas reclamadas, lease, workspace y autoridad.'
     );
     expect(text).toContain('worker-1');
     expect(text).toContain('task-1');
-    expect(text).toContain('esperando aprobación');
+    expect(text).toContain('aprobación requerida');
     expect(text).not.toContain('Tasks reclamadas');
 
     expect(text).toContain('Workspaces');
@@ -532,7 +542,7 @@ describe('SwarmControl control room composition', () => {
     expect(primarySurface).not.toBeNull();
     expect(primarySurface?.textContent).toContain('Swarm activo');
     expect(primarySurface?.textContent).toContain('Continuar desde cola durable');
-    expect(primarySurface?.textContent).toContain('1 agente activo');
+    expect(primarySurface?.textContent).toContain('1 agente');
     expect(fullText.indexOf('Swarm activo')).toBeLessThan(fullText.indexOf('Cola del director'));
     expect(fullText.indexOf('Swarm activo')).toBeLessThan(fullText.indexOf('Kernel de misión'));
     expect(fullText.indexOf('Swarm activo')).toBeLessThan(fullText.indexOf('Filtrar registros'));
@@ -1313,7 +1323,7 @@ describe('SwarmControl control room composition', () => {
     const text = view.container.textContent;
 
     expect(text).toContain('worker-1');
-    expect(text).toContain('esperando aprobación');
+    expect(text).toContain('aprobación requerida');
     expect(text).toContain('Actividad en vivo: inactivo');
   });
 

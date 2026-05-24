@@ -18,6 +18,7 @@ import {
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import { DatePicker } from '@/components/ui/date-picker';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 
 const STATUS_CFG = {
   planned: { label: 'Planificado', color: '#484F58', pulse: false },
@@ -258,26 +259,7 @@ export default function Roadmap() {
         }}
       >
         <div className="flex items-center gap-3">
-          <MapPin
-            className="w-4 h-4"
-            strokeWidth={1.5}
-            style={{ color: 'var(--accent-primary)' }}
-          />
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Roadmap
-          </h1>
-          {project?.name && (
-            <span
-              className="text-xs px-2 py-0.5 rounded-full"
-              style={{
-                background: 'var(--surface-elevated)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text-muted)',
-              }}
-            >
-              {project.name}
-            </span>
-          )}
+          <WorkspacePageTitle icon={MapPin} title="Roadmap" projectName={project?.name} />
         </div>
         <button
           onClick={() => setShowModal(true)}

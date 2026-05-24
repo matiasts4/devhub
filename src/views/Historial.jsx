@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 
 const STATUS_COLORS = {
   completed: { color: '#3FB950', bg: 'bg-[#3FB950]/10', text: 'text-success', label: 'Completada' },
@@ -155,26 +156,19 @@ export default function Historial() {
         }}
       >
         <div className="flex items-center gap-3">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center"
-            style={{ background: '#D2A8FF18', border: '1px solid #D2A8FF30' }}
-          >
-            <History className="w-3.5 h-3.5" strokeWidth={1.5} style={{ color: '#D2A8FF' }} />
-          </div>
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Historial de Actividad
-          </h1>
-          {project?.name && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
-              {project.name}
-            </span>
-          )}
-          <span
-            className="text-xs px-2 py-0.5 rounded-full"
-            style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
-          >
-            {filtered.length} registros
-          </span>
+          <WorkspacePageTitle
+            icon={History}
+            title="Historial de Actividad"
+            projectName={project?.name}
+            badges={[
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
+              >
+                {filtered.length} registros
+              </span>,
+            ]}
+          />
         </div>
 
         {/* Filter pills */}

@@ -20,6 +20,7 @@ import {
   normalizeTelegramActivityItem,
   shouldShowRealtimeBadge,
 } from './telegramMonitorRealtime';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 
 function safeFetch(url) {
   return fetch(url).then((res) => {
@@ -162,26 +163,26 @@ export default function TelegramMonitor() {
         }}
       >
         <div className="flex items-center gap-3">
-          <Send className="w-4 h-4" strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Telegram Bot Monitor
-          </h1>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
-            {project?.name || 'Proyecto'}
-          </span>
-          {showRealtimeBadge && (
-            <span
-              aria-label="Agente en vivo ejecutando herramientas"
-              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 animate-pulse"
-            >
-              🔴 EN VIVO
-            </span>
-          )}
-          {showRealtimeBadge && currentToolDisplay && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
-              🔧 {currentToolDisplay}
-            </span>
-          )}
+          <WorkspacePageTitle
+            icon={Send}
+            title="Telegram Bot Monitor"
+            projectName={project?.name || 'Proyecto'}
+            badges={[
+              showRealtimeBadge ? (
+                <span
+                  aria-label="Agente en vivo ejecutando herramientas"
+                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 animate-pulse"
+                >
+                  🔴 EN VIVO
+                </span>
+              ) : null,
+              showRealtimeBadge && currentToolDisplay ? (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+                  🔧 {currentToolDisplay}
+                </span>
+              ) : null,
+            ].filter(Boolean)}
+          />
         </div>
         <button
           onClick={() => fetchTelegram({ soft: true })}

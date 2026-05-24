@@ -38,6 +38,8 @@ const nextConfig = {
   },
   // Clean URLs for Tauri (Tauri abre http://localhost:3000, no archivos estáticos)
   trailingSlash: true,
+  // Keep /api/* endpoints slashless; redirecting to /api/*/ breaks app router API handlers.
+  skipTrailingSlashRedirect: true,
   serverExternalPackages: ['node-pty', 'ws', 'better-sqlite3'],
   output: 'standalone',
   // Next.js 16: Turbopack es el bundler por defecto

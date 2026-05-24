@@ -462,7 +462,6 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
     const agentId = `worker-sdd-orchestrator-${Date.now()}`;
 
     // Telemetría UI inmediata
-    const db = createClient();
     try {
       const hints = JSON.parse(localStorage.getItem('devhub_agent_task_hints') || '{}');
       hints[agentId] = task.title;
@@ -470,16 +469,6 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
     } catch {
       // Ignore localStorage failures (private mode / storage disabled)
     }
-
-    await db.from('agent_registry').insert({
-      agent_id: agentId,
-      project_id: project.id,
-      nombre: 'SDD ORCHESTRATOR',
-      modelo_llm: 'OpenCode Local',
-      status: 'working',
-      current_task_id: task.id,
-      last_heartbeat: new Date().toISOString(),
-    });
 
     navigate(`/project/${project.id}/terminales`);
 

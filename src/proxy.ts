@@ -23,6 +23,14 @@ const ratelimit = redis
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Keep API handlers slashless: with trailingSlash=true, Next redirects
+  // /api/foo -> /api/foo/ and app router API endpoints can 404 on that form.
+  if (pathname.startsWith('/api/') && pathname.length > 5 && pathname.endsWith('/')) {
+    const normalized = request.nextUrl.clone();
+    normalized.pathname = pathname.replace(/\/+$/, '');
+    return NextResponse.rewrite(normalized);
+  }
+
   // Rate Limiting para APIs
   if (pathname.startsWith('/api') && ratelimit) {
     const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1';

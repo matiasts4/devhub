@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { Button } from '@/components/ui/button';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 
 export default function ProjectDashboard() {
   const { project } = useOutletContext() || {};
@@ -107,22 +108,32 @@ export default function ProjectDashboard() {
 
   return (
     <div
-      className="h-full flex flex-col"
+      className="h-full flex flex-col core-page-shell"
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
+      <div
+        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
+        style={{ borderColor: 'var(--border-subtle)' }}
+      >
+        <WorkspacePageTitle
+          icon={LayoutDashboard}
+          title="Dashboard"
+          projectName={project?.name}
+        />
+
+        <Button
+          onClick={() => navigate(`/project/${project?.id}/tareas`)}
+          variant="devhubPrimary"
+          size="toolbar"
+        >
+          <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+          Nueva Tarea
+        </Button>
+      </div>
+
       {/* Page Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-6 pt-6 pb-6 w-full max-w-[1280px] mx-auto">
-        <div className="mb-6 flex items-center justify-end">
-          <Button
-            onClick={() => navigate(`/project/${project?.id}/tareas`)}
-            variant="devhubPrimary"
-            size="toolbar"
-          >
-            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-            Nueva Tarea
-          </Button>
-        </div>
         {/* Breadcrumb */}
         <div
           className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"

@@ -17,6 +17,7 @@ module.exports = {
     '/node_modules/',
     '<rootDir>/.next/',
     '<rootDir>/.plyrium-forge/worktrees/',
+    '<rootDir>/.worktrees/',
     '<rootDir>/opencode/',
     '<rootDir>/sidecar-backend/',
     '<rootDir>/src-tauri/',

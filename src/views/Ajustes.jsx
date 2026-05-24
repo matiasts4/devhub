@@ -32,6 +32,7 @@ import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import { getStoredTheme, setTheme, THEMES, THEME_OPTIONS } from '@/lib/theme/themes';
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
   DOCUMENTATION_POLICY_OPTIONS,
   PROJECT_TYPE_OPTIONS,
@@ -1510,19 +1511,7 @@ export default function Ajustes() {
       {/* Header */}
       <div className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between core-sticky-header">
         <div className="flex items-center gap-3">
-          <Settings
-            className="w-4 h-4"
-            strokeWidth={1.5}
-            style={{ color: 'var(--accent-primary)' }}
-          />
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Ajustes
-          </h1>
-          {project?.name && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
-              {project.name}
-            </span>
-          )}
+          <WorkspacePageTitle icon={Settings} title="Ajustes" projectName={project?.name} />
         </div>
       </div>
 

@@ -13,6 +13,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 
 const START_MARKER = '__DEVHUB_SCAFFOLD_START__';
 const END_MARKER = '__DEVHUB_SCAFFOLD_DONE__';
@@ -448,14 +449,7 @@ export default function Scaffolding() {
         }}
       >
         <div className="flex items-center gap-3">
-          <Layers
-            className="w-4 h-4"
-            strokeWidth={1.5}
-            style={{ color: 'var(--accent-primary)' }}
-          />
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Scaffolding & Stack
-          </h1>
+          <WorkspacePageTitle icon={Layers} title="Scaffolding & Stack" />
         </div>
         <button
           type="button"

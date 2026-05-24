@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 
 const TYPE_CONFIG = {
   github: { label: 'GitHub', color: '#F0F6FC', Icon: Code2, desc: 'Repositorios y PRs' },
@@ -263,13 +264,15 @@ export default function Conexiones() {
         }}
       >
         <div className="flex items-center gap-3">
-          <Plug2 className="w-4 h-4" strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Conexiones MCP
-          </h1>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
-            {active}/{connections.length} activas
-          </span>
+          <WorkspacePageTitle
+            icon={Plug2}
+            title="Conexiones MCP"
+            badges={[
+              <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted">
+                {active}/{connections.length} activas
+              </span>,
+            ]}
+          />
         </div>
         <button
           onClick={() => setShowModal(true)}
