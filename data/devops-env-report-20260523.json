@@ -1,0 +1,122 @@
+{
+  "report_id": "devops-env-report-20260523",
+  "timestamp": "2026-05-24T00:32:24.638Z",
+  "project": "/home/matias/ArxonLabs/devhub",
+  "worktree": "/home/matias/ArxonLabs/devhub/.plyrium-forge/worktrees/swarm-feature-delivery",
+  "checks": {
+    "opencode_server": {
+      "status": "PASS",
+      "details": "opencode serve running on 127.0.0.1:40421 (PID 1769)",
+      "blocker": false
+    },
+    "nextjs_dev_server": {
+      "status": "PASS",
+      "details": "Next.js dev server running on port 3100 (PID 1328122)",
+      "blocker": false
+    },
+    "devhub_mcp_server": {
+      "status": "PASS",
+      "details": "devhub-mcp/server.js running (PID 1317, plus 2 more instances)",
+      "blocker": false
+    },
+    "sidecar_backend": {
+      "status": "PASS",
+      "details": "sidecar-backend/server.js running (PID 1273066)",
+      "blocker": false
+    },
+    "tauri_dev": {
+      "status": "PASS",
+      "details": "Tauri dev server running (PID 1272121)",
+      "blocker": false
+    },
+    "database_file": {
+      "status": "PASS",
+      "details": "data/devhub.db exists (659KB, last modified 2026-05-23 17:29)",
+      "blocker": false
+    },
+    "database_tables": {
+      "status": "WARNING",
+      "details": "35 tables exist but core operational tables are EMPTY: agent_registry=0, agent_runs=0, swarm_missions=0, tasks=0, projects=0. workspaces=1 (empty row). Only agent_hub_sessions=4, telegram_* tables have data.",
+      "blocker": false,
+      "note": "Non-blocker: swarm processes are detected via process scanning, not DB registry. However, no persistent project/task state exists."
+    },
+    "worktree": {
+      "status": "PASS",
+      "details": "worktree exists at .plyrium-forge/worktrees/swarm-feature-delivery, branch=main, HEAD=1b78c8f",
+      "blocker": false
+    },
+    "node_modules": {
+      "status": "PASS",
+      "details": "node_modules exists with key deps: next, react, @tauri-apps/cli, better-sqlite3",
+      "blocker": false
+    },
+    "swarm_launch_cli": {
+      "status": "PASS",
+      "details": "devhub-cli/commands/swarm-launch.js exists (4149 bytes)",
+      "blocker": false
+    },
+    "swarm_lib_modules": {
+      "status": "PASS",
+      "details": "src/lib/swarm/ has: processManager.js, openCodeProcesses.js, runtimeStatus.js, queue.js, opencodeDeliveryAdapter.js, opencodeTargetResolver.js",
+      "blocker": false
+    },
+    "tty_server": {
+      "status": "PASS",
+      "details": "src/lib/terminal/ttyServer.js exists (33KB)",
+      "blocker": false
+    },
+    "api_endpoints": {
+      "status": "PASS",
+      "details": "/api/health (308 redirect), /api/swarm/processes (308 redirect), /api/agenthub/* (11 sub-routes), /api/swarm/runtime-diagnostics exists",
+      "blocker": false,
+      "note": "308 redirects are normal for Next.js App Router trailing slash behavior"
+    },
+    "swarm_process_detection": {
+      "status": "PASS",
+      "details": "getOpenCodeProcesses() detects 10 opencode processes with all 5 roles: Director, Coder, DevOps, Auditor, Architect. 4 unique agent types: swarm-coder, swarm-reviewer, swarm-explorer, gentle-orchestrator.",
+      "blocker": false
+    },
+    "active_swarm": {
+      "status": "PASS",
+      "details": "A swarm is ALREADY RUNNING from launch-ab650be6. All 5 roles active with tmux sessions and opencode processes.",
+      "blocker": false
+    },
+    "git_status": {
+      "status": "WARNING",
+      "details": "Working tree has MANY uncommitted changes: ~60 modified files (M), ~40 deleted files (D), ~50 untracked files (??). Current branch is main on worktree.",
+      "blocker": false,
+      "note": "Non-blocker for launch, but indicates active development. Risk of collision if swarm writes code."
+    },
+    "system_resources": {
+      "status": "PASS",
+      "details": "RAM: 31GB total, 11GB available. CPU: 16 cores. Disk: 85GB free of 333GB.",
+      "blocker": false
+    },
+    "logs_directory": {
+      "status": "PASS",
+      "details": "data/logs/ exists with browser.log (1.5MB), crash-dumps/, and opencode logs",
+      "blocker": false
+    },
+    "jest_processes": {
+      "status": "INFO",
+      "details": "Jest test suite running (PID 1239789) with 12 worker processes. May compete for CPU during swarm launch.",
+      "blocker": false
+    }
+  },
+  "blockers": [],
+  "warnings": [
+    "Core DB tables (agent_registry, agent_runs, swarm_missions, tasks, projects) are EMPTY — no persistent project/task state",
+    "Working tree has ~150 uncommitted changes across modified, deleted, and untracked files",
+    "Jest test suite running with 12 workers may compete for CPU resources"
+  ],
+  "swarm_launch_verdict": {
+    "can_launch": true,
+    "confidence": "HIGH",
+    "reasoning": "All required services running, process spawning works (evidenced by existing active swarm), all swarm libraries present, API endpoints accessible, system resources adequate. The swarm launch mechanism is functional — a swarm is already running from a previous launch.",
+    "pre_launch_notes": [
+      "Existing swarm (launch-ab650be6) is still active with all 5 roles. Consider whether to terminate it before launching a new one.",
+      "DB tables are empty but swarm uses process scanning for detection, so this is not a blocker.",
+      "Large number of uncommitted git changes — ensure new swarm does not conflict with in-progress work."
+    ]
+  }
+}
