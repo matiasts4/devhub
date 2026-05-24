@@ -21,6 +21,8 @@ const {
   selectControlRoomDiagnostics,
   selectControlRoomEvidenceTimeline,
   selectControlRoomErrors,
+  buildRoleAgentProfile,
+  buildSwarmLaunchModels,
 } = require('../swarmControl');
 const {
   buildControlRoomInput,
@@ -481,6 +483,10 @@ describe('composeControlRoomSnapshot', () => {
       session_stream: expect.objectContaining({
         status: 'unavailable',
         missing_source: 'session stream snapshot',
+      }),
+      runtime: expect.objectContaining({
+        status: 'unavailable',
+        missing_source: 'runtime diagnostics snapshot',
       }),
     });
     expect(selectControlRoomErrors(snapshot)).toEqual([]);
@@ -1237,6 +1243,127 @@ describe('composeControlRoomSnapshot', () => {
     );
   });
 
+  test('maps runtime quota-blocked anomaly into director roster status in active topology', () => {
+    const snapshot = composeControlRoomSnapshot(
+      buildControlRoomInput({
+        supervisor: {
+          ...buildControlRoomInput().supervisor,
+          agents: [
+            {
+              agent_id: 'agent-director',
+              task_id: 'task-director',
+              workspace_id: 'ws-director',
+              run_id: 'run-director',
+              supervisor_state: 'active',
+              evidence_ref: 'evidence://supervisor/director',
+            },
+            {
+              agent_id: 'agent-worker-1',
+              task_id: 'task-worker',
+              workspace_id: 'ws-worker',
+              run_id: 'run-worker',
+              supervisor_state: 'active',
+              evidence_ref: 'evidence://supervisor/worker',
+            },
+          ],
+        },
+        mission_control: {
+          ...buildControlRoomInput().mission_control,
+          participants: [
+            {
+              participant_id: 'participant-director',
+              agent_id: 'agent-director',
+              role_in_mission: 'director',
+              status: 'active',
+            },
+            {
+              participant_id: 'participant-worker',
+              agent_id: 'agent-worker-1',
+              role_in_mission: 'executor',
+              status: 'active',
+            },
+          ],
+        },
+        diagnostics: {
+          ...buildControlRoomInput().diagnostics,
+          runtime: {
+            status: 'degraded',
+            authority: 'authoritative',
+            freshness: 'current',
+            metrics: {
+              quota_blocked: true,
+              orphaned_processes: 0,
+              stale_registry_agents: 0,
+            },
+            evidence_ref: 'evidence://runtime/quota',
+          },
+        },
+      })
+    );
+
+    const surface = selectSwarmControlPrimarySurface(snapshot);
+    const director = surface.hero.roster.find((member) => member.isDirector);
+
+    expect(surface.mode).toBe('active');
+    expect(director.status).toBe('quota-blocked');
+  });
+
+  test('maps idle-vs-live mismatch to stale-registry status in active roster', () => {
+    const snapshot = composeControlRoomSnapshot(
+      buildControlRoomInput({
+        supervisor: {
+          ...buildControlRoomInput().supervisor,
+          agents: [
+            {
+              agent_id: 'agent-director',
+              task_id: 'task-director',
+              workspace_id: 'ws-director',
+              run_id: 'run-director',
+              supervisor_state: 'active',
+              evidence_ref: 'evidence://supervisor/director',
+            },
+            {
+              agent_id: 'agent-worker-1',
+              task_id: 'task-worker',
+              workspace_id: 'ws-worker',
+              run_id: 'run-worker',
+              supervisor_state: 'idle',
+              evidence_ref: 'evidence://supervisor/worker',
+            },
+          ],
+        },
+        liveHints: {
+          agents: [
+            { agent_id: 'agent-worker-1', status: 'running', authority: 'cached' },
+          ],
+        },
+        mission_control: {
+          ...buildControlRoomInput().mission_control,
+          participants: [
+            {
+              participant_id: 'participant-director',
+              agent_id: 'agent-director',
+              role_in_mission: 'director',
+              status: 'active',
+            },
+            {
+              participant_id: 'participant-worker',
+              agent_id: 'agent-worker-1',
+              role_in_mission: 'executor',
+              status: 'active',
+            },
+          ],
+        },
+      })
+    );
+
+    const surface = selectSwarmControlPrimarySurface(snapshot);
+    const worker = surface.hero.roster.find((member) => member.id === 'agent-worker-1');
+
+    expect(surface.mode).toBe('active');
+    expect(worker.status).toBe('stale-registry');
+  });
+
   test('selectSwarmControlPrimarySurface flips launch payload input into active mode when launch returns top-level durable slices', () => {
     const snapshot = composeControlRoomSnapshot({
       project: { id: 'project-1', name: 'DevHub' },
@@ -1348,6 +1475,60 @@ describe('composeControlRoomSnapshot', () => {
         }),
       })
     );
+  });
+
+  test('exposes degraded launch identity health when agent/run/workspace linkage is inconsistent', () => {
+    const snapshot = composeControlRoomSnapshot(
+      buildControlRoomInput({
+        supervisor: {
+          ...buildControlRoomInput().supervisor,
+          agents: [
+            {
+              agent_id: 'agent-director',
+              task_id: 'task-director',
+              workspace_id: 'ws-missing',
+              run_id: 'run-missing',
+              supervisor_state: 'active',
+              evidence_ref: 'evidence://supervisor/director',
+            },
+          ],
+        },
+        diagnostics: {
+          ...buildControlRoomInput().diagnostics,
+          runtime: {
+            status: 'degraded',
+            authority: 'authoritative',
+            freshness: 'current',
+            metrics: {
+              orphaned_processes: 1,
+            },
+            evidence_ref: 'evidence://runtime/orphan',
+          },
+        },
+        mission_control: {
+          ...buildControlRoomInput().mission_control,
+          participants: [
+            {
+              participant_id: 'participant-director',
+              agent_id: 'agent-director',
+              role_in_mission: 'director',
+              status: 'active',
+            },
+          ],
+        },
+      })
+    );
+
+    const surface = selectSwarmControlPrimarySurface(snapshot);
+
+    expect(surface.mode).toBe('active');
+    expect(surface.hero.identityHealth).toEqual(
+      expect.objectContaining({
+        status: 'degraded',
+        issueCount: expect.any(Number),
+      })
+    );
+    expect(surface.hero.identityHealth.issues[0]).toContain('agent agent-director');
   });
 
   test('selectSwarmControlPrimarySurface exposes a disabled CTA reason when an active swarm has no durable next focus', () => {
@@ -1485,6 +1666,7 @@ describe('composeControlRoomSnapshot', () => {
         devops: 'opencode',
         architect: 'opencode',
       },
+      roleModels: {},
       mission:
         'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
     });
@@ -1560,5 +1742,68 @@ describe('composeControlRoomSnapshot', () => {
         ],
       })
     );
+  });
+});
+
+describe('buildRoleAgentProfile', () => {
+  test('maps director to swarm-director', () => {
+    expect(buildRoleAgentProfile('director')).toBe('swarm-director');
+  });
+
+  test('maps coder and builder to swarm-coder', () => {
+    expect(buildRoleAgentProfile('coder')).toBe('swarm-coder');
+    expect(buildRoleAgentProfile('builder')).toBe('swarm-coder');
+    expect(buildRoleAgentProfile('devops')).toBe('swarm-coder');
+    expect(buildRoleAgentProfile('recovery_ops')).toBe('swarm-coder');
+  });
+
+  test('maps qa to swarm-qa', () => {
+    expect(buildRoleAgentProfile('qa')).toBe('swarm-qa');
+  });
+
+  test('maps auditor and reviewer to swarm-reviewer', () => {
+    expect(buildRoleAgentProfile('auditor')).toBe('swarm-reviewer');
+    expect(buildRoleAgentProfile('reviewer')).toBe('swarm-reviewer');
+  });
+
+  test('maps explorer roles to swarm-explorer', () => {
+    expect(buildRoleAgentProfile('architect')).toBe('swarm-explorer');
+    expect(buildRoleAgentProfile('scout')).toBe('swarm-explorer');
+    expect(buildRoleAgentProfile('analyst')).toBe('swarm-explorer');
+    expect(buildRoleAgentProfile('evidence')).toBe('swarm-explorer');
+  });
+
+  test('falls back to swarm-coder for unknown roles', () => {
+    expect(buildRoleAgentProfile('unknown_role')).toBe('swarm-coder');
+    expect(buildRoleAgentProfile('')).toBe('swarm-coder');
+    expect(buildRoleAgentProfile(null)).toBe('swarm-coder');
+  });
+});
+
+describe('buildSwarmLaunchModels', () => {
+  test('returns model catalog with expected models', () => {
+    const models = buildSwarmLaunchModels();
+    expect(models).toHaveLength(4);
+    expect(models.map((m) => m.id)).toContain('opencode-go/deepseek-v4-flash');
+    expect(models.map((m) => m.id)).toContain('opencode-go/qwen3.6-plus');
+    expect(models.map((m) => m.id)).toContain('opencode-go/qwen3.5-plus');
+    expect(models.map((m) => m.id)).toContain('opencode/claude-sonnet-4.6');
+  });
+
+  test('each model has id, label, summary, and recommended_for', () => {
+    const models = buildSwarmLaunchModels();
+    models.forEach((model) => {
+      expect(model).toHaveProperty('id');
+      expect(model).toHaveProperty('label');
+      expect(model).toHaveProperty('summary');
+      expect(model).toHaveProperty('recommended_for');
+      expect(Array.isArray(model.recommended_for)).toBe(true);
+    });
+  });
+
+  test('catalog includes models', () => {
+    const catalog = selectSwarmLaunchCatalog({});
+    expect(catalog.models).toBeDefined();
+    expect(catalog.models).toHaveLength(4);
   });
 });

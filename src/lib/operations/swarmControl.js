@@ -421,9 +421,24 @@ function hasActiveSwarm(snapshot = {}) {
   const mission = selectControlRoomMission(snapshot)?.mission;
   const header = selectControlRoomHeader(snapshot);
   const directorQueue = selectDirectorQueue(snapshot);
+  const agents = selectControlRoomAgents(snapshot);
+
+  // Check if at least one agent is non-offline (stale counts as potentially live).
+  // 'stale' means the agent hasn't pinged recently but is not confirmed dead.
+  // Only 'offline' and 'unknown' mean the agent is confirmed gone.
+  const hasNonOfflineAgent = agents.length > 0 && agents.some((agent) => {
+    const status = String(agent.supervisor_state || agent.status || '').toLowerCase();
+    return status !== 'offline' && status !== 'unknown';
+  });
+
+  // If the database has an active mission, but we have agents and ALL are confirmed offline/unknown,
+  // then the swarm is actually dead.
+  if (mission?.status === 'active' && agents.length > 0 && !hasNonOfflineAgent) {
+    return false;
+  }
 
   return (
-    mission?.status === 'active' ||
+    (mission?.status === 'active' && (agents.length === 0 || hasNonOfflineAgent)) ||
     Number(header.active || 0) > 0 ||
     directorQueue?.handoff?.status !== 'idle'
   );
@@ -489,10 +504,51 @@ function humanizeLaunchRole(value = '') {
 
 function buildActiveRoster(snapshot = {}) {
   const missionControl = selectControlRoomMission(snapshot);
+  const diagnostics = selectControlRoomDiagnostics(snapshot);
+  const runtimeMetrics = diagnostics.runtime?.metrics || {};
   const agentsById = new Map(
     selectControlRoomAgents(snapshot).map((agent) => [agent.agent_id, agent])
   );
   const participants = asArray(missionControl.participants);
+
+  const hasRuntimeQuotaBlocked = Boolean(runtimeMetrics.quota_blocked);
+  const hasRuntimeOrphanedProcess = Number(runtimeMetrics.orphaned_processes || 0) > 0;
+  const hasRuntimeStaleRegistry = Number(runtimeMetrics.stale_registry_agents || 0) > 0;
+
+  const hasLiveAgentRegistryMismatch = selectControlRoomAgents(snapshot).some((agent) => {
+    const normalizedSupervisorState = String(agent?.supervisor_state || '').toLowerCase();
+    const normalizedLiveHintStatus = String(agent?.live_hint?.status || '').toLowerCase();
+    const hasLiveActivity = ['running', 'working', 'active', 'thinking', 'asking_questions'].includes(
+      normalizedLiveHintStatus
+    );
+    return normalizedSupervisorState === 'idle' && hasLiveActivity;
+  });
+
+  const globalRuntimeStatus = hasRuntimeQuotaBlocked
+    ? 'quota-blocked'
+    : hasRuntimeStaleRegistry || hasLiveAgentRegistryMismatch
+      ? 'stale-registry'
+      : hasRuntimeOrphanedProcess
+        ? 'orphaned-process'
+        : null;
+
+  const resolveRosterStatus = (baseStatus, agent, isDirector = false) => {
+    const normalizedSupervisorState = String(agent?.supervisor_state || '').toLowerCase();
+    const normalizedLiveHintStatus = String(agent?.live_hint?.status || '').toLowerCase();
+    const hasLiveActivity = ['running', 'working', 'active', 'thinking', 'asking_questions'].includes(
+      normalizedLiveHintStatus
+    );
+
+    if (normalizedSupervisorState === 'idle' && hasLiveActivity) {
+      return 'stale-registry';
+    }
+
+    if (isDirector && globalRuntimeStatus) {
+      return globalRuntimeStatus;
+    }
+
+    return baseStatus;
+  };
 
   const roster =
     participants.length > 0
@@ -509,7 +565,11 @@ function buildActiveRoster(snapshot = {}) {
             id: participant.agent_id || participant.participant_id || `participant-${index}`,
             label: role,
             role,
-            status: agent.supervisor_state || participant.status || 'active',
+            status: resolveRosterStatus(
+              agent.supervisor_state || participant.status || 'active',
+              agent,
+              participant.role_in_mission === 'director'
+            ),
             isDirector: participant.role_in_mission === 'director',
             workspaceId: agent.workspace_id || null,
             runId: agent.run_id || null,
@@ -522,7 +582,7 @@ function buildActiveRoster(snapshot = {}) {
             id: agent.agent_id || `agent-${index}`,
             label: role,
             role,
-            status: agent.supervisor_state || 'active',
+            status: resolveRosterStatus(agent.supervisor_state || 'active', agent, /director/i.test(role)),
             isDirector: /director/i.test(role),
             workspaceId: agent.workspace_id || null,
             runId: agent.run_id || null,
@@ -552,12 +612,66 @@ function buildActiveTopology(roster = []) {
   };
 }
 
+function buildLaunchIdentityHealth(snapshot = {}) {
+  const agents = selectControlRoomAgents(snapshot);
+  const workspacesById = new Map(
+    selectControlRoomWorkspaces(snapshot).map((workspace) => [workspace.workspace_id, workspace])
+  );
+  const runsById = new Map(selectControlRoomRuns(snapshot).map((run) => [run.run_id, run]));
+  const runtimeMetrics = selectControlRoomDiagnostics(snapshot).runtime?.metrics || {};
+
+  const issues = [];
+
+  agents.forEach((agent) => {
+    if (!agent.agent_id) return;
+
+    if (!agent.workspace_id) {
+      issues.push(`agent ${agent.agent_id} missing workspace_id`);
+      return;
+    }
+
+    const workspace = workspacesById.get(agent.workspace_id);
+    if (!workspace) {
+      issues.push(`agent ${agent.agent_id} points to unknown workspace ${agent.workspace_id}`);
+    }
+
+    if (!agent.run_id) {
+      issues.push(`agent ${agent.agent_id} missing run_id`);
+      return;
+    }
+
+    const run = runsById.get(agent.run_id);
+    if (!run) {
+      issues.push(`agent ${agent.agent_id} points to unknown run ${agent.run_id}`);
+      return;
+    }
+
+    if (run.workspace_id && agent.workspace_id && run.workspace_id !== agent.workspace_id) {
+      issues.push(
+        `agent ${agent.agent_id} workspace/run mismatch (${agent.workspace_id} vs ${run.workspace_id})`
+      );
+    }
+  });
+
+  const orphanedProcessCount = Number(runtimeMetrics.orphaned_processes || 0);
+  if (orphanedProcessCount > 0) {
+    issues.push(`runtime reports ${orphanedProcessCount} orphaned process(es)`);
+  }
+
+  return {
+    status: issues.length > 0 ? 'degraded' : 'healthy',
+    issueCount: issues.length,
+    issues: issues.slice(0, 3),
+  };
+}
+
 function buildActiveHero(snapshot = {}) {
   const header = selectControlRoomHeader(snapshot);
   const missionSummary = selectDirectorMissionSummary(snapshot);
   const directorQueue = selectDirectorQueue(snapshot);
   const nextQueueItem = asArray(directorQueue.items)[0] || null;
   const roster = buildActiveRoster(snapshot);
+  const identityHealth = buildLaunchIdentityHealth(snapshot);
 
   return {
     title: missionSummary.title || 'Swarm activo',
@@ -566,6 +680,7 @@ function buildActiveHero(snapshot = {}) {
     freshness: header.freshness,
     primaryCta: buildActivePrimaryCta(snapshot),
     stats: buildPrimarySurfaceStats(snapshot),
+    identityHealth,
     roster,
     topology: buildActiveTopology(roster),
     highlights: [
@@ -1014,6 +1129,7 @@ const HEALTH_TO_CONTROL_ROOM_DIAGNOSTIC_KEY = Object.freeze({
   mcp: 'mcp',
   telegram: 'telegram',
   'session-stream': 'session_stream',
+  'runtime-diagnostics': 'runtime',
 });
 
 function isMissing(value) {
@@ -1237,6 +1353,8 @@ function normalizeDiagnosticRecord(record = null, fallbackAuthority = 'unavailab
     freshness: status.freshness,
     evidence_ref: status.evidence_ref,
     evidence_refs: status.evidence_refs,
+    metrics: record.metrics || {},
+    status_reason: record.status_reason || '',
     missing_source: status.evidence_ref ? null : `${fallbackAuthority} snapshot`,
   };
 }
@@ -1345,6 +1463,7 @@ export function composeControlRoomSnapshot(input = {}) {
         input.diagnostics?.session_stream,
         'session stream'
       ),
+      runtime: normalizeDiagnosticRecord(input.diagnostics?.runtime, 'runtime diagnostics'),
     },
     director_queue: normalizeDirectorQueue(input.director_queue),
     mission_control: normalizeMissionControl(input.mission_control),
@@ -1442,6 +1561,7 @@ export function selectControlRoomDiagnostics(snapshot = {}) {
       mcp: null,
       process: null,
       session_stream: null,
+      runtime: null,
     }
   );
 }
@@ -1464,6 +1584,7 @@ export function selectSwarmLaunchCatalog(snapshot = {}) {
   const programs = buildSwarmLaunchPrograms();
   const teams = buildSwarmLaunchTeams();
   const swarmTypes = buildSwarmTypeCatalog();
+  const models = buildSwarmLaunchModels();
   const recommendedTemplateId = selectRecommendedTemplateId(snapshot);
   const recommendedTemplate = findTemplateById(templates, recommendedTemplateId);
   const orderedTemplates = [
@@ -1480,6 +1601,7 @@ export function selectSwarmLaunchCatalog(snapshot = {}) {
     teams,
     templates: orderedTemplates,
     swarm_types: swarmTypes,
+    models,
   };
 }
 
@@ -1529,6 +1651,16 @@ export function createSwarmLaunchDraft({
   const projectPath =
     project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
 
+  // Default model: DeepSeek V4 Flash for all roles (lightweight for testing)
+  const DEFAULT_SWARM_MODEL = 'opencode-go/deepseek-v4-flash';
+  const defaultRoleModels = topology?.roles
+    ? topology.roles.reduce((acc, role) => {
+        const key = slugifyRoleKey(role);
+        if (key) acc[key] = DEFAULT_SWARM_MODEL;
+        return acc;
+      }, {})
+    : {};
+
   return {
     mode: draft.mode || 'template',
     category: category?.id || null,
@@ -1538,6 +1670,7 @@ export function createSwarmLaunchDraft({
     providerId: provider?.id || null,
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
+    roleModels: Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
     mission: draft.mission ?? template?.default_mission ?? '',
   };
 }
@@ -1589,6 +1722,60 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
       provider?.id
     ),
   };
+}
+
+/**
+ * Mapea un role_key de swarm a un perfil de agente OpenCode.
+ * Director usa gentle-orchestrator; workers usan perfiles swarm-* livianos.
+ */
+export function buildRoleAgentProfile(roleKey = '') {
+  const mapping = {
+    director: 'swarm-director',
+    coder: 'swarm-coder',
+    builder: 'swarm-coder',
+    qa: 'swarm-qa',
+    auditor: 'swarm-reviewer',
+    reviewer: 'swarm-reviewer',
+    devops: 'swarm-coder',
+    architect: 'swarm-explorer',
+    scout: 'swarm-explorer',
+    analyst: 'swarm-explorer',
+    recovery_ops: 'swarm-coder',
+    evidence: 'swarm-explorer',
+  };
+  return mapping[roleKey] || 'swarm-coder';
+}
+
+/**
+ * Catálogo de modelos disponibles para selección por rol en el wizard.
+ */
+export function buildSwarmLaunchModels() {
+  return [
+    {
+      id: 'opencode-go/deepseek-v4-flash',
+      label: 'DeepSeek V4 Flash',
+      summary: 'Mayor cantidad de requests — ideal para workers intensivos.',
+      recommended_for: ['coder', 'builder', 'qa', 'devops', 'recovery_ops'],
+    },
+    {
+      id: 'opencode-go/qwen3.6-plus',
+      label: 'Qwen 3.6 Plus',
+      summary: 'Balanceado para tareas generales de código.',
+      recommended_for: ['director', 'auditor', 'reviewer'],
+    },
+    {
+      id: 'opencode-go/qwen3.5-plus',
+      label: 'Qwen 3.5 Plus',
+      summary: 'Alternativa con buen ratio de requests.',
+      recommended_for: ['explorer', 'scout', 'analyst'],
+    },
+    {
+      id: 'opencode/claude-sonnet-4.6',
+      label: 'Claude Sonnet 4.6',
+      summary: 'Mayor criterio para decisiones complejas.',
+      recommended_for: ['director', 'architect'],
+    },
+  ];
 }
 
 export function selectSwarmControlPrimarySurface(snapshot = {}) {

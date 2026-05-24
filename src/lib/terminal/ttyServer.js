@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import cwdGuard from './cwdGuard.js';
 import { saveSessions, loadSessions } from './sessionStore.js';
 
-const { resolveTerminalSpawnCwd } = cwdGuard;
+const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
 // ─── Diagnostic file logger ───────────────────────────────────────────────────
 // Writes to data/logs/terminal-debug.log (relative to project root / cwd).
@@ -108,7 +108,11 @@ const { WebSocketServer } = eval('require')('ws');
 const GLOBAL_TTY_KEY = '__DEVHUB_TTY_SERVER__';
 const GLOBAL_TTY_SESSIONS_KEY = '__DEVHUB_TTY_SESSIONS__';
 const STRIPPED_SHELL_ENV_KEYS = ['npm_config_prefix', 'NPM_CONFIG_PREFIX'];
+const MAX_SESSIONS = 50;
+const IDLE_CLEANUP_INTERVAL_MS = 60_000; // 60s
+const IDLE_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 let tmuxAvailabilityCache;
+let idleCleanupTimer = null;
 
 function resolveShell() {
   if (process.env.SHELL) return process.env.SHELL;
@@ -429,7 +433,8 @@ function buildSessionSpawnConfig(cwd, terminalId) {
 
   let spawnArgs = [];
   if (tmuxEnabled && os.platform() !== 'win32') {
-    const attachCommand = `tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
+    // Disable tmux status bar to save vertical space, then create/attach session
+    const attachCommand = `tmux set -g status off 2>/dev/null || true; tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
     spawnArgs = ['-lc', attachCommand];
   } else if (path.basename(resolvedShell) === 'zsh') {
     spawnArgs = ['-lic', 'exec zsh -i', 'devhub-shell', '--no-use'];
@@ -444,7 +449,7 @@ function buildSessionSpawnConfig(cwd, terminalId) {
  *
  * @param {{ id: string, cwd?: string, shell?: string, restored?: boolean }} opts
  */
-export function createSession({ id, cwd, shell, restored = false } = {}) {
+export function createSession({ id, cwd, shell, restored = false, swarmContext = null } = {}) {
   const sessions = getOrInitSessions();
   const requestedCwd = cwd || resolveHomeDirectory();
   const cwdResolution = resolveTerminalSpawnCwd(requestedCwd, {
@@ -453,6 +458,35 @@ export function createSession({ id, cwd, shell, restored = false } = {}) {
   });
   const resolvedCwd = cwdResolution.effectiveCwd;
   const resolvedShell = shell || resolveShell();
+
+  // T1.4: Validate cwd — for worktree paths enforce full validation; for Plyrium paths reject always
+  {
+    const explicitSwarmRole = Boolean(swarmContext?.isSwarmRole);
+    const cwdValidation = validateSwarmCwd({
+      requestedCwd: resolvedCwd,
+      roleKey: swarmContext?.roleKey || 'swarm-agent',
+      isSwarmRole: explicitSwarmRole,
+    });
+    if (!cwdValidation.valid) {
+      ttyLog('createSession', `swarm cwd validation FAILED`, {
+        id,
+        requestedCwd: resolvedCwd,
+        explicitSwarmRole,
+        launchId: swarmContext?.launchId || null,
+        error: cwdValidation.error,
+      });
+      throw new Error(`Swarm worktree cwd validation failed: ${cwdValidation.error}`);
+    }
+    if (explicitSwarmRole) {
+      ttyLog('createSession', `swarm cwd validation passed`, {
+        id,
+        roleKey: swarmContext?.roleKey || 'swarm-agent',
+        launchId: swarmContext?.launchId || null,
+        effectiveCwd: cwdValidation.effectiveCwd,
+      });
+    }
+  }
+
   const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(resolvedCwd, id);
 
   ttyLog('createSession', `spawning PTY`, {
@@ -484,6 +518,7 @@ export function createSession({ id, cwd, shell, restored = false } = {}) {
   const now = new Date().toISOString();
   const session = {
     pty: terminal,
+    ptyPid: terminal.pid,
     sockets: new Set(),
     history: '',
     mode: 'shell',
@@ -502,6 +537,11 @@ export function createSession({ id, cwd, shell, restored = false } = {}) {
   };
 
   sessions.set(id, session);
+
+  // Evict oldest idle sessions if we exceed the cap
+  if (sessions.size > MAX_SESSIONS) {
+    evictOldestIdleSessions(sessions);
+  }
 
   wireSessionPty(session, sessions);
 
@@ -681,17 +721,152 @@ function wireSessionPty(session, sessions) {
 }
 
 /**
+ * evictOldestIdleSessions — removes the oldest idle sessions when the Map exceeds MAX_SESSIONS.
+ * "Idle" = no connected WebSocket sockets.
+ */
+function evictOldestIdleSessions(sessions) {
+  const excess = sessions.size - MAX_SESSIONS;
+  if (excess <= 0) return;
+
+  const idleSessions = [];
+  for (const [id, session] of sessions.entries()) {
+    if (session.sockets.size === 0) {
+      idleSessions.push({ id, session });
+    }
+  }
+
+  // Sort by lastActivityAt ascending (oldest first)
+  idleSessions.sort((a, b) => (a.session.lastActivityAt || 0) - (b.session.lastActivityAt || 0));
+
+  const toEvict = idleSessions.slice(0, excess);
+  for (const { id, session } of toEvict) {
+    ttyLog('EVICTION', `evicting idle session (MAX_SESSIONS cap)`, { id, pid: session.ptyPid });
+    try {
+      session.pty?.kill?.();
+    } catch {
+      // ignore
+    }
+    if (session._saveDebounceTimer) {
+      clearTimeout(session._saveDebounceTimer);
+      session._saveDebounceTimer = null;
+    }
+    if (session._autoKillTimer) {
+      clearTimeout(session._autoKillTimer);
+      session._autoKillTimer = null;
+    }
+    sessions.delete(id);
+  }
+
+  if (toEvict.length > 0) {
+    saveSessions(sessions);
+    ttyLog('EVICTION', `evicted ${toEvict.length} idle session(s)`);
+  }
+}
+
+/**
+ * startIdleCleanup — starts a periodic timer that removes sessions with no connected
+ * WebSocket sockets and lastActivity older than IDLE_SESSION_TIMEOUT_MS.
+ */
+function startIdleCleanup(sessions) {
+  if (idleCleanupTimer) return; // already running
+
+  idleCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const [id, session] of sessions.entries()) {
+      if (session.sockets.size > 0) continue; // still connected
+
+      const lastActivity = session.lastActivityAt || 0;
+      if (now - lastActivity < IDLE_SESSION_TIMEOUT_MS) continue; // not idle long enough
+
+      ttyLog('IDLE_CLEANUP', `removing idle session`, { id, pid: session.ptyPid, lastActivityAt: lastActivity });
+
+      try {
+        session.pty?.kill?.();
+      } catch {
+        // ignore
+      }
+      if (session._saveDebounceTimer) {
+        clearTimeout(session._saveDebounceTimer);
+        session._saveDebounceTimer = null;
+      }
+      if (session._autoKillTimer) {
+        clearTimeout(session._autoKillTimer);
+        session._autoKillTimer = null;
+      }
+      sessions.delete(id);
+      cleaned++;
+    }
+
+    if (cleaned > 0) {
+      saveSessions(sessions);
+      ttyLog('IDLE_CLEANUP', `cleaned ${cleaned} idle session(s)`);
+    }
+  }, IDLE_CLEANUP_INTERVAL_MS);
+
+  // Allow Node to exit even if timer is still running
+  if (idleCleanupTimer.unref) idleCleanupTimer.unref();
+}
+
+/**
  * restoreSessions — loads persisted sessions from disk and recreates PTY processes.
  * Called once at startup. No-op if no file exists.
+ * ZOMBIE CLEANUP: Skips sessions whose PTY processes are no longer alive.
+ * REQUIRES ptyPid: sessions without a saved ptyPid are skipped entirely.
  */
 export function restoreSessions() {
   const saved = loadSessions();
+  let zombieCount = 0;
+  let skippedNoPid = 0;
+  const sessions = getOrInitSessions();
+  
   for (const s of saved) {
     try {
-      createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+      // Must have a saved ptyPid — without it we cannot verify the process
+      if (!s.ptyPid) {
+        ttyLog('RESTORE', `skipping session without ptyPid`, { id: s.id });
+        skippedNoPid++;
+        continue;
+      }
+
+      // Check if the PTY process is still alive before restoring
+      try {
+        process.kill(s.ptyPid, 0); // Signal 0 = check if process exists
+      } catch {
+        // Process is dead — skip restoration and log
+        ttyLog('ZOMBIE_CLEANUP', `skipping dead session`, { id: s.id, pid: s.ptyPid });
+        zombieCount++;
+        continue;
+      }
+      
+      const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+
+      // Verify the newly spawned PTY is actually alive
+      if (restored.ptyPid && typeof process.kill === 'function') {
+        try {
+          process.kill(restored.ptyPid, 0);
+        } catch {
+          // Spawned process died immediately — remove from disk
+          ttyLog('ZOMBIE_CLEANUP', `restored session died on spawn, removing from disk`, {
+            id: s.id,
+            pid: restored.ptyPid,
+          });
+          sessions.delete(s.id);
+          zombieCount++;
+        }
+      }
     } catch (err) {
       console.warn(`[ttyServer] Failed to restore session ${s.id}:`, err);
+      ttyLog('RESTORE', `restore failed`, { id: s.id, error: err?.message });
     }
+  }
+  
+  if (zombieCount > 0) {
+    console.log(`[ttyServer][ZOMBIE_CLEANUP] Cleaned up ${zombieCount} dead session(s) from previous run`);
+  }
+  if (skippedNoPid > 0) {
+    console.log(`[ttyServer][RESTORE] Skipped ${skippedNoPid} session(s) without saved ptyPid`);
   }
 }
 
@@ -718,14 +893,34 @@ export async function ensureTTYServer() {
   wss.on('connection', (socket, request) => {
     let requestedCwd = resolveHomeDirectory();
     let terminalId = `term-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    let swarmContext = {
+      isSwarmRole: false,
+      roleKey: null,
+      launchId: null,
+    };
 
     try {
+      const parseBooleanQueryFlag = (value) => {
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized === '1' || normalized === 'true' || normalized === 'yes';
+      };
+
       if (request?.url) {
         const dummyUrl = new URL(request.url, 'http://localhost');
         const wsRequestedCwd = dummyUrl.searchParams.get('cwd');
         const reqTermId = dummyUrl.searchParams.get('id');
+        const reqSessionId = dummyUrl.searchParams.get('sessionId');
+        const isSwarmRoleFlag = parseBooleanQueryFlag(dummyUrl.searchParams.get('isSwarmRole'));
+        const roleKey = dummyUrl.searchParams.get('roleKey');
+        const launchId = dummyUrl.searchParams.get('launchId');
         if (wsRequestedCwd) requestedCwd = wsRequestedCwd;
-        if (reqTermId) terminalId = reqTermId;
+        if (reqSessionId) terminalId = reqSessionId;
+        else if (reqTermId) terminalId = reqTermId;
+        swarmContext = {
+          isSwarmRole: isSwarmRoleFlag,
+          roleKey: roleKey || null,
+          launchId: launchId || null,
+        };
       }
     } catch (e) {
       ttyLog('WS_CONN', `URL parse error`, { error: e?.message });
@@ -737,6 +932,34 @@ export async function ensureTTYServer() {
       homeDir: resolveHomeDirectory(),
     });
     const cwd = cwdResolution.effectiveCwd;
+
+    // T1.4: Validate cwd — for worktree paths enforce full validation; for Plyrium paths reject always
+    {
+      const cwdValidation = validateSwarmCwd({
+        requestedCwd: cwd,
+        roleKey: swarmContext.roleKey || 'swarm-agent',
+        isSwarmRole: Boolean(swarmContext.isSwarmRole),
+      });
+      if (!cwdValidation.valid) {
+        ttyLog('WS_CONN', `swarm cwd validation FAILED`, {
+          terminalId,
+          requestedCwd: cwd,
+          explicitSwarmRole: Boolean(swarmContext.isSwarmRole),
+          launchId: swarmContext.launchId || null,
+          error: cwdValidation.error,
+        });
+        socket.close();
+        return;
+      }
+      if (swarmContext.isSwarmRole) {
+        ttyLog('WS_CONN', `swarm cwd validation passed`, {
+          terminalId,
+          roleKey: swarmContext.roleKey || 'swarm-agent',
+          launchId: swarmContext.launchId || null,
+          effectiveCwd: cwdValidation.effectiveCwd,
+        });
+      }
+    }
 
     ttyLog('WS_CONN', `new WebSocket connection`, {
       terminalId,
@@ -780,6 +1003,7 @@ export async function ensureTTYServer() {
       const now = new Date().toISOString();
       session = {
         pty: terminal,
+        ptyPid: terminal.pid,
         sockets: new Set([socket]),
         history: '',
         mode: 'shell',
@@ -895,13 +1119,64 @@ export async function ensureTTYServer() {
         session.sockets.delete(socket);
         session.lastActivityAt = Date.now();
 
-        // If this was the last socket and it closed abruptly, generate a crash dump
-        // The PTY is still running but has no connected clients
-        if (isAbruptClose && remainingSockets <= 0 && session.pty) {
-          writeCrashDump(session, null, null, 'ws_abrupt_close_no_clients');
+        // AUTO-KILL: If this was the last socket, start a grace timer
+        // If no one reconnects within 15s, kill the PTY to prevent zombies
+        if (remainingSockets <= 0 && session.pty) {
+          ttyLog('WS_CLOSE', `last socket disconnected, starting auto-kill grace timer`, {
+            terminalId,
+            gracePeriodSeconds: 15,
+          });
+
+          // Clear any existing timer (reconnect scenario)
+          if (session._autoKillTimer) {
+            clearTimeout(session._autoKillTimer);
+            session._autoKillTimer = null;
+          }
+
+          session._autoKillTimer = setTimeout(() => {
+            // Check if sockets are still empty (no one reconnected)
+            if (session && session.sockets.size === 0) {
+              ttyLog('AUTO_KILL', `grace period expired, killing orphaned PTY`, {
+                terminalId,
+                pid: session.pty.pid,
+                cwd: session.cwd,
+                command: session.command,
+                uptime: Date.now() - (session.createdAt || Date.now()),
+              });
+
+              try {
+                session.pty.kill();
+                console.log(`[ttyServer][AUTO_KILL] Killed orphaned PTY session ${terminalId} (pid: ${session.pty.pid})`);
+              } catch (err) {
+                console.error(`[ttyServer][AUTO_KILL] Failed to kill PTY ${terminalId}:`, err.message);
+              }
+
+              // Clean up session
+              terminalSessions.delete(terminalId);
+              try {
+                saveSessions(terminalSessions);
+              } catch {
+                // ignore save failures during cleanup
+              }
+            } else {
+              ttyLog('AUTO_KILL', `client reconnected, cancelling auto-kill timer`, {
+                terminalId,
+                socketCount: session?.sockets?.size || 0,
+              });
+            }
+            session._autoKillTimer = null;
+          }, 15000); // 15 second grace period
         }
 
-        // Do NOT kill the pty process here. Let it run in background.
+        // If client reconnected and cancelled the auto-kill timer, log it
+        if (remainingSockets > 0 && session._autoKillTimer) {
+          clearTimeout(session._autoKillTimer);
+          session._autoKillTimer = null;
+          ttyLog('AUTO_KILL', `client reconnected, auto-kill timer cancelled`, {
+            terminalId,
+            socketCount: session.sockets.size,
+          });
+        }
       }
     });
 
@@ -914,6 +1189,9 @@ export async function ensureTTYServer() {
 
   // Restore persisted sessions from previous run
   restoreSessions();
+
+  // Start periodic idle-session cleanup to prevent unbounded Map growth
+  startIdleCleanup(terminalSessions);
 
   return serverState;
 }

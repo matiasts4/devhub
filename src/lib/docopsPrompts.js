@@ -109,7 +109,7 @@ export function buildDocOpsGatePrompt({
     topicKey ? `topic_key candidato: ${topicKey}` : null,
     objective ? `objetivo: ${objective}` : null,
     telemetryId
-      ? `Cuando termines, usa update_agent_status con status='completed' y agent_id='${telemetryId}'.`
+      ? `Cuando termines, registra evidencia con add_task_comment y cierra la tarea con update_task(status='completed').`
       : null,
     `]`,
   ]
@@ -206,7 +206,7 @@ export function buildDocOpsTaskPrompt({
     `Sos el agente ${agentId}.`,
     `Implementa la tarea de DevHub con ID: ${taskId}.`,
     docOpsGate,
-    `Usa devhub_get_next_task o actualizala a in_progress directamente, trabaja en ella y luego reportala como completada usando update_agent_status con status='completed' y agent_id='${telemetryId}'.`,
+    `Usa get_execution_queue + claim_next_task para reclamar trabajo cuando aplique. Sobre esta tarea (${taskId}), dejá evidencia con add_task_comment y cerrala con update_task(status='completed').`,
   ]
     .filter(Boolean)
     .join('\n');

@@ -324,4 +324,68 @@ describe('useAgentRegistryPolling', () => {
     expect(labels).toContain('Awaiting approval');
     expect(labels).toContain('Recover orphan workspace');
   });
+
+  test('does not auto-demote stale heartbeat agents when live terminal evidence exists', async () => {
+    const staleHeartbeat = new Date(Date.now() - (95 * 1000)).toISOString();
+
+    mockDbChain.order.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            agent_id: 'agent-live-stale',
+            current_task_id: 'task-live-stale',
+            workspace_id: 'ws-live-stale',
+            status: 'running',
+            last_heartbeat: staleHeartbeat,
+          },
+        ],
+      })
+    );
+
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({
+        'ws-live-stale': {
+          panelId: 'panel-live-stale',
+          selectedAgent: 'opencode',
+          opencodeSessionId: 'oc-live-stale',
+          taskTitle: 'Live stale agent',
+        },
+      })
+    );
+
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        sessions: [
+          {
+            terminalId: 'panel-live-stale',
+            alive: true,
+            opencodeSessionId: 'oc-live-stale',
+          },
+        ],
+      }),
+    });
+
+    mockGetAgentRegistryLiveSnapshot.mockReturnValue({
+      activeAgents: [
+        {
+          agent_id: 'agent-live-stale',
+          _displayName: 'Live stale agent',
+        },
+      ],
+      activeAgentsCount: 1,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(Harness, { projectId: 'project-1' }),
+      mountedRoots
+    );
+
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-testid="active-count"]')?.textContent).toBe('1');
+    });
+
+    expect(mockDbChain.update).not.toHaveBeenCalled();
+  });
 });
