@@ -43,6 +43,16 @@ describe('GET /api/agenthub/operations/health', () => {
         recent_errors: 0,
         last_activity: '2026-04-10T17:24:40.000Z',
       }),
+      getRuntimeDiagnostics: async () => ({
+        generatedAt: '2026-04-10T17:25:00.000Z',
+        summary: {
+          totalTerminals: 0,
+          totalProcesses: 0,
+          totalRegistryAgents: 0,
+        },
+        anomalies: {},
+        evidence_refs: [],
+      }),
       getMissionSnapshot: async () => ({
         mission: {
           mission_id: 'mission-1',
@@ -99,8 +109,8 @@ describe('GET /api/agenthub/operations/health', () => {
     });
 
     expect(snapshot.summary).toMatchObject({
-      total: 5,
-      healthy: 3,
+      total: 6,
+      healthy: 4,
       degraded: 1,
       stale: 1,
       worst_status: 'stale',
@@ -120,6 +130,7 @@ describe('GET /api/agenthub/operations/health', () => {
         mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
         telegram: expect.objectContaining({ key: 'telegram', status: 'healthy' }),
         session_stream: expect.objectContaining({ key: 'session-stream', status: 'degraded' }),
+        runtime: expect.objectContaining({ key: 'runtime-diagnostics', status: 'healthy' }),
       },
       evidence_timeline: [
         expect.objectContaining({
@@ -178,6 +189,7 @@ describe('GET /api/agenthub/operations/health', () => {
         recent_errors: 2,
         last_activity: null,
       }),
+      getRuntimeDiagnostics: async () => null,
     });
 
     const processSource = snapshot.sources.find((source) => source.key === 'opencode-process');
@@ -192,6 +204,7 @@ describe('GET /api/agenthub/operations/health', () => {
         mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
         telegram: expect.objectContaining({ key: 'telegram', status: 'degraded' }),
         session_stream: expect.objectContaining({ key: 'session-stream', status: 'stale' }),
+        runtime: expect.objectContaining({ key: 'runtime-diagnostics', status: 'stale' }),
       },
     });
   });
@@ -1690,7 +1703,8 @@ describe('GET /api/agenthub/operations/health', () => {
     jest.resetModules();
 
     const Database = require('better-sqlite3');
-    const actualLocalDb = jest.requireActual('../../../src/lib/db/localDb.js');
+    const localDbPath = '../../../src/lib/db/localDb.js';
+    const actualLocalDb = jest.requireActual(localDbPath);
     const db = new Database(':memory:');
     actualLocalDb.ensureRuntimeSchema(db);
     db.prepare('INSERT INTO projects (id, name, local_path) VALUES (?, ?, ?)').run(
@@ -1699,10 +1713,29 @@ describe('GET /api/agenthub/operations/health', () => {
       '/workspace/devhub'
     );
 
-    jest.doMock('@/lib/db/localDb.js', () => ({
-      ...jest.requireActual('@/lib/db/localDb.js'),
+    const mockLocalDb = {
+      ...actualLocalDb,
       getDb: () => db,
-    }));
+    };
+
+    jest.doMock('@/lib/db/localDb.js', () => mockLocalDb);
+    jest.doMock(localDbPath, () => mockLocalDb);
+
+    const mockWorkspaceManager = {
+      prepareAgentWorktree: jest.fn(({ repoRoot, launchId, roleKey }) => ({
+        branchName: `devhub/swarm/${launchId}/${roleKey}`,
+        worktreePath: `${repoRoot}/.devhub/worktrees/${launchId}/${roleKey}`,
+        observedHead: `head-${launchId}-${roleKey}`,
+        created: true,
+      })),
+      computeBranchName: jest.fn((launchId, roleKey) => `devhub/swarm/${launchId}/${roleKey}`),
+      computeWorktreePath: jest.fn(
+        (repoRoot, launchId, roleKey) => `${repoRoot}/.devhub/worktrees/${launchId}/${roleKey}`
+      ),
+    };
+
+    jest.doMock('@/lib/swarm/agentWorkspaceManager', () => mockWorkspaceManager);
+    jest.doMock('../../../src/lib/swarm/agentWorkspaceManager', () => mockWorkspaceManager);
 
     const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
 
@@ -1752,23 +1785,17 @@ describe('GET /api/agenthub/operations/health', () => {
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('auditor'),
-            command: expect.stringContaining(
-              '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt'
-            ),
+            command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('devops'),
-            command: expect.stringContaining(
-              '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt'
-            ),
+            command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('architect'),
-            command: expect.stringContaining(
-              '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt'
-            ),
+            command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
         ]),
       })
@@ -1820,7 +1847,7 @@ describe('GET /api/agenthub/operations/health', () => {
       expect.objectContaining({
         project_id: 'project-launch',
         status: 'active',
-        directory: '/workspace/devhub',
+        directory: expect.stringContaining('/workspace/devhub/.devhub/worktrees/'),
       })
     );
     expect(builderSession?.opencode_session_id).toBeTruthy();

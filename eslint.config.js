@@ -111,6 +111,7 @@ export default [
     ignores: [
       'node_modules/**',
       '.next/**',
+      '.devhub/**',
       'out/**',
       'devhub-mcp/node_modules/**',
       'devhub-mcp/**',

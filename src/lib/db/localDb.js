@@ -899,6 +899,22 @@ function ensureRuntimeSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_agent_presence_agent_expires ON agent_presence(agent_id, expires_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_presence_mission_expires ON agent_presence(mission_id, expires_at DESC);
+
+    -- Durable queue for SwarmQueue persistence
+    CREATE TABLE IF NOT EXISTS swarm_queue_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      queue_name TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      enqueued_at TEXT NOT NULL DEFAULT (datetime('now')),
+      acquired_at TEXT,
+      acked_at TEXT,
+      retries INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sqi_queue_status ON swarm_queue_items(queue_name, status);
+    CREATE INDEX IF NOT EXISTS idx_sqi_status_enqueued ON swarm_queue_items(status, enqueued_at);
   `);
 
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
@@ -3111,6 +3127,7 @@ const tables = {
   agent_hub_messages: makeTableOps('agent_hub_messages', 'id'),
   swarm_config: makeTableOps('swarm_config', 'key'),
   swarm_processes: makeTableOps('swarm_processes', 'id'),
+  swarm_queue_items: makeTableOps('swarm_queue_items', 'id'),
   profiles: {
     ...makeTableOps('profiles', 'id'),
     upsert(data) {
@@ -3739,6 +3756,109 @@ function getActiveAgentCount() {
 }
 
 // ============================================================
+// Durable Queue Operations (SwarmQueue persistence)
+// ============================================================
+
+/**
+ * Enqueue an item into the durable queue.
+ * Persists payload as JSON. Returns the inserted row.
+ */
+function enqueueDurableItem(db, queueName, payload) {
+  const payloadJson =
+    typeof payload === 'string' ? JSON.stringify(payload) : JSON.stringify(payload);
+  const result = db
+    .prepare(
+      `INSERT INTO swarm_queue_items (queue_name, payload_json, status, enqueued_at)
+       VALUES (?, ?, 'pending', datetime('now'))`
+    )
+    .run(queueName, payloadJson);
+  return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(result.lastInsertRowid);
+}
+
+/**
+ * Atomically dequeue the next pending item from a queue.
+ * Sets status to 'processing' and acquired_at. Returns the item or null.
+ */
+function dequeueDurableItem(db, queueName) {
+  const item = db
+    .prepare(
+      `SELECT * FROM swarm_queue_items
+       WHERE queue_name = ? AND status = 'pending'
+       ORDER BY enqueued_at ASC
+       LIMIT 1`
+    )
+    .get(queueName);
+  if (!item) return null;
+
+  db.prepare(
+    `UPDATE swarm_queue_items SET status = 'processing', acquired_at = datetime('now') WHERE id = ? AND status = 'pending'`
+  ).run(item.id);
+
+  return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(item.id);
+}
+
+/**
+ * Acknowledge a processing item — marks it completed.
+ * Returns the updated row or null if not found.
+ */
+function ackDurableItem(db, itemId) {
+  const existing = db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
+  if (!existing) return null;
+  db.prepare(
+    `UPDATE swarm_queue_items SET status = 'completed', acked_at = datetime('now') WHERE id = ? AND status = 'processing'`
+  ).run(itemId);
+  return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
+}
+
+/**
+ * Cancel a processing item — marks it cancelled.
+ * Returns the updated row or null if not found.
+ */
+function cancelDurableItem(db, itemId) {
+  const existing = db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
+  if (!existing) return null;
+  db.prepare(
+    `UPDATE swarm_queue_items SET status = 'cancelled', acked_at = datetime('now') WHERE id = ?`
+  ).run(itemId);
+  return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
+}
+
+/**
+ * Recover stale processing items: reset to pending if acquired_at is older than staleMinutes.
+ * Increments retries. Returns the number of items recovered.
+ */
+function recoverStaleItems(db, staleMinutes) {
+  const result = db
+    .prepare(
+      `UPDATE swarm_queue_items
+       SET status = 'pending',
+           acquired_at = NULL,
+           retries = retries + 1
+       WHERE status = 'processing'
+         AND acquired_at IS NOT NULL
+         AND datetime(acquired_at) < datetime('now', ? || ' minutes')`
+    )
+    .run(`-${staleMinutes}`);
+  return result.changes;
+}
+
+/**
+ * Cleanup completed/cancelled items older than olderThanMinutes.
+ * Returns the number of items purged.
+ */
+function cleanupCompletedItems(db, olderThanMinutes) {
+  const result = db
+    .prepare(
+      `DELETE FROM swarm_queue_items
+       WHERE status IN ('completed', 'cancelled')
+         AND acked_at IS NOT NULL
+         AND datetime(acked_at) < datetime('now', ? || ' minutes')`
+    )
+    .run(`-${olderThanMinutes}`);
+  return result.changes;
+}
+
+// ============================================================
 // Session Hierarchy (parent/child navigation)
 // ============================================================
 // Session Hierarchy (parent/child navigation)
@@ -3808,10 +3928,54 @@ function getSiblingSessions(sessionId) {
 }
 
 module.exports = {
+  // Constants
+  AGENT_WORKSPACE_TERMINAL_STATUSES,
   AGENT_WORKSPACE_BASE_COMMIT,
+  AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES,
+  AGENT_RUN_OBSERVED_DIRTY_STATUSES,
+  SUPERVISOR_STATES,
+  SUPERVISOR_OUTCOMES,
+  SUPERVISOR_REASON_CLASSES,
+  SUPERVISOR_APPROVAL_STATUSES,
+  TELEGRAM_INTENT_ACTIONS,
+  TELEGRAM_INTENT_STATUSES,
+  TELEGRAM_DELIVERY_STATUSES,
+  TELEGRAM_SUBSCRIPTION_STATUSES,
+  SWARM_MISSION_STATUSES,
+  SWARM_MISSION_KINDS,
+  MISSION_PARTICIPANT_ROLES,
+  MISSION_PARTICIPANT_STATUSES,
+  MISSION_MESSAGE_KINDS,
+  MISSION_DELIVERY_STATUSES,
+  AGENT_PRESENCE_STATES,
+  AGENT_PRESENCE_TTL_MS,
+  MISSION_IDENTITY_METADATA_FIELDS,
+  RUNTIME_ONLY_FIELDS,
+  DIRECTOR_SNAPSHOT_MISSION_FIELDS,
+  DIRECTOR_SNAPSHOT_PARTICIPANT_FIELDS,
+  DIRECTOR_SNAPSHOT_MESSAGE_FIELDS,
+  DIRECTOR_SNAPSHOT_DELIVERY_FIELDS,
+  DIRECTOR_SNAPSHOT_PRESENCE_FIELDS,
+  // Singleton
   getDb,
   closeDb,
+  // Schema
   ensureRuntimeSchema,
+  // Query builders
+  buildSelectQuery,
+  buildWhere,
+  resolveDbArgs,
+  tableExists,
+  tableHasColumn,
+  // Delete helpers
+  deleteByProjectId,
+  deleteByValues,
+  deleteProjectCascadeUnsafe,
+  // Table ops
+  makeTableOps,
+  tables,
+  // Query class
+  LocalQuery,
   buildPrepareAgentWorkspaceAck,
   buildWorkspaceIntentId,
   prepareAgentWorkspaceLease,
@@ -3855,7 +4019,6 @@ module.exports = {
   buildTelegramSubscriptionKey,
   upsertTelegramSubscription,
   getLatestTelegramChannelSnapshot,
-  tables,
   from(table) {
     return new LocalQuery(table);
   },
@@ -3898,4 +4061,11 @@ module.exports = {
   getActiveSwarmCount,
   // Active Agent Count
   getActiveAgentCount,
+  // Durable Queue Operations
+  enqueueDurableItem,
+  dequeueDurableItem,
+  ackDurableItem,
+  cancelDurableItem,
+  recoverStaleItems,
+  cleanupCompletedItems,
 };

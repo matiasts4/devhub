@@ -16,12 +16,10 @@ export function resolveAgentProgramExecutable(programId = 'hermes') {
  * Session name: devhub-swarm-{launchId}-{roleKey}
  * Status bar disabled to save vertical space.
  */
-export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName) {
-  // Create session detached (-d) or reuse if exists (-A), then disable the
-  // status bar before attaching. Semicolons ensure all steps run even when
-  // new-session exits non-zero (e.g. session already exists).
+export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
+  const command = cwd ? `cd "${cwd}" && ${innerCommand}` : innerCommand;
   return [
-    `tmux new-session -A -d -s "${tmuxSessionName}" '${innerCommand}' 2>/dev/null || true`,
+    `tmux new-session -A -d -s "${tmuxSessionName}" '${command}' 2>/dev/null || true`,
     `tmux set-option -t "${tmuxSessionName}" status off 2>/dev/null || true`,
     `tmux attach-session -t "${tmuxSessionName}"`,
   ].join('; ');
@@ -53,7 +51,7 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
 
   // Wrap in tmux if session name provided (swarm resilience)
   if (tmuxSessionName) {
-    return buildTmuxWrappedCommand(innerCommand, tmuxSessionName);
+    return buildTmuxWrappedCommand(innerCommand, tmuxSessionName, options.cwd);
   }
 
   return innerCommand;
