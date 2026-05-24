@@ -10,8 +10,13 @@
  * This replaces the need for Plyrium's worktree-add + team-spawn flow.
  */
 
+import { generateAgentSecret, hashToken } from './swarm/auth.js';
+import { provisionAuthToken, getDb } from '@/lib/db/localDb.js';
+
 /**
  * Build the environment variables block for an agent.
+ * If agentId and workspaceId are provided, provisions an HMAC auth token
+ * and injects the secret as DEVHUB_AGENT_TOKEN (never logged or echoed).
  * @param {object} params
  * @returns {string} Shell export statements
  */
@@ -35,6 +40,33 @@ export function buildAgentEnvExports({
 
   if (supervisorUrl) {
     exports.push(`export DEVHUB_SUPERVISOR_URL="${supervisorUrl}"`);
+  }
+
+  // AUTH-5: Provision HMAC token and inject as env var
+  if (agentId) {
+    let dbHandle;
+    try {
+      dbHandle = getDb();
+    } catch {
+      // DB not available in test environments — skip token provisioning
+    }
+    if (dbHandle) {
+      const secret = generateAgentSecret();
+      const tokenHash = hashToken(secret);
+      try {
+        provisionAuthToken(dbHandle, {
+          agentId,
+          workspaceId: workspaceId || null,
+          tokenHash,
+          algorithm: 'hmac-sha256',
+        });
+        // NEVER log or echo the secret — inject directly as env var
+        exports.push(`export DEVHUB_AGENT_TOKEN="${secret}"`);
+      } catch {
+        // Token provisioning failed — agent will operate without auth token
+        // Middleware will fall back to dual-mode (unauthenticated)
+      }
+    }
   }
 
   return exports.join('\n');

@@ -915,6 +915,22 @@ function ensureRuntimeSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_sqi_queue_status ON swarm_queue_items(queue_name, status);
     CREATE INDEX IF NOT EXISTS idx_sqi_status_enqueued ON swarm_queue_items(status, enqueued_at);
+
+    -- Agent Auth Tokens (AUTH-1)
+    CREATE TABLE IF NOT EXISTS agent_auth_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      workspace_id TEXT,
+      token_hash TEXT NOT NULL,
+      algorithm TEXT NOT NULL DEFAULT 'hmac-sha256',
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'revoked', 'expired')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      revoked_at TEXT,
+      expires_at TEXT,
+      FOREIGN KEY (workspace_id) REFERENCES agent_workspaces(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_tokens_agent ON agent_auth_tokens(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_auth_tokens_status ON agent_auth_tokens(status);
   `);
 
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
@@ -3756,6 +3772,110 @@ function getActiveAgentCount() {
 }
 
 // ============================================================
+// Agent Auth Token Operations (AUTH-1)
+// ============================================================
+
+/**
+ * Provision a new auth token for an agent.
+ * @param {Database} db - better-sqlite3 database handle
+ * @param {object} params
+ * @param {string} params.agentId - Agent identifier
+ * @param {string} [params.workspaceId] - Workspace identifier
+ * @param {string} params.tokenHash - SHA-256 hash of the raw secret
+ * @param {string} [params.algorithm] - Algorithm, defaults to 'hmac-sha256'
+ * @returns {object} The inserted token row
+ */
+function provisionAuthToken(db, { agentId, workspaceId, tokenHash, algorithm } = {}) {
+  if (!db) throw new Error('Database handle requerido para provisionAuthToken.');
+  if (!agentId) throw new Error('agentId es requerido para provisionAuthToken.');
+  if (!tokenHash) throw new Error('tokenHash es requerido para provisionAuthToken.');
+
+  const timestamp = new Date().toISOString();
+  const row = {
+    agent_id: agentId,
+    workspace_id: workspaceId || null,
+    token_hash: tokenHash,
+    algorithm: algorithm || 'hmac-sha256',
+    status: 'active',
+    created_at: timestamp,
+    revoked_at: null,
+    expires_at: null,
+  };
+
+  const keys = Object.keys(row);
+  db.prepare(
+    `INSERT INTO agent_auth_tokens (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+  ).run(...keys.map((key) => row[key] ?? null));
+
+  return db
+    .prepare('SELECT * FROM agent_auth_tokens WHERE id = ?')
+    .get(db.prepare('SELECT last_insert_rowid() as id').get().id);
+}
+
+/**
+ * Revoke active auth tokens for an agent.
+ * @param {Database} db - better-sqlite3 database handle
+ * @param {string} agentId - Agent identifier
+ * @param {object} [options] - Options (reason reserved for future use)
+ * @returns {object|null} The last revoked token row, or null if none active
+ */
+function revokeAuthToken(db, agentId, options = {}) {
+  if (!db) throw new Error('Database handle requerido para revokeAuthToken.');
+  if (!agentId) throw new Error('agentId es requerido para revokeAuthToken.');
+
+  const timestamp = new Date().toISOString();
+  const result = db
+    .prepare(
+      `UPDATE agent_auth_tokens SET status = 'revoked', revoked_at = ? WHERE agent_id = ? AND status = 'active'`
+    )
+    .run(timestamp, agentId);
+
+  if (result.changes === 0) return null;
+
+  // Return the most recently revoked token for this agent
+  return db
+    .prepare(
+      "SELECT * FROM agent_auth_tokens WHERE agent_id = ? AND status = 'revoked' ORDER BY revoked_at DESC LIMIT 1"
+    )
+    .get(agentId);
+}
+
+/**
+ * Get the active auth token for an agent.
+ * @param {Database} db - better-sqlite3 database handle
+ * @param {string} agentId - Agent identifier
+ * @returns {object|null} The active token row, or null if not found
+ */
+function getActiveAuthToken(db, agentId) {
+  if (!db) throw new Error('Database handle requerido para getActiveAuthToken.');
+  if (!agentId) throw new Error('agentId es requerido para getActiveAuthToken.');
+
+  return (
+    db
+      .prepare(
+        "SELECT * FROM agent_auth_tokens WHERE agent_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1"
+      )
+      .get(agentId) || null
+  );
+}
+
+/**
+ * Check whether an active auth token exists for an agent.
+ * @param {Database} db - better-sqlite3 database handle
+ * @param {string} agentId - Agent identifier
+ * @returns {boolean} true if an active token exists for this agent
+ */
+function verifyAuthTokenExists(db, agentId) {
+  if (!db) throw new Error('Database handle requerido para verifyAuthTokenExists.');
+  if (!agentId) throw new Error('agentId es requerido para verifyAuthTokenExists.');
+
+  const row = db
+    .prepare("SELECT 1 FROM agent_auth_tokens WHERE agent_id = ? AND status = 'active' LIMIT 1")
+    .get(agentId);
+  return Boolean(row);
+}
+
+// ============================================================
 // Durable Queue Operations (SwarmQueue persistence)
 // ============================================================
 
@@ -4068,4 +4188,9 @@ module.exports = {
   cancelDurableItem,
   recoverStaleItems,
   cleanupCompletedItems,
+  // Agent Auth Token Operations
+  provisionAuthToken,
+  revokeAuthToken,
+  getActiveAuthToken,
+  verifyAuthTokenExists,
 };
