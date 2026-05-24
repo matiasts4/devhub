@@ -38,19 +38,21 @@ function formatMissionToken(value) {
 }
 
 function PresenceGroup({ label, entries = [] }) {
+  const visibleEntries = entries.slice(0, 4);
+
   return (
     <div className="space-y-2">
       <h4 className="text-sm font-semibold">{label}</h4>
       {entries.length === 0
         ? renderEmptyCopy(`Sin presencia ${label.toLowerCase()} en este snapshot.`)
-        : entries.map((entry) => (
+        : visibleEntries.map((entry) => (
             <article
               key={entry.presence_id || `${label}-${entry.agent_id}`}
               className="rounded-xl border p-3"
               style={panelShellStyle()}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-medium">{entry.agent_id || 'Agente sin id'}</div>
+                <div className="font-medium text-sm break-all">{entry.agent_id || 'Agente sin id'}</div>
                 <div className="text-xs" style={metaTextStyle()}>
                   {formatMissionToken(entry.effective_state)}
                 </div>
@@ -61,6 +63,11 @@ function PresenceGroup({ label, entries = [] }) {
               </p>
             </article>
           ))}
+      {entries.length > visibleEntries.length ? (
+        <p className="text-xs" style={metaTextStyle()}>
+          +{entries.length - visibleEntries.length} más…
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -169,19 +176,19 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
 
   return (
     <section
-      className="rounded-2xl border p-4"
+      className="rounded-2xl border p-4 h-full min-h-[460px] max-h-[700px] flex flex-col"
       style={panelShellStyle()}
       aria-label="Kernel de misión"
     >
-      <header className="mb-4">
+      <header className="mb-4 shrink-0">
         <h2 className="text-lg font-semibold">Kernel de misión</h2>
         <p className="text-sm" style={metaTextStyle()}>
           Snapshot durable y de solo lectura para dirección dentro de Swarm / Control Room.
         </p>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-2 flex-1 min-h-0">
+        <div className="space-y-4 min-h-0 overflow-y-auto pr-1">
           <MissionOverviewSection mission={mission} />
 
           <RecentMessagesSection recentMessages={recentMessages} />
@@ -191,7 +198,7 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
           <PresenceSummarySection presence={presence} hasPresence={hasPresence} />
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 min-h-0 overflow-y-auto pr-1">
           <ParticipantsSection participants={participants} />
 
           <ComposerSection
@@ -238,7 +245,7 @@ function RecentMessagesSection({ recentMessages }) {
   return (
     <section className="rounded-xl border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Mensajes recientes</h3>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
         {recentMessages.length === 0
           ? renderEmptyCopy('Sin mensajes recientes en este snapshot.')
           : recentMessages.map((message) => (
@@ -264,7 +271,7 @@ function PendingDeliveriesSection({ pendingDeliveries }) {
   return (
     <section className="rounded-xl border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Entregas pendientes</h3>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
         {pendingDeliveries.length === 0
           ? renderEmptyCopy('Sin entregas pendientes en este snapshot.')
           : pendingDeliveries.map((delivery) => (
@@ -301,7 +308,7 @@ function PresenceSummarySection({ presence, hasPresence }) {
   return (
     <section className="rounded-xl border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Presencia TTL</h3>
-      <div className="mt-3 grid gap-4 lg:grid-cols-3">
+      <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <PresenceGroup label="Activa" entries={presence.active} />
         <PresenceGroup label="Vencida" entries={presence.stale} />
         <PresenceGroup label="Fuera de línea" entries={presence.offline} />
@@ -315,7 +322,7 @@ function ParticipantsSection({ participants }) {
   return (
     <section className="rounded-xl border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Participantes</h3>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
         {participants.length === 0
           ? renderEmptyCopy('Sin participantes durables en este snapshot.')
           : participants.map((participant) => (

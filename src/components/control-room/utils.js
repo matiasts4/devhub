@@ -1,3 +1,5 @@
+import { Fragment } from 'react';
+
 const TOKEN_LABELS = Object.freeze({
   unknown: 'desconocido',
   active: 'activo',
@@ -31,6 +33,9 @@ const TOKEN_LABELS = Object.freeze({
   'unknown error': 'error desconocido',
   'unknown source': 'origen desconocido',
   local_snapshot: 'snapshot local',
+  'stale-registry': 'registro stale',
+  'orphaned-process': 'proceso huérfano',
+  'quota-blocked': 'bloqueado por cuota',
 });
 
 const MISSING_SOURCE_LABELS = Object.freeze({
@@ -47,7 +52,7 @@ const MISSING_SOURCE_LABELS = Object.freeze({
 });
 
 // ── Status color palette ──────────────────────────────────────────────────────
-const STATUS_COLORS = Object.freeze({
+export const STATUS_COLORS = Object.freeze({
   // green — healthy / done
   active: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
   running: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
@@ -70,14 +75,17 @@ const STATUS_COLORS = Object.freeze({
   // orange — blocked / conflict
   blocked: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
   conflicted: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
+  quota_blocked: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
   // indigo — lease / special states
   lease_active: { bg: 'rgba(99,102,241,0.12)', color: '#a5b4fc', dot: '#6366f1' },
   // purple — paused / suspended
   paused: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
   orphaned: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
+  orphaned_process: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
   // gray — idle / stale / unknown
   idle: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   stale: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  stale_registry: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   offline: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unknown: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unavailable: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
@@ -248,7 +256,7 @@ export function CompactPanelShell({
       ) : (
         <div className="flex flex-col gap-2">
           {items.map((item, idx) => (
-            <React.Fragment key={idx}>{renderItem(item)}</React.Fragment>
+            <Fragment key={idx}>{renderItem(item)}</Fragment>
           ))}
         </div>
       )}

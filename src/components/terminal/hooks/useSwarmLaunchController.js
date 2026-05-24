@@ -6,7 +6,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { createSwarmLaunchDraft, deriveSwarmLaunchPreview } from '@/lib/operations/swarmControl';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
-import { createClient } from '@/lib/db/localClient';
 import {
   buildSwarmRoleMetadata,
   getSwarmRoleOrder,
@@ -239,24 +238,9 @@ export default function useSwarmLaunchController({
         // Ignore localStorage failures.
       }
 
-      if (projectId) {
-        try {
-          const db = createClient();
-          await db.from('agent_registry').insert({
-            agent_id: taskId,
-            project_id: projectId,
-            nombre: selectedAgent || 'sdd-orchestrator',
-            modelo_llm: 'N/A',
-            status: 'running',
-            current_task_id: taskId,
-            last_heartbeat: new Date().toISOString(),
-          });
-        } catch (dbErr) {
-          console.warn('Failed to write agent_registry entry:', dbErr);
-        }
-      }
+      // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
     },
-    [projectId]
+    []
   );
 
   const syncActiveWindowSnapshot = useCallback((wsId, columns, nextActivePanelId = null) => {

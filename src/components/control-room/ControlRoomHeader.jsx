@@ -10,23 +10,25 @@ import {
 export default function ControlRoomHeader({ header, loading, projectName, missionSummary = null }) {
   return (
     <section
-      className="rounded-2xl border p-5"
+      className="rounded-2xl border p-5 md:p-6"
       style={panelShellStyle()}
       aria-label="Control Room Header"
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={metaTextStyle()}>
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2 min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={metaTextStyle()}>
             Swarm / Control Room
           </p>
-          <h1 className="text-2xl font-semibold">{projectName || 'Swarm / Control Room'}</h1>
+          <h1 className="text-xl md:text-2xl font-semibold truncate">
+            {projectName || 'Swarm / Control Room'}
+          </h1>
           <p className="text-sm" style={metaTextStyle()}>
             Supervisor {formatToken(header.supervisor_state)}
             {loading ? ' · cargando snapshot…' : ''}
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 min-w-0 w-full lg:w-auto">
           <MetricCard label="Agentes" value={`${header.active}/${header.max} activos`} />
           <MetricCard label="Cola" value={`${header.queue_depth} en cola`} />
           <MetricCard label="Autoridad" value={formatToken(header.authority)} />
@@ -37,8 +39,10 @@ export default function ControlRoomHeader({ header, loading, projectName, missio
       <MissionSummaryStrip missionSummary={missionSummary} />
 
       <div className="mt-4 rounded-xl border px-3 py-3 text-sm" style={panelShellStyle()}>
-        <span style={metaTextStyle()}>Evidencia: </span>
-        <span>{formatEvidence(header.evidence_refs)}</span>
+        <p className="text-xs font-semibold uppercase tracking-[0.15em]" style={metaTextStyle()}>
+          Evidencia durable
+        </p>
+        <p className="mt-1 break-all">{formatEvidence(header.evidence_refs)}</p>
         {header.missing_source ? (
           <p className="mt-2 text-xs" style={metaTextStyle()}>
             {formatMissingSource(header.missing_source)}
@@ -68,17 +72,17 @@ function MissionSummaryStrip({ missionSummary = null }) {
 
   return (
     <div className="mt-4 rounded-xl border px-3 py-3" style={panelShellStyle()}>
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1 min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={metaTextStyle()}>
             Contexto de misión
           </p>
-          <p className="text-sm font-medium">
+          <p className="text-sm font-medium break-words">
             {missionSummary.title || 'Sin misión activa'}
             {missionSummary.status ? ` · ${formatToken(missionSummary.status)}` : ''}
           </p>
           {missionSummary.latestMessageSummary ? (
-            <p className="text-sm" style={metaTextStyle()}>
+            <p className="text-sm break-words" style={metaTextStyle()}>
               {missionSummary.latestMessageSummary}
             </p>
           ) : null}
@@ -108,11 +112,11 @@ function pluralize(count, singular, plural) {
 
 function MetricCard({ label, value }) {
   return (
-    <div className="rounded-xl border px-3 py-3" style={panelShellStyle()}>
-      <div className="text-xs uppercase tracking-wide" style={metaTextStyle()}>
+    <div className="rounded-xl border px-3 py-2.5" style={panelShellStyle()}>
+      <div className="text-[11px] uppercase tracking-wide" style={metaTextStyle()}>
         {label}
       </div>
-      <div className="mt-1 text-sm font-medium">{value}</div>
+      <div className="mt-1 text-sm font-medium leading-snug">{value}</div>
     </div>
   );
 }

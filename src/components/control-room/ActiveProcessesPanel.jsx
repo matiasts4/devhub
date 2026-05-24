@@ -77,6 +77,7 @@ export default function ActiveProcessesPanel() {
   const [loading, setLoading] = useState(true);
   const [killing, setKilling] = useState(new Set());
   const [error, setError] = useState(null);
+  const [confirmKillAll, setConfirmKillAll] = useState(false);
 
   const fetchProcesses = useCallback(async () => {
     try {
@@ -125,7 +126,11 @@ export default function ActiveProcessesPanel() {
   );
 
   const handleKillAll = useCallback(async () => {
-    if (!confirm(`¿Seguro que querés matar ${processes.length} procesos opencode?`)) return;
+    if (!confirmKillAll) {
+      setConfirmKillAll(true);
+      return;
+    }
+    setConfirmKillAll(false);
 
     try {
       const res = await fetch('/api/swarm/processes', {
@@ -138,7 +143,7 @@ export default function ActiveProcessesPanel() {
     } catch (err) {
       console.error('[ProcessPanel] Kill all error:', err);
     }
-  }, [processes.length, fetchProcesses]);
+  }, [processes.length, fetchProcesses, confirmKillAll]);
 
   return (
     <div className="space-y-4">
@@ -179,19 +184,34 @@ export default function ActiveProcessesPanel() {
             Refresh
           </button>
           {processes.length > 0 && (
-            <button
-              type="button"
-              onClick={handleKillAll}
-              className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium"
-              style={{
-                borderColor: 'rgba(239,68,68,0.3)',
-                color: 'rgb(239,68,68)',
-                background: 'rgba(239,68,68,0.08)',
-              }}
-            >
-              <Trash2 size={12} />
-              Matar todos
-            </button>
+            <div className="flex items-center gap-1.5">
+              {confirmKillAll && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmKillAll(false)}
+                  className="rounded-lg border px-2.5 py-1.5 text-xs"
+                  style={{
+                    borderColor: 'var(--border-subtle)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  Cancelar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleKillAll}
+                className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium"
+                style={{
+                  borderColor: confirmKillAll ? 'rgba(239,68,68,0.7)' : 'rgba(239,68,68,0.3)',
+                  color: 'rgb(239,68,68)',
+                  background: confirmKillAll ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.08)',
+                }}
+              >
+                <Trash2 size={12} />
+                {confirmKillAll ? `¿Matar ${processes.length} procesos?` : 'Matar todos'}
+              </button>
+            </div>
           )}
         </div>
       </div>

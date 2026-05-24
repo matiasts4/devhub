@@ -78,6 +78,8 @@ export default function SwarmLaunchWizardModal({
   onStepChange,
   onDraftChange,
   onLaunch,
+  submitState,
+  onSubmitStateChange,
 }) {
   useEffect(() => {
     if (!open) return undefined;
@@ -377,41 +379,72 @@ export default function SwarmLaunchWizardModal({
 
                   <div className="space-y-3 md:col-span-2">
                     <div>
-                      <p className="text-sm font-medium">Programa por rol</p>
+                      <p className="text-sm font-medium">Programa y modelo por rol</p>
                       <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                        Elegí qué cliente usa cada rol del swarm antes del launch.
+                        Elegí qué cliente y qué modelo usa cada rol del swarm antes del launch.
                       </p>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {(preview?.rolePrograms || []).map((entry) => (
-                        <label key={entry.role_key} className="space-y-2 text-sm font-medium">
-                          <span>{entry.role}</span>
-                          <select
-                            aria-label={`Programa para ${entry.role}`}
-                            value={entry.program_id || ''}
-                            onChange={(event) =>
-                              onDraftChange({
-                                rolePrograms: {
-                                  ...(draft.rolePrograms || {}),
-                                  [entry.role_key]: event.target.value,
-                                },
-                              })
-                            }
-                            className="w-full rounded-2xl border px-3 py-3"
-                            style={{
-                              background: 'var(--surface-app)',
-                              borderColor: 'var(--border-subtle)',
-                            }}
-                          >
-                            {programs.map((program) => (
-                              <option key={program.id} value={program.id}>
-                                {program.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {(preview?.rolePrograms || []).map((entry) => {
+                        const roleModels = Array.isArray(catalog?.models) ? catalog.models : [];
+                        const currentModel = draft.roleModels?.[entry.role_key] || '';
+
+                        return (
+                          <div key={entry.role_key} className="space-y-2">
+                            <span className="text-sm font-medium">{entry.role}</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <select
+                                aria-label={`Programa para ${entry.role}`}
+                                value={entry.program_id || ''}
+                                onChange={(event) =>
+                                  onDraftChange({
+                                    rolePrograms: {
+                                      ...(draft.rolePrograms || {}),
+                                      [entry.role_key]: event.target.value,
+                                    },
+                                  })
+                                }
+                                className="w-full rounded-2xl border px-3 py-3 text-xs"
+                                style={{
+                                  background: 'var(--surface-app)',
+                                  borderColor: 'var(--border-subtle)',
+                                }}
+                              >
+                                {programs.map((program) => (
+                                  <option key={program.id} value={program.id}>
+                                    {program.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <select
+                                aria-label={`Modelo para ${entry.role}`}
+                                value={currentModel}
+                                onChange={(event) =>
+                                  onDraftChange({
+                                    roleModels: {
+                                      ...(draft.roleModels || {}),
+                                      [entry.role_key]: event.target.value,
+                                    },
+                                  })
+                                }
+                                className="w-full rounded-2xl border px-3 py-3 text-xs"
+                                style={{
+                                  background: 'var(--surface-app)',
+                                  borderColor: 'var(--border-subtle)',
+                                }}
+                              >
+                                <option value="">Default del perfil</option>
+                                {roleModels.map((model) => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -558,18 +591,67 @@ export default function SwarmLaunchWizardModal({
                     Siguiente
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => onLaunch?.()}
-                    disabled={!preview?.isReady}
-                    className="rounded-2xl border px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{
-                      borderColor: 'rgba(255,176,64,0.26)',
-                      background: 'rgba(255,176,64,0.18)',
-                    }}
-                  >
-                    {preview?.isReady ? 'Lanzar swarm local' : 'Completá configuración'}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSubmitStateChange?.({ submitting: false, error: null });
+                        onLaunch?.();
+                      }}
+                      disabled={!preview?.isReady || submitState?.submitting}
+                      className="rounded-2xl border px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{
+                        borderColor: 'rgba(255,176,64,0.26)',
+                        background: 'rgba(255,176,64,0.18)',
+                      }}
+                    >
+                      {submitState?.submitting
+                        ? 'Lanzando…'
+                        : preview?.isReady
+                          ? 'Lanzar swarm local'
+                          : 'Completá configuración'}
+                    </button>
+
+                    {submitState?.error ? (
+                      <div
+                        className="rounded-xl border px-3 py-2 text-sm font-medium"
+                        style={{
+                          borderColor: 'rgba(239,68,68,0.35)',
+                          background: 'rgba(239,68,68,0.1)',
+                          color: '#fca5a5',
+                        }}
+                      >
+                        <div>{submitState.error}</div>
+                        {submitState.error.includes('swarm activo') && (
+                          <button
+                            type="button"
+                            className="mt-2 rounded-lg border px-2.5 py-1 text-xs font-semibold"
+                            style={{
+                              borderColor: 'rgba(239,68,68,0.5)',
+                              background: 'rgba(239,68,68,0.15)',
+                              color: '#fca5a5',
+                            }}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch('/api/swarm/processes', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ action: 'abort_all_active' }),
+                                });
+                                if (res.ok) {
+                                  onSubmitStateChange?.({ submitting: false, error: null });
+                                }
+                              } catch (_) {
+                                // ignore
+                              }
+                            }}
+                          >
+                            Forzar cancelación de misión activa
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
