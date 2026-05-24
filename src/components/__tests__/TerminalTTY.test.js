@@ -613,7 +613,7 @@ describe('resolveTerminalRendererViewModel()', () => {
         requestedMode: 'vte-experimental',
         effectiveMode: 'xterm',
         didFallback: true,
-        showRecoveryBanner: true,
+        showRecoveryBanner: false,
       })
     );
   });
@@ -700,7 +700,7 @@ describe('shouldOpenNativeVtePanel()', () => {
 });
 
 describe('resolveTerminalRuntimePhase()', () => {
-  test('switches dock side-by-side native panels into fallback-xterm instead of leaving them native-suspended', () => {
+  test('keeps dock side-by-side native panels on native-suspended instead of forcing fallback-xterm', () => {
     expect(
       resolveTerminalRuntimePhase({
         isActivePanel: true,
@@ -713,7 +713,7 @@ describe('resolveTerminalRuntimePhase()', () => {
         runtimePlatform: 'linux',
         tauriAvailable: true,
       })
-    ).toBe('fallback-xterm');
+    ).toBe('native-suspended');
   });
 
   test('keeps transient grid or drag suspension on native-suspended phase', () => {
@@ -833,7 +833,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     jest.clearAllMocks();
   });
 
-  test('restore with invalid experimental renderer keeps xterm surface visible with fallback recovery UI', async () => {
+  test('restore with invalid experimental renderer keeps xterm surface visible', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
         id: 'term-restore-1',
@@ -851,20 +851,10 @@ describe('TerminalTTY renderer fallback UI', () => {
     const fallbackBanner = view.container.querySelector(
       '[data-testid="terminal-renderer-fallback-banner"]'
     );
-    const fallbackTitle = view.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-title"]'
-    );
-    const fallbackCopy = view.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-copy"]'
-    );
-    const recoveryButton = view.container.querySelector('[data-testid="terminal-renderer-reset"]');
 
     expect(shell).not.toBeNull();
     expect(terminalContainer).not.toBeNull();
-    expect(fallbackBanner).not.toBeNull();
-    expect(fallbackTitle?.textContent).toContain('VTE');
-    expect(fallbackCopy?.textContent).toContain('xterm');
-    expect(recoveryButton?.textContent).toBe('Volver a xterm');
+    expect(fallbackBanner).toBeNull();
 
     expect(mockTerminalInstances).toHaveLength(1);
     expect(mockTerminalInstances[0].open).toHaveBeenCalledWith(terminalContainer);
@@ -1266,7 +1256,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockTerminalInstances).toHaveLength(1);
     expect(
       view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
-    ).not.toBeNull();
+    ).toBeNull();
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
   });
 
@@ -1442,6 +1432,21 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
   });
 
+  test('rejects offscreen native bounds so hidden workspace panels are not resized into view', () => {
+    const element = {
+      getBoundingClientRect: () => ({
+        left: -2000,
+        top: 96,
+        right: -1120,
+        bottom: 636,
+        width: 880,
+        height: 540,
+      }),
+    };
+
+    expect(getNativeTerminalBounds(element)).toBeNull();
+  });
+
   test('native open failure falls back in place without blanking the live xterm session', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
@@ -1464,8 +1469,8 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(
-      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
-    ).toContain('xterm');
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
+    ).toBeNull();
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
@@ -1734,6 +1739,73 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
 
+  test('workspace sync event hides inactive native panels and resizes active panels after switch', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-workspace-sync',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
+    mockNativeVteBridge.resizeNativeVtePanel.mockClear();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:native-vte-workspace-sync', {
+        detail: {
+          activeWorkspaceId: 'ws2',
+          activePanelIds: ['other-panel'],
+          hiddenPanelIds: ['term-native-workspace-sync'],
+          reason: 'workspace-switch',
+        },
+      })
+    );
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+      panelId: 'term-native-workspace-sync',
+      visible: false,
+      reason: 'workspace-switch',
+    });
+
+    mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
+    mockNativeVteBridge.resizeNativeVtePanel.mockClear();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:native-vte-workspace-sync', {
+        detail: {
+          activeWorkspaceId: 'ws1',
+          activePanelIds: ['term-native-workspace-sync'],
+          hiddenPanelIds: ['other-panel'],
+          reason: 'workspace-switch',
+        },
+      })
+    );
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+      panelId: 'term-native-workspace-sync',
+      visible: true,
+      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+    });
+    expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        panelId: 'term-native-workspace-sync',
+        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      })
+    );
+  });
+
   test('temporarily hides native surfaces during explicit suspension and restores visibility resize and focus after resume', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
@@ -1815,7 +1887,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
   });
 
-  test('dock side-by-side policy boots visible xterm fallback while hiding native lease and restores native when policy clears', async () => {
+  test('dock side-by-side policy hides native lease without booting xterm fallback and restores native when policy clears', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
     mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
@@ -1863,9 +1935,11 @@ describe('TerminalTTY renderer fallback UI', () => {
       visible: false,
       reason: 'dock-side-by-side',
     });
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
     expect(view.container.querySelector('.devhub-xterm-container')).not.toBeNull();
-    expect(mockTerminalInstances).toHaveLength(1);
+    expect(mockTerminalInstances).toHaveLength(0);
 
     mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
     mockNativeVteBridge.resizeNativeVtePanel.mockClear();
@@ -2101,6 +2175,63 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
 
+  test('hides a native panel that finishes opening after the terminal route is hidden', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+
+    let resolveOpen;
+    mockNativeVteBridge.openNativeVtePanel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOpen = resolve;
+        })
+    );
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-open-hidden-race',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
+      expect.objectContaining({ panelId: 'term-native-open-hidden-race' })
+    );
+
+    await rerenderIntoRoot(
+      view.root,
+      React.createElement(TerminalTTY, {
+        id: 'term-native-open-hidden-race',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: false,
+        isActivePanel: false,
+        isVisibleInLayout: false,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+    await flushTerminalEffects();
+
+    mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
+    resolveOpen({ opened: true, reason: null });
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+      panelId: 'term-native-open-hidden-race',
+      visible: false,
+      reason: 'layout-hidden',
+    });
+    expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalledWith(
+      expect.objectContaining({ panelId: 'term-native-open-hidden-race' })
+    );
+  });
+
   test('closes the native lease when the owning terminal session is explicitly removed', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
@@ -2167,8 +2298,8 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(
-      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
-    ).toContain('xterm');
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
+    ).toBeNull();
     expect(mockTerminalInstances.length).toBeGreaterThan(0);
   });
 
@@ -2197,8 +2328,8 @@ describe('TerminalTTY renderer fallback UI', () => {
     const originalTerminal = mockTerminalInstances[0];
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(
-      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
-    ).toContain('paneles vecinos');
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
+    ).toBeNull();
     expect(mockTerminalInstances[0]).toBe(originalTerminal);
   });
 });

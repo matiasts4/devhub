@@ -520,7 +520,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(panelBody?.querySelector('[data-testid="panel-close-p1"]')).toBeNull();
   });
 
-  test('keeps the native-safe floating header contract while compacting the upper chrome', async () => {
+  test('keeps the native-safe floating header while hiding the upper V1/V2 chrome', async () => {
     persistWorkspaceState({
       workspaces: [
         {
@@ -546,6 +546,8 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(workspaceTopBar?.className).toContain('min-h-[44px]');
     expect(workspaceTopBar?.className).not.toContain('min-h-[52px]');
     expect(subtabsBar).not.toBeNull();
+    expect(subtabsBar?.className).toContain('hidden');
+    expect(subtabsBar?.getAttribute('aria-hidden')).toBe('true');
     expect(subtabsBar?.className).toContain('h-10');
     expect(subtabsBar?.className).not.toContain('h-11');
     expect(workspaceShell).not.toBeNull();

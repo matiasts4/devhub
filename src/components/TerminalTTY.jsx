@@ -233,6 +233,23 @@ export function getNativeTerminalBounds(element) {
 
   if (width <= 0 || height <= 0) return null;
 
+  const browserWindow = typeof window !== 'undefined' ? window : null;
+  if (browserWindow) {
+    const viewportWidth = Number(browserWindow.innerWidth || 0);
+    const viewportHeight = Number(browserWindow.innerHeight || 0);
+    const left = Number(rect.left || 0);
+    const top = Number(rect.top || 0);
+    const right = Number(rect.right ?? left + width);
+    const bottom = Number(rect.bottom ?? top + height);
+
+    if (
+      (viewportWidth > 0 && (right <= 0 || left >= viewportWidth)) ||
+      (viewportHeight > 0 && (bottom <= 0 || top >= viewportHeight))
+    ) {
+      return null;
+    }
+  }
+
   return {
     x: Number(rect.left || 0),
     y: Number(rect.top || 0),
@@ -369,6 +386,7 @@ export default function TerminalTTY({
   nativeSurfacePolicy = 'live',
   runtimePlatform,
   showQuickCopyButton = true,
+  swarmContext = null,
 }) {
   const containerRef = useRef(null);
   const nativePlaceholderRef = useRef(null);
@@ -389,6 +407,17 @@ export default function TerminalTTY({
   const nativeVteProbeRetryTimerRef = useRef(null);
   const nativeVteProbeRetryDelayRef = useRef(null);
   const shouldRetryNativeVteProbeRef = useRef(false);
+
+    const FONT_SIZE_KEY = 'devhub:terminalFontSize';
+    const [fontSize, setFontSize] = useState(() => {
+      try {
+        const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
+        const parsed = stored ? parseInt(stored, 10) : NaN;
+        return Number.isFinite(parsed) && parsed >= 8 && parsed <= 24 ? parsed : 13;
+      } catch {
+        return 13;
+      }
+    });
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
@@ -593,6 +622,7 @@ export default function TerminalTTY({
   const hideNativeLease = useCallback(
     async (reason = 'inactive') => {
       if (!nativeLeaseRef.current) return;
+      cliLog(`CLIENT:${id}`, 'native VTE hide requested', { reason });
       await Promise.resolve(
         setNativeVtePanelVisibility({
           panelId: id,
@@ -628,14 +658,46 @@ export default function TerminalTTY({
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
     const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+    if (!bounds) {
+      cliLog(`CLIENT:${id}`, 'native VTE show skipped — invalid bounds');
+      return;
+    }
+    cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds });
     await Promise.resolve(
       setNativeVtePanelVisibility({
         panelId: id,
         visible: true,
-        bounds: bounds || undefined,
+        bounds,
       })
     ).catch(handleNativeLeaseCommandError);
   }, [handleNativeLeaseCommandError, id]);
+
+  const resizeNativeLease = useCallback(
+    async () => {
+      if (!nativeLeaseRef.current) return;
+      const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+      if (!bounds) {
+        cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
+        return;
+      }
+      cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
+      await Promise.resolve(
+        resizeNativeVtePanel({
+          panelId: id,
+          bounds,
+        })
+      ).catch(handleNativeLeaseCommandError);
+    },
+    [handleNativeLeaseCommandError, id]
+  );
+
+  const showAndResizeNativeLease = useCallback(
+    async () => {
+      await showNativeLease();
+      await resizeNativeLease();
+    },
+    [resizeNativeLease, showNativeLease]
+  );
 
   const waitForVisibleDimensions = useCallback(async () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -842,6 +904,10 @@ export default function TerminalTTY({
     };
 
     const applyNativeOpenResult = (result) => {
+      cliLog(`CLIENT:${id}`, 'native VTE open result', {
+        opened: Boolean(result?.opened),
+        reason: result?.reason || null,
+      });
       if (result?.opened) {
         nativeLeaseRef.current = true;
         setNativeVteOpenFailure(null);
@@ -884,6 +950,12 @@ export default function TerminalTTY({
       })();
       return undefined;
     }
+
+    cliLog(`CLIENT:${id}`, 'native VTE open requested', {
+      bounds,
+      cwd: cwd || null,
+      hasInitialCommand: Boolean(initialCommand),
+    });
 
     openNativeVtePanel(nativeOpenRequest)
       .then((result) => {
@@ -974,6 +1046,85 @@ export default function TerminalTTY({
   ]);
 
   useEffect(() => {
+    if (requestedRendererMode !== 'vte-experimental') return undefined;
+
+    const settleTimers = [];
+    let rafId = null;
+
+    const clearScheduledSync = () => {
+      settleTimers.forEach((timerId) => clearTimeout(timerId));
+      settleTimers.length = 0;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    };
+
+    const scheduleShowAndResize = () => {
+      clearScheduledSync();
+      const sync = () => {
+        if (!isVisibleInLayout) return;
+        if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
+        showAndResizeNativeLease();
+      };
+
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        sync();
+      });
+
+      [80, 180, 400].forEach((delayMs) => {
+        settleTimers.push(
+          setTimeout(() => {
+            sync();
+          }, delayMs)
+        );
+      });
+    };
+
+    const handleWorkspaceNativeSurfaceSync = (event) => {
+      const detail = event.detail || {};
+      const activePanelIds = new Set(
+        Array.isArray(detail.activePanelIds) ? detail.activePanelIds.filter(Boolean) : []
+      );
+      const hiddenPanelIds = new Set(
+        Array.isArray(detail.hiddenPanelIds) ? detail.hiddenPanelIds.filter(Boolean) : []
+      );
+
+      if (hiddenPanelIds.has(id)) {
+        clearScheduledSync();
+        hideNativeLease(detail.reason || 'workspace-hidden');
+        return;
+      }
+
+      if (activePanelIds.has(id)) {
+        scheduleShowAndResize();
+      }
+    };
+
+    window.addEventListener(
+      'devhub:native-vte-workspace-sync',
+      handleWorkspaceNativeSurfaceSync
+    );
+
+    return () => {
+      clearScheduledSync();
+      window.removeEventListener(
+        'devhub:native-vte-workspace-sync',
+        handleWorkspaceNativeSurfaceSync
+      );
+    };
+  }, [
+    hideNativeLease,
+    id,
+    isVisibleInLayout,
+    nativeSurfacePolicy,
+    requestedRendererMode,
+    showAndResizeNativeLease,
+    suspendNativeSurface,
+  ]);
+
+  useEffect(() => {
     if (requestedRendererMode !== 'vte-experimental' || isVisibleInLayout) return undefined;
 
     Promise.resolve(
@@ -1056,7 +1207,14 @@ export default function TerminalTTY({
         nativeResizeRafRef.current = null;
       }
     };
-  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, nativeVteOpened, suspendNativeSurface]);
+  }, [
+    handleNativeLeaseCommandError,
+    id,
+    isVisibleInLayout,
+    nativeSurfacePolicy,
+    nativeVteOpened,
+    suspendNativeSurface,
+  ]);
 
   useEffect(() => {
     const handleSessionClosing = (event) => {
@@ -1119,7 +1277,23 @@ export default function TerminalTTY({
       const cwdParam = cwd ? `cwd=${encodeURIComponent(cwd)}` : '';
       const sessionIdParam = id ? `sessionId=${encodeURIComponent(id)}` : '';
       const legacyIdParam = id ? `id=${encodeURIComponent(id)}` : '';
-      const queryParams = [cwdParam, sessionIdParam, legacyIdParam].filter(Boolean).join('&');
+      const swarmRoleParam = swarmContext?.isSwarmRole ? 'isSwarmRole=1' : '';
+      const swarmRoleKeyParam = swarmContext?.roleKey
+        ? `roleKey=${encodeURIComponent(swarmContext.roleKey)}`
+        : '';
+      const swarmLaunchIdParam = swarmContext?.launchId
+        ? `launchId=${encodeURIComponent(swarmContext.launchId)}`
+        : '';
+      const queryParams = [
+        cwdParam,
+        sessionIdParam,
+        legacyIdParam,
+        swarmRoleParam,
+        swarmRoleKeyParam,
+        swarmLaunchIdParam,
+      ]
+        .filter(Boolean)
+        .join('&');
       const queryStr = queryParams ? `?${queryParams}` : '';
 
       console.log(`[TTY:${id}] Connecting to /api/terminal/session${queryStr}`);
@@ -1270,6 +1444,18 @@ export default function TerminalTTY({
     }
   }, [scrollTerminalToBottom, sendResize, cwd, initialCommand, id]);
 
+    const adjustFontSize = useCallback((delta) => {
+      setFontSize((prev) => {
+        const next = Math.min(24, Math.max(8, prev + delta));
+        try { window.localStorage.setItem(FONT_SIZE_KEY, String(next)); } catch { /* ignore */ }
+        if (termRef.current) {
+          termRef.current.options.fontSize = next;
+          fitRef.current?.fit();
+        }
+        return next;
+      });
+    }, []);
+
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
     cliLog(`CLIENT:${id}`, 'reconnect() called');
@@ -1340,7 +1526,7 @@ export default function TerminalTTY({
         const terminal = new Terminal({
           cursorBlink: true,
           fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
-          fontSize: 13,
+          fontSize: fontSize,
           lineHeight: 1.4,
           allowTransparency: false,
           theme: getTerminalTheme(),
@@ -1676,6 +1862,20 @@ export default function TerminalTTY({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => adjustFontSize(-1)}
+              title="Reducir tamaño de fuente"
+              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <span className="text-[9px] font-bold text-gray-400 hover:text-white leading-none select-none">A-</span>
+            </button>
+            <button
+              onClick={() => adjustFontSize(1)}
+              title="Aumentar tamaño de fuente"
+              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <span className="text-[11px] font-bold text-gray-400 hover:text-white leading-none select-none">A+</span>
+            </button>
             <button
               onClick={reconnect}
               className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"

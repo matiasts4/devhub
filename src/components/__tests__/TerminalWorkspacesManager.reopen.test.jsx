@@ -199,6 +199,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
     mockCatalogState.status = 'empty';
     mockCatalogState.sessions = [];
     mockCatalogState.error = null;
@@ -212,6 +213,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     dom.window.close();
     delete global.localStorage;
+    delete global.fetch;
     jest.clearAllMocks();
   });
 
@@ -244,7 +246,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
       )
     );
 
-    expect(mockCatalogState.retry).toHaveBeenCalledTimes(1);
+    expect(mockCatalogState.refresh).toHaveBeenCalledTimes(1);
   });
 
   test('renders the same resumable sessions in topbar and Agent Room history', async () => {
@@ -322,7 +324,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     );
 
     const historyStubAfter = view.container.querySelector('[data-testid="agent-room-sidebar-stub"]');
-    expect(mockCatalogState.retry).toHaveBeenCalledTimes(1);
+    expect(mockCatalogState.refresh).toHaveBeenCalledTimes(1);
     expect(view.container.textContent).toContain('Recovered after retry');
     expect(view.container.textContent).not.toContain('OpenCode session listing timed out.');
     expect(historyStubAfter?.getAttribute('data-status')).toBe('success');
@@ -397,6 +399,57 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     const restoredTerminal = view.container.querySelector('[data-testid="terminal-p1"]');
 
     expect(restoredTerminal?.getAttribute('data-command')).toBe('opencode --session oc-reboot-1');
+  });
+
+  test('dispatches one relaunch event from startup restore plan when runtime has no live terminal', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [
+                  {
+                    id: 'p1',
+                    cwd: '/workspace/devhub',
+                    initialCommand: 'opencode --session oc-startup-1',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: 'p1' },
+      })
+    );
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ terminals: [], processes: [], anomalies: {} }),
+    });
+
+    const relaunchEvents = [];
+    window.addEventListener('devhub:relaunch-panel', (event) => {
+      relaunchEvents.push(event.detail);
+    });
+
+    await renderManager();
+    await flushEffects();
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/swarm/runtime-diagnostics',
+      expect.objectContaining({ cache: 'no-store' })
+    );
+    expect(relaunchEvents).toEqual([
+      expect.objectContaining({
+        panelId: 'p1',
+        command: 'opencode --session oc-startup-1',
+      }),
+    ]);
   });
 
   test('migrates legacy Ghostty renderer preference to xterm on reload', async () => {

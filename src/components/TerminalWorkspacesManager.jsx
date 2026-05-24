@@ -76,6 +76,11 @@ import {
   deriveSwarmLaunchPreview,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
+import {
+  RESTORE_ACTION,
+  buildRestoreManifestFromWorkspaceState,
+  buildStartupRestorePlan,
+} from '@/lib/terminal/startupRestoreCoordinator';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 
 // --- Helper Functions ---
@@ -84,6 +89,7 @@ const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null
   initialCommand,
   cwd: panelCwd,
   swarmRole: metadata?.swarmRole || null,
+  swarmContext: metadata?.swarmContext || null,
 });
 const createColumn = (colId, panelId, initialCommand = null, panelCwd = null) => ({
   id: colId,
@@ -682,6 +688,7 @@ function renderWorkspacePanel(
           <TerminalTTY
             id={panel.id}
             cwd={panel.cwd || cwd}
+            swarmContext={panel.swarmContext || null}
             hideTitleBar={true}
             showQuickCopyButton={false}
             autoFocus={isActive}
@@ -853,6 +860,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const terminalStateStorageKey = projectId
     ? `devhub_terminal_state:${projectId}`
     : 'devhub_terminal_state';
+  const restoreManifestStorageKey = projectId
+    ? `devhub_restore_manifest:${projectId}`
+    : 'devhub_restore_manifest';
   const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [reopenActionError, setReopenActionError] = useState(null);
   const [workspaces, setWorkspaces] = useState(() => createDefaultWorkspaceState().workspaces);
@@ -944,6 +954,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const panelCounterRef = useRef(1);
   const colCounterRef = useRef(1);
   const windowCounterRef = useRef(1);
+  const hasRunStartupRestoreRef = useRef(false);
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
@@ -1135,91 +1146,105 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     writeTerminalRendererPreferences(storage, projectId, terminalRendererPreferences, workspaces);
   }, [isClientLoaded, projectId, storage, terminalRendererPreferences, workspaces]);
 
-  // --- Session Recovery: detect orphaned opencode processes and trigger clean relaunch ---
   useEffect(() => {
     if (!isClientLoaded || !storage) return;
 
     try {
-      const pendingRecovery = JSON.parse(
-        storage.getItem('devhub_pending_session_recovery') || 'null'
-      );
-      if (!pendingRecovery?.panelIds?.length) return;
-
-      // Check if recovery is still valid (within 5 minutes)
-      const age = Date.now() - pendingRecovery.timestamp;
-      if (age > 5 * 60 * 1000) {
-        storage.removeItem('devhub_pending_session_recovery');
-        return;
-      }
-
-      // Fetch active opencode sessions from TTY server to check which panels are still connected
-      fetch('/api/terminal/sessions')
-        .then((res) => res.json())
-        .then((data) => {
-          const activeSessionIds = new Set((data.sessions || []).map((s) => s.id || s.terminalId));
-
-          // Find panels that need recovery (have opencode command but no active session)
-          const panelsToRelaunch = [];
-          workspaces.forEach((ws) => {
-            ws.columns?.forEach((col) => {
-              col.panels?.forEach((panel) => {
-                if (
-                  pendingRecovery.panelIds.includes(panel.id) &&
-                  panel.initialCommand &&
-                  /opencode/i.test(panel.initialCommand) &&
-                  !activeSessionIds.has(panel.id)
-                ) {
-                  panelsToRelaunch.push({
-                    panelId: panel.id,
-                    command: panel.initialCommand,
-                    cwd: panel.cwd,
-                  });
-                }
-              });
-            });
-          });
-
-          // Clear recovery tracking
-          storage.removeItem('devhub_pending_session_recovery');
-
-          // Process panels: close orphaned sessions first, then relaunch
-          const processRelaunch = async () => {
-            for (const { panelId, command, cwd } of panelsToRelaunch) {
-              // Close any existing orphaned session for this panel
-              try {
-                await fetch('/api/terminal/processes', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ terminalId: panelId }),
-                });
-              } catch {
-                // Ignore close failures - the session might not exist
-              }
-
-              // Dispatch relaunch event
-              window.dispatchEvent(
-                new CustomEvent('devhub:relaunch-panel', {
-                  detail: { panelId, command, cwd, reason: 'orphaned-session' },
-                })
-              );
-            }
-          };
-
-          if (panelsToRelaunch.length > 0) {
-            console.log(
-              `[Session Recovery] Relaunching ${panelsToRelaunch.length} orphaned opencode sessions`
-            );
-            processRelaunch();
-          }
-        })
-        .catch(() => {
-          // If we can't check sessions, clear the recovery flag to avoid infinite loops
-          storage.removeItem('devhub_pending_session_recovery');
-        });
+      const manifest = buildRestoreManifestFromWorkspaceState({
+        workspaces,
+        activeWorkspaceId: activeWsId,
+        projectId,
+        appSessionId: `live-${Date.now()}`,
+        agentRunsByPanel: readAgentRunsByPanel(storage),
+      });
+      storage.setItem(restoreManifestStorageKey, JSON.stringify(manifest));
     } catch {
-      // Ignore recovery failures
+      // Restore manifest persistence is best-effort only.
     }
-  }, [isClientLoaded, storage, workspaces]);
+  }, [activeWsId, isClientLoaded, projectId, restoreManifestStorageKey, storage, workspaces]);
+
+  // --- Startup restore coordinator: build restore plan once and dispatch idempotent relaunch actions ---
+  useEffect(() => {
+    if (!isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
+    hasRunStartupRestoreRef.current = true;
+
+    let cancelled = false;
+
+    const runStartupRestore = async () => {
+      try {
+        const runtimeResponse = await fetch('/api/swarm/runtime-diagnostics', { cache: 'no-store' });
+        const runtimeSnapshot = runtimeResponse.ok ? await runtimeResponse.json() : null;
+
+        if (cancelled) return;
+
+        const manifest = buildRestoreManifestFromWorkspaceState({
+          workspaces,
+          activeWorkspaceId: activeWsId,
+          projectId,
+          appSessionId: `startup-${Date.now()}`,
+          agentRunsByPanel,
+        });
+
+        const plan = buildStartupRestorePlan({ manifest, runtimeSnapshot });
+        const panelMap = new Map(
+          workspaces.flatMap((workspace) =>
+            (workspace?.columns || []).flatMap((column) =>
+              (column?.panels || []).map((panel) => [panel.id, panel])
+            )
+          )
+        );
+        const relaunchDispatched = new Set();
+
+        plan.actions.forEach((action) => {
+          if (cancelled) return;
+
+          if (action.action === RESTORE_ACTION.QUOTA_BLOCKED) {
+            setReopenActionError(
+              'OpenCode appears quota-blocked (429). Review runtime diagnostics before relaunching sessions.'
+            );
+            return;
+          }
+
+          if (
+            action.action === RESTORE_ACTION.RESTORE_READY ||
+            action.action === RESTORE_ACTION.REATTACH_LIVE_TERMINAL
+          ) {
+            return;
+          }
+
+          const panel = panelMap.get(action.terminalId);
+          const command =
+            panel?.initialCommand ||
+            (action.opencodeSessionId ? `opencode --session ${action.opencodeSessionId}` : null);
+
+          if (!action.terminalId || !command) return;
+
+          const dedupeKey = `${action.terminalId}:${command}`;
+          if (relaunchDispatched.has(dedupeKey)) return;
+          relaunchDispatched.add(dedupeKey);
+
+          window.dispatchEvent(
+            new CustomEvent('devhub:relaunch-panel', {
+              detail: {
+                panelId: action.terminalId,
+                command,
+                cwd: panel?.cwd || null,
+                reason: action.reason || action.action,
+              },
+            })
+          );
+        });
+      } catch {
+        // Startup restore must not block workspace boot.
+      }
+    };
+
+    runStartupRestore();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWsId, isClientLoaded, projectId, storage, workspaces]);
 
   // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
@@ -1410,7 +1435,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const isFullscreenBrowser =
     effectiveRightDockState.visible &&
     effectiveRightDockState.maximized &&
-    effectiveRightDockState.maximizedView === 'browser';
+    (effectiveRightDockState.maximizedView === 'browser' ||
+      effectiveRightDockState.maximizedView === 'swarm');
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
   const shouldSuspendNativeSurfaces =
@@ -1576,6 +1602,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         throw new Error(payload?.error || 'No se pudo lanzar el swarm desde terminales.');
       }
 
+      const runtimeRequests = payload?.launch_result?.runtime_requests || [];
+      if (runtimeRequests.length === 0) {
+        const failedRoles = payload?.launch_result?.failed_roles || [];
+        const failedDetail = failedRoles
+          .map((role) => `${role?.roleLabel || role?.roleKey}: ${role?.error || 'error desconocido'}`)
+          .join(' | ');
+        throw new Error(
+          failedDetail
+            ? `El swarm no se lanzó: no se pudo inicializar ningún agente. ${failedDetail}`
+            : 'El swarm no se lanzó: no se pudo inicializar ningún agente.'
+        );
+      }
+
       if (payload.control_room_snapshot_input) {
         try {
           localStorage.setItem(
@@ -1587,7 +1626,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         }
       }
 
-      (payload.launch_result?.runtime_requests || []).forEach((request) => {
+      runtimeRequests.forEach((request) => {
         window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
       });
 
@@ -1783,20 +1822,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     };
   }, [browserWindowStates, isClientLoaded, projectId, updateBrowserWindowState]);
 
-  const handleRightDockVisibilityToggle = useCallback(() => {
-    updateRightDockState((currentState) => ({
-      ...currentState,
-      visible: !currentState.visible,
-    }));
-  }, [updateRightDockState]);
-
   const handleRightDockTabSelect = useCallback(
     (tab) => {
       updateRightDockState((currentState) => ({
         ...currentState,
-        visible: true,
+        visible:
+          currentState.visible && currentState.activeTab === tab
+            ? false
+            : true,
         activeTab: tab,
-        maximizedView: tab === 'editor' ? 'editor' : 'browser',
+        maximizedView: tab === 'editor' ? 'editor' : tab === 'swarm' ? 'swarm' : 'browser',
       }));
     },
     [updateRightDockState]
@@ -1821,9 +1856,54 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return `P${index + 1}`;
   };
 
-  const getAllPanelIds = (columns) => {
+  const getAllPanelIds = useCallback((columns) => {
     return columns.flatMap((col) => col.panels.map((p) => p.id));
-  };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const activeWorkspaceForNativeSurface = workspaces.find(
+      (workspace) => workspace.id === activeWsId
+    );
+    const activePanelIdsForNativeSurface = activeWorkspaceForNativeSurface
+      ? getAllPanelIds(activeWorkspaceForNativeSurface.columns || [])
+      : [];
+    const hiddenPanelIdsForNativeSurface = workspaces
+      .filter((workspace) => workspace.id !== activeWsId)
+      .flatMap((workspace) => getAllPanelIds(workspace.columns || []));
+
+    const detail = {
+      activeWorkspaceId: activeWsId,
+      activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
+      hiddenPanelIds: isVisible
+        ? hiddenPanelIdsForNativeSurface
+        : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
+      reason: isVisible ? 'workspace-switch' : 'terminal-manager-hidden',
+    };
+
+    const dispatchNativeWorkspaceSync = () => {
+      window.dispatchEvent(new CustomEvent('devhub:native-vte-workspace-sync', { detail }));
+    };
+
+    dispatchNativeWorkspaceSync();
+
+    let rafId = null;
+    if (typeof requestAnimationFrame === 'function') {
+      rafId = requestAnimationFrame(dispatchNativeWorkspaceSync);
+    }
+
+    const settleTimers = [80, 180, 400].map((delayMs) =>
+      setTimeout(dispatchNativeWorkspaceSync, delayMs)
+    );
+
+    return () => {
+      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rafId);
+      }
+      settleTimers.forEach((timerId) => clearTimeout(timerId));
+    };
+  }, [activeWsId, getAllPanelIds, isVisible, workspaces]);
 
   const findPanelInWorkspace = (workspace, panelId) => {
     if (!workspace || !panelId) return null;
@@ -2111,24 +2191,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         // Ignore localStorage failures.
       }
 
-      if (projectId) {
-        try {
-          const db = createClient();
-          await db.from('agent_registry').insert({
-            agent_id: taskId,
-            project_id: projectId,
-            nombre: selectedAgent || 'sdd-orchestrator',
-            modelo_llm: 'N/A',
-            status: 'running',
-            current_task_id: taskId,
-            last_heartbeat: new Date().toISOString(),
-          });
-        } catch (dbErr) {
-          console.warn('Failed to write agent_registry entry:', dbErr);
-        }
-      }
+      // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
     },
-    [projectId]
+    []
   );
 
   const createWorkspaceForSwarmLaunchRequests = useCallback(
@@ -2180,8 +2245,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             if (!firstPanelId) firstPanelId = panelId;
             if (request.swarmRole?.roleKey === 'director') directorPanelId = panelId;
             panelAssignments.push({ request, panelId });
-            return createPanel(panelId, request.commandToRun, cwd, {
+            return createPanel(panelId, request.commandToRun, request.workspacePath || cwd, {
               swarmRole: request.swarmRole,
+              swarmContext: {
+                isSwarmRole: Boolean(request.isSwarmRole),
+                roleKey: request.roleKey || request.swarmRole?.roleKey || null,
+                launchId: request.launchId || null,
+              },
             });
           });
           return { id: colId, panels };
@@ -2338,6 +2408,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const splitDownLabel = 'Dividir hacia abajo';
       const isFullscreenMode = wsDockState.maximized === true;
       const isBrowserFullscreen = isFullscreenMode && wsDockState.maximizedView === 'browser';
+      const isSwarmFullscreen = isFullscreenMode && wsDockState.maximizedView === 'swarm';
       const activeWindowId = activeWindowIds[ws.id] || viewTabs[0]?.id;
 
       return (
@@ -2349,7 +2420,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         >
           <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden pr-2">
             {viewTabs.map((view, idx) => {
-              const isActive = !isBrowserFullscreen && view.id === activeWindowId;
+              const isActive = !isBrowserFullscreen && !isSwarmFullscreen && view.id === activeWindowId;
               return (
                 <button
                   key={view.id}
@@ -2389,27 +2460,50 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               );
             })}
             {isFullscreenMode ? (
-              <button
-                type="button"
-                data-testid="panel-tab-browser"
-                onClick={() => {
-                  updateWsDockState({
-                    visible: true,
-                    activeTab: 'browser',
-                    maximized: true,
-                    maximizedView: 'browser',
-                  });
-                }}
-                className={`h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
-                  isBrowserFullscreen
-                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
-                    : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
-                }`}
-                title="Vista Browser"
-              >
-                <Globe className="w-3.5 h-3.5" />
-                Browser
-              </button>
+              <>
+                <button
+                  type="button"
+                  data-testid="panel-tab-browser"
+                  onClick={() => {
+                    updateWsDockState({
+                      visible: true,
+                      activeTab: 'browser',
+                      maximized: true,
+                      maximizedView: 'browser',
+                    });
+                  }}
+                  className={`h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
+                    isBrowserFullscreen
+                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
+                      : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
+                  }`}
+                  title="Vista Browser"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  Browser
+                </button>
+                <button
+                  type="button"
+                  data-testid="panel-tab-swarm"
+                  onClick={() => {
+                    updateWsDockState({
+                      visible: true,
+                      activeTab: 'swarm',
+                      maximized: true,
+                      maximizedView: 'swarm',
+                    });
+                  }}
+                  className={`h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
+                    isSwarmFullscreen
+                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]'
+                      : 'text-[var(--text-muted)] bg-transparent border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]'
+                  }`}
+                  title="Vista Swarm"
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  Swarm
+                </button>
+              </>
             ) : null}
             <button
               data-testid="panel-subtabs-add"
@@ -2532,27 +2626,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         // Ignore localStorage failures
       }
 
-      // Register in agent_registry so Activity tab shows this session
-      if (projectId) {
-        try {
-          const db = createClient();
-          await db.from('agent_registry').insert({
-            agent_id: `oc-reopen-${resumableSessionId}`,
-            project_id: projectId,
-            nombre: 'opencode',
-            modelo_llm: 'N/A',
-            status: 'running',
-            current_task_id: resumableSessionId,
-            last_heartbeat: new Date().toISOString(),
-          });
-        } catch {
-          // Ignore DB failures — the localStorage entry is enough for display
-        }
-      }
-
       return createdPanelId;
     },
-    [activeWsId, cwd, launchPanelWithCommand, projectId]
+    [activeWsId, cwd, launchPanelWithCommand]
   );
 
   const removeReopenRun = useCallback((panelId, sessionId) => {
@@ -3213,6 +3289,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           </button>
           <button
             type="button"
+            data-testid="right-dock-tab-swarm"
+            onClick={() => handleRightDockTabSelect('swarm')}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'swarm' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Show swarm topology"
+          >
+            <Bot className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={openTerminalSwarmLauncher}
             className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
             title="Lanzar swarm desde terminales"
@@ -3225,20 +3314,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <div className="w-px h-5 bg-white/10 mx-1" />
 
           <NotificationCenter projectId={projectId} variant="topbar" />
-          <button
-            type="button"
-            data-testid="right-dock-toggle"
-            onClick={handleRightDockVisibilityToggle}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.10)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
-            aria-label={rightDockState.visible ? 'Hide right dock' : 'Show right dock'}
-          >
-            <PanelLeft className="w-4 h-4" />
-          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -3729,6 +3804,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         onStepChange={setSwarmLaunchWizardStep}
         onDraftChange={updateSwarmLaunchDraft}
         onLaunch={handleTerminalSwarmLaunch}
+        submitState={swarmLaunchSubmitState}
+        onSubmitStateChange={setSwarmLaunchSubmitState}
       />
     </motion.div>
   );

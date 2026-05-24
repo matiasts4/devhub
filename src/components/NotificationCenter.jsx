@@ -113,43 +113,62 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
     healthSnapshot,
   });
 
+  const topbarTriggerClassName = `group relative inline-flex h-7 w-7 items-center justify-center rounded-sm transition-all ${
+    open
+      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)]'
+      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+  }`;
+
+  const sidebarTriggerClassName = `w-full ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} rounded-lg ${
+    open ? 'border-white/16 bg-white/[0.08] text-text-primary' : 'text-text-muted'
+  }`;
+
   return (
     <div className={isTopbar ? 'relative' : 'px-2 py-2 border-b border-borders-subtle'}>
-      <Button
-        data-testid="notification-bell"
-        onClick={() => (isTopbar || !collapsed) && setOpen((prev) => !prev)}
-        variant={isTopbar ? 'devhubGlass' : 'devhubGhost'}
-        size={isTopbar ? 'toolbar' : 'sm'}
-        className={
-          isTopbar
-            ? open
-              ? 'text-text-primary border-white/16 bg-white/[0.09]'
-              : 'text-text-secondary'
-            : `w-full ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} rounded-lg ${
-                open ? 'border-white/16 bg-white/[0.08] text-text-primary' : 'text-text-muted'
-              }`
-        }
-        title={collapsed && !isTopbar ? 'Notificaciones' : undefined}
-        aria-label="Notificaciones"
-      >
-        <span
-          className={`flex items-center ${
-            isTopbar ? 'gap-1.5' : collapsed ? 'justify-center' : 'gap-2'
-          }`}
+      {isTopbar ? (
+        <button
+          type="button"
+          data-testid="notification-bell"
+          onClick={() => setOpen((prev) => !prev)}
+          className={topbarTriggerClassName}
+          title="Notificaciones"
+          aria-label="Notificaciones"
         >
-          <Bell className="w-3.5 h-3.5" strokeWidth={1.5} />
-          {!isTopbar ? !collapsed && <span>Notificaciones</span> : null}
-        </span>
-        <span
-          className={`min-w-5 h-5 px-1 rounded-full border text-xs font-semibold flex items-center justify-center ${
-            unreadCount > 0
-              ? 'border-[#F778BA]/40 text-danger bg-[#F778BA]/10'
-              : 'border-borders-strong text-text-muted bg-surface-card'
-          }`}
+          <Bell className="w-4 h-4" strokeWidth={1.5} />
+          {unreadCount > 0 ? (
+            <span
+              className="absolute -bottom-px -right-px min-w-4 h-4 px-1 rounded-full border border-[#F778BA]/40 text-[10px] font-semibold text-danger bg-[#F778BA]/10 flex items-center justify-center leading-none"
+              aria-label={`${unreadCount} notificaciones`}
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          ) : null}
+        </button>
+      ) : (
+        <Button
+          data-testid="notification-bell"
+          onClick={() => !collapsed && setOpen((prev) => !prev)}
+          variant="devhubGhost"
+          size="sm"
+          className={sidebarTriggerClassName}
+          title={collapsed ? 'Notificaciones' : undefined}
+          aria-label="Notificaciones"
         >
-          {unreadCount}
-        </span>
-      </Button>
+          <span className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2'}`}>
+            <Bell className="w-3.5 h-3.5" strokeWidth={1.5} />
+            {!collapsed ? <span>Notificaciones</span> : null}
+          </span>
+          <span
+            className={`min-w-5 h-5 px-1 rounded-full border text-xs font-semibold flex items-center justify-center ${
+              unreadCount > 0
+                ? 'border-[#F778BA]/40 text-danger bg-[#F778BA]/10'
+                : 'border-borders-strong text-text-muted bg-surface-card'
+            }`}
+          >
+            {unreadCount}
+          </span>
+        </Button>
+      )}
 
       {(isTopbar || !collapsed) && open && (
         <div
