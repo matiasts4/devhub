@@ -54,7 +54,12 @@ async function waitForSidecarHealth(port, attempts = 10, delayMs = 200) {
       });
 
       if (response.ok) {
+        // Consume body to fully close the underlying connection
+        try { await response.text(); } catch { /* ignore */ }
         return true;
+      } else {
+        // Consume body on non-ok responses too
+        try { await response.text(); } catch { /* ignore */ }
       }
     } catch {
       // Keep retrying while the sidecar boots.
@@ -118,6 +123,8 @@ async function readProductionSidecarPort() {
     const healthResponse = await fetch(`http://127.0.0.1:${port}/health`, {
       cache: 'no-store',
     });
+    // Consume body to fully close the underlying undici connection
+    try { await healthResponse.text(); } catch { /* ignore */ }
     if (healthResponse.ok) {
       return port;
     }
@@ -129,37 +136,17 @@ async function readProductionSidecarPort() {
 }
 
 export async function GET(request) {
-  if (process.env.NODE_ENV === 'production') {
-    try {
-      const port = await readProductionSidecarPort();
-      if (port) {
-        return NextResponse.json({ port, wsPath: '/tty' });
-      }
-    } catch (e) {
-      console.error('Error reading sidecar port file:', e);
+  // Always check for production sidecar first (works in both dev and prod)
+  try {
+    const port = await readProductionSidecarPort();
+    if (port) {
+      return NextResponse.json({ port, wsPath: '/tty' });
     }
-
-    try {
-      const cwd = request.nextUrl.searchParams.get('cwd');
-      const { ensureTTYServer } = await import('@/lib/terminal/ttyServer');
-      const { port, wsPath } = await ensureTTYServer(cwd);
-      return NextResponse.json({ port, wsPath });
-    } catch (error) {
-      console.error('Failed to initialize local PTY fallback:', error);
-    }
-
-    try {
-      const recovered = await recoverProductionSidecar();
-      if (recovered) {
-        return NextResponse.json(recovered);
-      }
-    } catch (error) {
-      console.error('Failed to recover production sidecar:', error);
-    }
-
-    return NextResponse.json({ error: 'Servidor terminal (sidecar) no encontrado' }, { status: 503 });
+  } catch (e) {
+    console.error('Error checking sidecar:', e);
   }
 
+  // Fallback to local TTY server only if sidecar is not available
   try {
     const cwd = request.nextUrl.searchParams.get('cwd');
     const { ensureTTYServer } = await import('@/lib/terminal/ttyServer');
@@ -195,6 +182,9 @@ export async function DELETE(request) {
         method: 'DELETE',
         cache: 'no-store',
       });
+
+      // Consume body to fully close the underlying undici connection
+      try { await response.text(); } catch { /* ignore */ }
 
       if (!response.ok) {
         return NextResponse.json(

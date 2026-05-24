@@ -3,16 +3,18 @@ import { NextResponse } from 'next/server';
 /**
  * POST /api/mcp/devhub
  * Proxies MCP tool calls to the DevHub MCP server managed by OpenCode.
- * DevHub MCP exposes tools for projects, tasks, milestones, dashboard, and swarm agents.
+ * DevHub MCP exposes control-plane tools for projects/tasks/milestones,
+ * portable queue/claim/lease operations, and external integrations.
  *
  * Available tools:
  *   Proyectos:  list_projects, get_project, create_project, update_project, delete_project
  *   Tareas:     list_tasks, create_task, update_task, delete_task, add_task_comment,
- *               create_task_dependency, get_task_dependencies, get_next_task
+ *               create_task_dependency, get_task_dependencies, get_execution_queue, claim_next_task,
+ *               renew_task_lease, release_task
  *   Hitos:      list_milestones, create_milestone, update_milestone
- *   Dashboard:  get_dashboard, get_project_context, mark_planning_done
+ *   Contexto:   get_project_context, get_workspace_evidence
  *   Context:    validate_topic_key, build_context_pack
- *   Swarm:      register_agent, heartbeat_agent, unregister_agent, update_agent_status
+ *   Legacy:     deprecated tools may still exist for compatibility, but are not preferred.
  */
 export async function POST(req) {
   try {

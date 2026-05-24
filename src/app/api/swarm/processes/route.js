@@ -1,50 +1,8 @@
 import { NextResponse } from 'next/server';
-import { execSync } from 'child_process';
+import { getOpenCodeProcesses } from '@/lib/swarm/openCodeProcesses';
+import { getDb } from '@/lib/db/core';
 
 export const dynamic = 'force-dynamic';
-
-// Get all running opencode processes with their details
-function getOpenCodeProcesses() {
-  try {
-    const output = execSync(
-      'ps aux | grep -E "opencode.*--agent|opencode.*--session" | grep -v grep',
-      { encoding: 'utf8' }
-    );
-
-    if (!output.trim()) return [];
-
-    return output
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split(/\s+/);
-        const pid = parseInt(parts[1]);
-        const cpu = parseFloat(parts[2]);
-        const mem = parseFloat(parts[3]);
-        const rss = parseInt(parts[5]); // KB
-        const command = parts.slice(10).join(' ');
-
-        // Extract agent name from command
-        const agentMatch = command.match(/--agent\s+([\w-]+)/);
-        const sessionMatch = command.match(/--session\s+([\w-]+)/);
-        const workspaceMatch = command.match(/Workspace:\\s*([^\\n]+)/);
-
-        return {
-          pid,
-          cpu,
-          mem,
-          rss,
-          command,
-          agent: agentMatch?.[1] || 'unknown',
-          sessionId: sessionMatch?.[1] || null,
-          workspace: workspaceMatch?.[1]?.trim() || null,
-          startedAt: null, // Could be enhanced with ps -o lstart
-        };
-      });
-  } catch {
-    return [];
-  }
-}
 
 // Kill a process by PID
 function killProcess(pid, force = false) {
@@ -65,6 +23,22 @@ export async function GET() {
     const totalMem = processes.reduce((sum, p) => sum + (p.rss || 0), 0);
     const totalCpu = processes.reduce((sum, p) => sum + (p.cpu || 0), 0);
 
+    // Detect duplicate swarms
+    const launchCounts = {};
+    processes.forEach(p => {
+      if (p.launchId) {
+        launchCounts[p.launchId] = (launchCounts[p.launchId] || 0) + 1;
+      }
+    });
+    
+    const duplicateWarnings = Object.entries(launchCounts)
+      .filter(([, count]) => count > 5)
+      .map(([launchId, count]) => ({
+        launchId,
+        count,
+        warning: `Possible duplicate: ${count} agents for ${launchId}`
+      }));
+
     return NextResponse.json({
       processes,
       summary: {
@@ -72,6 +46,7 @@ export async function GET() {
         totalMemoryMB: Math.round(totalMem / 1024),
         totalCpu: totalCpu.toFixed(1),
         agents: [...new Set(processes.map((p) => p.agent))],
+        duplicateWarnings,
       },
     });
   } catch (error) {
@@ -85,6 +60,38 @@ export async function POST(request) {
     const body = await request.json();
     const { action, pid, all, force = false } = body;
 
+    if (action === 'abort_all_active') {
+      // Abort all active swarm missions without killing processes
+      // Useful when processes were already killed but DB state is stale
+      let missionsClosed = 0;
+      try {
+        const db = getDb();
+        const now = new Date().toISOString();
+        const activeMissions = db
+          .prepare("SELECT mission_id FROM swarm_missions WHERE status = 'active'")
+          .all();
+        const stmt = db.prepare(
+          "UPDATE swarm_missions SET status = 'aborted', completed_at = ?, updated_at = ? WHERE mission_id = ?"
+        );
+        const presenceStmt = db.prepare(
+          "UPDATE agent_presence SET presence_state = 'offline', updated_at = ? WHERE mission_id = ?"
+        );
+        const participantStmt = db.prepare(
+          "UPDATE mission_participants SET status = 'aborted', left_at = ?, updated_at = ? WHERE mission_id = ? AND status = 'active'"
+        );
+        for (const { mission_id } of activeMissions) {
+          stmt.run(now, now, mission_id);
+          presenceStmt.run(now, mission_id);
+          participantStmt.run(now, now, mission_id);
+          missionsClosed++;
+        }
+      } catch (dbErr) {
+        console.error('[swarm/processes] Failed to abort active missions:', dbErr.message);
+        return NextResponse.json({ error: dbErr.message }, { status: 500 });
+      }
+      return NextResponse.json({ action: 'abort_all_active', missionsClosed });
+    }
+
     if (action === 'kill') {
       if (all) {
         // Kill all opencode processes
@@ -93,11 +100,39 @@ export async function POST(request) {
         const killed = results.filter((r) => r.success).length;
         const failed = results.filter((r) => !r.success).length;
 
+        // Abort all active swarm missions in DB so new launches are not blocked
+        let missionsClosed = 0;
+        try {
+          const db = getDb();
+          const now = new Date().toISOString();
+          const activeMissions = db
+            .prepare("SELECT mission_id FROM swarm_missions WHERE status = 'active'")
+            .all();
+          const stmt = db.prepare(
+            "UPDATE swarm_missions SET status = 'aborted', completed_at = ?, updated_at = ? WHERE mission_id = ?"
+          );
+          const presenceStmt = db.prepare(
+            "UPDATE agent_presence SET presence_state = 'offline', updated_at = ? WHERE mission_id = ?"
+          );
+          const participantStmt = db.prepare(
+            "UPDATE mission_participants SET status = 'aborted', left_at = ?, updated_at = ? WHERE mission_id = ? AND status = 'active'"
+          );
+          for (const { mission_id } of activeMissions) {
+            stmt.run(now, now, mission_id);
+            presenceStmt.run(now, mission_id);
+            participantStmt.run(now, now, mission_id);
+            missionsClosed++;
+          }
+        } catch (dbErr) {
+          console.error('[swarm/processes] Failed to abort missions after kill-all:', dbErr.message);
+        }
+
         return NextResponse.json({
           action: 'kill_all',
           killed,
           failed,
           results,
+          missionsClosed,
         });
       }
 
