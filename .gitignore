@@ -129,3 +129,7 @@ workspaces_diff.txt
 
 # === CLI ephemeral data ===
 devhub-cli/data/
+devhub-cli/coverage/
+
+# === Tauri resources (vendored binaries) ===
+src-tauri/resources/
