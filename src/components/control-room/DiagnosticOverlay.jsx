@@ -71,6 +71,13 @@ function buildRuntimeSummaryLines(record = {}) {
   ];
 }
 
+function formatRuntimeMetricLabel(label = '') {
+  const normalized = String(label || '').trim().toLowerCase();
+  if (normalized === 'blocked') return 'bloqueada';
+  if (normalized === 'ok') return 'ok';
+  return label;
+}
+
 async function copyRuntimeSummary(record = {}) {
   await copyEvidencePath(buildRuntimeSummaryLines(record).join('\n'));
 }
@@ -93,8 +100,8 @@ function RuntimeSnapshotActions({ record = null }) {
       <div className="flex flex-wrap gap-2 text-[11px]" style={metaTextStyle()}>
         <span>Reattachables: {reattachableCount}</span>
         <span>Orphaned: {orphanedProcessCount}</span>
-        <span>Stale registry: {staleRegistryCount}</span>
-        <span>Quota: {quotaBlocked ? 'blocked' : 'ok'}</span>
+        <span>Registro vencido: {staleRegistryCount}</span>
+        <span>Cuota: {formatRuntimeMetricLabel(quotaBlocked ? 'blocked' : 'ok')}</span>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -104,7 +111,7 @@ function RuntimeSnapshotActions({ record = null }) {
           className="rounded-md border px-2 py-1 text-[11px]"
           style={panelShellStyle()}
         >
-          Copy runtime summary
+          Copiar resumen runtime
         </button>
         <button
           type="button"
@@ -112,7 +119,7 @@ function RuntimeSnapshotActions({ record = null }) {
           className="rounded-md border px-2 py-1 text-[11px]"
           style={panelShellStyle()}
         >
-          Export runtime JSON
+          Exportar runtime JSON
         </button>
       </div>
     </div>

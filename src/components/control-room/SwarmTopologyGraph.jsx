@@ -606,7 +606,7 @@ export default function SwarmTopologyGraph({
         <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#4ade80' }} />
-            {activeCount} active
+            {activeCount} activo{activeCount === 1 ? '' : 's'}
           </span>
           <span>· {totalCount} total</span>
         </div>
@@ -691,22 +691,22 @@ export default function SwarmTopologyGraph({
         >
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#4ade80' }} />
-            active
+            activo
           </span>
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#6366f1' }} />
-            lease
+            lease activo
           </span>
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#64748b' }} />
-            idle/stale
+            inactivo/vencido
           </span>
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#ef4444' }} />
             error
           </span>
           <span className="ml-auto" style={{ color: 'var(--text-secondary)' }}>
-            drag nodes to rearrange
+            arrastrá nodos para reordenar
           </span>
         </div>
       )}

@@ -220,78 +220,101 @@ export function CompactPanelShell({
   renderItem,
   emptyMessage,
   ariaLabel,
+  headerExtra,
+  maxHeight = '300px',
 }) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const resolvedEmptyMessage = emptyMessage || 'Sin datos';
+
   return (
-    <div
+    <section
       className="rounded-xl border p-3"
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
-      aria-label={ariaLabel}
+      aria-label={ariaLabel || title}
     >
       <div className="mb-2 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-default)' }}>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-default)' }}>
             {title}
-          </h3>
-          <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-            {description}
-          </p>
+          </h2>
+          {description ? (
+            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {description}
+            </p>
+          ) : null}
         </div>
-        {count > 0 && (
-          <span
-            className="rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums"
-            style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-          >
-            {count}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {headerExtra}
+          <CountBadge count={count} />
+        </div>
       </div>
 
-      {items.length === 0 ? (
-        <div
-          className="rounded-lg border border-dashed px-3 py-4 text-sm"
-          style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-        >
-          {emptyMessage}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {items.map((item, idx) => (
-            <Fragment key={idx}>{renderItem(item)}</Fragment>
-          ))}
-        </div>
-      )}
-    </div>
+      <div
+        data-testid="compact-panel-body"
+        className="flex flex-col gap-2 overflow-y-auto"
+        style={{ ...panelListStyle(), maxHeight, overflowY: 'auto' }}
+      >
+        {safeItems.length === 0
+          ? renderEmptyCopy(resolvedEmptyMessage)
+          : safeItems.map((item, idx) => (
+              <Fragment key={item?.id || item?.key || idx}>{renderItem(item)}</Fragment>
+            ))}
+      </div>
+    </section>
   );
 }
 
 /**
  * Compact row used inside list panels.
  */
-export function CompactRow({ status, primary, secondary, badge, timestamp }) {
-  const theme = resolveStatusTheme(status);
+export function CompactRow({ status, primary, secondary, badge, timestamp, icon = null }) {
+  const primaryText = truncateId(primary);
+  const hasBadge = badge !== null && badge !== undefined;
+  const timeText = timestamp ? formatRelativeTime(timestamp) : null;
+
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex items-center justify-between gap-2" data-testid="compact-row">
       <div className="flex items-center gap-2">
-        <span
-          className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full"
-          style={{ background: theme.dot }}
-        />
+        {icon}
+        <StatusPill status={status} />
         <div className="flex flex-col">
-          <span className="text-xs font-medium" style={{ color: 'var(--text-default)' }}>
-            {primary}
+          <span
+            className="text-xs font-medium"
+            style={{ color: 'var(--text-default)' }}
+            data-testid="compact-row-primary"
+          >
+            {primaryText}
           </span>
-          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-            {secondary}
-          </span>
+          {secondary ? (
+            <span
+              className="text-[10px]"
+              style={{ color: 'var(--text-muted)' }}
+              data-testid="compact-row-secondary"
+            >
+              {secondary}
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {badge}
-        {timestamp && (
-          <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-            {timestamp}
+        {hasBadge ? (
+          <span
+            data-testid="compact-row-badge"
+            className="rounded-full border px-2 py-0.5 text-[10px] font-medium tabular-nums"
+            style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+          >
+            {badge}
           </span>
-        )}
+        ) : null}
+        {timeText ? (
+          <span
+            data-testid="compact-row-timestamp"
+            className="text-[10px] tabular-nums"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {timeText}
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -304,8 +327,9 @@ export function CompactRow({ status, primary, secondary, badge, timestamp }) {
  */
 export function formatRelativeTime(dateInput) {
   if (!dateInput) return '—';
+  const raw = String(dateInput);
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return raw.length > 8 ? raw.slice(-8) : raw;
 
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -314,9 +338,9 @@ export function formatRelativeTime(dateInput) {
   const diffHour = Math.round(diffMin / 60);
   const diffDay = Math.round(diffHour / 24);
 
-  if (diffSec < 60) return 'hace unos segundos';
-  if (diffMin < 60) return `hace ${diffMin} min${diffMin === 1 ? 'uto' : 'utos'}`;
-  if (diffHour < 24) return `hace ${diffHour} hora${diffHour === 1 ? '' : 's'}`;
-  if (diffDay < 30) return `hace ${diffDay} día${diffDay === 1 ? '' : 's'}`;
+  if (diffSec < 60) return 'now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 30) return `${diffDay}d ago`;
   return date.toLocaleDateString('es-AR');
 }

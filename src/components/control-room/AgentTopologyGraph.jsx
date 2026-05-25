@@ -187,7 +187,7 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
         <div className="flex flex-wrap items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
           {topology?.label ? <span>{topology.label}</span> : null}
           <span>{activeCount} vivos</span>
-          {staleCount ? <span>{staleCount} stale/offline</span> : null}
+          {staleCount ? <span>{staleCount} vencidos/fuera de línea</span> : null}
         </div>
       </div>
 
@@ -294,7 +294,7 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#64748b' }} />
-          stale/offline
+          vencido/fuera de línea
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#f87171' }} />

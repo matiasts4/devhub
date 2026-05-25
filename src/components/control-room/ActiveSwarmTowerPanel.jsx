@@ -1,6 +1,7 @@
 import React from 'react';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import SwarmTopologyGraph from './SwarmTopologyGraph';
+import { formatToken } from './utils';
 
 function statLabel(value, singular, plural) {
   return `${value} ${Number(value) === 1 ? singular : plural}`;
@@ -17,8 +18,8 @@ export default function ActiveSwarmTowerPanel({ hero }) {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <SurfacePill tone="accent">Swarm activo</SurfacePill>
-            <SurfacePill>{hero?.authority || 'unavailable'}</SurfacePill>
-            <SurfacePill>{hero?.freshness || 'unavailable'}</SurfacePill>
+            <SurfacePill>{formatToken(hero?.authority || 'unavailable')}</SurfacePill>
+            <SurfacePill>{formatToken(hero?.freshness || 'unavailable')}</SurfacePill>
           </div>
 
           <div className="space-y-2">
@@ -26,7 +27,7 @@ export default function ActiveSwarmTowerPanel({ hero }) {
               {hero?.title || 'Swarm activo'}
             </h2>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Estado {hero?.status || 'unknown'} ·{' '}
+              Estado {formatToken(hero?.status || 'unknown')} ·{' '}
               {hero?.highlights?.[0] || 'Tomá el foco principal desde la vista durable.'}
             </p>
           </div>

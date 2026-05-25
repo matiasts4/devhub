@@ -639,6 +639,39 @@ function WorkspaceBrowserPane({
               </button>
             ) : null}
             <div
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5"
+              data-testid="browser-runtime-toggle"
+            >
+              <button
+                type="button"
+                data-testid="browser-runtime-option-iframe"
+                aria-pressed={browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.IFRAME}
+                onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.IFRAME)}
+                className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
+                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.IFRAME
+                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
+                    : 'text-[var(--text-muted)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
+                }`}
+                title="Use iframe runtime"
+              >
+                iframe
+              </button>
+              <button
+                type="button"
+                data-testid="browser-runtime-option-native-gtk"
+                aria-pressed={browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK}
+                onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.NATIVE_GTK)}
+                className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
+                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
+                    : 'text-[var(--text-muted)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
+                }`}
+                title="Use native GTK runtime"
+              >
+                native gtk
+              </button>
+            </div>
+            <div
               className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
                 nativeRuntimeActive
                   ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'

@@ -68,7 +68,7 @@ function MissionSummaryStrip({ missionSummary = null }) {
     'entrega pendiente',
     'entregas pendientes'
   );
-  const presenceLabel = `${missionSummary.activePresenceCount || 0} activas · ${missionSummary.stalePresenceCount || 0} vencidas · ${missionSummary.offlinePresenceCount || 0} offline`;
+  const presenceLabel = `${missionSummary.activePresenceCount || 0} activas · ${missionSummary.stalePresenceCount || 0} vencidas · ${missionSummary.offlinePresenceCount || 0} fuera de línea`;
 
   return (
     <div className="mt-4 rounded-xl border px-3 py-3" style={panelShellStyle()}>

@@ -92,14 +92,14 @@ describe('DiagnosticOverlay runtime evidence actions', () => {
     expect(restoreSummary).not.toBeNull();
     expect(restoreSummary?.textContent).toContain('Reattachables: 2');
     expect(restoreSummary?.textContent).toContain('Orphaned: 1');
-    expect(restoreSummary?.textContent).toContain('Stale registry: 1');
-    expect(restoreSummary?.textContent).toContain('Quota: blocked');
+    expect(restoreSummary?.textContent).toContain('Registro vencido: 1');
+    expect(restoreSummary?.textContent).toContain('Cuota: bloqueada');
 
     const summaryButton = Array.from(restoreSummary?.querySelectorAll('button') || []).find((button) =>
-      button.textContent.includes('Copy runtime summary')
+      button.textContent.includes('Copiar resumen runtime')
     );
     const exportButton = Array.from(restoreSummary?.querySelectorAll('button') || []).find((button) =>
-      button.textContent.includes('Export runtime JSON')
+      button.textContent.includes('Exportar runtime JSON')
     );
 
     await click(summaryButton);

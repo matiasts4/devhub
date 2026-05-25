@@ -1224,9 +1224,16 @@ export default function useBrowserPreviewController({
       return;
     }
 
+    const shouldWaitForProxyPreview = classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy
+      && !useProxyPreview;
+
+    if (shouldWaitForProxyPreview) {
+      return;
+    }
+
     autoInspectOnEditModeRef.current = false;
     handleInspectToggle(false);
-  }, [effectiveEditMode, isInspecting]);
+  }, [dockState.browserUrl, effectiveEditMode, isInspecting, useProxyPreview]);
 
   return {
     activeAgent,
