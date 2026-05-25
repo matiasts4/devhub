@@ -315,6 +315,40 @@ function ensureLocalMcpTables() {
     CREATE INDEX IF NOT EXISTS idx_agent_runs_workspace ON agent_runs(workspace_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_task ON agent_runs(task_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_artifacts_run_seq ON agent_artifacts(run_id, seq ASC);
+
+    -- Operator Inbox (OPI-1)
+    CREATE TABLE IF NOT EXISTS operator_inbox (
+      inbox_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('approval_request','approval_result','supervisor_action','task_claimed','task_released','task_blocked','agent_event','system')),
+      source_table TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unread' CHECK(status IN ('unread','read','dismissed')),
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT(datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_project ON operator_inbox(project_id);
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_actor ON operator_inbox(actor_id);
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_status ON operator_inbox(status);
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_created ON operator_inbox(created_at DESC);
+
+    -- Task History (OBH-1)
+    CREATE TABLE IF NOT EXISTS task_history (
+      history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      actor_id TEXT,
+      action TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT,
+      metadata TEXT,
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      FOREIGN KEY(task_id) REFERENCES tasks(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_history_created ON task_history(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_task_history_action ON task_history(action);
   `);
 
   const alterStatements = [
@@ -331,6 +365,7 @@ function ensureLocalMcpTables() {
     'ALTER TABLE agent_registry ADD COLUMN current_task_id TEXT',
     'ALTER TABLE agent_registry ADD COLUMN updated_at TEXT',
     'ALTER TABLE agent_registry ADD COLUMN error_message TEXT',
+    "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT '[]'",
   ];
 
   for (const stmt of alterStatements) {
@@ -2752,6 +2787,30 @@ server.tool(
     try {
       if (DB_DRIVER !== 'supabase') {
         const claimed = getLocalClaimTransaction()({ projectId: project_id, agentId: agent_id });
+        // OBH-2: Record task history on claim
+        if (claimed?.task) {
+          try {
+            const db = localDb.getDb();
+            localDb.recordTaskHistory(db, {
+              taskId: claimed.task.id,
+              actorId: agent_id,
+              action: 'claimed',
+              fromStatus: 'pending',
+              toStatus: 'in_progress',
+              metadata: { claim_token: claimed.task.claim_token },
+            });
+            localDb.recordInboxItem(db, {
+              projectId: project_id,
+              actorId: agent_id,
+              category: 'task_claimed',
+              sourceTable: 'tasks',
+              sourceId: claimed.task.id,
+              message: `Task "${claimed.task.title}" claimed by ${agent_id}`,
+            });
+          } catch (_) {
+            /* non-fatal */
+          }
+        }
         return ok(
           claimed.task ? { ...claimed, task: await attachSupervisorToTask(claimed.task) } : claimed
         );
@@ -3162,6 +3221,29 @@ server.tool(
         );
 
         const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task_id);
+
+        // OBH-2: Record task history on release
+        try {
+          localDb.recordTaskHistory(db, {
+            taskId: task_id,
+            actorId: agent_id,
+            action: outcome,
+            fromStatus: 'in_progress',
+            toStatus: releaseFields.status,
+            metadata: { claim_token },
+          });
+          localDb.recordInboxItem(db, {
+            projectId: task.project_id || project_id,
+            actorId: agent_id,
+            category: 'task_released',
+            sourceTable: 'tasks',
+            sourceId: task_id,
+            message: `Task "${task.title}" released by ${agent_id}: ${outcome}`,
+          });
+        } catch (_) {
+          /* non-fatal */
+        }
+
         return ok({ released: true, task: updated, message: 'Tarea liberada.' });
       }
 
@@ -4095,7 +4177,11 @@ server.tool(
     mission_id: z.string().min(1),
     sender_agent_id: z.string().min(1),
     body_summary: z.string().min(1),
-    recipients: z.array(z.string().min(1)).min(1).max(50),
+    recipients: z.array(z.string().min(1)).max(50).optional().default([]),
+    target_role: z
+      .string()
+      .optional()
+      .describe('Target all agents with this role_in_mission (e.g. "worker", "director")'),
     message_kind: z
       .enum([
         'directive',
@@ -4110,7 +4196,15 @@ server.tool(
       .default('directive'),
     evidence_ref: z.string().optional(),
   },
-  async ({ mission_id, sender_agent_id, body_summary, recipients, message_kind, evidence_ref }) => {
+  async ({
+    mission_id,
+    sender_agent_id,
+    body_summary,
+    recipients,
+    target_role,
+    message_kind,
+    evidence_ref,
+  }) => {
     try {
       const db = localDb.getDb();
       validateTeamTellMembership(db, { mission_id, sender_agent_id, recipients });
@@ -4127,6 +4221,7 @@ server.tool(
         sender_agent_id,
         body_summary,
         recipients,
+        target_role,
         message_kind,
         evidence_ref: evidence_ref || null,
       });
@@ -4236,6 +4331,70 @@ server.tool(
     if (error) return err(error.message);
     if (!data) return err(`Agente ${agent_id} no encontrado en registry.`);
     return ok({ success: true, message: 'Estado actualizado en la UI', agent: data });
+  }
+);
+
+// ─── Operator Inbox + Task History MCP Tools ─────────────────────────────────
+
+server.tool(
+  'list_operator_inbox',
+  'Lee el snapshot durable compartido para el inbox del operador. Filtra por project_id, status, category.',
+  {
+    project_id: z.string().uuid().optional(),
+    status: z.enum(['unread', 'read', 'dismissed']).optional(),
+    category: z
+      .enum([
+        'approval_request',
+        'approval_result',
+        'supervisor_action',
+        'task_claimed',
+        'task_released',
+        'task_blocked',
+        'agent_event',
+        'system',
+      ])
+      .optional(),
+    limit: z.number().int().min(1).max(100).optional().default(50),
+    offset: z.number().int().min(0).optional().default(0),
+  },
+  async ({ project_id, status, category, limit, offset }) => {
+    try {
+      if (DB_DRIVER !== 'supabase') {
+        const db = localDb.getDb();
+        const items = localDb.queryOperatorInbox(db, {
+          projectId: project_id,
+          status,
+          category,
+          limit,
+          offset,
+        });
+        return ok({ items, count: items.length });
+      }
+      return err('Supabase driver not implemented for operator_inbox');
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+);
+
+server.tool(
+  'dismiss_inbox_item',
+  'Descarta un item del inbox del operador cambiando su status a dismissed.',
+  {
+    inbox_id: z.string().min(1),
+  },
+  async ({ inbox_id }) => {
+    try {
+      if (DB_DRIVER !== 'supabase') {
+        const db = localDb.getDb();
+        const dismissed = localDb.dismissInboxItem(db, inbox_id);
+        if (!dismissed) return err('Inbox item not found or already dismissed');
+        return ok({ dismissed: true, inbox_id });
+      }
+      return err('Supabase driver not implemented for operator_inbox');
+    } catch (e) {
+      return err(e.message);
+    }
   }
 );
 

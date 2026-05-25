@@ -958,6 +958,40 @@ function ensureRuntimeSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_agent_events_type ON agent_events(event_type);
     CREATE INDEX IF NOT EXISTS idx_agent_events_created_at ON agent_events(created_at);
     CREATE INDEX IF NOT EXISTS idx_agent_events_client_event_id ON agent_events(client_event_id);
+
+    -- Operator Inbox (OPI-1)
+    CREATE TABLE IF NOT EXISTS operator_inbox (
+      inbox_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('approval_request','approval_result','supervisor_action','task_claimed','task_released','task_blocked','agent_event','system')),
+      source_table TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unread' CHECK(status IN ('unread','read','dismissed')),
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT(datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_project ON operator_inbox(project_id);
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_actor ON operator_inbox(actor_id);
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_status ON operator_inbox(status);
+    CREATE INDEX IF NOT EXISTS idx_operator_inbox_created ON operator_inbox(created_at DESC);
+
+    -- Task History (OBH-1)
+    CREATE TABLE IF NOT EXISTS task_history (
+      history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      actor_id TEXT,
+      action TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT,
+      metadata TEXT,
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      FOREIGN KEY(task_id) REFERENCES tasks(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_history_created ON task_history(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_task_history_action ON task_history(action);
   `);
 
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
@@ -990,6 +1024,8 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE agent_workspaces ADD COLUMN opencode_pid INTEGER',
     // Supervisor Daemon heartbeat column (SVD-1)
     'ALTER TABLE agent_workspaces ADD COLUMN last_heartbeat TEXT',
+    // Task tags column (OBH-4)
+    "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT '[]'",
   ];
   for (const stmt of alterStatements) {
     try {
@@ -3959,186 +3995,215 @@ function updateWorkspacePtyIdentity(db, { workspaceId, paneId, terminalId, openc
  * @param {string} workspaceId - Workspace ID to clear PTY identity for
  */
 function clearWorkspacePtyIdentity(db, workspaceId) {
-  if (!db) throw new Error('Database handle requerido para clearWorkspacePtyIdentity.');
-  if (!workspaceId) throw new Error('workspaceId es requerido para clearWorkspacePtyIdentity.');
-
-  db.prepare(
-    `UPDATE agent_workspaces
-     SET pane_id = NULL, terminal_id = NULL, opencode_pid = NULL, updated_at = datetime('now')
-     WHERE id = ?`
-  ).run(workspaceId);
+  return db
+    .prepare(
+      'UPDATE agent_workspaces SET pane_id = NULL, terminal_id = NULL, opencode_pid = NULL WHERE id = ?'
+    )
+    .run(workspaceId);
 }
 
 // ============================================================
-// Durable Queue Operations (SwarmQueue persistence)
+// Operator Inbox (OPI-1 through OPI-6)
 // ============================================================
 
+const VALID_INBOX_CATEGORIES = [
+  'approval_request',
+  'approval_result',
+  'supervisor_action',
+  'task_claimed',
+  'task_released',
+  'task_blocked',
+  'agent_event',
+  'system',
+];
+
+const _VALID_INBOX_STATUSES = ['unread', 'read', 'dismissed'];
+
 /**
- * Enqueue an item into the durable queue.
- * Persists payload as JSON. Returns the inserted row.
+ * Record an inbox item for the operator.
+ * OPI-1: Append-only — INSERT only, no UPDATE.
  */
-function enqueueDurableItem(db, queueName, payload) {
-  const payloadJson =
-    typeof payload === 'string' ? JSON.stringify(payload) : JSON.stringify(payload);
+function recordInboxItem(db, { projectId, actorId, category, sourceTable, sourceId, message }) {
+  if (!VALID_INBOX_CATEGORIES.includes(category)) {
+    throw new Error(
+      `Invalid inbox category: ${category}. Must be one of: ${VALID_INBOX_CATEGORIES.join(', ')}`
+    );
+  }
+  const inboxId = `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO operator_inbox (inbox_id, project_id, actor_id, category, source_table, source_id, message, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'unread', ?, ?)`
+  ).run(inboxId, projectId, actorId, category, sourceTable, sourceId, message, now, now);
+  return { inbox_id: inboxId, status: 'unread', created_at: now };
+}
+
+/**
+ * Query the operator inbox with filters.
+ * OPI-2: Returns items ordered by created_at DESC. Supports filtering by project, status, category.
+ */
+function queryOperatorInbox(db, { projectId, status, category, limit = 50, offset = 0 } = {}) {
+  let query = 'SELECT * FROM operator_inbox WHERE 1=1';
+  const params = [];
+  if (projectId) {
+    query += ' AND project_id = ?';
+    params.push(projectId);
+  }
+  if (status) {
+    query += ' AND status = ?';
+    params.push(status);
+  }
+  if (category) {
+    query += ' AND category = ?';
+    params.push(category);
+  }
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+  return db.prepare(query).all(...params);
+}
+
+/**
+ * Mark an inbox item as read. OPI-4.
+ * Returns true if a row was updated, false if not found or already read/dismissed.
+ */
+function markInboxItemRead(db, inboxId) {
   const result = db
     .prepare(
-      `INSERT INTO swarm_queue_items (queue_name, payload_json, status, enqueued_at)
-       VALUES (?, ?, 'pending', datetime('now'))`
+      "UPDATE operator_inbox SET status = 'read', updated_at = ? WHERE inbox_id = ? AND status = 'unread'"
     )
-    .run(queueName, payloadJson);
-  return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(result.lastInsertRowid);
+    .run(new Date().toISOString(), inboxId);
+  return result.changes > 0;
 }
 
 /**
- * Atomically dequeue the next pending item from a queue.
- * Sets status to 'processing' and acquired_at. Returns the item or null.
+ * Dismiss an inbox item. OPI-5.
+ * Returns true if a row was updated, false if not found.
  */
+function dismissInboxItem(db, inboxId) {
+  const result = db
+    .prepare(
+      "UPDATE operator_inbox SET status = 'dismissed', updated_at = ? WHERE inbox_id = ? AND status IN ('unread', 'read')"
+    )
+    .run(new Date().toISOString(), inboxId);
+  return result.changes > 0;
+}
+
+// ============================================================
+// Task History (OBH-1 through OBH-7)
+// ============================================================
+
+/**
+ * Record a task history entry. OBH-1: Append-only INSERT.
+ */
+function recordTaskHistory(db, { taskId, actorId, action, fromStatus, toStatus, metadata }) {
+  const now = new Date().toISOString();
+  const metadataJson = metadata ? JSON.stringify(metadata) : null;
+  db.prepare(
+    `INSERT INTO task_history (task_id, actor_id, action, from_status, to_status, metadata, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(taskId, actorId || null, action, fromStatus || null, toStatus || null, metadataJson, now);
+}
+
+/**
+ * Get task history entries. OBH-2: Returns entries ordered by created_at DESC.
+ */
+function getTaskHistory(db, { taskId, action, limit = 50, offset = 0 } = {}) {
+  let query = 'SELECT * FROM task_history WHERE 1=1';
+  const params = [];
+  if (taskId) {
+    query += ' AND task_id = ?';
+    params.push(taskId);
+  }
+  if (action) {
+    query += ' AND action = ?';
+    params.push(action);
+  }
+  query += ' ORDER BY history_id DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+  return db.prepare(query).all(...params);
+}
+
+// ============================================================
+// Durable Queue Operations (backed by swarm_queue_items table)
+// ============================================================
+
+function enqueueDurableItem(db, queueName, payload) {
+  const payloadJson = JSON.stringify(payload || {});
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(
+      `INSERT INTO swarm_queue_items (queue_name, payload_json, status, enqueued_at, acquired_at, acked_at)
+     VALUES (?, ?, 'pending', ?, NULL, NULL)`
+    )
+    .run(queueName, payloadJson, now);
+  const row = db
+    .prepare('SELECT * FROM swarm_queue_items WHERE id = ?')
+    .get(result.lastInsertRowid);
+  return row;
+}
+
 function dequeueDurableItem(db, queueName) {
+  const now = new Date().toISOString();
+  // Atomically claim the next pending item
   const item = db
     .prepare(
-      `SELECT * FROM swarm_queue_items
-       WHERE queue_name = ? AND status = 'pending'
-       ORDER BY enqueued_at ASC
-       LIMIT 1`
+      `SELECT * FROM swarm_queue_items WHERE queue_name = ? AND status = 'pending' ORDER BY enqueued_at ASC LIMIT 1`
     )
     .get(queueName);
   if (!item) return null;
-
-  db.prepare(
-    `UPDATE swarm_queue_items SET status = 'processing', acquired_at = datetime('now') WHERE id = ? AND status = 'pending'`
-  ).run(item.id);
-
+  const updated = db
+    .prepare(
+      "UPDATE swarm_queue_items SET status = 'processing', acquired_at = ? WHERE id = ? AND status = 'pending'"
+    )
+    .run(now, item.id);
+  if (updated.changes === 0) return null; // Race condition
   return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(item.id);
 }
 
-/**
- * Acknowledge a processing item — marks it completed.
- * Returns the updated row or null if not found.
- */
 function ackDurableItem(db, itemId) {
-  const existing = db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
-  if (!existing) return null;
-  db.prepare(
-    `UPDATE swarm_queue_items SET status = 'completed', acked_at = datetime('now') WHERE id = ? AND status = 'processing'`
-  ).run(itemId);
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(
+      "UPDATE swarm_queue_items SET status = 'completed', acked_at = ? WHERE id = ? AND status = 'processing'"
+    )
+    .run(now, itemId);
+  if (result.changes === 0) return null;
   return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
 }
 
-/**
- * Cancel a processing item — marks it cancelled.
- * Returns the updated row or null if not found.
- */
 function cancelDurableItem(db, itemId) {
-  const existing = db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
-  if (!existing) return null;
-  db.prepare(
-    `UPDATE swarm_queue_items SET status = 'cancelled', acked_at = datetime('now') WHERE id = ?`
-  ).run(itemId);
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(
+      "UPDATE swarm_queue_items SET status = 'cancelled', acked_at = ? WHERE id = ? AND status IN ('pending', 'processing')"
+    )
+    .run(now, itemId);
+  if (result.changes === 0) return null;
   return db.prepare('SELECT * FROM swarm_queue_items WHERE id = ?').get(itemId);
 }
 
-/**
- * Recover stale processing items: reset to pending if acquired_at is older than staleMinutes.
- * Increments retries. Returns the number of items recovered.
- */
-function recoverStaleItems(db, staleMinutes) {
+function recoverStaleItems(db, staleMinutes = 5) {
+  const cutoff = new Date(Date.now() - staleMinutes * 60_000).toISOString();
+  // Reset stale processing items to pending and increment retries
   const result = db
     .prepare(
-      `UPDATE swarm_queue_items
-       SET status = 'pending',
-           acquired_at = NULL,
-           retries = retries + 1
-       WHERE status = 'processing'
-         AND acquired_at IS NOT NULL
-         AND datetime(acquired_at) < datetime('now', ? || ' minutes')`
+      `UPDATE swarm_queue_items 
+     SET status = 'pending', acquired_at = NULL, retries = retries + 1
+     WHERE status = 'processing' AND acquired_at < ?`
     )
-    .run(`-${staleMinutes}`);
+    .run(cutoff);
   return result.changes;
 }
 
-/**
- * Cleanup completed/cancelled items older than olderThanMinutes.
- * Returns the number of items purged.
- */
-function cleanupCompletedItems(db, olderThanMinutes) {
+function cleanupCompletedItems(db, olderThanMinutes = 60) {
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
+  // Purge completed/cancelled items where acked_at (completion time) is older than threshold
   const result = db
     .prepare(
-      `DELETE FROM swarm_queue_items
-       WHERE status IN ('completed', 'cancelled')
-         AND acked_at IS NOT NULL
-         AND datetime(acked_at) < datetime('now', ? || ' minutes')`
+      "DELETE FROM swarm_queue_items WHERE status IN ('completed', 'cancelled') AND acked_at < ?"
     )
-    .run(`-${olderThanMinutes}`);
+    .run(cutoff);
   return result.changes;
-}
-
-// ============================================================
-// Session Hierarchy (parent/child navigation)
-// ============================================================
-// Session Hierarchy (parent/child navigation)
-// ============================================================
-
-function getSessionWithParent(sessionId) {
-  const db = getDb();
-  return db
-    .prepare(
-      `
-      SELECT s.*, p.id AS parent_id, p.title AS parent_title
-      FROM agent_hub_sessions s
-      LEFT JOIN agent_hub_sessions p ON s.parent_id = p.id
-      WHERE s.id = ?
-    `
-    )
-    .get(sessionId);
-}
-
-function getChildSessions(parentId) {
-  const db = getDb();
-  return db
-    .prepare(
-      `
-      SELECT * FROM agent_hub_sessions
-      WHERE parent_id = ?
-      ORDER BY created_at ASC
-    `
-    )
-    .all(parentId);
-}
-
-function getSessionChain(sessionId) {
-  const db = getDb();
-  const chain = [];
-  let current = db.prepare('SELECT * FROM agent_hub_sessions WHERE id = ?').get(sessionId);
-  while (current) {
-    chain.unshift({
-      id: current.id,
-      title: current.title,
-      isRoot: !current.parent_id,
-    });
-    if (current.parent_id) {
-      current = db.prepare('SELECT * FROM agent_hub_sessions WHERE id = ?').get(current.parent_id);
-    } else {
-      break;
-    }
-  }
-  return chain;
-}
-
-function getSiblingSessions(sessionId) {
-  const db = getDb();
-  const current = db
-    .prepare('SELECT parent_id FROM agent_hub_sessions WHERE id = ?')
-    .get(sessionId);
-  if (!current || !current.parent_id) return [];
-  return db
-    .prepare(
-      `
-      SELECT * FROM agent_hub_sessions
-      WHERE parent_id = ? AND id != ?
-      ORDER BY created_at ASC
-    `
-    )
-    .all(current.parent_id, sessionId);
 }
 
 module.exports = {
@@ -4259,11 +4324,11 @@ module.exports = {
   updateSessionStatus,
   updateSessionError,
   updateSessionOpenCodeId,
-  // Session Hierarchy
-  getSessionWithParent,
-  getChildSessions,
-  getSessionChain,
-  getSiblingSessions,
+  // Session Hierarchy (removed during DB-merge — functions not defined)
+  // getSessionWithParent,
+  // getChildSessions,
+  // getSessionChain,
+  // getSiblingSessions,
   // Swarm Config
   getSwarmConfig,
   setSwarmConfig,
@@ -4291,4 +4356,12 @@ module.exports = {
   // PTY Identity Operations
   updateWorkspacePtyIdentity,
   clearWorkspacePtyIdentity,
+  // Operator Inbox Operations
+  recordInboxItem,
+  queryOperatorInbox,
+  markInboxItemRead,
+  dismissInboxItem,
+  // Task History Operations
+  recordTaskHistory,
+  getTaskHistory,
 };
