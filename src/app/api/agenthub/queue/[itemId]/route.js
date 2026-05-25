@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import swarmQueue from '@/lib/swarm/queue';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 export const runtime = 'nodejs';
 
-export async function DELETE(req, { params }) {
+export const DELETE = withAuth(async function DELETE(req, { params }) {
   try {
     const { itemId } = params;
     if (!itemId) {
@@ -14,4 +15,4 @@ export async function DELETE(req, { params }) {
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
+});

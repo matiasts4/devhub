@@ -4,6 +4,7 @@ import { getCopilotToken } from '@/lib/copilot-token';
 import { upsertSessionUsage } from '@/lib/db/localDb.js';
 import { resolveContextUsage } from '@/lib/agenthub/contextUsage';
 import fs from 'fs/promises';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 import path from 'path';
 import { spawn } from 'child_process';
 
@@ -249,7 +250,7 @@ function persistSessionUsageSnapshot(sessionId, rawUsage, options = {}) {
   }
 }
 
-export async function POST(req) {
+export const POST = withAuth(async function POST(req) {
   try {
     const body = await req.json();
     const {
@@ -749,4 +750,4 @@ Proyecto: ${projectName || project_id || 'El Proyecto Actual'}`;
     console.error('AgentHub Chat API Error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
+});

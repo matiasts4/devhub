@@ -42,6 +42,7 @@ import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
 import { buildAgentLaunchWrapper } from '@/lib/agentLaunchWrapper';
 import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
 import { prepareAgentWorktree } from '@/lib/swarm/agentWorkspaceManager';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 export const runtime = 'nodejs';
 
@@ -1337,7 +1338,7 @@ export async function GET(request, _context, dependencies) {
   }
 }
 
-export async function POST(request, _context, dependencies = {}) {
+export const POST = withAuth(async function POST(request, _context, dependencies = {}) {
   try {
     const payload = await request.json();
     if (payload?.action === 'claim_director_next_task') {
@@ -1446,4 +1447,4 @@ export async function POST(request, _context, dependencies = {}) {
     console.error('[operations/health][POST] Error:', error.message);
     return NextResponse.json({ error: error.message }, { status });
   }
-}
+});

@@ -11,6 +11,7 @@ import {
 import processManager from '@/lib/swarm/processManager';
 import swarmQueue from '@/lib/swarm/queue';
 import { AuditTrail } from '../../../../../lib/audit-trail.js';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 // Force Node.js runtime — required for background promises after response
 export const runtime = 'nodejs';
@@ -359,7 +360,7 @@ async function consumeSSE(sessionID, messageID, _projectID, _cwd, auditTrail) {
     processManager.untrackSession(sessionID);
   }
 }
-export async function POST(req) {
+export const POST = withAuth(async function POST(req) {
   try {
     const body = await req.json();
     const {
@@ -608,4 +609,4 @@ export async function POST(req) {
     console.error('Error en Headless Proxy', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
+});

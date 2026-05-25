@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db/localDb.js';
 import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
+import { emitAgentEvent, queryAgentEvents, VALID_EVENT_TYPES as AGENT_EVENT_TYPES } from '@/lib/swarm/agentEvents.js';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 /**
- * Valid event types for the agent event feed.
+ * Valid event types for the legacy mission_messages event feed.
+ * These are the original event types that map to mission_messages.body_summary.
  */
-const VALID_EVENT_TYPES = [
+const LEGACY_EVENT_TYPES = [
   'agent_booted',
   'cwd_verified',
   'task_started',
@@ -20,7 +23,12 @@ const VALID_EVENT_TYPES = [
   'workspace_error',
 ];
 
-export async function POST(request) {
+/**
+ * Combined valid event types: both the new agent_events types and legacy types.
+ */
+const VALID_EVENT_TYPES = [...new Set([...AGENT_EVENT_TYPES, ...LEGACY_EVENT_TYPES])];
+
+export const POST = withAuth(async function POST(request) {
   try {
     const body = await request.json();
     const {
@@ -30,21 +38,20 @@ export async function POST(request) {
       payload,
       cwd,
       status_summary,
+      client_event_id,
+      workspace_id,
     } = body;
 
-    if (!agent_id) {
+    // Extract agent ID from auth context if available
+    const authAgentId = request.agentId || null;
+
+    if (!agent_id && !authAgentId) {
       return NextResponse.json(
         { error: 'agent_id is required' },
         { status: 400 }
-      );
-    }
-
-    if (!event_type) {
-      return NextResponse.json(
-        { error: 'event_type is required' },
-        { status: 400 }
-      );
-    }
+    );
+  }
+});
 
     if (!VALID_EVENT_TYPES.includes(event_type)) {
       return NextResponse.json(
@@ -56,8 +63,30 @@ export async function POST(request) {
     const now = new Date().toISOString();
     const eventId = `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    // Insert into mission_messages as append-only event (via write queue)
+    // Dual-write: Insert into agent_events (structured) AND mission_messages (backward compat)
     await withDbWriteQueue((writeDb) => {
+      // Primary write: agent_events table
+      if (AGENT_EVENT_TYPES.includes(event_type)) {
+        try {
+          emitAgentEvent(writeDb, {
+            agent_id: resolvedAgentId,
+            event_type,
+            workspace_id: workspace_id || null,
+            payload: payload || undefined,
+            mission_id: mission_id || null,
+            client_event_id: client_event_id || null,
+          });
+        } catch (evtErr) {
+          // Dedup (200) is not an error — anything else is non-fatal since we also write to mission_messages
+          if (!evtErr.message?.includes('Invalid')) {
+            console.warn('[EVENTS] Failed to write to agent_events:', evtErr.message);
+          } else {
+            throw evtErr; // Re-throw validation errors
+          }
+        }
+      }
+
+      // Backward-compat write: mission_messages table
       writeDb.prepare(
         `INSERT INTO mission_messages (
           message_id, mission_id, sender_agent_id, message_kind,
@@ -66,14 +95,14 @@ export async function POST(request) {
       ).run(
         eventId,
         mission_id || null,
-        agent_id,
+        resolvedAgentId,
         `${event_type}${status_summary ? `: ${status_summary}` : ''}`,
         `evidence://event/${eventId}`,
         now,
         now,
       );
 
-      // Also store structured payload if provided
+      // Also store structured payload if provided (legacy trace)
       if (payload) {
         try {
           writeDb.prepare(
@@ -84,14 +113,14 @@ export async function POST(request) {
           ).run(
             `trace-${eventId}`,
             mission_id || 'global',
-            agent_id,
+            resolvedAgentId,
             event_type,
             JSON.stringify(payload),
             cwd ? JSON.stringify({ cwd }) : null,
             now,
           );
         } catch (traceErr) {
-          // Non-fatal — event was already recorded in mission_messages
+          // Non-fatatal — event was already recorded in mission_messages
           console.warn('[EVENTS] Failed to store trace:', traceErr.message);
         }
       }
@@ -101,9 +130,9 @@ export async function POST(request) {
       success: true,
       event_id: eventId,
       event_type,
-      agent_id,
+      agent_id: resolvedAgentId,
       created_at: now,
-    });
+    }, { status: 201 });
   } catch (error) {
     console.error('[EVENTS] Error:', error.message);
     return NextResponse.json(
@@ -119,11 +148,35 @@ export async function GET(request) {
     const missionId = searchParams.get('mission_id');
     const agentId = searchParams.get('agent_id');
     const eventType = searchParams.get('event_type');
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const since = searchParams.get('since');
+    const limit = parseInt(searchParams.get('limit') || '100', 10);
 
     const db = getDb();
 
-    // Query mission_messages for events (message_kind='status')
+    // Primary query: agent_events table
+    if (AGENT_EVENT_TYPES.includes(eventType) || !eventType) {
+      const events = queryAgentEvents(db, {
+        agent_id: agentId || undefined,
+        type: eventType && AGENT_EVENT_TYPES.includes(eventType) ? eventType : undefined,
+        since: since || undefined,
+        limit: Math.min(limit, 100),
+      });
+
+      // If mission_id filter is requested, also filter agent_events results
+      let filtered = events;
+      if (missionId) {
+        filtered = filtered.filter((e) => e.mission_id === missionId);
+      }
+
+      return NextResponse.json({
+        success: true,
+        source: 'agent_events',
+        events: filtered,
+        count: filtered.length,
+      });
+    }
+
+    // Legacy fallback: query mission_messages for old event types
     let query = `
       SELECT
         message_id as event_id,
@@ -150,12 +203,13 @@ export async function GET(request) {
     }
 
     query += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(limit);
+    params.push(Math.min(limit, 100));
 
     const events = db.prepare(query).all(...params);
 
     return NextResponse.json({
       success: true,
+      source: 'mission_messages',
       events,
       count: events.length,
     });

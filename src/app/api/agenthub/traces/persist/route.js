@@ -7,8 +7,9 @@
  * Kept as a stub for backward compatibility. Remove in next major cleanup.
  */
 import { NextResponse } from 'next/server';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
-export async function POST(req) {
+export const POST = withAuth(async function POST(req) {
   console.warn(
     '[DEPRECATED] /api/agenthub/traces/persist is deprecated. ' +
       'Use the background SSE consumer in headless/route.js instead.'
@@ -20,4 +21,4 @@ export async function POST(req) {
     },
     { status: 410 }
   );
-}
+});

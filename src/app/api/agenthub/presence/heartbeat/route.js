@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db/localDb.js';
 import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 const AGENT_PRESENCE_TTL_MS = 120_000; // 2 minutes
 
-export async function POST(request) {
+export const POST = withAuth(async function POST(request) {
   try {
     const body = await request.json();
     const {
@@ -98,7 +99,7 @@ export async function POST(request) {
       { status: 500 }
     );
   }
-}
+});
 
 export async function GET(request) {
   try {
