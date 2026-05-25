@@ -15,6 +15,7 @@ const {
   provisionAuthToken,
   revokeAuthToken,
   getActiveAuthToken,
+  getAgentSecret,
   verifyAuthTokenExists,
 } = require('../../db/localDb');
 
@@ -186,6 +187,7 @@ test('agent_auth_tokens has all required columns', () => {
     'agent_id',
     'workspace_id',
     'token_hash',
+    'secret',
     'algorithm',
     'status',
     'created_at',
@@ -298,7 +300,7 @@ test('getActiveAuthToken returns null when no active token exists', () => {
   db.close();
 });
 
-test('revokeAuthToken marks token as revoked', () => {
+test('revokeAuthToken hard-deletes the active token', () => {
   const db = createTestDb();
   const secret = generateAgentSecret();
   const tokenHash = hashToken(secret);
@@ -306,12 +308,21 @@ test('revokeAuthToken marks token as revoked', () => {
   provisionAuthToken(db, {
     agentId: 'agent-revoke-1',
     tokenHash,
+    rawSecret: secret,
   });
 
+  const beforeCount = db
+    .prepare('SELECT count(*) as c FROM agent_auth_tokens WHERE agent_id = ?')
+    .get('agent-revoke-1').c;
+  assert.equal(beforeCount, 1, 'token should exist before revocation');
+
   const revoked = revokeAuthToken(db, 'agent-revoke-1', { reason: 'rotation' });
-  assert.ok(revoked, 'revokeAuthToken must return the updated token');
-  assert.equal(revoked.status, 'revoked', 'token status must be revoked');
-  assert.ok(revoked.revoked_at, 'revoked_at must be set');
+  assert.ok(revoked, 'revokeAuthToken must return the deleted token');
+
+  const afterCount = db
+    .prepare('SELECT count(*) as c FROM agent_auth_tokens WHERE agent_id = ?')
+    .get('agent-revoke-1').c;
+  assert.equal(afterCount, 0, 'token row must be hard-deleted');
   db.close();
 });
 
@@ -370,31 +381,128 @@ test('verifyAuthTokenExists returns false for revoked token', () => {
   db.close();
 });
 
-test('provisioning a new active token after revocation works', () => {
+// ---------------------------------------------------------------------------
+// AUTH-2: Secret storage for HMAC verification
+// ---------------------------------------------------------------------------
+
+test('provisionAuthToken stores raw secret when provided', () => {
+  const db = createTestDb();
+  const secret = generateAgentSecret();
+  const tokenHash = hashToken(secret);
+
+  const token = provisionAuthToken(db, {
+    agentId: 'agent-secret-1',
+    tokenHash,
+    rawSecret: secret,
+  });
+
+  assert.equal(token.secret, secret, 'secret must be stored in DB');
+  db.close();
+});
+
+test('getAgentSecret returns raw secret for active token', () => {
+  const db = createTestDb();
+  const secret = generateAgentSecret();
+  const tokenHash = hashToken(secret);
+
+  provisionAuthToken(db, {
+    agentId: 'agent-secret-2',
+    tokenHash,
+    rawSecret: secret,
+  });
+
+  const retrieved = getAgentSecret(db, 'agent-secret-2');
+  assert.equal(retrieved, secret, 'getAgentSecret must return the raw secret');
+  db.close();
+});
+
+test('getAgentSecret returns null when no active token exists', () => {
+  const db = createTestDb();
+  const retrieved = getAgentSecret(db, 'agent-no-secret');
+  assert.equal(retrieved, null, 'getAgentSecret must return null when no token exists');
+  db.close();
+});
+
+test('getAgentSecret returns null when token has no secret stored', () => {
+  const db = createTestDb();
+  const tokenHash = hashToken(generateAgentSecret());
+
+  provisionAuthToken(db, {
+    agentId: 'agent-secret-null',
+    tokenHash,
+    // rawSecret not provided
+  });
+
+  const retrieved = getAgentSecret(db, 'agent-secret-null');
+  assert.equal(retrieved, null, 'getAgentSecret must return null when secret column is NULL');
+  db.close();
+});
+
+// ---------------------------------------------------------------------------
+// AUTH-4: Hard delete on revocation
+// ---------------------------------------------------------------------------
+
+test('revokeAuthToken hard-deletes the token row', () => {
+  const db = createTestDb();
+  const secret = generateAgentSecret();
+  const tokenHash = hashToken(secret);
+
+  provisionAuthToken(db, {
+    agentId: 'agent-revoke-hard',
+    tokenHash,
+    rawSecret: secret,
+  });
+
+  const beforeCount = db
+    .prepare('SELECT count(*) as c FROM agent_auth_tokens WHERE agent_id = ?')
+    .get('agent-revoke-hard').c;
+  assert.equal(beforeCount, 1, 'token should exist before revocation');
+
+  const revoked = revokeAuthToken(db, 'agent-revoke-hard', { reason: 'rotation' });
+  assert.ok(revoked, 'revokeAuthToken must return the deleted token');
+
+  const afterCount = db
+    .prepare('SELECT count(*) as c FROM agent_auth_tokens WHERE agent_id = ?')
+    .get('agent-revoke-hard').c;
+  assert.equal(afterCount, 0, 'token row must be hard-deleted');
+  db.close();
+});
+
+test('provisioning a new active token after hard-delete works', () => {
   const db = createTestDb();
   const secret1 = generateAgentSecret();
   const secret2 = generateAgentSecret();
 
   // Provision first token
   provisionAuthToken(db, {
-    agentId: 'agent-rotate',
+    agentId: 'agent-rotate-hard',
     tokenHash: hashToken(secret1),
+    rawSecret: secret1,
   });
 
-  // Revoke it
-  revokeAuthToken(db, 'agent-rotate', { reason: 'rotation' });
+  // Revoke it (hard delete)
+  revokeAuthToken(db, 'agent-rotate-hard', { reason: 'rotation' });
 
   // Provision a new one
   const newToken = provisionAuthToken(db, {
-    agentId: 'agent-rotate',
+    agentId: 'agent-rotate-hard',
     tokenHash: hashToken(secret2),
+    rawSecret: secret2,
   });
 
   assert.equal(newToken.status, 'active', 'new token must be active');
 
   // getActiveAuthToken should return the newest active token
-  const active = getActiveAuthToken(db, 'agent-rotate');
+  const active = getActiveAuthToken(db, 'agent-rotate-hard');
   assert.ok(active, 'should find an active token after re-provisioning');
   assert.equal(active.id, newToken.id, 'active token should be the newly provisioned one');
+
+  // getAgentSecret should return the new secret
+  const retrievedSecret = getAgentSecret(db, 'agent-rotate-hard');
+  assert.equal(
+    retrievedSecret,
+    secret2,
+    'getAgentSecret must return the new secret after rotation'
+  );
   db.close();
 });

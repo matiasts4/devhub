@@ -1,5 +1,4 @@
 /* eslint-env node */
-/* eslint-disable no-useless-escape */
 
 /**
  * Agent Launch Wrapper — DevHub's own wrapper for swarm agents.
@@ -58,6 +57,7 @@ export function buildAgentEnvExports({
           agentId,
           workspaceId: workspaceId || null,
           tokenHash,
+          rawSecret: secret,
           algorithm: 'hmac-sha256',
         });
         // NEVER log or echo the secret — inject directly as env var
@@ -100,6 +100,7 @@ export function buildIdentityVerificationBlock({ agentId, missionId, role, works
 
 /**
  * Build the initial heartbeat command.
+ * Signs the request with HMAC-SHA256 using DEVHUB_AGENT_TOKEN.
  * @param {object} params
  * @returns {string} curl command to report heartbeat
  */
@@ -123,13 +124,20 @@ export function buildInitialHeartbeatCommand({
     status_summary: 'Agent starting up',
   });
 
-  return `curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
+  return `TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+BODY_HASH=$(printf '%s' '${payload}' | openssl dgst -sha256 | awk '{print $NF}')
+SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
+curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
   -H "Content-Type: application/json" \\
+  -H "X-Agent-Id: ${agentId}" \\
+  -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
+  -H "X-Agent-Signature: \${SIGNATURE}" \\
   -d '${payload}' > /dev/null 2>&1 || true`;
 }
 
 /**
  * Build the exit event command.
+ * Signs the request with HMAC-SHA256 using DEVHUB_AGENT_TOKEN.
  * @param {object} params
  * @returns {string} Shell trap command
  */
@@ -138,9 +146,17 @@ export function buildExitTrapCommand({ supervisorUrl, agentId, missionId }) {
     return '# Exit trap skipped (no supervisor URL)';
   }
 
-  return `trap 'curl -s -X POST "${supervisorUrl}/api/agenthub/events" \\
+  return `trap 'EXIT_CODE=$?
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+PAYLOAD="{\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"event_type\\":\\"process_exit\\",\\"exit_code\\":$EXIT_CODE}"
+BODY_HASH=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
+SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
+curl -s -X POST "${supervisorUrl}/api/agenthub/events" \\
   -H "Content-Type: application/json" \\
-  -d "{\"agent_id\":\"${agentId}\",\"mission_id\":\"${missionId}\",\"event_type\":\"process_exit\",\"exit_code\":$?}" \\
+  -H "X-Agent-Id: ${agentId}" \\
+  -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
+  -H "X-Agent-Signature: \${SIGNATURE}" \\
+  -d "$PAYLOAD" \\
   > /dev/null 2>&1 || true' EXIT`;
 }
 
