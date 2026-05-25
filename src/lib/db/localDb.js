@@ -226,6 +226,15 @@ function ensureRuntimeSchema(db) {
 
     CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id);
 
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      author_type TEXT DEFAULT 'agent',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
+
     CREATE TABLE IF NOT EXISTS telegram_activity (
       id TEXT PRIMARY KEY,
       chat_id TEXT,
@@ -922,6 +931,7 @@ function ensureRuntimeSchema(db) {
       agent_id TEXT NOT NULL,
       workspace_id TEXT,
       token_hash TEXT NOT NULL,
+      secret TEXT,
       algorithm TEXT NOT NULL DEFAULT 'hmac-sha256',
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'revoked', 'expired')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -931,6 +941,23 @@ function ensureRuntimeSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_agent ON agent_auth_tokens(agent_id);
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_status ON agent_auth_tokens(status);
+
+    -- Agent Events (EVT-1)
+    CREATE TABLE IF NOT EXISTS agent_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      workspace_id TEXT,
+      event_type TEXT NOT NULL CHECK(event_type IN ('agent_booted','agent_shutdown','workspace_orphaned','quota_blocked','supervisor_action','mission_joined','mission_left')),
+      payload_json TEXT,
+      mission_id TEXT,
+      client_event_id TEXT,
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      FOREIGN KEY(workspace_id) REFERENCES agent_workspaces(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_events_agent_id ON agent_events(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_events_type ON agent_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_agent_events_created_at ON agent_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_agent_events_client_event_id ON agent_events(client_event_id);
   `);
 
   // ALTER TABLE statements — wrapped in try-catch since columns may already exist
@@ -957,6 +984,12 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE agent_workspaces ADD COLUMN reservation_token TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN correlation_id TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN accepted_at TEXT',
+    // PTY identity columns (PTY-1)
+    'ALTER TABLE agent_workspaces ADD COLUMN pane_id TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN terminal_id TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN opencode_pid INTEGER',
+    // Supervisor Daemon heartbeat column (SVD-1)
+    'ALTER TABLE agent_workspaces ADD COLUMN last_heartbeat TEXT',
   ];
   for (const stmt of alterStatements) {
     try {
@@ -2820,6 +2853,7 @@ function getLatestTaskComment(dbOrTaskId, maybeTaskId) {
   const db = hasDb ? dbOrTaskId : getDb();
   const taskId = hasDb ? maybeTaskId : dbOrTaskId;
   if (!taskId) return null;
+  if (!tableExists(db, 'task_comments')) return null;
   return (
     db
       .prepare(
@@ -3785,7 +3819,7 @@ function getActiveAgentCount() {
  * @param {string} [params.algorithm] - Algorithm, defaults to 'hmac-sha256'
  * @returns {object} The inserted token row
  */
-function provisionAuthToken(db, { agentId, workspaceId, tokenHash, algorithm } = {}) {
+function provisionAuthToken(db, { agentId, workspaceId, tokenHash, rawSecret, algorithm } = {}) {
   if (!db) throw new Error('Database handle requerido para provisionAuthToken.');
   if (!agentId) throw new Error('agentId es requerido para provisionAuthToken.');
   if (!tokenHash) throw new Error('tokenHash es requerido para provisionAuthToken.');
@@ -3795,6 +3829,7 @@ function provisionAuthToken(db, { agentId, workspaceId, tokenHash, algorithm } =
     agent_id: agentId,
     workspace_id: workspaceId || null,
     token_hash: tokenHash,
+    secret: rawSecret || null,
     algorithm: algorithm || 'hmac-sha256',
     status: 'active',
     created_at: timestamp,
@@ -3814,30 +3849,51 @@ function provisionAuthToken(db, { agentId, workspaceId, tokenHash, algorithm } =
 
 /**
  * Revoke active auth tokens for an agent.
+ * AUTH-4: Hard delete tokens instead of soft delete.
  * @param {Database} db - better-sqlite3 database handle
  * @param {string} agentId - Agent identifier
  * @param {object} [options] - Options (reason reserved for future use)
- * @returns {object|null} The last revoked token row, or null if none active
+ * @returns {object|null} The deleted token row, or null if none active
  */
-function revokeAuthToken(db, agentId, options = {}) {
+function revokeAuthToken(db, agentId, _options = {}) {
   if (!db) throw new Error('Database handle requerido para revokeAuthToken.');
   if (!agentId) throw new Error('agentId es requerido para revokeAuthToken.');
 
-  const timestamp = new Date().toISOString();
-  const result = db
+  // Find the active token first so we can return it after deletion
+  const activeToken = db
     .prepare(
-      `UPDATE agent_auth_tokens SET status = 'revoked', revoked_at = ? WHERE agent_id = ? AND status = 'active'`
+      "SELECT * FROM agent_auth_tokens WHERE agent_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1"
     )
-    .run(timestamp, agentId);
+    .get(agentId);
+
+  if (!activeToken) return null;
+
+  const result = db
+    .prepare('DELETE FROM agent_auth_tokens WHERE agent_id = ? AND status = ?')
+    .run(agentId, 'active');
 
   if (result.changes === 0) return null;
 
-  // Return the most recently revoked token for this agent
-  return db
+  return activeToken;
+}
+
+/**
+ * Get the raw secret for an agent's active auth token.
+ * @param {Database} db - better-sqlite3 database handle
+ * @param {string} agentId - Agent identifier
+ * @returns {string|null} The raw secret, or null if not found
+ */
+function getAgentSecret(db, agentId) {
+  if (!db) throw new Error('Database handle requerido para getAgentSecret.');
+  if (!agentId) throw new Error('agentId es requerido para getAgentSecret.');
+
+  const row = db
     .prepare(
-      "SELECT * FROM agent_auth_tokens WHERE agent_id = ? AND status = 'revoked' ORDER BY revoked_at DESC LIMIT 1"
+      "SELECT secret FROM agent_auth_tokens WHERE agent_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1"
     )
     .get(agentId);
+
+  return row?.secret || null;
 }
 
 /**
@@ -3873,6 +3929,44 @@ function verifyAuthTokenExists(db, agentId) {
     .prepare("SELECT 1 FROM agent_auth_tokens WHERE agent_id = ? AND status = 'active' LIMIT 1")
     .get(agentId);
   return Boolean(row);
+}
+
+// ============================================================
+// PTY Identity Operations (PTY-2)
+// ============================================================
+
+/**
+ * Update PTY identity columns on an agent workspace.
+ * Sets pane_id, terminal_id, and opencode_pid. Any field not provided is set to NULL.
+ * @param {Database} db - better-sqlite3 database handle
+ * @param {{ workspaceId: string, paneId?: string, terminalId?: string, opencodePid?: number }} params
+ */
+function updateWorkspacePtyIdentity(db, { workspaceId, paneId, terminalId, opencodePid }) {
+  if (!db) throw new Error('Database handle requerido para updateWorkspacePtyIdentity.');
+  if (!workspaceId) throw new Error('workspaceId es requerido para updateWorkspacePtyIdentity.');
+
+  db.prepare(
+    `UPDATE agent_workspaces
+     SET pane_id = ?, terminal_id = ?, opencode_pid = ?, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(paneId ?? null, terminalId ?? null, opencodePid ?? null, workspaceId);
+}
+
+/**
+ * Clear PTY identity columns on an agent workspace (session terminated).
+ * Sets pane_id, terminal_id, and opencode_pid to NULL.
+ * @param {Database} db - better-sqlite3 database handle
+ * @param {string} workspaceId - Workspace ID to clear PTY identity for
+ */
+function clearWorkspacePtyIdentity(db, workspaceId) {
+  if (!db) throw new Error('Database handle requerido para clearWorkspacePtyIdentity.');
+  if (!workspaceId) throw new Error('workspaceId es requerido para clearWorkspacePtyIdentity.');
+
+  db.prepare(
+    `UPDATE agent_workspaces
+     SET pane_id = NULL, terminal_id = NULL, opencode_pid = NULL, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(workspaceId);
 }
 
 // ============================================================
@@ -4192,5 +4286,9 @@ module.exports = {
   provisionAuthToken,
   revokeAuthToken,
   getActiveAuthToken,
+  getAgentSecret,
   verifyAuthTokenExists,
+  // PTY Identity Operations
+  updateWorkspacePtyIdentity,
+  clearWorkspacePtyIdentity,
 };
