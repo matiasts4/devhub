@@ -8,6 +8,79 @@ import { saveSessions, loadSessions } from './sessionStore.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
+// Lazy-loaded DB helpers — loaded on first use to avoid circular/ESM issues at module load time.
+let _ptyDbHelpers = null;
+function getPtyDbHelpers() {
+  if (!_ptyDbHelpers) {
+    try {
+      // localDb is CJS — use eval require to bypass Next.js static analysis
+      const localDb = eval('require')('../../lib/db/localDb.js');
+      _ptyDbHelpers = {
+        getDb: localDb.getDb,
+        updateWorkspacePtyIdentity: localDb.updateWorkspacePtyIdentity,
+        clearWorkspacePtyIdentity: localDb.clearWorkspacePtyIdentity,
+      };
+    } catch {
+      // DB not available (e.g., test environment, Edge runtime) — no-op
+      _ptyDbHelpers = null;
+    }
+  }
+  return _ptyDbHelpers;
+}
+
+/**
+ * Try to update PTY identity on a workspace (session activation).
+ * Looks up the workspace by matching the terminal cwd to workspace_path.
+ * Best-effort — silently skips if DB or workspace is unavailable.
+ */
+function tryUpdatePtyIdentity(session) {
+  const helpers = getPtyDbHelpers();
+  if (!helpers) return;
+
+  try {
+    const db = helpers.getDb();
+    // Try to find a workspace matching this session's cwd
+    const workspace = db.prepare(
+      `SELECT id FROM agent_workspaces WHERE workspace_path = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
+    ).get(session.cwd);
+
+    if (workspace) {
+      helpers.updateWorkspacePtyIdentity(db, {
+        workspaceId: workspace.id,
+        paneId: session.id || null,
+        terminalId: session.id || null,
+        opencodePid: session.ptyPid || null,
+      });
+    }
+  } catch {
+    // Never let PTY identity DB operations crash the terminal server
+  }
+}
+
+/**
+ * Try to clear PTY identity for a workspace (session termination).
+ * Looks up workspace by terminal ID and clears PTY columns.
+ * Best-effort — silently skips if DB is unavailable.
+ */
+function tryClearPtyIdentity(session) {
+  const helpers = getPtyDbHelpers();
+  if (!helpers) return;
+
+  try {
+    const db = helpers.getDb();
+    // Find workspace whose terminal_id matches this session
+    const workspace = db.prepare(
+      `SELECT id FROM agent_workspaces WHERE terminal_id = ? OR pane_id = ? LIMIT 1`
+    ).get(session.id, session.id);
+
+    if (workspace) {
+      helpers.clearWorkspacePtyIdentity(db, workspace.id);
+    }
+  } catch {
+    // Never let PTY identity DB operations crash the terminal server
+  }
+}
+
 // ─── Diagnostic file logger ───────────────────────────────────────────────────
 // Writes to data/logs/terminal-debug.log (relative to project root / cwd).
 // Safe for concurrent calls — appendFileSync is atomic per call.
@@ -189,6 +262,54 @@ async function findAvailablePort(basePort = 4077, attempts = 20) {
   }
 
   throw new Error('No available port found for PTY websocket server.');
+}
+
+async function openWebSocketServer(port, wsPath) {
+  const wss = new WebSocketServer({ host: '127.0.0.1', port, path: wsPath });
+
+  if (typeof wss.once !== 'function') {
+    return { wss, port };
+  }
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      if (typeof wss.off === 'function') {
+        wss.off('listening', handleListening);
+        wss.off('error', handleError);
+      }
+    };
+
+    const handleListening = () => {
+      cleanup();
+      const actualPort = typeof wss.address === 'function' ? wss.address()?.port || port : port;
+      resolve({ wss, port: actualPort });
+    };
+
+    const handleError = (error) => {
+      cleanup();
+      if (typeof wss.close === 'function') {
+        try {
+          wss.close();
+        } catch {
+          // Ignore close failures during startup retry.
+        }
+      }
+      reject(error);
+    };
+
+    wss.once('listening', handleListening);
+    wss.once('error', handleError);
+  });
+}
+
+function isTestRuntime() {
+  return (
+    process.env.NODE_ENV === 'test' ||
+    Boolean(process.env.JEST_WORKER_ID) ||
+    typeof globalThis.jest !== 'undefined' ||
+    typeof globalThis.expect !== 'undefined' ||
+    process.argv.some((arg) => String(arg).includes('jest'))
+  );
 }
 
 function parseClientMessage(rawMessage) {
@@ -538,6 +659,9 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
 
   sessions.set(id, session);
 
+  // PTY-3: Update workspace PTY identity on session activation
+  tryUpdatePtyIdentity(session);
+
   // Evict oldest idle sessions if we exceed the cap
   if (sessions.size > MAX_SESSIONS) {
     evictOldestIdleSessions(sessions);
@@ -559,6 +683,9 @@ export function closeSession(id) {
   const session = sessions.get(id);
 
   if (session) {
+    // PTY-4: Clear workspace PTY identity on session termination
+    tryClearPtyIdentity(session);
+
     try {
       session.pty?.kill?.();
     } catch {
@@ -683,6 +810,9 @@ function handleSessionExit(sessions, session, exitCode, signal) {
     signal,
     socketCount: session.sockets?.size ?? 0,
   });
+
+  // PTY-4: Clear workspace PTY identity on PTY process exit
+  tryClearPtyIdentity(session);
 
   if (!sessions.has(session.id)) return;
 
@@ -883,10 +1013,17 @@ export async function ensureTTYServer() {
   const terminalSessions = new Map();
   globalThis[GLOBAL_TTY_SESSIONS_KEY] = terminalSessions;
 
-  const basePort = Number(process.env.DEVHUB_TTY_PORT || 4077);
+  const basePort = Number(process.env.DEVHUB_TTY_PORT || (isTestRuntime() ? 0 : 4077));
   const wsPath = '/terminal';
-  const port = await findAvailablePort(basePort);
-  const wss = new WebSocketServer({ host: '127.0.0.1', port, path: wsPath });
+  let port = await findAvailablePort(basePort);
+  let wss;
+
+  try {
+    ({ wss, port } = await openWebSocketServer(port, wsPath));
+  } catch (error) {
+    if (error?.code !== 'EADDRINUSE') throw error;
+    ({ wss, port } = await openWebSocketServer(0, wsPath));
+  }
 
   ttyLog('ensureTTYServer', `WSS ready`, { port, wsPath });
 
@@ -1024,6 +1161,9 @@ export async function ensureTTYServer() {
       terminalSessions.set(terminalId, session);
       wireSessionPty(session, terminalSessions);
       saveSessions(terminalSessions);
+
+      // PTY-3: Update workspace PTY identity on WS session creation
+      tryUpdatePtyIdentity(session);
 
       if (!tmuxEnabled && os.platform() !== 'win32') {
         terminal.write(
