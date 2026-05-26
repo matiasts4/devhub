@@ -556,7 +556,7 @@ function renderWorkspacePanel(
         style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
       >
         {/* Agent info bar — kept above the native terminal surface so VTE cannot cover it. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-center px-4">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-3 pr-[120px] pt-[6px]">
           <div
             data-testid={`panel-semantic-header-${panel.id}`}
             data-panel-metadata-source={semanticMetadata.source}

@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { STATUS_COLORS, formatToken } from './utils';
+import {
+  Target,
+  Code2,
+  Settings,
+  Eye,
+  Terminal,
+  Layout,
+  Compass,
+  BarChart2,
+  FileCheck,
+  Wrench,
+  Bot,
+} from 'lucide-react';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -32,27 +45,31 @@ const ACTIVE_STATUSES = new Set([
 ]);
 
 const ROLE_ICONS = {
-  director: '🎯',
-  coder: '⚙️',
-  builder: '⚙️',
-  auditor: '🔍',
-  qa: '🔍',
-  devops: '🛠',
-  architect: '📐',
-  scout: '🔭',
-  analyst: '📊',
-  evidence: '📋',
-  'recovery ops': '🔧',
+  director: Target,
+  coder: Code2,
+  builder: Settings,
+  auditor: Eye,
+  qa: Eye,
+  devops: Terminal,
+  architect: Layout,
+  scout: Compass,
+  analyst: BarChart2,
+  evidence: FileCheck,
+  'recovery ops': Wrench,
 };
 
 function getRoleIcon(label) {
-  const key = String(label || '').toLowerCase().trim();
-  return ROLE_ICONS[key] || '●';
+  const key = String(label || '')
+    .toLowerCase()
+    .trim();
+  return ROLE_ICONS[key] || Bot;
 }
 
 function isEdgeActive(sourceStatus, targetStatus) {
-  return ACTIVE_STATUSES.has(normalizeStatus(sourceStatus)) ||
-         ACTIVE_STATUSES.has(normalizeStatus(targetStatus));
+  return (
+    ACTIVE_STATUSES.has(normalizeStatus(sourceStatus)) ||
+    ACTIVE_STATUSES.has(normalizeStatus(targetStatus))
+  );
 }
 
 function clamp(val, min, max) {
@@ -135,12 +152,7 @@ function TopologyEdge({ x1, y1, x2, y2, active, highlighted, compact }) {
     return (
       <g>
         {/* Background glow */}
-        <path
-          d={pathD}
-          fill="none"
-          stroke="rgba(74,222,128,0.12)"
-          strokeWidth={sw + 4}
-        />
+        <path d={pathD} fill="none" stroke="rgba(74,222,128,0.12)" strokeWidth={sw + 4} />
         {/* Base line */}
         <path
           d={pathD}
@@ -184,7 +196,7 @@ function TopologyNode({
 }) {
   const theme = getNodeTheme(node.status);
   const isActive = ACTIVE_STATUSES.has(normalizeStatus(node.status));
-  const icon = getRoleIcon(node.label);
+  const IconComponent = getRoleIcon(node.label);
 
   const dimensions = getNodeDimensions(node, compact);
   const w = dimensions.width;
@@ -225,31 +237,35 @@ function TopologyNode({
         transform: highlighted || selected ? 'scale(1.04)' : 'scale(1)',
         '--glow-color-soft': `${theme.dot}18`,
         '--glow-color-bright': `${theme.dot}44`,
-        transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s, background-color 0.2s, box-shadow 0.2s',
+        transition:
+          'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s, background-color 0.2s, box-shadow 0.2s',
       }}
       title={`${node.label} · ${formatToken(node.status)}`}
       aria-label={`${node.label} estado ${formatToken(node.status)}`}
     >
       {/* Icon Wrapper on the Left */}
-      <div 
+      <div
         className="relative flex items-center justify-center shrink-0 rounded-lg"
         style={{
           width: compact ? '22px' : '28px',
           height: compact ? '22px' : '28px',
-          background: node.isDirector
-            ? 'rgba(245,158,11,0.18)'
-            : 'rgba(255,255,255,0.05)',
+          background: node.isDirector ? 'rgba(245,158,11,0.18)' : 'rgba(255,255,255,0.05)',
           border: node.isDirector
             ? '1px solid rgba(245,158,11,0.35)'
             : '1px solid rgba(255,255,255,0.09)',
         }}
       >
-        <span style={{ fontSize: compact ? '11px' : '13px', lineHeight: 1 }}>
-          {icon === '●' ? node.label?.charAt(0)?.toUpperCase() || 'W' : icon}
-        </span>
-        
+        <IconComponent
+          className="shrink-0 text-slate-400"
+          style={{
+            width: compact ? '12px' : '15px',
+            height: compact ? '12px' : '15px',
+            color: node.isDirector ? '#fbbf24' : '#94a3b8',
+          }}
+        />
+
         {/* Status Dot / Ring Indicator */}
-        <span 
+        <span
           className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0b0f19]"
           style={{
             background: theme.dot,
@@ -260,7 +276,7 @@ function TopologyNode({
 
       {/* Info on the Right */}
       <div className="flex flex-col items-start min-w-0 flex-1 leading-tight text-left">
-        <span 
+        <span
           className={`font-semibold truncate w-full tracking-wide ${
             compact ? 'text-[10px]' : 'text-[11px]'
           }`}
@@ -268,7 +284,7 @@ function TopologyNode({
         >
           {node.label}
         </span>
-        <span 
+        <span
           className={`font-mono text-[8.5px] uppercase tracking-wider ${
             compact ? 'mt-0' : 'mt-0.5'
           }`}
@@ -334,7 +350,7 @@ export default function SwarmTopologyGraph({
 }) {
   const compact = variant === 'compact';
   const containerRef = useRef(null);
-  const [containerSize, setContainerSize] = useState({ width: 600, height: compact ? 200 : 380 });
+  const [containerSize, setContainerSize] = useState({ width: 600, height: compact ? 160 : 280 });
   const [hoveredNode, setHoveredNode] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [dragState, setDragState] = useState(null); // { nodeId, offsetX, offsetY }
@@ -350,14 +366,22 @@ export default function SwarmTopologyGraph({
     const el = containerRef.current;
 
     if (el.clientWidth) {
-      setContainerSize({ width: el.clientWidth, height: compact ? Math.max(180, el.clientWidth * 0.35) : Math.max(320, el.clientWidth * 0.55) });
+      setContainerSize({
+        width: el.clientWidth,
+        height: compact
+          ? Math.max(160, el.clientWidth * 0.28)
+          : Math.max(260, el.clientWidth * 0.38),
+      });
     }
 
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width;
-        setContainerSize({ width: w, height: compact ? Math.max(180, w * 0.35) : Math.max(320, w * 0.55) });
+        setContainerSize({
+          width: w,
+          height: compact ? Math.max(160, w * 0.28) : Math.max(260, w * 0.38),
+        });
       }
     });
     observer.observe(el);
@@ -387,12 +411,19 @@ export default function SwarmTopologyGraph({
       const nodesByLabel = new Map(nodes.map((n) => [n.label.toLowerCase(), n]));
       return topology.connections
         .map((conn) => {
-          const parts = String(conn).split('→').map((s) => s.trim().toLowerCase());
+          const parts = String(conn)
+            .split('→')
+            .map((s) => s.trim().toLowerCase());
           if (parts.length !== 2) return null;
           const source = nodesByLabel.get(parts[0]);
           const target = nodesByLabel.get(parts[1]);
           if (!source || !target) return null;
-          return { from: source.id, to: target.id, sourceStatus: source.status, targetStatus: target.status };
+          return {
+            from: source.id,
+            to: target.id,
+            sourceStatus: source.status,
+            targetStatus: target.status,
+          };
         })
         .filter(Boolean);
     }
@@ -472,24 +503,27 @@ export default function SwarmTopologyGraph({
 
   // ── Drag handlers ────────────────────────────────────────────────────────
 
-  const handleMouseDown = useCallback((e, nodeId) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const node = displayNodes.find((n) => n.id === nodeId);
-    if (!node) return;
+  const handleMouseDown = useCallback(
+    (e, nodeId) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const node = displayNodes.find((n) => n.id === nodeId);
+      if (!node) return;
 
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
 
-    const localX = e.clientX - rect.left;
-    const localY = e.clientY - rect.top;
+      const localX = e.clientX - rect.left;
+      const localY = e.clientY - rect.top;
 
-    setDragState({
-      nodeId,
-      offsetX: localX - node.x,
-      offsetY: localY - node.y,
-    });
-  }, [displayNodes]);
+      setDragState({
+        nodeId,
+        offsetX: localX - node.x,
+        offsetY: localY - node.y,
+      });
+    },
+    [displayNodes]
+  );
 
   useEffect(() => {
     if (!dragState) return;
@@ -553,11 +587,24 @@ export default function SwarmTopologyGraph({
     [hoveredNode, connectedToHovered]
   );
 
+  const selectedNodeObj = useMemo(() => {
+    if (!selectedNode) return null;
+    return nodes.find((n) => n.id === selectedNode) || null;
+  }, [selectedNode, nodes]);
+
+  const SelectedIconComponent = useMemo(() => {
+    if (!selectedNodeObj) return null;
+    return getRoleIcon(selectedNodeObj.label);
+  }, [selectedNodeObj]);
+
+  const selectedNodeTheme = useMemo(() => {
+    if (!selectedNodeObj) return null;
+    return getNodeTheme(selectedNodeObj.status);
+  }, [selectedNodeObj]);
+
   // ── Stats ────────────────────────────────────────────────────────────────
 
-  const activeCount = roster.filter((m) =>
-    ACTIVE_STATUSES.has(normalizeStatus(m?.status))
-  ).length;
+  const activeCount = roster.filter((m) => ACTIVE_STATUSES.has(normalizeStatus(m?.status))).length;
   const totalCount = roster.length;
 
   // ── Empty state ──────────────────────────────────────────────────────────
@@ -633,8 +680,6 @@ export default function SwarmTopologyGraph({
         <svg
           width="100%"
           height="100%"
-          viewBox={`0 0 ${containerSize.width} ${containerSize.height}`}
-          preserveAspectRatio="none"
           className="absolute inset-0"
           style={{ pointerEvents: 'none' }}
           aria-hidden="true"
@@ -683,31 +728,87 @@ export default function SwarmTopologyGraph({
         ))}
       </div>
 
-      {/* Footer legend */}
+      {/* Footer / Agent Inspector */}
       {!compact && (
-        <div
-          className="flex flex-wrap items-center gap-3 border-t px-3 py-2 text-[10px]"
-          style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-        >
-          <span className="flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#4ade80' }} />
-            activo
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#6366f1' }} />
-            lease activo
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#64748b' }} />
-            inactivo/vencido
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#ef4444' }} />
-            error
-          </span>
-          <span className="ml-auto" style={{ color: 'var(--text-secondary)' }}>
-            arrastrá nodos para reordenar
-          </span>
+        <div className="border-t border-[var(--border-subtle)] bg-[#070c14]/90 backdrop-blur-md px-4 py-3">
+          {selectedNodeObj ? (
+            <div className="flex items-center justify-between gap-4 animate-fadeIn">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="flex items-center justify-center rounded-lg p-2 bg-white/5 border border-white/10 shrink-0"
+                  style={{
+                    color: selectedNodeObj.isDirector ? '#fbbf24' : 'var(--text-secondary)',
+                  }}
+                >
+                  <SelectedIconComponent className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[var(--text-primary)]">
+                      {selectedNodeObj.label}
+                    </span>
+                    <span
+                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-medium"
+                      style={{
+                        background: selectedNodeTheme.bg,
+                        color: selectedNodeTheme.color,
+                        border: `1px solid ${selectedNodeTheme.dot}22`,
+                      }}
+                    >
+                      <span
+                        className="mr-1 h-1 w-1 rounded-full animate-pulse"
+                        style={{ background: selectedNodeTheme.dot }}
+                      />
+                      {formatToken(selectedNodeObj.status)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono">
+                    {selectedNodeObj.workspaceId && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-[9px] text-[var(--text-secondary)] font-sans">
+                          Workspace:
+                        </span>
+                        <span className="text-sky-400 select-all">
+                          {selectedNodeObj.workspaceId}
+                        </span>
+                      </span>
+                    )}
+                    {selectedNodeObj.runId && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-[9px] text-[var(--text-secondary)] font-sans">
+                          Run:
+                        </span>
+                        <span className="text-indigo-400 select-all">{selectedNodeObj.runId}</span>
+                      </span>
+                    )}
+                    {!selectedNodeObj.workspaceId && !selectedNodeObj.runId && (
+                      <span>Sin workspace o run activo asignado</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="text-[10px] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/5"
+                onClick={() => {
+                  setSelectedNode(null);
+                  onSelectAgent?.(null);
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+              <span className="flex items-center gap-1.5">
+                <Bot className="w-3.5 h-3.5 text-[var(--accent-primary)] animate-pulse" />
+                Seleccioná un agente en el grafo para inspeccionar sus detalles
+              </span>
+              <span className="hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>
+                Arrastrá nodos para reorganizar la topología
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
