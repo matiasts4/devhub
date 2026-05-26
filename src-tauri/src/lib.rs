@@ -18,8 +18,8 @@ use native_browser::{
     native_browser_select_all, native_browser_selector_command, native_browser_set_visibility, NativeBrowserState,
 };
 use native_vte::{
-    native_vte_close, native_vte_focus, native_vte_open, native_vte_probe, native_vte_resize,
-    native_vte_set_visibility, NativeVteState,
+    native_vte_close, native_vte_focus, native_vte_open, native_vte_paste, native_vte_probe,
+    native_vte_resize, native_vte_set_visibility, NativeVteState,
 };
 
 fn nextjs_port() -> u16 {
@@ -546,6 +546,7 @@ pub fn run() {
             native_vte_probe,
             native_vte_open,
             native_vte_focus,
+            native_vte_paste,
             native_vte_resize,
             native_vte_set_visibility,
             native_vte_close,

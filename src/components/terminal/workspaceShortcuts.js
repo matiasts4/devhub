@@ -10,7 +10,12 @@ function isEditableElement(element) {
   if (!element || typeof element !== 'object') return false;
 
   const tagName = String(element.tagName || '').toLowerCase();
-  return element.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+  return (
+    element.isContentEditable ||
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select'
+  );
 }
 
 export function resolveTerminalShortcutAction(event) {
@@ -30,10 +35,16 @@ export function resolveTerminalShortcutAction(event) {
   return null;
 }
 
-export function shouldHandleTerminalShortcut(event, { isVisible, rootElement, activeElement } = {}) {
+export function shouldHandleTerminalShortcut(
+  event,
+  { isVisible, rootElement, activeElement } = {}
+) {
   const action = resolveTerminalShortcutAction(event);
   if (!action || !isVisible || !rootElement || !activeElement) return false;
   if (!rootElement.contains(activeElement)) return false;
+  const eventTarget = event?.target instanceof Node ? event.target : null;
+  const terminalViewport = eventTarget?.closest?.('[data-testid="terminal-viewport-shell"]');
+  if (terminalViewport) return false;
   if (isEditableElement(activeElement)) return false;
   return true;
 }

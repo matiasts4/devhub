@@ -31,17 +31,42 @@ function activeMissionIdFromFeed(feed) {
  * Returns a flat snapshot of all active sessions with their latest trace count and usage.
  * Enhanced to include full trace rows (not just counts) for real-time UI updates.
  */
-function buildSnapshot(sinceTimestamp) {
+function buildSnapshot(sinceTimestamp, scope = {}) {
   const db = getDb();
-  const activeMission = db
-    .prepare(
-      `SELECT mission_id
-       FROM swarm_missions
-       WHERE status = 'active'
-       ORDER BY updated_at DESC, rowid DESC
-       LIMIT 1`
-    )
-    .get();
+  const projectId = scope?.projectId || null;
+  const missionId = scope?.missionId || null;
+
+  let activeMission;
+  if (missionId) {
+    activeMission = db
+      .prepare(
+        `SELECT mission_id
+         FROM swarm_missions
+         WHERE mission_id = ?
+         LIMIT 1`
+      )
+      .get(missionId);
+  } else if (projectId) {
+    activeMission = db
+      .prepare(
+        `SELECT mission_id
+         FROM swarm_missions
+         WHERE status = 'active' AND project_id = ?
+         ORDER BY updated_at DESC, rowid DESC
+         LIMIT 1`
+      )
+      .get(projectId);
+  } else {
+    activeMission = db
+      .prepare(
+        `SELECT mission_id
+         FROM swarm_missions
+         WHERE status = 'active'
+         ORDER BY updated_at DESC, rowid DESC
+         LIMIT 1`
+      )
+      .get();
+  }
   const directorFeed = activeMission?.mission_id
     ? readDirectorFeedSummary(db, { missionId: activeMission.mission_id })
     : null;
@@ -283,9 +308,14 @@ function computeDelta(prev, curr) {
   };
 }
 
-export async function GET() {
+export async function GET(request) {
   const encoder = new TextEncoder();
-  let prevSnapshot = buildSnapshot();
+  const { searchParams } = new URL(request.url);
+  const scope = {
+    projectId: searchParams.get('project_id') || null,
+    missionId: searchParams.get('mission_id') || null,
+  };
+  let prevSnapshot = buildSnapshot(null, scope);
   prevSnapshot.pollTimestamp = new Date().toISOString();
   let heartbeatTimer = null;
   let pollTimer = null;
@@ -317,7 +347,7 @@ export async function GET() {
           const lastPollTs = prevSnapshot.pollTimestamp
             ? prevSnapshot.pollTimestamp.replace('T', ' ').replace('Z', '').split('.')[0]
             : null;
-          const currSnapshot = buildSnapshot(lastPollTs);
+          const currSnapshot = buildSnapshot(lastPollTs, scope);
           currSnapshot.pollTimestamp = new Date().toISOString();
           const delta = computeDelta(prevSnapshot, currSnapshot);
 

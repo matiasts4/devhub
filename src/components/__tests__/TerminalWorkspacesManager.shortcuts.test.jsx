@@ -432,4 +432,24 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p1');
     expect(event.defaultPrevented).toBe(true);
   });
+
+  test('Ctrl+Shift+V inside the terminal viewport does not trigger workspace shortcuts', async () => {
+    const view = await renderManager();
+    const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    terminal.focus();
+
+    const event = new window.KeyboardEvent('keydown', {
+      key: 'V',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    terminal.dispatchEvent(event);
+    await flushEffects();
+
+    expect(getVisibleWorkspaceColumns(view.container)).toHaveLength(1);
+    expect(getVisiblePanelSlots(view.container)).toHaveLength(1);
+    expect(event.defaultPrevented).toBe(false);
+  });
 });

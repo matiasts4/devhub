@@ -34,6 +34,52 @@ const {
 
 const mountedRoots = [];
 
+class MockEventSource {
+  static instances = [];
+
+  constructor(url) {
+    this.url = url;
+    this.listeners = new Map();
+    this.closed = false;
+    MockEventSource.instances.push(this);
+  }
+
+  addEventListener(type, handler) {
+    if (!this.listeners.has(type)) {
+      this.listeners.set(type, new Set());
+    }
+    this.listeners.get(type).add(handler);
+  }
+
+  removeEventListener(type, handler) {
+    this.listeners.get(type)?.delete(handler);
+  }
+
+  close() {
+    this.closed = true;
+  }
+
+  emit(type, data) {
+    const handlers = this.listeners.get(type);
+    if (!handlers) return;
+    handlers.forEach((handler) => handler({ data: JSON.stringify(data) }));
+  }
+
+  static reset() {
+    MockEventSource.instances = [];
+  }
+}
+
+function getLastEventSource() {
+  return MockEventSource.instances[MockEventSource.instances.length - 1] || null;
+}
+
+async function flushAsyncWork(cycles = 3) {
+  for (let index = 0; index < cycles; index += 1) {
+    await flushEffects();
+  }
+}
+
 function buildExpandedInput() {
   const base = buildControlRoomInput();
 
@@ -399,6 +445,8 @@ describe('SwarmControl control room composition', () => {
 
   beforeEach(() => {
     dom = installDom();
+    MockEventSource.reset();
+    global.EventSource = MockEventSource;
     mockUseOutletContext.mockReturnValue({
       project: { id: 'project-1', name: 'DevHub', local_path: '/workspace/devhub' },
     });
@@ -408,6 +456,7 @@ describe('SwarmControl control room composition', () => {
     cleanupMountedRoots(mountedRoots);
     dom.window.close();
     delete global.fetch;
+    delete global.EventSource;
     jest.clearAllMocks();
   });
 
@@ -441,9 +490,7 @@ describe('SwarmControl control room composition', () => {
     expect(text).not.toContain('Offline');
 
     expect(text).toContain('Agentes y asignaciones');
-    expect(text).toContain(
-'Tareas reclamadas, lease, workspace y autoridad.'
-    );
+    expect(text).toContain('Tareas reclamadas, lease, workspace y autoridad.');
     expect(text).toContain('worker-1');
     expect(text).toContain('task-1');
     expect(text).toContain('aprobación requerida');
@@ -1246,6 +1293,179 @@ describe('SwarmControl control room composition', () => {
 
     expect(view.container.textContent).toContain('No se pudo reclamar el siguiente task durable.');
     expect(handoffButton.disabled).toBe(false);
+  });
+
+  test('refreshes the visible director queue when a scoped director-feed event arrives', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: buildControlRoomInput({
+            mission_control: {
+              ...buildPreviewInput().mission_control,
+              mission: {
+                ...buildPreviewInput().mission_control.mission,
+                mission_id: 'mission-live-1',
+              },
+            },
+            director_queue: {
+              authority: 'authoritative',
+              freshness: 'current',
+              items: [
+                {
+                  id: 'task-before',
+                  title: 'Antes del feed durable',
+                  status: 'pending',
+                  position: 1,
+                  priority: 'high',
+                  blocked_reason: null,
+                },
+              ],
+              handoff: {
+                status: 'idle',
+                recipient_agent_id: null,
+                message: null,
+                task: null,
+                workspace: null,
+                run: null,
+                artifact: null,
+                supervisor: null,
+              },
+            },
+          }),
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: buildControlRoomInput({
+            mission_control: {
+              ...buildPreviewInput().mission_control,
+              mission: {
+                ...buildPreviewInput().mission_control.mission,
+                mission_id: 'mission-live-1',
+              },
+            },
+            director_queue: {
+              authority: 'authoritative',
+              freshness: 'current',
+              items: [
+                {
+                  id: 'task-after',
+                  title: 'Después del feed durable',
+                  status: 'pending',
+                  position: 1,
+                  priority: 'critical',
+                  blocked_reason: null,
+                },
+              ],
+              handoff: {
+                status: 'ready',
+                recipient_agent_id: 'agent-worker-1',
+                message: 'Worker terminó y dejó handoff durable.',
+                task: {
+                  id: 'task-after',
+                  title: 'Después del feed durable',
+                },
+                workspace: null,
+                run: null,
+                artifact: null,
+                supervisor: null,
+              },
+            },
+          }),
+        }),
+      });
+
+    const view = await renderSwarmControl();
+    await flushAsyncWork();
+
+    expect(view.container.textContent).toContain('Antes del feed durable');
+    expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    expect(getLastEventSource()?.url).toContain('project_id=project-1');
+    expect(getLastEventSource()?.url).toContain('mission_id=mission-live-1');
+
+    getLastEventSource()?.emit('director-feed', {
+      mission_id: 'mission-live-1',
+      director_feed: {
+        items: [
+          {
+            mission_id: 'mission-live-1',
+            summary: 'Worker terminó y dejó handoff durable.',
+          },
+        ],
+        handoff: {
+          status: 'ready',
+          message: 'Worker terminó y dejó handoff durable.',
+        },
+      },
+    });
+    await flushAsyncWork();
+
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/agenthub/operations/health?project_id=project-1',
+      { cache: 'no-store' }
+    );
+    expect(view.container.textContent).toContain('Después del feed durable');
+    expect(view.container.textContent).toContain('Worker terminó y dejó handoff durable.');
+  });
+
+  test('ignores director-feed events from a different mission scope', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        control_room_snapshot_input: buildControlRoomInput({
+          mission_control: {
+            ...buildPreviewInput().mission_control,
+            mission: {
+              ...buildPreviewInput().mission_control.mission,
+              mission_id: 'mission-live-1',
+            },
+          },
+          director_queue: {
+            authority: 'authoritative',
+            freshness: 'current',
+            items: [
+              {
+                id: 'task-stable',
+                title: 'Queue estable',
+                status: 'pending',
+                position: 1,
+                priority: 'high',
+                blocked_reason: null,
+              },
+            ],
+            handoff: {
+              status: 'idle',
+              recipient_agent_id: null,
+              message: null,
+              task: null,
+              workspace: null,
+              run: null,
+              artifact: null,
+              supervisor: null,
+            },
+          },
+        }),
+      }),
+    });
+
+    const view = await renderSwarmControl();
+    await flushAsyncWork();
+
+    getLastEventSource()?.emit('director-feed', {
+      mission_id: 'mission-other',
+      director_feed: {
+        items: [{ mission_id: 'mission-other', summary: 'No debería refrescar' }],
+      },
+    });
+    await flushAsyncWork();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain('Queue estable');
+    expect(view.container.textContent).not.toContain('No debería refrescar');
   });
 
   test('keeps secondary panels visible when mission snapshot is empty', async () => {

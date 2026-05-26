@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
+import { ClipboardPaste, Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
 import {
   closeNativeVtePanel,
   focusNativeVtePanel,
   isNativeVteRuntimeAvailable,
   openNativeVtePanel,
+  pasteNativeVtePanel,
   probeNativeVte,
   resizeNativeVtePanel,
   setNativeVtePanelVisibility,
@@ -214,6 +215,28 @@ export function shouldAutoReconnectTerminal(connectionState, autoFocus) {
   return connectionState === 'disconnected' || connectionState === 'error';
 }
 
+function getClipboardApi() {
+  return globalThis?.navigator?.clipboard || null;
+}
+
+export function resolveTerminalClipboardShortcut(event) {
+  if (!event || event.metaKey || event.altKey) return null;
+
+  const key = String(event.key || '');
+  const normalizedKey = key.length === 1 ? key.toLowerCase() : key;
+
+  if (event.ctrlKey && event.shiftKey) {
+    if (normalizedKey === 'c') return 'copy';
+    if (normalizedKey === 'v') return 'paste';
+  }
+
+  if (!event.ctrlKey && event.shiftKey && normalizedKey === 'Insert') {
+    return 'paste';
+  }
+
+  return null;
+}
+
 export function getTerminalRuntimePlatform(explicitPlatform) {
   if (explicitPlatform) return String(explicitPlatform).toLowerCase();
   if (typeof navigator !== 'undefined') {
@@ -388,6 +411,7 @@ export default function TerminalTTY({
   showQuickCopyButton = true,
   swarmContext = null,
 }) {
+  const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
   const nativePlaceholderRef = useRef(null);
   const termRef = useRef(null);
@@ -408,16 +432,16 @@ export default function TerminalTTY({
   const nativeVteProbeRetryDelayRef = useRef(null);
   const shouldRetryNativeVteProbeRef = useRef(false);
 
-    const FONT_SIZE_KEY = 'devhub:terminalFontSize';
-    const [fontSize, setFontSize] = useState(() => {
-      try {
-        const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
-        const parsed = stored ? parseInt(stored, 10) : NaN;
-        return Number.isFinite(parsed) && parsed >= 8 && parsed <= 24 ? parsed : 13;
-      } catch {
-        return 13;
-      }
-    });
+  const FONT_SIZE_KEY = 'devhub:terminalFontSize';
+  const [fontSize, setFontSize] = useState(() => {
+    try {
+      const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
+      const parsed = stored ? parseInt(stored, 10) : NaN;
+      return Number.isFinite(parsed) && parsed >= 8 && parsed <= 24 ? parsed : 13;
+    } catch {
+      return 13;
+    }
+  });
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
@@ -672,32 +696,26 @@ export default function TerminalTTY({
     ).catch(handleNativeLeaseCommandError);
   }, [handleNativeLeaseCommandError, id]);
 
-  const resizeNativeLease = useCallback(
-    async () => {
-      if (!nativeLeaseRef.current) return;
-      const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
-      if (!bounds) {
-        cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
-        return;
-      }
-      cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
-      await Promise.resolve(
-        resizeNativeVtePanel({
-          panelId: id,
-          bounds,
-        })
-      ).catch(handleNativeLeaseCommandError);
-    },
-    [handleNativeLeaseCommandError, id]
-  );
+  const resizeNativeLease = useCallback(async () => {
+    if (!nativeLeaseRef.current) return;
+    const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+    if (!bounds) {
+      cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
+      return;
+    }
+    cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
+    await Promise.resolve(
+      resizeNativeVtePanel({
+        panelId: id,
+        bounds,
+      })
+    ).catch(handleNativeLeaseCommandError);
+  }, [handleNativeLeaseCommandError, id]);
 
-  const showAndResizeNativeLease = useCallback(
-    async () => {
-      await showNativeLease();
-      await resizeNativeLease();
-    },
-    [resizeNativeLease, showNativeLease]
-  );
+  const showAndResizeNativeLease = useCallback(async () => {
+    await showNativeLease();
+    await resizeNativeLease();
+  }, [resizeNativeLease, showNativeLease]);
 
   const waitForVisibleDimensions = useCallback(async () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -1102,10 +1120,7 @@ export default function TerminalTTY({
       }
     };
 
-    window.addEventListener(
-      'devhub:native-vte-workspace-sync',
-      handleWorkspaceNativeSurfaceSync
-    );
+    window.addEventListener('devhub:native-vte-workspace-sync', handleWorkspaceNativeSurfaceSync);
 
     return () => {
       clearScheduledSync();
@@ -1444,17 +1459,21 @@ export default function TerminalTTY({
     }
   }, [scrollTerminalToBottom, sendResize, cwd, initialCommand, id]);
 
-    const adjustFontSize = useCallback((delta) => {
-      setFontSize((prev) => {
-        const next = Math.min(24, Math.max(8, prev + delta));
-        try { window.localStorage.setItem(FONT_SIZE_KEY, String(next)); } catch { /* ignore */ }
-        if (termRef.current) {
-          termRef.current.options.fontSize = next;
-          fitRef.current?.fit();
-        }
-        return next;
-      });
-    }, []);
+  const adjustFontSize = useCallback((delta) => {
+    setFontSize((prev) => {
+      const next = Math.min(24, Math.max(8, prev + delta));
+      try {
+        window.localStorage.setItem(FONT_SIZE_KEY, String(next));
+      } catch {
+        /* ignore */
+      }
+      if (termRef.current) {
+        termRef.current.options.fontSize = next;
+        fitRef.current?.fit();
+      }
+      return next;
+    });
+  }, []);
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
@@ -1463,6 +1482,63 @@ export default function TerminalTTY({
     // connect() already silences and closes the stale socket — just call it directly.
     connect();
   }, [connect]);
+
+  const copyTextToClipboard = useCallback(async (text) => {
+    if (!text) return false;
+
+    try {
+      const clipboardApi = getClipboardApi();
+      if (!clipboardApi?.writeText) {
+        throw new Error('clipboard-unavailable');
+      }
+      await clipboardApi.writeText(text);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+    return true;
+  }, []);
+
+  const handleCopySelection = useCallback(async () => {
+    const text = termRef.current?.getSelection?.() || contextMenu?.text || '';
+    return copyTextToClipboard(text);
+  }, [contextMenu?.text, copyTextToClipboard]);
+
+  const handlePasteIntoTerminal = useCallback(async () => {
+    if (shouldUseNativeRenderer) {
+      const result = await pasteNativeVtePanel({ panelId: id });
+      return Boolean(result?.supported);
+    }
+
+    const clipboardApi = getClipboardApi();
+    if (!clipboardApi?.readText) return false;
+
+    const text = await clipboardApi.readText();
+    if (!text) return false;
+
+    if (typeof termRef.current?.paste === 'function') {
+      termRef.current.paste(text);
+      return true;
+    }
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      if (transportRef.current === 'raw') {
+        wsRef.current.send(text);
+      } else {
+        wsRef.current.send(JSON.stringify({ type: 'input', data: text }));
+      }
+      return true;
+    }
+
+    return false;
+  }, [id, shouldUseNativeRenderer]);
 
   useEffect(() => {
     let mounted = true;
@@ -1735,10 +1811,8 @@ export default function TerminalTTY({
   const handleContextMenu = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    const text = termRef.current?.getSelection();
-    if (text) {
-      setContextMenu({ x: e.clientX, y: e.clientY, text });
-    }
+    const text = termRef.current?.getSelection?.() || '';
+    setContextMenu({ x: e.clientX, y: e.clientY, text, canCopy: Boolean(text) });
   }, []);
 
   const handleViewportMouseDown = useCallback(() => {
@@ -1759,25 +1833,14 @@ export default function TerminalTTY({
   ]);
 
   const handleCopyFromMenu = useCallback(async () => {
-    if (contextMenu?.text) {
-      try {
-        await navigator.clipboard.writeText(contextMenu.text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch {
-        // Fallback: select all and copy
-        const textarea = document.createElement('textarea');
-        textarea.value = contextMenu.text;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }
-    }
+    await handleCopySelection();
     setContextMenu(null);
-  }, [contextMenu]);
+  }, [handleCopySelection]);
+
+  const handlePasteFromMenu = useCallback(async () => {
+    await handlePasteIntoTerminal().catch(() => false);
+    setContextMenu(null);
+  }, [handlePasteIntoTerminal]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -1787,30 +1850,37 @@ export default function TerminalTTY({
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
-  // ── Keyboard shortcut: Ctrl+Shift+C to copy ─────────────────────────────────
+  // ── Keyboard shortcuts: copy/paste ───────────────────────────────────────────
   useEffect(() => {
-    const handler = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'C') {
-        e.preventDefault();
-        e.stopPropagation();
-        const text = termRef.current?.getSelection();
-        if (text) {
-          navigator.clipboard.writeText(text).catch(() => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-          });
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }
+    const handler = async (e) => {
+      const action = resolveTerminalClipboardShortcut(e);
+      if (!action) return;
+
+      const rootElement = terminalRootRef.current;
+      const activeElement = document?.activeElement || null;
+      const eventTarget = e.target instanceof Node ? e.target : null;
+      const belongsToTerminal = Boolean(
+        rootElement &&
+        ((activeElement && rootElement.contains(activeElement)) ||
+          (eventTarget && rootElement.contains(eventTarget)) ||
+          isActivePanel)
+      );
+      if (!belongsToTerminal) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (action === 'copy') {
+        await handleCopySelection();
+        return;
       }
+
+      await handlePasteIntoTerminal().catch(() => false);
     };
+
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, []);
+  }, [handleCopySelection, handlePasteIntoTerminal, isActivePanel]);
 
   const isConnected = connectionState === 'connected';
   const showTerminalViewport =
@@ -1829,7 +1899,10 @@ export default function TerminalTTY({
         : 'Desconectado';
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative">
+    <div
+      ref={terminalRootRef}
+      className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative"
+    >
       {!hideTitleBar && (
         <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle cursor-pointer">
           <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none">
@@ -1867,14 +1940,18 @@ export default function TerminalTTY({
               title="Reducir tamaño de fuente"
               className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
             >
-              <span className="text-[9px] font-bold text-gray-400 hover:text-white leading-none select-none">A-</span>
+              <span className="text-[9px] font-bold text-gray-400 hover:text-white leading-none select-none">
+                A-
+              </span>
             </button>
             <button
               onClick={() => adjustFontSize(1)}
               title="Aumentar tamaño de fuente"
               className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
             >
-              <span className="text-[11px] font-bold text-gray-400 hover:text-white leading-none select-none">A+</span>
+              <span className="text-[11px] font-bold text-gray-400 hover:text-white leading-none select-none">
+                A+
+              </span>
             </button>
             <button
               onClick={reconnect}
@@ -1988,18 +2065,7 @@ export default function TerminalTTY({
           {isConnected && showQuickCopyButton && (
             <button
               onClick={async () => {
-                if (termRef.current) {
-                  try {
-                    const text = termRef.current.getSelection();
-                    if (text) {
-                      await navigator.clipboard.writeText(text);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    }
-                  } catch {
-                    // Clipboard API may not be available
-                  }
-                }
+                await handleCopySelection();
               }}
               className="absolute top-2 right-2 z-20 p-1.5 rounded-md bg-[#1e1e1e]/90 border border-white/10 hover:bg-white/10 transition-colors"
               title="Copiar selección"
@@ -2020,8 +2086,20 @@ export default function TerminalTTY({
               }}
             >
               <button
+                data-testid="terminal-context-menu-paste"
+                onClick={handlePasteFromMenu}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-t-lg"
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 text-gray-400" />
+                Pegar
+                <span className="ml-auto text-[10px] text-gray-500 font-mono">Ctrl+Shift+V</span>
+              </button>
+              <div className="h-px bg-[#3a3a3a] mx-2 my-1" />
+              <button
+                data-testid="terminal-context-menu-copy"
                 onClick={handleCopyFromMenu}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+                disabled={!contextMenu.canCopy}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Copy className="w-3.5 h-3.5 text-gray-400" />
                 Copiar selección
@@ -2030,7 +2108,7 @@ export default function TerminalTTY({
               <div className="h-px bg-[#3a3a3a] mx-2 my-1" />
               <button
                 onClick={() => setContextMenu(null)}
-                className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+                className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-b-lg"
               >
                 Cerrar
               </button>

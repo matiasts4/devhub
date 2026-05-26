@@ -16,9 +16,19 @@ function createMockDb({
   traces = [],
   textLengths = [],
   usages = [],
+  missionById = null,
+  missionByProject = null,
 } = {}) {
   return {
     prepare: jest.fn((sql) => {
+      if (sql.includes('WHERE mission_id = ?')) {
+        return { get: jest.fn(() => missionById) };
+      }
+
+      if (sql.includes("WHERE status = 'active' AND project_id = ?")) {
+        return { get: jest.fn(() => missionByProject) };
+      }
+
       if (sql.includes('FROM swarm_missions')) {
         return { get: jest.fn(() => activeMission) };
       }
@@ -108,6 +118,67 @@ describe('agenthub sessions stream route helpers', () => {
         usage: null,
       }),
     ]);
+  });
+
+  test('buildSnapshot scopes director_feed to the requested project mission when provided', async () => {
+    const directorFeed = {
+      authority: 'durable',
+      freshness: 'current',
+      watermark: 'director-feed-project-scope',
+      items: [
+        {
+          feed_id: 'agent_event:project-scope',
+          kind: 'task_completed',
+          mission_id: 'mission-project-1',
+          summary: 'Scoped by project',
+        },
+      ],
+      handoff: { status: 'idle' },
+    };
+    const mockDb = createMockDb({
+      missionByProject: { mission_id: 'mission-project-1' },
+    });
+    mockGetDb.mockReturnValue(mockDb);
+    mockReadDirectorFeedSummary.mockReturnValue(directorFeed);
+
+    const { buildSnapshot } = await import('./route.js');
+    const snapshot = buildSnapshot(null, { projectId: 'project-1' });
+
+    expect(mockReadDirectorFeedSummary).toHaveBeenCalledWith(mockDb, {
+      missionId: 'mission-project-1',
+    });
+    expect(snapshot.directorFeed).toBe(directorFeed);
+  });
+
+  test('buildSnapshot scopes director_feed to an explicit mission id over global active mission', async () => {
+    const directorFeed = {
+      authority: 'durable',
+      freshness: 'current',
+      watermark: 'director-feed-mission-scope',
+      items: [
+        {
+          feed_id: 'agent_event:mission-scope',
+          kind: 'handoff_ready',
+          mission_id: 'mission-explicit',
+          summary: 'Scoped by mission',
+        },
+      ],
+      handoff: { status: 'ready' },
+    };
+    const mockDb = createMockDb({
+      activeMission: { mission_id: 'mission-global' },
+      missionById: { mission_id: 'mission-explicit' },
+    });
+    mockGetDb.mockReturnValue(mockDb);
+    mockReadDirectorFeedSummary.mockReturnValue(directorFeed);
+
+    const { buildSnapshot } = await import('./route.js');
+    const snapshot = buildSnapshot(null, { missionId: 'mission-explicit', projectId: 'project-1' });
+
+    expect(mockReadDirectorFeedSummary).toHaveBeenCalledWith(mockDb, {
+      missionId: 'mission-explicit',
+    });
+    expect(snapshot.directorFeed).toBe(directorFeed);
   });
 
   test('computeDelta keeps director_feed unchanged when watermark is stable and only stream state changes', async () => {

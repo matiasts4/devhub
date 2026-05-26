@@ -1,4 +1,3 @@
-/* global window */
 const { JSDOM } = require('jsdom');
 
 describe('nativeVteBridge', () => {
@@ -283,6 +282,7 @@ describe('nativeVteBridge', () => {
     await bridge.probeNativeVte(probePayload);
     await bridge.openNativeVtePanel(openPayload);
     await bridge.focusNativeVtePanel({ panelId: 'p5' });
+    await bridge.pasteNativeVtePanel({ panelId: 'p5' });
     await bridge.resizeNativeVtePanel(openPayload);
     await bridge.setNativeVtePanelVisibility({
       panelId: 'p5',
@@ -297,8 +297,11 @@ describe('nativeVteBridge', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(3, 'native_vte_focus', {
       request: { panelId: 'p5' },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(4, 'native_vte_resize', { request: openPayload });
-    expect(invokeMock).toHaveBeenNthCalledWith(5, 'native_vte_set_visibility', {
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'native_vte_paste', {
+      request: { panelId: 'p5' },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(5, 'native_vte_resize', { request: openPayload });
+    expect(invokeMock).toHaveBeenNthCalledWith(6, 'native_vte_set_visibility', {
       request: {
         panelId: 'p5',
         visible: false,
@@ -306,7 +309,7 @@ describe('nativeVteBridge', () => {
         bounds: { x: 12, y: 24, width: 800, height: 480 },
       },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(6, 'native_vte_close', {
+    expect(invokeMock).toHaveBeenNthCalledWith(7, 'native_vte_close', {
       request: { panelId: 'p5', reason: 'test-cleanup' },
     });
   });

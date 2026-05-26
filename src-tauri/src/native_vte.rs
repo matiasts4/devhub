@@ -85,6 +85,12 @@ pub struct NativeVtePanelRequest {
     pub reason: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct NativeVteCommandResponse {
+    pub supported: bool,
+    pub reason: Option<String>,
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeVteVisibilityRequest {
@@ -1123,6 +1129,20 @@ fn registry_focus_panel(panel_id: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
+fn registry_paste_panel(panel_id: &str) -> Result<(), String> {
+    with_native_vte_registry(|registry| {
+        registry_show_panel(registry, panel_id)?;
+        let panel = registry
+            .panels
+            .get(panel_id)
+            .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
+        panel.terminal.paste_clipboard();
+        registry.focused_panel_id = Some(panel_id.to_string());
+        Ok(())
+    })
+}
+
+#[cfg(target_os = "linux")]
 fn registry_resize_panel(panel_id: &str, bounds: &NativeVteBounds) -> Result<(), String> {
     with_native_vte_registry(|registry| {
         let layout = registry
@@ -1333,6 +1353,43 @@ pub fn native_vte_focus(
         let _ = _state;
         let _ = request;
         Err("unsupported-platform".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn native_vte_paste(
+    _app: AppHandle,
+    state: State<'_, NativeVteState>,
+    request: NativeVtePanelRequest,
+) -> NativeVteCommandResponse {
+    #[cfg(target_os = "linux")]
+    {
+        let panel_id = request.panel_id;
+
+        match registry_paste_panel(panel_id.as_str()).and_then(|_| {
+            set_focused_panel_metadata(&state, panel_id.as_str())?;
+            Ok(())
+        }) {
+            Ok(()) => NativeVteCommandResponse {
+                supported: true,
+                reason: None,
+            },
+            Err(reason) => NativeVteCommandResponse {
+                supported: false,
+                reason: Some(reason),
+            },
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = _app;
+        let _ = state;
+        let _ = request;
+        NativeVteCommandResponse {
+            supported: false,
+            reason: unsupported_platform_reason(),
+        }
     }
 }
 

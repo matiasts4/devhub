@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Bot } from 'lucide-react';
 import {
@@ -109,6 +109,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [launchDraft, setLaunchDraft] = useState(null);
   const [launchResult, setLaunchResult] = useState(null);
   const [launchSubmitState, setLaunchSubmitState] = useState({ submitting: false, error: null });
+  const eventSourceRef = useRef(null);
 
   const loadSnapshot = useCallback(async () => {
     if (snapshotInput) return;
@@ -164,6 +165,61 @@ export default function SwarmControl({ snapshotInput = null }) {
     loadSnapshot();
     return undefined;
   }, [loadSnapshot, snapshotInput]);
+
+  useEffect(() => {
+    if (snapshotInput || typeof window === 'undefined' || typeof EventSource === 'undefined') {
+      return undefined;
+    }
+
+    const params = new URLSearchParams();
+    if (project?.id) params.set('project_id', project.id);
+
+    const activeMissionId = fetchedInput?.mission_control?.mission?.mission_id || null;
+    if (activeMissionId) params.set('mission_id', activeMissionId);
+
+    const sseUrl = params.size
+      ? `/api/agenthub/sessions/stream?${params.toString()}`
+      : '/api/agenthub/sessions/stream';
+
+    let isSubscribed = true;
+    const source = new EventSource(sseUrl);
+    eventSourceRef.current = source;
+
+    const handleDirectorFeed = async (event) => {
+      if (!isSubscribed) return;
+
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      const eventMissionId =
+        payload?.mission_id || payload?.director_feed?.handoff?.task?.mission_id || null;
+      if (activeMissionId && eventMissionId && activeMissionId !== eventMissionId) {
+        return;
+      }
+
+      await loadSnapshot();
+    };
+
+    source.addEventListener('director-feed', handleDirectorFeed);
+
+    return () => {
+      isSubscribed = false;
+      source.removeEventListener('director-feed', handleDirectorFeed);
+      source.close();
+      if (eventSourceRef.current === source) {
+        eventSourceRef.current = null;
+      }
+    };
+  }, [
+    fetchedInput?.mission_control?.mission?.mission_id,
+    loadSnapshot,
+    project?.id,
+    snapshotInput,
+  ]);
 
   const snapshot = useMemo(
     () =>
