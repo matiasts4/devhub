@@ -4,7 +4,7 @@ const {
   createTempDb,
   cleanupDb,
   readDb,
-  seedBaseline,
+  seedBaseline: _seedBaseline,
   seedProject,
   seedTask,
   seedAgent,
@@ -53,8 +53,12 @@ describe('claim-release happy path', () => {
     expect(claimResult.stdout).toMatch(/task-1/i);
 
     // Parse claim token from output
-    const tokenMatch = claimResult.stdout.match(/Token:\s*([a-f0-9]+)/i)
-      || (() => { const json = JSON.parse(claimResult.stdout); return json.claim_token ? [null, json.claim_token] : null; })();
+    const tokenMatch =
+      claimResult.stdout.match(/Token:\s*([a-f0-9]+)/i) ||
+      (() => {
+        const json = JSON.parse(claimResult.stdout);
+        return json.claim_token ? [null, json.claim_token] : null;
+      })();
     const claimToken = tokenMatch ? tokenMatch[1] : null;
     expect(claimToken).toBeTruthy();
 
@@ -64,7 +68,13 @@ describe('claim-release happy path', () => {
     expect(tasks[0].claim_token).toBe(claimToken);
 
     // Release with completed outcome
-    const releaseResult = runCli(dbPath, ['release', 'task-1', claimToken, '--outcome', 'completed']);
+    const releaseResult = runCli(dbPath, [
+      'release',
+      'task-1',
+      claimToken,
+      '--outcome',
+      'completed',
+    ]);
     expect(releaseResult.status).toBe(0);
     expect(releaseResult.stdout).toMatch(/released.*completed/i);
 
@@ -161,7 +171,13 @@ describe('release invalid token', () => {
     expect(claim.status).toBe(0);
 
     // Try to release with wrong token
-    const release = runCli(dbPath, ['release', 'task-1', 'wrong-token-123', '--outcome', 'completed']);
+    const release = runCli(dbPath, [
+      'release',
+      'task-1',
+      'wrong-token-123',
+      '--outcome',
+      'completed',
+    ]);
     expect(release.status).toBe(1);
     expect(release.stderr).toMatch(/invalid.*token/i);
 
@@ -196,7 +212,17 @@ function extractToken(stdout) {
   // Try TTY format first: "Token: <hex>"
   const ttyMatch = stdout.match(/Token:\s*([a-f0-9]+)/i);
   if (ttyMatch) return ttyMatch[1];
-  // Try JSON format
+  // Parse the last valid JSON line
+  const lines = stdout.trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const json = JSON.parse(lines[i]);
+      return json.claim_token || null;
+    } catch {
+      continue;
+    }
+  }
+  // Legacy fallback: try parsing entire stdout
   try {
     const json = JSON.parse(stdout);
     return json.claim_token || null;

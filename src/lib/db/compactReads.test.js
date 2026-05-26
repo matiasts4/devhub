@@ -5,11 +5,95 @@ const { ensureRuntimeSchema, AGENT_WORKSPACE_BASE_COMMIT } = require('./core');
 const { applyTestSchema } = require('../../../lib/test-schema');
 const {
   readExecutionQueueSummary,
+  readMissionDiagnosticSummary,
+  readMissionListSummary,
+  readWorkspaceDiagnosticList,
+  readWorkspaceDiagnosticSummary,
   readWorkspaceEvidenceSummary,
   presentExecutionQueue,
   presentWorkspaceEvidence,
   createDirectorQueueContract,
 } = require('./compactReads');
+
+function seedMission(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO swarm_missions (
+      mission_id, project_id, task_id, owner_agent_id, kind, status, title, summary, started_at, updated_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.mission_id || 'mission-1',
+    overrides.project_id || 'proj-1',
+    overrides.task_id || null,
+    overrides.owner_agent_id || 'director-1',
+    overrides.kind || 'coordination',
+    overrides.status || 'active',
+    overrides.title || 'Mission 1',
+    overrides.summary || 'Mission summary',
+    overrides.started_at || '2026-05-22T10:00:00.000Z',
+    overrides.updated_at || '2026-05-22T10:00:00.000Z',
+    overrides.created_at || '2026-05-22T10:00:00.000Z'
+  );
+}
+
+function seedMissionParticipant(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO mission_participants (
+      participant_id, mission_id, agent_id, role_in_mission, status, joined_at, updated_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.participant_id || `participant-${Math.random().toString(36).slice(2, 8)}`,
+    overrides.mission_id || 'mission-1',
+    overrides.agent_id || 'agent-1',
+    overrides.role_in_mission || 'executor',
+    overrides.status || 'active',
+    overrides.joined_at || '2026-05-22T10:00:00.000Z',
+    overrides.updated_at || '2026-05-22T10:00:00.000Z',
+    overrides.created_at || '2026-05-22T10:00:00.000Z'
+  );
+}
+
+function seedMissionPresence(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_presence (
+      presence_id, mission_id, agent_id, workspace_id, run_id, runtime_surface, presence_state,
+      status_summary, last_seen_at, expires_at, updated_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.presence_id || `presence-${Math.random().toString(36).slice(2, 8)}`,
+    overrides.mission_id || 'mission-1',
+    overrides.agent_id || 'agent-1',
+    overrides.workspace_id || null,
+    overrides.run_id || null,
+    overrides.runtime_surface || 'swarm-control-launch',
+    overrides.presence_state || 'busy',
+    overrides.status_summary || 'Busy',
+    overrides.last_seen_at || '2026-05-22T10:00:00.000Z',
+    overrides.expires_at || '2026-05-22T10:02:00.000Z',
+    overrides.updated_at || '2026-05-22T10:00:00.000Z',
+    overrides.created_at || '2026-05-22T10:00:00.000Z'
+  );
+}
+
+function seedSession(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_hub_sessions (
+      id, project_id, title, agent_model, status, visibility, opencode_session_id, directory, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.id || 'session-1',
+    overrides.project_id || 'proj-1',
+    overrides.title || 'Agent Session',
+    overrides.agent_model || 'opencode',
+    overrides.status || 'active',
+    overrides.visibility || 'visible',
+    Object.prototype.hasOwnProperty.call(overrides, 'opencode_session_id')
+      ? overrides.opencode_session_id
+      : null,
+    overrides.directory || '/repo/devhub/.devhub/worktrees/ws-1',
+    overrides.created_at || '2026-05-22T10:00:00.000Z',
+    overrides.updated_at || '2026-05-22T10:00:00.000Z'
+  );
+}
 
 function seedProject(db, id = 'proj-1') {
   db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(id, `Project ${id}`);
@@ -98,6 +182,8 @@ function seedDependency(db, { id, task_id, depends_on, tipo = 'blocks' }) {
 }
 
 function seedWorkspace(db, overrides = {}) {
+  const requiresBoundState =
+    (overrides.status || 'planned') === 'active' || (overrides.status || 'planned') === 'ready';
   const row = {
     id: overrides.id || 'ws-1',
     project_id: overrides.project_id || 'proj-1',
@@ -106,14 +192,34 @@ function seedWorkspace(db, overrides = {}) {
     run_id_or_session_id: overrides.run_id_or_session_id ?? null,
     repo_root: overrides.repo_root || '/repo/devhub',
     workspace_path: overrides.workspace_path || 'workspace://proj-1/ws-1',
-    worktree_path: overrides.worktree_path ?? null,
+    worktree_path: Object.prototype.hasOwnProperty.call(overrides, 'worktree_path')
+      ? overrides.worktree_path
+      : requiresBoundState
+        ? `/repo/devhub/.devhub/worktrees/${overrides.id || 'ws-1'}`
+        : null,
     base_branch: overrides.base_branch || 'main',
     base_commit: overrides.base_commit || AGENT_WORKSPACE_BASE_COMMIT,
-    branch_name: overrides.branch_name ?? null,
+    branch_name: Object.prototype.hasOwnProperty.call(overrides, 'branch_name')
+      ? overrides.branch_name
+      : requiresBoundState
+        ? `feat/${overrides.id || 'ws-1'}`
+        : null,
     status: overrides.status || 'planned',
-    observed_branch: overrides.observed_branch ?? null,
-    observed_head: overrides.observed_head ?? null,
-    observed_dirty: overrides.observed_dirty ?? null,
+    observed_branch: Object.prototype.hasOwnProperty.call(overrides, 'observed_branch')
+      ? overrides.observed_branch
+      : requiresBoundState
+        ? `feat/${overrides.id || 'ws-1'}`
+        : null,
+    observed_head: Object.prototype.hasOwnProperty.call(overrides, 'observed_head')
+      ? overrides.observed_head
+      : requiresBoundState
+        ? 'abc123'
+        : null,
+    observed_dirty: Object.prototype.hasOwnProperty.call(overrides, 'observed_dirty')
+      ? overrides.observed_dirty
+      : requiresBoundState
+        ? 'clean'
+        : null,
     evidence_ref: overrides.evidence_ref ?? null,
     updated_at: overrides.updated_at || '2026-05-22T10:00:00.000Z',
     created_at: overrides.created_at || overrides.updated_at || '2026-05-22T10:00:00.000Z',
@@ -520,5 +626,145 @@ describe('compactReads', () => {
       latest_run: null,
       latest_artifact: null,
     });
+  });
+
+  test('readMissionDiagnosticSummary returns canonical participant binding and presence data', () => {
+    seedProject(db, 'proj-1');
+    seedMission(db, {
+      mission_id: 'mission-diagnostic',
+      project_id: 'proj-1',
+      task_id: 'task-stale',
+      title: 'Mission Diagnostic',
+    });
+    seedMissionParticipant(db, {
+      mission_id: 'mission-diagnostic',
+      agent_id: 'worker-stale',
+      participant_id: 'participant-stale',
+    });
+    seedWorkspace(db, {
+      id: 'ws-stale',
+      project_id: 'proj-1',
+      agent_id: 'worker-stale',
+      current_task_id: 'task-stale',
+      run_id_or_session_id: 'session-stale',
+      status: 'active',
+    });
+    seedRun(db, {
+      run_id: 'run-stale',
+      workspace_id: 'ws-stale',
+      task_id: 'task-stale',
+      agent_id: 'worker-stale',
+    });
+    seedSession(db, { id: 'session-stale', opencode_session_id: null });
+    seedMissionPresence(db, {
+      mission_id: 'mission-diagnostic',
+      agent_id: 'worker-stale',
+      workspace_id: 'ws-stale',
+      run_id: 'run-stale',
+      presence_state: 'busy',
+    });
+
+    const summary = readMissionDiagnosticSummary(db, { missionId: 'mission-diagnostic' });
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        mission: expect.objectContaining({ mission_id: 'mission-diagnostic' }),
+        participants: expect.arrayContaining([
+          expect.objectContaining({
+            agent_id: 'worker-stale',
+            binding: expect.objectContaining({ classification: 'stale', reason: 'binding_stale' }),
+            presence: expect.objectContaining({ effective_state: expect.any(String) }),
+          }),
+        ]),
+      })
+    );
+    expect(readMissionDiagnosticSummary(db, { missionId: 'missing-mission' })).toBeNull();
+  });
+
+  test('readMissionListSummary exposes canonical binding counts per mission', () => {
+    seedProject(db, 'proj-1');
+    seedMission(db, {
+      mission_id: 'mission-listing',
+      project_id: 'proj-1',
+      task_id: 'task-listing',
+      title: 'Mission Listing',
+    });
+    seedMissionParticipant(db, {
+      mission_id: 'mission-listing',
+      agent_id: 'worker-bound',
+      participant_id: 'participant-bound',
+    });
+    seedWorkspace(db, {
+      id: 'ws-bound',
+      project_id: 'proj-1',
+      agent_id: 'worker-bound',
+      current_task_id: 'task-listing',
+      run_id_or_session_id: 'session-bound',
+      status: 'active',
+    });
+    seedRun(db, {
+      run_id: 'run-bound',
+      workspace_id: 'ws-bound',
+      task_id: 'task-listing',
+      agent_id: 'worker-bound',
+    });
+    seedSession(db, { id: 'session-bound', opencode_session_id: 'oc-bound-1' });
+
+    const missions = readMissionListSummary(db, {});
+
+    expect(missions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          mission_id: 'mission-listing',
+          participants_count: 1,
+          binding_counts: expect.objectContaining({ bound: 1, stale: 0, orphaned: 0, missing: 0 }),
+        }),
+      ])
+    );
+  });
+
+  test('readWorkspaceDiagnosticSummary and list expose latest evidence plus canonical orphaned state', () => {
+    seedProject(db, 'proj-1');
+    seedWorkspace(db, {
+      id: 'ws-orphaned',
+      project_id: 'proj-1',
+      current_task_id: 'task-orphaned',
+      status: 'orphaned',
+      run_id_or_session_id: 'session-orphaned',
+    });
+    seedRun(db, {
+      run_id: 'run-orphaned',
+      workspace_id: 'ws-orphaned',
+      task_id: 'task-orphaned',
+    });
+    seedArtifact(db, {
+      artifact_id: 'artifact-orphaned',
+      run_id: 'run-orphaned',
+      seq: 3,
+      summary: 'Latest orphaned evidence',
+    });
+
+    const summary = readWorkspaceDiagnosticSummary(db, { workspaceId: 'ws-orphaned' });
+    const worktrees = readWorkspaceDiagnosticList(db, { status: 'orphaned' });
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        workspace: expect.objectContaining({ id: 'ws-orphaned', status: 'orphaned' }),
+        latest_run: expect.objectContaining({ run_id: 'run-orphaned' }),
+        latest_artifact: expect.objectContaining({ artifact_id: 'artifact-orphaned' }),
+        session_binding: expect.objectContaining({
+          classification: 'orphaned',
+          reason: 'binding_orphaned',
+        }),
+      })
+    );
+    expect(worktrees).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workspace: expect.objectContaining({ id: 'ws-orphaned' }),
+          session_binding: expect.objectContaining({ classification: 'orphaned' }),
+        }),
+      ])
+    );
   });
 });

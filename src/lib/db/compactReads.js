@@ -14,9 +14,13 @@
 
 'use strict';
 
-const { getDb } = require('./core');
+const { getDb } = require('./shared');
 const { getLatestAgentRunForWorkspace } = require('./workspaces');
 const { getLatestAgentArtifactForRun } = require('./artifacts');
+const { buildMissionBindingResult } = require('./agentRuns');
+const {
+  readMissionDiagnosticSummary: readMissionDiagnosticSummaryFromSwarm,
+} = require('./swarmMissions');
 const {
   getSupervisorSnapshot,
   getSupervisorApprovalCheckpoint,
@@ -286,7 +290,7 @@ function readAgentRegistrySummary(dbOrNull, opts = {}) {
 
   const rows = db.prepare(sql).all(...params);
 
-  const enriched = rows.map(row => ({
+  const enriched = rows.map((row) => ({
     ...row,
     heartbeat_age_min: row.last_heartbeat
       ? Math.round((Date.now() - Date.parse(row.last_heartbeat)) / 60000)
@@ -320,6 +324,162 @@ function readWorkspaceEvidenceSummary(dbOrNull, input = {}) {
   };
 }
 
+function buildWorkspaceSessionBinding(db, workspace, latestRun = null) {
+  if (!workspace) return null;
+
+  const binding = {
+    agent_id: workspace.agent_id || null,
+    workspace_id: workspace.id,
+    run_id: latestRun?.run_id || null,
+    run_id_or_session_id: workspace.run_id_or_session_id || null,
+    cwd: workspace.repo_root || null,
+  };
+  const supervisor = workspace.current_task_id
+    ? getSupervisorSnapshot(db, workspace.current_task_id)
+    : null;
+  const sessionId = workspace.run_id_or_session_id || null;
+  const orphanedByDurableState =
+    workspace.status === 'orphaned' ||
+    supervisor?.reason_class === 'orphaned_workspace' ||
+    supervisor?.reason_class === 'orphaned_run';
+
+  if (orphanedByDurableState) {
+    return buildMissionBindingResult(binding, {
+      status: 'unbound',
+      classification: 'orphaned',
+      session_id: sessionId,
+      opencode_session_id: null,
+      reason: 'binding_orphaned',
+      agent_model: null,
+      cwd: workspace.repo_root || null,
+    });
+  }
+
+  if (!sessionId) {
+    return buildMissionBindingResult(binding, {
+      status: 'unbound',
+      classification: 'missing',
+      session_id: null,
+      opencode_session_id: null,
+      reason: 'binding_missing',
+      agent_model: null,
+      cwd: workspace.repo_root || null,
+    });
+  }
+
+  const session =
+    db.prepare('SELECT * FROM agent_hub_sessions WHERE id = ? LIMIT 1').get(sessionId) || null;
+  const opencodeSessionId = session?.opencode_session_id?.trim() || null;
+  const isVerified = session && session.status === 'active' && opencodeSessionId;
+
+  if (!isVerified) {
+    return buildMissionBindingResult(binding, {
+      status: 'unbound',
+      classification: 'stale',
+      session_id: sessionId,
+      opencode_session_id: null,
+      reason: 'binding_stale',
+      agent_model: null,
+      cwd: workspace.repo_root || null,
+    });
+  }
+
+  return buildMissionBindingResult(binding, {
+    status: 'bound',
+    classification: 'bound',
+    session_id: session.id,
+    opencode_session_id: opencodeSessionId,
+    reason: 'binding_found',
+    agent_model: session.agent_model || null,
+    cwd: session.directory || workspace.repo_root || null,
+  });
+}
+
+function readMissionDiagnosticSummary(dbOrNull, input = {}) {
+  const db = resolveDb(dbOrNull);
+  return readMissionDiagnosticSummaryFromSwarm(db, input);
+}
+
+function readMissionListSummary(dbOrNull, input = {}) {
+  const db = resolveDb(dbOrNull);
+  const conditions = [];
+  const params = [];
+
+  if (input.projectId || input.project_id) {
+    conditions.push('project_id = ?');
+    params.push(input.projectId || input.project_id);
+  }
+  if (input.status) {
+    conditions.push('status = ?');
+    params.push(input.status);
+  }
+
+  let sql = 'SELECT * FROM swarm_missions';
+  if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+  sql += ' ORDER BY updated_at DESC, rowid DESC';
+  if (input.limit) {
+    sql += ' LIMIT ?';
+    params.push(input.limit);
+  }
+
+  return db
+    .prepare(sql)
+    .all(...params)
+    .map((mission) => {
+      const summary = readMissionDiagnosticSummaryFromSwarm(db, { missionId: mission.mission_id });
+      const participants = summary?.participants || [];
+      const bindingCounts = { bound: 0, stale: 0, orphaned: 0, missing: 0 };
+      for (const participant of participants) {
+        const classification = participant?.binding?.classification || 'missing';
+        if (Object.prototype.hasOwnProperty.call(bindingCounts, classification)) {
+          bindingCounts[classification] += 1;
+        }
+      }
+
+      return {
+        ...mission,
+        participants_count: participants.length,
+        binding_counts: bindingCounts,
+      };
+    });
+}
+
+function readWorkspaceDiagnosticSummary(dbOrNull, input = {}) {
+  const db = resolveDb(dbOrNull);
+  const summary = readWorkspaceEvidenceSummary(db, input);
+  if (!summary) return null;
+
+  return {
+    ...summary,
+    session_binding: buildWorkspaceSessionBinding(db, summary.workspace, summary.latest_run),
+  };
+}
+
+function readWorkspaceDiagnosticList(dbOrNull, input = {}) {
+  const db = resolveDb(dbOrNull);
+  const conditions = [];
+  const params = [];
+
+  if (input.projectId || input.project_id) {
+    conditions.push('project_id = ?');
+    params.push(input.projectId || input.project_id);
+  }
+  if (input.status) {
+    conditions.push('status = ?');
+    params.push(input.status);
+  }
+
+  let sql = 'SELECT id FROM agent_workspaces';
+  if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+  sql += ' ORDER BY created_at DESC, rowid DESC';
+
+  return db
+    .prepare(sql)
+    .all(...params)
+    .map((row) => readWorkspaceDiagnosticSummary(db, { workspaceId: row.id }))
+    .filter(Boolean);
+}
+
 /**
  * Query a single task by ID.
  * @param {Database} db - better-sqlite3 instance (or null for singleton)
@@ -333,6 +493,10 @@ function readTaskById(dbOrNull, taskId) {
 
 module.exports = {
   readExecutionQueueSummary,
+  readMissionDiagnosticSummary,
+  readMissionListSummary,
+  readWorkspaceDiagnosticList,
+  readWorkspaceDiagnosticSummary,
   readWorkspaceEvidenceSummary,
   readAgentRegistrySummary,
   readTaskById,

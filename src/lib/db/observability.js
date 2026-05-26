@@ -6,7 +6,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getDb } = require('./core');
+const { getDb } = require('./shared');
 
 // Helper to resolve db-first or input-first calling convention
 function resolveDbArgs(dbOrInput, maybeInput) {

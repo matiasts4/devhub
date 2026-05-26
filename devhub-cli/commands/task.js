@@ -1,34 +1,115 @@
 'use strict';
 
 const { getDb, readTaskById } = require('../lib/db');
-const { section, row, divider, isTTY: formatIsTTY } = require('../lib/format');
+const { section, row, isTTY: formatIsTTY, table } = require('../lib/format');
 
 const TRUNCATE_LENGTH = 120;
 
 /**
- * `devhub task <id>` — display task detail from SQLite.
- * TTY: formatted sections. Non-TTY: key=value pairs.
- * @param {object} opts
- * @param {boolean} [opts.verbose] - Show full description without truncation
+ * Parse args for task subcommands.
+ * @returns {object} { subcommand, taskId, options }
  */
-function taskCommand(opts = {}) {
-  const verbose = opts.verbose === true;
-
-  // Validate ID argument
+function parseTaskArgs() {
   const args = process.argv.slice(3); // ['node', 'bin/devhub', 'task', ...]
-  const id = args.find(a => !a.startsWith('--'));
+  let subcommand = null;
+  let taskId = null;
+  const options = {};
 
-  if (!id) {
-    process.stderr.write('ID required\n');
-    process.exit(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'history') {
+      subcommand = 'history';
+    } else if (args[i] === '--verbose') {
+      options.verbose = true;
+    } else if (args[i] === '--limit' && args[i + 1]) {
+      options.limit = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i] === '--json') {
+      options.json = true;
+    } else if (!args[i].startsWith('--') && !taskId) {
+      taskId = args[i];
+    }
   }
 
+  return { subcommand, taskId, options };
+}
+
+/**
+ * `devhub task history <task-id>` — show task history.
+ * @param {string} taskId
+ * @param {object} opts
+ */
+function taskHistory(taskId, opts = {}) {
   const db = getDb();
-  const task = readTaskById(db, id);
+  const limit = opts.limit || 10;
+
+  // Import getTaskHistory from tasks.js
+  let getTaskHistory;
+  try {
+    const tasks = require('../../src/lib/db/tasks.js');
+    getTaskHistory = tasks.getTaskHistory;
+  } catch (err) {
+    process.stderr.write(`Error: getTaskHistory not available: ${err.message}\n`);
+    process.exit(1);
+  }
+
+  const history = getTaskHistory(db, { taskId, limit });
+
+  if (opts.json) {
+    process.stdout.write(JSON.stringify({ task_id: taskId, history }) + '\n');
+    process.exit(0);
+  }
+
+  // TTY formatted output
+  if (history.length === 0) {
+    process.stdout.write('No history found.\n');
+    process.exit(0);
+  }
+
+  const effectiveTTY = process.env.FORCE_TTY === '1' || formatIsTTY;
+
+  if (effectiveTTY) {
+    process.stdout.write(section(`TASK HISTORY: ${taskId}`));
+    process.stdout.write('\n');
+    const headers = ['Timestamp', 'Action', 'Agent', 'Details'];
+    const rows = history.map((h) => [
+      h.timestamp || h.created_at || '',
+      h.action || '',
+      h.actor_id || h.agent_id || 'system',
+      truncate(h.details || h.metadata || '', 60),
+    ]);
+    process.stdout.write(table(headers, rows));
+    process.stdout.write('\n');
+  } else {
+    for (const h of history) {
+      process.stdout.write(
+        `${h.timestamp || h.created_at}|${h.action}|${h.actor_id || h.agent_id || 'system'}|${h.details || h.metadata || ''}\n`
+      );
+    }
+  }
+
+  process.exit(0);
+}
+
+/**
+ * `devhub task <id>` — display task detail from SQLite.
+ * TTY: formatted sections. Non-TTY: key=value pairs.
+ * @param {string} taskId
+ * @param {object} opts
+ */
+function taskDetail(taskId, opts = {}) {
+  const verbose = opts.verbose === true;
+
+  const db = getDb();
+  const task = readTaskById(db, taskId);
 
   if (!task) {
     process.stderr.write('Task not found\n');
     process.exit(1);
+  }
+
+  if (opts.json) {
+    process.stdout.write(JSON.stringify({ task }) + '\n');
+    process.exit(0);
   }
 
   // Support FORCE_TTY for testing
@@ -38,7 +119,9 @@ function taskCommand(opts = {}) {
   if (effectiveTTY) {
     // TTY formatted output
     const description = task.description
-      ? (verbose ? task.description : truncate(task.description, TRUNCATE_LENGTH))
+      ? verbose
+        ? task.description
+        : truncate(task.description, TRUNCATE_LENGTH)
       : '(none)';
 
     const lines = [];
@@ -71,6 +154,27 @@ function taskCommand(opts = {}) {
   }
 
   process.exit(0);
+}
+
+/**
+ * Main task command handler.
+ * @param {object} opts
+ */
+function taskCommand(opts = {}) {
+  const { subcommand, taskId, options } = parseTaskArgs();
+
+  if (!taskId) {
+    process.stderr.write('Task ID required\n');
+    process.stderr.write('Usage: devhub task <id> [--verbose] [--json]\n');
+    process.stderr.write('       devhub task history <id> [--limit <n>] [--json]\n');
+    process.exit(2);
+  }
+
+  if (subcommand === 'history') {
+    return taskHistory(taskId, { ...opts, ...options });
+  } else {
+    return taskDetail(taskId, { ...opts, ...options });
+  }
 }
 
 /**

@@ -53,20 +53,43 @@ const mockTerminalTTYProps = [];
 
 jest.mock('../TerminalTTY', () => ({
   __esModule: true,
-  default: ({ id, autoFocus, isActivePanel, requestedRendererMode = 'xterm', onResetRendererToXterm }) => {
+  default: ({
+    id,
+    autoFocus,
+    isActivePanel,
+    requestedRendererMode = 'xterm',
+    onResetRendererToXterm,
+  }) => {
     const React = require('react');
     mockTerminalTTYProps.push({ id, autoFocus, isActivePanel, requestedRendererMode });
-    return React.createElement('div', { 'data-testid': `terminal-${id}`, 'data-autofocus': autoFocus ? 'true' : 'false' }, [
-      React.createElement('span', { key: 'label', 'data-testid': `terminal-renderer-${id}` }, requestedRendererMode),
-      React.createElement('span', { key: 'active', 'data-testid': `terminal-active-${id}` }, isActivePanel ? 'active' : 'inactive'),
-      onResetRendererToXterm
-        ? React.createElement(
-            'button',
-            { key: 'reset', type: 'button', 'data-testid': `terminal-renderer-reset-${id}`, onClick: onResetRendererToXterm },
-            'reset renderer'
-          )
-        : null,
-    ]);
+    return React.createElement(
+      'div',
+      { 'data-testid': `terminal-${id}`, 'data-autofocus': autoFocus ? 'true' : 'false' },
+      [
+        React.createElement(
+          'span',
+          { key: 'label', 'data-testid': `terminal-renderer-${id}` },
+          requestedRendererMode
+        ),
+        React.createElement(
+          'span',
+          { key: 'active', 'data-testid': `terminal-active-${id}` },
+          isActivePanel ? 'active' : 'inactive'
+        ),
+        onResetRendererToXterm
+          ? React.createElement(
+              'button',
+              {
+                key: 'reset',
+                type: 'button',
+                'data-testid': `terminal-renderer-reset-${id}`,
+                onClick: onResetRendererToXterm,
+              },
+              'reset renderer'
+            )
+          : null,
+      ]
+    );
   },
 }));
 
@@ -78,14 +101,6 @@ jest.mock('../NotificationCenter', () => ({
   },
 }));
 
-jest.mock('../AgentRoomSidebar', () => ({
-  __esModule: true,
-  default: () => {
-    const React = require('react');
-    return React.createElement('div', null, 'agent room');
-  },
-}));
-
 jest.mock('@/lib/docopsPrompts', () => ({
   enforceDocOpsGateOnLaunchCommand: (value) => value,
 }));
@@ -94,7 +109,9 @@ jest.mock('@/lib/db/localClient', () => ({
   createClient: () => ({
     from: () => ({
       insert: jest.fn().mockResolvedValue({}),
-      update() { return this; },
+      update() {
+        return this;
+      },
       eq: jest.fn().mockResolvedValue({}),
     }),
   }),
@@ -135,21 +152,29 @@ jest.mock('date-fns', () => ({
   formatDistanceToNow: () => 'just now',
 }));
 
-jest.mock('../workspace/FileExplorerEditorPane', () => ({
-  __esModule: true,
-  default: ({ embedded }) => {
-    const React = require('react');
-    return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/FileExplorerEditorPane',
+  () => ({
+    __esModule: true,
+    default: ({ embedded }) => {
+      const React = require('react');
+      return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
+    },
+  }),
+  { virtual: true }
+);
 
-jest.mock('../workspace/WorkspaceBridgePane', () => ({
-  __esModule: true,
-  default: ({ dockState }) => {
-    const React = require('react');
-    return React.createElement('div', { 'data-testid': 'shared-bridge-pane' });
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/WorkspaceBridgePane',
+  () => ({
+    __esModule: true,
+    default: ({ dockState }) => {
+      const React = require('react');
+      return React.createElement('div', { 'data-testid': 'shared-bridge-pane' });
+    },
+  }),
+  { virtual: true }
+);
 
 const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').default;
 
@@ -186,7 +211,9 @@ async function renderIntoDom(element) {
   const root = createRoot(container);
   mountedRoots.push({ root, container });
 
-  flushSync(() => { root.render(element); });
+  flushSync(() => {
+    root.render(element);
+  });
   await flushEffects();
   return { container };
 }
@@ -207,7 +234,9 @@ function getPanelTab(container, label) {
 }
 
 function expectAutoFocusedTerminal(container, panelId) {
-  expect(container.querySelector(`[data-testid="terminal-${panelId}"]`)?.getAttribute('data-autofocus')).toBe('true');
+  expect(
+    container.querySelector(`[data-testid="terminal-${panelId}"]`)?.getAttribute('data-autofocus')
+  ).toBe('true');
 }
 
 function getAddButton(container) {
@@ -231,8 +260,8 @@ function getVisibleWorkspaceShell(container) {
 }
 
 function getTerminalRendererValues(container) {
-  return Array.from(container.querySelectorAll('[data-testid^="terminal-renderer-p"]')).map((node) =>
-    node.textContent
+  return Array.from(container.querySelectorAll('[data-testid^="terminal-renderer-p"]')).map(
+    (node) => node.textContent
   );
 }
 
@@ -268,7 +297,9 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
   afterEach(() => {
     while (mountedRoots.length > 0) {
       const { root, container } = mountedRoots.pop();
-      flushSync(() => { root.unmount(); });
+      flushSync(() => {
+        root.unmount();
+      });
       container.remove();
     }
     consoleErrorSpy?.mockRestore();
@@ -484,24 +515,40 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     );
 
     await click(getSplitRightButton(container));
-    expect(getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(2);
-    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
-    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p2"]')).not.toBeNull();
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')
+    ).toHaveLength(2);
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p1"]')
+    ).not.toBeNull();
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p2"]')
+    ).not.toBeNull();
 
     await click(getAddButton(container));
     expectAutoFocusedTerminal(container, 'p3');
 
     await click(getPanelTab(container, 'p1'));
-    expect(getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(2);
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')
+    ).toHaveLength(2);
 
     const closeV1 = getPanelTab(container, 'p1').querySelector('[role="button"]');
     await click(closeV1);
 
     expect(getPanelTab(container, 'p2')).toBeNull();
-    expect(getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')).toHaveLength(1);
-    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p3"]')).not.toBeNull();
-    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p1"]')).toBeNull();
-    expect(getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p2"]')).toBeNull();
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]')
+    ).toHaveLength(1);
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p3"]')
+    ).not.toBeNull();
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p1"]')
+    ).toBeNull();
+    expect(
+      getVisibleWorkspaceShell(container)?.querySelector('[data-testid="terminal-p2"]')
+    ).toBeNull();
   });
 
   test('stores an explicit renderer selection for the active panel and keeps other panels independent', async () => {
@@ -527,7 +574,9 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     );
 
     await click(getAddButton(container));
-    expect(container.querySelector('[data-testid="terminal-renderer-p2"]')?.textContent).toBe('vte-experimental');
+    expect(container.querySelector('[data-testid="terminal-renderer-p2"]')?.textContent).toBe(
+      'vte-experimental'
+    );
 
     await click(getPanelTab(container, 'p1'));
     expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
@@ -555,7 +604,9 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
 
     await click(container.querySelector('[data-testid="terminal-renderer-reset-p1"]'));
 
-    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe('xterm');
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
+      'xterm'
+    );
   });
 
   test('uses GTK VTE as the default renderer for fresh workspaces and inherited views', async () => {
@@ -590,9 +641,9 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
 
     await click(getAddButton(firstView.container));
 
-    expect(firstView.container.querySelector('[data-testid="terminal-renderer-p2"]')?.textContent).toBe(
-      'xterm'
-    );
+    expect(
+      firstView.container.querySelector('[data-testid="terminal-renderer-p2"]')?.textContent
+    ).toBe('xterm');
 
     const secondView = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
@@ -608,7 +659,9 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
-    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe('xterm');
+    expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
+      'xterm'
+    );
   });
 
   test('keeps explicit panel override independent from workspace default settings', async () => {
@@ -641,7 +694,9 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
-    expect(container.querySelector('[data-testid="terminal-renderer-workspace-select"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="terminal-renderer-workspace-select"]')
+    ).toBeNull();
     expect(container.querySelector('[data-testid="terminal-renderer-panel-select"]')).toBeNull();
     expect(container.textContent).not.toContain('Renderer por defecto');
     expect(container.textContent).not.toContain('Vista activa');
@@ -654,14 +709,24 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
 
     await click(getAddButton(container));
 
-    expect(container.querySelector('[data-testid="terminal-active-p2"]')?.textContent).toBe('active');
-    expect(getLatestTerminalTTYProps('p1')).toEqual(expect.objectContaining({ isActivePanel: true }));
-    expect(getLatestTerminalTTYProps('p2')).toEqual(expect.objectContaining({ isActivePanel: true }));
+    expect(container.querySelector('[data-testid="terminal-active-p2"]')?.textContent).toBe(
+      'active'
+    );
+    expect(getLatestTerminalTTYProps('p1')).toEqual(
+      expect.objectContaining({ isActivePanel: true })
+    );
+    expect(getLatestTerminalTTYProps('p2')).toEqual(
+      expect.objectContaining({ isActivePanel: true })
+    );
 
     await click(getPanelTab(container, 'p1'));
 
-    expect(container.querySelector('[data-testid="terminal-active-p1"]')?.textContent).toBe('active');
-    expect(getLatestTerminalTTYProps('p1')).toEqual(expect.objectContaining({ isActivePanel: true }));
+    expect(container.querySelector('[data-testid="terminal-active-p1"]')?.textContent).toBe(
+      'active'
+    );
+    expect(getLatestTerminalTTYProps('p1')).toEqual(
+      expect.objectContaining({ isActivePanel: true })
+    );
     expect(container.querySelector('[data-testid="terminal-p2"]')).toBeNull();
   });
 });

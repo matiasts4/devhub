@@ -1,9 +1,42 @@
 'use strict';
 
-const { spawnSync } = require('child_process');
 const path = require('path');
+const { createTempDb } = require('../tests/fixtures/seed-factory');
 
+// Set DB path BEFORE any require() that loads lib/db
+const dbPath = createTempDb();
+process.env.DEVHUB_DB_PATH = dbPath;
+jest.resetModules();
+
+const childProcess = require('child_process');
 const CLI = path.resolve(__dirname, '..', 'bin', 'devhub');
+
+function spawnSync(command, args, options = {}) {
+  return childProcess.spawnSync(command, args, {
+    encoding: 'utf8',
+    ...options,
+    env: {
+      ...process.env,
+      DEVHUB_DB_PATH: dbPath,
+      ...(options.env || {}),
+    },
+  });
+}
+
+beforeAll(() => {
+  // DB path already set above
+});
+
+afterAll(() => {
+  const { closeDb } = require('../lib/db');
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
+  delete process.env.DEVHUB_DB_PATH;
+  // Note: NOT calling cleanupDb to avoid disk I/O errors in subsequent tests
+});
 
 /**
  * Seed the test DB with required tables.
@@ -58,6 +91,12 @@ function seedTestData() {
   db.prepare('DELETE FROM projects').run();
   db.pragma('foreign_keys = ON');
 
+  // Insert dummy project to prevent recovery on reopen
+  db.prepare('INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)').run(
+    'proj-1',
+    'Test Project'
+  );
+
   closeDb();
 }
 
@@ -69,25 +108,40 @@ function seedWorkspace(ws, runs = [], artifacts = []) {
   const db = getDb();
   const now = new Date().toISOString();
 
-  db.prepare(
-    "INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)"
-  ).run(ws.project_id || 'proj-1', 'Test Project');
+  db.prepare('INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)').run(
+    ws.project_id || 'proj-1',
+    'Test Project'
+  );
+
+  // Prepare values respecting CHECK constraint for active/ready status
+  const status = ws.status || 'active';
+  const needsConstraintFields = status === 'active' || status === 'ready';
+
+  const worktreePath =
+    ws.worktree_path || (needsConstraintFields ? `/tmp/worktree-${ws.id}` : null);
+  const branchName = ws.branch_name || (needsConstraintFields ? `branch-${ws.id}` : null);
+  const observedBranch =
+    ws.observed_branch || (needsConstraintFields ? ws.branch_name || `branch-${ws.id}` : null);
+  const observedHead = ws.observed_head || (needsConstraintFields ? 'abc123' : null);
 
   db.prepare(
-    `INSERT INTO agent_workspaces (id, project_id, agent_id, repo_root, workspace_path, base_branch, base_commit, branch_name, status, current_task_id, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO agent_workspaces (id, project_id, agent_id, repo_root, workspace_path, worktree_path, base_branch, base_commit, branch_name, status, current_task_id, observed_branch, observed_head, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     ws.id,
     ws.project_id || 'proj-1',
     ws.agent_id || 'agent-1',
     ws.repo_root || '/tmp/repo',
     ws.workspace_path || '/tmp/ws',
+    worktreePath,
     ws.base_branch || 'main',
     ws.base_commit || 'abc123',
-    ws.branch_name || null,
-    ws.status || 'active',
+    branchName,
+    status,
     ws.current_task_id || null,
-    ws.updated_at || now,
+    observedBranch,
+    observedHead,
+    ws.updated_at || now
   );
 
   for (const r of runs) {
@@ -101,10 +155,10 @@ function seedWorkspace(ws, runs = [], artifacts = []) {
       'main',
       'abc123',
       r.status || 'succeeded',
-      r.created_at || now,
+      r.created_at || now
     );
 
-    const matchingArtifacts = artifacts.filter(a => a.run_id === r.id);
+    const matchingArtifacts = artifacts.filter((a) => a.run_id === r.id);
     for (const a of matchingArtifacts) {
       db.prepare(
         `INSERT INTO agent_artifacts (artifact_id, run_id, seq, phase, kind, producer, summary, evidence_ref, observed_at, created_at)
@@ -119,16 +173,13 @@ function seedWorkspace(ws, runs = [], artifacts = []) {
         a.summary || '',
         a.evidence_ref || '{}',
         a.observed_at || now,
-        a.created_at || now,
+        a.created_at || now
       );
     }
   }
 
   closeDb();
 }
-
-// Clean slate before all tests
-seedTestData();
 
 describe('devhub ws command', () => {
   describe('missing ID argument', () => {
@@ -173,7 +224,7 @@ describe('devhub ws command', () => {
         env: { ...process.env, FORCE_TTY: '1' },
       });
       expect(result.status).toBe(0);
-      expect(result.stdout).toMatch(/\x1b\[/);
+      expect(result.stdout).toContain('\x1b[');
     });
   });
 
@@ -204,7 +255,7 @@ describe('devhub ws command', () => {
       seedWorkspace({ id: 'ws-no-ansi' });
 
       const result = spawnSync('node', [CLI, 'ws', 'ws-no-ansi'], { encoding: 'utf8' });
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      expect(result.stdout).not.toContain('\x1b[');
     });
   });
 
@@ -246,12 +297,17 @@ describe('devhub ws command', () => {
         { id: 'ws-with-runs', agent_id: 'agent-y' },
         [
           { id: 'run-1', workspace_id: 'ws-with-runs', status: 'succeeded', created_at: now },
-          { id: 'run-2', workspace_id: 'ws-with-runs', status: 'failed', created_at: new Date(Date.now() + 1000).toISOString() },
+          {
+            id: 'run-2',
+            workspace_id: 'ws-with-runs',
+            status: 'failed',
+            created_at: new Date(Date.now() + 1000).toISOString(),
+          },
         ],
         [
           { id: 'art-1', run_id: 'run-1', kind: 'git.commit' },
           { id: 'art-2', run_id: 'run-2', kind: 'test.result' },
-        ],
+        ]
       );
 
       const result = spawnSync('node', [CLI, 'ws', 'ws-with-runs'], { encoding: 'utf8' });

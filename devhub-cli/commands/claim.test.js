@@ -1,9 +1,42 @@
 'use strict';
 
-const { spawnSync } = require('child_process');
+const childProcess = require('child_process');
 const path = require('path');
+const { createTempDb } = require('../tests/fixtures/seed-factory');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'devhub');
+
+function spawnSync(command, args, options = {}) {
+  return childProcess.spawnSync(command, args, {
+    encoding: 'utf8',
+    ...options,
+    env: {
+      ...process.env,
+      DEVHUB_DB_PATH: dbPath,
+      ...(options.env || {}),
+    },
+  });
+}
+
+let dbPath;
+
+beforeAll(() => {
+  dbPath = createTempDb();
+  process.env.DEVHUB_DB_PATH = dbPath;
+  // Force reload of db module with new env
+  jest.resetModules();
+});
+
+afterAll(() => {
+  const { closeDb } = require('../lib/db');
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
+  delete process.env.DEVHUB_DB_PATH;
+  // Note: NOT calling cleanupDb to avoid disk I/O errors in subsequent tests
+});
 
 function seedClaimData() {
   const { getDb, closeDb } = require('../lib/db');
@@ -74,6 +107,15 @@ function seedClaimData() {
   db.prepare('DELETE FROM agent_registry').run();
 
   db.pragma('foreign_keys = ON');
+
+  // Insert dummy project to prevent recovery on reopen
+  db.prepare('INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)').run(
+    'proj-1',
+    'Test Project'
+  );
+
+  // Force WAL checkpoint so spawnSync child process sees changes
+  db.pragma('wal_checkpoint(RESTART)');
   closeDb();
 }
 
@@ -109,9 +151,6 @@ function getTaskById(taskId) {
   closeDb();
   return row;
 }
-
-// Clean slate before all tests
-seedClaimData();
 
 describe('devhub claim command', () => {
   beforeEach(() => {

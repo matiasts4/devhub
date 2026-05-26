@@ -10,8 +10,7 @@
 
 const { execSync } = require('child_process');
 const fs = require('fs');
-const path = require('path');
-const { getDb } = require('./core');
+const { getDb } = require('../db/core');
 
 function safeExec(cmd, cwd = undefined) {
   try {
@@ -182,18 +181,24 @@ function cleanupMissionWorktrees({ repoRoot, launchId }, options = {}) {
   const now = new Date().toISOString();
 
   // Get all workspaces for this launch
-  const workspaces = db.prepare(
-    'SELECT * FROM agent_workspaces WHERE branch_name LIKE ?'
-  ).all(`%${launchId}%`);
+  const workspaces = db
+    .prepare('SELECT * FROM agent_workspaces WHERE branch_name LIKE ?')
+    .all(`%${launchId}%`);
 
   const results = [];
   for (const ws of workspaces) {
-    if (!ws.worktree_path) continue;
+    if (!ws.worktree_path) {
+      results.push({
+        workspace_id: ws.id,
+        agent_id: ws.agent_id,
+        worktree_path: ws.worktree_path || null,
+        success: false,
+        reason: 'missing_worktree_path',
+      });
+      continue;
+    }
 
-    const result = safeRemoveWorktree(
-      { repoRoot, worktreePath: ws.worktreePath },
-      options,
-    );
+    const result = safeRemoveWorktree({ repoRoot, worktreePath: ws.worktree_path }, options);
     results.push({
       workspace_id: ws.id,
       agent_id: ws.agent_id,

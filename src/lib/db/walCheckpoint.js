@@ -6,8 +6,8 @@
  */
 
 const fs = require('fs');
-const path = require('path');
-const { getDb, resolveDbPath } = require('./core');
+const { getDb } = require('./shared');
+const { resolveDbPath } = require('./pathResolver');
 
 const DEFAULT_WAL_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
 const DEFAULT_CHECK_INTERVAL_MS = 60_000; // 1 minute

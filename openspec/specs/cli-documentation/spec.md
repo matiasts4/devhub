@@ -2,115 +2,44 @@
 
 ## Purpose
 
-User-facing documentation for the `devhub` CLI covering all 11 commands, installation, exit codes, output modes, integration tests, and agent workflow patterns. Source of truth is `devhub-cli/README.md`.
+Define user-facing documentation for the current DevHub CLI command surface.
 
 ## Requirements
 
-### Requirement: Command Reference
+### Requirement: Current Command Surface Documentation
 
-The documentation SHALL list all 11 implemented commands with usage syntax, arguments, options, and at least one example per command.
+The documentation SHALL describe 20 implemented top-level CLI commands and SHALL NOT present planned commands as shipped.
 
-#### Scenario: All commands documented
+#### Scenario: README matches implemented commands
 
-- GIVEN the README exists
-- WHEN a reader searches for any implemented command
-- THEN the command appears with its full signature
-- AND no hallucinated commands or options are present
+- GIVEN the CLI command registry
+- WHEN the README command reference is reviewed
+- THEN every implemented top-level command is documented
+- AND no implemented command is omitted
 
-#### Scenario: Per-command detail format
+#### Scenario: Unsupported commands stay out of docs
 
-- GIVEN a command section
-- WHEN the reader reviews it
-- THEN it includes: usage line, arguments table, options table, and ≥1 example
+- GIVEN older parity notes mention commands like `register`
+- WHEN the README is reviewed
+- THEN unsupported commands are not presented as executable CLI behavior
 
-### Requirement: Installation Guide
+### Requirement: Executable Agent Workflow Docs
 
-The documentation SHALL describe how to install and run the CLI via `npm link`, global install, and direct invocation.
+The documentation SHALL describe agent workflows only with implemented commands and SHALL describe registration as runtime or launch setup, not as CLI command.
 
-#### Scenario: npm link development install
+#### Scenario: Workflow remains executable
 
-- GIVEN the reader wants to develop against the CLI
-- WHEN they follow the npm link instructions
-- THEN the `devhub` command is available globally from the local source
+- GIVEN a reader follows the workflow section
+- WHEN they execute the referenced commands
+- THEN each command exists in the CLI
+- AND registration is documented outside the command list
 
-#### Scenario: Direct invocation
+### Requirement: CLI Operations Guidance
 
-- GIVEN the reader does not want a global install
-- WHEN they invoke `node devhub-cli/bin/devhub`
-- THEN the CLI runs without requiring installation
+The documentation SHALL keep installation, output, and testing guidance aligned with the shipped CLI.
 
-### Requirement: Exit Code Contract
+#### Scenario: Reader can install and test the current CLI
 
-The documentation SHALL document the three exit codes: 0 (success), 1 (runtime error/not found), 2 (invalid args or unknown command).
-
-#### Scenario: Exit code table present
-
-- GIVEN the README
-- WHEN the reader looks for exit codes
-- THEN a table or list shows codes 0, 1, and 2 with their meanings
-
-#### Scenario: Exit code matches cli.js behavior
-
-- GIVEN the documented exit codes
-- WHEN compared against `cli.js` error handling
-- THEN they match: unknown command → 2, runtime error → 1, success → 0
-
-### Requirement: Output Modes
-
-The documentation SHALL explain TTY vs piped output behavior (color in TTY, plain text when piped).
-
-#### Scenario: TTY color documented
-
-- GIVEN the output modes section
-- WHEN the reader reviews it
-- THEN it explains ANSI color codes are applied when `process.stdout.isTTY` is true
-
-#### Scenario: Piped output documented
-
-- GIVEN the output modes section
-- WHEN the reader reviews it
-- THEN it explains output is plain text (no ANSI escapes) when piped or redirected
-
-### Requirement: Integration Test Guide
-
-The documentation SHALL explain how to run integration tests, including the test command, seed factory usage, and reference to actual test files.
-
-#### Scenario: Test command documented
-
-- GIVEN the integration test section
-- WHEN the reader wants to run tests
-- THEN it documents `npm run test:integration` as the command to execute
-
-#### Scenario: Seed factory explained
-
-- GIVEN the integration test section
-- WHEN the reader reviews it
-- THEN it explains the seed factory creates deterministic fixtures (projects, tasks, agents, milestones) per test
-
-#### Scenario: Test isolation documented
-
-- GIVEN the integration test section
-- WHEN the reader reviews it
-- THEN it explains each test gets an isolated temp SQLite DB via `DEVHUB_DB_PATH`
-
-### Requirement: Agent Workflow Patterns
-
-The documentation SHALL describe the agent lifecycle pattern: register → heartbeat → claim → work → release → heartbeat.
-
-#### Scenario: Lifecycle sequence documented
-
-- GIVEN the agent patterns section
-- WHEN the reader reviews it
-- THEN it shows the complete sequence: register, heartbeat loop, claim, work, release, heartbeat
-
-#### Scenario: Per-step CLI commands mapped
-
-- GIVEN the agent patterns section
-- WHEN the reader reviews it
-- THEN each step maps to the corresponding CLI command (register, heartbeat, claim, release, update-status)
-
-#### Scenario: Heartbeat purpose explained
-
-- GIVEN the agent patterns section
-- WHEN the reader reviews it
-- THEN it explains heartbeats prevent orphan detection and keep task leases valid
+- GIVEN the CLI README
+- WHEN a reader reviews setup and testing sections
+- THEN they see a valid install path, `npm run test:integration`, and the current output-mode rules

@@ -1,16 +1,15 @@
 /**
- * Integration tests for MCP Milestone and Dashboard tools:
+ * Integration tests for MCP milestone tools:
  *   - list_milestones
  *   - create_milestone
  *   - bulk_create_milestones
  *   - update_milestone
- *   - get_dashboard
  */
 
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { createTestHarness } from '../test-harness.js';
 
-describe('MCP Milestone & Dashboard Tools', () => {
+describe('MCP Milestone Tools', () => {
   let harness;
   let projectId;
   let userId;
@@ -149,23 +148,6 @@ describe('MCP Milestone & Dashboard Tools', () => {
       });
       expect(result.updated).toBe(true);
       expect(result.milestone.title).toBe('Updated Milestone');
-    });
-  });
-
-  describe('get_dashboard', () => {
-    it('returns global dashboard with all projects', async () => {
-      const result = await harness.callTool('get_dashboard');
-      expect(result).toHaveProperty('total_projects');
-      expect(result).toHaveProperty('active_projects');
-      expect(result).toHaveProperty('dashboard');
-      expect(Array.isArray(result.dashboard)).toBe(true);
-      if (result.dashboard.length > 0) {
-        const proj = result.dashboard[0];
-        expect(proj).toHaveProperty('tasks');
-        expect(proj.tasks).toHaveProperty('total');
-        expect(proj.tasks).toHaveProperty('completed');
-        expect(proj.tasks).toHaveProperty('overdue');
-      }
     });
   });
 });

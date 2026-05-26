@@ -3,12 +3,17 @@
  * @module agentRuns
  * Agent run lifecycle management.
  */
-const { resolveDbArgs, getAgentRunById, AGENT_RUN_OBSERVED_DIRTY_STATUSES } = require('./core');
+const crypto = require('crypto');
+const { getDb, resolveDbArgs, AGENT_RUN_OBSERVED_DIRTY_STATUSES } = require('./shared');
 const { isAgentRunStatus, isTerminalAgentRunStatus } = require('./agentRunArtifacts');
 
-// ---------------------------------------------------------------------------
-// Query helpers
-// ---------------------------------------------------------------------------
+function getAgentRunById(dbOrRunId, maybeRunId) {
+  const hasDb = dbOrRunId && typeof dbOrRunId.prepare === 'function';
+  const db = hasDb ? dbOrRunId : getDb();
+  const runId = hasDb ? maybeRunId : dbOrRunId;
+  if (!runId) return null;
+  return db.prepare('SELECT * FROM agent_runs WHERE run_id = ? LIMIT 1').get(runId) || null;
+}
 
 function listAgentRuns(dbOrFilters, maybeFilters) {
   const { db, input } = resolveDbArgs(dbOrFilters, maybeFilters);
@@ -42,9 +47,23 @@ function listAgentRuns(dbOrFilters, maybeFilters) {
   return statement.all(...params);
 }
 
+function getLatestAgentRunForWorkspace(dbOrWorkspaceId, maybeWorkspaceId) {
+  const hasDb = dbOrWorkspaceId && typeof dbOrWorkspaceId.prepare === 'function';
+  const db = hasDb ? dbOrWorkspaceId : getDb();
+  const workspaceId = hasDb ? maybeWorkspaceId : dbOrWorkspaceId;
+  if (!workspaceId) return null;
+  return (
+    db
+      .prepare(
+        'SELECT * FROM agent_runs WHERE workspace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
+      )
+      .get(workspaceId) || null
+  );
+}
+
 function getLatestAgentRunForTask(dbOrTaskId, maybeTaskId) {
   const hasDb = dbOrTaskId && typeof dbOrTaskId.prepare === 'function';
-  const db = hasDb ? dbOrTaskId : require('./core').getDb();
+  const db = hasDb ? dbOrTaskId : getDb();
   const taskId = hasDb ? maybeTaskId : dbOrTaskId;
   if (!taskId) return null;
   return (
@@ -56,10 +75,6 @@ function getLatestAgentRunForTask(dbOrTaskId, maybeTaskId) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Mutators
-// ---------------------------------------------------------------------------
-
 function createAgentRun(dbOrInput, maybeInput) {
   const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
   const timestamp = input.started_at || new Date().toISOString();
@@ -69,8 +84,9 @@ function createAgentRun(dbOrInput, maybeInput) {
   }
   if (!input.workspace_id) throw new Error('workspace_id es requerido para agent_runs.');
   if (!input.agent_id) throw new Error('agent_id es requerido para agent_runs.');
-  if (!input.requested_base_ref)
+  if (!input.requested_base_ref) {
     throw new Error('requested_base_ref es requerido para agent_runs.');
+  }
   if (!input.baseline_commit) throw new Error('baseline_commit es requerido para agent_runs.');
   if (
     input.observed_start?.dirty &&
@@ -113,11 +129,12 @@ function createAgentRun(dbOrInput, maybeInput) {
 
 function updateAgentRunTerminal(dbOrRunId, maybeRunId, maybeUpdates) {
   const hasDb = dbOrRunId && typeof dbOrRunId.prepare === 'function';
-  const db = hasDb ? dbOrRunId : require('./core').getDb();
+  const db = hasDb ? dbOrRunId : getDb();
   const runId = hasDb ? maybeRunId : dbOrRunId;
   const updates = hasDb ? maybeUpdates || {} : maybeRunId || {};
   const existing = getAgentRunById(db, runId);
   if (!existing) throw new Error(`agent_run ${runId} no encontrado.`);
+
   const status = updates.status || existing.status;
   if (!isTerminalAgentRunStatus(status)) {
     throw new Error(`Estado terminal inválido para agent_run: ${status}`);
@@ -129,16 +146,13 @@ function updateAgentRunTerminal(dbOrRunId, maybeRunId, maybeUpdates) {
     completed_at: updates.completed_at || new Date().toISOString(),
     updated_at: updates.updated_at || new Date().toISOString(),
   };
+
   const keys = Object.keys(payload);
   db.prepare(
     `UPDATE agent_runs SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE run_id = ?`
   ).run(...keys.map((key) => payload[key] ?? null), runId);
   return getAgentRunById(db, runId);
 }
-
-// ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
 
 function buildMissionBindingResult(binding = {}, overrides = {}) {
   return {
@@ -171,7 +185,9 @@ function buildMissionBindingResult(binding = {}, overrides = {}) {
 }
 
 module.exports = {
+  getAgentRunById,
   listAgentRuns,
+  getLatestAgentRunForWorkspace,
   getLatestAgentRunForTask,
   createAgentRun,
   updateAgentRunTerminal,

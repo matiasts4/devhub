@@ -1,9 +1,42 @@
 'use strict';
 
-const { spawnSync } = require('child_process');
 const path = require('path');
+const { createTempDb } = require('../tests/fixtures/seed-factory');
 
+// Set DB path BEFORE any require() that loads lib/db
+const dbPath = createTempDb();
+process.env.DEVHUB_DB_PATH = dbPath;
+jest.resetModules();
+
+const { spawnSync } = require('child_process');
 const CLI = path.resolve(__dirname, '..', 'bin', 'devhub');
+
+function runAgents(args = [], options = {}) {
+  return spawnSync('node', [CLI, 'agents', ...args], {
+    encoding: 'utf8',
+    ...options,
+    env: {
+      ...process.env,
+      DEVHUB_DB_PATH: dbPath,
+      ...(options.env || {}),
+    },
+  });
+}
+
+beforeAll(() => {
+  // DB path already set above
+});
+
+afterAll(() => {
+  const { closeDb } = require('../lib/db');
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
+  delete process.env.DEVHUB_DB_PATH;
+  // Note: NOT calling cleanupDb to avoid disk I/O errors in subsequent tests
+});
 
 /**
  * Seed the test DB with agent data.
@@ -13,43 +46,7 @@ function seedAgentData() {
   const db = getDb();
 
   db.pragma('foreign_keys = OFF');
-  db.exec(`DROP TABLE IF EXISTS agent_registry`);
-  db.exec(`DROP TABLE IF EXISTS agent_workspaces`);
-
-  db.exec(`
-    CREATE TABLE agent_registry (
-      agent_id TEXT PRIMARY KEY,
-      project_id TEXT,
-      nombre TEXT,
-      modelo_llm TEXT,
-      status TEXT DEFAULT 'idle',
-      current_task_id TEXT,
-      last_heartbeat TEXT
-    );
-  `);
-
-  db.exec(`
-    CREATE TABLE agent_workspaces (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL,
-      current_task_id TEXT,
-      repo_root TEXT NOT NULL,
-      workspace_path TEXT NOT NULL,
-      worktree_path TEXT,
-      base_branch TEXT NOT NULL,
-      base_commit TEXT NOT NULL DEFAULT '',
-      branch_name TEXT,
-      status TEXT NOT NULL DEFAULT 'planned',
-      observed_branch TEXT,
-      observed_head TEXT,
-      observed_dirty TEXT,
-      last_error TEXT,
-      recovery_reason TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
+  // Don't DROP TABLE - just clean data to maintain schema consistency
 
   // Ensure other tables exist for the CLI to not crash
   db.exec(`
@@ -110,6 +107,14 @@ function seedAgentData() {
   db.prepare('DELETE FROM milestones').run();
   db.pragma('foreign_keys = ON');
 
+  // Insert dummy project to prevent recovery on reopen
+  db.prepare('INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)').run(
+    'proj-1',
+    'Test Project'
+  );
+
+  // Force WAL checkpoint so spawnSync child process sees changes
+  db.pragma('wal_checkpoint(RESTART)');
   closeDb();
 }
 
@@ -129,10 +134,10 @@ function seedAgents(agents) {
       a.agent_id,
       a.nombre || 'Test Agent',
       a.modelo_llm || 'claude-sonnet-4-6',
-      a.project_id || null,
+      a.project_id || 'proj-1',
       a.status || 'idle',
       a.current_task_id || null,
-      a.last_heartbeat !== undefined ? a.last_heartbeat : now,
+      a.last_heartbeat !== undefined ? a.last_heartbeat : now
     );
   }
 
@@ -161,15 +166,17 @@ function seedWorkspaces(workspaces) {
       w.base_commit || 'abc123',
       w.branch_name || null,
       w.status || 'planned',
-      w.updated_at || now,
+      w.updated_at || now
     );
   }
 
   closeDb();
 }
 
-// Clean slate before all tests
-seedAgentData();
+// Also clean before each test to prevent contamination
+beforeEach(() => {
+  seedAgentData();
+});
 
 describe('devhub agents command', () => {
   describe('empty state', () => {
@@ -178,14 +185,14 @@ describe('devhub agents command', () => {
     });
 
     it('outputs "No agents registered" and exits 0 on empty DB', () => {
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
+      const result = runAgents();
       expect(result.stdout).toMatch(/No agents registered/i);
       expect(result.status).toBe(0);
     });
 
     it('outputs "No agents registered" when filter matches nothing', () => {
       seedAgents([{ agent_id: 'agent-1', status: 'idle' }]);
-      const result = spawnSync('node', [CLI, 'agents', '--status', 'nonexistent'], { encoding: 'utf8' });
+      const result = runAgents(['--status', 'nonexistent']);
       expect(result.stdout).toMatch(/No agents registered/i);
       expect(result.status).toBe(0);
     });
@@ -198,7 +205,13 @@ describe('devhub agents command', () => {
 
     it('shows two agents with correct columns in TTY mode', () => {
       seedAgents([
-        { agent_id: 'agent-alpha', nombre: 'Alpha', modelo_llm: 'claude-sonnet-4-6', status: 'working', current_task_id: 'task-1' },
+        {
+          agent_id: 'agent-alpha',
+          nombre: 'Alpha',
+          modelo_llm: 'claude-sonnet-4-6',
+          status: 'working',
+          current_task_id: 'task-1',
+        },
         { agent_id: 'agent-beta', nombre: 'Beta', modelo_llm: 'gpt-4o', status: 'idle' },
       ]);
       seedWorkspaces([
@@ -206,7 +219,7 @@ describe('devhub agents command', () => {
         { id: 'ws-2', agent_id: 'agent-beta', branch_name: 'main' },
       ]);
 
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8', env: { ...process.env, FORCE_TTY: '1' } });
+      const result = runAgents([], { env: { FORCE_TTY: '1' } });
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/AGENT/);
       expect(result.stdout).toMatch(/STATUS/);
@@ -222,7 +235,7 @@ describe('devhub agents command', () => {
     it('shows "—" for BRANCH when agent has no workspace', () => {
       seedAgents([{ agent_id: 'agent-lone', status: 'idle' }]);
 
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8', env: { ...process.env, FORCE_TTY: '1' } });
+      const result = runAgents([], { env: { FORCE_TTY: '1' } });
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/agent-lone/);
     });
@@ -237,7 +250,7 @@ describe('devhub agents command', () => {
         { id: 'ws-new', agent_id: 'agent-multi', branch_name: 'feature/new', updated_at: now },
       ]);
 
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8', env: { ...process.env, FORCE_TTY: '1' } });
+      const result = runAgents([], { env: { FORCE_TTY: '1' } });
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/feature\/new/);
       expect(result.stdout).not.toMatch(/feature\/old/);
@@ -255,7 +268,7 @@ describe('devhub agents command', () => {
     });
 
     it('filters to exact status match', () => {
-      const result = spawnSync('node', [CLI, 'agents', '--status', 'idle'], { encoding: 'utf8' });
+      const result = runAgents(['--status', 'idle']);
       expect(result.stdout).toMatch(/agent-idle/);
       expect(result.stdout).not.toMatch(/agent-working/);
       expect(result.stdout).not.toMatch(/agent-error/);
@@ -277,7 +290,7 @@ describe('devhub agents command', () => {
     });
 
     it('filters to active statuses: active, working, running, thinking', () => {
-      const result = spawnSync('node', [CLI, 'agents', '--active'], { encoding: 'utf8' });
+      const result = runAgents(['--active']);
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/agent-working/);
       expect(result.stdout).toMatch(/agent-thinking/);
@@ -295,7 +308,7 @@ describe('devhub agents command', () => {
     });
 
     it('exits with code 2 when both --active and --status are provided', () => {
-      const result = spawnSync('node', [CLI, 'agents', '--active', '--status', 'idle'], { encoding: 'utf8' });
+      const result = runAgents(['--active', '--status', 'idle']);
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/conflict|mutually exclusive|cannot use both/i);
     });
@@ -308,18 +321,16 @@ describe('devhub agents command', () => {
         { agent_id: 'agent-a', status: 'working', current_task_id: 'task-1' },
         { agent_id: 'agent-b', status: 'idle' },
       ]);
-      seedWorkspaces([
-        { id: 'ws-a', agent_id: 'agent-a', branch_name: 'feature/x' },
-      ]);
+      seedWorkspaces([{ id: 'ws-a', agent_id: 'agent-a', branch_name: 'feature/x' }]);
     });
 
     it('contains no ANSI escape sequences', () => {
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      const result = runAgents();
+      expect(result.stdout).not.toContain('\x1b[');
     });
 
     it('uses pipe-delimited format', () => {
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
+      const result = runAgents();
       const lines = result.stdout.trim().split('\n');
       for (const line of lines) {
         expect(line).toMatch(/\|/);
@@ -327,7 +338,7 @@ describe('devhub agents command', () => {
     });
 
     it('has no header row in non-TTY mode', () => {
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
+      const result = runAgents();
       expect(result.stdout).not.toMatch(/^AGENT\|/i);
     });
   });
@@ -341,7 +352,7 @@ describe('devhub agents command', () => {
       const twoMinAgo = new Date(Date.now() - 2 * 60000).toISOString();
       seedAgents([{ agent_id: 'agent-recent', status: 'working', last_heartbeat: twoMinAgo }]);
 
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
+      const result = runAgents();
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/2m ago/);
     });
@@ -350,7 +361,7 @@ describe('devhub agents command', () => {
       const tenMinAgo = new Date(Date.now() - 10 * 60000).toISOString();
       seedAgents([{ agent_id: 'agent-stale', status: 'working', last_heartbeat: tenMinAgo }]);
 
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
+      const result = runAgents();
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/stale/);
     });
@@ -358,7 +369,7 @@ describe('devhub agents command', () => {
     it('shows "unknown" for null heartbeat', () => {
       seedAgents([{ agent_id: 'agent-no-hb', status: 'idle', last_heartbeat: null }]);
 
-      const result = spawnSync('node', [CLI, 'agents'], { encoding: 'utf8' });
+      const result = runAgents();
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/unknown/);
     });
@@ -366,7 +377,7 @@ describe('devhub agents command', () => {
 
   describe('--help', () => {
     it('prints usage and exits 0', () => {
-      const result = spawnSync('node', [CLI, 'agents', '--help'], { encoding: 'utf8' });
+      const result = runAgents(['--help']);
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/agents/i);
       expect(result.stdout).toMatch(/status/);

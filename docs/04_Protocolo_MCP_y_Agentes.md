@@ -16,7 +16,7 @@ Este documento describe la arquitectura y las reglas de integración del **Model
 
 ## 🤖 Arquitectura MCP en DevHub
 
-El Servidor MCP (`devhub-mcp/server.js`) funciona como el **control plane operacional** de DevHub. Expone herramientas de estado, roadmap, cola, leases, comentarios y registro de agentes a cualquier cliente compatible.
+El Servidor MCP (`devhub-mcp/server.js`) funciona como el **control plane operacional** de DevHub. Hoy publica un **36-tool env-invariant MCP contract** para estado, roadmap, cola, leases, comentarios, workspaces, runs e inbox. Telegram runtime/storage queda fuera de esa surface pública.
 
 > **Boundary vigente:** Git, filesystem, terminal, tests y PRs **no** viven en el DevHub MCP general. Esas operaciones pertenecen a la capability/skill del ejecutor (OpenCode, Hermes, editor, runner, etc.).
 
@@ -37,7 +37,7 @@ El alcance del Servidor MCP se divide en **cinco grandes módulos**:
 2. **Gestión de Tareas/Hitos:** backlog, comments y roadmap. ✅
 3. **Planning IA:** contexto completo del proyecto para planificación exhaustiva. ✅
 4. **Swarm Runtime State:** cola priorizada, claims, leases y release de tareas. ✅
-5. **Agent Registry:** heartbeat, status y presencia de agentes. ✅
+5. **Execution Tracking:** workspaces, runs, artifacts e inbox operator-friendly. ✅
 
 ---
 
@@ -60,7 +60,6 @@ Esta tabla resume el catálogo real del DevHub MCP. La surface general de Git/fi
 | `bulk_create_tasks`       | Tareas         | Crea tareas en lote de forma idempotente                                                  |
 | `update_task`             | Tareas         | Cambia estado, prioridad, milestone o asignación de tarea                                 |
 | `add_task_comment`        | Tareas         | Añade comentario técnico o de QA a una tarea                                              |
-| `get_next_task`           | Tareas/Swarm   | Devuelve y marca en progreso la siguiente tarea priorizada                                |
 | `get_execution_queue`     | Tareas/Swarm   | Devuelve cola scoreada de tareas y bloqueos                                               |
 | `claim_next_task`         | Tareas/Swarm   | Reclama tarea de forma segura para un agente                                              |
 | `renew_task_lease`        | Tareas/Swarm   | Renueva el lease de una tarea reclamada                                                   |
@@ -69,15 +68,21 @@ Esta tabla resume el catálogo real del DevHub MCP. La surface general de Git/fi
 | `create_milestone`        | Hitos          | Crea nuevo hito                                                                           |
 | `bulk_create_milestones`  | Hitos          | Crea hitos en lote de forma idempotente                                                   |
 | `update_milestone`        | Hitos          | Actualiza estado/fecha/asignación de hito                                                 |
-| `get_dashboard`           | Global         | Resumen global de todos los proyectos                                                     |
 | `get_project_context`     | Planning IA ⭐ | Lee planning_prompt + todos los project_files                                             |
 | `list_agent_workspaces`   | Workspaces     | Lista workspaces y estados lifecycle del control plane                                    |
-| `register_agent`          | Swarm          | Registra o actualiza un agente Worker                                                     |
-| `heartbeat_agent`         | Swarm          | Renueva señal de vida de un agente                                                        |
 | `report_agent_workspace`  | Workspaces     | Registra `workspace_status`, recovery metadata y `evidence_ref` devueltos por el ejecutor |
-| `unregister_agent`        | Swarm          | Elimina un agente del registry                                                            |
-| `update_agent_status`     | Swarm          | Actualiza estado visible del agente                                                       |
 | `update_agent_workspace`  | Workspaces     | Ajusta lifecycle metadata sin ejecutar side effects git                                   |
+| `create_agent_run`        | Runs           | Crea run durable asociado a workspace y task                                              |
+| `get_agent_run`           | Runs           | Lee un run puntual                                                                        |
+| `list_agent_runs`         | Runs           | Lista runs durables                                                                       |
+| `complete_agent_run`      | Runs           | Cierra un run tracked                                                                     |
+| `append_agent_artifact`   | Artifacts      | Registra artifact/evidence de ejecución                                                   |
+| `list_agent_artifacts`    | Artifacts      | Lista artifacts asociados a un run                                                        |
+| `get_workspace_evidence`  | Artifacts      | Lee evidencia resumida de workspace/run                                                   |
+| `list_operator_inbox`     | Inbox          | Lista operator inbox durable                                                              |
+| `dismiss_inbox_item`      | Inbox          | Marca/dismiss item del inbox                                                              |
+
+> **Fuera del contrato MCP público actual:** Telegram MCP helpers y ghost tools duplicadas de CLI (`get_dashboard`, `get_next_task`, `register_agent`, `heartbeat_agent`, `unregister_agent`, `update_agent_status`). Si vuelven, debe ser mediante cambio de contrato explícito.
 
 ---
 

@@ -1,7 +1,28 @@
 'use strict';
 
 const path = require('path');
+const { createTempDb } = require('../tests/fixtures/seed-factory');
+
 const DB_PATH = path.resolve(__dirname, 'db.js');
+
+// Set DB path BEFORE any require() that loads lib/db
+const dbPath = createTempDb();
+process.env.DEVHUB_DB_PATH = dbPath;
+
+beforeAll(() => {
+  // DB path already set above
+});
+
+afterAll(() => {
+  const { closeDb } = require(DB_PATH);
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
+  delete process.env.DEVHUB_DB_PATH;
+  // Note: NOT calling cleanupDb to avoid disk I/O errors in subsequent tests
+});
 
 function seedClaimReleaseData() {
   const { getDb, closeDb } = require(DB_PATH);
@@ -78,6 +99,13 @@ function seedClaimReleaseData() {
   db.prepare('DELETE FROM agent_registry').run();
 
   db.pragma('foreign_keys = ON');
+
+  // Insert dummy project to prevent recovery on reopen
+  db.prepare('INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)').run(
+    'proj-1',
+    'Test Project'
+  );
+
   closeDb();
 }
 
@@ -93,9 +121,7 @@ function seedAgent(agentId, projectId) {
 function seedProject(id, name) {
   const { getDb, closeDb } = require(DB_PATH);
   const db = getDb();
-  db.prepare(
-    'INSERT OR REPLACE INTO projects (id, name) VALUES (?, ?)'
-  ).run(id, name);
+  db.prepare('INSERT OR REPLACE INTO projects (id, name) VALUES (?, ?)').run(id, name);
   closeDb();
 }
 
@@ -111,10 +137,12 @@ function seedTask(id, projectId, title, status, priority, businessValue) {
 function seedDependency(taskId, dependsOn) {
   const { getDb, closeDb } = require(DB_PATH);
   const db = getDb();
-  const depId = `dep-${taskId}-${dependsOn}`;
-  db.prepare(
-    'INSERT OR REPLACE INTO task_dependencies (id, task_id, depends_on, tipo) VALUES (?, ?, ?, ?)'
-  ).run(depId, taskId, dependsOn, 'blocks');
+  // task_dependencies.id is INTEGER PRIMARY KEY AUTOINCREMENT, so don't insert id manually
+  db.prepare('INSERT INTO task_dependencies (task_id, depends_on, tipo) VALUES (?, ?, ?)').run(
+    taskId,
+    dependsOn,
+    'blocks'
+  );
   closeDb();
 }
 
@@ -215,7 +243,9 @@ describe('lib/db.js — claimNextTask and releaseTask', () => {
 
       // Verify lease fields cleared
       const db = getDb();
-      const row = db.prepare('SELECT status, claim_token, lease_expires_at FROM tasks WHERE id = ?').get('task-1');
+      const row = db
+        .prepare('SELECT status, claim_token, lease_expires_at FROM tasks WHERE id = ?')
+        .get('task-1');
       expect(row.status).toBe('completed');
       expect(row.claim_token).toBeNull();
       expect(row.lease_expires_at).toBeNull();

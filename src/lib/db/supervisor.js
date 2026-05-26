@@ -4,13 +4,14 @@
  * Supervisor snapshot and approval checkpoint management.
  */
 const {
+  getDb,
   resolveDbArgs,
   tableExists,
   SUPERVISOR_STATES,
   SUPERVISOR_OUTCOMES,
   SUPERVISOR_REASON_CLASSES,
   SUPERVISOR_APPROVAL_STATUSES,
-} = require('./core');
+} = require('./shared');
 
 function isSupervisorState(value) {
   return SUPERVISOR_STATES.includes(value);
@@ -42,7 +43,7 @@ function buildSupervisorApprovalCheckpointKey({
 
 function getSupervisorSnapshot(dbOrTaskId, maybeTaskId) {
   const hasDb = dbOrTaskId && typeof dbOrTaskId.prepare === 'function';
-  const db = hasDb ? dbOrTaskId : require('./core').getDb();
+  const db = hasDb ? dbOrTaskId : getDb();
   const taskId = hasDb ? maybeTaskId : dbOrTaskId;
   if (!taskId) return null;
   return (
@@ -129,7 +130,7 @@ function upsertSupervisorSnapshot(dbOrInput, maybeInput) {
 
 function getSupervisorApprovalCheckpoint(dbOrKey, maybeKey) {
   const hasDb = dbOrKey && typeof dbOrKey.prepare === 'function';
-  const db = hasDb ? dbOrKey : require('./core').getDb();
+  const db = hasDb ? dbOrKey : getDb();
   const checkpointKey = hasDb ? maybeKey : dbOrKey;
   if (!checkpointKey) return null;
   return (
@@ -224,7 +225,7 @@ function upsertSupervisorApprovalCheckpoint(dbOrInput, maybeInput) {
 
 function getLatestTaskComment(dbOrTaskId, maybeTaskId) {
   const hasDb = dbOrTaskId && typeof dbOrTaskId.prepare === 'function';
-  const db = hasDb ? dbOrTaskId : require('./core').getDb();
+  const db = hasDb ? dbOrTaskId : getDb();
   const taskId = hasDb ? maybeTaskId : dbOrTaskId;
   if (!taskId) return null;
   if (!tableExists(db, 'task_comments')) return null;

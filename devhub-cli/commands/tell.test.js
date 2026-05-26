@@ -1,9 +1,42 @@
 'use strict';
 
-const { spawnSync } = require('child_process');
 const path = require('path');
+const { createTempDb } = require('../tests/fixtures/seed-factory');
 
+// Set DB path BEFORE any require() that loads lib/db
+const dbPath = createTempDb();
+process.env.DEVHUB_DB_PATH = dbPath;
+jest.resetModules();
+
+const childProcess = require('child_process');
 const CLI = path.resolve(__dirname, '..', 'bin', 'devhub');
+
+function spawnSync(command, args, options = {}) {
+  return childProcess.spawnSync(command, args, {
+    encoding: 'utf8',
+    ...options,
+    env: {
+      ...process.env,
+      DEVHUB_DB_PATH: dbPath,
+      ...(options.env || {}),
+    },
+  });
+}
+
+beforeAll(() => {
+  // DB path already set above
+});
+
+afterAll(() => {
+  const { closeDb } = require('../lib/db');
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
+  delete process.env.DEVHUB_DB_PATH;
+  // Note: NOT calling cleanupDb to avoid disk I/O errors in subsequent tests
+});
 
 /**
  * Seed the test DB with minimal data for tell command tests.
@@ -79,6 +112,21 @@ function seedTellData() {
   db.exec('DELETE FROM message_deliveries');
   db.exec('DELETE FROM swarm_missions');
 
+  // Insert dummy project to prevent recovery on reopen
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  db.prepare('INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)').run(
+    'proj-1',
+    'Test Project'
+  );
+
+  // Force WAL checkpoint so spawnSync child process sees changes
+  db.pragma('wal_checkpoint(RESTART)');
   // Keep FK off for test isolation
   // db.pragma('foreign_keys = ON');
   closeDb();
@@ -106,11 +154,24 @@ function seedMission(missionId, projectId = 'proj-1') {
       documentation_policy TEXT
     )
   `);
-  db.exec(`INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES (?, 'Test Project', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`, [projectId]);
+  db.exec(
+    `INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES (?, 'Test Project', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+    [projectId]
+  );
 
   db.prepare(
     'INSERT OR REPLACE INTO swarm_missions (mission_id, project_id, owner_agent_id, kind, status, title, created_at, updated_at, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(missionId, projectId, 'owner-1', 'task_execution', 'active', 'Test Mission', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+  ).run(
+    missionId,
+    projectId,
+    'owner-1',
+    'task_execution',
+    'active',
+    'Test Mission',
+    '2026-01-01T00:00:00.000Z',
+    '2026-01-01T00:00:00.000Z',
+    '2026-01-01T00:00:00.000Z'
+  );
   closeDb();
 }
 
@@ -146,9 +207,6 @@ function getLastDelivery() {
   return row;
 }
 
-// Clean slate before all tests
-seedTellData();
-
 describe('devhub tell command', () => {
   beforeEach(() => {
     seedTellData();
@@ -166,7 +224,9 @@ describe('devhub tell command', () => {
   // 2.3 — Missing --mission exits 2
   describe('missing --mission', () => {
     it('exits with code 2 when --mission is omitted', () => {
-      const result = spawnSync('node', [CLI, 'tell', 'worker-1', 'msg', '--sender', 's1'], { encoding: 'utf8' });
+      const result = spawnSync('node', [CLI, 'tell', 'worker-1', 'msg', '--sender', 's1'], {
+        encoding: 'utf8',
+      });
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/mission/i);
     });
@@ -175,7 +235,9 @@ describe('devhub tell command', () => {
   // 2.5 — Missing --sender exits 2
   describe('missing --sender', () => {
     it('exits with code 2 when --sender is omitted', () => {
-      const result = spawnSync('node', [CLI, 'tell', 'worker-1', 'msg', '--mission', 'm1'], { encoding: 'utf8' });
+      const result = spawnSync('node', [CLI, 'tell', 'worker-1', 'msg', '--mission', 'm1'], {
+        encoding: 'utf8',
+      });
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/sender/i);
     });
@@ -184,7 +246,11 @@ describe('devhub tell command', () => {
   // 2.7 — Invalid --kind exits 2
   describe('invalid --kind', () => {
     it('exits with code 2 when kind is not a valid value', () => {
-      const result = spawnSync('node', [CLI, 'tell', 'w1', 'msg', '--kind', 'urgent', '--mission', 'm1', '--sender', 's1'], { encoding: 'utf8' });
+      const result = spawnSync(
+        'node',
+        [CLI, 'tell', 'w1', 'msg', '--kind', 'urgent', '--mission', 'm1', '--sender', 's1'],
+        { encoding: 'utf8' }
+      );
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/kind|invalid/i);
     });
@@ -192,11 +258,23 @@ describe('devhub tell command', () => {
 
   // 2.9 — All valid kind values accepted
   describe('valid kind values', () => {
-    const validKinds = ['directive', 'status', 'handoff', 'decision', 'risk', 'approval_request', 'approval_result'];
+    const validKinds = [
+      'directive',
+      'status',
+      'handoff',
+      'decision',
+      'risk',
+      'approval_request',
+      'approval_result',
+    ];
 
     it.each(validKinds)('accepts kind=%s and exits 0', (kind) => {
       seedMission('m-valid');
-      const result = spawnSync('node', [CLI, 'tell', 'w1', 'msg', '--kind', kind, '--mission', 'm-valid', '--sender', 's1'], { encoding: 'utf8' });
+      const result = spawnSync(
+        'node',
+        [CLI, 'tell', 'w1', 'msg', '--kind', kind, '--mission', 'm-valid', '--sender', 's1'],
+        { encoding: 'utf8' }
+      );
       expect(result.status).toBe(0);
     });
   });
@@ -204,7 +282,11 @@ describe('devhub tell command', () => {
   // 2.11 — Unknown mission exits 1
   describe('unknown mission', () => {
     it('exits with code 1 when mission does not exist', () => {
-      const result = spawnSync('node', [CLI, 'tell', 'w1', 'msg', '--mission', 'nonexistent', '--sender', 's1'], { encoding: 'utf8' });
+      const result = spawnSync(
+        'node',
+        [CLI, 'tell', 'w1', 'msg', '--mission', 'nonexistent', '--sender', 's1'],
+        { encoding: 'utf8' }
+      );
       expect(result.status).toBe(1);
       expect(result.stderr).toMatch(/mission.*not found|not found.*mission/i);
     });
@@ -214,7 +296,22 @@ describe('devhub tell command', () => {
   describe('successful persist', () => {
     it('inserts into mission_messages and message_deliveries', () => {
       seedMission('m-1');
-      const result = spawnSync('node', [CLI, 'tell', 'worker-1', 'Start processing', '--kind', 'directive', '--mission', 'm-1', '--sender', 'worker-2'], { encoding: 'utf8' });
+      const result = spawnSync(
+        'node',
+        [
+          CLI,
+          'tell',
+          'worker-1',
+          'Start processing',
+          '--kind',
+          'directive',
+          '--mission',
+          'm-1',
+          '--sender',
+          'worker-2',
+        ],
+        { encoding: 'utf8' }
+      );
       expect(result.status).toBe(0);
 
       expect(countMessages()).toBe(1);
@@ -234,7 +331,11 @@ describe('devhub tell command', () => {
 
     it('defaults kind to directive when --kind is not specified', () => {
       seedMission('m-2');
-      const result = spawnSync('node', [CLI, 'tell', 'w1', 'msg', '--mission', 'm-2', '--sender', 's1'], { encoding: 'utf8' });
+      const result = spawnSync(
+        'node',
+        [CLI, 'tell', 'w1', 'msg', '--mission', 'm-2', '--sender', 's1'],
+        { encoding: 'utf8' }
+      );
       expect(result.status).toBe(0);
 
       const msg = getLastMessage();
@@ -249,7 +350,11 @@ describe('devhub tell command', () => {
       // We can't easily mock isTTY via spawn, so we verify the output format
       // The command checks process.stdout.isTTY — in a spawned process it's typically false (piped)
       // We test the JSON output path here and verify TTY path via unit-level inspection
-      const result = spawnSync('node', [CLI, 'tell', 'w1', 'msg', '--mission', 'm-tty', '--sender', 's1'], { encoding: 'utf8' });
+      const result = spawnSync(
+        'node',
+        [CLI, 'tell', 'w1', 'msg', '--mission', 'm-tty', '--sender', 's1'],
+        { encoding: 'utf8' }
+      );
       expect(result.status).toBe(0);
       // In a spawned process, stdout is piped, so we get JSON
       const output = result.stdout.trim();
@@ -266,12 +371,18 @@ describe('devhub tell command', () => {
   describe('piped JSON output', () => {
     it('outputs valid JSON when stdout is not a TTY', () => {
       seedMission('m-json');
-      const result = spawnSync('node', [CLI, 'tell', 'w1', 'msg', '--mission', 'm-json', '--sender', 's1'], { encoding: 'utf8' });
+      const result = spawnSync(
+        'node',
+        [CLI, 'tell', 'w1', 'msg', '--mission', 'm-json', '--sender', 's1'],
+        { encoding: 'utf8' }
+      );
       expect(result.status).toBe(0);
 
       const output = result.stdout.trim();
       let parsed;
-      expect(() => { parsed = JSON.parse(output); }).not.toThrow();
+      expect(() => {
+        parsed = JSON.parse(output);
+      }).not.toThrow();
       expect(parsed.message_id).toBeTruthy();
       expect(parsed.recipient).toBe('w1');
       expect(parsed.kind).toBe('directive');

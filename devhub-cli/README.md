@@ -1,264 +1,187 @@
 # DevHub CLI
 
-CLI for DevHub — agent swarm orchestration and operations.
+CLI operativo de DevHub para swarm, ejecución y surfaces de soporte.
+
+**Baseline soportado hoy:** 20 comandos top-level. La registración de agentes ocurre en runtime o durante `swarm-launch`; `devhub register` NO existe como comando CLI.
 
 ## Quick Start
 
 ```bash
-# Install from source
 cd devhub-cli && npm link
 
-# Run any command
 devhub status
 devhub queue --limit 10
-devhub agents --active
+devhub swarm-launch <project-id>
 ```
 
 ## Installation
 
-| Method | Command | Use Case |
-|--------|---------|----------|
-| npm link (dev) | `cd devhub-cli && npm link` | Development, links local source globally |
-| Direct invocation | `node devhub-cli/bin/devhub <cmd>` | No global install, CI/CD pipelines |
-| Global install | `npm install -g devhub-cli` | Production use (when published) |
+| Method            | Command                            | Use case                             |
+| ----------------- | ---------------------------------- | ------------------------------------ |
+| npm link          | `cd devhub-cli && npm link`        | Desarrollo local                     |
+| Direct invocation | `node devhub-cli/bin/devhub <cmd>` | CI/CD o ejecución sin install global |
+| Global install    | `npm install -g devhub-cli`        | Cuando el paquete se publique        |
 
 ## Command Reference
 
-| Command | Description |
-|---------|-------------|
-| [`status`](#status) | Show compact swarm dashboard |
-| [`queue`](#queue) | Show prioritized execution queue |
-| [`agents`](#agents) | Show registered swarm agents |
-| [`swarm`](#swarm) | Show composite swarm overview |
-| [`task`](#task) | Show task detail by ID |
-| [`ws`](#ws) | Show workspace detail by ID |
-| [`heartbeat`](#heartbeat) | Record agent heartbeat (idempotent) |
-| [`update-status`](#update-status) | Update agent status |
-| [`claim`](#claim) | Claim next pending task for an agent |
-| [`release`](#release) | Release a claimed task |
-| [`tell`](#tell) | Send a mission message to a recipient |
+| Command                           | Description                                      |
+| --------------------------------- | ------------------------------------------------ |
+| [`status`](#status)               | Show compact swarm dashboard                     |
+| [`queue`](#queue)                 | Show prioritized execution queue                 |
+| [`agents`](#agents)               | Show registered swarm agents                     |
+| [`swarm`](#swarm)                 | Show composite swarm overview                    |
+| [`task`](#task)                   | Show task detail and history                     |
+| [`ws`](#ws)                       | Show workspace detail                            |
+| [`heartbeat`](#heartbeat)         | Record agent heartbeat                           |
+| [`update-status`](#update-status) | Update agent status                              |
+| [`claim`](#claim)                 | Claim next pending task                          |
+| [`release`](#release)             | Release a claimed task                           |
+| [`tell`](#tell)                   | Send mission message                             |
+| [`swarm-launch`](#swarm-launch)   | Launch a swarm from a project                    |
+| [`auth`](#auth)                   | Manage CLI auth (`login`, `status`, `verify`)    |
+| [`events`](#events)               | Query or stream agent events                     |
+| [`inbox`](#inbox)                 | List, read, and dismiss inbox items              |
+| [`presence`](#presence)           | List active agent presence                       |
+| [`mission`](#mission)             | List, inspect, or close missions                 |
+| [`run`](#run)                     | List runs or inspect one run                     |
+| [`worktree`](#worktree)           | List, inspect, or clean worktrees                |
+| [`supervisor`](#supervisor)       | Inspect supervisor state and resolve checkpoints |
 
 ### status
 
-Show compact swarm dashboard with projects, queue, agents, and milestones.
-
-```
-devhub status
-```
-
-**Example:**
 ```bash
 devhub status
 ```
+
+Muestra dashboard compacto del swarm.
 
 ### queue
 
-Show prioritized execution queue sorted by score.
-
-```
-devhub queue [options]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--limit <n>` | 20 | Maximum number of rows to display |
-| `--project <id>` | — | Filter by project ID |
-| `--blocked` | false | Show only blocked tasks |
-
-**Examples:**
 ```bash
-devhub queue --limit 10
-devhub queue --project proj-alpha --blocked
+devhub queue [--limit <n>] [--project <id>] [--blocked]
 ```
 
 ### agents
 
-Show registered swarm agents.
-
-```
-devhub agents [options]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--status <filter>` | — | Filter by exact status match |
-| `--active` | false | Show only active agents (active, working, running, thinking) |
-
-**Examples:**
 ```bash
-devhub agents --active
-devhub agents --status idle
+devhub agents [--status <filter>] [--active]
 ```
 
 ### swarm
 
-Show composite swarm overview (projects, queue, agents, milestones).
-
-```
-devhub swarm [options]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--compact` | false | Show collapsed one-line summaries |
-
-**Example:**
 ```bash
-devhub swarm --compact
+devhub swarm [--compact]
 ```
 
 ### task
 
-Show task detail by ID.
-
-```
-devhub task <task-id> [options]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--verbose` | false | Show full description without truncation |
-
-**Example:**
 ```bash
-devhub task task-1 --verbose
+devhub task <task-id> [--verbose] [--json] [--limit <n>]
 ```
 
 ### ws
 
-Show workspace detail by ID.
-
-```
-devhub ws <workspace-id>
-```
-
-**Example:**
 ```bash
-devhub ws ws-abc123
+devhub ws <workspace-id>
 ```
 
 ### heartbeat
 
-Record agent heartbeat (idempotent).
-
-```
-devhub heartbeat [agent-id]
-```
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `agent-id` | No | Agent ID (uses env default if omitted) |
-
-**Example:**
 ```bash
-devhub heartbeat agent-1
+devhub heartbeat [agent-id]
 ```
 
 ### update-status
 
-Update agent status with optional task description.
-
-```
-devhub update-status [agent-id] [status] [task-description]
-```
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `agent-id` | No | Agent ID |
-| `status` | No | New status value |
-| `task-description` | No | Optional task description |
-
-**Example:**
 ```bash
-devhub update-status agent-1 working "Implementing auth middleware"
+devhub update-status [agent-id] [status] [task-description]
 ```
 
 ### claim
 
-Claim next pending task for an agent.
-
-```
-devhub claim [agent-id]
-```
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `agent-id` | No | Agent ID |
-
-**Example:**
 ```bash
-devhub claim agent-1
+devhub claim [agent-id]
 ```
 
 ### release
 
-Release a claimed task.
-
-```
-devhub release [task-id] [claim-token] [options]
-```
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `task-id` | No | Task ID |
-| `claim-token` | No | Claim token from claim command |
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--outcome <value>` | completed | Outcome: completed, paused, failed, abandoned |
-
-**Example:**
 ```bash
-devhub release task-1 TOKEN123 --outcome completed
+devhub release [task-id] [claim-token] [--outcome <value>]
 ```
 
 ### tell
 
-Send a mission message to a recipient.
-
-```
-devhub tell [recipient] [message] [options]
-```
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `recipient` | No | Recipient agent ID |
-| `message` | No | Message body |
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--kind <kind>` | directive | Message kind: directive, status, handoff, decision, risk, approval_request, approval_result |
-| `--mission <id>` | — | Mission ID (required) |
-| `--sender <id>` | — | Sender agent ID (required) |
-
-**Example:**
 ```bash
-devhub tell agent-2 "Auth middleware done" --kind status --mission m-1 --sender agent-1
+devhub tell [recipient] [message] [--kind <kind>] [--mission <id>] [--sender <id>]
+```
+
+### swarm-launch
+
+```bash
+devhub swarm-launch <project> [--template <id>] [--swarm-type <id>] [--team <id>] [--provider <id>] [--mission <text>] [--workspace-path <path>]
+```
+
+### auth
+
+```bash
+devhub auth <login|status|verify> [--agent-id <id>] [--workspace-id <id>] [--json]
+```
+
+### events
+
+```bash
+devhub events <list|stream> [--agent <id>] [--type <type>] [--since <iso>] [--limit <n>] [--interval <ms>] [--json]
+```
+
+### inbox
+
+```bash
+devhub inbox <list|read|dismiss> [--status <s>] [--category <c>] [--limit <n>] [--json]
+```
+
+### presence
+
+```bash
+devhub presence [list] [--mission <id>] [--agent <id>] [--json]
+```
+
+### mission
+
+```bash
+devhub mission <list|status|close> [--outcome <val>] [--summary <text>] [--check <text>] [--commit <sha>] [--json]
+```
+
+### run
+
+```bash
+devhub run <list|status> [--workspace <id>] [--task <id>] [--limit <n>] [--json]
+```
+
+### worktree
+
+```bash
+devhub worktree <list|status|clean> [--status <val>] [--force] [--json]
+```
+
+### supervisor
+
+```bash
+devhub supervisor <status|approve|reject> [--json]
 ```
 
 ## Exit Codes
 
-| Code | Meaning | Trigger |
-|------|---------|---------|
-| 0 | Success | Command completes normally |
-| 1 | Runtime error | Command action throws or stub executed |
-| 2 | Invalid args | Unknown command or invalid arguments |
+| Code | Meaning                           |
+| ---- | --------------------------------- |
+| 0    | Success                           |
+| 1    | Runtime error or missing resource |
+| 2    | Invalid args or unknown command   |
 
 ## Output Modes
 
-The CLI adapts output based on the environment:
-
-- **TTY (terminal):** ANSI color codes applied. Section headers in cyan, dividers in gray.
-- **Piped/redirected:** Plain text, no ANSI escapes. Pipe-separated tables.
-- **Override:** Set `FORCE_TTY=1` to force colored output even when piped.
-
-```bash
-# Piped output (plain text)
-devhub queue | grep proj-alpha
-
-# Force color in pipe
-FORCE_TTY=1 devhub status | cat
-```
+- **TTY:** salida con color.
+- **Piped/redirected:** salida plain text.
+- **Override:** `FORCE_TTY=1` fuerza color.
 
 ## Integration Test Guide
 
@@ -266,33 +189,23 @@ FORCE_TTY=1 devhub status | cat
 npm run test:integration
 ```
 
-Tests use a seed factory (`tests/fixtures/seed-factory.js`) that creates deterministic fixtures per test:
-
-- **Temp DB isolation:** Each test gets an isolated SQLite DB via `DEVHUB_DB_PATH` in a temp directory.
-- **Seed factory:** Creates projects, tasks, agents, milestones, workspaces, and dependencies.
-- **Cleanup:** DB files (`.db`, `-wal`, `-shm`) are removed after each test.
-
-Run CLI against a test DB:
-
-```bash
-DEVHUB_DB_PATH=/tmp/devhub-test.db node devhub-cli/bin/devhub status
-```
+Los tests usan SQLite temporal por test vía `DEVHUB_DB_PATH` y seed factory determinística.
 
 ## Agent Workflow Patterns
 
 Standard agent lifecycle:
 
-```
-register → heartbeat (loop) → claim → work → release → heartbeat
+```text
+runtime registration or swarm-launch setup → heartbeat → claim → work → release → heartbeat
 ```
 
-| Step | CLI Command | Purpose |
-|------|-------------|---------|
-| Register | `devhub register` | Announce agent to swarm |
-| Heartbeat loop | `devhub heartbeat [agent-id]` | Prevent orphan detection, keep lease valid |
-| Claim | `devhub claim [agent-id]` | Get next pending task |
-| Work | — | Execute task logic |
-| Release | `devhub release [task-id] [token] --outcome <value>` | Mark task complete/paused/failed |
-| Final heartbeat | `devhub heartbeat [agent-id]` | Confirm agent still alive |
+| Step            | CLI Command                                          | Purpose                                                    |
+| --------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
+| Runtime setup   | `devhub swarm-launch <project>` o launcher runtime   | Provisiona contexto operativo; no existe `devhub register` |
+| Heartbeat loop  | `devhub heartbeat [agent-id]`                        | Mantener presencia viva                                    |
+| Claim           | `devhub claim [agent-id]`                            | Reclamar trabajo                                           |
+| Work            | —                                                    | Ejecutar tarea                                             |
+| Release         | `devhub release [task-id] [token] --outcome <value>` | Cerrar o pausar tarea                                      |
+| Final heartbeat | `devhub heartbeat [agent-id]`                        | Confirmar presencia final                                  |
 
-> Heartbeats prevent orphan detection and keep task leases valid.
+Registration happens during runtime or swarm-launch setup, not as a CLI command.

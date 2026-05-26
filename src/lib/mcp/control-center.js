@@ -1,5 +1,3 @@
-/* global process */
-
 import fs from 'fs';
 import path from 'path';
 import localDb from '@/lib/db/localDb.js';
@@ -53,14 +51,7 @@ function createEvidence(kind, ref, authority) {
   return createMcpEvidenceRef({ kind, ref, authority });
 }
 
-function createProbe({
-  key,
-  status,
-  authority,
-  freshness,
-  reason,
-  evidence = [],
-}) {
+function createProbe({ key, status, authority, freshness, reason, evidence = [] }) {
   return createMcpProbe({ key, status, authority, freshness, reason, evidence });
 }
 
@@ -107,6 +98,34 @@ function extractToolNamesFromServerSource(source) {
   return names;
 }
 
+function listDurableToolSourceFiles(rootDir) {
+  const toolsDir = path.join(rootDir, 'devhub-mcp', 'tools');
+  const files = [path.join(rootDir, 'devhub-mcp', 'server.js')];
+
+  try {
+    if (!fs.existsSync(toolsDir)) return files;
+    const stack = [toolsDir];
+
+    while (stack.length > 0) {
+      const currentDir = stack.pop();
+      for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+        const entryPath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(entryPath);
+          continue;
+        }
+        if (entry.isFile() && entry.name.endsWith('.js')) {
+          files.push(entryPath);
+        }
+      }
+    }
+  } catch {
+    return files;
+  }
+
+  return files;
+}
+
 export function getConfiguredMcpServers() {
   return CONFIGURED_SERVERS.map((server) => ({
     ...server,
@@ -115,10 +134,18 @@ export function getConfiguredMcpServers() {
 }
 
 export function readDurableToolCatalog() {
-  const serverPath = path.resolve(process.cwd(), 'devhub-mcp/server.js');
+  const rootDir = process.cwd();
   try {
-    const source = fs.readFileSync(serverPath, 'utf8');
-    return uniqueBy(extractToolNamesFromServerSource(source), (name) => name).map((name) => ({
+    const toolNames = listDurableToolSourceFiles(rootDir).flatMap((filePath) => {
+      try {
+        const source = fs.readFileSync(filePath, 'utf8');
+        return extractToolNamesFromServerSource(source);
+      } catch {
+        return [];
+      }
+    });
+
+    return uniqueBy(toolNames, (name) => name).map((name) => ({
       name,
       server: 'devhub-control-plane',
       description: '',
@@ -132,8 +159,11 @@ export function classifyMcpToolSafety(tool = {}) {
   const authority = tool.authority || 'configured';
   const name = String(tool.name || '').trim();
   const server = String(tool.server || '').trim();
-  const durableControlPlane = authority === 'durable' || server === 'devhub' || server === 'devhub-control-plane';
-  const unsafeByPattern = UNSAFE_TOOL_PATTERNS.some((pattern) => pattern.test(name) || pattern.test(server));
+  const durableControlPlane =
+    authority === 'durable' || server === 'devhub' || server === 'devhub-control-plane';
+  const unsafeByPattern = UNSAFE_TOOL_PATTERNS.some(
+    (pattern) => pattern.test(name) || pattern.test(server)
+  );
 
   return {
     control_plane: durableControlPlane,
@@ -165,7 +195,8 @@ function flattenConfiguredInventory(servers = []) {
 function queryLatestRow(db, table, orderColumn = 'updated_at') {
   try {
     return (
-      db.prepare(`SELECT * FROM ${table} ORDER BY ${orderColumn} DESC, rowid DESC LIMIT 1`).get() || null
+      db.prepare(`SELECT * FROM ${table} ORDER BY ${orderColumn} DESC, rowid DESC LIMIT 1`).get() ||
+      null
     );
   } catch {
     return null;
@@ -266,7 +297,9 @@ function buildDoctorProbes({ durable, live, attach }) {
       freshness: durable?.freshness || (durableHealthy ? 'current' : 'unknown'),
       reason:
         durable?.db?.reason ||
-        (durableHealthy ? 'Durable database connection succeeded.' : 'Durable database unavailable.'),
+        (durableHealthy
+          ? 'Durable database connection succeeded.'
+          : 'Durable database unavailable.'),
       evidence: [
         createEvidence(
           'database',
@@ -292,7 +325,9 @@ function buildDoctorProbes({ durable, live, attach }) {
       status: attach?.available ? 'healthy' : 'unavailable',
       authority: attach?.available ? 'live' : 'configured',
       freshness: attach?.available ? 'current' : 'unknown',
-      reason: attach?.reason || (attach?.available ? 'Attach evidence available.' : 'Attach evidence unavailable.'),
+      reason:
+        attach?.reason ||
+        (attach?.available ? 'Attach evidence available.' : 'Attach evidence unavailable.'),
       evidence: attach?.available
         ? [createEvidence('attach', attach.ref || 'attach://gtk-vte', 'live')]
         : [],
@@ -351,8 +386,16 @@ function buildSmokeChecks({ durable, live, attach }) {
     }),
     createProbe({
       key: 'bounded-connectivity',
-      status: live?.reachable ? 'healthy' : durable?.status === 'unavailable' ? 'unavailable' : 'degraded',
-      authority: live?.reachable ? 'live' : durable?.status === 'unavailable' ? 'configured' : 'configured',
+      status: live?.reachable
+        ? 'healthy'
+        : durable?.status === 'unavailable'
+          ? 'unavailable'
+          : 'degraded',
+      authority: live?.reachable
+        ? 'live'
+        : durable?.status === 'unavailable'
+          ? 'configured'
+          : 'configured',
       freshness: live?.reachable ? 'current' : 'unknown',
       reason: live?.reachable
         ? 'Bounded live probe responded without mutating durable truth.'
@@ -389,7 +432,8 @@ function groupToolsAsServers(tools = [], inventoryProbe) {
     if (!grouped.has(serverName)) {
       grouped.set(serverName, {
         name: serverName,
-        status: tool.authority === 'live' || tool.authority === 'durable' ? 'connected' : 'degraded',
+        status:
+          tool.authority === 'live' || tool.authority === 'durable' ? 'connected' : 'degraded',
         authority: tool.authority,
         freshness: tool.authority === 'configured' ? 'unknown' : 'current',
         status_reason:
@@ -470,7 +514,10 @@ export function buildMcpControlCenterSnapshot(input = {}) {
       status: smokeStatus,
       checks: smokeChecks,
     },
-    status_reason: firstReason(doctorProbes, 'MCP diagnostics assembled from durable evidence first.'),
+    status_reason: firstReason(
+      doctorProbes,
+      'MCP diagnostics assembled from durable evidence first.'
+    ),
     note:
       inventoryProbe?.status !== 'healthy'
         ? inventoryProbe?.reason || 'Inventory could not be fully verified.'
@@ -479,7 +526,11 @@ export function buildMcpControlCenterSnapshot(input = {}) {
   });
 }
 
-export async function fetchLiveMcpInventory({ fetchImpl = fetch, serverUrl, timeoutMs = 2000 } = {}) {
+export async function fetchLiveMcpInventory({
+  fetchImpl = fetch,
+  serverUrl,
+  timeoutMs = 2000,
+} = {}) {
   if (typeof fetchImpl !== 'function' || !serverUrl) {
     return {
       reachable: false,

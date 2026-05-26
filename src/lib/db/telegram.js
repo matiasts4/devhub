@@ -10,12 +10,12 @@ const crypto = require('crypto');
 const {
   getDb,
   resolveDbArgs,
-  getAgentRunById,
   TELEGRAM_INTENT_ACTIONS,
   TELEGRAM_INTENT_STATUSES,
   TELEGRAM_DELIVERY_STATUSES,
   TELEGRAM_SUBSCRIPTION_STATUSES,
-} = require('./core');
+} = require('./shared');
+const { getAgentRunById } = require('./agentRuns');
 const { getLatestAgentArtifactForRun } = require('./artifacts');
 
 // ---------------------------------------------------------------------------

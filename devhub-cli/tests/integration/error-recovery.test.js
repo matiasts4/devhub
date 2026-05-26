@@ -89,7 +89,13 @@ describe('token ownership validation', () => {
     const tokenA = extractToken(claimA.stdout);
 
     // Agent B tries to release with a different token
-    const releaseB = runCli(dbPath, ['release', 'task-token', 'wrong-token-from-b', '--outcome', 'completed']);
+    const releaseB = runCli(dbPath, [
+      'release',
+      'task-token',
+      'wrong-token-from-b',
+      '--outcome',
+      'completed',
+    ]);
     expect(releaseB.status).toBe(1);
     expect(releaseB.stderr).toMatch(/invalid.*token/i);
 
@@ -152,8 +158,20 @@ describe('unregistered agent claim', () => {
 // ---------------------------------------------------------------------------
 
 function extractToken(stdout) {
+  // Try TTY format first: "Token: <hex>"
   const ttyMatch = stdout.match(/Token:\s*([a-f0-9]+)/i);
   if (ttyMatch) return ttyMatch[1];
+  // Parse the last valid JSON line
+  const lines = stdout.trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const json = JSON.parse(lines[i]);
+      return json.claim_token || null;
+    } catch {
+      continue;
+    }
+  }
+  // Legacy fallback: try parsing entire stdout
   try {
     const json = JSON.parse(stdout);
     return json.claim_token || null;

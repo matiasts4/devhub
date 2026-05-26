@@ -32,9 +32,23 @@ jest.mock('http', () => ({
       mockRes.statusCode = 200;
       callback(mockRes);
       process.nextTick(() => {
-        mockRes.emit('data', JSON.stringify({
-          launch_result: { launchId: 'test-123', runtime_requests: [] },
-        }));
+        mockRes.emit(
+          'data',
+          JSON.stringify({
+            launch_result: {
+              launchId: 'test-123',
+              runtime_requests: [],
+              launch_trace: {
+                traceId: 'trace-test-123',
+                traceType: 'swarm_launch',
+                traceSessionId: 'test-123-director-session',
+                requestedAt: '2026-05-26T00:00:00.000Z',
+                committedAt: '2026-05-26T00:00:02.000Z',
+                durationMs: 2000,
+              },
+            },
+          })
+        );
         mockRes.emit('end');
       });
     });

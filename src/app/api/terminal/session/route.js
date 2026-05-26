@@ -30,7 +30,17 @@ function resolveProductionSidecarScript() {
   const envCandidate = process.env.DEVHUB_SIDECAR_PATH;
   const candidates = [
     envCandidate,
-    process.env.APPDIR ? path.join(process.env.APPDIR, 'usr', 'lib', 'DevHub', '_up_', 'sidecar-backend', 'server.js') : null,
+    process.env.APPDIR
+      ? path.join(
+          process.env.APPDIR,
+          'usr',
+          'lib',
+          'DevHub',
+          '_up_',
+          'sidecar-backend',
+          'server.js'
+        )
+      : null,
     process.env.APPDIR ? path.join(process.env.APPDIR, 'sidecar-backend', 'server.js') : null,
     '/usr/lib/DevHub/_up_/sidecar-backend/server.js',
     '/usr/local/lib/DevHub/_up_/sidecar-backend/server.js',
@@ -55,11 +65,19 @@ async function waitForSidecarHealth(port, attempts = 10, delayMs = 200) {
 
       if (response.ok) {
         // Consume body to fully close the underlying connection
-        try { await response.text(); } catch { /* ignore */ }
+        try {
+          await response.text();
+        } catch {
+          /* ignore */
+        }
         return true;
       } else {
         // Consume body on non-ok responses too
-        try { await response.text(); } catch { /* ignore */ }
+        try {
+          await response.text();
+        } catch {
+          /* ignore */
+        }
       }
     } catch {
       // Keep retrying while the sidecar boots.
@@ -124,7 +142,11 @@ async function readProductionSidecarPort() {
       cache: 'no-store',
     });
     // Consume body to fully close the underlying undici connection
-    try { await healthResponse.text(); } catch { /* ignore */ }
+    try {
+      await healthResponse.text();
+    } catch {
+      /* ignore */
+    }
     if (healthResponse.ok) {
       return port;
     }
@@ -153,11 +175,20 @@ export async function GET(request) {
     const { port, wsPath } = await ensureTTYServer(cwd);
     return NextResponse.json({ port, wsPath });
   } catch (error) {
+    if (process.env.NODE_ENV === 'production') {
+      const recoveredSidecar = await recoverProductionSidecar();
+      if (recoveredSidecar) {
+        return NextResponse.json(recoveredSidecar);
+      }
+
+      return NextResponse.json(
+        { error: 'Servidor terminal (sidecar) no encontrado' },
+        { status: 503 }
+      );
+    }
+
     console.error('Failed to initialize terminal PTY server:', error);
-    return NextResponse.json(
-      { error: 'No se pudo inicializar el servidor PTY.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'No se pudo inicializar el servidor PTY.' }, { status: 500 });
   }
 }
 
@@ -178,13 +209,20 @@ export async function DELETE(request) {
         );
       }
 
-      const response = await fetch(`http://127.0.0.1:${sidecarPort}/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        `http://127.0.0.1:${sidecarPort}/sessions/${encodeURIComponent(sessionId)}`,
+        {
+          method: 'DELETE',
+          cache: 'no-store',
+        }
+      );
 
       // Consume body to fully close the underlying undici connection
-      try { await response.text(); } catch { /* ignore */ }
+      try {
+        await response.text();
+      } catch {
+        /* ignore */
+      }
 
       if (!response.ok) {
         return NextResponse.json(

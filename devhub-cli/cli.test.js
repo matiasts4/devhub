@@ -1,10 +1,31 @@
 'use strict';
 
-const { spawnSync } = require('child_process');
 const path = require('path');
 const pkg = require('./package.json');
+const { createTempDb } = require('./tests/fixtures/seed-factory');
 
+// Set DB path BEFORE any require() that loads lib/db
+const dbPath = createTempDb();
+process.env.DEVHUB_DB_PATH = dbPath;
+jest.resetModules();
+
+const { spawnSync } = require('child_process');
 const CLI = path.resolve(__dirname, 'bin', 'devhub');
+
+beforeAll(() => {
+  // DB path already set above
+});
+
+afterAll(() => {
+  const { closeDb } = require('./lib/db');
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
+  delete process.env.DEVHUB_DB_PATH;
+  // Note: NOT calling cleanupDb to avoid disk I/O errors in subsequent tests
+});
 
 // ── CLI Exit Code Tests ──────────────────────────────────────────
 
@@ -31,11 +52,24 @@ describe('CLI unknown command', () => {
   });
 });
 
-describe('CLI stub commands', () => {
-  it('exits 1 and stderr has "not yet implemented" for run', () => {
+describe('CLI auth command with manual flags', () => {
+  it('accepts --agent-id and --workspace-id flags without unknown option error', () => {
+    const result = spawnSync(
+      'node',
+      [CLI, 'auth', 'login', '--agent-id', 'test-agent', '--workspace-id', 'ws-test'],
+      { encoding: 'utf8' }
+    );
+    // Should not exit with unknown option error
+    expect(result.stderr).not.toContain('unknown option');
+    // May exit with auth-specific error (e.g., missing config), but that's OK — we're testing that flags are accepted
+  });
+});
+
+describe('CLI run command', () => {
+  it('exits 0 and shows Usage: devhub run', () => {
     const result = spawnSync('node', [CLI, 'run'], { encoding: 'utf8' });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/not yet implemented/i);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/Usage: devhub run/i);
   });
 });
 

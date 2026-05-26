@@ -18,7 +18,69 @@ const {
   listAgentPresenceForMission,
   getAgentPresenceStatus,
   getSwarmMissionDirectorSnapshot,
+  readMissionDiagnosticSummary,
 } = require('./swarmMissions');
+
+function seedWorkspace(overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_workspaces (
+      id, project_id, agent_id, current_task_id, run_id_or_session_id, repo_root,
+      workspace_path, worktree_path, base_branch, base_commit, branch_name, status,
+      observed_branch, observed_head, observed_dirty
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.id || 'ws-1',
+    overrides.project_id || 'proj-1',
+    overrides.agent_id || 'agent-1',
+    overrides.current_task_id || 'task-1',
+    overrides.run_id_or_session_id || 'session-1',
+    overrides.repo_root || '/repo/devhub',
+    overrides.workspace_path || 'workspace://proj-1/ws-1',
+    overrides.worktree_path || '/repo/devhub/.devhub/worktrees/ws-1',
+    overrides.base_branch || 'main',
+    overrides.base_commit || 'HEAD',
+    overrides.branch_name || 'feat/ws-1',
+    overrides.status || 'active',
+    overrides.observed_branch || 'feat/ws-1',
+    overrides.observed_head || 'abc123',
+    overrides.observed_dirty || 'clean'
+  );
+}
+
+function seedRun(overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_runs (
+      run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.run_id || 'run-1',
+    overrides.workspace_id || 'ws-1',
+    overrides.task_id || 'task-1',
+    overrides.agent_id || 'agent-1',
+    overrides.requested_base_ref || 'HEAD',
+    overrides.baseline_commit || 'HEAD',
+    overrides.status || 'running'
+  );
+}
+
+function seedSession(overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_hub_sessions (
+      id, project_id, title, agent_model, status, visibility, opencode_session_id, directory
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.id || 'session-1',
+    overrides.project_id || 'proj-1',
+    overrides.title || 'Agent Session',
+    overrides.agent_model || 'opencode',
+    overrides.status || 'active',
+    overrides.visibility || 'visible',
+    Object.prototype.hasOwnProperty.call(overrides, 'opencode_session_id')
+      ? overrides.opencode_session_id
+      : null,
+    overrides.directory || '/repo/devhub/.devhub/worktrees/ws-1'
+  );
+}
 
 let db;
 
@@ -352,5 +414,98 @@ describe('getSwarmMissionDirectorSnapshot', () => {
     expect(snapshot).not.toBeNull();
     expect(snapshot.mission.title).toBe('Snapshot Test');
     expect(snapshot.watermark).toBeDefined();
+  });
+});
+
+describe('readMissionDiagnosticSummary', () => {
+  it('reports stale participant bindings from the canonical durable session row', () => {
+    const mission = createSwarmMission(db, {
+      mission_id: 'mission-stale-summary',
+      project_id: 'proj-1',
+      owner_agent_id: 'director-1',
+      task_id: 'task-stale',
+      title: 'Mission stale summary',
+      kind: 'coordination',
+      status: 'active',
+    });
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'worker-stale',
+      role_in_mission: 'executor',
+      status: 'active',
+    });
+    seedWorkspace({
+      id: 'ws-stale',
+      project_id: 'proj-1',
+      agent_id: 'worker-stale',
+      current_task_id: 'task-stale',
+      run_id_or_session_id: 'session-stale',
+      status: 'active',
+    });
+    seedRun({
+      run_id: 'run-stale',
+      workspace_id: 'ws-stale',
+      task_id: 'task-stale',
+      agent_id: 'worker-stale',
+    });
+    seedSession({ id: 'session-stale', opencode_session_id: null });
+
+    const summary = readMissionDiagnosticSummary(db, { missionId: mission.mission_id });
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        mission: expect.objectContaining({ mission_id: 'mission-stale-summary' }),
+        participants: expect.arrayContaining([
+          expect.objectContaining({
+            agent_id: 'worker-stale',
+            binding: expect.objectContaining({ classification: 'stale', reason: 'binding_stale' }),
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('preserves orphaned participant diagnosis instead of downgrading it to missing', () => {
+    const mission = createSwarmMission(db, {
+      mission_id: 'mission-orphaned-summary',
+      project_id: 'proj-1',
+      owner_agent_id: 'director-1',
+      task_id: 'task-orphaned',
+      title: 'Mission orphaned summary',
+      kind: 'coordination',
+      status: 'active',
+    });
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'worker-orphaned',
+      role_in_mission: 'executor',
+      status: 'active',
+    });
+    seedWorkspace({
+      id: 'ws-orphaned',
+      project_id: 'proj-1',
+      agent_id: 'worker-orphaned',
+      current_task_id: 'task-orphaned',
+      run_id_or_session_id: 'session-orphaned',
+      status: 'orphaned',
+    });
+    seedRun({
+      run_id: 'run-orphaned',
+      workspace_id: 'ws-orphaned',
+      task_id: 'task-orphaned',
+      agent_id: 'worker-orphaned',
+    });
+
+    const summary = readMissionDiagnosticSummary(db, { missionId: mission.mission_id });
+
+    expect(summary?.participants?.[0]).toEqual(
+      expect.objectContaining({
+        agent_id: 'worker-orphaned',
+        binding: expect.objectContaining({
+          classification: 'orphaned',
+          reason: 'binding_orphaned',
+        }),
+      })
+    );
   });
 });

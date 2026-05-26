@@ -2,8 +2,21 @@
 
 const { spawnSync } = require('child_process');
 const path = require('path');
+const { createTempDb, cleanupDb } = require('../tests/fixtures/seed-factory');
+
+// Set DB path BEFORE any require() that loads lib/db
+const dbPath = createTempDb();
+process.env.DEVHUB_DB_PATH = dbPath;
+jest.resetModules();
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'devhub');
+
+function runQueue(args = []) {
+  return spawnSync('node', [CLI, 'queue', ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, DEVHUB_DB_PATH: dbPath },
+  });
+}
 
 /**
  * Seed the test DB with queue-relevant data.
@@ -103,9 +116,11 @@ function seedProjectsAndTasks(projects, tasks) {
   const db = getDb();
 
   for (const p of projects) {
-    db.prepare(
-      "INSERT INTO projects (id, name, status) VALUES (?, ?, ?)"
-    ).run(p.id, p.name, p.status || 'active');
+    db.prepare('INSERT INTO projects (id, name, status) VALUES (?, ?, ?)').run(
+      p.id,
+      p.name,
+      p.status || 'active'
+    );
   }
 
   for (const t of tasks) {
@@ -115,9 +130,14 @@ function seedProjectsAndTasks(projects, tasks) {
         business_value, retry_count, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
-      t.id, t.project_id, t.title, t.description || null,
-      t.status || 'pending', t.priority || 'medium',
-      t.business_value ?? 5, t.retry_count ?? 0,
+      t.id,
+      t.project_id,
+      t.title,
+      t.description || null,
+      t.status || 'pending',
+      t.priority || 'medium',
+      t.business_value ?? 5,
+      t.retry_count ?? 0,
       t.created_at || '2026-05-22T10:00:00.000Z',
       t.updated_at || '2026-05-22T10:00:00.000Z'
     );
@@ -139,20 +159,32 @@ function seedDependency(taskId, dependsOn) {
   closeDb();
 }
 
-// Clean slate before all tests
-seedQueueData();
+afterAll(() => {
+  const { closeDb } = require('../lib/db');
+  try {
+    closeDb();
+  } catch {
+    // ignore
+  }
+  cleanupDb(dbPath);
+  delete process.env.DEVHUB_DB_PATH;
+});
 
 describe('devhub queue command', () => {
+  beforeEach(() => {
+    seedQueueData();
+  });
+
   describe('exit code', () => {
     it('exits with code 0 on empty DB', () => {
-      const result = spawnSync('node', [CLI, 'queue'], { encoding: 'utf8' });
+      const result = runQueue();
       expect(result.status).toBe(0);
     });
   });
 
   describe('empty queue', () => {
     it('outputs "No tasks in queue" when DB has no tasks', () => {
-      const result = spawnSync('node', [CLI, 'queue'], { encoding: 'utf8' });
+      const result = runQueue();
       expect(result.stdout).toMatch(/No tasks in queue/i);
       expect(result.status).toBe(0);
     });
@@ -174,10 +206,10 @@ describe('devhub queue command', () => {
     });
 
     it('shows exactly 5 rows with --limit 5', () => {
-      const result = spawnSync('node', [CLI, 'queue', '--limit', '5'], { encoding: 'utf8' });
-      const lines = result.stdout.split('\n').filter(l => l.trim() && !l.includes('No tasks'));
+      const result = runQueue(['--limit', '5']);
+      const lines = result.stdout.split('\n').filter((l) => l.trim() && !l.includes('No tasks'));
       // Count data rows (exclude header/separator in TTY mode)
-      const dataRows = lines.filter(l => !l.match(/^[-]+/));
+      const dataRows = lines.filter((l) => !l.match(/^[-]+/));
       expect(dataRows.length).toBeLessThanOrEqual(6); // header + separator + 5 data = 7 max
       expect(result.status).toBe(0);
     });
@@ -200,7 +232,7 @@ describe('devhub queue command', () => {
     });
 
     it('filters to single project only', () => {
-      const result = spawnSync('node', [CLI, 'queue', '--project', 'proj-a'], { encoding: 'utf8' });
+      const result = runQueue(['--project', 'proj-a']);
       expect(result.stdout).not.toMatch(/Task B1/);
       expect(result.stdout).toMatch(/Task A1/);
       expect(result.status).toBe(0);
@@ -222,7 +254,7 @@ describe('devhub queue command', () => {
     });
 
     it('shows only blocked tasks with reason', () => {
-      const result = spawnSync('node', [CLI, 'queue', '--blocked'], { encoding: 'utf8' });
+      const result = runQueue(['--blocked']);
       expect(result.stdout).toMatch(/Blocked Task/);
       expect(result.stdout).not.toMatch(/Free Task/);
       expect(result.status).toBe(0);
@@ -231,8 +263,8 @@ describe('devhub queue command', () => {
 
   describe('non-TTY output', () => {
     it('contains no ANSI escape sequences', () => {
-      const result = spawnSync('node', [CLI, 'queue'], { encoding: 'utf8' });
-      expect(result.stdout).not.toMatch(/\x1b\[/);
+      const result = runQueue();
+      expect(result.stdout).not.toContain('\x1b[');
     });
   });
 
@@ -253,7 +285,7 @@ describe('devhub queue command', () => {
     });
 
     it('merges and sorts by priority score DESC', () => {
-      const result = spawnSync('node', [CLI, 'queue'], { encoding: 'utf8' });
+      const result = runQueue();
       const stdout = result.stdout;
       // Y High should appear before X Low in output
       const yIdx = stdout.indexOf('Y High');
@@ -266,7 +298,7 @@ describe('devhub queue command', () => {
 
   describe('--help', () => {
     it('prints usage and exits 0', () => {
-      const result = spawnSync('node', [CLI, 'queue', '--help'], { encoding: 'utf8' });
+      const result = runQueue(['--help']);
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/queue/i);
       expect(result.stdout).toMatch(/limit/);

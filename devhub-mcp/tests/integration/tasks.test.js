@@ -5,7 +5,6 @@
  *   - bulk_create_tasks
  *   - update_task
  *   - add_task_comment
- *   - get_next_task
  *   - get_execution_queue
  *   - claim_next_task
  */
@@ -353,27 +352,6 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('get_next_task', () => {
-    it('returns a tokenized lease or null message', async () => {
-      if (!projectId) return;
-      const result = await harness.callTool('get_next_task', {
-        project_id: projectId,
-        agent_id: 'test-agent',
-      });
-      // Either returns a task or a message
-      expect(result).toHaveProperty('message');
-      if (result.task) {
-        expect(result.task).toHaveProperty('id');
-        expect(result.task).toHaveProperty('title');
-        expect(result.task.status).toBe('in_progress');
-        expect(result.task.assigned_to).toBe('test-agent');
-        expect(result.task).toHaveProperty('claim_token');
-        expect(result.task).toHaveProperty('claimed_at');
-        expect(result.task).toHaveProperty('lease_expires_at');
-      }
-    });
-  });
-
   describe('get_execution_queue / claim_next_task', () => {
     it('returns a scored pending-task queue', async () => {
       if (!projectId) return;
@@ -440,7 +418,7 @@ describe('MCP Task Tools', () => {
       expect(released.task.claim_token).toBeNull();
     });
 
-    it('surfaces supervisor snapshots with reason/evidence fields in queue and task claims', async () => {
+    it('surfaces supervisor snapshots with reason/evidence fields in queue and claim_next_task', async () => {
       if (!isolatedProjectId) return;
 
       const taskResult = await harness.callTool('create_task', {
@@ -483,7 +461,7 @@ describe('MCP Task Tools', () => {
         project_id: isolatedProjectId,
         limit: 20,
       });
-      const nextTask = await harness.callTool('get_next_task', {
+      const claimedTask = await harness.callTool('claim_next_task', {
         project_id: isolatedProjectId,
         agent_id: 'agent-supervisor-reader-1',
       });
@@ -509,8 +487,9 @@ describe('MCP Task Tools', () => {
           run_id: runResult.run.run_id,
         })
       );
-      expect(nextTask.task.id).toBe(taskResult.task.id);
-      expect(nextTask.task.supervisor).toEqual(
+      expect(claimedTask.claimed).toBe(true);
+      expect(claimedTask.task.id).toBe(taskResult.task.id);
+      expect(claimedTask.task.supervisor).toEqual(
         expect.objectContaining({
           supervisor_state: 'awaiting_approval',
           outcome: 'wait',

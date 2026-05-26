@@ -4,7 +4,8 @@
  * Agent artifact persistence — append-only evidence trail for agent runs.
  */
 const crypto = require('crypto');
-const { getDb, resolveDbArgs, getAgentRunById } = require('./core');
+const { getDb, resolveDbArgs } = require('./shared');
+const { getAgentRunById } = require('./agentRuns');
 const {
   normalizeEvidenceRef,
   parseEvidenceRef,

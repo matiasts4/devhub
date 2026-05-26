@@ -10,8 +10,8 @@
 jest.mock('@/lib/swarm/agentWorkspaceManager', () => ({
   prepareAgentWorktree: jest.fn(),
   computeBranchName: jest.fn((launchId, roleKey) => `devhub/swarm/${launchId}/${roleKey}`),
-  computeWorktreePath: jest.fn((repoRoot, launchId, roleKey) =>
-    `${repoRoot}/.devhub/worktrees/${launchId}/${roleKey}`
+  computeWorktreePath: jest.fn(
+    (repoRoot, launchId, roleKey) => `${repoRoot}/.devhub/worktrees/${launchId}/${roleKey}`
   ),
 }));
 
@@ -31,12 +31,15 @@ jest.mock('@/lib/db/localDb.js', () => {
     createAgentRun: jest.fn((db, opts) => ({ run_id: `run-${opts.agent_id}` })),
     createSwarmMission: jest.fn((db, opts) => ({ mission_id: opts.mission_id })),
     getActiveAgentCount: jest.fn(() => 0),
+    getSupervisorSnapshot: jest.fn(() => null),
     getSwarmMissionDirectorSnapshot: jest.fn(() => ({})),
+    insertTrace: jest.fn(() => ({ changes: 1 })),
     listMissionParticipants: jest.fn(() => []),
     prepareAgentWorkspaceLease: jest.fn((db, opts) => ({
       workspace: { id: 'ws-1', base_commit: 'abc123' },
     })),
     registerMissionParticipant: jest.fn(() => {}),
+    resolveAgentRuntimeBinding: jest.fn(() => null),
     upsertAgentPresence: jest.fn(() => {}),
     upsertMessageDelivery: jest.fn(() => {}),
   };
@@ -68,7 +71,11 @@ jest.mock('@/lib/agentLaunchCommand', () => ({
   buildAgentLaunchCommand: jest.fn((programId, prompt) => `${programId} "${prompt}"`),
 }));
 
-const { prepareAgentWorktree, computeBranchName, computeWorktreePath } = require('@/lib/swarm/agentWorkspaceManager');
+const {
+  prepareAgentWorktree,
+  computeBranchName,
+  computeWorktreePath,
+} = require('@/lib/swarm/agentWorkspaceManager');
 
 describe('launchSwarmLocal — worktree integration (T1.2, T1.3)', () => {
   beforeEach(() => {

@@ -30,7 +30,11 @@ jest.mock('lucide-react', () => {
 jest.mock('react-resizable-panels', () => ({
   PanelGroup: ({ children, direction, ...props }) => {
     const React = require('react');
-    return React.createElement('div', { ...props, 'data-panel-group-direction': direction }, children);
+    return React.createElement(
+      'div',
+      { ...props, 'data-panel-group-direction': direction },
+      children
+    );
   },
   Panel: ({ children, defaultSize, ...props }) => {
     const React = require('react');
@@ -46,7 +50,11 @@ jest.mock('../TerminalTTY', () => ({
   __esModule: true,
   default: ({ id, autoFocus }) => {
     const React = require('react');
-    return React.createElement('div', { 'data-testid': `terminal-${id}`, 'data-autofocus': autoFocus ? 'true' : 'false' }, id);
+    return React.createElement(
+      'div',
+      { 'data-testid': `terminal-${id}`, 'data-autofocus': autoFocus ? 'true' : 'false' },
+      id
+    );
   },
 }));
 
@@ -55,14 +63,6 @@ jest.mock('../NotificationCenter', () => ({
   default: () => {
     const React = require('react');
     return React.createElement('div', null, 'notifications');
-  },
-}));
-
-jest.mock('../AgentRoomSidebar', () => ({
-  __esModule: true,
-  default: () => {
-    const React = require('react');
-    return React.createElement('div', null, 'agent room');
   },
 }));
 
@@ -125,13 +125,17 @@ jest.mock('../workspace/WorkspaceRightDock', () => ({
   },
 }));
 
-jest.mock('../workspace/FileExplorerEditorPane', () => ({
-  __esModule: true,
-  default: () => {
-    const React = require('react');
-    return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/FileExplorerEditorPane',
+  () => ({
+    __esModule: true,
+    default: () => {
+      const React = require('react');
+      return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
+    },
+  }),
+  { virtual: true }
+);
 
 jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   __esModule: true,
@@ -167,19 +171,27 @@ function renderManager(props = {}) {
 }
 
 function getVisibleWorkspaceShell(container) {
-  return Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-    (node) => !String(node.className || '').includes('pointer-events-none')
-  ) || null;
+  return (
+    Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
+      (node) => !String(node.className || '').includes('pointer-events-none')
+    ) || null
+  );
 }
 
 function getVisibleWorkspaceId(container) {
-  return getVisibleWorkspaceShell(container)?.getAttribute('data-testid')?.replace('workspace-shell-', '') || null;
+  return (
+    getVisibleWorkspaceShell(container)
+      ?.getAttribute('data-testid')
+      ?.replace('workspace-shell-', '') || null
+  );
 }
 
 function getActiveWorkspaceTabLabel(container) {
-  return Array.from(container.querySelectorAll('[title^="Workspace "]')).find((node) =>
-    String(node.getAttribute('style') || '').includes('box-shadow')
-  )?.getAttribute('title') || null;
+  return (
+    Array.from(container.querySelectorAll('[title^="Workspace "]'))
+      .find((node) => String(node.getAttribute('style') || '').includes('box-shadow'))
+      ?.getAttribute('title') || null
+  );
 }
 
 function getAutoFocusedTerminal(container) {
@@ -191,11 +203,16 @@ function getPersistedWorkspaceState() {
 }
 
 function getVisibleWorkspaceColumns(container) {
-  return getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="workspace-column-"]') || [];
+  return (
+    getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="workspace-column-"]') ||
+    []
+  );
 }
 
 function getVisiblePanelSlots(container) {
-  return getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]') || [];
+  return (
+    getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]') || []
+  );
 }
 
 async function dispatchShortcut(init) {
@@ -298,7 +315,11 @@ describe('TerminalWorkspacesManager shortcuts', () => {
 
     expect(getVisibleWorkspaceId(view.container)).toBe('ws3');
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p3');
-    expect(getPersistedWorkspaceState().workspaces.map((workspace) => workspace.id)).toEqual(['ws2', 'ws1', 'ws3']);
+    expect(getPersistedWorkspaceState().workspaces.map((workspace) => workspace.id)).toEqual([
+      'ws2',
+      'ws1',
+      'ws3',
+    ]);
     expect(getPersistedWorkspaceState().activeWsId).toBe('ws3');
   });
 
@@ -388,7 +409,9 @@ describe('TerminalWorkspacesManager shortcuts', () => {
 
     const event = await dispatchShortcut({ key: 'D', ctrlKey: true, shiftKey: true });
 
-    expect(view.container.querySelector('[data-testid="workspace-column-panels-c1"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-column-panels-c1"]')
+    ).not.toBeNull();
     const panelSlots = getVisiblePanelSlots(view.container);
     expect(panelSlots).toHaveLength(2);
     expect(panelSlots[0].querySelector('[data-testid="terminal-p1"]')).not.toBeNull();

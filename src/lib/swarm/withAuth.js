@@ -11,8 +11,6 @@ import { getActiveAuthToken, getAgentSecret, getDb } from '../db/localDb.js';
 import { isAuthEnforced } from './authMiddleware.js';
 import { NextResponse } from 'next/server';
 
-const DEFAULT_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-
 /**
  * Wrap a Next.js route handler with HMAC authentication.
  *
@@ -25,11 +23,11 @@ export function withAuth(handler, opts = {}) {
   const methods = new Set(opts.methods || ['POST', 'PUT', 'PATCH', 'DELETE']);
   const getDbFn = opts.getDb || getDb;
 
-  return async function authenticatedHandler(request) {
+  return async function authenticatedHandler(request, ...rest) {
     const method = request.method?.toUpperCase();
 
     if (!methods.has(method)) {
-      return handler(request);
+      return handler(request, ...rest);
     }
 
     const enforced = isAuthEnforced();
@@ -40,7 +38,7 @@ export function withAuth(handler, opts = {}) {
     if (!signature && !timestamp && !agentId) {
       if (!enforced) {
         console.warn('[withAuth] No auth headers (permissive mode)');
-        return handler(request);
+        return handler(request, ...rest);
       }
       return NextResponse.json(
         { error: 'Authentication required', code: 'AUTH_MISSING' },
@@ -51,7 +49,7 @@ export function withAuth(handler, opts = {}) {
     if (!signature || !timestamp || !agentId) {
       if (!enforced) {
         console.warn('[withAuth] Incomplete auth headers (permissive mode)');
-        return handler(request);
+        return handler(request, ...rest);
       }
       return NextResponse.json(
         { error: 'Missing authentication headers', code: 'AUTH_INCOMPLETE' },
@@ -65,7 +63,7 @@ export function withAuth(handler, opts = {}) {
     } catch {
       if (!enforced) {
         console.warn('[withAuth] DB unavailable (permissive mode)');
-        return handler(request);
+        return handler(request, ...rest);
       }
       return NextResponse.json(
         { error: 'Authentication service unavailable', code: 'AUTH_DB_ERROR' },
@@ -78,7 +76,7 @@ export function withAuth(handler, opts = {}) {
       if (!enforced) {
         console.warn(`[withAuth] No active token for agent ${agentId} (permissive mode)`);
         request.agentId = agentId;
-        return handler(request);
+        return handler(request, ...rest);
       }
       return NextResponse.json(
         { error: 'Agent not registered or token revoked', code: 'AUTH_NO_TOKEN' },
@@ -91,7 +89,7 @@ export function withAuth(handler, opts = {}) {
       if (!enforced) {
         console.warn(`[withAuth] No secret for agent ${agentId} (permissive mode)`);
         request.agentId = agentId;
-        return handler(request);
+        return handler(request, ...rest);
       }
       return NextResponse.json(
         { error: 'Cannot verify request signature', code: 'AUTH_NO_SECRET' },
@@ -114,7 +112,7 @@ export function withAuth(handler, opts = {}) {
       if (!enforced) {
         console.warn(`[withAuth] Invalid signature for agent ${agentId} (permissive mode)`);
         request.agentId = agentId;
-        return handler(request);
+        return handler(request, ...rest);
       }
       return NextResponse.json(
         { error: 'Invalid signature', code: 'AUTH_INVALID_SIG' },
@@ -123,6 +121,6 @@ export function withAuth(handler, opts = {}) {
     }
 
     request.agentId = agentId;
-    return handler(request);
+    return handler(request, ...rest);
   };
 }

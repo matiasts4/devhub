@@ -67,7 +67,7 @@ describe('table() helper', () => {
       const headers = ['Score', 'Status'];
       const rows = [['85', 'pending']];
       const output = table(headers, rows, false);
-      expect(output).not.toMatch(/\x1b\[/);
+      expect(output).not.toContain('\x1b[');
     });
 
     it('handles empty rows', () => {

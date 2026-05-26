@@ -8,10 +8,13 @@ import {
   createSwarmMission,
   getActiveAgentCount as getDbActiveAgentCount,
   getDb,
+  getSupervisorSnapshot,
   getSwarmMissionDirectorSnapshot,
+  insertTrace,
   listMissionParticipants,
   prepareAgentWorkspaceLease,
   registerMissionParticipant,
+  resolveAgentRuntimeBinding,
   upsertAgentPresence,
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
@@ -49,6 +52,9 @@ export const runtime = 'nodejs';
 const LOCAL_MISSION_DELIVERY_CHANNEL = 'local_snapshot';
 const LOCAL_MISSION_MESSAGE_KIND = 'directive';
 const LOCAL_SWARM_RUNTIME_SURFACE = 'swarm-control-launch';
+const DIRECTOR_TASK_LEASE_TTL_MS = 120_000;
+const SWARM_LAUNCH_TRACE_TYPE = 'swarm_launch';
+const SWARM_LAUNCH_TRACE_TOOL_NAME = 'launch_swarm_local';
 const EMPTY_DIRECTOR_QUEUE_HANDOFF = Object.freeze({
   status: 'idle',
   recipient_agent_id: null,
@@ -120,11 +126,18 @@ function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = 
   ].join('\n');
 }
 
-function buildLaunchCommand(programId, prompt, roleKey = '', modelId = null, launchId = null, workspacePath = '') {
+function buildLaunchCommand(
+  programId,
+  prompt,
+  roleKey = '',
+  modelId = null,
+  launchId = null,
+  workspacePath = ''
+) {
   const agentProfile = roleKey ? buildRoleAgentProfile(roleKey) : 'sdd-orchestrator';
   const tmuxSessionName = launchId && roleKey ? `devhub-swarm-${launchId}-${roleKey}` : null;
-  const innerCommand = buildAgentLaunchCommand(programId, prompt, { 
-    opencodeAgent: agentProfile, 
+  const innerCommand = buildAgentLaunchCommand(programId, prompt, {
+    opencodeAgent: agentProfile,
     modelId,
     tmuxSessionName,
   });
@@ -135,6 +148,336 @@ function buildLaunchCommand(programId, prompt, roleKey = '', modelId = null, lau
     workspacePath,
     innerCommand,
   });
+}
+
+function summarizeLaunchPrompt(prompt = '', maxLength = 240) {
+  const normalized = String(prompt || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return null;
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function redactLaunchCommand(command = '') {
+  return String(command || '')
+    .replace(/^.*DEVHUB_AGENT_TOKEN=.*(?:\r?\n)?/gm, '')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+function parseLeaseTimeMs(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function hasExpiredLease(value, nowMs = Date.now()) {
+  const expiresAt = parseLeaseTimeMs(value);
+  return expiresAt === null || expiresAt <= nowMs;
+}
+
+function isActiveTaskLease(task, nowMs = Date.now()) {
+  return Boolean(
+    task?.status === 'in_progress' &&
+    task?.assigned_to &&
+    task?.claim_token &&
+    !hasExpiredLease(task?.lease_expires_at, nowMs)
+  );
+}
+
+function getNewestActiveTaskForAgent(db, projectId, agentId, nowMs = Date.now()) {
+  return (
+    db
+      .prepare(
+        "SELECT * FROM tasks WHERE project_id = ? AND assigned_to = ? AND status = 'in_progress'"
+      )
+      .all(projectId, agentId)
+      .filter((task) => isActiveTaskLease(task, nowMs))
+      .sort((left, right) => {
+        const leftMs = parseLeaseTimeMs(left?.claimed_at) || 0;
+        const rightMs = parseLeaseTimeMs(right?.claimed_at) || 0;
+        return rightMs - leftMs;
+      })[0] || null
+  );
+}
+
+function syncAgentRegistryTaskState(
+  db,
+  { agentId, currentTaskId = null, status = 'idle', timestamp }
+) {
+  if (!agentId) return;
+
+  db.prepare(
+    `UPDATE agent_registry
+     SET current_task_id = ?, status = ?, last_heartbeat = ?, updated_at = ?
+     WHERE agent_id = ?`
+  ).run(currentTaskId, status, timestamp, timestamp, agentId);
+}
+
+function cleanupExpiredTaskLeases(db, { projectId, nowMs = Date.now(), timestamp }) {
+  const staleTasks = db
+    .prepare("SELECT * FROM tasks WHERE project_id = ? AND status = 'in_progress'")
+    .all(projectId)
+    .filter((task) => !isActiveTaskLease(task, nowMs));
+
+  if (staleTasks.length === 0) return [];
+
+  const impactedAgents = new Set();
+  for (const staleTask of staleTasks) {
+    if (staleTask.assigned_to) impactedAgents.add(staleTask.assigned_to);
+
+    db.prepare(
+      `UPDATE tasks
+       SET status = 'pending', assigned_to = NULL, claimed_at = NULL,
+           lease_expires_at = NULL, claim_token = NULL, completed_at = NULL, updated_at = ?
+       WHERE id = ? AND status = 'in_progress'`
+    ).run(timestamp, staleTask.id);
+  }
+
+  for (const agentId of impactedAgents) {
+    const activeTask = getNewestActiveTaskForAgent(db, projectId, agentId, nowMs);
+    syncAgentRegistryTaskState(db, {
+      agentId,
+      currentTaskId: activeTask?.id || null,
+      status: activeTask ? 'working' : 'idle',
+      timestamp,
+    });
+  }
+
+  return staleTasks;
+}
+
+function buildClaimResponseMessage({ reused = false, blocked = false } = {}) {
+  if (reused) return 'El agente ya tiene una tarea activa.';
+  if (blocked) return 'Todas las tareas pendientes están bloqueadas.';
+  return 'Tarea reclamada.';
+}
+
+function hydrateClaimedTask(db, { projectId, agentId, task }) {
+  if (!task) return null;
+
+  const persistedTask = db.prepare('SELECT * FROM tasks WHERE id = ? LIMIT 1').get(task.id) || task;
+  const supervisor = getSupervisorSnapshot(db, persistedTask.id) || task.supervisor || null;
+  const runtimeBinding = resolveAgentRuntimeBinding(db, {
+    project_id: projectId,
+    agent_id: agentId,
+    preferred_task_id: persistedTask.id,
+  });
+
+  return {
+    ...task,
+    ...persistedTask,
+    supervisor,
+    workspace_id: runtimeBinding?.workspace_id || task.workspace_id || null,
+    run_id: runtimeBinding?.run_id || task.run_id || null,
+    session_id: runtimeBinding?.run_id_or_session_id || task.session_id || null,
+    runtime_binding: runtimeBinding || null,
+  };
+}
+
+async function claimNextTaskLocally({ projectId, agentId }) {
+  return withDbWriteQueue(
+    (writeDb) => {
+      const nowMs = Date.now();
+      const timestamp = new Date(nowMs).toISOString();
+
+      cleanupExpiredTaskLeases(writeDb, { projectId, nowMs, timestamp });
+
+      const activeTask = getNewestActiveTaskForAgent(writeDb, projectId, agentId, nowMs);
+      if (activeTask) {
+        syncAgentRegistryTaskState(writeDb, {
+          agentId,
+          currentTaskId: activeTask.id,
+          status: 'working',
+          timestamp,
+        });
+
+        return {
+          claimed: true,
+          reused: true,
+          task: hydrateClaimedTask(writeDb, { projectId, agentId, task: activeTask }),
+          message: buildClaimResponseMessage({ reused: true }),
+        };
+      }
+
+      const { queue } = readExecutionQueueSummary(writeDb, {
+        projectId,
+        limit: 20,
+        includeBlocked: true,
+        nowMs,
+      });
+      const candidates = queue.filter((entry) => !entry.blocked && entry.status === 'pending');
+
+      for (const candidate of candidates) {
+        const claimToken = crypto.randomUUID();
+        const updateResult = writeDb
+          .prepare(
+            `UPDATE tasks
+             SET status = 'in_progress', assigned_to = ?, claimed_at = ?,
+                 lease_expires_at = ?, claim_token = ?, updated_at = ?
+             WHERE id = ? AND status = 'pending'`
+          )
+          .run(
+            agentId,
+            timestamp,
+            new Date(nowMs + DIRECTOR_TASK_LEASE_TTL_MS).toISOString(),
+            claimToken,
+            timestamp,
+            candidate.id
+          );
+
+        if (updateResult.changes !== 1) continue;
+
+        syncAgentRegistryTaskState(writeDb, {
+          agentId,
+          currentTaskId: candidate.id,
+          status: 'working',
+          timestamp,
+        });
+
+        return {
+          claimed: true,
+          reused: false,
+          task: hydrateClaimedTask(writeDb, {
+            projectId,
+            agentId,
+            task: {
+              ...candidate,
+              status: 'in_progress',
+              assigned_to: agentId,
+              claimed_at: timestamp,
+              lease_expires_at: new Date(nowMs + DIRECTOR_TASK_LEASE_TTL_MS).toISOString(),
+              claim_token: claimToken,
+              updated_at: timestamp,
+            },
+          }),
+          message: buildClaimResponseMessage({ reused: false }),
+        };
+      }
+
+      syncAgentRegistryTaskState(writeDb, {
+        agentId,
+        currentTaskId: null,
+        status: 'idle',
+        timestamp,
+      });
+
+      return {
+        claimed: false,
+        reused: false,
+        task: null,
+        message:
+          queue.length > 0 ? buildClaimResponseMessage({ blocked: true }) : 'Sin tareas pendientes',
+      };
+    },
+    { label: 'director-claim-next-task', timeout: 10000 }
+  );
+}
+
+function buildLaunchTracePayload({
+  launchId,
+  missionId,
+  project,
+  missionTitle,
+  missionSummary,
+  workspaceRoot,
+  directorAgentId,
+  directorSessionId,
+  requestedAt,
+  committedAt,
+  runtimeRequests = [],
+  failedRoles = [],
+}) {
+  const requestedMs = Date.parse(requestedAt || '') || Date.now();
+  const committedMs = Date.parse(committedAt || '') || requestedMs;
+  const durationMs = Math.max(0, committedMs - requestedMs);
+
+  return {
+    traceId: `trace-${launchId}`,
+    traceType: SWARM_LAUNCH_TRACE_TYPE,
+    toolName: SWARM_LAUNCH_TRACE_TOOL_NAME,
+    traceSessionId: directorSessionId,
+    directorSessionId,
+    directorAgentId,
+    launchId,
+    missionId,
+    projectId: project?.id || null,
+    projectName: project?.name || null,
+    launchLabel: missionTitle,
+    missionSummary: summarizeLaunchPrompt(missionSummary, 320),
+    workspaceRoot: workspaceRoot || null,
+    requestedAt,
+    committedAt,
+    durationMs,
+    runtimeRequestCount: runtimeRequests.length,
+    failedRoleCount: failedRoles.length,
+    runtimeRequests: runtimeRequests.map((request) => ({
+      roleKey: request.roleKey,
+      roleLabel: request.roleLabel,
+      selectedAgent: request.selectedAgent,
+      modelId: request.modelId || null,
+      taskId: request.taskId,
+      taskTitle: request.taskTitle || null,
+      workspaceId: request.workspaceId || null,
+      workspacePath: request.workspacePath || null,
+      runId: request.runId || null,
+      sessionId: request.sessionId || null,
+      branchName: request.branchName || null,
+      observedHead: request.observedHead || null,
+      evidenceRef: request.evidenceRef || null,
+      tmuxSessionName: request.tmuxSessionName || null,
+      promptSummary: request.promptSummary || null,
+      promptReference: request.promptReference || null,
+      commandPreview: request.commandPreview || null,
+    })),
+    failedRoles: failedRoles.map((role) => ({
+      roleKey: role.roleKey || null,
+      roleLabel: role.roleLabel || null,
+      error: role.error || null,
+    })),
+  };
+}
+
+function persistLaunchTrace(db, launchTrace) {
+  if (!launchTrace?.traceSessionId) return;
+
+  insertTrace(db, {
+    id: launchTrace.traceId,
+    session_id: launchTrace.traceSessionId,
+    trace_type: launchTrace.traceType,
+    agent_name: launchTrace.directorAgentId,
+    tool_name: launchTrace.toolName,
+    tool_status: 'success',
+    content: `Swarm launch ${launchTrace.launchId} persisted with ${launchTrace.runtimeRequestCount} runtime request(s).`,
+    duration_ms: launchTrace.durationMs,
+    time_start: Date.parse(launchTrace.requestedAt || '') || null,
+    time_end: Date.parse(launchTrace.committedAt || '') || null,
+    metadata: launchTrace,
+  });
+
+  console.info(
+    '[SWARM_LAUNCH_TRACE]',
+    JSON.stringify({
+      launchId: launchTrace.launchId,
+      missionId: launchTrace.missionId,
+      projectId: launchTrace.projectId,
+      requestedAt: launchTrace.requestedAt,
+      committedAt: launchTrace.committedAt,
+      durationMs: launchTrace.durationMs,
+      directorSessionId: launchTrace.traceSessionId,
+      runtimeRequestCount: launchTrace.runtimeRequestCount,
+      failedRoleCount: launchTrace.failedRoleCount,
+      roles: launchTrace.runtimeRequests.map((request) => ({
+        roleKey: request.roleKey,
+        selectedAgent: request.selectedAgent,
+        modelId: request.modelId,
+        sessionId: request.sessionId,
+        workspaceId: request.workspaceId,
+        runId: request.runId,
+      })),
+    })
+  );
 }
 
 function uniqueBy(items = [], getKey) {
@@ -233,7 +576,12 @@ function deriveMissionAgentSupervisorState({
 
     // Soft expiration: if no expires_at but last_seen is older than 5 minutes, stale
     const STALENESS_THRESHOLD_MS = 5 * 60 * 1000;
-    if (!expiresAt && lastSeen && !Number.isNaN(lastSeen) && (currentTime - lastSeen) > STALENESS_THRESHOLD_MS) {
+    if (
+      !expiresAt &&
+      lastSeen &&
+      !Number.isNaN(lastSeen) &&
+      currentTime - lastSeen > STALENESS_THRESHOLD_MS
+    ) {
       return 'stale';
     }
 
@@ -242,7 +590,11 @@ function deriveMissionAgentSupervisorState({
   } else {
     // If there is NO presence record at all, but the workspace is marked active/ready or run is running,
     // the agent is actually offline/dead.
-    if (workspace?.status === 'active' || workspace?.status === 'ready' || run?.status === 'running') {
+    if (
+      workspace?.status === 'active' ||
+      workspace?.status === 'ready' ||
+      run?.status === 'running'
+    ) {
       return 'offline';
     }
   }
@@ -412,7 +764,9 @@ function activatePreparedWorkspace(
   ).run(
     sessionId,
     branchName,
-    workspacePath.includes('.devhub/worktrees') ? workspacePath : `${workspacePath}/.worktrees/${branchName}`,
+    workspacePath.includes('.devhub/worktrees')
+      ? workspacePath
+      : `${workspacePath}/.worktrees/${branchName}`,
     branchName,
     observedHead,
     now,
@@ -427,10 +781,10 @@ function activatePreparedWorkspace(
 async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString() } = {}) {
   // Reads: use localDb directly
   const readDb = getDb();
-  
+
   // LOG: Inicio de lanzamiento
   console.log(`[SWARM_LAUNCH] Starting swarm launch for project ${projectId}`);
-  
+
   const project = readDb.prepare('SELECT * FROM projects WHERE id = ? LIMIT 1').get(projectId);
 
   if (!project) {
@@ -439,15 +793,19 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
   }
 
   // PREVENCIÓN DE DUPLICADOS: Verificar si ya hay un swarm activo para este proyecto
-  const activeMissions = readDb.prepare(
-    'SELECT count(*) as count FROM swarm_missions WHERE project_id = ? AND status = ?'
-  ).get(projectId, 'active');
-  
+  const activeMissions = readDb
+    .prepare('SELECT count(*) as count FROM swarm_missions WHERE project_id = ? AND status = ?')
+    .get(projectId, 'active');
+
   if (activeMissions.count > 0) {
-    console.error(`[SWARM_LAUNCH] ERROR: Project ${projectId} already has ${activeMissions.count} active swarm(s)`);
-    throw new Error(`Ya existe un swarm activo para este proyecto. Esperá a que termine o cancelalo antes de lanzar otro.`);
+    console.error(
+      `[SWARM_LAUNCH] ERROR: Project ${projectId} already has ${activeMissions.count} active swarm(s)`
+    );
+    throw new Error(
+      `Ya existe un swarm activo para este proyecto. Esperá a que termine o cancelalo antes de lanzar otro.`
+    );
   }
-  
+
   console.log(`[SWARM_LAUNCH] No active swarms found for project ${projectId}. Proceeding.`);
 
   const catalog = selectSwarmLaunchCatalog();
@@ -462,220 +820,280 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
   const launchId = `launch-${crypto.randomUUID().slice(0, 8)}`;
   const missionTitle = preview.launchLabel;
   const directorAgentId = `${launchId}-director`;
-  
+  const launchRequestedAt = now;
+
   console.log(`[SWARM_LAUNCH] Creating mission ${launchId}: ${missionTitle}`);
-  console.log(`[SWARM_LAUNCH] Roles: ${preview.rolePrograms?.map(r => r.role).join(', ') || 'none'}`);
+  console.log(
+    `[SWARM_LAUNCH] Roles: ${preview.rolePrograms?.map((r) => r.role).join(', ') || 'none'}`
+  );
 
   // Writes: use write queue to serialize all critical DB mutations
-  const result = await withDbWriteQueue((writeDb) => {
-    const mission = createSwarmMission(writeDb, {
-      mission_id: launchId,
-      project_id: projectId,
-      owner_agent_id: directorAgentId,
-      kind: 'coordination',
-      status: 'active',
-      title: missionTitle,
-      summary: resolvedDraft.mission,
-      started_at: now,
-      updated_at: now,
-    });
-
-    let parentSessionId = null;
-    const runtimeRequests = [];
-  const failedRoles = [];
-
-    for (const roleEntry of preview.rolePrograms || []) {
-      const roleKey = roleEntry.role_key;
-      const agentId = `${launchId}-${roleKey}`;
-      const taskId = `${launchId}:${roleKey}`;
-      const sessionId = `${launchId}-${roleKey}-session`;
-
-      console.log(`[SWARM_LAUNCH] Setting up role: ${roleEntry.role} (${roleKey})`);
-
-      // T1.2: Prepare real git worktree for this role
-      let worktreeResult;
-      try {
-        worktreeResult = prepareAgentWorktree({
-          repoRoot: resolvedDraft.workspacePath,
-          launchId,
-          roleKey,
-          baseRef: 'HEAD',
-        });
-      } catch (err) {
-        console.error(`[SWARM_LAUNCH] FAILED to prepare worktree for ${roleKey}: ${err.message}`);
-        failedRoles.push({
-          roleKey,
-          roleLabel: roleEntry.role,
-          error: err?.message || 'No se pudo preparar worktree.',
-        });
-        // Skip this role — don't create runtime request
-        continue;
-      }
-
-      const { worktreePath, branchName, observedHead } = worktreeResult;
-
-      const prompt = buildLaunchPrompt({
-        role: roleEntry.role,
-        roleKey,
-        mission: resolvedDraft.mission,
-        workspacePath: worktreePath,
-        hierarchy: preview.topology?.roles || [],
+  const result = await withDbWriteQueue(
+    (writeDb) => {
+      const mission = createSwarmMission(writeDb, {
+        mission_id: launchId,
+        project_id: projectId,
+        owner_agent_id: directorAgentId,
+        kind: 'coordination',
+        status: 'active',
+        title: missionTitle,
+        summary: resolvedDraft.mission,
+        started_at: now,
+        updated_at: now,
       });
-      const workspaceLease = prepareAgentWorkspaceLease(
-        writeDb,
-        {
+
+      let parentSessionId = null;
+      const runtimeRequests = [];
+      const failedRoles = [];
+
+      for (const roleEntry of preview.rolePrograms || []) {
+        const roleKey = roleEntry.role_key;
+        const agentId = `${launchId}-${roleKey}`;
+        const taskId = `${launchId}:${roleKey}`;
+        const sessionId = `${launchId}-${roleKey}-session`;
+
+        console.log(`[SWARM_LAUNCH] Setting up role: ${roleEntry.role} (${roleKey})`);
+
+        // T1.2: Prepare real git worktree for this role
+        let worktreeResult;
+        try {
+          worktreeResult = prepareAgentWorktree({
+            repoRoot: resolvedDraft.workspacePath,
+            launchId,
+            roleKey,
+            baseRef: 'HEAD',
+          });
+        } catch (err) {
+          console.error(`[SWARM_LAUNCH] FAILED to prepare worktree for ${roleKey}: ${err.message}`);
+          failedRoles.push({
+            roleKey,
+            roleLabel: roleEntry.role,
+            error: err?.message || 'No se pudo preparar worktree.',
+          });
+          // Skip this role — don't create runtime request
+          continue;
+        }
+
+        const { worktreePath, branchName, observedHead } = worktreeResult;
+
+        const prompt = buildLaunchPrompt({
+          role: roleEntry.role,
+          roleKey,
+          mission: resolvedDraft.mission,
+          workspacePath: worktreePath,
+          hierarchy: preview.topology?.roles || [],
+        });
+        const workspaceLease = prepareAgentWorkspaceLease(
+          writeDb,
+          {
+            task_id: taskId,
+            agent_id: agentId,
+            correlation_id: `${launchId}:${roleKey}`,
+            requested_base_ref: AGENT_WORKSPACE_BASE_COMMIT,
+            workspace_path: worktreePath,
+          },
+          {
+            repoRoot: resolvedDraft.workspacePath,
+            baseBranch: 'main',
+            acceptedAt: now,
+          }
+        );
+
+        registerMissionParticipant(writeDb, {
+          mission_id: mission.mission_id,
+          agent_id: agentId,
+          role_in_mission: mapLaunchRoleToParticipantRole(roleKey),
+          status: 'active',
+          joined_at: now,
+          updated_at: now,
+        });
+
+        const session = insertAgentHubSession(writeDb, {
+          id: sessionId,
+          project_id: projectId,
+          title: `${missionTitle} · ${roleEntry.role}`,
+          agent_model: roleEntry.program_id,
+          parent_id: parentSessionId,
+          directory: worktreePath,
+          status: 'active',
+          opencode_session_id: null,
+          now,
+        });
+
+        if (roleKey === 'director') {
+          parentSessionId = session.id;
+        }
+
+        const workspace = activatePreparedWorkspace(writeDb, {
+          workspaceId: workspaceLease.workspace.id,
+          sessionId: session.id,
+          branchName,
+          workspacePath: worktreePath,
+          observedHead,
+          now,
+        });
+
+        const run = createAgentRun(writeDb, {
+          workspace_id: workspace.id,
           task_id: taskId,
           agent_id: agentId,
-          correlation_id: `${launchId}:${roleKey}`,
-          requested_base_ref: AGENT_WORKSPACE_BASE_COMMIT,
-          workspace_path: worktreePath,
-        },
-        {
-          repoRoot: resolvedDraft.workspacePath,
-          baseBranch: 'main',
-          acceptedAt: now,
-        }
-      );
+          requested_base_ref: workspace.base_commit,
+          baseline_commit: workspace.base_commit,
+          status: 'running',
+          observed_start: {
+            branch: branchName,
+            head: observedHead,
+            dirty: 'clean',
+            path: worktreePath,
+          },
+          started_at: now,
+        });
 
-      registerMissionParticipant(writeDb, {
-        mission_id: mission.mission_id,
-        agent_id: agentId,
-        role_in_mission: mapLaunchRoleToParticipantRole(roleKey),
-        status: 'active',
-        joined_at: now,
-        updated_at: now,
-      });
+        upsertAgentPresence(writeDb, {
+          mission_id: mission.mission_id,
+          agent_id: agentId,
+          workspace_id: workspace.id,
+          run_id: run.run_id,
+          runtime_surface: LOCAL_SWARM_RUNTIME_SURFACE,
+          presence_state: 'busy',
+          status_summary: `${roleEntry.role} listo para launch`,
+          evidence_ref: `evidence://launch/${launchId}/${roleKey}`,
+          last_seen_at: now,
+          updated_at: now,
+        });
 
-      const session = insertAgentHubSession(writeDb, {
-        id: sessionId,
-        project_id: projectId,
-        title: `${missionTitle} · ${roleEntry.role}`,
-        agent_model: roleEntry.program_id,
-        parent_id: parentSessionId,
-        directory: worktreePath,
-        status: 'active',
-        opencode_session_id: roleEntry.program_id === 'opencode' ? sessionId : null,
-        now,
-      });
+        console.log(
+          `[SWARM_LAUNCH] Role ${roleEntry.role} configured. Workspace: ${workspace.id}, Run: ${run.run_id}`
+        );
 
-      if (roleKey === 'director') {
-        parentSessionId = session.id;
+        const roleModel = resolvedDraft.roleModels?.[roleKey] || null;
+        const evidenceRef = `evidence://launch/${launchId}/${roleKey}`;
+        const command = buildLaunchCommand(
+          roleEntry.program_id,
+          prompt,
+          roleKey,
+          roleModel,
+          launchId,
+          worktreePath
+        );
+
+        runtimeRequests.push({
+          taskId,
+          selectedAgent: roleEntry.program_id,
+          command,
+          commandPreview: redactLaunchCommand(command),
+          launchOrigin: 'swarm-control-launch',
+          roleKey,
+          roleLabel: roleEntry.role,
+          roleAbbrev: roleEntry.role_abbrev || null,
+          promptSummary: `${roleEntry.role} · ${preview.template?.label || missionTitle}`,
+          taskTitle: `${missionTitle} · ${roleEntry.role}`,
+          modelId: roleModel,
+          tmuxSessionName: `devhub-swarm-${launchId}-${roleKey}`,
+          launchId,
+          isSwarmRole: true,
+          missionId: mission.mission_id,
+          workspacePath: worktreePath,
+          workspaceId: workspace.id,
+          runId: run.run_id,
+          sessionId: session.id,
+          branchName,
+          observedHead,
+          evidenceRef,
+          promptReference: `${evidenceRef}/prompt`,
+        });
       }
 
-      const workspace = activatePreparedWorkspace(writeDb, {
-        workspaceId: workspaceLease.workspace.id,
-        sessionId: session.id,
-        branchName,
-        workspacePath: worktreePath,
-        observedHead,
-        now,
-      });
-
-      const run = createAgentRun(writeDb, {
-        workspace_id: workspace.id,
-        task_id: taskId,
-        agent_id: agentId,
-        requested_base_ref: workspace.base_commit,
-        baseline_commit: workspace.base_commit,
-        status: 'running',
-        observed_start: {
-          branch: branchName,
-          head: observedHead,
-          dirty: 'clean',
-          path: worktreePath,
-        },
-        started_at: now,
-      });
-
-      upsertAgentPresence(writeDb, {
-        mission_id: mission.mission_id,
-        agent_id: agentId,
-        workspace_id: workspace.id,
-        run_id: run.run_id,
-        runtime_surface: LOCAL_SWARM_RUNTIME_SURFACE,
-        presence_state: 'busy',
-        status_summary: `${roleEntry.role} listo para launch`,
-        evidence_ref: `evidence://launch/${launchId}/${roleKey}`,
-        last_seen_at: now,
-        updated_at: now,
-      });
-
-      console.log(`[SWARM_LAUNCH] Role ${roleEntry.role} configured. Workspace: ${workspace.id}, Run: ${run.run_id}`);
-
-      const roleModel = resolvedDraft.roleModels?.[roleKey] || null;
-
-      runtimeRequests.push({
-        taskId,
-        selectedAgent: roleEntry.program_id,
-        command: buildLaunchCommand(roleEntry.program_id, prompt, roleKey, roleModel, launchId, worktreePath),
-        launchOrigin: 'swarm-control-launch',
-        roleKey,
-        roleLabel: roleEntry.role,
-        roleAbbrev: roleEntry.role_abbrev || null,
-        promptSummary: `${roleEntry.role} · ${preview.template?.label || missionTitle}`,
-        taskTitle: `${missionTitle} · ${roleEntry.role}`,
-        modelId: roleModel,
-        tmuxSessionName: `devhub-swarm-${launchId}-${roleKey}`,
-        launchId,
-        isSwarmRole: true,
-        workspacePath: worktreePath,
-      });
-    }
-
-    console.log(`[SWARM_LAUNCH] All ${runtimeRequests.length} roles configured. Creating kickoff message...`);
-
-    if (runtimeRequests.length === 0) {
-      const failedSummary = failedRoles
-        .map((role) => `${role.roleLabel || role.roleKey}: ${role.error}`)
-        .join(' | ');
-      throw new Error(
-        `No se pudo lanzar el swarm: no se preparó ningún agente. ${failedSummary || 'Sin detalle de error.'}`
+      console.log(
+        `[SWARM_LAUNCH] All ${runtimeRequests.length} roles configured. Creating kickoff message...`
       );
-    }
 
-    const kickoffMessage = createMissionMessage(writeDb, {
-      mission_id: mission.mission_id,
-      sender_agent_id: directorAgentId,
-      message_kind: LOCAL_MISSION_MESSAGE_KIND,
-      body_summary: resolvedDraft.mission,
-      created_at: now,
-      updated_at: now,
-    });
+      if (runtimeRequests.length === 0) {
+        const failedSummary = failedRoles
+          .map((role) => `${role.roleLabel || role.roleKey}: ${role.error}`)
+          .join(' | ');
+        throw new Error(
+          `No se pudo lanzar el swarm: no se preparó ningún agente. ${failedSummary || 'Sin detalle de error.'}`
+        );
+      }
 
-    for (const roleEntry of preview.rolePrograms || []) {
-      if (roleEntry.role_key === 'director') continue;
-
-      upsertMessageDelivery(writeDb, {
-        message_id: kickoffMessage.message_id,
-        recipient_agent_id: `${launchId}-${roleEntry.role_key}`,
-        channel: LOCAL_MISSION_DELIVERY_CHANNEL,
-        status: 'pending',
-        last_attempt_at: now,
+      const kickoffMessage = createMissionMessage(writeDb, {
+        mission_id: mission.mission_id,
+        sender_agent_id: directorAgentId,
+        message_kind: LOCAL_MISSION_MESSAGE_KIND,
+        body_summary: resolvedDraft.mission,
+        created_at: now,
         updated_at: now,
       });
-    }
 
-    const missionSnapshot = getSwarmMissionDirectorSnapshot(writeDb, mission.mission_id, { now });
+      for (const roleEntry of preview.rolePrograms || []) {
+        if (roleEntry.role_key === 'director') continue;
 
-    console.log(`[SWARM_LAUNCH] SUCCESS: Swarm ${launchId} launched with ${runtimeRequests.length} agents`);
-    console.log(`[SWARM_LAUNCH] Mission ID: ${mission.mission_id}`);
-    console.log(`[SWARM_LAUNCH] Runtime requests: ${runtimeRequests.map(r => `${r.roleLabel}(${r.taskId})`).join(', ')}`);
+        upsertMessageDelivery(writeDb, {
+          message_id: kickoffMessage.message_id,
+          recipient_agent_id: `${launchId}-${roleEntry.role_key}`,
+          channel: LOCAL_MISSION_DELIVERY_CHANNEL,
+          status: 'pending',
+          last_attempt_at: now,
+          updated_at: now,
+        });
+      }
 
-    return {
-      control_room_snapshot_input: buildMissionControlRoomSnapshotInput({
-        db: writeDb,
-        missionControl: missionSnapshot,
-      }),
-      launch_result: {
+      const missionSnapshot = getSwarmMissionDirectorSnapshot(writeDb, mission.mission_id, { now });
+      const launchCommittedAt = new Date().toISOString();
+      const launchTrace = buildLaunchTracePayload({
         launchId,
-        mission_id: mission.mission_id,
-        launchLabel: missionTitle,
-        summaryLines: preview.summaryLines,
-        runtime_requests: runtimeRequests,
-        failed_roles: failedRoles,
-      },
-    };
-  }, { label: 'swarm-launch', timeout: 30000 });
+        missionId: mission.mission_id,
+        project,
+        missionTitle,
+        missionSummary: resolvedDraft.mission,
+        workspaceRoot: resolvedDraft.workspacePath,
+        directorAgentId,
+        directorSessionId: parentSessionId,
+        requestedAt: launchRequestedAt,
+        committedAt: launchCommittedAt,
+        runtimeRequests,
+        failedRoles,
+      });
+
+      persistLaunchTrace(writeDb, launchTrace);
+
+      console.log(
+        `[SWARM_LAUNCH] SUCCESS: Swarm ${launchId} launched with ${runtimeRequests.length} agents`
+      );
+      console.log(`[SWARM_LAUNCH] Mission ID: ${mission.mission_id}`);
+      console.log(
+        `[SWARM_LAUNCH] Runtime requests: ${runtimeRequests.map((r) => `${r.roleLabel}(${r.taskId})`).join(', ')}`
+      );
+
+      return {
+        control_room_snapshot_input: buildMissionControlRoomSnapshotInput({
+          db: writeDb,
+          missionControl: missionSnapshot,
+        }),
+        launch_result: {
+          launchId,
+          mission_id: mission.mission_id,
+          launchLabel: missionTitle,
+          summaryLines: preview.summaryLines,
+          runtime_requests: runtimeRequests,
+          failed_roles: failedRoles,
+          launch_trace: {
+            traceId: launchTrace.traceId,
+            traceType: launchTrace.traceType,
+            traceSessionId: launchTrace.traceSessionId,
+            requestedAt: launchTrace.requestedAt,
+            committedAt: launchTrace.committedAt,
+            durationMs: launchTrace.durationMs,
+            directorAgentId: launchTrace.directorAgentId,
+            runtimeRequestCount: launchTrace.runtimeRequestCount,
+            failedRoleCount: launchTrace.failedRoleCount,
+          },
+        },
+      };
+    },
+    { label: 'swarm-launch', timeout: 30000 }
+  );
 
   return result;
 }
@@ -966,32 +1384,6 @@ function buildCheckpointGateErrors(queue = []) {
     }));
 }
 
-async function callDevhubTool(toolName, args, { request, fetchImpl = fetch } = {}) {
-  if (!request?.url) {
-    throw new Error(`No se pudo resolver el origen para ${toolName}.`);
-  }
-
-  const url = new URL('/api/mcp/devhub', request.url);
-  const response = await fetchImpl(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ toolName, args }),
-  });
-  const payload = await response.json();
-
-  if (!response.ok || payload?.success === false) {
-    throw new Error(payload?.error || `Falló ${toolName}.`);
-  }
-
-  const raw = payload?.raw;
-  const textContent = raw?.content?.find?.((entry) => entry?.type === 'text')?.text;
-  if (!textContent) {
-    throw new Error(`Respuesta inválida de ${toolName}.`);
-  }
-
-  return JSON.parse(textContent);
-}
-
 function getRouteMissionSnapshot(now, getMissionSnapshot, projectId = null) {
   if (getMissionSnapshot) return getMissionSnapshot();
 
@@ -1000,42 +1392,34 @@ function getRouteMissionSnapshot(now, getMissionSnapshot, projectId = null) {
   return missionId ? getSwarmMissionDirectorSnapshot(db, missionId, { now }) : null;
 }
 
-async function readDirectorQueueEntries({ projectId, request, getExecutionQueue, fetchImpl }) {
+async function readDirectorQueueEntries({ projectId, getExecutionQueue }) {
   if (!projectId) return null;
 
-  // Try shared durable core first (SQLite local path)
-  if (!getExecutionQueue) {
-    try {
-      const db = getDb();
-      const { total, queue } = readExecutionQueueSummary(db, {
-        projectId,
-        limit: 20,
-        includeBlocked: true,
-      });
-      return presentExecutionQueue({ queue, total }).queue;
-    } catch {
-      // Fall through to MCP bounce if shared core fails
-    }
+  if (getExecutionQueue) {
+    const queuePayload = await getExecutionQueue({ projectId, includeBlocked: true });
+    if (Array.isArray(queuePayload)) return queuePayload;
+    return queuePayload?.queue || [];
   }
 
-  const queuePayload = getExecutionQueue
-    ? await getExecutionQueue({ projectId, includeBlocked: true })
-    : await callDevhubTool(
-        'get_execution_queue',
-        { project_id: projectId, include_blocked: true },
-        { request, fetchImpl }
-      );
-
-  if (Array.isArray(queuePayload)) return queuePayload;
-  return queuePayload?.queue || [];
+  try {
+    const db = getDb();
+    const { total, queue } = readExecutionQueueSummary(db, {
+      projectId,
+      limit: 20,
+      includeBlocked: true,
+    });
+    return presentExecutionQueue({ queue, total }).queue;
+  } catch (error) {
+    throw new Error(
+      `No se pudo leer la cola durable local para director handoff: ${error?.message || 'sin detalle.'}`
+    );
+  }
 }
 
-async function getDirectorQueueSnapshot({ projectId, request, getExecutionQueue, fetchImpl }) {
+async function getDirectorQueueSnapshot({ projectId, getExecutionQueue }) {
   const queue = await readDirectorQueueEntries({
     projectId,
-    request,
     getExecutionQueue,
-    fetchImpl,
   });
   if (!queue) return null;
   return createDirectorQueueContract({ queue });
@@ -1047,44 +1431,36 @@ function getEligibleMissionExecutors(missionSnapshot = null) {
   );
 }
 
-async function getNextTaskResult({ projectId, agentId, request, getNextTask, fetchImpl }) {
+async function getNextTaskResult({ projectId, agentId, getNextTask }) {
   if (getNextTask) {
     return getNextTask({ projectId, agentId });
   }
 
-  return callDevhubTool(
-    'claim_next_task',
-    { project_id: projectId, agent_id: agentId },
-    { request, fetchImpl }
-  );
+  try {
+    return claimNextTaskLocally({ projectId, agentId });
+  } catch (error) {
+    throw new Error(
+      `No se pudo reclamar la siguiente tarea desde durable local: ${error?.message || 'sin detalle.'}`
+    );
+  }
 }
 
-async function getWorkspaceEvidenceResult({
-  workspaceId,
-  request,
-  getWorkspaceEvidence,
-  fetchImpl,
-}) {
+async function getWorkspaceEvidenceResult({ workspaceId, getWorkspaceEvidence }) {
   if (!workspaceId) return null;
 
-  // Try shared durable core first (local path)
-  if (!getWorkspaceEvidence) {
-    try {
-      const db = getDb();
-      const summary = readWorkspaceEvidenceSummary(db, { workspaceId });
-      return summary ? presentWorkspaceEvidence(summary) : null;
-    } catch {
-      // Fall through to MCP bounce
-    }
+  if (getWorkspaceEvidence) {
+    return getWorkspaceEvidence({ workspaceId });
   }
 
-  return getWorkspaceEvidence
-    ? getWorkspaceEvidence({ workspaceId })
-    : callDevhubTool(
-        'get_workspace_evidence',
-        { workspace_id: workspaceId },
-        { request, fetchImpl }
-      );
+  try {
+    const db = getDb();
+    const summary = readWorkspaceEvidenceSummary(db, { workspaceId });
+    return summary ? presentWorkspaceEvidence(summary) : null;
+  } catch (error) {
+    throw new Error(
+      `No se pudo leer evidencia durable local para workspace ${workspaceId}: ${error?.message || 'sin detalle.'}`
+    );
+  }
 }
 
 function getWorkspaceIdFromClaimResult(claimResult = {}) {
@@ -1224,7 +1600,6 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
   const getQueueStatus = dependencies.getQueueStatus || (() => swarmQueue.getStatus());
   const getActiveAgentCount = dependencies.getActiveAgentCount || (() => getDbActiveAgentCount());
   const getExecutionQueue = dependencies.getExecutionQueue || null;
-  const fetchImpl = dependencies.fetchImpl || fetch;
   const getMcpStatus =
     dependencies.getMcpStatus ||
     (async () => {
@@ -1272,9 +1647,7 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
     getRouteMissionSnapshot(now, getMissionSnapshot, projectId),
     getDirectorQueueSnapshot({
       projectId,
-      request,
       getExecutionQueue,
-      fetchImpl,
     }),
   ]);
 
@@ -1348,7 +1721,6 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       const getExecutionQueue = dependencies.getExecutionQueue || null;
       const getNextTask = dependencies.getNextTask || null;
       const getWorkspaceEvidence = dependencies.getWorkspaceEvidence || null;
-      const fetchImpl = dependencies.fetchImpl || fetch;
 
       if (!projectId) {
         return NextResponse.json({ error: 'project_id es requerido.' }, { status: 400 });
@@ -1360,9 +1732,7 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       if (eligibleExecutors.length !== 1) {
         const queueEntries = await readDirectorQueueEntries({
           projectId,
-          request,
           getExecutionQueue,
-          fetchImpl,
         });
 
         return NextResponse.json({
@@ -1385,21 +1755,15 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       const claimResult = await getNextTaskResult({
         projectId,
         agentId: recipientAgentId,
-        request,
         getNextTask,
-        fetchImpl,
       });
       const workspaceEvidence = await getWorkspaceEvidenceResult({
         workspaceId: getWorkspaceIdFromClaimResult(claimResult),
-        request,
         getWorkspaceEvidence,
-        fetchImpl,
       });
       const queueEntries = await readDirectorQueueEntries({
         projectId,
-        request,
         getExecutionQueue,
-        fetchImpl,
       });
 
       return NextResponse.json({

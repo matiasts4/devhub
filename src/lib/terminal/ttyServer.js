@@ -40,9 +40,11 @@ function tryUpdatePtyIdentity(session) {
   try {
     const db = helpers.getDb();
     // Try to find a workspace matching this session's cwd
-    const workspace = db.prepare(
-      `SELECT id FROM agent_workspaces WHERE workspace_path = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
-    ).get(session.cwd);
+    const workspace = db
+      .prepare(
+        `SELECT id FROM agent_workspaces WHERE workspace_path = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
+      )
+      .get(session.cwd);
 
     if (workspace) {
       helpers.updateWorkspacePtyIdentity(db, {
@@ -69,9 +71,9 @@ function tryClearPtyIdentity(session) {
   try {
     const db = helpers.getDb();
     // Find workspace whose terminal_id matches this session
-    const workspace = db.prepare(
-      `SELECT id FROM agent_workspaces WHERE terminal_id = ? OR pane_id = ? LIMIT 1`
-    ).get(session.id, session.id);
+    const workspace = db
+      .prepare(`SELECT id FROM agent_workspaces WHERE terminal_id = ? OR pane_id = ? LIMIT 1`)
+      .get(session.id, session.id);
 
     if (workspace) {
       helpers.clearWorkspacePtyIdentity(db, workspace.id);
@@ -172,11 +174,18 @@ function resolveMcpServerPath() {
 
 const MCP_SERVER_PATH = resolveMcpServerPath();
 
+function loadTerminalDependency(globalKey, moduleName) {
+  if (globalThis[globalKey]) {
+    return globalThis[globalKey];
+  }
+  return eval('require')(moduleName);
+}
+
 // Use global require via eval to bypass Webpack's statically analyzed requires
 // This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly
 // instead of getting stubbed or mangled by Next.js's dev compiler.
-const pty = eval('require')('node-pty');
-const { WebSocketServer } = eval('require')('ws');
+const pty = loadTerminalDependency('__DEVHUB_TTY_NODE_PTY__', 'node-pty');
+const { WebSocketServer } = loadTerminalDependency('__DEVHUB_TTY_WS__', 'ws');
 
 const GLOBAL_TTY_KEY = '__DEVHUB_TTY_SERVER__';
 const GLOBAL_TTY_SESSIONS_KEY = '__DEVHUB_TTY_SESSIONS__';
@@ -910,7 +919,11 @@ function startIdleCleanup(sessions) {
       const lastActivity = session.lastActivityAt || 0;
       if (now - lastActivity < IDLE_SESSION_TIMEOUT_MS) continue; // not idle long enough
 
-      ttyLog('IDLE_CLEANUP', `removing idle session`, { id, pid: session.ptyPid, lastActivityAt: lastActivity });
+      ttyLog('IDLE_CLEANUP', `removing idle session`, {
+        id,
+        pid: session.ptyPid,
+        lastActivityAt: lastActivity,
+      });
 
       try {
         session.pty?.kill?.();
@@ -950,7 +963,7 @@ export function restoreSessions() {
   let zombieCount = 0;
   let skippedNoPid = 0;
   const sessions = getOrInitSessions();
-  
+
   for (const s of saved) {
     try {
       // Must have a saved ptyPid — without it we cannot verify the process
@@ -969,7 +982,7 @@ export function restoreSessions() {
         zombieCount++;
         continue;
       }
-      
+
       const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
 
       // Verify the newly spawned PTY is actually alive
@@ -991,9 +1004,11 @@ export function restoreSessions() {
       ttyLog('RESTORE', `restore failed`, { id: s.id, error: err?.message });
     }
   }
-  
+
   if (zombieCount > 0) {
-    console.log(`[ttyServer][ZOMBIE_CLEANUP] Cleaned up ${zombieCount} dead session(s) from previous run`);
+    console.log(
+      `[ttyServer][ZOMBIE_CLEANUP] Cleaned up ${zombieCount} dead session(s) from previous run`
+    );
   }
   if (skippedNoPid > 0) {
     console.log(`[ttyServer][RESTORE] Skipped ${skippedNoPid} session(s) without saved ptyPid`);
@@ -1038,7 +1053,9 @@ export async function ensureTTYServer() {
 
     try {
       const parseBooleanQueryFlag = (value) => {
-        const normalized = String(value || '').trim().toLowerCase();
+        const normalized = String(value || '')
+          .trim()
+          .toLowerCase();
         return normalized === '1' || normalized === 'true' || normalized === 'yes';
       };
 
@@ -1286,9 +1303,14 @@ export async function ensureTTYServer() {
 
               try {
                 session.pty.kill();
-                console.log(`[ttyServer][AUTO_KILL] Killed orphaned PTY session ${terminalId} (pid: ${session.pty.pid})`);
+                console.log(
+                  `[ttyServer][AUTO_KILL] Killed orphaned PTY session ${terminalId} (pid: ${session.pty.pid})`
+                );
               } catch (err) {
-                console.error(`[ttyServer][AUTO_KILL] Failed to kill PTY ${terminalId}:`, err.message);
+                console.error(
+                  `[ttyServer][AUTO_KILL] Failed to kill PTY ${terminalId}:`,
+                  err.message
+                );
               }
 
               // Clean up session

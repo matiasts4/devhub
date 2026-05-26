@@ -1333,9 +1333,7 @@ describe('composeControlRoomSnapshot', () => {
           ],
         },
         liveHints: {
-          agents: [
-            { agent_id: 'agent-worker-1', status: 'running', authority: 'cached' },
-          ],
+          agents: [{ agent_id: 'agent-worker-1', status: 'running', authority: 'cached' }],
         },
         mission_control: {
           ...buildControlRoomInput().mission_control,
@@ -1666,7 +1664,13 @@ describe('composeControlRoomSnapshot', () => {
         devops: 'opencode',
         architect: 'opencode',
       },
-      roleModels: {},
+      roleModels: {
+        director: 'opencode-go/deepseek-v4-flash',
+        coder: 'opencode-go/deepseek-v4-flash',
+        auditor: 'opencode-go/deepseek-v4-flash',
+        devops: 'opencode-go/deepseek-v4-flash',
+        architect: 'opencode-go/deepseek-v4-flash',
+      },
       mission:
         'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
     });

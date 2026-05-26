@@ -1190,7 +1190,7 @@ describe('GET /api/agenthub/operations/health', () => {
     const Database = require('better-sqlite3');
     const actualLocalDb = jest.requireActual('../../../src/lib/db/localDb.js');
     const db = new Database(':memory:');
-    actualLocalDb.ensureRuntimeSchema(db);
+    actualLocalDb.ensureAllSchema(db);
     db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(
       'project-parity',
       'Project Parity'
@@ -1699,6 +1699,190 @@ describe('GET /api/agenthub/operations/health', () => {
     });
   });
 
+  test('uses durable local fallback for director claim and evidence without MCP bounce', async () => {
+    jest.resetModules();
+
+    const Database = require('better-sqlite3');
+    const localDbPath = '../../../src/lib/db/localDb.js';
+    const actualLocalDb = jest.requireActual(localDbPath);
+    const db = new Database(':memory:');
+    actualLocalDb.ensureAllSchema(db);
+
+    db.prepare('INSERT INTO projects (id, name, local_path) VALUES (?, ?, ?)').run(
+      'project-local-claim',
+      'Project Local Claim',
+      '/workspace/devhub'
+    );
+    db.prepare(
+      'INSERT INTO tasks (id, project_id, title, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      'task-local-1',
+      'project-local-claim',
+      'Local durable task',
+      'pending',
+      'high',
+      '2026-05-26T00:00:00.000Z',
+      '2026-05-26T00:00:00.000Z'
+    );
+    db.prepare(
+      'INSERT INTO agent_registry (agent_id, project_id, nombre, modelo_llm, status) VALUES (?, ?, ?, ?, ?)'
+    ).run('agent-executor-1', 'project-local-claim', 'Executor 1', 'opencode', 'idle');
+    db.prepare(
+      `INSERT INTO agent_workspaces (
+        id, project_id, agent_id, current_task_id, run_id_or_session_id, repo_root, workspace_path,
+        worktree_path, base_branch, base_commit, branch_name, status, observed_branch, observed_head,
+        observed_dirty, updated_at, claimed_at, started_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'ws-local-1',
+      'project-local-claim',
+      'agent-executor-1',
+      'task-local-1',
+      'launch-local-coder-session',
+      '/workspace/devhub',
+      '/workspace/devhub/.devhub/worktrees/launch-local/coder',
+      '/workspace/devhub/.devhub/worktrees/launch-local/coder',
+      'main',
+      'HEAD',
+      'devhub/swarm/launch-local/coder',
+      'active',
+      'devhub/swarm/launch-local/coder',
+      'head-local-1',
+      'clean',
+      '2026-05-26T00:00:00.000Z',
+      '2026-05-26T00:00:00.000Z',
+      '2026-05-26T00:00:00.000Z'
+    );
+    db.prepare(
+      `INSERT INTO agent_runs (
+        run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit,
+        observed_start_branch, observed_start_head, observed_start_dirty, observed_start_path,
+        status, started_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'run-local-1',
+      'ws-local-1',
+      'task-local-1',
+      'agent-executor-1',
+      'HEAD',
+      'HEAD',
+      'devhub/swarm/launch-local/coder',
+      'head-local-1',
+      'clean',
+      '/workspace/devhub/.devhub/worktrees/launch-local/coder',
+      'running',
+      '2026-05-26T00:00:00.000Z'
+    );
+    db.prepare(
+      `INSERT INTO agent_artifacts (
+        artifact_id, run_id, seq, phase, kind, producer, summary, evidence_ref, observed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'artifact-local-1',
+      'run-local-1',
+      1,
+      'execute',
+      'decision.note',
+      'devhub',
+      'Local durable evidence',
+      'evidence://artifact/artifact-local-1',
+      '2026-05-26T00:00:00.000Z'
+    );
+    db.prepare(
+      `INSERT INTO supervisor_snapshots (
+        task_id, supervisor_state, outcome, workspace_id, run_id, evidence_ref, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'task-local-1',
+      'dispatch_pending',
+      'dispatch',
+      'ws-local-1',
+      'run-local-1',
+      'evidence://supervisor/task-local-1',
+      '2026-05-26T00:00:00.000Z',
+      '2026-05-26T00:00:00.000Z'
+    );
+
+    jest.doMock('@/lib/db/localDb.js', () => ({
+      ...jest.requireActual(localDbPath),
+      getDb: () => db,
+      getActiveAgentCount: () => 0,
+    }));
+    jest.doMock(localDbPath, () => ({
+      ...jest.requireActual(localDbPath),
+      getDb: () => db,
+      getActiveAgentCount: () => 0,
+    }));
+
+    const { POST } = require('../../../src/app/api/agenthub/operations/health/route');
+    const getMissionSnapshot = jest.fn().mockResolvedValue({
+      participants: [
+        { agent_id: 'agent-director', role_in_mission: 'director', status: 'active' },
+        { agent_id: 'agent-executor-1', role_in_mission: 'executor', status: 'active' },
+      ],
+    });
+    const fetchImpl = jest.fn();
+
+    const response = await POST(
+      new Request(
+        'http://localhost/api/agenthub/operations/health?project_id=project-local-claim',
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'claim_director_next_task' }),
+        }
+      ),
+      undefined,
+      {
+        getMissionSnapshot,
+        fetchImpl,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(payload.control_room_snapshot_input.director_queue.handoff).toEqual(
+      expect.objectContaining({
+        status: 'claimed',
+        recipient_agent_id: 'agent-executor-1',
+        message: 'Tarea reclamada.',
+        task: expect.objectContaining({
+          id: 'task-local-1',
+          status: 'in_progress',
+          workspace_id: 'ws-local-1',
+          run_id: 'run-local-1',
+          runtime_binding: expect.objectContaining({
+            classification: 'bound',
+            workspace_id: 'ws-local-1',
+            run_id: 'run-local-1',
+          }),
+        }),
+        workspace: expect.objectContaining({
+          workspace_id: 'ws-local-1',
+          branch_name: 'devhub/swarm/launch-local/coder',
+        }),
+        run: expect.objectContaining({ run_id: 'run-local-1', status: 'running' }),
+        artifact: expect.objectContaining({
+          artifact_id: 'artifact-local-1',
+          kind: 'decision.note',
+        }),
+        supervisor: expect.objectContaining({
+          supervisor_state: 'dispatch_pending',
+          workspace_id: 'ws-local-1',
+        }),
+      })
+    );
+    expect(payload.control_room_snapshot_input.director_queue.items).toEqual([]);
+
+    const claimedTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get('task-local-1');
+    expect(claimedTask.assigned_to).toBe('agent-executor-1');
+    expect(claimedTask.claim_token).toBeTruthy();
+    expect(claimedTask.lease_expires_at).toBeTruthy();
+
+    db.close();
+    jest.resetModules();
+  });
+
   test('launches a local swarm into durable mission, workspace, run, and session records', async () => {
     jest.resetModules();
 
@@ -1769,6 +1953,13 @@ describe('GET /api/agenthub/operations/health', () => {
     expect(payload.launch_result).toEqual(
       expect.objectContaining({
         launchLabel: 'Lanzar Arranque limpio guiado',
+        launch_trace: expect.objectContaining({
+          traceType: 'swarm_launch',
+          traceSessionId: expect.stringContaining('director-session'),
+          runtimeRequestCount: 5,
+          failedRoleCount: 0,
+          durationMs: expect.any(Number),
+        }),
         runtime_requests: expect.arrayContaining([
           expect.objectContaining({
             selectedAgent: 'codex',
@@ -1776,6 +1967,12 @@ describe('GET /api/agenthub/operations/health', () => {
             command: expect.stringContaining(
               '/home/matias/.nvm/versions/node/v24.14.0/bin/codex exec --sandbox workspace-write'
             ),
+            commandPreview: expect.any(String),
+            sessionId: expect.stringContaining('director-session'),
+            workspaceId: expect.any(String),
+            runId: expect.any(String),
+            missionId: expect.any(String),
+            promptReference: expect.stringMatching(/^evidence:\/\/launch\//),
           }),
           expect.objectContaining({
             selectedAgent: 'hermes',
@@ -1830,6 +2027,11 @@ describe('GET /api/agenthub/operations/health', () => {
     expect(db.prepare('SELECT COUNT(*) as count FROM agent_workspaces').get().count).toBe(5);
     expect(db.prepare('SELECT COUNT(*) as count FROM agent_runs').get().count).toBe(5);
     expect(db.prepare('SELECT COUNT(*) as count FROM agent_hub_sessions').get().count).toBe(5);
+    expect(
+      db
+        .prepare("SELECT COUNT(*) as count FROM agent_traces WHERE trace_type = 'swarm_launch'")
+        .get().count
+    ).toBe(1);
 
     const directorSession = db
       .prepare("SELECT * FROM agent_hub_sessions WHERE agent_model = 'codex' LIMIT 1")
@@ -1850,10 +2052,40 @@ describe('GET /api/agenthub/operations/health', () => {
         directory: expect.stringContaining('/workspace/devhub/.devhub/worktrees/'),
       })
     );
-    expect(builderSession?.opencode_session_id).toBeTruthy();
+    expect(builderSession?.opencode_session_id).toBeNull();
     expect(directorPresence).toEqual(
       expect.objectContaining({ presence_state: 'busy', runtime_surface: 'swarm-control-launch' })
     );
+
+    const launchTrace = db
+      .prepare("SELECT * FROM agent_traces WHERE trace_type = 'swarm_launch' LIMIT 1")
+      .get();
+    expect(launchTrace).toEqual(
+      expect.objectContaining({
+        session_id: directorSession.id,
+        tool_name: 'launch_swarm_local',
+        tool_status: 'success',
+      })
+    );
+    const traceMetadata = JSON.parse(launchTrace.metadata);
+    expect(traceMetadata).toEqual(
+      expect.objectContaining({
+        launchId: payload.launch_result.launchId,
+        missionId: payload.launch_result.mission_id,
+        directorSessionId: directorSession.id,
+        runtimeRequestCount: 5,
+      })
+    );
+    expect(traceMetadata.runtimeRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          roleKey: 'director',
+          sessionId: directorSession.id,
+          commandPreview: expect.any(String),
+        }),
+      ])
+    );
+    expect(traceMetadata.runtimeRequests[0].commandPreview).not.toContain('DEVHUB_AGENT_TOKEN');
 
     db.close();
     jest.resetModules();

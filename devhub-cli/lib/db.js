@@ -6,12 +6,8 @@ const swarmMissions = require('../../src/lib/db/swarmMissions.js');
 const crypto = require('crypto');
 
 // Re-export mission message / delivery functions from swarmMissions barrel
-const {
-  createMissionMessage,
-  upsertMessageDelivery,
-  isMissionMessageKind,
-  MISSION_MESSAGE_KINDS,
-} = swarmMissions;
+const { createMissionMessage, upsertMessageDelivery, isMissionMessageKind, MISSION_MESSAGE_KINDS } =
+  swarmMissions;
 
 /**
  * Claim the next available pending task for a given agent.
@@ -30,7 +26,11 @@ function claimNextTask(agentId) {
 
   // Get prioritized execution queue
   const { readExecutionQueueSummary } = compactReads;
-  const { queue } = readExecutionQueueSummary(db, { projectId: agent.project_id, limit: 20, includeBlocked: true });
+  const { queue } = readExecutionQueueSummary(db, {
+    projectId: agent.project_id,
+    limit: 20,
+    includeBlocked: true,
+  });
 
   // Find first non-blocked pending task
   for (const entry of queue) {
@@ -74,9 +74,11 @@ function releaseTask(taskId, claimToken, outcome) {
   }
 
   // Atomic update: validate token in WHERE clause
-  const result = db.prepare(
-    "UPDATE tasks SET status = ?, claim_token = NULL, lease_expires_at = NULL, updated_at = datetime('now') WHERE id = ? AND claim_token = ?"
-  ).run(newStatus, taskId, claimToken);
+  const result = db
+    .prepare(
+      "UPDATE tasks SET status = ?, claim_token = NULL, lease_expires_at = NULL, updated_at = datetime('now') WHERE id = ? AND claim_token = ?"
+    )
+    .run(newStatus, taskId, claimToken);
 
   return { changes: result.changes, taskFound: true, wasClaimed: true };
 }
@@ -89,9 +91,11 @@ function releaseTask(taskId, claimToken, outcome) {
 function ensureWriteSchema() {
   const db = getDb();
   // Check if agent_registry exists; create it if missing (fresh test DB)
-  const hasTable = db.prepare(
-    "SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='agent_registry'"
-  ).get();
+  const hasTable = db
+    .prepare(
+      "SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='agent_registry'"
+    )
+    .get();
   if (!hasTable.cnt) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS agent_registry (
@@ -114,4 +118,16 @@ function ensureWriteSchema() {
   }
 }
 
-module.exports = { ...compactReads, getDb, closeDb, ensureWriteSchema, claimNextTask, releaseTask, crypto, createMissionMessage, upsertMessageDelivery, isMissionMessageKind, MISSION_MESSAGE_KINDS };
+module.exports = {
+  ...compactReads,
+  getDb,
+  closeDb,
+  ensureWriteSchema,
+  claimNextTask,
+  releaseTask,
+  crypto,
+  createMissionMessage,
+  upsertMessageDelivery,
+  isMissionMessageKind,
+  MISSION_MESSAGE_KINDS,
+};

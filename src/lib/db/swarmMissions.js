@@ -6,7 +6,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getDb, resolveDbArgs } = require('./core');
+const { getDb, resolveDbArgs } = require('./shared');
 const { resolveAgentRuntimeBinding, getPreferredBindingWorkspace } = require('./workspaces');
 const { buildMissionBindingResult } = require('./agentRuns');
 const { getSupervisorSnapshot } = require('./supervisor');
@@ -456,6 +456,38 @@ function getVerifiedMissionRecipientBinding(dbOrInput, maybeInput) {
   });
 }
 
+function readMissionDiagnosticSummary(dbOrInput, maybeInput = {}) {
+  const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
+  const missionId = input.missionId || input.mission_id;
+  if (!missionId) throw new Error('missionId is required for readMissionDiagnosticSummary.');
+
+  const mission = getSwarmMissionById(db, missionId);
+  if (!mission) return null;
+
+  const participants = listMissionParticipants(db, missionId).map((participant) => {
+    const binding = getVerifiedMissionRecipientBinding(db, {
+      mission_id: missionId,
+      recipient_agent_id: participant.agent_id,
+    });
+    const presenceRows = listAgentPresenceForMission(db, missionId).filter(
+      (presence) => presence.agent_id === participant.agent_id
+    );
+    const latestPresence = presenceRows[0] || null;
+    return {
+      ...participant,
+      binding,
+      presence: latestPresence
+        ? { ...latestPresence, ...getAgentPresenceStatus(latestPresence) }
+        : null,
+    };
+  });
+
+  return {
+    mission,
+    participants,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Mission Messages
 // ---------------------------------------------------------------------------
@@ -810,6 +842,7 @@ module.exports = {
   registerMissionParticipant,
   listMissionParticipants,
   getVerifiedMissionRecipientBinding,
+  readMissionDiagnosticSummary,
   // Messages
   createMissionMessage,
   listMissionMessages,

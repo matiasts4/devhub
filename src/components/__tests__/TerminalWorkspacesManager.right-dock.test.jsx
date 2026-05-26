@@ -99,22 +99,6 @@ jest.mock('../NotificationCenter', () => ({
   },
 }));
 
-jest.mock('../AgentRoomSidebar', () => ({
-  __esModule: true,
-  default: ({ resumableSessions = [], resumableStatus = 'empty' }) => {
-    const React = require('react');
-    return React.createElement(
-      'div',
-      {
-        'data-testid': 'agent-room-sidebar-stub',
-        'data-status': resumableStatus,
-        'data-count': String(resumableSessions.length),
-      },
-      'agent room'
-    );
-  },
-}));
-
 jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   __esModule: true,
   default: () => ({
@@ -396,7 +380,9 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
 
-    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe('live');
+    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+      'live'
+    );
     expect(
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
     ).toBe('live');
@@ -505,27 +491,21 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
-    expect(
-      view.container.querySelector('[data-testid="workspace-right-dock-panel"]')
-    ).toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
-    expect(
-      view.container.querySelector('[data-testid="workspace-right-dock-panel"]')
-    ).toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-swarm"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="workspace-swarm-pane"]')).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-swarm"]'));
-    expect(
-      view.container.querySelector('[data-testid="workspace-right-dock-panel"]')
-    ).toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
   });
 
   test('switching to editor reveals the shared pane with contextual subtitle', async () => {

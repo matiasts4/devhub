@@ -1,37 +1,30 @@
 # DevHub MCP Server
 
-Servidor MCP local que expone herramientas de DevHub a agentes AI (OpenCode, Claude, etc.).
+Servidor MCP local para el control plane de DevHub.
 
-**Sin API key externa** — se conecta directamente a SQLite local (local-first).
+**Baseline soportado:** 36 tools MCP. Telegram queda fuera del contrato público MCP; cualquier runtime o storage interno de Telegram sigue fuera de esta superficie.
 
 ---
 
-## Setup: 2 pasos
-
-### 1. Instalar dependencias
+## Setup rápido
 
 ```bash
 cd devhub-mcp
 npm install
+npm start
 ```
 
-### 2. Iniciar el servidor
+Desde la raíz del repo también podés ejecutar:
 
 ```bash
-npm start
-# o desde la raíz del proyecto:
 node devhub-mcp/server.js
 ```
 
-Si ves `✅ DevHub MCP Server iniciado (stdio)` el servidor funciona correctamente.
+Si ves `✅ DevHub MCP Server iniciado (stdio)`, el servidor arrancó bien.
 
 ---
 
 ## Configuración en clientes MCP
-
-### OpenCode
-
-Registrar el servidor en tu configuración MCP:
 
 ```json
 {
@@ -46,103 +39,88 @@ Registrar el servidor en tu configuración MCP:
 
 ---
 
-## Ownership Matrix (45 tools)
+## Supported MCP Contract (36 tools)
 
-Every MCP tool is classified into exactly one category. This table is the authoritative source for the MCP vs CLI ownership boundary.
+Esta tabla es la fuente de verdad del contrato MCP soportado hoy.
 
-| Tool | Category | CLI Equivalent | Notes |
-|------|----------|----------------|-------|
-| `list_projects` | crud | — | MCP-owned |
-| `get_project` | crud | — | MCP-owned |
-| `create_project` | crud | — | MCP-owned |
-| `update_project` | crud | — | MCP-owned |
-| `delete_project` | crud | — | MCP-owned |
-| `list_tasks` | crud | — | MCP-owned |
-| `create_task` | crud | — | MCP-owned |
-| `bulk_create_tasks` | crud | — | MCP-owned |
-| `update_task` | crud | — | MCP-owned |
-| `add_task_comment` | crud | — | MCP-owned |
-| `list_milestones` | crud | — | MCP-owned |
-| `create_milestone` | crud | — | MCP-owned |
-| `bulk_create_milestones` | crud | — | MCP-owned |
-| `update_milestone` | crud | — | MCP-owned |
-| `get_execution_queue` | portable-contract | — | Stable across CLI changes |
-| `claim_next_task` | portable-contract | — | Stable across CLI changes |
-| `renew_task_lease` | portable-contract | — | Stable across CLI changes |
-| `release_task` | portable-contract | — | Stable across CLI changes |
-| `request_supervisor_approval` | portable-contract | — | Stable across CLI changes |
-| `team_tell` | portable-contract | — | Stable across CLI changes |
-| `get_dashboard` | deprecated | `devhub status` | Advisory — still functional |
-| `get_next_task` | deprecated | `devhub claim` | Advisory — still functional |
-| `register_agent` | deprecated | `devhub agents register` | Advisory — still functional |
-| `heartbeat_agent` | deprecated | `devhub heartbeat` | Advisory — still functional |
-| `unregister_agent` | deprecated | CLI (future) | Advisory — still functional |
-| `update_agent_status` | deprecated | `devhub update-status` | Advisory — still functional |
-| `record_telegram_adapter_intent` | external-integration | — | Telegram integration |
-| `record_telegram_delivery` | external-integration | — | Telegram integration |
-| `set_telegram_subscription` | external-integration | — | Telegram integration |
-| `respond_telegram_approval` | external-integration | — | Telegram integration |
-| `get_telegram_channel_snapshot` | external-integration | — | Telegram integration |
-| `prepare_agent_workspace` | external-integration | — | Workspace lifecycle |
-| `list_agent_workspaces` | external-integration | — | Workspace lifecycle |
-| `get_agent_workspace` | external-integration | — | Workspace lifecycle |
-| `create_agent_workspace` | external-integration | — | Workspace lifecycle |
-| `update_agent_workspace` | external-integration | — | Workspace lifecycle |
-| `report_agent_workspace` | external-integration | — | Workspace lifecycle |
-| `create_agent_run` | external-integration | — | Run lifecycle |
-| `get_agent_run` | external-integration | — | Run lifecycle |
-| `list_agent_runs` | external-integration | — | Run lifecycle |
-| `complete_agent_run` | external-integration | — | Run lifecycle |
-| `append_agent_artifact` | external-integration | — | Artifact tracking |
-| `list_agent_artifacts` | external-integration | — | Artifact tracking |
-| `get_workspace_evidence` | external-integration | — | Downstream consumers |
-| `get_project_context` | external-integration | — | Planning context |
+| Tool                          | Category             | CLI Equivalent | Notes                     |
+| ----------------------------- | -------------------- | -------------- | ------------------------- |
+| `list_projects`               | crud                 | —              | MCP-owned                 |
+| `get_project`                 | crud                 | —              | MCP-owned                 |
+| `create_project`              | crud                 | —              | MCP-owned                 |
+| `update_project`              | crud                 | —              | MCP-owned                 |
+| `delete_project`              | crud                 | —              | MCP-owned                 |
+| `list_tasks`                  | crud                 | —              | MCP-owned                 |
+| `create_task`                 | crud                 | —              | MCP-owned                 |
+| `bulk_create_tasks`           | crud                 | —              | MCP-owned                 |
+| `update_task`                 | crud                 | —              | MCP-owned                 |
+| `add_task_comment`            | crud                 | —              | MCP-owned                 |
+| `list_milestones`             | crud                 | —              | MCP-owned                 |
+| `create_milestone`            | crud                 | —              | MCP-owned                 |
+| `bulk_create_milestones`      | crud                 | —              | MCP-owned                 |
+| `update_milestone`            | crud                 | —              | MCP-owned                 |
+| `get_execution_queue`         | portable-contract    | —              | Stable execution contract |
+| `claim_next_task`             | portable-contract    | —              | Stable execution contract |
+| `renew_task_lease`            | portable-contract    | —              | Stable execution contract |
+| `release_task`                | portable-contract    | —              | Stable execution contract |
+| `request_supervisor_approval` | portable-contract    | —              | Stable execution contract |
+| `team_tell`                   | portable-contract    | —              | Stable execution contract |
+| `prepare_agent_workspace`     | external-integration | —              | Workspace lifecycle       |
+| `list_agent_workspaces`       | external-integration | —              | Workspace lifecycle       |
+| `get_agent_workspace`         | external-integration | —              | Workspace lifecycle       |
+| `create_agent_workspace`      | external-integration | —              | Workspace lifecycle       |
+| `update_agent_workspace`      | external-integration | —              | Workspace lifecycle       |
+| `report_agent_workspace`      | external-integration | —              | Workspace lifecycle       |
+| `create_agent_run`            | external-integration | —              | Run lifecycle             |
+| `get_agent_run`               | external-integration | —              | Run lifecycle             |
+| `list_agent_runs`             | external-integration | —              | Run lifecycle             |
+| `complete_agent_run`          | external-integration | —              | Run lifecycle             |
+| `append_agent_artifact`       | external-integration | —              | Artifact tracking         |
+| `list_agent_artifacts`        | external-integration | —              | Artifact tracking         |
+| `get_workspace_evidence`      | external-integration | —              | Evidence projection       |
+| `get_project_context`         | external-integration | —              | Planning context          |
+| `list_operator_inbox`         | external-integration | —              | Operator inbox            |
+| `dismiss_inbox_item`          | external-integration | —              | Operator inbox            |
 
-### Category Definitions
+### Category definitions
 
-- **crud**: MCP-owned project/task/milestone management. These tools wrap direct database operations and are the canonical surface for data access.
-- **portable-contract**: Stable integration points for portable clients (execution queue, claim/release, approvals, team communication). These remain stable across CLI changes.
-- **deprecated**: Duplicated by CLI commands. Still fully functional but clients should migrate to the CLI equivalent. No tools removed — deprecation is advisory only.
-- **external-integration**: Telegram, workspace, run, and artifact tracking tools. MCP-owned because they coordinate with external systems or internal control-plane state.
+- **crud**: gestión MCP-owned de proyectos, tareas y hitos.
+- **portable-contract**: contrato estable para cola, leases, aprobaciones y team messaging.
+- **external-integration**: workspaces, runs, artifacts, inbox y contexto operativo que no vive como comando CLI portable.
 
-### Deprecation Policy
+### Explicitly not part of the supported MCP contract
 
-- **Advisory only**: No tools are removed, renamed, or have their signatures changed.
-- **Detection**: Clients can detect deprecated tools via `description.startsWith('[DEPRECATED]')`.
-- **Rollback**: A simple `git revert` restores original descriptions. No data migration required.
-- **Runtime**: Deprecated tools execute identically to before — no warnings, no errors, no behavioral changes.
+- Telegram MCP helpers.
+- Legacy CLI-duplicate ghost tools (`get_dashboard`, `get_next_task`, `register_agent`, `heartbeat_agent`, `unregister_agent`, `update_agent_status`).
 
-### Portable Client Contract
-
-If you are building a portable client that integrates with DevHub, these tools form the stable contract:
-
-| Tool | Purpose |
-|------|---------|
-| `get_execution_queue` | Get prioritized task queue with dependency blocking info |
-| `claim_next_task` | Atomically claim next task with lease token |
-| `renew_task_lease` | Extend lease on claimed task |
-| `release_task` | Release lease with outcome (completed/paused/failed) |
-| `request_supervisor_approval` | Create approval checkpoint for supervisor review |
-| `team_tell` | Send durable directives to team members |
-
-These tools are stable across CLI changes and form the core execution coordination surface.
+Si alguna de esas superficies vuelve, debe hacerlo como cambio nuevo de contrato, no como comportamiento implícito por variables de entorno viejas.
 
 ---
 
-## Arquitectura
+## Portable client contract
 
-- **Base de datos**: SQLite local-first (vía `better-sqlite3`)
-- **Protocolo**: MCP sobre stdio
-- **Query Builder**: `LocalQueryBuilder` (compatible con API de Supabase)
-- **Sin dependencias externas**: No requiere Supabase, OpenAI, ni API keys
+Si estás construyendo un cliente portable, esta es la parte más estable del contrato:
+
+| Tool                          | Purpose                                              |
+| ----------------------------- | ---------------------------------------------------- |
+| `get_execution_queue`         | Obtener cola priorizada con dependencias bloqueantes |
+| `claim_next_task`             | Reclamar la siguiente tarea con lease                |
+| `renew_task_lease`            | Renovar lease activo                                 |
+| `release_task`                | Liberar lease con outcome                            |
+| `request_supervisor_approval` | Crear checkpoint de aprobación                       |
+| `team_tell`                   | Enviar directivas durables al equipo                 |
 
 ---
 
-## Flujo recomendado para agentes
+## Agent workflow recomendado
 
-- Ver `AGENT-FLOW.md` para cuándo usar DevHub MCP junto a Engram/Graphify.
-- Ver `AGENT-INSTRUCTIONS.md` para instrucciones copiables a agentes.
-- Ver `CLIENT-CONFIGS.md` para configurar OpenCode, Codex, VS Code/Windsurf y clientes compatibles.
+1. Orientarte con `list_projects` o `get_project_context`.
+2. Revisar la cola con `get_execution_queue`.
+3. Reclamar trabajo con `claim_next_task`.
+4. Preparar `agent_workspace` / `agent_run` si el flujo lo necesita.
+5. Reportar progreso con `add_task_comment`, `report_agent_workspace`, `append_agent_artifact` y `update_task`.
+
+La registración runtime del agente, heartbeats y cualquier integración Telegram viven fuera de este contrato MCP público.
 
 ---
 
@@ -150,7 +128,6 @@ These tools are stable across CLI changes and form the core execution coordinati
 
 ```bash
 npm test
-npm run test:coverage
 npm run mcp:smoke
 ```
 
@@ -158,6 +135,6 @@ npm run mcp:smoke
 
 ## Notas
 
-- El servidor usa `localDb` compartido con la app Next.js (`src/lib/db/localDb.js`)
-- Las tablas se crean automáticamente al iniciar (`ensureLocalMcpTables`)
-- Soporta IDs UUID y IDs legacy (`tipo-timestamp-suffix`)
+- El servidor usa `src/lib/db/localDb.js` como capa compartida.
+- El smoke test valida el catálogo exacto de 36 tools.
+- El contrato público es env-invariant: `TELEGRAM_BOT_TOKEN` ya no cambia `tools/list`.

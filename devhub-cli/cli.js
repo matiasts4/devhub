@@ -16,10 +16,7 @@ program
 
 // Implemented commands
 const statusCommand = require('./commands/status.js');
-program
-  .command('status')
-  .description('Show compact swarm dashboard')
-  .action(statusCommand);
+program.command('status').description('Show compact swarm dashboard').action(statusCommand);
 
 const queueCommand = require('./commands/queue.js');
 program
@@ -61,13 +58,12 @@ program
   .command('task')
   .description('Show task detail by ID')
   .option('--verbose', 'Show full description without truncation')
+  .option('--json', 'Output in JSON format')
+  .option('--limit <n>', 'Maximum number of history entries to display')
   .action(taskCommand);
 
 const wsCommand = require('./commands/ws.js');
-program
-  .command('ws')
-  .description('Show workspace detail by ID')
-  .action(wsCommand);
+program.command('ws').description('Show workspace detail by ID').action(wsCommand);
 
 const heartbeatCommand = require('./commands/heartbeat.js');
 program
@@ -107,7 +103,11 @@ program
   .description('Send a mission message to a recipient')
   .argument('[recipient]', 'Recipient agent ID')
   .argument('[message]', 'Message body')
-  .option('--kind <kind>', 'Message kind (directive, status, handoff, decision, risk, approval_request, approval_result)', 'directive')
+  .option(
+    '--kind <kind>',
+    'Message kind (directive, status, handoff, decision, risk, approval_request, approval_result)',
+    'directive'
+  )
   .option('--mission <id>', 'Mission ID (required)')
   .option('--sender <id>', 'Sender agent ID (required)')
   .action((recipient, message, opts) => tellCommand(recipient, message, opts));
@@ -130,6 +130,63 @@ program
     }
     swarmLaunchCommand(project, opts);
   });
+
+// New commands
+const authCommand = require('./commands/auth.js');
+program
+  .command('auth')
+  .description('Authentication management (login, status, verify)')
+  .allowUnknownOption(true)
+  .action(authCommand);
+
+const eventsCommand = require('./commands/events.js');
+program
+  .command('events')
+  .description('Agent events stream and query (list, stream)')
+  .allowUnknownOption(true)
+  .action(eventsCommand);
+
+const inboxCommand = require('./commands/inbox.js');
+program
+  .command('inbox')
+  .description('Inbox item management (list, read, dismiss)')
+  .allowUnknownOption(true)
+  .action(inboxCommand);
+
+const presenceCommand = require('./commands/presence.js');
+program
+  .command('presence')
+  .description('Agent presence listing')
+  .allowUnknownOption(true)
+  .action(presenceCommand);
+
+const missionCommand = require('./commands/mission.js');
+program
+  .command('mission')
+  .description('Mission management (list, status, close)')
+  .allowUnknownOption(true)
+  .action(missionCommand);
+
+const runCommand = require('./commands/run.js');
+program
+  .command('run')
+  .description('Agent run management (list, status)')
+  .allowUnknownOption(true)
+  .action(runCommand);
+
+const worktreeCommand = require('./commands/worktree.js');
+program
+  .command('worktree')
+  .description('Worktree management (list, status, clean)')
+  .allowUnknownOption(true)
+  .action(worktreeCommand);
+
+const supervisorCommand = require('./commands/supervisor.js');
+program
+  .command('supervisor')
+  .description('Supervisor status and checkpoint management (status, approve, reject)')
+  .allowUnknownOption(true)
+  .action(supervisorCommand);
 
 // Stub commands — not yet implemented
 const STUB_COMMANDS = [];

@@ -17,25 +17,38 @@ const stderrPath = join(tempDir, 'stderr.log');
 
 const expectedTools = [
   'add_task_comment',
+  'append_agent_artifact',
   'bulk_create_milestones',
   'bulk_create_tasks',
   'claim_next_task',
+  'complete_agent_run',
+  'create_agent_run',
+  'create_agent_workspace',
   'create_milestone',
   'create_project',
   'create_task',
   'delete_project',
-  'get_dashboard',
+  'dismiss_inbox_item',
+  'get_agent_run',
+  'get_agent_workspace',
   'get_execution_queue',
-  'get_next_task',
   'get_project',
   'get_project_context',
-  'heartbeat_agent',
+  'get_workspace_evidence',
+  'list_agent_artifacts',
+  'list_agent_runs',
+  'list_agent_workspaces',
   'list_milestones',
+  'list_operator_inbox',
   'list_projects',
   'list_tasks',
-  'register_agent',
-  'unregister_agent',
-  'update_agent_status',
+  'prepare_agent_workspace',
+  'release_task',
+  'renew_task_lease',
+  'report_agent_workspace',
+  'request_supervisor_approval',
+  'team_tell',
+  'update_agent_workspace',
   'update_milestone',
   'update_project',
   'update_task',
@@ -54,7 +67,12 @@ const messages = [
   },
   { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
   { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
-  { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_dashboard', arguments: {} } },
+  {
+    jsonrpc: '2.0',
+    id: 3,
+    method: 'tools/call',
+    params: { name: 'list_projects', arguments: { status: 'all' } },
+  },
 ];
 
 writeFileSync(inputPath, messages.map((msg) => JSON.stringify(msg)).join('\n') + '\n');
@@ -88,8 +106,8 @@ const tools = responses.find((msg) => msg.id === 2)?.result?.tools?.map((tool) =
 if (JSON.stringify(tools) !== JSON.stringify(expectedTools)) {
   throw new Error(`Unexpected tool catalog. Expected ${expectedTools.length}, got ${tools?.length}: ${tools?.join(', ')}`);
 }
-const dashboardText = responses.find((msg) => msg.id === 3)?.result?.content?.[0]?.text;
-if (!dashboardText) throw new Error('get_dashboard did not return text content');
+const projectsText = responses.find((msg) => msg.id === 3)?.result?.content?.[0]?.text;
+if (!projectsText) throw new Error('list_projects did not return text content');
 
 console.log(`✅ DevHub MCP smoke passed (${tools.length} tools). DB: ${dbPath}`);
 if (!process.env.DEVHUB_DB_PATH) rmSync(tempDir, { recursive: true, force: true });

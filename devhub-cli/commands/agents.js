@@ -3,8 +3,6 @@
 const { getDb, readAgentRegistrySummary } = require('../lib/db');
 const { table } = require('../lib/format');
 
-const ACTIVE_STATUSES = ['active', 'working', 'running', 'thinking'];
-
 /**
  * Truncate agent_id to 20 chars if needed.
  * @param {string} id
@@ -45,7 +43,7 @@ function agentsCommand(opts = {}) {
   }
 
   // Build table rows
-  const dataRows = rows.map(row => [
+  const dataRows = rows.map((row) => [
     truncateAgentId(row.agent_id),
     row.status || '—',
     row.current_task_id || '—',

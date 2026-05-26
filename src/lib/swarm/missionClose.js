@@ -8,7 +8,7 @@
  * - Only clean up what's safe.
  */
 
-const { getDb } = require('./core');
+const { getDb } = require('../db/core');
 
 /**
  * Close a mission with evidence.
@@ -34,9 +34,9 @@ function closeMission({ missionId, outcome, summary, evidence = {} }, options = 
   }
 
   // Get current mission
-  const mission = db.prepare(
-    'SELECT * FROM swarm_missions WHERE mission_id = ? LIMIT 1'
-  ).get(missionId);
+  const mission = db
+    .prepare('SELECT * FROM swarm_missions WHERE mission_id = ? LIMIT 1')
+    .get(missionId);
 
   if (!mission) {
     return {
@@ -72,14 +72,7 @@ function closeMission({ missionId, outcome, summary, evidence = {} }, options = 
     `UPDATE swarm_missions
      SET status = ?, summary = ?, evidence_ref = ?, completed_at = ?, updated_at = ?
      WHERE mission_id = ?`
-  ).run(
-    outcome,
-    summary,
-    `evidence://mission-close/${missionId}`,
-    now,
-    now,
-    missionId,
-  );
+  ).run(outcome, summary, `evidence://mission-close/${missionId}`, now, now, missionId);
 
   // Update participant statuses
   db.prepare(
@@ -115,25 +108,25 @@ function closeMission({ missionId, outcome, summary, evidence = {} }, options = 
 function generateMissionReport(missionId) {
   const db = getDb();
 
-  const mission = db.prepare(
-    'SELECT * FROM swarm_missions WHERE mission_id = ? LIMIT 1'
-  ).get(missionId);
+  const mission = db
+    .prepare('SELECT * FROM swarm_missions WHERE mission_id = ? LIMIT 1')
+    .get(missionId);
 
   if (!mission) {
     return { error: 'Mission not found' };
   }
 
-  const participants = db.prepare(
-    'SELECT * FROM mission_participants WHERE mission_id = ?'
-  ).all(missionId);
+  const participants = db
+    .prepare('SELECT * FROM mission_participants WHERE mission_id = ?')
+    .all(missionId);
 
-  const messages = db.prepare(
-    'SELECT * FROM mission_messages WHERE mission_id = ? ORDER BY created_at ASC'
-  ).all(missionId);
+  const messages = db
+    .prepare('SELECT * FROM mission_messages WHERE mission_id = ? ORDER BY created_at ASC')
+    .all(missionId);
 
-  const presence = db.prepare(
-    'SELECT * FROM agent_presence WHERE mission_id = ? ORDER BY last_seen_at DESC'
-  ).all(missionId);
+  const presence = db
+    .prepare('SELECT * FROM agent_presence WHERE mission_id = ? ORDER BY last_seen_at DESC')
+    .all(missionId);
 
   return {
     mission,
