@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevHub Preview Iterator</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090a0c;
+      --panel: rgba(18, 18, 22, 0.96);
+      --panel-2: rgba(23, 23, 28, 0.98);
+      --line: rgba(255, 255, 255, 0.08);
+      --line-strong: rgba(255, 255, 255, 0.16);
+      --text: #f5f2ea;
+      --text-2: #c0b8a8;
+      --text-3: #857e71;
+      --amber: #d8a84d;
+      --blue: #8ab4c8;
+      --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(216, 168, 77, 0.12), transparent 26%),
+        radial-gradient(circle at top right, rgba(138, 180, 200, 0.12), transparent 24%),
+        linear-gradient(180deg, #0a0a0d 0%, #101115 100%);
+      color: var(--text);
+      font-family: Geist, system-ui, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(10, 10, 14, 0.84);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .brand {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .eyebrow {
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 1.45;
+      max-width: 76ch;
+    }
+
+    .toolbar,
+    .viewer-bar,
+    .viewer-actions,
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .button,
+    .ghost,
+    .tag {
+      min-height: 34px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      text-decoration: none;
+      padding: 0 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .button:hover,
+    .ghost:hover,
+    .tag:hover {
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+    }
+
+    .button {
+      background: linear-gradient(180deg, rgba(216, 168, 77, 0.18), rgba(216, 168, 77, 0.08));
+      border-color: rgba(216, 168, 77, 0.24);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 264px minmax(0, 1fr);
+      min-height: 0;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: rgba(12, 12, 15, 0.78);
+      padding: 12px;
+      overflow: auto;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .sidebar-head {
+      display: grid;
+      gap: 6px;
+      padding: 4px 2px 8px;
+    }
+
+    .sidebar-head p {
+      margin: 0;
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .preview-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .preview-card {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+      padding: 12px;
+      text-align: left;
+      color: inherit;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .preview-card:hover {
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+    }
+
+    .preview-card.active {
+      border-color: rgba(216, 168, 77, 0.32);
+      background: linear-gradient(180deg, rgba(216, 168, 77, 0.12), rgba(216, 168, 77, 0.03));
+      box-shadow: inset 0 0 0 1px rgba(216, 168, 77, 0.14);
+    }
+
+    .preview-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .preview-card h3 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: -0.02em;
+    }
+
+    .family {
+      margin: 3px 0 0;
+      color: var(--text-3);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .preview-card p {
+      margin: 0;
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .tag {
+      min-height: auto;
+      padding: 5px 8px;
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    .tag.recommended { color: #f7deac; border-color: rgba(216,168,77,0.24); }
+    .tag.high { color: #bfe6cb; border-color: rgba(109,197,143,0.2); }
+    .tag.medium { color: #f0d7a0; border-color: rgba(240,195,106,0.2); }
+    .tag.low { color: #c8def0; border-color: rgba(138,180,200,0.22); }
+
+    .main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      padding: 10px;
+      overflow: hidden;
+    }
+
+    .viewer-bar {
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .viewer-copy {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .viewer-copy h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.03em;
+    }
+
+    .viewer-copy p {
+      margin: 0;
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 1.45;
+      max-width: 82ch;
+    }
+
+    .frame-wrap {
+      min-height: 0;
+      display: grid;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      background: var(--panel-2);
+      box-shadow: var(--shadow);
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      min-height: calc(100vh - 132px);
+      border: 0;
+      background: #09090b;
+    }
+
+    @media (max-width: 1040px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        max-height: 34vh;
+      }
+
+      .viewer-bar,
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="eyebrow">DevHub / Preview iterator</div>
+      <h1>Iterador same shell</h1>
+      <p class="subtitle">Misma arquitectura interna, distinto lenguaje morfologico. Flechas izquierda/derecha navegan. Enter abre el archivo activo.</p>
+    </div>
+    <div class="toolbar">
+      <button class="ghost" id="prev-button" type="button">←</button>
+      <button class="ghost" id="next-button" type="button">→</button>
+      <button class="ghost" id="random-button" type="button">Aleatorio</button>
+      <button class="ghost" id="copy-link-button" type="button">Copiar link</button>
+      <a class="button" id="open-button" href="#" target="_blank" rel="noopener noreferrer">Abrir archivo</a>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div class="eyebrow">Themes</div>
+        <p>Comparacion apples-to-apples: topologia, dashboard, terminal room, kanban y roadmap sobre el mismo shell base.</p>
+      </div>
+      <div class="preview-list" id="preview-list"></div>
+    </aside>
+
+    <main class="main">
+      <section class="viewer-bar">
+        <div class="viewer-copy">
+          <div class="eyebrow" id="current-family">Grounded</div>
+          <h2 id="current-title">Amber Command Deck</h2>
+          <p id="current-summary"></p>
+          <div class="meta-row" id="current-badges"></div>
+        </div>
+        <div class="viewer-actions"></div>
+      </section>
+      <section class="frame-wrap">
+        <iframe id="preview-frame" title="Preview de tema"></iframe>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const previews = [
+      {
+        id: 'brutalist-tech',
+        title: 'Brutalist Tech / Brutally Staged',
+        file: 'brutalist-tech.html',
+        familyLabel: 'Same shell baseline',
+        summary: 'Baseline comun: bloques con offset duro, bordes pesados, geometria cruda y jerarquia frontal.',
+        fidelity: 'Alta',
+        cost: 'Base',
+        note: 'Punto de control para leer cambios de morfologia.',
+      },
+      {
+        id: 'brutalist-amber-command',
+        title: 'Brutalist + Amber Command',
+        file: 'brutalist-amber-command.html',
+        familyLabel: 'Same shell / warm command',
+        summary: 'Misma estructura brutalista, pero con carcasas achaflanadas, costuras de bronce y controles capsula.',
+        fidelity: 'Alta',
+        cost: 'Media',
+        note: 'Mas cockpit, menos bloque crudo.',
+        recommended: true,
+      },
+      {
+        id: 'brutalist-oxide-console',
+        title: 'Brutalist + Oxide Console',
+        file: 'brutalist-oxide-console.html',
+        familyLabel: 'Same shell / industrial oxide',
+        summary: 'Misma shell con masa metalica, planos hundidos, soldaduras visuales y botones compactos de consola.',
+        fidelity: 'Alta',
+        cost: 'Alta',
+        note: 'La opcion mas pesada e industrial.',
+      },
+      {
+        id: 'brutalist-blueprint-relay',
+        title: 'Brutalist + Blueprint Relay',
+        file: 'brutalist-blueprint-relay.html',
+        familyLabel: 'Same shell / technical schematic',
+        summary: 'Alternativa nueva: misma shell con precision de plano tecnico, esquinas tensas, capas finas y ritmo mas ingenieril.',
+        fidelity: 'Alta',
+        cost: 'Media',
+        note: 'Mejor alternativa fria sin cambiar la app shell.',
+      },
+    ];
+
+    const state = {
+      selectedId: null,
+    };
+
+    const elements = {
+      previewList: document.getElementById('preview-list'),
+      previewFrame: document.getElementById('preview-frame'),
+      currentFamily: document.getElementById('current-family'),
+      currentTitle: document.getElementById('current-title'),
+      currentSummary: document.getElementById('current-summary'),
+      currentBadges: document.getElementById('current-badges'),
+      openButton: document.getElementById('open-button'),
+      prevButton: document.getElementById('prev-button'),
+      nextButton: document.getElementById('next-button'),
+      randomButton: document.getElementById('random-button'),
+      copyLinkButton: document.getElementById('copy-link-button'),
+    };
+
+    function ensureSelection() {
+      const urlTheme = new URLSearchParams(window.location.search).get('theme');
+      if (urlTheme && previews.some((preview) => preview.id === urlTheme)) {
+        state.selectedId = urlTheme;
+        return;
+      }
+
+      const stored = localStorage.getItem('devhub-preview-selected');
+      if (stored && previews.some((preview) => preview.id === stored)) {
+        state.selectedId = stored;
+        return;
+      }
+
+      state.selectedId = previews[0].id;
+    }
+
+    function createTag(text, extraClass = '') {
+      const span = document.createElement('span');
+      span.className = `tag ${extraClass}`.trim();
+      span.textContent = text;
+      return span;
+    }
+
+    function renderList() {
+      elements.previewList.innerHTML = '';
+      previews.forEach((preview) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `preview-card ${preview.id === state.selectedId ? 'active' : ''}`;
+        button.addEventListener('click', () => selectPreview(preview.id));
+
+        const header = document.createElement('div');
+        header.className = 'preview-card-header';
+
+        const titleWrap = document.createElement('div');
+        const title = document.createElement('h3');
+        title.textContent = preview.title;
+        const family = document.createElement('p');
+        family.className = 'family';
+        family.textContent = preview.familyLabel;
+        titleWrap.append(title, family);
+
+        header.append(titleWrap);
+        if (preview.recommended) header.appendChild(createTag('Recomendado', 'recommended'));
+
+        const copy = document.createElement('p');
+        copy.textContent = preview.summary;
+
+        const badges = document.createElement('div');
+        badges.className = 'badge-row';
+        badges.append(
+          createTag(`Fidelidad: ${preview.fidelity}`, preview.fidelity.toLowerCase().includes('alta') ? 'high' : preview.fidelity.toLowerCase().includes('media') ? 'medium' : 'low'),
+          createTag(`Costo: ${preview.cost}`, preview.cost.toLowerCase().includes('alta') ? 'medium' : 'low')
+        );
+
+        button.append(header, copy, badges);
+        elements.previewList.appendChild(button);
+      });
+    }
+
+    function renderViewer() {
+      const current = previews.find((preview) => preview.id === state.selectedId);
+      if (!current) return;
+
+      elements.currentFamily.textContent = current.familyLabel;
+      elements.currentTitle.textContent = current.title;
+      elements.currentSummary.textContent = current.summary;
+      elements.currentBadges.innerHTML = '';
+      elements.currentBadges.append(
+        createTag(`Fidelidad ${current.fidelity}`, current.fidelity.toLowerCase().includes('alta') ? 'high' : current.fidelity.toLowerCase().includes('media') ? 'medium' : 'low'),
+        createTag(`Costo ${current.cost}`, current.cost.toLowerCase().includes('alta') ? 'medium' : 'low'),
+        createTag(current.note, current.recommended ? 'recommended' : '')
+      );
+
+      elements.previewFrame.src = current.file;
+      elements.openButton.href = current.file;
+
+      const url = new URL(window.location.href);
+      url.searchParams.set('theme', current.id);
+      window.history.replaceState({}, '', url);
+    }
+
+    function selectPreview(id) {
+      state.selectedId = id;
+      localStorage.setItem('devhub-preview-selected', id);
+      render();
+    }
+
+    function moveSelection(direction) {
+      const index = previews.findIndex((preview) => preview.id === state.selectedId);
+      const safeIndex = index === -1 ? 0 : index;
+      const nextIndex = (safeIndex + direction + previews.length) % previews.length;
+      selectPreview(previews[nextIndex].id);
+    }
+
+    async function copyCurrentLink() {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        elements.copyLinkButton.textContent = 'Copiado';
+        setTimeout(() => { elements.copyLinkButton.textContent = 'Copiar link'; }, 1200);
+      } catch {
+        elements.copyLinkButton.textContent = 'Sin permiso';
+        setTimeout(() => { elements.copyLinkButton.textContent = 'Copiar link'; }, 1200);
+      }
+    }
+
+    function pickRandom() {
+      const options = previews.filter((preview) => preview.id !== state.selectedId);
+      const pool = options.length ? options : previews;
+      const next = pool[Math.floor(Math.random() * pool.length)];
+      selectPreview(next.id);
+    }
+
+    function render() {
+      renderList();
+      renderViewer();
+    }
+
+    elements.prevButton.addEventListener('click', () => moveSelection(-1));
+    elements.nextButton.addEventListener('click', () => moveSelection(1));
+    elements.randomButton.addEventListener('click', pickRandom);
+    elements.copyLinkButton.addEventListener('click', copyCurrentLink);
+
+    document.addEventListener('keydown', (event) => {
+      if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
+      if (event.key === 'ArrowLeft') moveSelection(-1);
+      if (event.key === 'ArrowRight') moveSelection(1);
+      if (event.key === 'Enter') elements.openButton.click();
+    });
+
+    ensureSelection();
+    render();
+  </script>
+</body>
+</html>

@@ -48,11 +48,11 @@ AgentHub expone **tres MCPs nativos** que el LLM puede invocar directamente medi
 
 ### MCP 1 — DevHub MCP (`execute_devhub`)
 
-Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **36-tool env-invariant surface** para proyectos, tareas, workspaces, runs, artifacts e inbox. Telegram runtime queda fuera del contrato MCP público.
+Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **24-tool env-invariant surface** para proyectos, tareas, evidencia durable e inbox. Telegram runtime queda fuera del contrato MCP público.
 
 **Endpoint interno:** `POST /api/mcp/devhub`
 
-#### Herramientas disponibles (36 tools)
+#### Herramientas disponibles (24 tools)
 
 **Proyectos**
 | Tool | Descripción |
@@ -70,10 +70,6 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **36-tool e
 | `update_task` | Modifica estado, prioridad, título, asignación |
 | `add_task_comment` | Agrega comentario/nota técnica a una tarea |
 | `get_execution_queue` | Devuelve la cola priorizada con bloqueos |
-| `claim_next_task` | Reclama la siguiente tarea disponible |
-| `renew_task_lease` | Renueva el lease activo |
-| `release_task` | Libera la tarea con outcome |
-| `request_supervisor_approval` | Crea checkpoint de aprobación |
 
 **Hitos**
 | Tool | Descripción |
@@ -85,25 +81,18 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **36-tool e
 **Runs / artifacts / inbox**
 | Tool | Descripción |
 |------|-------------|
-| `create_agent_run` | Crea un run durable |
 | `get_agent_run` | Lee detalle de un run |
 | `list_agent_runs` | Lista runs |
-| `complete_agent_run` | Cierra run tracked |
-| `append_agent_artifact` | Guarda evidencia/artifacts |
 | `list_agent_artifacts` | Lista artifacts del run |
 | `get_workspace_evidence` | Resume evidencia de workspace/run |
 | `list_operator_inbox` | Lista inbox de operador |
 | `dismiss_inbox_item` | Descarta item de inbox |
-| `team_tell` | Envía directiva durable al equipo |
 
 **Workspaces (SW-2.1A)**
 | Tool | Descripción |
 |------|-------------|
-| `create_agent_workspace` | Reserva un workspace `planned` en el control plane |
 | `list_agent_workspaces` | Lista workspaces y lifecycle del proyecto |
 | `get_agent_workspace` | Lee un workspace puntual por `workspace_id` |
-| `update_agent_workspace` | Ajusta lifecycle metadata sin ejecutar Git |
-| `report_agent_workspace` | Registra estado observado devuelto por el ejecutor |
 
 Notas de contrato:
 
@@ -118,6 +107,7 @@ Fuera del contrato MCP público actual:
 
 - Telegram MCP helpers.
 - Ghost tools viejas (`get_dashboard`, `get_next_task`, `register_agent`, `heartbeat_agent`, `unregister_agent`, `update_agent_status`).
+- Mutaciones runtime (`claim_next_task`, `renew_task_lease`, `release_task`, `request_supervisor_approval`, `team_tell`, `create/update/report workspace`, `create/complete run`, `append_agent_artifact`).
 
 **Sintaxis en el prompt del LLM:**
 

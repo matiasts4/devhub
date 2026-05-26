@@ -31,13 +31,11 @@ single-create calls when generating full plans.
 
 ## Recommended execution sequence
 
-1. Runtime launch or `create_agent_workspace`/`create_agent_run` when the session needs workspace/run tracking.
-2. `get_execution_queue` when the agent/user wants to inspect options.
-3. `claim_next_task` when the agent is ready to work.
-4. `add_task_comment` for decisions, QA notes, implementation summaries, or
+1. Use `get_execution_queue` when the agent/user wants to inspect options.
+2. Use `add_task_comment` for decisions, QA notes, implementation summaries, or
    blockers that belong on the task.
-5. `report_agent_workspace`, `append_agent_artifact`, and `update_task` as work progresses.
-6. `complete_agent_run` when the tracked run is done.
+3. Use `update_task` for public task-state changes once evidence is ready.
+4. Handle runtime workspace/run/lease activity outside this public MCP surface.
 
 ### Git gate before `completed` or `qa-ready`
 

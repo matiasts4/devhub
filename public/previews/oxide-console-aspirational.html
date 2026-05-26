@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevHub Preview - Oxide Console Aspirational</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101113;
+      --panel: rgba(27, 29, 33, 0.96);
+      --panel-2: rgba(34, 37, 43, 0.98);
+      --panel-3: rgba(19, 21, 24, 0.94);
+      --line: rgba(240, 223, 208, 0.09);
+      --line-strong: rgba(240, 223, 208, 0.18);
+      --text: #f2ece7;
+      --text-2: #d2c3b5;
+      --text-3: #8d8076;
+      --oxide: #d8874a;
+      --oxide-2: #eaab78;
+      --steel: #92adbf;
+      --green: #84c796;
+      --rose: #d88796;
+      --shadow: 0 24px 50px rgba(0, 0, 0, 0.36);
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-sm: 12px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(216, 135, 74, 0.18), transparent 24%),
+        radial-gradient(circle at 88% 6%, rgba(146, 173, 191, 0.08), transparent 22%),
+        linear-gradient(180deg, #101113 0%, #0c0d0f 100%);
+      color: var(--text);
+      font-family: 'Geist', system-ui, sans-serif;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-size: 30px 30px;
+      opacity: 0.1;
+      mix-blend-mode: soft-light;
+    }
+
+    .mono,
+    .eyebrow,
+    .badge,
+    .tab,
+    .count,
+    .queue-score,
+    .terminal-log,
+    .terminal-input,
+    .terminal-tab,
+    .meta-chip,
+    .kanban-card small,
+    .view-button,
+    .clock {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .frame {
+      min-height: 100vh;
+      padding: 14px;
+    }
+
+    .shell {
+      min-height: calc(100vh - 28px);
+      border-radius: 28px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(18, 19, 21, 0.98), rgba(12, 13, 15, 0.99));
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 228px minmax(0, 1fr);
+    }
+
+    .side {
+      border-right: 1px solid var(--line);
+      padding: 14px;
+      background: linear-gradient(180deg, rgba(27, 29, 33, 0.98), rgba(20, 22, 26, 0.98));
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .brand,
+    .rail-panel,
+    .surface,
+    .oxide-note {
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.024);
+    }
+
+    .brand {
+      padding: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: rgba(216, 135, 74, 0.12);
+      color: var(--oxide);
+      border: 1px solid rgba(216, 135, 74, 0.22);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    .side-block {
+      display: grid;
+      gap: 6px;
+    }
+
+    .eyebrow {
+      padding: 0 10px 4px;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    .nav-item,
+    .view-button {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-2);
+      text-decoration: none;
+      font-size: 13px;
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .nav-item.active,
+    .view-button.active,
+    .nav-item:hover,
+    .view-button:hover {
+      color: var(--text);
+      background: rgba(216, 135, 74, 0.09);
+      border-color: rgba(216, 135, 74, 0.18);
+    }
+
+    .oxide-note {
+      margin-top: auto;
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .oxide-note strong { font-size: 13px; }
+    .oxide-note p { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+
+    .main {
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .top {
+      padding: 18px 20px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .crumbs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--text-3);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .top h2 {
+      margin: 10px 0 0;
+      font-size: 29px;
+      letter-spacing: -0.04em;
+      line-height: 1.04;
+    }
+
+    .top p {
+      margin: 7px 0 0;
+      color: var(--text-2);
+      font-size: 13px;
+      line-height: 1.55;
+      max-width: 70ch;
+    }
+
+    .top-right,
+    .route-bar,
+    .toolbar,
+    .toolbar-left,
+    .toolbar-right,
+    .terminal-toolbar,
+    .terminal-tabs,
+    .terminal-state,
+    .meta-row,
+    .card-meta,
+    .card-footer,
+    .milestone-meta,
+    .dependency-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .badge,
+    .tab,
+    .control,
+    .search,
+    .terminal-tab,
+    .meta-chip {
+      min-height: 38px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+    }
+
+    .badge.live,
+    .tab.active,
+    .control.active,
+    .terminal-tab.active {
+      color: var(--oxide-2);
+      background: rgba(216, 135, 74, 0.08);
+      border-color: rgba(216, 135, 74, 0.18);
+    }
+
+    .tab,
+    .control,
+    .terminal-tab {
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .tab:hover,
+    .control:hover,
+    .terminal-tab:hover {
+      color: var(--text);
+      border-color: var(--line-strong);
+    }
+
+    .route-bar {
+      padding: 10px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .view-page {
+      display: none;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 12px;
+    }
+
+    .view-page.active { display: grid; }
+
+    .stack,
+    .rail {
+      display: grid;
+      gap: 12px;
+    }
+
+    .surface {
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .head {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .head h3 {
+      margin: 8px 0 0;
+      font-size: 21px;
+      letter-spacing: -0.03em;
+    }
+
+    .head p {
+      margin: 7px 0 0;
+      color: var(--text-2);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .body,
+    .rail-body {
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .stat {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.018);
+    }
+
+    .stat span { color: var(--text-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .stat b { display: block; margin-top: 10px; font-size: 28px; letter-spacing: -0.05em; }
+    .stat small,
+    .text-body,
+    .item p,
+    .milestone-card p,
+    .release-card p,
+    .terminal-side p { color: var(--text-2); font-size: 12px; line-height: 1.5; }
+
+    .dashboard,
+    .terminal-layout,
+    .roadmap-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+      gap: 12px;
+    }
+
+    .sub,
+    .milestone-card,
+    .release-card,
+    .terminal-side {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.02);
+      display: grid;
+      gap: 12px;
+    }
+
+    .meter {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .meter > div {
+      width: 66%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--oxide), var(--oxide-2), #f2c093);
+    }
+
+    .grid2,
+    .release-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .cell,
+    .item,
+    .release-line {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.02);
+      display: grid;
+      gap: 6px;
+    }
+
+    .cell strong,
+    .item strong,
+    .milestone-card strong,
+    .release-card strong,
+    .terminal-side strong { display: block; font-size: 16px; margin-bottom: 4px; }
+
+    .item-top,
+    .release-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .score {
+      color: var(--oxide-2);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .search { width: 210px; outline: none; }
+
+    .control.primary {
+      color: #22160d;
+      background: linear-gradient(180deg, #e7ac7d, #d8874a);
+      border-color: rgba(255, 255, 255, 0.08);
+      font-weight: 600;
+    }
+
+    .board-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .col {
+      padding: 10px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.018);
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .col-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      padding: 4px 4px 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .col-head strong {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .count {
+      min-height: auto;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-2);
+      font-size: 11px;
+    }
+
+    .kanban-card {
+      padding: 13px;
+      border-radius: 15px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(31, 34, 38, 0.96), rgba(22, 24, 28, 0.98));
+      display: grid;
+      gap: 9px;
+    }
+
+    .kanban-card.blocked { border-color: rgba(216, 135, 150, 0.24); }
+    .kanban-card h4 { margin: 0; font-size: 13px; line-height: 1.45; }
+    .kanban-card small { color: var(--text-3); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+    .pill,
+    .meta-chip {
+      min-height: auto;
+      padding: 5px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-2);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+    }
+
+    .critical { color: var(--rose); border-color: rgba(216, 135, 150, 0.22); background: rgba(216, 135, 150, 0.08); }
+    .high { color: var(--oxide); border-color: rgba(216, 135, 74, 0.18); background: rgba(216, 135, 74, 0.08); }
+    .medium { color: var(--steel); border-color: rgba(146, 173, 191, 0.18); background: rgba(146, 173, 191, 0.08); }
+    .progress { color: var(--steel); }
+    .blocked { color: var(--rose); }
+    .done { color: var(--green); border-color: rgba(132, 199, 150, 0.18); background: rgba(132, 199, 150, 0.08); }
+
+    .link {
+      color: var(--text-3);
+      text-decoration: none;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .link:hover { color: var(--text); }
+
+    .terminal-surface {
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #0a0b0c;
+      overflow: hidden;
+      display: grid;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    }
+
+    .terminal-toolbar {
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .terminal-body {
+      min-height: 360px;
+      padding: 16px;
+      background:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(8, 9, 10, 0.98), rgba(5, 6, 7, 1));
+      background-size: 28px 28px, 28px 28px, auto;
+      display: grid;
+      gap: 14px;
+    }
+
+    .terminal-log {
+      margin: 0;
+      color: #d9c7ba;
+      font-size: 12px;
+      line-height: 1.75;
+      white-space: pre-wrap;
+    }
+
+    .terminal-log .muted { color: #80746a; }
+    .terminal-log .warn { color: var(--oxide-2); }
+    .terminal-log .info { color: var(--steel); }
+    .terminal-log .good { color: var(--green); }
+
+    .terminal-input {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      font-size: 12px;
+    }
+
+    .milestone-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .milestone-row {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .milestone-mark {
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--oxide);
+    }
+
+    .release-line {
+      background: rgba(216, 135, 74, 0.06);
+      border-color: rgba(216, 135, 74, 0.18);
+    }
+
+    @media (max-width: 1240px) {
+      .view-page.active,
+      .dashboard,
+      .terminal-layout,
+      .roadmap-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 1100px) {
+      .shell { grid-template-columns: 1fr; }
+      .side { display: none; }
+      .stats,
+      .grid2,
+      .board-grid,
+      .release-grid,
+      .rail { grid-template-columns: 1fr 1fr; }
+      .top,
+      .head,
+      .terminal-toolbar { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (max-width: 760px) {
+      .frame,
+      .main { padding: 12px; }
+      .stats,
+      .grid2,
+      .board-grid,
+      .release-grid,
+      .rail,
+      .milestone-row { grid-template-columns: 1fr; }
+      .search { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="shell">
+      <aside class="side">
+        <div class="brand">
+          <div class="mark"><i data-lucide="flame"></i></div>
+          <div>
+            <h1>DevHub</h1>
+            <p>oxide console</p>
+          </div>
+        </div>
+
+        <div class="side-block">
+          <div class="eyebrow">Workspace</div>
+          <a class="nav-item active" href="#"><i data-lucide="folder-kanban"></i> Project cockpit</a>
+          <a class="nav-item" href="#"><i data-lucide="monitor-up"></i> Browser dock</a>
+          <a class="nav-item" href="#"><i data-lucide="bot"></i> Agent orchestration</a>
+          <a class="nav-item" href="#"><i data-lucide="settings-2"></i> Local config</a>
+        </div>
+
+        <div class="side-block">
+          <div class="eyebrow">Views</div>
+          <button class="view-button active" data-view="dashboard"><i data-lucide="layout-dashboard"></i> System Dashboard</button>
+          <button class="view-button" data-view="terminal"><i data-lucide="terminal"></i> Terminal Room</button>
+          <button class="view-button" data-view="kanban"><i data-lucide="layout-kanban"></i> Task Kanban</button>
+          <button class="view-button" data-view="roadmap"><i data-lucide="milestone"></i> Roadmap View</button>
+        </div>
+
+        <div class="oxide-note">
+          <strong>Aspirational, still grounded</strong>
+          <p>Oxide empuja textura, masa y contraste, pero sigue atado al flujo real: dashboard, terminal, kanban, roadmap, execution queue y browser truth.</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="top surface">
+          <div>
+            <div class="crumbs"><span>proyectos</span><span>/</span><span>devhub</span><span>/</span><span id="oxide-breadcrumb">system dashboard</span></div>
+            <h2 id="oxide-title">Industrial route cockpit</h2>
+            <p id="oxide-description">Direccion mas ambiciosa, pero todavia ligada al producto real. Las cuatro vistas internas sirven para juzgar el lenguaje visual sin perder workflow, milestones ni estados honestos.</p>
+          </div>
+          <div class="top-right">
+            <div class="badge live"><span style="width:8px;height:8px;border-radius:999px;background:currentColor;display:inline-block;"></span> aspirational</div>
+            <div class="badge">oxide surface</div>
+            <div class="badge clock"><i data-lucide="clock-3"></i> <span id="oxide-clock">16:42:11</span></div>
+          </div>
+        </section>
+
+        <section class="route-bar" aria-label="Rutas internas del preview oxide">
+          <button class="tab active" data-view="dashboard"><i data-lucide="layout-dashboard"></i> System Dashboard</button>
+          <button class="tab" data-view="terminal"><i data-lucide="terminal"></i> Terminal Room</button>
+          <button class="tab" data-view="kanban"><i data-lucide="columns-4"></i> Task Kanban</button>
+          <button class="tab" data-view="roadmap"><i data-lucide="map-pinned"></i> Roadmap View</button>
+        </section>
+
+        <section class="view-page active" id="oxide-view-dashboard">
+          <div class="stack">
+            <section class="surface">
+              <div class="head">
+                <div>
+                  <p class="eyebrow" style="padding:0;">System Dashboard</p>
+                  <h3>Mas fisico, pero todavia fiel al flujo real</h3>
+                  <p>La informacion sigue siendo DevHub de verdad: progreso, hitos, prediccion, vencimientos, estado del dock y cola ejecutable. Cambia el peso visual, no el modelo.</p>
+                </div>
+                <div class="meta-row"><span class="badge"><i data-lucide="flame-kindling"></i> industrial mode</span></div>
+              </div>
+              <div class="body">
+                <div class="stats">
+                  <div class="stat"><span>Tareas</span><b>24</b><small>scope activo</small></div>
+                  <div class="stat"><span>Completadas</span><b style="color:var(--green)">11</b><small>verificadas</small></div>
+                  <div class="stat"><span>En progreso</span><b style="color:var(--steel)">6</b><small>workstreams vivos</small></div>
+                  <div class="stat"><span>Bloqueadas</span><b style="color:var(--rose)">3</b><small>dependencias runtime</small></div>
+                </div>
+
+                <div class="dashboard">
+                  <div class="sub">
+                    <div>
+                      <p class="eyebrow" style="padding:0;">Progress meter</p>
+                      <h3 style="margin:6px 0 0;font-size:24px;">64% de la cabina operativa</h3>
+                      <div class="meter"><div></div></div>
+                    </div>
+                    <div class="grid2">
+                      <div class="cell"><strong>13 jun</strong><span>fecha realista</span></div>
+                      <div class="cell"><strong>1.4/d</strong><span>velocidad</span></div>
+                      <div class="cell"><strong>M3</strong><span>browser truth</span></div>
+                      <div class="cell"><strong>Alta</strong><span>si destraban build local</span></div>
+                    </div>
+                  </div>
+
+                  <div class="sub">
+                    <div class="cell"><strong>Dock status</strong><span>Editor embebido sano, browser external estable, same-window todavia experimental.</span></div>
+                    <div class="cell"><strong>Next milestone</strong><span>Dedicated browser window con selector de workspace y warnings honestos.</span></div>
+                    <div class="cell"><strong>Operator signal</strong><span>3 inbox items sin resolver: approval QA, blocked runtime, browser embed review.</span></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="surface">
+              <div class="head">
+                <div>
+                  <p class="eyebrow" style="padding:0;">Flow pressure</p>
+                  <h3>Las piezas que sostienen el ritmo</h3>
+                  <p>Oxide muestra mas masa visual para el trabajo pesado: queue, handoffs y decisiones que alteran el ritmo del workspace.</p>
+                </div>
+              </div>
+              <div class="body">
+                <div class="grid2">
+                  <div class="cell"><strong>Latest evidence</strong><span>workspace-evidence actualizado hace 6 minutos, artifacts al dia.</span></div>
+                  <div class="cell"><strong>Browser work</strong><span>iterator compacto ya deja mas espacio al preview real.</span></div>
+                  <div class="cell"><strong>Drift policy</strong><span>4 direcciones activas, legacy links reparados, sin archivos huérfanos.</span></div>
+                  <div class="cell"><strong>QA pressure</strong><span>El build empaquetado Linux sigue siendo el mayor cuello de botella.</span></div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="rail">
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Execution queue</p><h3>Trabajo libre</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><div class="item-top"><strong>Browser dock veridico</strong><span class="score">8.8</span></div><p>Mayor impacto UX inmediato. Reduce expectativa falsa y deja visible el estado real.</p></article>
+                <article class="item"><div class="item-top"><strong>Resize observer nativo</strong><span class="score">8.0</span></div><p>Clave para que el seam same-window no se vea roto al cambiar layouts.</p></article>
+                <article class="item"><div class="item-top"><strong>Persistir board state</strong><span class="score">7.1</span></div><p>El cockpit gana mucho si vuelve donde el usuario lo dejó.</p></article>
+              </div>
+            </section>
+
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Activity</p><h3>Estado local</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><div class="item-top"><strong>SwarmCoder</strong><span class="pill progress">running</span></div><p>Construyendo cleanup de previews y expansion de vistas internas.</p></article>
+                <article class="item"><div class="item-top"><strong>SwarmAuditor</strong><span class="pill blocked">blocked</span></div><p>Marca drift entre previews viejos y arquitectura route-based del app real.</p></article>
+                <article class="item"><div class="item-top"><strong>Roadmap</strong><span class="pill">M2</span></div><p>Objetivo: densidad, estructura real y comparabilidad entre direcciones visuales.</p></article>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <section class="view-page" id="oxide-view-terminal">
+          <div class="stack">
+            <section class="surface">
+              <div class="head">
+                <div>
+                  <p class="eyebrow" style="padding:0;">Terminal Room</p>
+                  <h3>Industrial shell para trabajo real, no para teatro</h3>
+                  <p>La vista terminal lleva el lenguaje Oxide al limite, pero sigue hablando del repo, del runtime y del workspace evidence de DevHub.</p>
+                </div>
+                <div class="meta-row"><span class="badge"><i data-lucide="hard-drive-download"></i> native logs</span></div>
+              </div>
+              <div class="body">
+                <div class="terminal-layout">
+                  <div class="terminal-surface">
+                    <div class="terminal-toolbar">
+                      <div class="terminal-tabs">
+                        <button class="terminal-tab active"><i data-lucide="terminal"></i> coder.sh</button>
+                        <button class="terminal-tab"><i data-lucide="shield-check"></i> auditor.sh</button>
+                        <button class="terminal-tab"><i data-lucide="crown"></i> director.sh</button>
+                      </div>
+                      <div class="terminal-state">
+                        <span class="badge">tty /dev/pts/14</span>
+                        <span class="badge live">workspace local</span>
+                      </div>
+                    </div>
+                    <div class="terminal-body">
+                      <pre class="terminal-log"><span class="muted">matias@devhub:~/ArxonLabs/devhub$</span> devhub-cli evidence latest --workspace desktop
+<span class="good">[ok]</span> latest workspace evidence seq=184 updated_at=16:42:09
+<span class="muted">[16:42:10]</span> browser_mode=external reason="same-window still blocked by packaged host"
+<span class="info">[info]</span> opening preview iterator in compact shell
+<span class="muted">[16:42:14]</span> loading oxide-console-aspirational internal route: terminal-room
+<span class="warn">[warn]</span> gtk runtime smoke still pending human confirmation on installed app
+<span class="info">[info]</span> next candidate: browser dock truthfulness score=8.8
+<span class="info">[info]</span> second candidate: resize observer native path score=8.0
+<span class="good">[ok]</span> preview set reduced to four active directions
+<span class="muted">matias@devhub:~/ArxonLabs/devhub$</span> smoke packaged-browser --mode windowed</pre>
+                      <div class="terminal-input">awaiting operator confirmation for packaged build smoke</div>
+                    </div>
+                  </div>
+
+                  <div class="terminal-side">
+                    <div>
+                      <p class="eyebrow" style="padding:0;">Console framing</p>
+                      <strong>Heavier, still truthful</strong>
+                      <p>Oxide usa mas contraste y textura, pero mantiene el terminal como superficie de trabajo dentro del producto real.</p>
+                    </div>
+                    <div class="item"><strong>Current shell</strong><p>Coder thread trabajando sobre previews y browser dock.</p></div>
+                    <div class="item"><strong>Command set</strong><p>status workspace, list artifacts, smoke packaged browser, inspect runtime logs.</p></div>
+                    <div class="item"><strong>Dock read</strong><p>Editor embebido y terminal nativo sanos. Browser todavía no se disfraza de resuelto.</p></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="rail">
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Next commands</p><h3>Batch sugerido</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><strong>smoke linux-installed</strong><p>Verificar browser maximizado y same-window placeholder en binario.</p></article>
+                <article class="item"><strong>tail runtime.log</strong><p>Buscar glitches de resize al alternar layout.</p></article>
+                <article class="item"><strong>inspect browser dock</strong><p>Comparar badge y copy contra estado real.</p></article>
+              </div>
+            </section>
+
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">State map</p><h3>Embed truth</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><div class="item-top"><strong>Editor</strong><span class="pill done">embedded</span></div><p>Modo estable, sin drama.</p></article>
+                <article class="item"><div class="item-top"><strong>Browser</strong><span class="pill high">external</span></div><p>Fallback real preferido hoy.</p></article>
+                <article class="item"><div class="item-top"><strong>Terminal</strong><span class="pill progress">native host</span></div><p>Sigue siendo vista central para deep work.</p></article>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <section class="view-page" id="oxide-view-kanban">
+          <div class="stack">
+            <section class="surface">
+              <div class="head">
+                <div>
+                  <p class="eyebrow" style="padding:0;">Task Kanban</p>
+                  <h3>Board industrial con el mismo dominio real</h3>
+                  <p>Estados reales, prioridades, business value, bloqueos y acciones. Oxide sirve para empujar tono visual sin romper el modelo del producto.</p>
+                </div>
+                <div class="meta-row"><span class="badge"><i data-lucide="layout-list"></i> 4 columnas</span></div>
+              </div>
+              <div class="body">
+                <div class="toolbar">
+                  <div class="toolbar-left">
+                    <div class="control"><i data-lucide="search"></i> Buscar tarea...</div>
+                    <div class="control"><i data-lucide="milestone"></i> Todos los milestones</div>
+                    <div class="control active"><i data-lucide="zap"></i> Solo desbloqueadas</div>
+                  </div>
+                  <div class="toolbar-right">
+                    <div class="control"><i data-lucide="bot"></i> Cola Agente</div>
+                    <div class="control primary"><i data-lucide="plus"></i> Anadir tarea</div>
+                  </div>
+                </div>
+
+                <div class="board-grid">
+                  <section class="col">
+                    <header class="col-head"><strong><i data-lucide="circle"></i>Pendiente</strong><span class="count">5</span></header>
+                    <article class="kanban-card"><small>M3</small><h4>Clarificar browser maximizado vs embebido en copy y badges</h4><div class="card-meta"><span class="pill high">Alta</span><span class="pill">V:8</span></div><div class="card-footer"><span class="pill">Pendiente</span><a class="link" href="#">Mover</a></div></article>
+                    <article class="kanban-card"><small>M4</small><h4>Exponer operator inbox desde la vista de proyecto</h4><div class="card-meta"><span class="pill medium">Media</span><span class="pill">V:6</span></div><div class="card-footer"><span class="pill">Pendiente</span><a class="link" href="#">Mover</a></div></article>
+                    <article class="kanban-card"><small>M4</small><h4>Persistir filtros del kanban y ultima agrupacion</h4><div class="card-meta"><span class="pill medium">Media</span><span class="pill">V:7</span></div><div class="card-footer"><span class="pill">Pendiente</span><a class="link" href="#">Mover</a></div></article>
+                  </section>
+
+                  <section class="col">
+                    <header class="col-head"><strong><i data-lucide="circle-dot"></i>En progreso</strong><span class="count">3</span></header>
+                    <article class="kanban-card"><small>M2</small><h4>Expansion de previews para comparacion real entre direcciones</h4><div class="card-meta"><span class="pill high">Alta</span><span class="pill">V:8</span></div><div class="card-footer"><span class="pill progress">En progreso</span><a class="link" href="#">Completar</a></div></article>
+                    <article class="kanban-card"><small>M3</small><h4>Revisar browser dock maximizado para que muestre mas producto y menos marco</h4><div class="card-meta"><span class="pill high">Alta</span><span class="pill">V:8</span></div><div class="card-footer"><span class="pill progress">En progreso</span><a class="link" href="#">Completar</a></div></article>
+                  </section>
+
+                  <section class="col">
+                    <header class="col-head"><strong><i data-lucide="shield-alert"></i>Bloqueada</strong><span class="count">2</span></header>
+                    <article class="kanban-card blocked"><small>M3</small><h4>Validar GTK/VTE empaquetado dentro de ventana principal</h4><div class="card-meta"><span class="pill critical">Critica</span><span class="pill">V:10</span></div><div class="card-footer"><span class="pill blocked">Bloqueada</span><a class="link" href="#">Dependencias</a></div></article>
+                    <article class="kanban-card blocked"><small>M3</small><h4>Fix de origin drift Next 16</h4><div class="card-meta"><span class="pill high">Alta</span><span class="pill">V:8</span></div><div class="card-footer"><span class="pill blocked">Bloqueada</span><a class="link" href="#">Ver fix</a></div></article>
+                  </section>
+
+                  <section class="col">
+                    <header class="col-head"><strong><i data-lucide="check-circle-2"></i>Completada</strong><span class="count">4</span></header>
+                    <article class="kanban-card"><small>M1</small><h4>Sidebar y rutas principales del app</h4><div class="card-meta"><span class="pill medium">Media</span><span class="pill">V:7</span></div><div class="card-footer"><span class="pill done">Completada</span><a class="link" href="#">Reusar</a></div></article>
+                    <article class="kanban-card"><small>M1</small><h4>Persistencia de tema y zoom</h4><div class="card-meta"><span class="pill medium">Media</span><span class="pill">V:6</span></div><div class="card-footer"><span class="pill done">Completada</span><a class="link" href="#">Detalle</a></div></article>
+                  </section>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="rail">
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Milestone read</p><h3>Tramo actual</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><strong>M2 · preview fidelity</strong><p>Cleanup del set, parity de vistas y iterator mas compacto.</p></article>
+                <article class="item"><strong>M3 · browser truth</strong><p>Quita humo y ordena modos reales del dock.</p></article>
+                <article class="item"><strong>M4 · workflow memory</strong><p>Persistencia e inbox integrado.</p></article>
+              </div>
+            </section>
+
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Board notes</p><h3>Lectura rapida</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><strong>Business value visible</strong><p>El board sigue leyendo como producto, no como demo abstracta de agentes.</p></article>
+                <article class="item"><strong>Blocked stays blocked</strong><p>Oxide no tapa friccion real bajo capas de estilo.</p></article>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <section class="view-page" id="oxide-view-roadmap">
+          <div class="stack">
+            <section class="surface">
+              <div class="head">
+                <div>
+                  <p class="eyebrow" style="padding:0;">Roadmap View</p>
+                  <h3>Milestones, dependencias y release gates con mas peso visual</h3>
+                  <p>Oxide sirve para comprobar si una dirección mas pesada puede seguir expresando roadmap real, gates y dependencias sin caer en puro moodboard.</p>
+                </div>
+                <div class="meta-row"><span class="badge"><i data-lucide="calendar-range"></i> sprint 03</span></div>
+              </div>
+              <div class="body">
+                <div class="milestone-list">
+                  <div class="milestone-row">
+                    <div class="milestone-mark"><i data-lucide="check"></i></div>
+                    <div class="milestone-card">
+                      <strong>M1 · Workspace foundation</strong>
+                      <p>Base del producto cerrada: sidebar, layout, persistencia y superficies principales.</p>
+                      <div class="milestone-meta"><span class="meta-chip done">completed</span><span class="meta-chip">abril</span></div>
+                    </div>
+                  </div>
+
+                  <div class="milestone-row">
+                    <div class="milestone-mark"><i data-lucide="loader-circle"></i></div>
+                    <div class="milestone-card">
+                      <strong>M2 · Preview cleanup and comparison set</strong>
+                      <p>Quedar con cuatro direcciones activas, iterator compacto y parity de vistas entre grounded y aspirational.</p>
+                      <div class="milestone-meta"><span class="meta-chip high">in progress</span><span class="meta-chip">esta semana</span><span class="meta-chip">64%</span></div>
+                      <div class="dependency-row">
+                        <span class="meta-chip">Amber grounded</span>
+                        <span class="meta-chip">Brutalist legacy</span>
+                        <span class="meta-chip">Nordic legacy</span>
+                        <span class="meta-chip">Oxide aspirational</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="milestone-row">
+                    <div class="milestone-mark"><i data-lucide="monitor-up"></i></div>
+                    <div class="milestone-card">
+                      <strong>M3 · Browser dock truthfulness</strong>
+                      <p>Resolver la capa mas delicada del producto: que el browser muestre estado real y no un ideal falso.</p>
+                      <div class="milestone-meta"><span class="meta-chip progress">queued</span><span class="meta-chip">valor 10</span><span class="meta-chip">qa gate</span></div>
+                      <div class="dependency-row">
+                        <span class="meta-chip">GTK/VTE packaging</span>
+                        <span class="meta-chip">origin consistency</span>
+                        <span class="meta-chip">copy states</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="milestone-row">
+                    <div class="milestone-mark"><i data-lucide="lock"></i></div>
+                    <div class="milestone-card">
+                      <strong>M4 · Workflow memory</strong>
+                      <p>Persistencia, operator inbox integrado y menos friccion entre sesiones largas de trabajo.</p>
+                      <div class="milestone-meta"><span class="meta-chip">planned</span><span class="meta-chip">depende M3</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Release gates</p><h3>Condiciones de cierre</h3></div></div>
+              <div class="body">
+                <div class="release-grid">
+                  <div class="release-card"><strong>Iterator limpio</strong><p>Solo cuatro previews activos, menos sidebar y mas area visible para comparar.</p></div>
+                  <div class="release-card"><strong>Parity interna</strong><p>Amber y Oxide ya dejan ver dashboard, terminal, kanban y roadmap.</p></div>
+                  <div class="release-card"><strong>No dead links</strong><p>Switchers legacy reparados para no apuntar a archivos borrados.</p></div>
+                  <div class="release-card"><strong>No swarm theater</strong><p>La narrativa sigue siendo producto, no agents por agents.</p></div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="rail">
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Risk map</p><h3>Lo que sigue pegando</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><div class="item-top"><strong>Packaged runtime</strong><span class="score">P1</span></div><p>Sin smoke real del binario, same-window sigue en deuda.</p></article>
+                <article class="item"><div class="item-top"><strong>Dock honesty</strong><span class="score">P2</span></div><p>La UI tiene que contar la verdad incluso cuando la integración todavía no cierra.</p></article>
+              </div>
+            </section>
+
+            <section class="rail-panel surface">
+              <div class="head"><div><p class="eyebrow" style="padding:0;">Why Oxide</p><h3>Que prueba esta direccion</h3></div></div>
+              <div class="rail-body">
+                <article class="item"><strong>Visual range</strong><p>Permite juzgar si DevHub soporta una capa mas industrial sin perder legibilidad ni verdad operativa.</p></article>
+              </div>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const oxideMeta = {
+      dashboard: {
+        breadcrumb: 'system dashboard',
+        title: 'Industrial route cockpit',
+        description: 'Dashboard pesado y textural, pero todavia anclado al flujo real del producto: progreso, queue, dock state y milestones.',
+      },
+      terminal: {
+        breadcrumb: 'terminal room',
+        title: 'Oxide terminal room',
+        description: 'Terminal-first con lectura industrial: logs reales, evidence, smoke pendiente y dock truth dentro del mismo workspace.',
+      },
+      kanban: {
+        breadcrumb: 'task kanban',
+        title: 'Industrial task board',
+        description: 'Kanban comparativo con el mismo dominio de DevHub: estados reales, valor, milestones y bloqueos visibles.',
+      },
+      roadmap: {
+        breadcrumb: 'roadmap view',
+        title: 'Roadmap under load',
+        description: 'Milestones, dependencias y release gates para comprobar que la dirección aspirational sigue sirviendo a la toma de decisiones real.',
+      },
+    };
+
+    const oxideTabs = Array.from(document.querySelectorAll('.tab[data-view]'));
+    const oxideButtons = Array.from(document.querySelectorAll('.view-button[data-view]'));
+    const oxidePages = Array.from(document.querySelectorAll('.view-page'));
+    const oxideBreadcrumb = document.getElementById('oxide-breadcrumb');
+    const oxideTitle = document.getElementById('oxide-title');
+    const oxideDescription = document.getElementById('oxide-description');
+
+    function setOxideView(view) {
+      oxideTabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.view === view));
+      oxideButtons.forEach((button) => button.classList.toggle('active', button.dataset.view === view));
+      oxidePages.forEach((page) => page.classList.toggle('active', page.id === `oxide-view-${view}`));
+
+      const meta = oxideMeta[view];
+      if (meta) {
+        oxideBreadcrumb.textContent = meta.breadcrumb;
+        oxideTitle.textContent = meta.title;
+        oxideDescription.textContent = meta.description;
+      }
+    }
+
+    [...oxideTabs, ...oxideButtons].forEach((control) => {
+      control.addEventListener('click', () => setOxideView(control.dataset.view));
+    });
+
+    function updateOxideClock() {
+      document.getElementById('oxide-clock').textContent = new Date().toLocaleTimeString('es-AR', { hour12: false });
+    }
+
+    updateOxideClock();
+    setInterval(updateOxideClock, 1000);
+  </script>
+</body>
+</html>

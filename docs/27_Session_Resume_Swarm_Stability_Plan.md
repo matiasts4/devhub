@@ -303,7 +303,8 @@ Estados mínimos:
 
 **Criterio de aceptación:**
 
-- si `/api/swarm/processes` ve OpenCode, Swarm Control/topology lo clasifica correctamente.
+- si `/api/swarm/processes` ve OpenCode, Swarm CNo hay procesos opencode activos
+  ontrol/topology lo clasifica correctamente.
 
 #### RESUME-SWARM-09 — Hacer launch de swarm durable desde el inicio
 
@@ -431,4 +432,3 @@ Al completar este plan:
 5. Estados bloqueados por cuota/modelo se ven como tales.
 6. El usuario tiene un Debug/Restore Center para resolver casos raros.
 7. Existe harness E2E para no volver a romper restore/swarm sin evidencia.
-

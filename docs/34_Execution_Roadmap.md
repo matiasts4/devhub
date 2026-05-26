@@ -1,6 +1,6 @@
 # 34 — Execution Roadmap
 
-## Supported baseline now: 36 MCP tools and 20 CLI commands.
+## Supported baseline now: 24 MCP tools and 20 CLI commands.
 
 Ese baseline ya está soportado y documentado. Este roadmap NO reabre Telegram como MCP ni vuelve a tratar trabajo ya shippeado como gap activo.
 

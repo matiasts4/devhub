@@ -48,7 +48,7 @@ describe('auth.js', () => {
     writeAuthFile(auth);
     const read = readAuthFile();
 
-    expect(read).toEqual(auth);
+    expect(read).toEqual({ ...auth, source: 'file' });
   });
 
   it('should return null when auth file does not exist', () => {

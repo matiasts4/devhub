@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - Nordic Arctic</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        nordic: {
+                            bg: '#070a13',
+                            panel: 'rgba(15, 23, 42, 0.55)',
+                            border: 'rgba(148, 163, 184, 0.09)',
+                            accent: '#38bdf8', // Ice blue
+                            teal: '#14b8a6',   // Aurora Green
+                            purple: '#6366f1', // Aurora Purple
+                            rose: '#fb7185',   // Frost Rose
+                            text: '#f1f5f9',
+                            muted: '#94a3b8'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Custom Nordic Arctic Styles -->
+    <style>
+        :root {
+            --accent: #38bdf8;
+            --accent-glow: rgba(56,189,248,0.15);
+            --accent-border: rgba(56,189,248,0.3);
+        }
+    </style>
+    <style>
+        body {
+            background-color: #070a13;
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(20, 184, 166, 0.04) 0px, transparent 40%),
+                radial-gradient(at 90% 10%, rgba(99, 102, 241, 0.05) 0px, transparent 40%),
+                radial-gradient(at 50% 80%, rgba(56, 189, 248, 0.05) 0px, transparent 50%),
+                linear-gradient(rgba(255, 255, 255, 0.002) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.002) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+            color: #f1f5f9;
+        }
+
+        /* Frosted Glass / Ice Panel */
+        .ice-panel {
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            background: rgba(15, 23, 42, 0.45);
+            border: 1px solid rgba(148, 163, 184, 0.09);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .ice-panel-glow {
+            box-shadow: 0 0 30px rgba(56, 189, 248, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        /* Interactive active state for tabs/buttons */
+        .ice-active-glow {
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        /* Glowing wire animation for Swarm Topology */
+        @keyframes pulse-flow {
+            0% {
+                stroke-dashoffset: 24;
+            }
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+        .nordic-edge {
+            stroke-dasharray: 8, 4;
+            animation: pulse-flow 1.5s linear infinite;
+        }
+
+        /* Status ring pulsing */
+        @keyframes ring-pulse {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.8;
+            }
+            100% {
+                transform: scale(1.4);
+                opacity: 0;
+            }
+        }
+        .status-ring-pulse {
+            animation: ring-pulse 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
+
+        /* Scrollbar custom styles */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.01);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-hidden">
+
+    <!-- Top Header -->
+    <header class="h-16 border-b border-white/5 bg-slate-950/20 backdrop-blur-md px-6 flex items-center justify-between z-30">
+        <div class="flex items-center gap-3">
+            <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-sky-400/20 to-teal-500/20 border border-sky-400/30 flex items-center justify-center shadow-lg shadow-sky-500/5">
+                <i data-lucide="snowflake" class="w-5 h-5 text-sky-300 stroke-[1.75]"></i>
+            </div>
+            <div class="flex items-baseline">
+                <span class="font-display font-semibold text-lg text-slate-100 tracking-wide">DevHub Swarm</span>
+                <span class="text-[10px] text-sky-400 font-mono ml-3 border border-sky-400/20 rounded px-1.5 py-0.5 bg-sky-950/10 font-medium">NORDIC ARCTIC</span>
+            </div>
+        </div>
+
+        <!-- Theme Selector Tabs -->
+        <div class="flex items-center bg-slate-950/60 border border-white/5 rounded-full p-1 gap-1">
+            <a href="amber-command-deck-grounded.html" class="px-4 py-1 rounded-full text-xs font-medium text-slate-400 hover:text-slate-200 transition-all duration-200">
+                Amber Grounded
+            </a>
+            <a href="brutalist-tech.html" class="px-4 py-1 rounded-full text-xs font-medium text-slate-400 hover:text-slate-200 transition-all duration-200">
+                Brutalist Tech
+            </a>
+            <a href="nordic-arctic.html" class="px-4 py-1 rounded-full text-xs font-semibold bg-white/[0.06] text-sky-200 border border-white/10 shadow-sm transition-all duration-200">
+                Nordic Arctic
+            </a>
+            <a href="oxide-console-aspirational.html" class="px-4 py-1 rounded-full text-xs font-medium text-slate-400 hover:text-slate-200 transition-all duration-200">
+                Oxide Console
+            </a>
+        </div>
+
+        <!-- Status & Clock -->
+        <div class="flex items-center gap-4 text-xs">
+            <div class="flex items-center gap-2 px-3 py-1 rounded-full border border-teal-500/20 bg-teal-950/10 text-teal-300 font-medium">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
+                </span>
+                <span>SWARM: ONLINE</span>
+            </div>
+            <span id="clock" class="text-slate-400 font-mono">15:58:11</span>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Sidebar Navigation -->
+        <nav class="w-64 border-r border-white/5 bg-slate-950/20 backdrop-blur-lg flex flex-col p-4 justify-between">
+            <div class="space-y-1.5">
+                <p class="text-[10px] font-bold text-slate-500 tracking-wider uppercase px-2 mb-2">Directorios</p>
+                <button onclick="switchTab('topology')" id="tab-btn-topology" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 bg-white/[0.04] text-white border border-white/10 shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="git-branch" class="w-4 h-4 text-sky-300"></i>
+                        <span>Swarm Topology</span>
+                    </div>
+                </button>
+                <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.02] border border-transparent transition-all duration-200">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                    <span>System Dashboard</span>
+                </button>
+                <button onclick="switchTab('terminals')" id="tab-btn-terminals" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.02] border border-transparent transition-all duration-200">
+                    <i data-lucide="terminal" class="w-4 h-4"></i>
+                    <span>Terminal Room</span>
+                </button>
+                <button onclick="switchTab('kanban')" id="tab-btn-kanban" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.02] border border-transparent transition-all duration-200">
+                    <i data-lucide="layout-kanban" class="w-4 h-4"></i>
+                    <span>Task Kanban</span>
+                </button>
+                <button onclick="switchTab('roadmap')" id="tab-btn-roadmap" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.02] border border-transparent transition-all duration-200">
+                    <i data-lucide="milestone" class="w-4 h-4"></i>
+                    <span>Roadmap</span>
+                </button>
+
+                <!-- Accent Color Selector -->
+                <div class="pt-3 border-t border-white/5 mt-3">
+                    <p class="text-[10px] font-medium text-slate-500 tracking-wider uppercase px-1 mb-2">Accent Color</p>
+                    <div class="grid grid-cols-5 gap-1.5 px-1">
+                        <button onclick="setAccentTheme('ice')" data-theme="ice" class="accent-swatch w-full aspect-square rounded-lg bg-[#38bdf8] border-2 border-sky-300/60 transition-all hover:scale-110" title="Ice Blue" style="box-shadow:0 0 0 2px #38bdf8"></button>
+                        <button onclick="setAccentTheme('aurora')" data-theme="aurora" class="accent-swatch w-full aspect-square rounded-lg bg-[#14b8a6] border-2 border-white/10 transition-all hover:scale-110" title="Aurora Teal"></button>
+                        <button onclick="setAccentTheme('violet')" data-theme="violet" class="accent-swatch w-full aspect-square rounded-lg bg-[#818cf8] border-2 border-white/10 transition-all hover:scale-110" title="Aurora Violet"></button>
+                        <button onclick="setAccentTheme('frost')" data-theme="frost" class="accent-swatch w-full aspect-square rounded-lg bg-[#fb7185] border-2 border-white/10 transition-all hover:scale-110" title="Frost Rose"></button>
+                        <button onclick="setAccentTheme('polar')" data-theme="polar" class="accent-swatch w-full aspect-square rounded-lg bg-[#c084fc] border-2 border-white/10 transition-all hover:scale-110" title="Polar Lilac"></button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick System Info -->
+            <div class="ice-panel p-4 rounded-2xl space-y-3">
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-400">CPU Utility</span>
+                    <span class="font-semibold text-slate-200">24.8%</span>
+                </div>
+                <div class="w-full bg-slate-950/40 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-gradient-to-r from-sky-400 to-teal-400 h-full rounded-full" style="width: 24.8%"></div>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-400">Memory Alloc</span>
+                    <span class="font-semibold text-slate-200">4.2GB / 16GB</span>
+                </div>
+                <div class="w-full bg-slate-950/40 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-gradient-to-r from-sky-400 to-teal-400 h-full rounded-full" style="width: 26.2%"></div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Display Panel -->
+        <main class="flex-1 p-6 overflow-hidden flex flex-col relative">
+            <!-- Decorative background text -->
+            <div class="absolute top-4 right-4 text-slate-800/10 font-bold text-[8rem] pointer-events-none select-none tracking-tight">DEVHUB</div>
+
+            <!-- Tab: Swarm Topology -->
+            <div id="tab-topology" class="tab-content flex-1 flex flex-col gap-6 z-10">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-100 tracking-tight">Swarm Topology Graph</h2>
+                        <p class="text-xs text-slate-400 mt-1">Representación gráfica de las relaciones y flujos activos del Swarm.</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button class="px-4 py-2 text-xs font-semibold rounded-xl border border-white/5 bg-white/[0.02] text-slate-300 hover:text-white transition-all">
+                            Exportar Imagen
+                        </button>
+                        <button class="px-4 py-2 text-xs font-semibold rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 shadow-md shadow-sky-500/10 transition-all flex items-center gap-1.5">
+                            <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+                            <span>Añadir Agente</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Canvas Area -->
+                <div class="flex-1 ice-panel rounded-3xl p-4 flex flex-col relative overflow-hidden ice-panel-glow bg-slate-950/10">
+                    <!-- Graph grid bg -->
+                    <div class="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.015)_1.5px,transparent_1.5px)] bg-[size:24px_24px] pointer-events-none"></div>
+
+                    <!-- Connection Lines SVG -->
+                    <svg class="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="nordicGrad-1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.8"/>
+                                <stop offset="100%" stop-color="#14b8a6" stop-opacity="0.8"/>
+                            </linearGradient>
+                            <linearGradient id="nordicGrad-2" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.7"/>
+                                <stop offset="100%" stop-color="#fb7185" stop-opacity="0.7"/>
+                            </linearGradient>
+                            <linearGradient id="nordicGrad-inactive" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#475569" stop-opacity="0.2"/>
+                                <stop offset="100%" stop-color="#334155" stop-opacity="0.2"/>
+                            </linearGradient>
+                        </defs>
+                        
+                        <!-- Edges -->
+                        <path d="M 280 200 C 370 200, 370 120, 480 120" stroke="url(#nordicGrad-1)" stroke-width="2.5" fill="none" class="nordic-edge" />
+                        <path d="M 280 200 C 370 200, 370 280, 480 280" stroke="url(#nordicGrad-1)" stroke-width="2.5" fill="none" class="nordic-edge" />
+                        <path d="M 640 120 C 720 120, 720 200, 800 200" stroke="url(#nordicGrad-1)" stroke-width="2" fill="none" opacity="0.6" class="nordic-edge" style="animation-duration: 3s;" />
+                        <path d="M 640 280 C 720 280, 720 200, 800 200" stroke="url(#nordicGrad-2)" stroke-width="2" fill="none" class="nordic-edge" style="animation-duration: 2s;" />
+                        <path d="M 280 200 L 280 340 L 480 380" stroke="url(#nordicGrad-inactive)" stroke-width="1.5" fill="none" stroke-dasharray="4,4" />
+                    </svg>
+
+                    <!-- Interactive Nodes (Absolutely Positioned) -->
+                    <!-- Node 1: Director Agent -->
+                    <div style="left: 100px; top: 165px;" class="absolute z-20 cursor-pointer" onclick="selectNode('Director', 'Running', 'Orquesta la ejecución global y delega tareas a los agentes especialistas.', 'Director/Orchestrator')">
+                        <div class="hover:scale-[1.02] hover:-translate-y-0.5 border border-white/10 hover:border-sky-400/40 bg-slate-900/60 rounded-2xl py-2.5 px-4 text-white flex items-center gap-3 transition-all duration-300 shadow-lg">
+                            <div class="relative w-8 h-8 rounded-xl bg-sky-950/40 border border-sky-400/30 flex items-center justify-center text-sky-300">
+                                <span class="absolute -inset-1 rounded-xl border border-sky-400/30 status-ring-pulse"></span>
+                                <i data-lucide="crown" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-xs tracking-wide text-slate-100">SwarmDirector</h4>
+                                <p class="text-[9px] text-sky-400 font-mono tracking-wider font-semibold">DIRECTOR • RUNNING</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Node 2: Coder Agent -->
+                    <div style="left: 480px; top: 85px;" class="absolute z-20 cursor-pointer" onclick="selectNode('Coder', 'Running', 'Implementa el código estructurado en base a las especificaciones del diseño.', 'Developer')">
+                        <div class="hover:scale-[1.02] hover:-translate-y-0.5 border border-white/10 hover:border-sky-400/40 bg-slate-900/60 rounded-2xl py-2.5 px-4 text-white flex items-center gap-3 transition-all duration-300 shadow-lg">
+                            <div class="relative w-8 h-8 rounded-xl bg-sky-950/40 border border-sky-400/30 flex items-center justify-center text-sky-300">
+                                <span class="absolute -inset-1 rounded-xl border border-sky-400/25 status-ring-pulse" style="animation-delay: 0.6s"></span>
+                                <i data-lucide="code-2" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-xs tracking-wide text-slate-100">SwarmCoder</h4>
+                                <p class="text-[9px] text-sky-400 font-mono tracking-wider font-semibold">DEVELOPER • RUNNING</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Node 3: Auditor Agent (Error/Failing) -->
+                    <div style="left: 480px; top: 245px;" class="absolute z-20 cursor-pointer" onclick="selectNode('Auditor', 'Error', 'Fallo de conexión en el validador estático (eslint). Requiere intervención.', 'QA/Auditor')">
+                        <div class="hover:scale-[1.02] hover:-translate-y-0.5 border border-rose-500/20 hover:border-rose-500/50 bg-slate-900/60 rounded-2xl py-2.5 px-4 text-white flex items-center gap-3 transition-all duration-300 shadow-lg shadow-rose-950/10">
+                            <div class="relative w-8 h-8 rounded-xl bg-rose-950/40 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                                <span class="absolute -inset-1 rounded-xl border border-rose-400/30 status-ring-pulse" style="animation-delay: 1.2s"></span>
+                                <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-xs tracking-wide text-slate-100">SwarmAuditor</h4>
+                                <p class="text-[9px] text-rose-400 font-mono tracking-wider font-semibold">AUDITOR • ERROR</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Node 4: Product Manager (Finished/Standby) -->
+                    <div style="left: 800px; top: 165px;" class="absolute z-20 cursor-pointer" onclick="selectNode('ProductManager', 'Idle', 'Planifica y gestiona las especificaciones funcionales.', 'Analyst/PM')">
+                        <div class="hover:scale-[1.02] hover:-translate-y-0.5 border border-white/5 hover:border-slate-500/35 bg-slate-900/40 rounded-2xl py-2.5 px-4 text-slate-300 flex items-center gap-3 transition-all duration-300 shadow-md">
+                            <div class="w-8 h-8 rounded-xl bg-slate-800/40 border border-slate-700/40 flex items-center justify-center text-slate-400">
+                                <i data-lucide="compass" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-xs tracking-wide text-slate-200">SwarmPM</h4>
+                                <p class="text-[9px] text-slate-500 font-mono tracking-wider">ANALYST • STANDBY</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Node 5: DevOps Agent -->
+                    <div style="left: 480px; top: 345px;" class="absolute z-20 opacity-40 cursor-pointer" onclick="selectNode('DevOps', 'Inactive', 'Handoff completado. Esperando disparador del ciclo de integración.', 'DevOps/CI')">
+                        <div class="border border-white/5 bg-slate-900/20 rounded-2xl py-2.5 px-4 text-slate-400 flex items-center gap-3 transition-all duration-300">
+                            <div class="w-8 h-8 rounded-xl bg-slate-950/20 border border-slate-900 flex items-center justify-center text-slate-600">
+                                <i data-lucide="server" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-xs tracking-wide text-slate-400">SwarmDevOps</h4>
+                                <p class="text-[9px] text-slate-600 font-mono tracking-wider">DEVOPS • INACTIVE</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Floating Node Info Drawer -->
+                    <div id="node-drawer" class="absolute bottom-4 left-4 right-4 ice-panel border border-sky-400/20 bg-slate-950/90 p-4 rounded-2xl flex items-center justify-between transition-all duration-300 translate-y-2 opacity-0 pointer-events-none">
+                        <div class="flex items-center gap-4">
+                            <div id="drawer-icon-box" class="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                                <i data-lucide="info" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 id="drawer-title" class="font-semibold text-sm text-slate-100">SwarmDirector</h3>
+                                    <span id="drawer-tag" class="text-[9px] font-mono border border-sky-500/30 text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded">DIRECTOR</span>
+                                </div>
+                                <p id="drawer-desc" class="text-xs text-slate-400 mt-1">Haga clic en cualquier nodo para ver sus detalles específicos y logs de ejecución.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.06] text-slate-300 hover:text-white px-3 py-1.5 text-xs transition-all">Ver Historial</button>
+                            <button class="rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold px-4 py-1.5 text-xs shadow-md shadow-sky-500/10 transition-all">Interceptar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: System Dashboard -->
+            <div id="tab-dashboard" class="tab-content flex-1 flex flex-col gap-6 z-10 hidden">
+                <div>
+                    <h2 class="text-xl font-semibold text-slate-100 tracking-tight">System Dashboard</h2>
+                    <p class="text-xs text-slate-400 mt-1">Estadísticas en tiempo real del Swarm y control de recursos del sistema.</p>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-4 gap-4">
+                    <div class="ice-panel p-4 rounded-2xl flex items-center justify-between border border-white/5 shadow-md">
+                        <div class="space-y-1">
+                            <p class="text-xs text-slate-400">Agentes Totales</p>
+                            <h3 class="text-2xl font-bold text-slate-100 tracking-tight">5</h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center text-sky-400 border border-sky-500/10">
+                            <i data-lucide="cpu" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <div class="ice-panel p-4 rounded-2xl flex items-center justify-between border border-white/5 shadow-md">
+                        <div class="space-y-1">
+                            <p class="text-xs text-slate-400">Claims Activos</p>
+                            <h3 class="text-2xl font-bold text-slate-100 tracking-tight">3</h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center text-sky-300 border border-sky-500/10">
+                            <i data-lucide="bookmark" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <div class="ice-panel p-4 rounded-2xl flex items-center justify-between border border-white/5 shadow-md">
+                        <div class="space-y-1">
+                            <p class="text-xs text-slate-400">Hilos Abiertos</p>
+                            <h3 class="text-2xl font-bold text-slate-100 tracking-tight">12</h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/10">
+                            <i data-lucide="git-merge" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <div class="ice-panel p-4 rounded-2xl flex items-center justify-between border border-white/5 shadow-md">
+                        <div class="space-y-1">
+                            <p class="text-xs text-slate-400">Consumo Tokens</p>
+                            <h3 class="text-2xl font-bold text-slate-100 tracking-tight">2.4k <span class="text-xs font-normal text-slate-500">/hr</span></h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-400 border border-teal-500/10">
+                            <i data-lucide="coins" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Split panels -->
+                <div class="flex-1 grid grid-cols-3 gap-6 overflow-hidden">
+                    <!-- Execution Queue -->
+                    <div class="col-span-2 ice-panel rounded-2xl border border-white/5 flex flex-col p-4 overflow-hidden">
+                        <h3 class="font-semibold text-sm text-slate-100 mb-3">Cola de Ejecución de Tareas</h3>
+                        <div class="flex-1 overflow-y-auto space-y-2 pr-1">
+                            <div class="p-3 bg-white/[0.015] border border-white/5 rounded-xl flex items-center justify-between hover:bg-white/[0.04] transition-all">
+                                <div class="flex items-center gap-3">
+                                    <span class="relative flex h-2 w-2">
+                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                                    </span>
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-200">Refactorizar TopologyNode CSS</p>
+                                        <p class="text-[10px] text-slate-400">SwarmCoder • Asignado hace 2m</p>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] font-mono bg-sky-500/10 text-sky-400 px-2 py-0.5 rounded border border-sky-500/20">Ejecutando</span>
+                            </div>
+                            <div class="p-3 bg-white/[0.015] border border-white/5 rounded-xl flex items-center justify-between hover:bg-white/[0.04] transition-all">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-200">Validar estructura de datos API</p>
+                                        <p class="text-[10px] text-slate-400">SwarmAuditor • En espera de aprobación</p>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] font-mono bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20">Verificación</span>
+                            </div>
+                            <div class="p-3 bg-white/[0.015] border border-white/5 rounded-xl flex items-center justify-between hover:bg-white/[0.04] transition-all">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-200">Actualizar CLI core bindings</p>
+                                        <p class="text-[10px] text-slate-400">SwarmDirector • Pendiente de asignación</p>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] font-mono bg-slate-500/10 text-slate-400 px-2 py-0.5 rounded border border-slate-500/20">Pendiente</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Performance Chart Mock -->
+                    <div class="ice-panel rounded-2xl border border-white/5 p-4 flex flex-col justify-between">
+                        <div>
+                            <h3 class="font-semibold text-sm text-slate-100 mb-1">Rendimiento Histórico</h3>
+                            <p class="text-[10px] text-slate-400">Latencia promedio por llamada de agente.</p>
+                        </div>
+                        
+                        <!-- Muted Line Chart SVG -->
+                        <div class="h-32 w-full flex items-end">
+                            <svg class="w-full h-full" viewBox="0 0 100 50">
+                                <defs>
+                                    <linearGradient id="nordicChartGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.25" />
+                                        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+                                    </linearGradient>
+                                </defs>
+                                <path d="M 0 35 Q 15 25 30 40 T 60 15 T 80 30 T 100 5 L 100 50 L 0 50 Z" fill="url(#nordicChartGrad)" />
+                                <path d="M 0 35 Q 15 25 30 40 T 60 15 T 80 30 T 100 5" fill="none" stroke="#38bdf8" stroke-width="1.75" />
+                            </svg>
+                        </div>
+
+                        <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+                            <span>15:00</span>
+                            <span>15:20</span>
+                            <span>15:40</span>
+                            <span>Ahora</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Terminal Room -->
+            <div id="tab-terminals" class="tab-content flex-1 flex flex-col gap-6 z-10 hidden">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-100 tracking-tight">Terminal Room</h2>
+                        <p class="text-xs text-slate-400 mt-1">Consolas interactivas directas sobre los subprocesos locales de los agentes.</p>
+                    </div>
+                    <!-- Terminal Selection -->
+                    <div class="flex gap-2">
+                        <button class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-sky-500/10 border border-sky-400/20 text-sky-300 font-mono shadow-sm">SwarmCoder.log</button>
+                        <button class="px-3 py-1.5 text-xs font-medium rounded-xl bg-white/[0.02] border border-white/5 text-slate-400 font-mono hover:text-white transition-all">SwarmAuditor.log</button>
+                    </div>
+                </div>
+
+                <!-- Terminal Layout -->
+                <div class="flex-1 ice-panel rounded-3xl border border-white/5 flex flex-col overflow-hidden bg-slate-950/20">
+                    <!-- Console Header bar -->
+                    <div class="px-4 py-2.5 bg-slate-950/40 border-b border-white/5 flex items-center justify-between text-xs text-slate-400">
+                        <div class="flex items-center gap-2">
+                            <span class="relative flex h-2 w-2">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                            </span>
+                            <span class="font-mono">bash - /home/matias/ArxonLabs/devhub</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="settings-2" class="w-3.5 h-3.5 hover:text-white cursor-pointer transition-colors"></i>
+                            <i data-lucide="maximize-2" class="w-3.5 h-3.5 hover:text-white cursor-pointer transition-colors"></i>
+                        </div>
+                    </div>
+                    
+                    <!-- Code block output -->
+                    <div class="flex-1 p-4 font-mono text-xs text-sky-200/80 overflow-y-auto space-y-1">
+                        <p class="text-slate-500">$ devhub-cli swarm status --agent=SwarmCoder</p>
+                        <p class="text-white">Connecting to DevHub local message bus at port 8421...</p>
+                        <p class="text-teal-400">✔ Connection established.</p>
+                        <p class="text-slate-400">[2026-05-26 15:58:11] INFO: SwarmCoder claimed task "Refactor SwarmTopologyGraph.jsx"</p>
+                        <p class="text-slate-400">[2026-05-26 15:58:12] INFO: Reading file components/control-room/SwarmTopologyGraph.jsx...</p>
+                        <p class="text-amber-400">[2026-05-26 15:58:15] WARN: Deprecated React DOM styles found at line 144</p>
+                        <p class="text-slate-400">[2026-05-26 15:58:16] INFO: Compiling CSS variables for Cyber-Glassmorphism integration...</p>
+                        <p class="text-sky-300 animate-pulse">[2026-05-26 15:58:20] RUNNING: Injecting dynamic style declarations into header...</p>
+                    </div>
+
+                    <!-- Input Bar -->
+                    <div class="p-3 bg-slate-950/40 border-t border-white/5 flex gap-3">
+                        <div class="flex-1 bg-slate-950/30 border border-white/5 rounded-xl px-4 py-2 flex items-center gap-2 text-xs">
+                            <span class="text-sky-400 font-bold">$</span>
+                            <input type="text" placeholder="Send operational signal to SwarmCoder..." class="bg-transparent border-none outline-none text-white w-full placeholder-slate-500 font-mono">
+                        </div>
+                        <button class="rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold px-5 py-2 text-xs shadow-md shadow-sky-500/10 transition-all flex items-center gap-1.5">
+                            <i data-lucide="play" class="w-3.5 h-3.5 fill-slate-950 stroke-none"></i>
+                            <span>Ejecutar</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <!-- Tab: Task Kanban -->
+            <div id="tab-kanban" class="tab-content flex-1 flex flex-col gap-5 z-10 hidden">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-100 tracking-tight">Task Kanban</h2>
+                        <p class="text-xs text-slate-400 mt-1">Execution pipeline across all active swarm agents.</p>
+                    </div>
+                    <button class="px-4 py-2 text-xs font-semibold rounded-xl flex items-center gap-1.5 text-slate-950 shadow-md transition-all" style="background:var(--accent)">
+                        <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+                        New Task
+                    </button>
+                </div>
+                <div class="flex-1 grid grid-cols-4 gap-4 overflow-hidden">
+                    <!-- BACKLOG -->
+                    <div class="ice-panel rounded-2xl border border-white/5 flex flex-col overflow-hidden">
+                        <div class="px-3 py-2.5 border-b border-white/5 flex items-center justify-between">
+                            <span class="text-xs font-semibold text-slate-300">Backlog</span>
+                            <span class="text-[10px] font-mono bg-white/5 text-slate-400 px-1.5 py-0.5 rounded">04</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                            <div class="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/10 transition-all cursor-pointer space-y-1">
+                                <p class="text-xs font-semibold text-slate-200">Integrate Swarm Metrics API</p>
+                                <p class="text-[10px] text-slate-500">#8102 · Director</p>
+                            </div>
+                            <div class="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/10 transition-all cursor-pointer space-y-1">
+                                <p class="text-xs font-semibold text-slate-200">Write E2E Playwright Suite</p>
+                                <p class="text-[10px] text-slate-500">#8210 · Coder</p>
+                            </div>
+                            <div class="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/10 transition-all cursor-pointer space-y-1 opacity-50">
+                                <p class="text-xs font-semibold text-slate-200">Docker Compose Hardening</p>
+                                <p class="text-[10px] text-slate-500">#7890 · DevOps</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- QUEUED -->
+                    <div class="ice-panel rounded-2xl border border-white/5 flex flex-col overflow-hidden">
+                        <div class="px-3 py-2.5 border-b border-white/5 flex items-center justify-between">
+                            <span class="text-xs font-semibold text-slate-200">Queued</span>
+                            <span class="text-[10px] font-mono bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20">02</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                            <div class="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/10 transition-all cursor-pointer space-y-1">
+                                <p class="text-xs font-semibold text-slate-200">Core Bindings Update CLI</p>
+                                <p class="text-[10px] text-slate-500">#7122 · Director</p>
+                            </div>
+                            <div class="p-2.5 bg-white/[0.02] border border-amber-500/10 rounded-xl cursor-pointer space-y-1">
+                                <p class="text-xs font-semibold text-slate-200">Validate API Data Structure</p>
+                                <p class="text-[10px] text-slate-500">#8872 · Auditor</p>
+                                <span class="text-[9px] font-mono bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20">QA Wait</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- RUNNING -->
+                    <div class="rounded-2xl flex flex-col overflow-hidden border" style="background:rgba(15,23,42,0.45);border-color:var(--accent-border);box-shadow:0 0 20px var(--accent-glow)">
+                        <div class="px-3 py-2.5 border-b flex items-center justify-between" style="border-color:var(--accent-border);background:var(--accent-glow)">
+                            <span class="text-xs font-semibold" style="color:var(--accent)">Running</span>
+                            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded" style="background:var(--accent-glow);color:var(--accent);border:1px solid var(--accent-border)">01</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                            <div class="p-2.5 rounded-xl cursor-pointer space-y-2 border" style="background:rgba(15,23,42,0.6);border-color:var(--accent-border)">
+                                <div class="flex items-center gap-2">
+                                    <span class="relative flex h-2 w-2">
+                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background:var(--accent)"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2" style="background:var(--accent)"></span>
+                                    </span>
+                                    <p class="text-xs font-semibold text-slate-100">Refactor Topology Node CSS</p>
+                                </div>
+                                <p class="text-[10px] text-slate-400">#9021 · SwarmCoder</p>
+                                <div class="w-full bg-slate-950/40 rounded-full h-1.5 overflow-hidden">
+                                    <div class="h-full rounded-full transition-all" style="width:68%;background:var(--accent)"></div>
+                                </div>
+                                <p class="text-[10px] text-slate-400">68% complete</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- DONE -->
+                    <div class="ice-panel rounded-2xl border border-teal-500/10 flex flex-col overflow-hidden">
+                        <div class="px-3 py-2.5 border-b border-teal-500/10 flex items-center justify-between bg-teal-950/10">
+                            <span class="text-xs font-semibold text-teal-300">Done</span>
+                            <span class="text-[10px] font-mono bg-teal-500/10 text-teal-400 px-1.5 py-0.5 rounded border border-teal-500/20">03</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                            <div class="p-2.5 bg-white/[0.01] border border-white/5 rounded-xl cursor-pointer opacity-60 space-y-1">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="check" class="w-3 h-3 text-teal-400 shrink-0"></i>
+                                    <p class="text-xs font-medium text-slate-400 line-through">Setup Swarm Message Bus</p>
+                                </div>
+                                <p class="text-[10px] text-slate-600">#6891 · Director</p>
+                            </div>
+                            <div class="p-2.5 bg-white/[0.01] border border-white/5 rounded-xl cursor-pointer opacity-60 space-y-1">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="check" class="w-3 h-3 text-teal-400 shrink-0"></i>
+                                    <p class="text-xs font-medium text-slate-400 line-through">Init Agent Heartbeat CLI</p>
+                                </div>
+                                <p class="text-[10px] text-slate-600">#6780 · DevOps</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Roadmap -->
+            <div id="tab-roadmap" class="tab-content flex-1 flex flex-col gap-5 z-10 hidden">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-100 tracking-tight">Project Roadmap</h2>
+                        <p class="text-xs text-slate-400 mt-1">Milestone-based execution timeline · Sprint 03 · Q2 2026</p>
+                    </div>
+                    <div class="flex gap-2 text-xs font-medium">
+                        <span class="px-3 py-1.5 rounded-xl border border-white/5 text-slate-400 bg-white/[0.02]">Q2 2026</span>
+                        <span class="px-3 py-1.5 rounded-xl text-slate-950 font-semibold" style="background:var(--accent)">Sprint 03</span>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-y-auto space-y-3">
+                    <!-- M1 Done -->
+                    <div class="ice-panel rounded-2xl border border-white/5 p-4 flex gap-4 items-start">
+                        <div class="flex flex-col items-center gap-1 shrink-0">
+                            <div class="w-8 h-8 rounded-xl bg-teal-500 border border-teal-400/50 flex items-center justify-center">
+                                <i data-lucide="check" class="w-4 h-4 text-slate-950 stroke-[3]"></i>
+                            </div>
+                            <div class="w-px h-full min-h-6 bg-white/10"></div>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between mb-1">
+                                <h3 class="text-sm font-semibold text-slate-100">M1 — Swarm Foundation</h3>
+                                <span class="text-[10px] font-mono bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded border border-teal-500/20">Completed</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mb-3">Core message bus, agent registration, CLI heartbeat.</p>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="p-2 bg-white/[0.01] border border-white/5 rounded-lg text-[10px] text-slate-500 flex items-center gap-1 line-through opacity-60">
+                                    <i data-lucide="check" class="w-3 h-3 text-teal-400 shrink-0"></i>Message bus
+                                </div>
+                                <div class="p-2 bg-white/[0.01] border border-white/5 rounded-lg text-[10px] text-slate-500 flex items-center gap-1 line-through opacity-60">
+                                    <i data-lucide="check" class="w-3 h-3 text-teal-400 shrink-0"></i>Heartbeat CLI
+                                </div>
+                                <div class="p-2 bg-white/[0.01] border border-white/5 rounded-lg text-[10px] text-slate-500 flex items-center gap-1 line-through opacity-60">
+                                    <i data-lucide="check" class="w-3 h-3 text-teal-400 shrink-0"></i>Arctic UI preview
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- M2 In Progress -->
+                    <div class="rounded-2xl border p-4 flex gap-4 items-start" style="background:rgba(15,23,42,0.55);border-color:var(--accent-border);box-shadow:0 0 25px var(--accent-glow)">
+                        <div class="flex flex-col items-center gap-1 shrink-0">
+                            <div class="w-8 h-8 rounded-xl border flex items-center justify-center" style="background:var(--accent-glow);border-color:var(--accent-border)">
+                                <i data-lucide="loader" class="w-4 h-4 animate-spin" style="color:var(--accent)"></i>
+                            </div>
+                            <div class="w-px h-full min-h-6 bg-white/10"></div>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between mb-1">
+                                <h3 class="text-sm font-semibold text-slate-100">M2 — UI & Visualization</h3>
+                                <span class="text-[10px] font-mono px-2 py-0.5 rounded" style="background:var(--accent-glow);color:var(--accent);border:1px solid var(--accent-border)">In Progress · 68%</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mb-2">Theme system, topology graph, kanban, roadmap views.</p>
+                            <div class="w-full bg-slate-950/40 rounded-full h-1.5 overflow-hidden mb-3">
+                                <div class="h-full rounded-full" style="width:68%;background:var(--accent)"></div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="p-2 bg-white/[0.01] border border-white/5 rounded-lg text-[10px] text-slate-500 flex items-center gap-1 line-through opacity-60">
+                                    <i data-lucide="check" class="w-3 h-3 text-teal-400 shrink-0"></i>Accent system
+                                </div>
+                                <div class="p-2 rounded-lg text-[10px] text-slate-100 font-semibold flex items-center gap-1 border" style="background:var(--accent-glow);border-color:var(--accent-border)">
+                                    <span class="relative flex h-1.5 w-1.5 shrink-0"><span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background:var(--accent)"></span><span class="relative rounded-full h-1.5 w-1.5" style="background:var(--accent)"></span></span>
+                                    Topology refactor
+                                </div>
+                                <div class="p-2 bg-white/[0.01] border border-white/5 rounded-lg text-[10px] text-slate-500 flex items-center gap-1 opacity-60">
+                                    <i data-lucide="clock" class="w-3 h-3 shrink-0"></i>Kanban + Roadmap
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- M3 Locked -->
+                    <div class="ice-panel rounded-2xl border border-white/5 p-4 flex gap-4 items-start opacity-40">
+                        <div class="w-8 h-8 rounded-xl bg-slate-800/40 border border-slate-700/40 flex items-center justify-center shrink-0">
+                            <i data-lucide="lock" class="w-4 h-4 text-slate-600"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <h3 class="text-sm font-semibold text-slate-300">M3 — Backend Integration</h3>
+                                <span class="text-[10px] font-mono bg-slate-500/10 text-slate-400 px-2 py-0.5 rounded border border-slate-500/20 ml-4">Locked</span>
+                            </div>
+                            <p class="text-xs text-slate-500">Live API endpoints, WebSocket event stream, real agent data.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Clock script & navigation script -->
+    <script>
+        const ALL_TABS = ['topology', 'dashboard', 'terminals', 'kanban', 'roadmap'];
+        function switchTab(tabId) {
+            ALL_TABS.forEach(id => {
+                const el = document.getElementById('tab-' + id);
+                if (el) el.classList.add('hidden');
+                const btn = document.getElementById('tab-btn-' + id);
+                if (btn) btn.className = "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.02] border border-transparent transition-all duration-200";
+            });
+            const tab = document.getElementById('tab-' + tabId);
+            if (tab) tab.classList.remove('hidden');
+            const activeBtn = document.getElementById('tab-btn-' + tabId);
+            if (activeBtn) activeBtn.className = "w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 bg-white/[0.04] text-white border border-white/10 shadow-sm";
+        }
+
+        const ARCTIC_THEMES = {
+            ice:    { accent: '#38bdf8', glow: 'rgba(56,189,248,0.15)',  border: 'rgba(56,189,248,0.3)' },
+            aurora: { accent: '#14b8a6', glow: 'rgba(20,184,166,0.15)', border: 'rgba(20,184,166,0.3)' },
+            violet: { accent: '#818cf8', glow: 'rgba(129,140,248,0.15)',border: 'rgba(129,140,248,0.3)' },
+            frost:  { accent: '#fb7185', glow: 'rgba(251,113,133,0.15)',border: 'rgba(251,113,133,0.3)' },
+            polar:  { accent: '#c084fc', glow: 'rgba(192,132,252,0.15)',border: 'rgba(192,132,252,0.3)' },
+        };
+        function setAccentTheme(name) {
+            const t = ARCTIC_THEMES[name];
+            if (!t) return;
+            document.documentElement.style.setProperty('--accent', t.accent);
+            document.documentElement.style.setProperty('--accent-glow', t.glow);
+            document.documentElement.style.setProperty('--accent-border', t.border);
+            document.querySelectorAll('.accent-swatch').forEach(btn => {
+                btn.style.boxShadow = '';
+                btn.classList.remove('border-sky-300/60');
+                btn.classList.add('border-white/10');
+            });
+            const active = document.querySelector(`.accent-swatch[data-theme="${name}"]`);
+            if (active) { active.style.boxShadow = `0 0 0 2px ${t.accent}`; }
+        }
+
+        // Clock logic
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toTimeString().split(' ')[0];
+            document.getElementById('clock').textContent = timeString;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Node Selection Drawer Logic
+        function selectNode(name, status, desc, role) {
+            const drawer = document.getElementById('node-drawer');
+            const title = document.getElementById('drawer-title');
+            const descEl = document.getElementById('drawer-desc');
+            const tag = document.getElementById('drawer-tag');
+            const iconBox = document.getElementById('drawer-icon-box');
+
+            // Reset classes
+            iconBox.className = "w-10 h-10 rounded-xl flex items-center justify-center border";
+
+            if (status === 'Running') {
+                tag.className = "text-[9px] font-mono border border-sky-400/30 text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded";
+                tag.textContent = `${role} • RUNNING`;
+                iconBox.classList.add("bg-sky-500/10", "border-sky-400/20", "text-sky-300");
+                iconBox.innerHTML = `<i data-lucide="cpu" class="w-5 h-5"></i>`;
+            } else if (status === 'Error') {
+                tag.className = "text-[9px] font-mono border border-rose-500/30 text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded";
+                tag.textContent = `${role} • FAILING`;
+                iconBox.classList.add("bg-rose-500/10", "border-rose-500/20", "text-rose-400");
+                iconBox.innerHTML = `<i data-lucide="shield-alert" class="w-5 h-5"></i>`;
+            } else {
+                tag.className = "text-[9px] font-mono border border-slate-500/30 text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded";
+                tag.textContent = `${role} • IDLE`;
+                iconBox.classList.add("bg-white/[0.02]", "border-white/5", "text-slate-400");
+                iconBox.innerHTML = `<i data-lucide="eye" class="w-5 h-5"></i>`;
+            }
+
+            title.textContent = `Swarm${name}`;
+            descEl.textContent = desc;
+
+            drawer.classList.remove('translate-y-2', 'opacity-0', 'pointer-events-none');
+            lucide.createIcons();
+        }
+
+        // Initialize icons
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
