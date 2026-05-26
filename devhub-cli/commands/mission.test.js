@@ -118,6 +118,113 @@ function seedMissionDiagnostic() {
   }
 }
 
+function seedMissionDirectorFeed() {
+  const db = new Database(dbPath);
+  try {
+    ensureAllSchema(db);
+
+    db.prepare(
+      `INSERT OR REPLACE INTO projects (id, user_id, name, status, created_at, updated_at)
+       VALUES ('proj-feed', 'user-1', 'Feed Project', 'active', datetime('now'), datetime('now'))`
+    ).run();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO tasks (id, project_id, title, status, priority, created_at, updated_at)
+       VALUES ('task-feed', 'proj-feed', 'Feed Task', 'in_progress', 'high', datetime('now'), datetime('now'))`
+    ).run();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO agent_workspaces (
+        id, project_id, agent_id, current_task_id, run_id_or_session_id, repo_root, workspace_path,
+        worktree_path, base_branch, base_commit, branch_name, observed_branch, observed_head, status, created_at, updated_at
+      ) VALUES (
+        'ws-feed', 'proj-feed', 'agent-worker-feed', 'task-feed', 'session-feed', '/repo/devhub',
+        'workspace://proj-feed/ws-feed', '/repo/devhub/.devhub/worktrees/ws-feed', 'main', 'HEAD',
+        'feat/feed', 'feat/feed', 'abc123', 'active', datetime('now'), datetime('now')
+      )`
+    ).run();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO agent_runs (
+        run_id, workspace_id, task_id, agent_id, requested_base_ref, baseline_commit, status, started_at, created_at, updated_at
+      ) VALUES (
+        'run-feed', 'ws-feed', 'task-feed', 'agent-worker-feed', 'HEAD', 'HEAD', 'running',
+        datetime('now'), datetime('now'), datetime('now')
+      )`
+    ).run();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO swarm_missions (
+        mission_id, project_id, task_id, workspace_id, run_id, owner_agent_id, kind, title, status, summary, started_at, updated_at
+      ) VALUES (?, 'proj-feed', 'task-feed', 'ws-feed', 'run-feed', 'agent-director-feed', 'coordination', ?, 'active', ?, ?, ?)`
+    ).run(
+      'mission-feed',
+      'Mission Feed',
+      'Mission feed summary',
+      '2026-05-26T21:00:00Z',
+      '2026-05-26T21:00:00Z'
+    );
+
+    db.prepare(
+      `INSERT OR REPLACE INTO agent_artifacts (
+        artifact_id, run_id, seq, phase, kind, producer, summary, evidence_ref, observed_at, created_at
+      ) VALUES (
+        'artifact-feed', 'run-feed', 1, 'execute', 'decision.note', 'executor', 'Feed artifact',
+        'evidence://artifact/feed', '2026-05-26T21:01:00Z', datetime('now')
+      )`
+    ).run();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO supervisor_snapshots (
+        task_id, supervisor_state, outcome, reason_class, workspace_id, run_id, evidence_ref, updated_at, created_at
+      ) VALUES (
+        'task-feed', 'awaiting_evidence', 'wait', 'recoverable_failure', 'ws-feed', 'run-feed',
+        'evidence://supervisor/feed', '2026-05-26T21:01:00Z', '2026-05-26T21:01:00Z'
+      )`
+    ).run();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO mission_messages (
+        message_id, mission_id, sender_agent_id, message_kind, body_summary, evidence_ref,
+        related_task_id, related_workspace_id, related_run_id, related_artifact_id,
+        created_at, updated_at
+      ) VALUES (
+        'message-feed-handoff', 'mission-feed', 'agent-worker-feed', 'handoff', 'Executor handoff ready',
+        'evidence://mission/feed-handoff', 'task-feed', 'ws-feed', 'run-feed', 'artifact-feed',
+        '2026-05-26T21:01:00Z', '2026-05-26T21:01:00Z'
+      )`
+    ).run();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO message_deliveries (
+        delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, created_at, updated_at
+      ) VALUES (
+        'delivery-feed-handoff', 'message-feed-handoff', 'agent-director-feed', 'runtime_bus', 'pending',
+        '2026-05-26T21:01:10Z', '2026-05-26T21:01:10Z', '2026-05-26T21:01:10Z'
+      )`
+    ).run();
+
+    db.prepare(
+      `INSERT INTO agent_events (
+        agent_id, workspace_id, event_type, payload_json, mission_id, created_at
+      ) VALUES (
+        'agent-worker-feed', 'ws-feed', 'handoff_ready', ?, 'mission-feed', '2026-05-26T21:01:00Z'
+      )`
+    ).run(
+      JSON.stringify({
+        related_task_id: 'task-feed',
+        related_workspace_id: 'ws-feed',
+        related_run_id: 'run-feed',
+        related_artifact_id: 'artifact-feed',
+        summary: 'Executor handoff ready',
+        next_action: 'director_review',
+      })
+    );
+  } finally {
+    db.close();
+  }
+}
+
 describe('mission.js', () => {
   beforeEach(() => {
     dbPath = createTempDb();
@@ -201,5 +308,34 @@ describe('mission.js', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/Mission not found/);
     expect(result.stdout.trim()).toBe('');
+  });
+
+  it('prints the shared director_feed contract in mission status json output', () => {
+    seedMissionDirectorFeed();
+
+    const result = runCli(['mission', 'status', 'mission-feed', '--json']);
+
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        director_feed: expect.objectContaining({
+          authority: 'durable',
+          items: [
+            expect.objectContaining({
+              kind: 'handoff_ready',
+              summary: 'Executor handoff ready',
+              next_action: 'director_review',
+              task_id: 'task-feed',
+            }),
+          ],
+          handoff: expect.objectContaining({
+            status: 'ready',
+            recipient_agent_id: 'agent-worker-feed',
+            message: 'Executor handoff ready',
+          }),
+        }),
+      })
+    );
   });
 });

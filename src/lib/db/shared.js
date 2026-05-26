@@ -269,6 +269,7 @@ const tables = {
   },
   tasks: makeTableOps('tasks', 'id'),
   milestones: makeTableOps('milestones', 'id'),
+  task_comments: makeTableOps('task_comments', 'id'),
   agent_workspaces: makeTableOps('agent_workspaces', 'id'),
   agent_runs: makeTableOps('agent_runs', 'run_id'),
   agent_artifacts: makeTableOps('agent_artifacts', 'artifact_id'),

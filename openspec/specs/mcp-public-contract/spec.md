@@ -8,13 +8,13 @@ Define the supported DevHub MCP contract as one env-invariant public surface.
 
 ### Requirement: Supported Surface Contract
 
-The system SHALL publish one supported MCP contract of 36 tools across `crud`, `portable-contract`, and `external-integration`. Telegram and stale CLI-duplicate ghost tools MUST NOT appear.
+The system SHALL publish one supported MCP contract of 24 tools across `crud`, `portable-contract`, and `external-integration`. Telegram and stale CLI-duplicate ghost tools MUST NOT appear.
 
 #### Scenario: Catalog and docs match supported surface
 
 - GIVEN the MCP server tool list, README, and catalog test
 - WHEN the supported contract is reviewed
-- THEN all three show the same 36 supported tools
+- THEN all three show the same 24 supported tools
 - AND no Telegram tool is listed
 
 #### Scenario: Conditional Telegram config does not change support policy

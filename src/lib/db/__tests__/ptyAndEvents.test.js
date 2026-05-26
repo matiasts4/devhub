@@ -332,6 +332,8 @@ test('agent_events all valid event_types are accepted', () => {
     'supervisor_action',
     'mission_joined',
     'mission_left',
+    'task_completed',
+    'handoff_ready',
   ];
   for (let i = 0; i < validTypes.length; i++) {
     const eventType = validTypes[i];
@@ -342,5 +344,31 @@ test('agent_events all valid event_types are accepted', () => {
   }
   const count = db.prepare('SELECT count(*) as c FROM agent_events').get().c;
   assert.equal(count, validTypes.length, 'all valid event types should be accepted');
+  db.close();
+});
+
+test('agent_events check constraint accepts canonical director feed event types', () => {
+  const db = createTestDb();
+
+  db.exec(`
+    INSERT INTO agent_events (agent_id, event_type, created_at)
+    VALUES ('agent-director-feed-1', 'task_completed', datetime('now'))
+  `);
+  db.exec(`
+    INSERT INTO agent_events (agent_id, event_type, created_at)
+    VALUES ('agent-director-feed-2', 'handoff_ready', datetime('now'))
+  `);
+
+  const rows = db
+    .prepare('SELECT agent_id, event_type FROM agent_events ORDER BY id ASC')
+    .all()
+    .map((row) => ({ agent_id: row.agent_id, event_type: row.event_type }));
+  assert.equal(
+    JSON.stringify(rows),
+    JSON.stringify([
+      { agent_id: 'agent-director-feed-1', event_type: 'task_completed' },
+      { agent_id: 'agent-director-feed-2', event_type: 'handoff_ready' },
+    ])
+  );
   db.close();
 });

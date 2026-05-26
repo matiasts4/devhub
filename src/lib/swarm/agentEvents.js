@@ -12,7 +12,96 @@ const VALID_EVENT_TYPES = [
   'supervisor_action',
   'mission_joined',
   'mission_left',
+  'task_completed',
+  'handoff_ready',
 ];
+
+const DIRECTOR_FEED_EVENT_TYPES = new Set(['task_completed', 'handoff_ready']);
+const DIRECTOR_FEED_DELIVERY_STATUSES = new Set(['pending', 'sent', 'failed', 'binding_missing']);
+
+function buildValidationError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
+function normalizeOptionalString(value) {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function pickLinkedValue(...values) {
+  for (const value of values) {
+    const normalized = normalizeOptionalString(value);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function normalizeDirectorFeedPayload(event) {
+  const payload =
+    event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
+      ? { ...event.payload }
+      : {};
+  const missionId = normalizeOptionalString(event.mission_id);
+  if (!missionId) {
+    throw buildValidationError(
+      `${event.event_type} requires mission_id for durable director feed.`
+    );
+  }
+
+  const relatedTaskId = pickLinkedValue(payload.related_task_id, payload.task_id);
+  if (!relatedTaskId) {
+    throw buildValidationError(
+      `${event.event_type} requires task context (related_task_id or task_id).`
+    );
+  }
+
+  const deliveryStatus = normalizeOptionalString(payload.delivery_status);
+  if (deliveryStatus && !DIRECTOR_FEED_DELIVERY_STATUSES.has(deliveryStatus)) {
+    throw buildValidationError(
+      `${event.event_type} has invalid delivery_status: ${deliveryStatus}.`
+    );
+  }
+
+  return {
+    ...payload,
+    related_task_id: relatedTaskId,
+    related_workspace_id: pickLinkedValue(
+      payload.related_workspace_id,
+      payload.workspace_id,
+      event.workspace_id
+    ),
+    related_run_id: pickLinkedValue(payload.related_run_id, payload.run_id),
+    related_artifact_id: pickLinkedValue(payload.related_artifact_id, payload.artifact_id),
+    related_approval_checkpoint_key: pickLinkedValue(
+      payload.related_approval_checkpoint_key,
+      payload.approval_checkpoint_key
+    ),
+    delivery_status: deliveryStatus,
+    summary: pickLinkedValue(payload.summary, payload.status_summary, payload.body_summary),
+    next_action: pickLinkedValue(payload.next_action),
+  };
+}
+
+function normalizeEventForPersistence(event) {
+  const normalized = {
+    ...event,
+    mission_id: normalizeOptionalString(event.mission_id),
+    workspace_id: normalizeOptionalString(event.workspace_id),
+  };
+
+  if (DIRECTOR_FEED_EVENT_TYPES.has(event.event_type)) {
+    normalized.payload = normalizeDirectorFeedPayload(normalized);
+    normalized.workspace_id =
+      normalized.workspace_id || normalized.payload.related_workspace_id || null;
+    return normalized;
+  }
+
+  normalized.payload = event.payload ? event.payload : null;
+  return normalized;
+}
 
 /**
  * Emit an agent event into the agent_events table.
@@ -35,20 +124,22 @@ function emitAgentEvent(db, event) {
     throw err;
   }
 
+  const normalizedEvent = normalizeEventForPersistence(event);
+
   // Dedup: if client_event_id provided, check for recent duplicate within 5s window
-  if (event.client_event_id) {
+  if (normalizedEvent.client_event_id) {
     const existing = db
       .prepare(
         `SELECT id FROM agent_events WHERE client_event_id = ? AND created_at > datetime('now', '-5 seconds') LIMIT 1`
       )
-      .get(event.client_event_id);
+      .get(normalizedEvent.client_event_id);
 
     if (existing) {
-      return { id: existing.id, status: 200 };
+      return { id: existing.id, status: 200, payload: normalizedEvent.payload };
     }
   }
 
-  const payloadJson = event.payload ? JSON.stringify(event.payload) : null;
+  const payloadJson = normalizedEvent.payload ? JSON.stringify(normalizedEvent.payload) : null;
 
   const result = db
     .prepare(
@@ -56,16 +147,16 @@ function emitAgentEvent(db, event) {
      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
     )
     .run(
-      event.agent_id,
-      event.workspace_id ?? null,
-      event.event_type,
+      normalizedEvent.agent_id,
+      normalizedEvent.workspace_id ?? null,
+      normalizedEvent.event_type,
       payloadJson,
-      event.mission_id ?? null,
-      event.client_event_id ?? null
+      normalizedEvent.mission_id ?? null,
+      normalizedEvent.client_event_id ?? null
     );
 
   const id = result.lastInsertRowid;
-  return { id, status: 201 };
+  return { id, status: 201, payload: normalizedEvent.payload };
 }
 
 /**
@@ -102,4 +193,4 @@ function queryAgentEvents(db, filters = {}) {
     .all(...params, limit);
 }
 
-export { emitAgentEvent, queryAgentEvents, VALID_EVENT_TYPES };
+export { emitAgentEvent, queryAgentEvents, VALID_EVENT_TYPES, normalizeEventForPersistence };

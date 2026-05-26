@@ -87,6 +87,73 @@ test('emitAgentEvent stores mission_id', () => {
   db.close();
 });
 
+test('emitAgentEvent accepts task_completed with canonical linked payload metadata', () => {
+  const db = createTestDb();
+  seedWorkspace(db, 'ws-task-complete');
+
+  const result = emitAgentEvent(db, {
+    agent_id: 'agent-task-complete',
+    event_type: 'task_completed',
+    mission_id: 'mission-complete-1',
+    workspace_id: 'ws-task-complete',
+    payload: {
+      task_id: 'task-complete-1',
+      run_id: 'run-complete-1',
+      artifact_id: 'artifact-complete-1',
+      approval_checkpoint_key: 'approval-complete-1',
+      delivery_status: 'binding_missing',
+      summary: 'Worker finished implementation.',
+    },
+  });
+
+  const row = db.prepare('SELECT * FROM agent_events WHERE id = ?').get(result.id);
+  const parsed = JSON.parse(row.payload_json);
+
+  assert.equal(row.event_type, 'task_completed');
+  assert.equal(parsed.related_task_id, 'task-complete-1');
+  assert.equal(parsed.related_workspace_id, 'ws-task-complete');
+  assert.equal(parsed.related_run_id, 'run-complete-1');
+  assert.equal(parsed.related_artifact_id, 'artifact-complete-1');
+  assert.equal(parsed.related_approval_checkpoint_key, 'approval-complete-1');
+  assert.equal(parsed.delivery_status, 'binding_missing');
+  assert.equal(parsed.summary, 'Worker finished implementation.');
+  db.close();
+});
+
+test('emitAgentEvent accepts handoff_ready with canonical linked payload metadata', () => {
+  const db = createTestDb();
+  seedWorkspace(db, 'ws-handoff-ready');
+
+  const result = emitAgentEvent(db, {
+    agent_id: 'agent-handoff-ready',
+    event_type: 'handoff_ready',
+    mission_id: 'mission-handoff-1',
+    workspace_id: 'ws-handoff-ready',
+    payload: {
+      related_task_id: 'task-handoff-1',
+      related_run_id: 'run-handoff-1',
+      related_artifact_id: 'artifact-handoff-1',
+      related_approval_checkpoint_key: 'approval-handoff-1',
+      delivery_status: 'binding_missing',
+      next_action: 'director_review',
+      summary: 'Handoff package ready for director review.',
+    },
+  });
+
+  const row = db.prepare('SELECT * FROM agent_events WHERE id = ?').get(result.id);
+  const parsed = JSON.parse(row.payload_json);
+
+  assert.equal(row.event_type, 'handoff_ready');
+  assert.equal(parsed.related_task_id, 'task-handoff-1');
+  assert.equal(parsed.related_workspace_id, 'ws-handoff-ready');
+  assert.equal(parsed.related_run_id, 'run-handoff-1');
+  assert.equal(parsed.related_artifact_id, 'artifact-handoff-1');
+  assert.equal(parsed.related_approval_checkpoint_key, 'approval-handoff-1');
+  assert.equal(parsed.delivery_status, 'binding_missing');
+  assert.equal(parsed.next_action, 'director_review');
+  db.close();
+});
+
 // ---------------------------------------------------------------------------
 // 3.9 RED: emitAgentEvent — unknown type → 400, dedup within 5s
 // ---------------------------------------------------------------------------
@@ -108,6 +175,27 @@ test('emitAgentEvent rejects unknown event_type with 400 status', () => {
     );
     assert.equal(e.status, 400, 'error status must be 400');
   }
+  db.close();
+});
+
+test('emitAgentEvent rejects task_completed without mission-linked task context', () => {
+  const db = createTestDb();
+
+  try {
+    emitAgentEvent(db, {
+      agent_id: 'agent-invalid-task-complete',
+      event_type: 'task_completed',
+      mission_id: 'mission-invalid-task-complete',
+      payload: {
+        summary: 'Missing linked task id should fail.',
+      },
+    });
+    assert.fail('emitAgentEvent should reject task_completed without related task id');
+  } catch (error) {
+    assert.equal(error.status, 400, 'error status must be 400');
+    assert.match(error.message, /task context|related_task_id|task_id/i);
+  }
+
   db.close();
 });
 
@@ -281,6 +369,8 @@ test('VALID_EVENT_TYPES contains all expected types', () => {
     'supervisor_action',
     'mission_joined',
     'mission_left',
+    'task_completed',
+    'handoff_ready',
   ];
   for (const t of expected) {
     assert.ok(VALID_EVENT_TYPES.includes(t), `must include ${t}`);

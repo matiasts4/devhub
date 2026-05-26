@@ -6,7 +6,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getDb, resolveDbArgs } = require('./shared');
+const { getDb, resolveDbArgs, tableExists } = require('./shared');
 const { resolveAgentRuntimeBinding, getPreferredBindingWorkspace } = require('./workspaces');
 const { buildMissionBindingResult } = require('./agentRuns');
 const { getSupervisorSnapshot } = require('./supervisor');
@@ -31,6 +31,17 @@ const MISSION_MESSAGE_KINDS = [
 const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
 const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline'];
 const AGENT_PRESENCE_TTL_MS = 120_000;
+const DIRECTOR_FEED_EVENT_TYPES = ['task_completed', 'handoff_ready'];
+const EMPTY_DIRECTOR_FEED_HANDOFF = {
+  status: 'idle',
+  recipient_agent_id: null,
+  message: null,
+  task: null,
+  workspace: null,
+  run: null,
+  artifact: null,
+  supervisor: null,
+};
 const MISSION_IDENTITY_METADATA_FIELDS = [
   'profile_key',
   'runtime_role',
@@ -716,12 +727,237 @@ function pickSnapshotFields(row, allowedFields) {
   }, {});
 }
 
+function parseEventPayload(payloadJson) {
+  if (!payloadJson) return {};
+  try {
+    const parsed = JSON.parse(payloadJson);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeDirectorFeedDeliveryStatus(status) {
+  if (!status) return null;
+  if (status === 'pending' || status === 'retry_pending') return 'pending';
+  if (status === 'sent') return 'sent';
+  if (status === 'failed' || status === 'expired') return 'failed';
+  if (status === 'binding_missing') return 'binding_missing';
+  return null;
+}
+
+function defaultDirectorFeedNextAction(kind) {
+  if (kind === 'handoff_ready') return 'director_review';
+  if (kind === 'task_completed') return 'claim_next_task';
+  return null;
+}
+
+function getMostRecentTimestamp(row = {}) {
+  return row.updated_at || row.last_attempt_at || row.created_at || null;
+}
+
+function compareDirectorFeedItems(left = {}, right = {}) {
+  const leftTime = Date.parse(left.occurred_at || 0) || 0;
+  const rightTime = Date.parse(right.occurred_at || 0) || 0;
+  if (leftTime !== rightTime) return rightTime - leftTime;
+  return String(left.feed_id || '').localeCompare(String(right.feed_id || ''));
+}
+
+function matchMissionMessageForDirectorFeed(eventRow, payload, missionMessages = []) {
+  const allowedKinds =
+    eventRow.event_type === 'handoff_ready' ? new Set(['handoff', 'status']) : new Set(['status']);
+  const candidates = missionMessages.filter((message) => {
+    if (!allowedKinds.has(message.message_kind)) return false;
+    if (message.sender_agent_id && message.sender_agent_id !== eventRow.agent_id) return false;
+    if (payload.related_task_id && message.related_task_id !== payload.related_task_id)
+      return false;
+    if (
+      payload.related_workspace_id &&
+      message.related_workspace_id !== payload.related_workspace_id
+    ) {
+      return false;
+    }
+    if (payload.related_run_id && message.related_run_id !== payload.related_run_id) return false;
+    if (
+      payload.related_approval_checkpoint_key &&
+      message.related_approval_checkpoint_key !== payload.related_approval_checkpoint_key
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const scored = candidates
+    .map((message) => {
+      let score = 0;
+      if (message.created_at === eventRow.created_at) score += 4;
+      if (payload.summary && message.body_summary === payload.summary) score += 3;
+      if (payload.related_task_id && message.related_task_id === payload.related_task_id)
+        score += 2;
+      if (
+        payload.related_workspace_id &&
+        message.related_workspace_id === payload.related_workspace_id
+      ) {
+        score += 2;
+      }
+      if (payload.related_run_id && message.related_run_id === payload.related_run_id) score += 2;
+      if (message.message_kind === 'handoff' && eventRow.event_type === 'handoff_ready') score += 1;
+      if (message.message_kind === 'status') score += 1;
+      return { message, score };
+    })
+    .filter((entry) => entry.score >= 3)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return compareDirectorFeedItems(
+        { occurred_at: left.message.created_at, feed_id: left.message.message_id },
+        { occurred_at: right.message.created_at, feed_id: right.message.message_id }
+      );
+    });
+
+  return scored[0]?.message || null;
+}
+
+function buildDirectorFeedHandoff(item, db) {
+  if (!item || item.kind !== 'handoff_ready') return { ...EMPTY_DIRECTOR_FEED_HANDOFF };
+
+  const hasTasksTable = tableExists(db, 'tasks');
+  const task = item.task_id
+    ? (hasTasksTable
+        ? db
+            .prepare('SELECT id, title, status, priority FROM tasks WHERE id = ? LIMIT 1')
+            .get(item.task_id)
+        : null) || { id: item.task_id, title: null, status: null, priority: null }
+    : null;
+  const workspace = item.workspace_id
+    ? db
+        .prepare(
+          'SELECT id, status, branch_name, evidence_ref FROM agent_workspaces WHERE id = ? LIMIT 1'
+        )
+        .get(item.workspace_id) || {
+        id: item.workspace_id,
+        status: null,
+        branch_name: null,
+        evidence_ref: null,
+      }
+    : null;
+  const run = item.run_id
+    ? db
+        .prepare('SELECT run_id, status FROM agent_runs WHERE run_id = ? LIMIT 1')
+        .get(item.run_id) || { run_id: item.run_id, status: null }
+    : null;
+  const artifact = item.artifact_id
+    ? db
+        .prepare(
+          'SELECT artifact_id, summary, evidence_ref FROM agent_artifacts WHERE artifact_id = ? LIMIT 1'
+        )
+        .get(item.artifact_id) || {
+        artifact_id: item.artifact_id,
+        summary: null,
+        evidence_ref: null,
+      }
+    : null;
+  const supervisor = item.task_id ? getSupervisorSnapshot(db, item.task_id) : null;
+
+  return {
+    status: 'ready',
+    recipient_agent_id: item.agent_id || null,
+    message: item.summary || null,
+    task: task
+      ? {
+          task_id: task.id,
+          title: task.title || null,
+          status: task.status || null,
+          priority: task.priority || null,
+        }
+      : null,
+    workspace: workspace
+      ? {
+          workspace_id: workspace.id,
+          status: workspace.status || null,
+          branch_name: workspace.branch_name || null,
+          evidence_ref: workspace.evidence_ref || null,
+        }
+      : null,
+    run: run
+      ? {
+          run_id: run.run_id,
+          status: run.status || null,
+        }
+      : null,
+    artifact: artifact
+      ? {
+          artifact_id: artifact.artifact_id,
+          summary: artifact.summary || null,
+          evidence_ref: artifact.evidence_ref || null,
+        }
+      : null,
+    supervisor: supervisor || null,
+  };
+}
+
+function listMissionDirectorFeedItems(dbOrMissionId, maybeMissionId) {
+  const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
+  const db = hasDb ? dbOrMissionId : getDb();
+  const missionId = hasDb ? maybeMissionId : dbOrMissionId;
+  const eventRows = db
+    .prepare(
+      `SELECT *
+       FROM agent_events
+       WHERE mission_id = ? AND event_type IN (${DIRECTOR_FEED_EVENT_TYPES.map(() => '?').join(', ')})
+       ORDER BY created_at DESC, id DESC`
+    )
+    .all(missionId, ...DIRECTOR_FEED_EVENT_TYPES);
+  const missionMessages = listMissionMessages(db, missionId);
+  const deliveries = listMessageDeliveriesForMission(db, missionId);
+
+  return eventRows
+    .map((eventRow) => {
+      const payload = parseEventPayload(eventRow.payload_json);
+      const matchedMessage = matchMissionMessageForDirectorFeed(eventRow, payload, missionMessages);
+      const matchedDelivery = matchedMessage
+        ? deliveries
+            .filter((delivery) => delivery.message_id === matchedMessage.message_id)
+            .sort((left, right) =>
+              compareDirectorFeedItems(
+                { occurred_at: getMostRecentTimestamp(left), feed_id: left.delivery_id },
+                { occurred_at: getMostRecentTimestamp(right), feed_id: right.delivery_id }
+              )
+            )[0] || null
+        : null;
+      const deliveryStatus =
+        normalizeDirectorFeedDeliveryStatus(matchedDelivery?.status) ||
+        normalizeDirectorFeedDeliveryStatus(payload.delivery_status) ||
+        null;
+
+      return {
+        feed_id: `agent_event:${eventRow.id}`,
+        kind: eventRow.event_type,
+        occurred_at: eventRow.created_at,
+        mission_id: eventRow.mission_id || null,
+        agent_id: eventRow.agent_id || null,
+        task_id: payload.related_task_id || null,
+        workspace_id: payload.related_workspace_id || eventRow.workspace_id || null,
+        run_id: payload.related_run_id || null,
+        artifact_id: payload.related_artifact_id || null,
+        approval_checkpoint_key: payload.related_approval_checkpoint_key || null,
+        summary: payload.summary || matchedMessage?.body_summary || eventRow.event_type,
+        next_action: payload.next_action || defaultDirectorFeedNextAction(eventRow.event_type),
+        evidence_ref: matchedMessage?.evidence_ref || null,
+        source: 'agent_event',
+        delivery_status: deliveryStatus,
+        message_id: matchedMessage?.message_id || null,
+      };
+    })
+    .sort(compareDirectorFeedItems);
+}
+
 function buildDirectorSnapshotWatermark({
   mission,
   participants,
   recentMessages,
   pendingDeliveries,
   presenceRows,
+  directorFeed,
 }) {
   const material = {
     mission: pickSnapshotFields(mission, DIRECTOR_SNAPSHOT_MISSION_FIELDS),
@@ -741,6 +977,22 @@ function buildDirectorSnapshotWatermark({
         return leftKey.localeCompare(rightKey);
       })
       .map((row) => pickSnapshotFields(row, DIRECTOR_SNAPSHOT_PRESENCE_FIELDS)),
+    director_feed: (Array.isArray(directorFeed) ? directorFeed : []).map((item) => ({
+      feed_id: item.feed_id || null,
+      kind: item.kind || null,
+      occurred_at: item.occurred_at || null,
+      mission_id: item.mission_id || null,
+      agent_id: item.agent_id || null,
+      task_id: item.task_id || null,
+      workspace_id: item.workspace_id || null,
+      run_id: item.run_id || null,
+      artifact_id: item.artifact_id || null,
+      summary: item.summary || null,
+      next_action: item.next_action || null,
+      evidence_ref: item.evidence_ref || null,
+      source: item.source || null,
+      delivery_status: item.delivery_status || null,
+    })),
   };
 
   return crypto.createHash('sha1').update(JSON.stringify(material)).digest('hex');
@@ -772,13 +1024,19 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
     ...presence,
     ...getAgentPresenceStatus(presence, { ...options, now: snapshotAt }),
   }));
+  const directorFeedItems = listMissionDirectorFeedItems(db, missionId);
   const watermark = buildDirectorSnapshotWatermark({
     mission,
     participants,
     recentMessages,
     pendingDeliveries,
     presenceRows,
+    directorFeed: directorFeedItems,
   });
+  const directorFeedHandoff = buildDirectorFeedHandoff(
+    directorFeedItems.find((item) => item.kind === 'handoff_ready') || null,
+    db
+  );
 
   return {
     mission,
@@ -790,6 +1048,13 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
     approval_checkpoints: approvalCheckpoints,
     snapshot_at: snapshotAt,
     watermark,
+    director_feed: {
+      authority: 'durable',
+      freshness: 'current',
+      watermark,
+      items: directorFeedItems,
+      handoff: directorFeedHandoff,
+    },
     presence: {
       active: presenceRows.filter(
         (presence) => !presence.stale && presence.effective_state !== 'offline'
@@ -847,6 +1112,7 @@ module.exports = {
   createMissionMessage,
   listMissionMessages,
   listRecentMissionMessages,
+  listMissionDirectorFeedItems,
   // Delivery
   listPendingMessageDeliveriesForMission,
   listMessageDeliveriesForMission,

@@ -4,6 +4,55 @@ const {
   AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES,
 } = require('./constants');
 
+const AGENT_EVENT_TYPES = [
+  'agent_booted',
+  'agent_shutdown',
+  'workspace_orphaned',
+  'quota_blocked',
+  'supervisor_action',
+  'mission_joined',
+  'mission_left',
+  'task_completed',
+  'handoff_ready',
+];
+
+function rebuildAgentEventsTableIfNeeded(db) {
+  const tableInfo = db.prepare(`PRAGMA table_info(agent_events)`).all();
+  if (tableInfo.length === 0) return;
+
+  const createSqlRow = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_events' LIMIT 1`)
+    .get();
+  const createSql = String(createSqlRow?.sql || '');
+  const missingType = AGENT_EVENT_TYPES.find((eventType) => !createSql.includes(`'${eventType}'`));
+  if (!missingType) return;
+
+  db.exec(`
+    BEGIN;
+    ALTER TABLE agent_events RENAME TO agent_events_legacy;
+    CREATE TABLE agent_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      workspace_id TEXT,
+      event_type TEXT NOT NULL CHECK(event_type IN (${AGENT_EVENT_TYPES.map((eventType) => `'${eventType}'`).join(',')})),
+      payload_json TEXT,
+      mission_id TEXT,
+      client_event_id TEXT,
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      FOREIGN KEY(workspace_id) REFERENCES agent_workspaces(id)
+    );
+    INSERT INTO agent_events (id, agent_id, workspace_id, event_type, payload_json, mission_id, client_event_id, created_at)
+    SELECT id, agent_id, workspace_id, event_type, payload_json, mission_id, client_event_id, created_at
+    FROM agent_events_legacy;
+    DROP TABLE agent_events_legacy;
+    CREATE INDEX idx_agent_events_agent_id ON agent_events(agent_id);
+    CREATE INDEX idx_agent_events_type ON agent_events(event_type);
+    CREATE INDEX idx_agent_events_created_at ON agent_events(created_at);
+    CREATE INDEX idx_agent_events_client_event_id ON agent_events(client_event_id);
+    COMMIT;
+  `);
+}
+
 function ensureRuntimeSchema(db) {
   if (typeof db.pragma === 'function') {
     db.pragma('foreign_keys = ON');
@@ -752,7 +801,7 @@ function ensureRuntimeSchema(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_id TEXT NOT NULL,
       workspace_id TEXT,
-      event_type TEXT NOT NULL CHECK(event_type IN ('agent_booted','agent_shutdown','workspace_orphaned','quota_blocked','supervisor_action','mission_joined','mission_left')),
+      event_type TEXT NOT NULL CHECK(event_type IN (${AGENT_EVENT_TYPES.map((eventType) => `'${eventType}'`).join(',')})),
       payload_json TEXT,
       mission_id TEXT,
       client_event_id TEXT,
@@ -898,6 +947,8 @@ function ensureRuntimeSchema(db) {
       SELECT RAISE(ABORT, 'agent_workspaces_terminal_immutable');
     END;
   `);
+
+  rebuildAgentEventsTableIfNeeded(db);
 }
 
 const MCP_SCHEMA_SQL = `

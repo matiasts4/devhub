@@ -20,6 +20,7 @@ const { getLatestAgentArtifactForRun } = require('./artifacts');
 const { buildMissionBindingResult } = require('./agentRuns');
 const {
   readMissionDiagnosticSummary: readMissionDiagnosticSummaryFromSwarm,
+  getSwarmMissionDirectorSnapshot,
 } = require('./swarmMissions');
 const {
   getSupervisorSnapshot,
@@ -400,6 +401,19 @@ function readMissionDiagnosticSummary(dbOrNull, input = {}) {
   return readMissionDiagnosticSummaryFromSwarm(db, input);
 }
 
+function readDirectorFeedSummary(dbOrNull, input = {}) {
+  const db = resolveDb(dbOrNull);
+  const missionId = input.missionId || input.mission_id;
+  if (!missionId) {
+    throw new Error('missionId is required for readDirectorFeedSummary.');
+  }
+
+  const snapshot = getSwarmMissionDirectorSnapshot(db, missionId, {
+    now: input.now || new Date().toISOString(),
+  });
+  return snapshot?.director_feed || null;
+}
+
 function readMissionListSummary(dbOrNull, input = {}) {
   const db = resolveDb(dbOrNull);
   const conditions = [];
@@ -493,6 +507,7 @@ function readTaskById(dbOrNull, taskId) {
 
 module.exports = {
   readExecutionQueueSummary,
+  readDirectorFeedSummary,
   readMissionDiagnosticSummary,
   readMissionListSummary,
   readWorkspaceDiagnosticList,

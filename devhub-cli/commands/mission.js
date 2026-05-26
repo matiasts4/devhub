@@ -5,7 +5,12 @@
  * Subcommands: list, status, close
  */
 
-const { getDb, readMissionDiagnosticSummary, readMissionListSummary } = require('../lib/db');
+const {
+  getDb,
+  readMissionDiagnosticSummary,
+  readMissionListSummary,
+  readDirectorFeedSummary,
+} = require('../lib/db');
 const { table, section, row } = require('../lib/format');
 
 /**
@@ -88,17 +93,24 @@ function missionStatus(missionId, opts = {}) {
   }
 
   try {
-    const summary = readMissionDiagnosticSummary(getDb(), { missionId });
+    const db = getDb();
+    const summary = readMissionDiagnosticSummary(db, { missionId });
 
     if (!summary) {
       process.stderr.write('Mission not found\n');
       process.exit(1);
     }
 
+    const directorFeed = readDirectorFeedSummary(db, { missionId });
+    const payload = {
+      ...summary,
+      director_feed: directorFeed,
+    };
+
     if (opts.json) {
-      process.stdout.write(JSON.stringify(summary) + '\n');
+      process.stdout.write(JSON.stringify(payload) + '\n');
     } else {
-      const { mission, participants } = summary;
+      const { mission, participants } = payload;
       process.stdout.write(section('MISSION'));
       process.stdout.write('\n');
       process.stdout.write(row('Mission ID', mission.mission_id));
@@ -120,6 +132,12 @@ function missionStatus(missionId, opts = {}) {
             .join(', ')
         )
       );
+      process.stdout.write('\n');
+      process.stdout.write(
+        row('Director Feed', `${directorFeed?.items?.length || 0} durable item(s)`)
+      );
+      process.stdout.write('\n');
+      process.stdout.write(row('Handoff', directorFeed?.handoff?.status || 'idle'));
       process.stdout.write('\n\n');
     }
     process.exit(0);

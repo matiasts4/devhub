@@ -17,13 +17,8 @@ const README_PATH = join(__dirname, '..', '..', 'README.md');
 
 const SUPPORTED_TOOL_NAMES = [
   'add_task_comment',
-  'append_agent_artifact',
   'bulk_create_milestones',
   'bulk_create_tasks',
-  'claim_next_task',
-  'complete_agent_run',
-  'create_agent_run',
-  'create_agent_workspace',
   'create_milestone',
   'create_project',
   'create_task',
@@ -42,13 +37,6 @@ const SUPPORTED_TOOL_NAMES = [
   'list_operator_inbox',
   'list_projects',
   'list_tasks',
-  'prepare_agent_workspace',
-  'release_task',
-  'renew_task_lease',
-  'request_supervisor_approval',
-  'report_agent_workspace',
-  'team_tell',
-  'update_agent_workspace',
   'update_milestone',
   'update_project',
   'update_task',
@@ -66,18 +54,32 @@ const UNSUPPORTED_TOOL_NAMES = [
   'heartbeat_agent',
   'unregister_agent',
   'update_agent_status',
+  'claim_next_task',
+  'renew_task_lease',
+  'release_task',
+  'request_supervisor_approval',
+  'team_tell',
+  'prepare_agent_workspace',
+  'create_agent_workspace',
+  'update_agent_workspace',
+  'report_agent_workspace',
+  'create_agent_run',
+  'complete_agent_run',
+  'append_agent_artifact',
 ];
 
 function extractReadmeToolNames(markdown) {
   return [
-    ...markdown.matchAll(/^\| `([^`]+)` \| (crud|portable-contract|external-integration) \|/gm),
+    ...markdown.matchAll(
+      /^\|\s*`([^`]+)`\s*\|\s*(crud|portable-contract|external-integration)\s*\|/gm
+    ),
   ].map((match) => match[1]);
 }
 
 function extractContractTable(markdown) {
   return (
     markdown.match(
-      /\| Tool \| Category \| CLI Equivalent \| Notes \|[\s\S]*?(?=\n### |\n---|$)/
+      /\|\s*Tool\s*\|\s*Category\s*\|\s*CLI Equivalent\s*\|\s*Notes\s*\|[\s\S]*?(?=\n### |\n---|$)/
     )?.[0] || ''
   );
 }
@@ -118,10 +120,10 @@ describe('MCP Tool Catalog', () => {
 
   it('documents the same supported MCP contract in the README', () => {
     const readme = readFileSync(README_PATH, 'utf8');
-    const supportedContractSection = extractSection(readme, 'Supported MCP Contract (36 tools)');
+    const supportedContractSection = extractSection(readme, 'Supported MCP Contract (24 tools)');
     const contractTable = extractContractTable(supportedContractSection);
 
-    expect(readme).toContain('Supported MCP Contract (36 tools)');
+    expect(readme).toContain('Supported MCP Contract (24 tools)');
     expect(extractReadmeToolNames(contractTable).sort()).toEqual([...SUPPORTED_TOOL_NAMES].sort());
 
     for (const toolName of UNSUPPORTED_TOOL_NAMES) {

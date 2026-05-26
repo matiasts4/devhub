@@ -4,6 +4,7 @@ import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
 import {
   emitAgentEvent,
   queryAgentEvents,
+  normalizeEventForPersistence,
   VALID_EVENT_TYPES as AGENT_EVENT_TYPES,
 } from '@/lib/swarm/agentEvents.js';
 import { withAuth } from '@/lib/swarm/withAuth.js';
@@ -31,6 +32,13 @@ const LEGACY_EVENT_TYPES = [
  * Combined valid event types: both the new agent_events types and legacy types.
  */
 const VALID_EVENT_TYPES = [...new Set([...AGENT_EVENT_TYPES, ...LEGACY_EVENT_TYPES])];
+
+function buildMissionMessageSummary(eventType, normalizedPayload, fallbackStatusSummary) {
+  const canonicalSummary = normalizedPayload?.summary || normalizedPayload?.next_action || null;
+  if (canonicalSummary) return canonicalSummary;
+  if (fallbackStatusSummary) return `${eventType}: ${fallbackStatusSummary}`;
+  return eventType;
+}
 
 export const POST = withAuth(async function POST(request) {
   try {
@@ -63,6 +71,17 @@ export const POST = withAuth(async function POST(request) {
       );
     }
 
+    const normalizedEvent = AGENT_EVENT_TYPES.includes(event_type)
+      ? normalizeEventForPersistence({
+          agent_id: resolvedAgentId,
+          event_type,
+          workspace_id: workspace_id || null,
+          payload: payload || undefined,
+          mission_id: mission_id || null,
+          client_event_id: client_event_id || null,
+        })
+      : null;
+
     const now = new Date().toISOString();
     const eventId = `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -71,39 +90,31 @@ export const POST = withAuth(async function POST(request) {
       (writeDb) => {
         // Primary write: agent_events table
         if (AGENT_EVENT_TYPES.includes(event_type)) {
-          try {
-            emitAgentEvent(writeDb, {
-              agent_id: resolvedAgentId,
-              event_type,
-              workspace_id: workspace_id || null,
-              payload: payload || undefined,
-              mission_id: mission_id || null,
-              client_event_id: client_event_id || null,
-            });
-          } catch (evtErr) {
-            // Dedup (200) is not an error — anything else is non-fatal since we also write to mission_messages
-            if (!evtErr.message?.includes('Invalid')) {
-              console.warn('[EVENTS] Failed to write to agent_events:', evtErr.message);
-            } else {
-              throw evtErr; // Re-throw validation errors
-            }
-          }
+          emitAgentEvent(writeDb, normalizedEvent);
         }
 
         // Backward-compat write: mission_messages table
+        const normalizedPayload = normalizedEvent?.payload || null;
         writeDb
           .prepare(
             `INSERT INTO mission_messages (
           message_id, mission_id, sender_agent_id, message_kind,
-          body_summary, evidence_ref, created_at, updated_at
-        ) VALUES (?, ?, ?, 'status', ?, ?, ?, ?)`
+          body_summary, evidence_ref, related_task_id, related_workspace_id,
+          related_run_id, related_artifact_id, related_approval_checkpoint_key,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, 'status', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             eventId,
             mission_id || null,
             resolvedAgentId,
-            `${event_type}${status_summary ? `: ${status_summary}` : ''}`,
+            buildMissionMessageSummary(event_type, normalizedPayload, status_summary),
             `evidence://event/${eventId}`,
+            normalizedPayload?.related_task_id || null,
+            normalizedPayload?.related_workspace_id || normalizedEvent?.workspace_id || null,
+            normalizedPayload?.related_run_id || null,
+            normalizedPayload?.related_artifact_id || null,
+            normalizedPayload?.related_approval_checkpoint_key || null,
             now,
             now
           );
@@ -149,8 +160,11 @@ export const POST = withAuth(async function POST(request) {
   } catch (error) {
     console.error('[EVENTS] Error:', error.message);
     return NextResponse.json(
-      { error: 'Internal server error', details: error.message },
-      { status: 500 }
+      {
+        error: error.status && error.status < 500 ? error.message : 'Internal server error',
+        details: error.message,
+      },
+      { status: error.status && error.status < 500 ? error.status : 500 }
     );
   }
 });

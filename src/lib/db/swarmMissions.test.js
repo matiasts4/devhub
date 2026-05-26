@@ -12,6 +12,7 @@ const {
   listMissionParticipants,
   createMissionMessage,
   listMissionMessages,
+  listMissionDirectorFeedItems,
   upsertMessageDelivery,
   listMessageDeliveriesForMission,
   upsertAgentPresence,
@@ -80,6 +81,41 @@ function seedSession(overrides = {}) {
       : null,
     overrides.directory || '/repo/devhub/.devhub/worktrees/ws-1'
   );
+}
+
+function seedDirectorFeedEvent(overrides = {}) {
+  const row = {
+    agent_id: overrides.agent_id || 'agent-worker-1',
+    workspace_id: Object.prototype.hasOwnProperty.call(overrides, 'workspace_id')
+      ? overrides.workspace_id
+      : null,
+    event_type: overrides.event_type || 'task_completed',
+    payload_json: JSON.stringify(
+      overrides.payload || {
+        related_task_id: 'task-1',
+        summary: 'Director feed event',
+      }
+    ),
+    mission_id: overrides.mission_id || 'mission-1',
+    client_event_id: overrides.client_event_id || null,
+    created_at: overrides.created_at || '2026-05-22T10:00:00.000Z',
+  };
+
+  db.prepare(
+    `INSERT INTO agent_events (
+      agent_id, workspace_id, event_type, payload_json, mission_id, client_event_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    row.agent_id,
+    row.workspace_id,
+    row.event_type,
+    row.payload_json,
+    row.mission_id,
+    row.client_event_id,
+    row.created_at
+  );
+
+  return row;
 }
 
 let db;
@@ -414,6 +450,174 @@ describe('getSwarmMissionDirectorSnapshot', () => {
     expect(snapshot).not.toBeNull();
     expect(snapshot.mission.title).toBe('Snapshot Test');
     expect(snapshot.watermark).toBeDefined();
+  });
+
+  it('returns empty durable director_feed with idle handoff when no completion facts exist', () => {
+    const mission = createSwarmMission(db, {
+      project_id: 'proj-1',
+      owner_agent_id: 'director-1',
+      title: 'Empty durable feed',
+      kind: 'coordination',
+      status: 'active',
+    });
+
+    const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+      now: '2026-05-26T20:20:00.000Z',
+    });
+
+    expect(snapshot.director_feed).toEqual({
+      authority: 'durable',
+      freshness: 'current',
+      watermark: expect.any(String),
+      items: [],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    });
+  });
+
+  it('projects director_feed newest-first with delivery status as metadata only', () => {
+    const mission = createSwarmMission(db, {
+      mission_id: 'mission-director-feed',
+      project_id: 'proj-1',
+      owner_agent_id: 'director-1',
+      task_id: 'task-1',
+      title: 'Director feed mission',
+      kind: 'coordination',
+      status: 'active',
+    });
+    seedWorkspace({ id: 'ws-1', project_id: 'proj-1', agent_id: 'agent-worker-1' });
+    seedRun({
+      run_id: 'run-1',
+      workspace_id: 'ws-1',
+      task_id: 'task-1',
+      agent_id: 'agent-worker-1',
+    });
+
+    seedDirectorFeedEvent({
+      mission_id: mission.mission_id,
+      workspace_id: 'ws-1',
+      event_type: 'task_completed',
+      created_at: '2026-05-26T20:21:00.000Z',
+      payload: {
+        related_task_id: 'task-1',
+        related_workspace_id: 'ws-1',
+        related_run_id: 'run-1',
+        summary: 'Worker finished implementation.',
+        delivery_status: 'binding_missing',
+      },
+    });
+    seedDirectorFeedEvent({
+      mission_id: mission.mission_id,
+      workspace_id: 'ws-1',
+      event_type: 'handoff_ready',
+      created_at: '2026-05-26T20:22:00.000Z',
+      payload: {
+        related_task_id: 'task-1',
+        related_workspace_id: 'ws-1',
+        related_run_id: 'run-1',
+        summary: 'Handoff package ready.',
+        next_action: 'director_review',
+      },
+    });
+    const handoffMessage = createMissionMessage(db, {
+      message_id: 'handoff-message-1',
+      mission_id: mission.mission_id,
+      sender_agent_id: 'agent-worker-1',
+      message_kind: 'handoff',
+      body_summary: 'Handoff package ready.',
+      related_task_id: 'task-1',
+      related_workspace_id: 'ws-1',
+      related_run_id: 'run-1',
+      created_at: '2026-05-26T20:22:00.000Z',
+      updated_at: '2026-05-26T20:22:00.000Z',
+    });
+    upsertMessageDelivery(db, {
+      message_id: handoffMessage.message_id,
+      recipient_agent_id: 'director-1',
+      channel: 'runtime_bus',
+      status: 'pending',
+      last_attempt_at: '2026-05-26T20:22:10.000Z',
+      updated_at: '2026-05-26T20:22:10.000Z',
+    });
+
+    const items = listMissionDirectorFeedItems(db, mission.mission_id);
+    const snapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+      now: '2026-05-26T20:22:30.000Z',
+    });
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual(
+      expect.objectContaining({
+        kind: 'handoff_ready',
+        source: 'agent_event',
+        summary: 'Handoff package ready.',
+        next_action: 'director_review',
+        delivery_status: 'pending',
+        task_id: 'task-1',
+        workspace_id: 'ws-1',
+        run_id: 'run-1',
+      })
+    );
+    expect(items[1]).toEqual(
+      expect.objectContaining({
+        kind: 'task_completed',
+        source: 'agent_event',
+        summary: 'Worker finished implementation.',
+        delivery_status: 'binding_missing',
+      })
+    );
+    expect(snapshot.director_feed.items).toEqual(items);
+    expect(snapshot.director_feed.handoff).toEqual(
+      expect.objectContaining({
+        status: 'ready',
+        recipient_agent_id: 'agent-worker-1',
+        message: 'Handoff package ready.',
+        task: expect.objectContaining({ task_id: 'task-1' }),
+        workspace: expect.objectContaining({ workspace_id: 'ws-1' }),
+        run: expect.objectContaining({ run_id: 'run-1' }),
+      })
+    );
+  });
+
+  it('keeps director_feed watermark stable when only read time changes', () => {
+    const mission = createSwarmMission(db, {
+      mission_id: 'mission-director-feed-stable',
+      project_id: 'proj-1',
+      owner_agent_id: 'director-1',
+      task_id: 'task-1',
+      title: 'Stable director feed watermark',
+      kind: 'coordination',
+      status: 'active',
+    });
+    seedDirectorFeedEvent({
+      mission_id: mission.mission_id,
+      event_type: 'task_completed',
+      created_at: '2026-05-26T20:23:00.000Z',
+      payload: {
+        related_task_id: 'task-1',
+        summary: 'Stable director feed item.',
+        delivery_status: 'binding_missing',
+      },
+    });
+
+    const firstSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+      now: '2026-05-26T20:23:10.000Z',
+    });
+    const secondSnapshot = getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
+      now: '2026-05-26T20:25:10.000Z',
+    });
+
+    expect(firstSnapshot.director_feed.items).toHaveLength(1);
+    expect(secondSnapshot.director_feed.items).toHaveLength(1);
+    expect(firstSnapshot.director_feed.watermark).toBe(secondSnapshot.director_feed.watermark);
   });
 });
 

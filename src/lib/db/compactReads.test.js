@@ -10,6 +10,7 @@ const {
   readWorkspaceDiagnosticList,
   readWorkspaceDiagnosticSummary,
   readWorkspaceEvidenceSummary,
+  readDirectorFeedSummary,
   presentExecutionQueue,
   presentWorkspaceEvidence,
   createDirectorQueueContract,
@@ -71,6 +72,74 @@ function seedMissionPresence(db, overrides = {}) {
     overrides.expires_at || '2026-05-22T10:02:00.000Z',
     overrides.updated_at || '2026-05-22T10:00:00.000Z',
     overrides.created_at || '2026-05-22T10:00:00.000Z'
+  );
+}
+
+function seedMissionMessage(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO mission_messages (
+      message_id, mission_id, sender_agent_id, message_kind, body_summary, evidence_ref,
+      related_task_id, related_workspace_id, related_run_id, related_artifact_id,
+      related_approval_checkpoint_key, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.message_id || `message-${Math.random().toString(36).slice(2, 8)}`,
+    overrides.mission_id || 'mission-1',
+    overrides.sender_agent_id || 'agent-1',
+    overrides.message_kind || 'status',
+    overrides.body_summary || 'Mission message',
+    overrides.evidence_ref || null,
+    overrides.related_task_id || null,
+    overrides.related_workspace_id || null,
+    overrides.related_run_id || null,
+    overrides.related_artifact_id || null,
+    overrides.related_approval_checkpoint_key || null,
+    overrides.created_at || '2026-05-22T10:00:00.000Z',
+    overrides.updated_at || overrides.created_at || '2026-05-22T10:00:00.000Z'
+  );
+}
+
+function seedAgentEvent(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO agent_events (
+      agent_id, workspace_id, event_type, payload_json, mission_id, client_event_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.agent_id || 'agent-1',
+    Object.prototype.hasOwnProperty.call(overrides, 'workspace_id') ? overrides.workspace_id : null,
+    overrides.event_type || 'task_completed',
+    JSON.stringify(
+      overrides.payload || {
+        related_task_id: 'task-1',
+        summary: 'Director feed event',
+      }
+    ),
+    overrides.mission_id || 'mission-1',
+    overrides.client_event_id || null,
+    overrides.created_at || '2026-05-22T10:00:00.000Z'
+  );
+}
+
+function seedDelivery(db, overrides = {}) {
+  db.prepare(
+    `INSERT INTO message_deliveries (
+      delivery_id, message_id, recipient_agent_id, channel, status, delivery_ref, evidence_ref,
+      last_error, attempt_count, last_attempt_at, acked_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    overrides.delivery_id || `delivery-${Math.random().toString(36).slice(2, 8)}`,
+    overrides.message_id,
+    overrides.recipient_agent_id || 'director-1',
+    overrides.channel || 'runtime_bus',
+    overrides.status || 'pending',
+    overrides.delivery_ref || null,
+    overrides.evidence_ref || null,
+    overrides.last_error || null,
+    overrides.attempt_count || 1,
+    overrides.last_attempt_at || '2026-05-22T10:00:00.000Z',
+    overrides.acked_at || null,
+    overrides.created_at || '2026-05-22T10:00:00.000Z',
+    overrides.updated_at || overrides.last_attempt_at || '2026-05-22T10:00:00.000Z'
   );
 }
 
@@ -679,6 +748,139 @@ describe('compactReads', () => {
       })
     );
     expect(readMissionDiagnosticSummary(db, { missionId: 'missing-mission' })).toBeNull();
+  });
+
+  test('readDirectorFeedSummary reuses the durable feed contract with honest empty state', () => {
+    seedProject(db, 'proj-1');
+    seedMission(db, {
+      mission_id: 'mission-director-feed-empty',
+      project_id: 'proj-1',
+      task_id: 'task-empty',
+      title: 'Director feed empty',
+    });
+
+    const summary = readDirectorFeedSummary(db, { missionId: 'mission-director-feed-empty' });
+
+    expect(summary).toEqual({
+      authority: 'durable',
+      freshness: 'current',
+      watermark: expect.any(String),
+      items: [],
+      handoff: {
+        status: 'idle',
+        recipient_agent_id: null,
+        message: null,
+        task: null,
+        workspace: null,
+        run: null,
+        artifact: null,
+        supervisor: null,
+      },
+    });
+  });
+
+  test('readDirectorFeedSummary returns stable durable ordering and watermark', () => {
+    seedProject(db, 'proj-1');
+    seedMission(db, {
+      mission_id: 'mission-director-feed-shared',
+      project_id: 'proj-1',
+      task_id: 'task-shared',
+      title: 'Director feed shared',
+    });
+    seedWorkspace(db, {
+      id: 'ws-shared',
+      project_id: 'proj-1',
+      agent_id: 'agent-worker-shared',
+      current_task_id: 'task-shared',
+      status: 'active',
+      branch_name: 'feat/ws-shared',
+      worktree_path: '.worktrees/ws-shared',
+      observed_branch: 'feat/ws-shared',
+      observed_head: 'abc123',
+    });
+    seedRun(db, {
+      run_id: 'run-shared',
+      workspace_id: 'ws-shared',
+      task_id: 'task-shared',
+      agent_id: 'agent-worker-shared',
+    });
+    seedMissionMessage(db, {
+      message_id: 'message-shared-handoff',
+      mission_id: 'mission-director-feed-shared',
+      sender_agent_id: 'agent-worker-shared',
+      message_kind: 'handoff',
+      body_summary: 'Shared handoff ready',
+      related_task_id: 'task-shared',
+      related_workspace_id: 'ws-shared',
+      related_run_id: 'run-shared',
+      created_at: '2026-05-22T10:03:00.000Z',
+      updated_at: '2026-05-22T10:03:00.000Z',
+    });
+    seedDelivery(db, {
+      delivery_id: 'delivery-shared-handoff',
+      message_id: 'message-shared-handoff',
+      status: 'pending',
+      last_attempt_at: '2026-05-22T10:03:10.000Z',
+      updated_at: '2026-05-22T10:03:10.000Z',
+    });
+    seedAgentEvent(db, {
+      mission_id: 'mission-director-feed-shared',
+      agent_id: 'agent-worker-shared',
+      workspace_id: 'ws-shared',
+      event_type: 'task_completed',
+      created_at: '2026-05-22T10:02:00.000Z',
+      payload: {
+        related_task_id: 'task-shared',
+        related_workspace_id: 'ws-shared',
+        related_run_id: 'run-shared',
+        summary: 'Shared task completed',
+        delivery_status: 'binding_missing',
+      },
+    });
+    seedAgentEvent(db, {
+      mission_id: 'mission-director-feed-shared',
+      agent_id: 'agent-worker-shared',
+      workspace_id: 'ws-shared',
+      event_type: 'handoff_ready',
+      created_at: '2026-05-22T10:03:00.000Z',
+      payload: {
+        related_task_id: 'task-shared',
+        related_workspace_id: 'ws-shared',
+        related_run_id: 'run-shared',
+        summary: 'Shared handoff ready',
+        next_action: 'director_review',
+      },
+    });
+
+    const firstSummary = readDirectorFeedSummary(db, { missionId: 'mission-director-feed-shared' });
+    const secondSummary = readDirectorFeedSummary(db, {
+      missionId: 'mission-director-feed-shared',
+    });
+
+    expect(firstSummary.items).toHaveLength(2);
+    expect(firstSummary.items[0]).toEqual(
+      expect.objectContaining({
+        kind: 'handoff_ready',
+        summary: 'Shared handoff ready',
+        delivery_status: 'pending',
+        next_action: 'director_review',
+      })
+    );
+    expect(firstSummary.items[1]).toEqual(
+      expect.objectContaining({
+        kind: 'task_completed',
+        summary: 'Shared task completed',
+        delivery_status: 'binding_missing',
+      })
+    );
+    expect(firstSummary.handoff).toEqual(
+      expect.objectContaining({
+        status: 'ready',
+        recipient_agent_id: 'agent-worker-shared',
+        message: 'Shared handoff ready',
+      })
+    );
+    expect(firstSummary.watermark).toBe(secondSummary.watermark);
   });
 
   test('readMissionListSummary exposes canonical binding counts per mission', () => {

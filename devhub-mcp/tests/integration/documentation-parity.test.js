@@ -96,14 +96,14 @@ describe('Documentation parity baseline', () => {
     const mcpSpec = readMarkdown(MCP_SPEC_PATH);
     const cliSpec = readMarkdown(CLI_SPEC_PATH);
 
-    expect(inventory).toContain('Baseline soportado hoy: 36 tools MCP y 20 comandos CLI.');
+    expect(inventory).toContain('Baseline soportado hoy: 24 tools MCP y 20 comandos CLI.');
     expect(comparison).toContain('Backlog diferido explícito');
     expect(mcpPlan).toContain('Telegram MCP removal is complete');
     expect(cliPlan).toContain('20 implemented top-level CLI commands');
-    expect(roadmap).toContain('Supported baseline now: 36 MCP tools and 20 CLI commands.');
-    expect(mcpProtocol).toContain('36-tool env-invariant MCP contract');
-    expect(agentHubDoc).toContain('36-tool env-invariant surface');
-    expect(mcpSpec).toContain('The system SHALL publish one supported MCP contract of 36 tools');
+    expect(roadmap).toContain('Supported baseline now: 24 MCP tools and 20 CLI commands.');
+    expect(mcpProtocol).toContain('24-tool env-invariant MCP contract');
+    expect(agentHubDoc).toContain('24-tool env-invariant surface');
+    expect(mcpSpec).toContain('The system SHALL publish one supported MCP contract of 24 tools');
     expect(cliSpec).toContain(
       'The documentation SHALL describe 20 implemented top-level CLI commands'
     );

@@ -19,7 +19,6 @@ import { randomUUID } from 'crypto';
 import { registerProjectTools } from './tools/projects.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerWorkspaceTools } from './tools/workspaces.js';
-import { registerAgentTools } from './tools/agents.js';
 import { registerInboxTools } from './tools/inbox.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -40,13 +39,6 @@ const { parseGitCheckpointComment, validateCheckpointHandoff } = require(
 );
 const { evaluateSupervisorSnapshot } = require(
   fromWorkspaceRoot('src/lib/swarm/supervisorLoop.js')
-);
-const { createTeamTell } = require(fromWorkspaceRoot('src/lib/swarm/teamTell.js'));
-const { createOpencodeTargetResolver } = require(
-  fromWorkspaceRoot('src/lib/swarm/opencodeTargetResolver.js')
-);
-const { createOpencodeDeliveryAdapter } = require(
-  fromWorkspaceRoot('src/lib/swarm/opencodeDeliveryAdapter.js')
 );
 const {
   AGENT_RUN_STATUSES,
@@ -310,9 +302,6 @@ const deps = {
   parseGitCheckpointComment,
   validateCheckpointHandoff,
   evaluateSupervisorSnapshot,
-  createTeamTell,
-  createOpencodeTargetResolver,
-  createOpencodeDeliveryAdapter,
   AGENT_RUN_STATUSES,
   TERMINAL_AGENT_RUN_STATUSES,
   AGENT_ARTIFACT_PHASES,
@@ -330,7 +319,6 @@ const server = new McpServer({ name: 'devhub', version: '1.0.0' });
 registerProjectTools(server, deps);
 registerTaskTools(server, deps);
 registerWorkspaceTools(server, deps);
-registerAgentTools(server, deps);
 registerInboxTools(server, deps);
 
 const keepAlive = setInterval(() => {}, 2_147_483_647);
