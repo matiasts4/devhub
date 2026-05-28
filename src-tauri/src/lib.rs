@@ -22,6 +22,28 @@ use native_vte::{
     native_vte_resize, native_vte_set_visibility, NativeVteState,
 };
 
+const NEXTJS_READY_POLL_MS: u64 = 500;
+const NEXTJS_READY_STARTUP_ATTEMPTS: usize = 120;
+const NEXTJS_READY_RECOVERY_ATTEMPTS: usize = 240;
+
+/// Canonical absolute path to the server entry point inside the packaged standalone.
+/// Works from both dev (`.next/standalone/server.js`) and installed
+/// (`~/.devhub/standalone/server.js`) layouts.
+fn standalone_server_path() -> PathBuf {
+    let dir = devhub_dir();
+    // Installed layout: ~/.devhub/standalone/server.js
+    let installed = dir.join("standalone").join("server.js");
+    if installed.exists() {
+        return installed;
+    }
+    // Dev layout: $PROJECT/.next/standalone/server.js
+    // Heuristic: detect via DEVHUB_HOME if it points to a project dir.
+    let dev_path = std::env::var("DEVHUB_DEV_PROJECT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+    dev_path.join(".next").join("standalone").join("server.js")
+}
+
 fn nextjs_port() -> u16 {
     if cfg!(debug_assertions) {
         3100
@@ -144,26 +166,56 @@ fn is_devhub_runtime_process(name: &str, cmdline: &str) -> bool {
 
 /// Espera hasta que el puerto de Next.js esté disponible.
 /// En dev usa 3100; en producción empaquetada usa 3400 (standalone).
-/// Tauri carga la webview inmediatamente, pero el sidecar / servidor tarda en arrancar.
-fn wait_for_nextjs_ready() {
+/// Devuelve true cuando la ruta raíz responde HTTP OK.
+fn wait_for_nextjs_ready(max_attempts: usize, context: &str) -> bool {
     let port = nextjs_port();
-    println!(
-        "[DevHub] Esperando a que Next.js responda HTTP OK en http://localhost:{}/ ...",
-        port
+    log::info!(
+        "[DevHub] Esperando a que Next.js responda HTTP OK en http://localhost:{}/ ... ({})",
+        port,
+        context
     );
-    for attempt in 0..30 {
-        // Máx 15 segundos (30 * 500ms)
-        thread::sleep(Duration::from_millis(500));
+    for attempt in 0..max_attempts {
+        thread::sleep(Duration::from_millis(NEXTJS_READY_POLL_MS));
         if nextjs_route_is_ready(port) {
-            println!(
-                "[DevHub] Next.js listo por HTTP en / (puerto {}, intento {}).",
+            log::info!(
+                "[DevHub] Next.js listo por HTTP en / (puerto {}, intento {}, {}).",
                 port,
-                attempt + 1
+                attempt + 1,
+                context
+            );
+            return true;
+        }
+    }
+    let waited_ms = max_attempts as u64 * NEXTJS_READY_POLL_MS;
+    log::error!(
+        "[DevHub] ⚠️  Next.js no devolvió HTTP OK en / dentro de {}ms ({}).",
+        waited_ms,
+        context
+    );
+    false
+}
+
+fn schedule_main_window_recovery(app: tauri::AppHandle, reason: &str) {
+    let reason = reason.to_string();
+    thread::spawn(move || {
+        if !wait_for_nextjs_ready(NEXTJS_READY_RECOVERY_ATTEMPTS, &format!("recovery: {}", reason)) {
+            log::error!(
+                "[DevHub] ❌ Next.js siguió sin responder; la ventana principal queda oculta para evitar una pantalla en blanco."
             );
             return;
         }
-    }
-    eprintln!("[DevHub] ⚠️  Next.js no devolvió HTTP OK en / dentro de 15s. La webview puede mostrar error.");
+
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.reload();
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            log::info!(
+                "[DevHub] Ventana principal recargada cuando Next.js quedó listo ({}).",
+                reason
+            );
+        }
+    });
 }
 
 /// Matar procesos zombie que ocupan los puertos del sidecar (4000) y Next.js.
@@ -202,10 +254,10 @@ fn cleanup_zombie_ports() {
                                 .collect::<Vec<_>>()
                                 .join(" ");
                             if is_devhub_runtime_process(&name, &cmdline) {
-                                println!(
-                                    "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
-                                    pid, port, name
-                                );
+log::info!(
+                                "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
+                                pid, port, name
+                            );
                                 process.kill();
                             }
                         }
@@ -294,19 +346,25 @@ fn ensure_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 fn restore_main_window(app: &tauri::AppHandle) {
-    if ensure_runtime_ready(app).is_err() {
-        return;
-    }
+    let next_ready = match ensure_runtime_ready(app) {
+        Ok(next_ready) => next_ready,
+        Err(_) => return,
+    };
 
     if ensure_main_window(app).is_err() {
         return;
     }
 
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.reload();
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+        if next_ready {
+            let _ = window.reload();
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        } else {
+            let _ = window.hide();
+            schedule_main_window_recovery(app.clone(), "restore_main_window");
+        }
     }
 }
 
@@ -350,7 +408,7 @@ fn check_existing_sidecar() -> Option<u32> {
         if let Some(pid) = find_devhub_pid_on_port(sidecar_port()) {
             let _ = fs::write(&pid_file, pid.to_string());
             let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
-            println!("[DevHub] Sidecar adoptado por puerto {} con PID {}.", sidecar_port(), pid);
+            log::info!("[DevHub] Sidecar adoptado por puerto {} con PID {}.", sidecar_port(), pid);
             return Some(pid);
         }
         return None;
@@ -364,7 +422,7 @@ fn check_existing_sidecar() -> Option<u32> {
                     (get_installed_build_id(), get_running_build_id())
                 {
                     if installed != running {
-                        println!(
+                        log::info!(
                             "[DevHub] Nueva versión detectada (build-id instalado: {} / corriendo: {}). Reiniciando sidecar...",
                             installed, running
                         );
@@ -375,7 +433,7 @@ fn check_existing_sidecar() -> Option<u32> {
                 if !get_sidecar_port_file().exists() {
                     let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
                 }
-                println!("[DevHub] Sidecar ya activo con PID {} (build-id OK).", pid);
+                log::info!("[DevHub] Sidecar ya activo con PID {} (build-id OK).", pid);
                 return Some(pid);
             }
         }
@@ -385,7 +443,7 @@ fn check_existing_sidecar() -> Option<u32> {
     if let Some(pid) = find_devhub_pid_on_port(sidecar_port()) {
         let _ = fs::write(&pid_file, pid.to_string());
         let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
-        println!(
+        log::info!(
             "[DevHub] Sidecar readoptado por puerto {} con PID {}.",
             sidecar_port(), pid
         );
@@ -404,7 +462,7 @@ fn shutdown_sidecar() {
         return;
     };
 
-    println!(
+    log::info!(
         "[DevHub] Solicitando shutdown graceful del sidecar (PID {})...",
         pid
     );
@@ -431,14 +489,14 @@ fn shutdown_sidecar() {
     }
 
     if !closed_gracefully {
-        println!("[DevHub] Sidecar no respondió, enviando SIGKILL...");
+        log::info!("[DevHub] Sidecar no respondió, enviando SIGKILL...");
         let mut sys = System::new_all();
         sys.refresh_all();
         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
             process.kill();
         }
     } else {
-        println!("[DevHub] Sidecar terminado limpiamente ✅");
+        log::info!("[DevHub] Sidecar terminado limpiamente ✅");
     }
 
     let _ = fs::remove_file(pid_file);
@@ -446,7 +504,7 @@ fn shutdown_sidecar() {
 }
 
 fn spawn_sidecar(app: &tauri::AppHandle) {
-    println!("[DevHub] Spawneando nuevo sidecar...");
+    log::info!("[DevHub] Spawneando nuevo sidecar...");
     let sidecar_command = app
         .shell()
         .sidecar("devhub-server")
@@ -454,7 +512,11 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         .env("DEVHUB_HOME", devhub_dir().to_string_lossy().as_ref())
         .env("SIDECAR_PORT", sidecar_port().to_string())
         .env("DEVHUB_WS_PORT", ws_port().to_string())
-        .env("DEVHUB_TTY_PORT", tty_port().to_string());
+        .env("DEVHUB_TTY_PORT", tty_port().to_string())
+        .env("NODE_PATH", devhub_dir().join("standalone").join("node_modules").to_string_lossy().as_ref())
+        .env("DEVHUB_NODE_BIN", std::env::var("DEVHUB_NODE_BIN").unwrap_or_default())
+        .env("DEVHUB_NPM_BIN", std::env::var("DEVHUB_NPM_BIN").unwrap_or_default())
+        .env("DEVHUB_ALLOW_NODE24", std::env::var("DEVHUB_ALLOW_NODE24").unwrap_or_default());
 
     let (mut rx, _child) = sidecar_command.spawn().expect("Error al lanzar el sidecar");
 
@@ -462,10 +524,10 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         while let Some(event) = rx.recv().await {
             match event {
                 tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
-                    println!("[Sidecar] {}", String::from_utf8_lossy(&line));
+                    log::info!("[Sidecar] {}", String::from_utf8_lossy(&line));
                 }
                 tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
-                    eprintln!("[Sidecar ERR] {}", String::from_utf8_lossy(&line));
+                    log::warn!("[Sidecar ERR] {}", String::from_utf8_lossy(&line));
                 }
                 _ => {}
             }
@@ -478,7 +540,7 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         if pid_file.exists() {
             if let Ok(content) = fs::read_to_string(&pid_file) {
                 if let Ok(pid) = content.trim().parse::<u32>() {
-                    println!(
+                    log::info!(
                         "[DevHub] Sidecar listo con PID {} (intento {})",
                         pid,
                         attempt + 1
@@ -490,16 +552,16 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
     }
 }
 
-fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()> {
+fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<bool> {
     let has_valid_sidecar = check_existing_sidecar().is_some();
     let next_ready = nextjs_route_is_ready(nextjs_port());
     let sidecar_ready = is_port_ready(sidecar_port());
 
     if has_valid_sidecar && next_ready && sidecar_ready {
-        return Ok(());
+        return Ok(true);
     }
 
-    println!(
+    log::info!(
         "[DevHub] Runtime local ausente o caído (sidecar válido: {}, next: {}, pty: {}). Relanzando...",
         has_valid_sidecar,
         next_ready,
@@ -509,9 +571,9 @@ fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()> {
     shutdown_sidecar();
     cleanup_zombie_ports();
     spawn_sidecar(app);
-    wait_for_nextjs_ready();
+    let next_ready = wait_for_nextjs_ready(NEXTJS_READY_STARTUP_ATTEMPTS, "startup");
 
-    Ok(())
+    Ok(next_ready)
 }
 
 #[cfg(test)]
@@ -601,7 +663,7 @@ pub fn run() {
             // Limpiar procesos zombie de sesiones anteriores (tauri dev, crashes, etc.)
             cleanup_zombie_ports();
 
-            ensure_runtime_ready(app.handle())?;
+            let next_ready = ensure_runtime_ready(app.handle())?;
             ensure_main_window(app.handle())?;
 
             // Setear el ícono de la ventana explícitamente (necesario en dev mode en Linux)
@@ -610,9 +672,14 @@ pub fn run() {
                     let _ = window.set_icon(icon.clone());
                 }
 
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+                if next_ready {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                } else {
+                    let _ = window.hide();
+                    schedule_main_window_recovery(app.handle().clone(), "setup");
+                }
             }
 
             Ok(())
@@ -620,7 +687,7 @@ pub fn run() {
 
     if !cfg!(debug_assertions) {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            println!("[DevHub] Segunda instancia detectada → restaurando ventana principal.");
+            log::info!("[DevHub] Segunda instancia detectada → restaurando ventana principal.");
             restore_main_window(app);
         }));
     }
@@ -645,14 +712,14 @@ pub fn run() {
                 }
                 // Prevenir el cierre real
                 api.prevent_close();
-                println!(
+                log::info!(
                     "[DevHub] Ventana ocultada (app sigue en background con el sidecar activo)."
                 );
             }
 
             // ── Cierre real de la aplicación (desde menú o señal del SO) ─────────
             RunEvent::ExitRequested { .. } | RunEvent::Exit => {
-                println!("[DevHub] Cerrando la aplicación — iniciando cleanup...");
+                log::info!("[DevHub] Cerrando la aplicación — iniciando cleanup...");
                 shutdown_sidecar();
             }
 
