@@ -198,6 +198,77 @@ export function buildTelegramHealthSource(payload = {}, options = {}) {
   });
 }
 
+export function buildRuntimeDiagnosticsHealthSource(payload = {}, options = {}) {
+  const observedAt = payload?.generatedAt || options.now || new Date().toISOString();
+  const evidenceRefs = Array.isArray(payload?.evidence_refs) ? payload.evidence_refs : [];
+
+  if (!payload || payload.error) {
+    return createHealthSource({
+      key: 'runtime-diagnostics',
+      label: 'Runtime Diagnostics',
+      status: 'stale',
+      authority: 'inferred',
+      freshness_ms: resolveFreshnessMs(observedAt, options.now),
+      observed_at: observedAt,
+      status_reason: payload?.error || 'Runtime diagnostics snapshot unavailable.',
+      evidence_refs: evidenceRefs,
+      metrics: {
+        total_terminals: 0,
+        total_processes: 0,
+        total_registry_agents: 0,
+        reattachable_terminals: 0,
+        orphaned_processes: 0,
+        stale_registry_agents: 0,
+        quota_blocked: false,
+      },
+    });
+  }
+
+  const anomalies = payload.anomalies || {};
+  const summary = payload.summary || {};
+  const reattachableCount = Array.isArray(anomalies.reattachableTerminals)
+    ? anomalies.reattachableTerminals.length
+    : 0;
+  const orphanedProcessCount = Array.isArray(anomalies.orphanedProcesses)
+    ? anomalies.orphanedProcesses.length
+    : 0;
+  const staleRegistryCount = Array.isArray(anomalies.staleRegistryAgents)
+    ? anomalies.staleRegistryAgents.length
+    : 0;
+  const quotaBlocked = Boolean(anomalies.quotaBlocked);
+
+  const degraded = quotaBlocked || orphanedProcessCount > 0 || staleRegistryCount > 0;
+  const hasWarnings = reattachableCount > 0;
+
+  return createHealthSource({
+    key: 'runtime-diagnostics',
+    label: 'Runtime Diagnostics',
+    status: degraded || hasWarnings ? 'degraded' : 'healthy',
+    authority: 'authoritative',
+    freshness_ms: resolveFreshnessMs(observedAt, options.now),
+    observed_at: observedAt,
+    evidence_refs: evidenceRefs,
+    status_reason: quotaBlocked
+      ? 'Runtime diagnostics detected quota-blocked signals.'
+      : orphanedProcessCount > 0
+        ? 'Runtime diagnostics detected orphaned processes.'
+        : staleRegistryCount > 0
+          ? 'Runtime diagnostics detected stale registry entries.'
+          : hasWarnings
+            ? 'Runtime diagnostics detected reattachable terminals.'
+            : 'Runtime diagnostics snapshot is consistent.',
+    metrics: {
+      total_terminals: Number(summary.totalTerminals || 0),
+      total_processes: Number(summary.totalProcesses || 0),
+      total_registry_agents: Number(summary.totalRegistryAgents || 0),
+      reattachable_terminals: reattachableCount,
+      orphaned_processes: orphanedProcessCount,
+      stale_registry_agents: staleRegistryCount,
+      quota_blocked: quotaBlocked,
+    },
+  });
+}
+
 export function buildHealthSnapshot(input = {}) {
   const sources = input.sources || [];
   const summary = {

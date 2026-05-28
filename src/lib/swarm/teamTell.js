@@ -98,14 +98,29 @@ function createTeamTell({
   }
 
   return async function teamTell(input = {}) {
-    const recipients = sanitizeRecipients(input.recipients);
+    let recipients = sanitizeRecipients(input.recipients);
+
+    // TCT-1: Resolve target_role to agent IDs via mission_participants
+    if (input.target_role && input.mission_id) {
+      const roleAgents = db
+        .prepare(
+          'SELECT agent_id FROM mission_participants WHERE mission_id = ? AND role_in_mission = ? AND status = ?'
+        )
+        .all(input.mission_id, input.target_role, 'active');
+      const roleIds = roleAgents.map((r) => r.agent_id).filter(Boolean);
+      // Merge: combine explicit recipients with role-resolved IDs, deduplicate
+      recipients = sanitizeRecipients([...recipients, ...roleIds]);
+    }
 
     if (!input.mission_id) throw new Error('mission_id es requerido para teamTell.');
     if (!input.sender_agent_id) throw new Error('sender_agent_id es requerido para teamTell.');
     if (!input.body_summary || !String(input.body_summary).trim()) {
       throw new Error('body_summary es requerido para teamTell.');
     }
-    if (recipients.length === 0) throw new Error('recipients es requerido para teamTell.');
+    if (recipients.length === 0)
+      throw new Error(
+        'recipients or target_role is required for teamTell (no recipients resolved).'
+      );
 
     const timestamp = now();
     const message = createMissionMessageFn(db, {

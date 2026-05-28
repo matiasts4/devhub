@@ -2,7 +2,10 @@ const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
-const { buildRightDockStorageKey } = require('../workspace/rightDockState');
+const {
+  DEFAULT_RIGHT_DOCK_STATE,
+  buildRightDockStorageKey,
+} = require('../workspace/rightDockState');
 const {
   buildBrowserWindowStorageKey,
   buildBrowserWindowLabel,
@@ -96,22 +99,6 @@ jest.mock('../NotificationCenter', () => ({
   default: () => {
     const React = require('react');
     return React.createElement('div', null, 'notifications');
-  },
-}));
-
-jest.mock('../AgentRoomSidebar', () => ({
-  __esModule: true,
-  default: ({ resumableSessions = [], resumableStatus = 'empty' }) => {
-    const React = require('react');
-    return React.createElement(
-      'div',
-      {
-        'data-testid': 'agent-room-sidebar-stub',
-        'data-status': resumableStatus,
-        'data-count': String(resumableSessions.length),
-      },
-      'agent room'
-    );
   },
 }));
 
@@ -339,7 +326,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     jest.clearAllMocks();
   });
 
-  test('keeps terminal-only layout by default and exposes dock toolbar controls without PageHeader', async () => {
+  test('keeps terminal-only layout by default and exposes dock tab controls without PageHeader', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
         cwd: '/workspace/devhub',
@@ -350,10 +337,7 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     expect(view.container.textContent).not.toContain('Terminals');
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="right-dock-toggle"]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="right-dock-toolbar-switch"]')
-    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="right-dock-toggle"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="right-dock-tab-browser"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="right-dock-tab-editor"]')).not.toBeNull();
     expect(
@@ -361,7 +345,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     ).toBeNull();
   });
 
-  test('toolbar toggle shows the dock shell and keeps the switch in the top toolbar', async () => {
+  test('browser tab shows the dock shell and keeps the switch in the top toolbar', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
         cwd: '/workspace/devhub',
@@ -370,7 +354,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(
       view.container.querySelector('[data-testid="workspace-right-dock-shell"]')
@@ -378,16 +362,13 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(
       view.container.querySelector('[data-testid="workspace-right-dock-description"]')
     ).toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="right-dock-toolbar-switch"]')
-    ).not.toBeNull();
     expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).not.toBeNull();
     expect(
-      view.container.querySelector('[data-testid="workspace-right-dock-maximize"]')
+      view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]')
     ).not.toBeNull();
   });
 
-  test('opening right dock browser side-by-side switches the visible terminal panel into dock fallback policy', async () => {
+  test('opening right dock browser side-by-side keeps native terminal policy live', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
         cwd: '/workspace/devhub',
@@ -400,17 +381,16 @@ describe('TerminalWorkspacesManager right dock', () => {
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
     ).toBe('live');
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
-      'suspended'
+      'live'
     );
     expect(
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
-    ).toBe('dock-side-by-side');
+    ).toBe('live');
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
       'live'
@@ -445,6 +425,62 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(document.body.textContent).toContain('Launch wizard');
   });
 
+  test('shows terminate swarm action for active workspace launch and posts launch-scoped terminate request', async () => {
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({
+        'launch-1:director': {
+          panelId: 'p1',
+          taskId: 'launch-1:director',
+          taskTitle: 'Terminal swarm · Director',
+          launchOrigin: 'swarm-control-launch',
+          launchedAt: 100,
+        },
+      })
+    );
+
+    global.fetch = jest.fn((url, options) => {
+      if (url === '/api/swarm/runtime-diagnostics') {
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      if (url === '/api/agenthub/operations/health') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            terminate_result: { launchId: 'launch-1', terminated: true },
+            control_room_snapshot_input: { mission_control: { mission: { mission_id: 'launch-1' } } },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-terminate-summary"]')?.textContent
+    ).toContain('Terminal swarm');
+
+    await click(view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]'));
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'terminate_swarm_local',
+        project_id: 'project-1',
+        launch_id: 'launch-1',
+      }),
+    });
+    expect(JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}')).toEqual({});
+  });
+
   test('batches swarm runtime requests into a dedicated workspace instead of replacing the same split', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
@@ -454,33 +490,58 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    ['director', 'coder', 'auditor', 'devops', 'architect'].forEach((role) => {
-      window.dispatchEvent(
-        new window.CustomEvent('devhub:run-agent', {
-          detail: {
-            taskId: `launch-1:${role}`,
-            selectedAgent: 'opencode',
-            command: `opencode --prompt ${role}`,
-            launchOrigin: 'swarm-control-launch',
-            taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
-          },
-        })
-      );
+    // Capture the batch deadline timer so we can fire it manually
+    let batchDeadlineCallback = null;
+    const origSetTimeout = window.setTimeout;
+    const setTimeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((fn, delay) => {
+      if (delay === 4500) {
+        batchDeadlineCallback = fn;
+        return origSetTimeout(() => {}, 0); // dummy timer ID
+      }
+      return origSetTimeout(fn, delay);
     });
 
-    await flushEffects();
-    await flushEffects();
+    try {
+      ['director', 'coder', 'auditor', 'devops', 'architect'].forEach((role) => {
+        window.dispatchEvent(
+          new window.CustomEvent('devhub:run-agent', {
+            detail: {
+              taskId: `launch-1:${role}`,
+              selectedAgent: 'opencode',
+              command: `opencode --prompt ${role}`,
+              launchOrigin: 'swarm-control-launch',
+              taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
+              launchId: 'launch-1',
+              roleKey: role,
+            },
+          })
+        );
+      });
 
-    const visibleShell = getVisibleWorkspaceShell(view.container);
-    expect(visibleShell?.textContent).toContain('p2');
-    expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
-    expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+      await flushEffects();
+      await flushEffects();
 
-    const persistedRuns = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
-    expect(Object.keys(persistedRuns)).toHaveLength(5);
+      // Before firing deadline: no workspace created yet
+      const visibleShellBefore = getVisibleWorkspaceShell(view.container);
+      expect(visibleShellBefore?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(1);
+
+      // Fire the batch deadline to flush all accumulated requests
+      if (batchDeadlineCallback) batchDeadlineCallback();
+      await flushEffects();
+      await flushEffects();
+
+      const visibleShell = getVisibleWorkspaceShell(view.container);
+      expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
+      expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+
+      const persistedRuns = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+      expect(Object.keys(persistedRuns)).toHaveLength(5);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
   });
 
-  test('opening right dock editor side-by-side applies the same dock fallback policy without mutating fullscreen state', async () => {
+  test('preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
         cwd: '/workspace/devhub',
@@ -489,15 +550,129 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    let batchDeadlineCallback = null;
+    const origSetTimeout = window.setTimeout;
+    const setTimeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((fn, delay) => {
+      if (delay === 4500) {
+        batchDeadlineCallback = fn;
+        return origSetTimeout(() => {}, 0);
+      }
+      return origSetTimeout(fn, delay);
+    });
+
+    try {
+      // Phase 1: director arrives immediately (simulates startAfterMs: 0)
+      window.dispatchEvent(
+        new window.CustomEvent('devhub:run-agent', {
+          detail: {
+            taskId: 'launch-2:director',
+            selectedAgent: 'opencode',
+            command: 'opencode --prompt director',
+            launchOrigin: 'swarm-control-launch',
+            taskTitle: 'Lanzar Arranque limpio guiado · director',
+            launchId: 'launch-2',
+            roleKey: 'director',
+            startAfterMs: 0,
+          },
+        })
+      );
+
+      await flushEffects();
+
+      // Director is buffered, no workspace yet
+      const shellAfterDirector = getVisibleWorkspaceShell(view.container);
+      expect(shellAfterDirector?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(1);
+
+      // Phase 2: workers arrive later (simulates startAfterMs: 4000)
+      ['coder', 'auditor', 'devops', 'architect'].forEach((role) => {
+        window.dispatchEvent(
+          new window.CustomEvent('devhub:run-agent', {
+            detail: {
+              taskId: `launch-2:${role}`,
+              selectedAgent: 'opencode',
+              command: `opencode --prompt ${role}`,
+              launchOrigin: 'swarm-control-launch',
+              taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
+              launchId: 'launch-2',
+              roleKey: role,
+              startAfterMs: 4000,
+            },
+          })
+        );
+      });
+
+      await flushEffects();
+
+      // Still buffered, no flush yet
+      expect(batchDeadlineCallback).not.toBeNull();
+
+      // Fire deadline — all 5 roles should be in one batch
+      batchDeadlineCallback();
+      await flushEffects();
+      await flushEffects();
+
+      const visibleShell = getVisibleWorkspaceShell(view.container);
+      // 3-column layout: 5 panels total with director in its own column
+      expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
+      expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+
+      // Verify 3 columns exist (director + 2 worker columns)
+      const columnContainers = visibleShell?.querySelectorAll('[data-testid^="workspace-column-c"]');
+      expect(columnContainers.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  test('opening right dock editor side-by-side keeps native terminal policy live without mutating fullscreen state', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
     expect(
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
-    ).toBe('dock-side-by-side');
+    ).toBe('live');
     expect(
       view.container.querySelector('[data-testid="workspace-right-dock-panel"]')
     ).not.toBeNull();
+  });
+
+  test('dock tab buttons toggle visibility when pressing the same tab twice', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).not.toBeNull();
+
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
+    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
+
+    await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
+
+    await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
+    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
+
+    await click(view.container.querySelector('[data-testid="right-dock-tab-swarm"]'));
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-swarm-pane"]')).not.toBeNull();
+
+    await click(view.container.querySelector('[data-testid="right-dock-tab-swarm"]'));
+    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
   });
 
   test('switching to editor reveals the shared pane with contextual subtitle', async () => {
@@ -509,7 +684,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
     expect(
@@ -596,7 +771,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
@@ -689,7 +864,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
     const editorPane = view.container.querySelector('[data-testid="shared-editor-pane"]');
@@ -753,11 +928,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(
       view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')
     ).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="workspace-browser-window-close"]')
-    ).not.toBeNull();
-
-    await click(view.container.querySelector('[data-testid="workspace-browser-window-close"]'));
+    await click(view.container.querySelector('[data-testid="workspace-browser-close-ws1"]'));
 
     expect(
       view.container.querySelector('[data-testid="workspace-browser-indicator-ws1"]')
@@ -766,9 +937,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(
       view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')
     ).toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="workspace-browser-window-close"]')
-    ).toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-browser-close-ws1"]')).toBeNull();
 
     const persisted = JSON.parse(
       window.localStorage.getItem(buildBrowserWindowStorageKey('project-1'))
@@ -882,7 +1051,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
 
     const maximizeFromBrowser = view.container.querySelector(
       '[data-testid="browser-toggle-workspace-maximize"]'
@@ -901,7 +1070,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     ).not.toBeNull();
     expect(
       view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width
-    ).toBe('44%');
+    ).toBe(`${DEFAULT_RIGHT_DOCK_STATE.size}%`);
   });
 
   test('keeps the same browser iframe mounted when switching between browser and editor tabs', async () => {
@@ -913,7 +1082,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
 
     const browserIframe = view.container.querySelector('[data-testid="browser-iframe"]');
     expect(browserIframe).not.toBeNull();
@@ -935,7 +1104,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     const browserIframe = view.container.querySelector('[data-testid="browser-iframe"]');
 
     await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
@@ -966,7 +1135,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
 
     const browserToolbar = view.container.querySelector(
@@ -1091,23 +1260,23 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     expect(
       view.container
         .querySelector('[data-testid="workspace-right-dock-panel"]')
         ?.getAttribute('data-panel-size')
-    ).toBe('44');
+    ).toBe(String(DEFAULT_RIGHT_DOCK_STATE.size));
 
-    await click(view.container.querySelector('[data-testid="workspace-right-dock-maximize"]'));
+    await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
 
-    await click(view.container.querySelector('[data-testid="workspace-right-dock-maximize"]'));
+    await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
     expect(
       view.container
         .querySelector('[data-testid="workspace-right-dock-panel"]')
         ?.getAttribute('data-panel-size')
-    ).toBe('44');
+    ).toBe(String(DEFAULT_RIGHT_DOCK_STATE.size));
   });
 
   test('dock drag overlay never blocks editor interactions and clears after pointer release', async () => {
@@ -1119,7 +1288,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
     const resizeHandle = view.container.querySelector(
@@ -1156,7 +1325,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
     const dockPanelPlaceholder = view.container.querySelector(
@@ -1235,7 +1404,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
 
     const workspaceGrid = view.container.querySelector('.flex-1.relative.min-w-0');
@@ -1270,7 +1439,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
     await flushEffects();
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
     await flushEffects();
 
@@ -1387,7 +1556,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
 
     const keyWarnings = consoleErrorSpy.mock.calls.filter(([message]) =>
       String(message || '').includes('Each child in a list should have a unique "key" prop')
@@ -1405,7 +1574,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    await click(view.container.querySelector('[data-testid="right-dock-toggle"]'));
+    await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).not.toBeNull();
 
     await flushEffects();

@@ -9,6 +9,7 @@ const SYSTEM_PKG_CONFIG = '/usr/bin/pkg-config';
 const TAURI_CLI_ENTRY = path.join(__dirname, '..', 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const TAURI_CONF_PATH = path.join(__dirname, '..', 'src-tauri', 'tauri.conf.json');
 const DEFAULT_LINUX_PKG_CONFIG_PATHS = ['/usr/lib/x86_64-linux-gnu/pkgconfig', '/usr/share/pkgconfig'];
+const DEV_URL_READY_PATH = '/api/agenthub/config';
 
 function mergePkgConfigPath(existingValue, platform = process.platform) {
   if (platform !== 'linux') {
@@ -100,8 +101,22 @@ function isReadyHttpStatus(status) {
   return Number.isInteger(status) && status >= 200 && status < 400;
 }
 
-function isDevUrlReady(url, { spawnSync: spawn = spawnSync } = {}) {
+function buildDevReadyProbeUrl(url, readinessPath = DEV_URL_READY_PATH) {
   if (!url) {
+    return null;
+  }
+
+  try {
+    return new URL(readinessPath, url).toString();
+  } catch (_error) {
+    return null;
+  }
+}
+
+function isDevUrlReady(url, { spawnSync: spawn = spawnSync } = {}) {
+  const probeTarget = buildDevReadyProbeUrl(url);
+
+  if (!probeTarget) {
     return false;
   }
 
@@ -117,7 +132,7 @@ function isDevUrlReady(url, { spawnSync: spawn = spawnSync } = {}) {
     'req.end();',
   ].join(' ');
 
-  const result = spawn(process.execPath, ['-e', probeScript, url], {
+  const result = spawn(process.execPath, ['-e', probeScript, probeTarget], {
     stdio: 'ignore',
   });
 
@@ -190,7 +205,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildDevReadyProbeUrl,
   buildTauriEnv,
+  DEV_URL_READY_PATH,
   DEFAULT_LINUX_PKG_CONFIG_PATHS,
   injectArgsBeforeAppArgs,
   isDevUrlReady,

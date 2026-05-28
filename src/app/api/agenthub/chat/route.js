@@ -4,6 +4,7 @@ import { getCopilotToken } from '@/lib/copilot-token';
 import { upsertSessionUsage } from '@/lib/db/localDb.js';
 import { resolveContextUsage } from '@/lib/agenthub/contextUsage';
 import fs from 'fs/promises';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 import path from 'path';
 import { spawn } from 'child_process';
 
@@ -249,7 +250,7 @@ function persistSessionUsageSnapshot(sessionId, rawUsage, options = {}) {
   }
 }
 
-export async function POST(req) {
+export const POST = withAuth(async function POST(req) {
   try {
     const body = await req.json();
     const {
@@ -577,7 +578,10 @@ HERRAMIENTAS DISPONIBLES:
 - create_task({ project_id, user_id, title, description?, status?, priority?, due_date?, milestone_id? })
 - update_task({ task_id, title?, description?, status?, priority?, due_date? })
 - add_task_comment({ task_id, content, author_type?: "human"|"agent" })
-- get_next_task({ project_id }) — sugiere la próxima tarea a trabajar
+- get_execution_queue({ project_id, include_blocked? }) — inspecciona la cola priorizada y bloqueos
+- claim_next_task({ project_id, agent_id }) — reclama de forma segura la siguiente tarea
+- renew_task_lease({ task_id, agent_id, claim_token }) — renueva lease de tarea reclamada
+- release_task({ task_id, agent_id, claim_token, outcome }) — libera la tarea con outcome operativo
 
 **Hitos:**
 - list_milestones({ project_id })
@@ -585,18 +589,15 @@ HERRAMIENTAS DISPONIBLES:
 - update_milestone({ milestone_id, title?, status?, due_date? })
 
 **Dashboard & Contexto:**
-- get_dashboard({ project_id }) — resumen visual del proyecto
+- list_projects({ status? }) — resumen de portfolio en modo compacto
+- get_project({ project_id }) — snapshot de proyecto con tareas e hitos
 - get_project_context({ project_id }) — pack compacto de contexto para el LLM
-
-**Swarm:**
-- update_agent_status({ agent_id, status, task_description? }) — reportá tu estado en la UI
-- register_agent({ agent_id, project_id, nombre, modelo_llm? })
 
 EJEMPLOS:
 - <execute_devhub tool="list_projects" args='{}'></execute_devhub>
 - <execute_devhub tool="list_tasks" args='{"project_id": "uuid", "status": "in_progress"}'></execute_devhub>
 - <execute_devhub tool="update_task" args='{"task_id": "uuid", "status": "completed"}'></execute_devhub>
-- <execute_devhub tool="get_dashboard" args='{"project_id": "uuid"}'></execute_devhub>
+- <execute_devhub tool="get_execution_queue" args='{"project_id": "uuid", "include_blocked": true}'></execute_devhub>
 
 CUÁNDO USAR DevHub MCP vs OpenCode sub-agente:
 - Tarea PEQUEÑA (consultar, listar, actualizar 1-2 registros) → usá execute_devhub directamente.
@@ -749,4 +750,4 @@ Proyecto: ${projectName || project_id || 'El Proyecto Actual'}`;
     console.error('AgentHub Chat API Error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
+});

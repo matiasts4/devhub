@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+'use strict';
+
+// Intercept console.log and console.error to suppress [localDb] lines unless DEVHUB_CLI_SHOW_DB_LOGS=1
+if (!process.env.DEVHUB_CLI_SHOW_DB_LOGS) {
+  const originalLog = console.log;
+  const originalError = console.error;
+  
+  console.log = function(...args) {
+    const firstArg = args[0];
+    if (typeof firstArg === 'string' && firstArg.startsWith('[localDb]')) {
+      return;
+    }
+    originalLog.apply(console, args);
+  };
+  
+  console.error = function(...args) {
+    const firstArg = args[0];
+    if (typeof firstArg === 'string' && firstArg.startsWith('[localDb]')) {
+      return;
+    }
+    originalError.apply(console, args);
+  };
+}
+
+require('../cli.js');

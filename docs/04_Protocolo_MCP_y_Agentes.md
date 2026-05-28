@@ -16,7 +16,7 @@ Este documento describe la arquitectura y las reglas de integración del **Model
 
 ## 🤖 Arquitectura MCP en DevHub
 
-El Servidor MCP (`devhub-mcp/server.js`) funciona como el **control plane operacional** de DevHub. Expone herramientas de estado, roadmap, cola, leases, comentarios y registro de agentes a cualquier cliente compatible.
+El Servidor MCP (`devhub-mcp/server.js`) funciona como el **control plane operacional** de DevHub. Hoy publica un **24-tool env-invariant MCP contract** para estado, roadmap, evidencia durable e inbox. Telegram runtime/storage queda fuera de esa surface pública.
 
 > **Boundary vigente:** Git, filesystem, terminal, tests y PRs **no** viven en el DevHub MCP general. Esas operaciones pertenecen a la capability/skill del ejecutor (OpenCode, Hermes, editor, runner, etc.).
 
@@ -37,7 +37,7 @@ El alcance del Servidor MCP se divide en **cinco grandes módulos**:
 2. **Gestión de Tareas/Hitos:** backlog, comments y roadmap. ✅
 3. **Planning IA:** contexto completo del proyecto para planificación exhaustiva. ✅
 4. **Swarm Runtime State:** cola priorizada, claims, leases y release de tareas. ✅
-5. **Agent Registry:** heartbeat, status y presencia de agentes. ✅
+5. **Execution Tracking:** workspaces, runs, artifacts e inbox operator-friendly. ✅
 
 ---
 
@@ -45,39 +45,34 @@ El alcance del Servidor MCP se divide en **cinco grandes módulos**:
 
 Esta tabla resume el catálogo real del DevHub MCP. La surface general de Git/filesystem/terminal queda fuera de este servidor.
 
-| Tool                      | Módulo         | Descripción                                                                               |
-| ------------------------- | -------------- | ----------------------------------------------------------------------------------------- |
-| `list_projects`           | Proyectos      | Lista todos los proyectos (filtro por estado)                                             |
-| `get_project`             | Proyectos      | Detalles completos + tareas + hitos                                                       |
-| `update_project`          | Proyectos      | Actualiza nombre, estado, progreso, color y planning_status                               |
-| `create_project`          | Proyectos      | Crea un nuevo proyecto                                                                    |
-| `create_agent_workspace`  | Workspaces     | Reserva un workspace `planned` sin ejecutar git/worktree                                  |
-| `delete_project`          | Proyectos      | Elimina un proyecto con confirmación explícita                                            |
-| `get_agent_workspace`     | Workspaces     | Lee un workspace puntual por `workspace_id`                                               |
-| `prepare_agent_workspace` | Workspaces     | Registra intención/ack de preparación sin exponer verbos Git                              |
-| `list_tasks`              | Tareas         | Tareas de un proyecto (filtro estado/prioridad)                                           |
-| `create_task`             | Tareas         | Crea nueva tarea con milestone_id opcional                                                |
-| `bulk_create_tasks`       | Tareas         | Crea tareas en lote de forma idempotente                                                  |
-| `update_task`             | Tareas         | Cambia estado, prioridad, milestone o asignación de tarea                                 |
-| `add_task_comment`        | Tareas         | Añade comentario técnico o de QA a una tarea                                              |
-| `get_next_task`           | Tareas/Swarm   | Devuelve y marca en progreso la siguiente tarea priorizada                                |
-| `get_execution_queue`     | Tareas/Swarm   | Devuelve cola scoreada de tareas y bloqueos                                               |
-| `claim_next_task`         | Tareas/Swarm   | Reclama tarea de forma segura para un agente                                              |
-| `renew_task_lease`        | Tareas/Swarm   | Renueva el lease de una tarea reclamada                                                   |
-| `release_task`            | Tareas/Swarm   | Libera una tarea reclamada con outcome operativo                                          |
-| `list_milestones`         | Hitos          | Hitos del roadmap                                                                         |
-| `create_milestone`        | Hitos          | Crea nuevo hito                                                                           |
-| `bulk_create_milestones`  | Hitos          | Crea hitos en lote de forma idempotente                                                   |
-| `update_milestone`        | Hitos          | Actualiza estado/fecha/asignación de hito                                                 |
-| `get_dashboard`           | Global         | Resumen global de todos los proyectos                                                     |
-| `get_project_context`     | Planning IA ⭐ | Lee planning_prompt + todos los project_files                                             |
-| `list_agent_workspaces`   | Workspaces     | Lista workspaces y estados lifecycle del control plane                                    |
-| `register_agent`          | Swarm          | Registra o actualiza un agente Worker                                                     |
-| `heartbeat_agent`         | Swarm          | Renueva señal de vida de un agente                                                        |
-| `report_agent_workspace`  | Workspaces     | Registra `workspace_status`, recovery metadata y `evidence_ref` devueltos por el ejecutor |
-| `unregister_agent`        | Swarm          | Elimina un agente del registry                                                            |
-| `update_agent_status`     | Swarm          | Actualiza estado visible del agente                                                       |
-| `update_agent_workspace`  | Workspaces     | Ajusta lifecycle metadata sin ejecutar side effects git                                   |
+| Tool                     | Módulo         | Descripción                                                 |
+| ------------------------ | -------------- | ----------------------------------------------------------- |
+| `list_projects`          | Proyectos      | Lista todos los proyectos (filtro por estado)               |
+| `get_project`            | Proyectos      | Detalles completos + tareas + hitos                         |
+| `update_project`         | Proyectos      | Actualiza nombre, estado, progreso, color y planning_status |
+| `create_project`         | Proyectos      | Crea un nuevo proyecto                                      |
+| `delete_project`         | Proyectos      | Elimina un proyecto con confirmación explícita              |
+| `get_agent_workspace`    | Workspaces     | Lee un workspace puntual por `workspace_id`                 |
+| `list_tasks`             | Tareas         | Tareas de un proyecto (filtro estado/prioridad)             |
+| `create_task`            | Tareas         | Crea nueva tarea con milestone_id opcional                  |
+| `bulk_create_tasks`      | Tareas         | Crea tareas en lote de forma idempotente                    |
+| `update_task`            | Tareas         | Cambia estado, prioridad, milestone o asignación de tarea   |
+| `add_task_comment`       | Tareas         | Añade comentario técnico o de QA a una tarea                |
+| `get_execution_queue`    | Tareas/Swarm   | Devuelve cola scoreada de tareas y bloqueos                 |
+| `list_milestones`        | Hitos          | Hitos del roadmap                                           |
+| `create_milestone`       | Hitos          | Crea nuevo hito                                             |
+| `bulk_create_milestones` | Hitos          | Crea hitos en lote de forma idempotente                     |
+| `update_milestone`       | Hitos          | Actualiza estado/fecha/asignación de hito                   |
+| `get_project_context`    | Planning IA ⭐ | Lee planning_prompt + todos los project_files               |
+| `list_agent_workspaces`  | Workspaces     | Lista workspaces y estados lifecycle del control plane      |
+| `get_agent_run`          | Runs           | Lee un run puntual                                          |
+| `list_agent_runs`        | Runs           | Lista runs durables                                         |
+| `list_agent_artifacts`   | Artifacts      | Lista artifacts asociados a un run                          |
+| `get_workspace_evidence` | Artifacts      | Lee evidencia resumida de workspace/run                     |
+| `list_operator_inbox`    | Inbox          | Lista operator inbox durable                                |
+| `dismiss_inbox_item`     | Inbox          | Marca/dismiss item del inbox                                |
+
+> **Fuera del contrato MCP público actual:** Telegram MCP helpers, ghost tools duplicadas de CLI (`get_dashboard`, `get_next_task`, `register_agent`, `heartbeat_agent`, `unregister_agent`, `update_agent_status`) y mutaciones runtime (`claim_next_task`, `renew_task_lease`, `release_task`, `request_supervisor_approval`, `team_tell`, `prepare/create/update/report_agent_workspace`, `create/complete_agent_run`, `append_agent_artifact`). Si vuelven, debe ser mediante cambio de contrato explícito.
 
 ---
 

@@ -89,13 +89,17 @@ function buildInvalidAddressError(submittedUrl) {
 
 function buildLocalhostTargetError(targetUrl, details = {}) {
   const meta = parseUrlMeta(targetUrl);
-  const hostLabel = meta.valid ? `${meta.hostname}${meta.port ? `:${meta.port}` : ''}` : String(targetUrl || '').trim();
+  const hostLabel = meta.valid
+    ? `${meta.hostname}${meta.port ? `:${meta.port}` : ''}`
+    : String(targetUrl || '').trim();
   const detail = String(details.detail || details.message || '').trim();
   return createBrowserError('localhost-target-unreachable', {
     title: 'Ese localhost no respondió',
-    message: details.code === 'ECONNREFUSED'
-      ? `No hay ningún servicio respondiendo en ${hostLabel}. Verificá que el servidor esté levantado en ese puerto.`
-      : (detail || `No pude abrir ${hostLabel}. Verificá que el servidor esté levantado y que el puerto sea correcto.`),
+    message:
+      details.code === 'ECONNREFUSED'
+        ? `No hay ningún servicio respondiendo en ${hostLabel}. Verificá que el servidor esté levantado en ese puerto.`
+        : detail ||
+          `No pude abrir ${hostLabel}. Verificá que el servidor esté levantado y que el puerto sea correcto.`,
     url: String(targetUrl || '').trim(),
   });
 }
@@ -103,7 +107,8 @@ function buildLocalhostTargetError(targetUrl, details = {}) {
 function buildIframeLoadError(targetUrl) {
   return createBrowserError('iframe-load-failed', {
     title: 'La vista embebida falló',
-    message: 'Esta página no pudo cargarse dentro del navegador integrado. Probá abrirla en ventana o afuera.',
+    message:
+      'Esta página no pudo cargarse dentro del navegador integrado. Probá abrirla en ventana o afuera.',
     url: String(targetUrl || '').trim(),
   });
 }
@@ -118,15 +123,20 @@ export default function useBrowserPreviewController({
 }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [isInspecting, setIsInspecting] = useState(false);
-  const [useProxyPreview, setUseProxyPreview] = useState(() => (
-    Boolean((dockState.editMode || forceEditMode) && classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy)
-  ));
+  const [useProxyPreview, setUseProxyPreview] = useState(() =>
+    Boolean(
+      (dockState.editMode || forceEditMode) &&
+      classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy
+    )
+  );
   const [selectedElement, setSelectedElement] = useState(null);
   const [changeRequest, setChangeRequest] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('hermes');
   const [lastLaunchMeta, setLastLaunchMeta] = useState(null);
   const [selectorState, setSelectorState] = useState(SELECTOR_STATE.IDLE);
-  const [supportState, setSupportState] = useState(() => getInitialSupportState(dockState.browserUrl));
+  const [supportState, setSupportState] = useState(() =>
+    getInitialSupportState(dockState.browserUrl)
+  );
   const [isLoading, setIsLoading] = useState(Boolean(dockState.browserUrl));
   const [browserError, setBrowserError] = useState(null);
   const urlInputRef = useRef(null);
@@ -147,12 +157,19 @@ export default function useBrowserPreviewController({
     () => resolvePreviewSrc(dockState.browserUrl, useProxyPreview),
     [dockState.browserUrl, useProxyPreview]
   );
-  const selectedSummary = useMemo(() => (selectedElement ? deriveSelectionLabel(selectedElement) : null), [selectedElement]);
+  const selectedSummary = useMemo(
+    () => (selectedElement ? deriveSelectionLabel(selectedElement) : null),
+    [selectedElement]
+  );
   const sourceHint = useMemo(() => deriveSourceHint(selectedElement), [selectedElement]);
   const dimensions = useMemo(() => deriveElementDimensions(selectedElement), [selectedElement]);
-  const activeAgent = BRIDGE_AGENT_OPTIONS.find((agent) => agent.id === selectedAgent) || BRIDGE_AGENT_OPTIONS[0];
-  const canSubmit = Boolean(selectedElement && String(changeRequest || '').trim() && activeAgent?.enabled);
-  const unsupportedCopy = selectorState === SELECTOR_STATE.UNSUPPORTED ? getUnsupportedCopy(supportState.reason) : null;
+  const activeAgent =
+    BRIDGE_AGENT_OPTIONS.find((agent) => agent.id === selectedAgent) || BRIDGE_AGENT_OPTIONS[0];
+  const canSubmit = Boolean(
+    selectedElement && String(changeRequest || '').trim() && activeAgent?.enabled
+  );
+  const unsupportedCopy =
+    selectorState === SELECTOR_STATE.UNSUPPORTED ? getUnsupportedCopy(supportState.reason) : null;
   const statusLabel = buildStatusLabel(selectorState);
 
   function clearUnsupportedTimer() {
@@ -238,9 +255,9 @@ export default function useBrowserPreviewController({
     ].includes(nextSelector);
 
     if (
-      selectorStateRef.current !== nextSelector
-      || supportStateRef.current?.mode !== nextSupport?.mode
-      || supportStateRef.current?.reason !== nextSupport?.reason
+      selectorStateRef.current !== nextSelector ||
+      supportStateRef.current?.mode !== nextSupport?.mode ||
+      supportStateRef.current?.reason !== nextSupport?.reason
     ) {
       visualEditLog('info', 'selector-state-transition', {
         from: selectorStateRef.current,
@@ -266,7 +283,11 @@ export default function useBrowserPreviewController({
     setIsInspecting(typeof inspecting === 'boolean' ? inspecting : fallbackInspecting);
   }
 
-  function updateSupportClassification(nextSupport, nextSelector = selectorStateRef.current, options = {}) {
+  function updateSupportClassification(
+    nextSupport,
+    nextSelector = selectorStateRef.current,
+    options = {}
+  ) {
     commitObservedState({
       selector: nextSelector,
       support: nextSupport,
@@ -315,11 +336,16 @@ export default function useBrowserPreviewController({
     );
   }
 
-  function classifyCurrentPreview({ protocolVerified = protocolVerifiedRef.current, iframeOverride } = {}) {
+  function classifyCurrentPreview({
+    protocolVerified = protocolVerifiedRef.current,
+    iframeOverride,
+  } = {}) {
     return classifyPreviewSupport({
       browserUrl: dockState.browserUrl,
       iframe: iframeRef.current,
-      iframeSrc: String(iframeOverride || iframeRef.current?.getAttribute('src') || iframeSrc || ''),
+      iframeSrc: String(
+        iframeOverride || iframeRef.current?.getAttribute('src') || iframeSrc || ''
+      ),
       protocolVerified,
     });
   }
@@ -438,20 +464,32 @@ export default function useBrowserPreviewController({
   }
 
   function scheduleUnsupportedState() {
-    if (![PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY, PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL].includes(supportStateRef.current.mode)) {
-      downgradeToUnsupported(supportStateRef.current.reason || SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION);
+    if (
+      ![PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY, PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL].includes(
+        supportStateRef.current.mode
+      )
+    ) {
+      downgradeToUnsupported(
+        supportStateRef.current.reason || SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION
+      );
       return;
     }
 
     visualEditLog('debug', 'handshake-timeout-scheduled', {
       browserUrl: parseUrlMeta(dockState.browserUrl),
-      initialDelay: supportStateRef.current.mode === PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY ? 0 : UNSUPPORTED_TIMEOUT_MS,
+      initialDelay:
+        supportStateRef.current.mode === PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY
+          ? 0
+          : UNSUPPORTED_TIMEOUT_MS,
       retryIntervalMs: FALLBACK_RETRY_INTERVAL_MS,
       retryAttemptsMax: FALLBACK_RETRY_ATTEMPTS,
       proxyPreviewActive: proxyPreviewRef.current,
     });
     clearUnsupportedTimer();
-    const initialDelay = supportStateRef.current.mode === PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY ? 0 : UNSUPPORTED_TIMEOUT_MS;
+    const initialDelay =
+      supportStateRef.current.mode === PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY
+        ? 0
+        : UNSUPPORTED_TIMEOUT_MS;
 
     const attemptFallback = () => {
       if (attachSameOriginDomInspector()) {
@@ -461,26 +499,38 @@ export default function useBrowserPreviewController({
         });
         clearUnsupportedTimer();
         updateSupportClassification(
-          createSupportState(PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM, SUPPORT_REASON.SAME_ORIGIN_ACCESS),
+          createSupportState(
+            PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
+            SUPPORT_REASON.SAME_ORIGIN_ACCESS
+          ),
           SELECTOR_STATE.ARMED,
           { clearTimer: true, inspecting: true }
         );
         return;
       }
 
-      if (!proxyPreviewRef.current && classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy) {
+      if (
+        !proxyPreviewRef.current &&
+        classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy
+      ) {
         visualEditLog('info', 'fallback-switch-to-preview-proxy', {
           browserUrl: parseUrlMeta(dockState.browserUrl),
         });
         proxyPreviewRef.current = true;
         proxyPreviewPendingLoadRef.current = true;
         setUseProxyPreview(true);
-        unsupportedTimerRef.current = window.setTimeout(attemptFallback, FALLBACK_RETRY_INTERVAL_MS);
+        unsupportedTimerRef.current = window.setTimeout(
+          attemptFallback,
+          FALLBACK_RETRY_INTERVAL_MS
+        );
         return;
       }
 
       if (proxyPreviewRef.current && proxyPreviewPendingLoadRef.current) {
-        unsupportedTimerRef.current = window.setTimeout(attemptFallback, FALLBACK_RETRY_INTERVAL_MS);
+        unsupportedTimerRef.current = window.setTimeout(
+          attemptFallback,
+          FALLBACK_RETRY_INTERVAL_MS
+        );
         return;
       }
 
@@ -543,7 +593,9 @@ export default function useBrowserPreviewController({
       return;
     }
 
-    const shouldPrimeProxyPreview = Boolean(effectiveEditMode && classifyPreviewSupport({ browserUrl: submittedUrl }).viaProxy);
+    const shouldPrimeProxyPreview = Boolean(
+      effectiveEditMode && classifyPreviewSupport({ browserUrl: submittedUrl }).viaProxy
+    );
     setBrowserError(null);
     onDockStateChange((currentState) => commitBrowserNavigation(currentState, submittedUrl));
     protocolVerifiedRef.current = false;
@@ -571,7 +623,9 @@ export default function useBrowserPreviewController({
 
   function handleEditModeToggle() {
     const nextEditMode = !dockState.editMode;
-    const shouldPrimeProxyPreview = Boolean(nextEditMode && classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy);
+    const shouldPrimeProxyPreview = Boolean(
+      nextEditMode && classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy
+    );
     visualEditLog('info', 'edit-mode-toggle', {
       nextEditMode,
       browserUrl: parseUrlMeta(dockState.browserUrl),
@@ -623,7 +677,10 @@ export default function useBrowserPreviewController({
         nativeBrowserSelectorCommand({ panelId: nativePanelId, action: 'clear-selection' });
         commitObservedState({
           selector: SELECTOR_STATE.IDLE,
-          support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+          support: createSupportState(
+            PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+            SUPPORT_REASON.PROTOCOL_ACTIVE
+          ),
           clearSelection: true,
           clearTimer: true,
           inspecting: false,
@@ -633,22 +690,28 @@ export default function useBrowserPreviewController({
 
       setLastLaunchMeta(null);
       setSelectedElement(null);
-      nativeBrowserSelectorCommand({ panelId: nativePanelId, action: 'activate', mode: 'select' })
-        .then((result) => {
-          if (result?.supported === false) {
-            downgradeToUnsupported(result.reason || 'selector-unavailable', {
-              inspecting: false,
-            });
-            return;
-          }
-
-          commitObservedState({
-            selector: SELECTOR_STATE.CONNECTING,
-            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
-            clearTimer: true,
-            inspecting: true,
+      nativeBrowserSelectorCommand({
+        panelId: nativePanelId,
+        action: 'activate',
+        mode: 'select',
+      }).then((result) => {
+        if (result?.supported === false) {
+          downgradeToUnsupported(result.reason || 'selector-unavailable', {
+            inspecting: false,
           });
+          return;
+        }
+
+        commitObservedState({
+          selector: SELECTOR_STATE.CONNECTING,
+          support: createSupportState(
+            PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+            SUPPORT_REASON.PROTOCOL_ACTIVE
+          ),
+          clearTimer: true,
+          inspecting: true,
         });
+      });
       return;
     }
 
@@ -661,7 +724,9 @@ export default function useBrowserPreviewController({
       return;
     }
 
-    const shouldKeepProxyPreview = classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy;
+    const shouldKeepProxyPreview = classifyPreviewSupport({
+      browserUrl: dockState.browserUrl,
+    }).viaProxy;
 
     if (isInspecting) {
       visualEditLog('info', 'selector-deactivation-requested', {
@@ -710,7 +775,8 @@ export default function useBrowserPreviewController({
       return;
     }
 
-    const shouldSkipActivationMessage = wasAutoStarting && classifiedSupport.mode === PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM;
+    const shouldSkipActivationMessage =
+      wasAutoStarting && classifiedSupport.mode === PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM;
 
     if (shouldKeepProxyPreview) {
       proxyPreviewRef.current = true;
@@ -728,8 +794,13 @@ export default function useBrowserPreviewController({
     if (hasSameOriginFallback) {
       attachSameOriginDomInspector();
     }
-    const activated = shouldSkipActivationMessage ? false : postBridgeCommand(COMMAND_ACTION.ACTIVATE, {});
-    if (!shouldSkipActivationMessage && classifiedSupport.mode !== PREVIEW_SUPPORT_MODE.UNSUPPORTED) {
+    const activated = shouldSkipActivationMessage
+      ? false
+      : postBridgeCommand(COMMAND_ACTION.ACTIVATE, {});
+    if (
+      !shouldSkipActivationMessage &&
+      classifiedSupport.mode !== PREVIEW_SUPPORT_MODE.UNSUPPORTED
+    ) {
       postBridgeCommand(COMMAND_ACTION.SET_INTERACTION_MODE, { mode: 'select' });
     }
 
@@ -822,9 +893,6 @@ export default function useBrowserPreviewController({
 
     if (nextSupport.reason === SUPPORT_REASON.PROXY_ESCAPED) {
       downgradeToUnsupported(SUPPORT_REASON.PROXY_ESCAPED);
-      if (loadedUrl) {
-        syncObservedBrowserUrl(loadedUrl, { immediate: true });
-      }
       return;
     }
 
@@ -832,11 +900,12 @@ export default function useBrowserPreviewController({
       syncObservedBrowserUrl(loadedUrl);
     }
 
-    const shouldKeepStableLocalReadyState = isProxyFrame
-      && nextSupport.mode === PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY
-      && canAccessIframeDom(iframeRef.current)
-      && [SELECTOR_STATE.ARMED, SELECTOR_STATE.SELECTED].includes(selectorStateRef.current)
-      && !protocolVerifiedRef.current;
+    const shouldKeepStableLocalReadyState =
+      isProxyFrame &&
+      nextSupport.mode === PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY &&
+      canAccessIframeDom(iframeRef.current) &&
+      [SELECTOR_STATE.ARMED, SELECTOR_STATE.SELECTED].includes(selectorStateRef.current) &&
+      !protocolVerifiedRef.current;
 
     if (shouldKeepStableLocalReadyState) {
       updateSupportClassification(nextSupport, selectorStateRef.current, {
@@ -851,10 +920,14 @@ export default function useBrowserPreviewController({
       postBridgeCommand(COMMAND_ACTION.SET_INTERACTION_MODE, { mode: 'select' });
     }
     if (nextSupport.mode === PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM) {
-      updateSupportClassification(nextSupport, selectedElement ? SELECTOR_STATE.SELECTED : SELECTOR_STATE.ARMED, {
-        clearTimer: true,
-        inspecting: true,
-      });
+      updateSupportClassification(
+        nextSupport,
+        selectedElement ? SELECTOR_STATE.SELECTED : SELECTOR_STATE.ARMED,
+        {
+          clearTimer: true,
+          inspecting: true,
+        }
+      );
     } else if (isProxyFrame || nextSupport.mode === PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL) {
       updateSupportClassification(nextSupport, SELECTOR_STATE.CONNECTING, { inspecting: true });
       scheduleUnsupportedState();
@@ -881,7 +954,9 @@ export default function useBrowserPreviewController({
   useEffect(() => {
     const targetUrl = String(dockState.browserUrl || '').trim();
     if (!targetUrl || !shouldUsePreviewProxy(targetUrl)) {
-      setBrowserError((current) => (current?.type === 'localhost-target-unreachable' ? null : current));
+      setBrowserError((current) =>
+        current?.type === 'localhost-target-unreachable' ? null : current
+      );
       return undefined;
     }
 
@@ -908,11 +983,11 @@ export default function useBrowserPreviewController({
           return;
         }
 
-        setBrowserError((current) => (
+        setBrowserError((current) =>
           current?.type === 'localhost-target-unreachable' && current?.url === targetUrl
             ? null
             : current
-        ));
+        );
       } catch (error) {
         if (cancelled || error?.name === 'AbortError') return;
         setBrowserError(buildLocalhostTargetError(targetUrl, error || {}));
@@ -958,7 +1033,10 @@ export default function useBrowserPreviewController({
     }
 
     commitObservedState({
-      support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+      support: createSupportState(
+        PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+        SUPPORT_REASON.PROTOCOL_ACTIVE
+      ),
       selector: selectedElement ? SELECTOR_STATE.SELECTED : SELECTOR_STATE.IDLE,
       clearTimer: true,
       detachInspector: true,
@@ -995,13 +1073,15 @@ export default function useBrowserPreviewController({
       return;
     }
 
-    const shouldPrimeProxyPreview = classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy;
+    const shouldPrimeProxyPreview = classifyPreviewSupport({
+      browserUrl: dockState.browserUrl,
+    }).viaProxy;
     proxyPreviewRef.current = shouldPrimeProxyPreview;
     proxyPreviewPendingLoadRef.current = shouldPrimeProxyPreview;
     setUseProxyPreview(shouldPrimeProxyPreview);
     if (
-      supportStateRef.current?.mode === PREVIEW_SUPPORT_MODE.UNSUPPORTED
-      && supportStateRef.current?.reason === SUPPORT_REASON.PROXY_ESCAPED
+      supportStateRef.current?.mode === PREVIEW_SUPPORT_MODE.UNSUPPORTED &&
+      supportStateRef.current?.reason === SUPPORT_REASON.PROXY_ESCAPED
     ) {
       updateSupportClassification(
         createSupportState(PREVIEW_SUPPORT_MODE.UNSUPPORTED, SUPPORT_REASON.PROXY_ESCAPED),
@@ -1010,13 +1090,14 @@ export default function useBrowserPreviewController({
       );
       return;
     }
-    const preserveInspectingState = isInspecting && supportStateRef.current?.mode !== PREVIEW_SUPPORT_MODE.UNSUPPORTED;
+    const preserveInspectingState =
+      isInspecting && supportStateRef.current?.mode !== PREVIEW_SUPPORT_MODE.UNSUPPORTED;
     if (preserveInspectingState) {
       updateSupportClassification(
         createSupportState(
           supportStateRef.current.mode,
           supportStateRef.current.reason,
-          supportStateRef.current.viaProxy,
+          supportStateRef.current.viaProxy
         ),
         selectedElement ? SELECTOR_STATE.SELECTED : selectorStateRef.current,
         { clearTimer: true }
@@ -1030,7 +1111,13 @@ export default function useBrowserPreviewController({
       selectedElement ? SELECTOR_STATE.SELECTED : SELECTOR_STATE.IDLE,
       { clearTimer: true }
     );
-  }, [dockState.browserUrl, effectiveEditMode, nativeRuntimeActive, nativePanelId, selectedElement]);
+  }, [
+    dockState.browserUrl,
+    effectiveEditMode,
+    nativeRuntimeActive,
+    nativePanelId,
+    selectedElement,
+  ]);
 
   useEffect(() => {
     if (!nativeRuntimeActive || !nativePanelId) {
@@ -1051,7 +1138,10 @@ export default function useBrowserPreviewController({
         case 'selector-hover':
           commitObservedState({
             selector: SELECTOR_STATE.ARMED,
-            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            support: createSupportState(
+              PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+              SUPPORT_REASON.PROTOCOL_ACTIVE
+            ),
             clearTimer: true,
             inspecting: true,
           });
@@ -1060,7 +1150,10 @@ export default function useBrowserPreviewController({
           setSelectedElement(payload.element || null);
           commitObservedState({
             selector: SELECTOR_STATE.SELECTED,
-            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            support: createSupportState(
+              PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+              SUPPORT_REASON.PROTOCOL_ACTIVE
+            ),
             clearTimer: true,
             inspecting: true,
           });
@@ -1069,7 +1162,10 @@ export default function useBrowserPreviewController({
           setSelectedElement(null);
           commitObservedState({
             selector: SELECTOR_STATE.ARMED,
-            support: createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            support: createSupportState(
+              PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+              SUPPORT_REASON.PROTOCOL_ACTIVE
+            ),
             clearTimer: true,
             inspecting: true,
           });
@@ -1089,7 +1185,8 @@ export default function useBrowserPreviewController({
     });
 
     window.addEventListener('devhub:native-browser-event', handleNativeBrowserEvent);
-    unlistenWindow = () => window.removeEventListener('devhub:native-browser-event', handleNativeBrowserEvent);
+    unlistenWindow = () =>
+      window.removeEventListener('devhub:native-browser-event', handleNativeBrowserEvent);
 
     return () => {
       unlistenWindow?.();
@@ -1098,7 +1195,11 @@ export default function useBrowserPreviewController({
   }, [nativePanelId, nativeRuntimeActive]);
 
   useEffect(() => {
-    if (!effectiveEditMode || !isInspecting || !classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy) {
+    if (
+      !effectiveEditMode ||
+      !isInspecting ||
+      !classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy
+    ) {
       return;
     }
 
@@ -1120,12 +1221,15 @@ export default function useBrowserPreviewController({
     proxyPreviewPendingLoadRef.current = useProxyPreview;
   }, [useProxyPreview]);
 
-  useEffect(() => () => {
-    clearUnsupportedTimer();
-    detachDomInspector();
-    restoreElementOutline(hoveredElementRef.current);
-    restoreElementOutline(selectedElementRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      clearUnsupportedTimer();
+      detachDomInspector();
+      restoreElementOutline(hoveredElementRef.current);
+      restoreElementOutline(selectedElementRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
     function handleMessage(event) {
@@ -1140,7 +1244,13 @@ export default function useBrowserPreviewController({
       });
       if (data.type !== MESSAGE_TYPE.SITE_DEBUG) return;
 
-      if ([MONITOR_ACTION.MODE_ACTIVATED, MONITOR_ACTION.ELEMENT_SELECTED, MONITOR_ACTION.INTERACTION_MODE_CHANGED].includes(data.action)) {
+      if (
+        [
+          MONITOR_ACTION.MODE_ACTIVATED,
+          MONITOR_ACTION.ELEMENT_SELECTED,
+          MONITOR_ACTION.INTERACTION_MODE_CHANGED,
+        ].includes(data.action)
+      ) {
         clearUnsupportedTimer();
       }
 
@@ -1152,7 +1262,10 @@ export default function useBrowserPreviewController({
           });
           protocolVerifiedRef.current = true;
           updateSupportClassification(
-            createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            createSupportState(
+              PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+              SUPPORT_REASON.PROTOCOL_ACTIVE
+            ),
             SELECTOR_STATE.ARMED,
             { clearTimer: true, inspecting: true }
           );
@@ -1178,7 +1291,10 @@ export default function useBrowserPreviewController({
           protocolVerifiedRef.current = true;
           setSelectedElement(data.elementInfo || data.element || null);
           updateSupportClassification(
-            createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE),
+            createSupportState(
+              PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+              SUPPORT_REASON.PROTOCOL_ACTIVE
+            ),
             SELECTOR_STATE.SELECTED,
             { clearTimer: true, inspecting: true }
           );
@@ -1198,7 +1314,10 @@ export default function useBrowserPreviewController({
           const hasFallback = attachSameOriginDomInspector();
           if (hasFallback) {
             updateSupportClassification(
-              createSupportState(PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM, SUPPORT_REASON.SAME_ORIGIN_ACCESS),
+              createSupportState(
+                PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
+                SUPPORT_REASON.SAME_ORIGIN_ACCESS
+              ),
               SELECTOR_STATE.ARMED,
               { clearTimer: true, inspecting: true }
             );
@@ -1224,9 +1343,16 @@ export default function useBrowserPreviewController({
       return;
     }
 
+    const shouldWaitForProxyPreview =
+      classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy && !useProxyPreview;
+
+    if (shouldWaitForProxyPreview) {
+      return;
+    }
+
     autoInspectOnEditModeRef.current = false;
     handleInspectToggle(false);
-  }, [effectiveEditMode, isInspecting]);
+  }, [dockState.browserUrl, effectiveEditMode, isInspecting, useProxyPreview]);
 
   return {
     activeAgent,

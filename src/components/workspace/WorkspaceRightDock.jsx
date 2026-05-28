@@ -2,6 +2,7 @@
 
 import FileExplorerEditorPane from './FileExplorerEditorPane';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
+import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 
 export default function WorkspaceRightDock({
   project,
@@ -16,7 +17,9 @@ export default function WorkspaceRightDock({
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
 }) {
-  const isBrowserActive = dockState.activeTab !== 'editor';
+  const isBrowserActive = dockState.activeTab === 'browser';
+  const isEditorActive = dockState.activeTab === 'editor';
+  const isSwarmActive = dockState.activeTab === 'swarm';
 
   return (
     <section
@@ -40,8 +43,16 @@ export default function WorkspaceRightDock({
           />
         </div>
 
-        <div className={isBrowserActive ? 'hidden' : 'h-full min-h-0'} aria-hidden={isBrowserActive}>
+        <div className={isEditorActive ? 'h-full min-h-0' : 'hidden'} aria-hidden={!isEditorActive}>
           <FileExplorerEditorPane project={project} workspaceId={workspaceId} embedded={true} />
+        </div>
+
+        <div className={isSwarmActive ? 'h-full min-h-0' : 'hidden'} aria-hidden={!isSwarmActive}>
+          <WorkspaceSwarmPane
+            project={project}
+            dockState={dockState}
+            onDockStateChange={onDockStateChange}
+          />
         </div>
       </div>
     </section>

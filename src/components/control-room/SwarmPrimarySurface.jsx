@@ -1,4 +1,5 @@
 import React from 'react';
+import { btnPrimaryStyle, pillStyle, sectionSurfaceStyle } from '../../chrome/morphology';
 import ActiveSwarmTowerPanel from './ActiveSwarmTowerPanel';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 
@@ -48,16 +49,21 @@ export default function SwarmPrimarySurface({ surface, onPrimaryAction }) {
               ].map(([step, title, summary]) => (
                 <div
                   key={step}
-                  className="rounded-2xl border p-3"
-                  style={{
-                    borderColor: 'var(--border-subtle)',
-                    background: 'rgba(255,255,255,0.025)',
-                  }}
+                  className="p-3"
+                  style={sectionSurfaceStyle()}
                 >
                   <div className="flex items-center gap-2">
                     <span
-                      className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold"
-                      style={{ background: 'rgba(255,176,64,0.15)', color: '#ffb040' }}
+                      className="flex h-6 w-6 items-center justify-center text-xs font-bold"
+                      style={{
+                        ...pillStyle({ tone: 'accent' }),
+                        width: '1.5rem',
+                        height: '1.5rem',
+                        padding: 0,
+                        justifyContent: 'center',
+                        borderRadius: '9999px',
+                        color: 'var(--accent-primary)',
+                      }}
                     >
                       {step}
                     </span>
@@ -72,11 +78,8 @@ export default function SwarmPrimarySurface({ surface, onPrimaryAction }) {
           </div>
 
           <div
-            className="space-y-4 rounded-[24px] border p-4"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,176,64,0.10), rgba(255,255,255,0.025))',
-              borderColor: 'rgba(255,176,64,0.18)',
-            }}
+            className="space-y-4 p-4"
+            style={sectionSurfaceStyle({ emphasized: true })}
           >
             <div>
               <p
@@ -97,11 +100,16 @@ export default function SwarmPrimarySurface({ surface, onPrimaryAction }) {
               type="button"
               disabled={hero?.primaryCta?.disabled}
               onClick={() => onPrimaryAction?.(hero?.primaryCta)}
-              className="w-full rounded-xl border px-4 py-3 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full disabled:cursor-not-allowed disabled:opacity-60"
               style={{
-                background: 'rgba(255,176,64,0.12)',
-                borderColor: 'rgba(255,176,64,0.26)',
-                color: 'var(--text-primary)',
+                ...btnPrimaryStyle({ size: 'lg' }),
+                width: '100%',
+                height: 'auto',
+                padding: '0.75rem 1rem',
+                justifyContent: 'flex-start',
+                textAlign: 'left',
+                textTransform: 'none',
+                letterSpacing: 'normal',
               }}
             >
               {hero?.primaryCta?.label || 'Elegir plantilla recomendada'}

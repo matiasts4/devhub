@@ -9,7 +9,12 @@ const commits = [
   { hash: "2d9c6e4", message: "feat: agregar componente ProductCard con skeleton", author: "NEXUS-7", time: "5h", status: "success", branch: "feature/ui" },
 ];
 
-const branchColors = { main: "#3FB950", "fix/checkout": "#F778BA", "feature/db": "#58A6FF", "feature/ui": "#D2A8FF" };
+const branchColors = {
+  main: "var(--success)",
+  "fix/checkout": "var(--accent-pink)",
+  "feature/db": "var(--accent-primary)",
+  "feature/ui": "var(--accent-purple)",
+};
 
 export default function HistorialCommits() {
   return (
@@ -22,7 +27,7 @@ export default function HistorialCommits() {
         <span className="text-xs text-text-muted">{commits.length} recientes</span>
       </div>
 
-      <div className="divide-y divide-[#21262D]">
+      <div className="divide-y divide-borders-subtle">
         {commits.map((commit, i) => (
           <div
             key={commit.hash}
@@ -33,7 +38,7 @@ export default function HistorialCommits() {
             <div className="flex-shrink-0 mt-0.5">
               {commit.status === "success"
                 ? <CheckCircle2 className="w-3.5 h-3.5 text-success" strokeWidth={1.5} />
-                : <Clock className="w-3.5 h-3.5 text-[#E3B341]" strokeWidth={1.5} />
+                : <Clock className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} strokeWidth={1.5} />
               }
             </div>
             <div className="flex-1 min-w-0">
@@ -42,7 +47,7 @@ export default function HistorialCommits() {
                 <code className="text-[11px] font-mono text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-borders-strong">
                   {commit.hash}
                 </code>
-                <span className="flex items-center gap-1 text-[11px]" style={{ color: branchColors[commit.branch] || "#8B949E" }}>
+                <span className="flex items-center gap-1 text-[11px]" style={{ color: branchColors[commit.branch] || "var(--text-muted)" }}>
                   <GitBranch className="w-2.5 h-2.5" strokeWidth={1.5} />
                   {commit.branch}
                 </span>

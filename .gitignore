@@ -95,6 +95,7 @@ opencode/
 opencode.json
 .claude/
 .plyrium-forge/
+.antigravitycli/
 data/logs/opencode_*.log
 # Git hygiene additions
 .hermes/
@@ -111,3 +112,25 @@ data/audit-trails/
 
 # Research externals vendored locally, not tracked
 research/external/
+devhub-cli/node_modules/
+
+# === Worktrees ===
+.devhub/worktrees/
+.worktrees/
+
+# === Python cache ===
+**/__pycache__/
+
+# === DB backups ===
+data/*.db.backup-*
+
+# === Temp/root-level test artifacts ===
+test_output.txt
+workspaces_diff.txt
+
+# === CLI ephemeral data ===
+devhub-cli/data/
+devhub-cli/coverage/
+
+# === Tauri resources (vendored binaries) ===
+src-tauri/resources/

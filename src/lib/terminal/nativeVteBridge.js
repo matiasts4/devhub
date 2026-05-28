@@ -124,6 +124,12 @@ export async function focusNativeVtePanel(payload = {}) {
   await invoke('native_vte_focus', { request: payload });
 }
 
+export async function pasteNativeVtePanel(payload = {}) {
+  if (!isNativeVteRuntimeAvailable()) return { supported: false, reason: 'tauri-unavailable' };
+  const { invoke } = await getTauriCore();
+  return await invoke('native_vte_paste', { request: payload });
+}
+
 export async function resizeNativeVtePanel(payload = {}) {
   if (!isNativeVteRuntimeAvailable()) return;
   const { invoke } = await getTauriCore();

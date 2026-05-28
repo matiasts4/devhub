@@ -166,6 +166,8 @@ export function createOperationalEvent(input = {}) {
 }
 
 export function createHealthSource(input = {}) {
+  const evidenceRefs = normalizeEvidenceRefs(input.evidence_refs, input.evidence_ref);
+
   return {
     key: input.key || 'unknown',
     label: input.label || input.key || 'Unknown',
@@ -174,6 +176,8 @@ export function createHealthSource(input = {}) {
     freshness_ms: Number.isFinite(input.freshness_ms) ? input.freshness_ms : null,
     observed_at: input.observed_at || null,
     status_reason: input.status_reason || '',
+    evidence_ref: evidenceRefs[0] || null,
+    evidence_refs: evidenceRefs,
     metrics: input.metrics || {},
   };
 }

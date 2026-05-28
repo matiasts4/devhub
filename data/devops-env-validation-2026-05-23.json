@@ -1,0 +1,244 @@
+{
+  "role": "DevOps",
+  "timestamp": "2026-05-23T22:31:00Z",
+  "workspace": "/home/matias/ArxonLabs/devhub",
+  "phase": "swarm-launch-validation",
+
+  "swarm_subagents": {
+    "launched_by": "Director (main opencode PID 177010)",
+    "total_subagents": 5,
+    "correct_workspace_count": 1,
+    "wrong_workspace_count": 4,
+    "entries": [
+      {
+        "pid": 1055643,
+        "agent_type": "swarm-coder",
+        "role": "Coder",
+        "workspace": "/home/matias/devhub",
+        "workspace_correct": false,
+        "status": "running"
+      },
+      {
+        "pid": 1055713,
+        "agent_type": "swarm-coder",
+        "role": "DevOps",
+        "workspace": "/home/matias/devhub",
+        "workspace_correct": false,
+        "note": "DUPLICATE DevOps — conflict with main DevOps instance",
+        "status": "running"
+      },
+      {
+        "pid": 1055726,
+        "agent_type": "swarm-reviewer",
+        "role": "Auditor",
+        "workspace": "/home/matias/devhub",
+        "workspace_correct": false,
+        "status": "running"
+      },
+      {
+        "pid": 1055949,
+        "agent_type": "swarm-explorer",
+        "role": "Architect",
+        "workspace": "/home/matias/devhub",
+        "workspace_correct": false,
+        "status": "running"
+      },
+      {
+        "pid": 1064904,
+        "agent_type": "swarm-coder",
+        "role": "DevOps",
+        "workspace": "/home/matias/ArxonLabs/devhub",
+        "workspace_correct": true,
+        "note": "This is the correct DevOps instance (possibly re-launched)",
+        "status": "running"
+      }
+    ]
+  },
+
+  "critical_mismatch_details": {
+    "summary": "4/5 swarm agents launched with WRONG workspace path (/home/matias/devhub instead of /home/matias/ArxonLabs/devhub)",
+    "impact": "All agents operate on stale/non-existent repo state. File edits, git operations, and references will be incorrect.",
+    "root_cause": "Director's launch command used the parent process CWD (/home/matias/devhub) instead of the project workspace (/home/matias/ArxonLabs/devhub)",
+    "recommended_fix": "Kill the 4 wrong-path agents, re-launch with correct workspace path. Or verify the Director already handled this."
+  },
+
+  "duplicate_devops_process": {
+    "pid": 1055713,
+    "role": "DevOps",
+    "workspace": "WRONG (/home/matias/devhub)",
+    "conflict": "Competes with DevOps PID 1064904 (correct workspace). Duplicate may produce conflicting evidence.",
+    "recommended_action": "kill -15 1055713"
+  },
+
+  "cli_swarm_launch_port_mismatch": {
+    "cli_file": "devhub-cli/commands/swarm-launch.js",
+    "hardcoded_url": "http://localhost:3000",
+    "actual_dev_server": "http://localhost:3100",
+    "issue": "CLI swarm-launch calls will fail with connection refused unless DEVHUB_API_URL env var is set",
+    "recommended_fix": "Update default to 3100 or read from env with fallback"
+  },
+
+  "system_resources": {
+    "timestamp": "2026-05-23T22:29:00Z",
+    "cpu": {
+      "cores": 16,
+      "load_1min": 6.73,
+      "load_5min": 5.72,
+      "load_15min": 4.16,
+      "status": "OK (load < cores)"
+    },
+    "ram": {
+      "total_gb": 31,
+      "used_gb": 21,
+      "available_gb": 9.1,
+      "status": "OK"
+    },
+    "disk": {
+      "total_gb": 333,
+      "used_gb": 231,
+      "available_gb": 85,
+      "used_pct": 74,
+      "status": "OK"
+    },
+    "uptime": "7h43m"
+  },
+
+  "services": {
+    "nextjs_dev_server": {
+      "port": 3100,
+      "pid": 1025157,
+      "status": "RUNNING",
+      "health_api": "accessible — queue empty, 35 active agents tracked"
+    },
+    "opencode_main": {
+      "pid": 177010,
+      "session": "ses_1af273b1bffeC9CSlCHCOcvJtt",
+      "status": "RUNNING"
+    },
+    "postgres_docker": {
+      "container_id": "f456b6408a6c",
+      "status": "RUNNING (healthy)",
+      "port": "127.0.0.1:5432"
+    },
+    "engram_mcp": {
+      "pid": 1844,
+      "port": 7437,
+      "status": "RUNNING"
+    }
+  },
+
+  "swarm_api_routes": {
+    "processes_get": {
+      "path": "/api/swarm/processes",
+      "method": "GET",
+      "file": "src/app/api/swarm/processes/route.js",
+      "status": "EXISTS — returns all opencode process list",
+      "test": "returns 200 (empty array from API)"
+    },
+    "processes_post": {
+      "path": "/api/swarm/processes",
+      "method": "POST",
+      "actions": "kill (single PID or 'all')",
+      "status": "EXISTS — can terminate misconfigured agents"
+    }
+  },
+
+  "git_state": {
+    "branch": "task/2a14962d-swarm-control-panel-polish",
+    "latest_commit": "156574c feat: session recovery for orphaned opencode processes",
+    "modified_files": 34,
+    "deleted_files": 27,
+    "untracked_dirs": 15,
+    "total_dirty_entries": 76,
+    "worktree_coder": ".plyrium-forge/worktrees/pane-p_40df269092784f5f894c83-coder",
+    "worktree_ready": true
+  },
+
+  "devhub_mcp_status": {
+    "available": true,
+    "project_id": "5e4330dc-c603-45f1-b466-ccfb4fc0308c",
+    "tasks_total": 87,
+    "tasks_completed": "all visible",
+    "active_milestone": "[DESKTOP-4] Empaquetado y Distribución Linux"
+  },
+
+  "health_api_snapshot": {
+    "endpoint": "GET /api/agenthub/operations/health/",
+    "total_sources": 5,
+    "healthy": 1,
+    "degraded": 2,
+    "stale": 1,
+    "offline": 1,
+    "worst_status": "offline",
+    "queue": "empty",
+    "active_agents_tracked": 35
+  },
+
+  "bins": {
+    "node": "v24.14.0",
+    "npm": "11.9.0",
+    "git": "2.53.0",
+    "docker": true,
+    "python3": true,
+    "gh": false,
+    "plyrium": false
+  },
+
+  "test_results_reference": {
+    "from_prior_session": true,
+    "total_suites": 222,
+    "passed_suites": 200,
+    "failed_suites": 22,
+    "failed_tests": 68,
+    "status": "DEGRADED"
+  },
+
+  "blockers": [
+    {
+      "id": "B1",
+      "severity": "CRITICAL",
+      "title": "Workspace path mismatch in 4/5 swarm agents",
+      "detail": "Coder, Auditor, Architect, and a duplicate DevOps agent all have workspace=/home/matias/devhub (wrong). They will operate on incorrect repo state.",
+      "action": "Kill PIDs 1055643, 1055713, 1055726, 1055949. Re-launch with correct path."
+    },
+    {
+      "id": "B2",
+      "severity": "CRITICAL",
+      "title": "Duplicate DevOps agent",
+      "detail": "PID 1055713 is a ghost DevOps running wrong workspace. Competes with PID 1064904 (correct).",
+      "action": "kill -15 1055713"
+    },
+    {
+      "id": "B3",
+      "severity": "HIGH",
+      "title": "swarm-launch CLI port mismatch",
+      "detail": "devhub-cli/commands/swarm-launch.js hardcodes port 3000. Dev server is on 3100.",
+      "action": "Update default to 3100 or document DEVHUB_API_URL requirement"
+    },
+    {
+      "id": "B4",
+      "severity": "MEDIUM",
+      "title": "68 test failures in previous run",
+      "detail": "200/222 suites pass, but 68 tests fail across module resolution issues.",
+      "action": "Review jest.config.js moduleNameMapper before production deployment"
+    },
+    {
+      "id": "B5",
+      "severity": "LOW",
+      "title": "Health API shows 1 offline, 2 degraded",
+      "detail": "opencode-process offline, MCP and Telegram degraded. Queue is healthy.",
+      "action": "Tolerable for development. Monitor if deploying."
+    }
+  ],
+
+  "operational_capacity": {
+    "can_continue": false,
+    "reason": "4/5 agents have wrong workspace. Must fix workspace paths before swarm can proceed.",
+    "recommended_next_actions": [
+      "1. Kill 4 misconfigured agents (PIDs 1055643, 1055713, 1055726, 1055949) via /api/swarm/processes POST or kill CLI",
+      "2. Confirm Director re-launches with correct workspace=/home/matias/ArxonLabs/devhub",
+      "3. Set DEVHUB_API_URL=http://localhost:3100 if using swarm-launch CLI",
+      "4. Re-validate after relaunch before any feature work begins"
+    ]
+  }
+}

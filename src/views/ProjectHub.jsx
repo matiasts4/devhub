@@ -31,6 +31,14 @@ import {
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import {
+  dataTileStyle,
+  filterBarStyle,
+  inputStyle,
+  panelStyle,
+  pillStyle,
+  sectionSurfaceStyle,
+} from '@/chrome/morphology';
+import {
   DOCUMENTATION_POLICY_OPTIONS,
   DEFAULT_DOCUMENTATION_POLICY,
   DEFAULT_PROJECT_TYPE,
@@ -40,27 +48,90 @@ import {
 import { getProjectEntryPath } from '@/lib/workspaceRouting';
 
 const PROJECT_TYPES_MODAL = [
-  { key: 'software', label: 'Software', Icon: MonitorSmartphone, color: '#58A6FF' },
-  { key: 'university', label: 'Universidad', Icon: GraduationCap, color: '#D2A8FF' },
-  { key: 'research', label: 'Investigación', Icon: FlaskConical, color: '#3FB950' },
-  { key: 'security', label: 'Seguridad', Icon: Shield, color: '#E3B341' },
-  { key: 'business', label: 'Negocio', Icon: BarChart3, color: '#F78166' },
-  { key: 'creative', label: 'Creativo', Icon: Palette, color: '#FF79C6' },
+  {
+    key: 'software',
+    label: 'Software',
+    Icon: MonitorSmartphone,
+    color: 'var(--project-type-software, var(--accent-primary, #58A6FF))',
+  },
+  {
+    key: 'university',
+    label: 'Universidad',
+    Icon: GraduationCap,
+    color: 'var(--project-type-university, #D2A8FF)',
+  },
+  {
+    key: 'research',
+    label: 'Investigación',
+    Icon: FlaskConical,
+    color: 'var(--project-type-research, var(--success, #3FB950))',
+  },
+  {
+    key: 'security',
+    label: 'Seguridad',
+    Icon: Shield,
+    color: 'var(--project-type-security, var(--warning, #E3B341))',
+  },
+  {
+    key: 'business',
+    label: 'Negocio',
+    Icon: BarChart3,
+    color: 'var(--project-type-business, #F78166)',
+  },
+  {
+    key: 'creative',
+    label: 'Creativo',
+    Icon: Palette,
+    color: 'var(--project-type-creative, #FF79C6)',
+  },
 ];
 
 const STATUS_CONFIG = {
-  active: { label: 'Activo', color: '#3FB950', dot: 'bg-[#3FB950]', animate: true },
-  paused: { label: 'Pausado', color: '#E3B341', dot: 'bg-[#E3B341]', animate: false },
-  completed: { label: 'Completado', color: '#8B949E', dot: 'bg-[#8B949E]', animate: false },
-  archived: { label: 'Archivado', color: '#484F58', dot: 'bg-[#484F58]', animate: false },
+  active: {
+    label: 'Activo',
+    color: 'var(--status-active, var(--success, #3FB950))',
+    dotColor: 'var(--status-active, var(--success, #3FB950))',
+    animate: true,
+  },
+  paused: {
+    label: 'Pausado',
+    color: 'var(--status-paused, var(--warning, #E3B341))',
+    dotColor: 'var(--status-paused, var(--warning, #E3B341))',
+    animate: false,
+  },
+  completed: {
+    label: 'Completado',
+    color: 'var(--status-completed, var(--text-muted, #8B949E))',
+    dotColor: 'var(--status-completed, var(--text-muted, #8B949E))',
+    animate: false,
+  },
+  archived: {
+    label: 'Archivado',
+    color: 'var(--status-archived, var(--text-muted, #484F58))',
+    dotColor: 'var(--status-archived, var(--text-muted, #484F58))',
+    animate: false,
+  },
 };
 
 const ACCENT_COLORS = ['#58A6FF', '#3FB950', '#F778BA', '#D2A8FF', '#E3B341', '#FF7B72'];
 
-const modalFieldClass =
-  'w-full rounded-xl border border-white/[0.08] bg-[rgba(7,10,14,0.78)] px-3.5 py-2.5 text-sm text-white placeholder-[#5b6574] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-[border-color,background-color,box-shadow] focus:outline-none focus:border-[color:color-mix(in_srgb,var(--accent-primary)_36%,transparent)] focus:bg-[rgba(10,14,20,0.92)]';
+const modalFieldStyle = inputStyle();
 
 const modalLabelClass = 'mb-1.5 block text-[11px] font-medium text-text-muted';
+
+function filterButtonStyle(selected) {
+  return {
+    ...pillStyle({ tone: selected ? 'accent' : 'neutral' }),
+    padding: '0.375rem 0.75rem',
+    fontSize: '12px',
+    textTransform: 'none',
+    letterSpacing: 'normal',
+    color: selected ? 'var(--text-primary)' : 'var(--text-muted)',
+    borderColor: selected
+      ? 'color-mix(in srgb, var(--accent-primary) 40%, var(--chrome-border-color))'
+      : 'var(--chrome-border-color)',
+  };
+}
 
 export default function ProjectHub() {
   const navigate = useNavigate();
@@ -232,18 +303,18 @@ export default function ProjectHub() {
     {
       label: 'Proyectos activos',
       value: projects.filter((p) => p.status === 'active').length,
-      color: '#3FB950',
+      color: 'var(--status-active, var(--success, #3FB950))',
     },
     {
       label: 'Total tareas',
       value: projects.reduce((a, p) => a + (p.tasks?.[0]?.count || 0), 0),
-      color: '#58A6FF',
+      color: 'var(--accent-primary, #58A6FF)',
     },
-    { label: 'Total proyectos', value: projects.length, color: '#D2A8FF' },
+    { label: 'Total proyectos', value: projects.length, color: 'var(--project-type-university, #D2A8FF)' },
     {
       label: 'Completados',
       value: projects.filter((p) => p.status === 'completed').length,
-      color: '#E3B341',
+      color: 'var(--status-paused, var(--warning, #E3B341))',
     },
   ];
 
@@ -258,10 +329,13 @@ export default function ProjectHub() {
         className="shrink-0"
         leftSlot={
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#58A6FF]/15 border border-[#58A6FF]/25 flex items-center justify-center">
+            <div
+              className="flex h-7 w-7 items-center justify-center rounded-lg"
+              style={{ ...pillStyle({ tone: 'accent' }), padding: 0 }}
+            >
               <Cpu className="w-3.5 h-3.5 text-accent-primary" strokeWidth={1.5} />
             </div>
-            <span className="font-mono font-bold text-text-primary text-[11px] tracking-wide">
+            <span className="typography-section-label text-text-primary tracking-widest">
               DevHub
             </span>
           </div>
@@ -277,7 +351,7 @@ export default function ProjectHub() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar proyecto..."
-                className="bg-surface-card border border-borders-subtle rounded-lg pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder-[#484F58] focus:outline-none focus:border-[var(--accent-primary)] w-52 transition-all"
+                className="bg-surface-card border border-borders-subtle pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder-[#484F58] focus:outline-none focus:border-[var(--accent-primary)] w-52 transition-all"
               />
             </div>
             <Button onClick={() => setShowNewModal(true)} variant="devhubPrimary" size="toolbar">
@@ -291,7 +365,7 @@ export default function ProjectHub() {
       <div className="px-8 py-8">
         {/* Header */}
         <div className="mb-8 fade-in-up">
-          <h1 className="font-mono text-3xl font-bold text-text-primary mb-1">
+          <h1 className="typography-title mb-1">
             Bienvenido a DevHub
           </h1>
           <p className="text-text-muted text-sm">
@@ -304,15 +378,14 @@ export default function ProjectHub() {
           {stats.map((stat, i) => (
             <div
               key={i}
-              className="fade-in-up core-kpi-card rounded-lg px-5 py-4 hover-lift"
+              className="fade-in-up core-kpi-card rounded-none px-5 py-4 hover-lift"
               style={{
                 animationDelay: `${i * 50}ms`,
-                background: 'var(--surface-card, #161b26)',
-                borderColor: 'var(--border-subtle, #30363d)',
+                ...dataTileStyle({ color: stat.color }),
               }}
             >
-              <p className="text-text-muted text-xs mb-1">{stat.label}</p>
-              <p className="font-mono text-2xl font-bold" style={{ color: stat.color }}>
+              <p className="typography-label mb-1">{stat.label}</p>
+              <p className="typography-data text-2xl font-bold" style={{ color: stat.color }}>
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : stat.value}
               </p>
             </div>
@@ -321,8 +394,8 @@ export default function ProjectHub() {
 
         {/* Status filters */}
         <div
-          className="flex items-center gap-2 mb-6 flex-wrap core-panel rounded-xl px-3 py-2"
-          style={{ background: 'var(--surface-card, #161b26)' }}
+          className="flex items-center gap-2 mb-6 flex-wrap core-panel px-3 py-2"
+          style={filterBarStyle()}
         >
           {[
             { key: 'all', label: 'Todos' },
@@ -331,11 +404,8 @@ export default function ProjectHub() {
             <button
               key={key}
               onClick={() => setFilterStatus(key)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                filterStatus === key
-                  ? 'bg-surface-elevated text-text-primary border border-[#388BFD]/50'
-                  : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated border border-transparent'
-              }`}
+              className="rounded-md text-xs font-medium transition-all"
+              style={filterButtonStyle(filterStatus === key)}
             >
               {label}
             </button>
@@ -356,11 +426,10 @@ export default function ProjectHub() {
                 <div
                   key={project.id}
                   onClick={() => navigate(`/project/${project.id}/dashboard`)}
-                  className="fade-in-up project-card-hover core-panel hover-lift rounded-xl p-5 cursor-pointer group"
+                  className="fade-in-up project-card-hover core-panel hover-lift rounded-none p-5 cursor-pointer group"
                   style={{
                     animationDelay: `${i * 60}ms`,
-                    background: 'var(--surface-card, #161b26)',
-                    borderColor: 'var(--border-subtle, #30363d)',
+                    ...panelStyle(),
                   }}
                 >
                   <div className="flex items-start justify-between mb-4">
@@ -395,7 +464,8 @@ export default function ProjectHub() {
                         </span>
                       )}
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${estado.dot} ${estado.animate ? 'animate-pulse' : ''}`}
+                        className={`w-1.5 h-1.5 rounded-full ${estado.animate ? 'animate-pulse' : ''}`}
+                        style={{ background: estado.dotColor }}
                       />
                       <span className="text-xs" style={{ color: estado.color }}>
                         {estado.label}
@@ -411,9 +481,9 @@ export default function ProjectHub() {
 
                   {/* Progress bar */}
                   <div className="mb-4">
-                    <div className="h-[3px] bg-surface-elevated rounded-full overflow-hidden">
+                    <div className="h-[3px] bg-surface-elevated rounded-none overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all duration-700"
+                        className="h-full rounded-none transition-all duration-700"
                         style={{ width: `${project.progress || 0}%`, background: accentColor }}
                       />
                     </div>
@@ -445,12 +515,11 @@ export default function ProjectHub() {
             {/* New project card */}
             <div
               onClick={() => setShowNewModal(true)}
-              className="fade-in-up rounded-xl p-5 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group min-h-[180px] hover:border-[color-mix(in_srgb,var(--accent-primary)_45%,transparent)]"
+              className="fade-in-up rounded-none p-5 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group min-h-[180px]"
               style={{
-                background:
-                  'linear-gradient(135deg, color-mix(in srgb, var(--surface-card, #161b26) 96%, black), color-mix(in srgb, var(--surface-muted, #111827) 92%, black))',
-                border:
-                  '1px dashed color-mix(in srgb, var(--accent-primary) 24%, var(--border-subtle))',
+                ...sectionSurfaceStyle({ emphasized: true }),
+                borderStyle: 'dashed',
+                borderColor: 'var(--chrome-border-color)',
               }}
             >
               <div className="w-10 h-10 rounded-full bg-surface-elevated flex items-center justify-center group-hover:bg-[#388BFD]/15 transition-colors cursor-pointer">
@@ -471,11 +540,11 @@ export default function ProjectHub() {
       </div>
 
       {showNewModal && (
-        <div className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center bg-black/72 backdrop-blur-md p-4">
-          <div className="fade-in-up max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[28px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(11,14,18,0.96),rgba(10,13,17,0.92))] p-6 shadow-[0_32px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <div className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center bg-black/72 p-4">
+          <div className="fade-in-up max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-card)] p-6 shadow-[8px_8px_0_0_var(--border-strong)]">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D2A8FF]/18 bg-[linear-gradient(180deg,rgba(210,168,255,0.14),rgba(255,255,255,0.03))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-none border-2 border-[#D2A8FF]/30 bg-[var(--surface-elevated)] shadow-[3px_3px_0_0_var(--border-strong)]">
                   <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />
                 </div>
                 <h2 className="font-mono font-bold text-text-primary">Nuevo Proyecto</h2>
@@ -488,14 +557,14 @@ export default function ProjectHub() {
                 }}
                 variant="devhubGhost"
                 size="icon"
-                className="h-8 w-8 rounded-full border-white/10"
+                className="h-8 w-8 rounded-none border-2 border-[var(--border-strong)]"
               >
                 <X className="w-5 h-5" />
               </Button>
             </div>
 
-            <form onSubmit={createProject} className="space-y-4">
-              <div className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(180deg,rgba(210,168,255,0.09),rgba(255,255,255,0.02))] p-4 text-[11px] leading-relaxed text-text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+<form onSubmit={createProject} className="space-y-4">
+                <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted shadow-[3px_3px_0_0_var(--border-strong)]">
                 Definí la clasificación y la política de documentación antes de arrancar el
                 planning. Ese gate decide cómo se guarda el contexto y qué documentos deja generar
                 DevHub antes de empezar a planificar.
@@ -510,7 +579,8 @@ export default function ProjectHub() {
                   value={newProject.name}
                   onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Mi proyecto increíble"
-                  className={modalFieldClass}
+                  className="w-full text-sm placeholder:text-text-muted"
+                  style={modalFieldStyle}
                 />
               </div>
 
@@ -523,7 +593,8 @@ export default function ProjectHub() {
                     value={newProject.local_path}
                     onChange={(e) => setNewProject((p) => ({ ...p, local_path: e.target.value }))}
                     placeholder="/home/usuario/proyectos/mi-proyecto"
-                    className={`flex-1 ${modalFieldClass}`}
+                    className="flex-1 text-sm placeholder:text-text-muted"
+                    style={modalFieldStyle}
                   />
                   <Button
                     type="button"
@@ -531,7 +602,7 @@ export default function ProjectHub() {
                     disabled={!isTauri}
                     variant="devhubGlass"
                     size="icon"
-                    className="h-[42px] w-[42px] rounded-xl border-white/[0.08] p-0 text-[var(--text-muted)]"
+                    className="h-[42px] w-[42px] rounded-none border-2 border-[var(--border-strong)] p-0 text-[var(--text-muted)]"
                     title={
                       isTauri
                         ? 'Explorar carpetas'
@@ -551,7 +622,8 @@ export default function ProjectHub() {
                   value={newProject.description}
                   onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                   placeholder="¿Qué hace este proyecto en una frase?"
-                  className={modalFieldClass}
+                  className="w-full text-sm placeholder:text-text-muted"
+                  style={modalFieldStyle}
                 />
               </div>
 
@@ -576,7 +648,7 @@ export default function ProjectHub() {
               </div>
 
               {/* Toggle Planning IA */}
-              <div className="rounded-2xl border border-[#D2A8FF]/16 bg-[linear-gradient(180deg,rgba(210,168,255,0.08),rgba(255,255,255,0.02))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted]">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
                     <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />
@@ -606,7 +678,7 @@ export default function ProjectHub() {
                             key={value}
                             type="button"
                             onClick={() => setNewProject((p) => ({ ...p, project_type: value }))}
-                            className="flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all"
+                            className="flex items-center gap-2 border px-2.5 py-2 text-left transition-all"
                             style={
                               sel
                                 ? {
@@ -651,7 +723,7 @@ export default function ProjectHub() {
                             onClick={() =>
                               setNewProject((p) => ({ ...p, documentation_policy: value }))
                             }
-                            className="rounded-xl border px-3 py-2.5 text-left transition-all"
+                            className="rounded-none border-2 px-3 py-2.5 text-left transition-all"
                             style={
                               sel
                                 ? {
@@ -694,7 +766,8 @@ export default function ProjectHub() {
                     }
                     rows={3}
                     placeholder="Describe tu proyecto: qué construirás, contexto, recursos, plazos, requerimientos específicos..."
-                    className={`${modalFieldClass} resize-none font-mono text-xs`}
+                    className="w-full resize-none font-mono text-xs placeholder:text-text-muted"
+                    style={modalFieldStyle}
                   />
 
                   {enablePlanning && (
@@ -713,7 +786,7 @@ export default function ProjectHub() {
                           processFileList(e.dataTransfer.files);
                         }}
                         onClick={() => document.getElementById('modal-file-input').click()}
-                        className={`border border-dashed rounded-lg px-4 py-3 flex items-center gap-3 cursor-pointer transition-all ${
+                        className={`border border-dashed px-4 py-3 flex items-center gap-3 cursor-pointer transition-all ${
                           isDragging
                             ? 'border-[#58A6FF] bg-[#58A6FF]/5'
                             : 'border-borders-strong hover:border-[#D2A8FF]/30 hover:bg-surface-elevated'
@@ -746,7 +819,7 @@ export default function ProjectHub() {
                           {pendingFiles.map((f, i) => (
                             <div
                               key={i}
-                              className="flex items-center gap-2 bg-surface-elevated rounded-lg px-3 py-1.5"
+                              className="flex items-center gap-2 bg-surface-elevated px-3 py-1.5"
                             >
                               <FileText className="w-3 h-3 text-[#58A6FF] flex-shrink-0" />
                               <span className="text-xs font-mono text-text-primary flex-1 truncate">
@@ -784,7 +857,7 @@ export default function ProjectHub() {
                     setPendingFiles([]);
                   }}
                   variant="devhubGlass"
-                  className="h-10 flex-1 rounded-xl border-white/[0.08] text-sm"
+                  className="h-10 flex-1 rounded-none border-2 border-[var(--border-strong)] text-sm"
                 >
                   Cancelar
                 </Button>
@@ -792,7 +865,7 @@ export default function ProjectHub() {
                   type="submit"
                   disabled={creating}
                   variant="devhubPrimary"
-                  className="h-10 flex-1 rounded-xl text-sm font-semibold"
+                  className="h-10 flex-1 rounded-none text-sm font-semibold border-2 border-[var(--accent-primary)]"
                 >
                   {creating ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

@@ -12,6 +12,12 @@ const {
   getVisibleNavKeys,
   isAgentActive,
   shouldShowPlanningSignal,
+  getSidebarChromeStyle,
+  getSidebarNavActiveStyle,
+  getSidebarNavItemClasses,
+  getSidebarIdentityShellStyle,
+  getSidebarStatCardStyle,
+  getSidebarToggleStyle,
 } = require('../workspaceSidebarUtils.js');
 
 const DEFAULT_NAV = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial', 'swarm', 'telegram'];
@@ -89,5 +95,61 @@ describe('planning affordances', () => {
     );
 
     expect(source).not.toContain('agenthub: {');
+  });
+
+  test('sidebar chrome helpers resolve morphology token-driven shell styles', () => {
+    expect(getSidebarChromeStyle()).toEqual(
+      expect.objectContaining({
+        borderRightColor: 'var(--chrome-border-color)',
+        borderRightWidth: 'var(--chrome-border-width)',
+        boxShadow: 'var(--chrome-shadow-panel)',
+      })
+    );
+    expect(getSidebarChromeStyle().background).toContain('var(--chrome-panel-fill)');
+    expect(getSidebarChromeStyle().background).not.toContain('var(--surface-card) 95%');
+  });
+
+  test('sidebar active nav style resolves tokenized control chrome instead of per-page gradients', () => {
+    const style = getSidebarNavActiveStyle();
+
+    expect(style.background).toContain('var(--chrome-control-fill)');
+    expect(style.borderColor).toBe('var(--chrome-border-color)');
+    expect(style.borderWidth).toBe('var(--chrome-border-width)');
+    expect(style.boxShadow).toBe('var(--chrome-shadow-control)');
+  });
+
+  test('sidebar nav items resolve stronger morphology-aware classes for both collapsed and active states', () => {
+    const activeExpanded = getSidebarNavItemClasses({ active: true, collapsed: false });
+    const inactiveCollapsed = getSidebarNavItemClasses({ active: false, collapsed: true });
+
+    expect(activeExpanded).toContain('rounded-[var(--chrome-radius-control)]');
+    expect(activeExpanded).toContain('bg-[var(--chrome-control-fill-hover)]');
+    expect(activeExpanded).toContain('shadow-[var(--chrome-shadow-control)]');
+    expect(activeExpanded).not.toContain('rounded-xl');
+
+    expect(inactiveCollapsed).toContain('justify-center');
+    expect(inactiveCollapsed).toContain('hover:bg-[var(--chrome-control-fill)]');
+    expect(inactiveCollapsed).toContain('hover:border-[var(--chrome-border-color)]');
+    expect(inactiveCollapsed).not.toContain('hover:bg-white/[0.05]');
+  });
+
+  test('sidebar identity and toggle chrome use shared panel/control tokens instead of bespoke shell values', () => {
+    const identityStyle = getSidebarIdentityShellStyle();
+    const statCardStyle = getSidebarStatCardStyle();
+    const toggleStyle = getSidebarToggleStyle();
+
+    expect(identityStyle.background).toContain('var(--chrome-panel-fill-emphasis)');
+    expect(identityStyle.borderColor).toContain('var(--chrome-border-color)');
+    expect(identityStyle.borderWidth).toBe('var(--chrome-border-width)');
+    expect(identityStyle.boxShadow).toBe('var(--chrome-shadow-panel)');
+
+    expect(statCardStyle.background).toContain('var(--chrome-control-fill)');
+    expect(statCardStyle.borderColor).toBe('var(--chrome-border-color)');
+    expect(statCardStyle.boxShadow).toBe('var(--chrome-shadow-control)');
+
+    expect(toggleStyle.background).toContain('var(--chrome-control-fill-hover)');
+    expect(toggleStyle.borderColor).toContain('var(--chrome-border-color)');
+    expect(toggleStyle.boxShadow).toBe('var(--chrome-shadow-control)');
+    expect(JSON.stringify({ identityStyle, statCardStyle, toggleStyle })).not.toContain('255,255,255');
   });
 });

@@ -13,6 +13,7 @@ const mockNativeVteBridge = {
   focusNativeVtePanel: jest.fn(),
   isNativeVteRuntimeAvailable: jest.fn(() => false),
   openNativeVtePanel: jest.fn(async () => ({ opened: false, reason: 'tauri-unavailable' })),
+  pasteNativeVtePanel: jest.fn(async () => ({ supported: false, reason: 'tauri-unavailable' })),
   probeNativeVte: jest.fn(async () => ({ ready: false, reason: 'tauri-unavailable' })),
   resizeNativeVtePanel: jest.fn(),
   setNativeVtePanelVisibility: jest.fn(),
@@ -51,6 +52,7 @@ jest.mock(
         focus: jest.fn(),
         write: jest.fn(),
         writeln: jest.fn(),
+        paste: jest.fn(),
         refresh: jest.fn(),
         clearTextureAtlas: jest.fn(),
         dispose: jest.fn(),
@@ -613,7 +615,7 @@ describe('resolveTerminalRendererViewModel()', () => {
         requestedMode: 'vte-experimental',
         effectiveMode: 'xterm',
         didFallback: true,
-        showRecoveryBanner: true,
+        showRecoveryBanner: false,
       })
     );
   });
@@ -700,7 +702,7 @@ describe('shouldOpenNativeVtePanel()', () => {
 });
 
 describe('resolveTerminalRuntimePhase()', () => {
-  test('switches dock side-by-side native panels into fallback-xterm instead of leaving them native-suspended', () => {
+  test('keeps dock side-by-side native panels on native-suspended instead of forcing fallback-xterm', () => {
     expect(
       resolveTerminalRuntimePhase({
         isActivePanel: true,
@@ -713,7 +715,7 @@ describe('resolveTerminalRuntimePhase()', () => {
         runtimePlatform: 'linux',
         tauriAvailable: true,
       })
-    ).toBe('fallback-xterm');
+    ).toBe('native-suspended');
   });
 
   test('keeps transient grid or drag suspension on native-suspended phase', () => {
@@ -794,13 +796,41 @@ describe('TERMINAL_NATIVE_CONTENT_BODY_STYLE', () => {
       isolation: 'isolate',
     });
   });
+
+  test('keeps the native placeholder inside the same safe viewport body across morphologies', async () => {
+    installTerminalDom();
+    document.documentElement.dataset.morphology = 'brutalist-stage';
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-body-bounds-brutalist',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const body = view.container.querySelector('[data-testid="terminal-content-body"]');
+    const placeholder = view.container.querySelector('[data-testid="terminal-native-placeholder"]');
+    const viewportShell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+
+    expect(body).not.toBeNull();
+    expect(placeholder).not.toBeNull();
+    expect(body?.contains(placeholder)).toBe(true);
+    expect(viewportShell?.contains(body)).toBe(true);
+  });
 });
 
 describe('TerminalTTY renderer fallback UI', () => {
-  let dom;
-
   beforeEach(() => {
-    dom = installTerminalDom();
+    installTerminalDom();
     installTerminalRuntimeMocks();
     mockTerminalInstances.length = 0;
     mockWebSocketInstances.length = 0;
@@ -829,11 +859,15 @@ describe('TerminalTTY renderer fallback UI', () => {
       opened: false,
       reason: 'tauri-unavailable',
     });
+    mockNativeVteBridge.pasteNativeVtePanel.mockResolvedValue({
+      supported: false,
+      reason: 'tauri-unavailable',
+    });
     mockNativeVteBridge.subscribeNativeVteEvents.mockReturnValue(jest.fn());
     jest.clearAllMocks();
   });
 
-  test('restore with invalid experimental renderer keeps xterm surface visible with fallback recovery UI', async () => {
+  test('restore with invalid experimental renderer keeps xterm surface visible', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
         id: 'term-restore-1',
@@ -851,20 +885,10 @@ describe('TerminalTTY renderer fallback UI', () => {
     const fallbackBanner = view.container.querySelector(
       '[data-testid="terminal-renderer-fallback-banner"]'
     );
-    const fallbackTitle = view.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-title"]'
-    );
-    const fallbackCopy = view.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-copy"]'
-    );
-    const recoveryButton = view.container.querySelector('[data-testid="terminal-renderer-reset"]');
 
     expect(shell).not.toBeNull();
     expect(terminalContainer).not.toBeNull();
-    expect(fallbackBanner).not.toBeNull();
-    expect(fallbackTitle?.textContent).toContain('VTE');
-    expect(fallbackCopy?.textContent).toContain('xterm');
-    expect(recoveryButton?.textContent).toBe('Volver a xterm');
+    expect(fallbackBanner).toBeNull();
 
     expect(mockTerminalInstances).toHaveLength(1);
     expect(mockTerminalInstances[0].open).toHaveBeenCalledWith(terminalContainer);
@@ -1054,6 +1078,54 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(body).not.toBeNull();
     expect(placeholder).not.toBeNull();
     expect(body?.contains(placeholder)).toBe(true);
+  });
+
+  test('opens native GTK VTE using the real xterm container bounds instead of the larger placeholder body', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+
+    const originalGetBoundingClientRect = global.HTMLElement.prototype.getBoundingClientRect;
+    Object.defineProperty(global.HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value() {
+        const dataTestId = this.getAttribute?.('data-testid');
+        if (this.classList?.contains('devhub-xterm-container')) {
+          return { left: 120, top: 180, right: 960, bottom: 700, width: 840, height: 520 };
+        }
+        if (dataTestId === 'terminal-content-body') {
+          return { left: 96, top: 148, right: 1024, bottom: 756, width: 928, height: 608 };
+        }
+        return { left: 0, top: 0, right: 1280, bottom: 720, width: 1280, height: 720 };
+      },
+    });
+
+    try {
+      await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-native-container-bounds',
+          requestedRendererMode: 'vte-experimental',
+          autoFocus: true,
+          isActivePanel: true,
+          runtimePlatform: 'linux',
+          showQuickCopyButton: false,
+        })
+      );
+
+      await flushTerminalEffects();
+
+      expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          panelId: 'term-native-container-bounds',
+          bounds: expect.objectContaining({ x: 120, y: 180, width: 840, height: 520 }),
+        })
+      );
+    } finally {
+      Object.defineProperty(global.HTMLElement.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+    }
   });
 
   test('keeps TERM-03 same-window by never opening an external window for GTK VTE', async () => {
@@ -1266,7 +1338,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockTerminalInstances).toHaveLength(1);
     expect(
       view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
-    ).not.toBeNull();
+    ).toBeNull();
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
   });
 
@@ -1442,6 +1514,21 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
   });
 
+  test('rejects offscreen native bounds so hidden workspace panels are not resized into view', () => {
+    const element = {
+      getBoundingClientRect: () => ({
+        left: -2000,
+        top: 96,
+        right: -1120,
+        bottom: 636,
+        width: 880,
+        height: 540,
+      }),
+    };
+
+    expect(getNativeTerminalBounds(element)).toBeNull();
+  });
+
   test('native open failure falls back in place without blanking the live xterm session', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
@@ -1464,8 +1551,8 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(
-      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
-    ).toContain('xterm');
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
+    ).toBeNull();
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
@@ -1734,6 +1821,73 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
 
+  test('workspace sync event hides inactive native panels and resizes active panels after switch', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-workspace-sync',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
+    mockNativeVteBridge.resizeNativeVtePanel.mockClear();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:native-vte-workspace-sync', {
+        detail: {
+          activeWorkspaceId: 'ws2',
+          activePanelIds: ['other-panel'],
+          hiddenPanelIds: ['term-native-workspace-sync'],
+          reason: 'workspace-switch',
+        },
+      })
+    );
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+      panelId: 'term-native-workspace-sync',
+      visible: false,
+      reason: 'workspace-switch',
+    });
+
+    mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
+    mockNativeVteBridge.resizeNativeVtePanel.mockClear();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:native-vte-workspace-sync', {
+        detail: {
+          activeWorkspaceId: 'ws1',
+          activePanelIds: ['term-native-workspace-sync'],
+          hiddenPanelIds: ['other-panel'],
+          reason: 'workspace-switch',
+        },
+      })
+    );
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+      panelId: 'term-native-workspace-sync',
+      visible: true,
+      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+    });
+    expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        panelId: 'term-native-workspace-sync',
+        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      })
+    );
+  });
+
   test('temporarily hides native surfaces during explicit suspension and restores visibility resize and focus after resume', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
@@ -1815,7 +1969,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
   });
 
-  test('dock side-by-side policy boots visible xterm fallback while hiding native lease and restores native when policy clears', async () => {
+  test('dock side-by-side policy hides native lease without booting xterm fallback and restores native when policy clears', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
     mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
@@ -1863,9 +2017,11 @@ describe('TerminalTTY renderer fallback UI', () => {
       visible: false,
       reason: 'dock-side-by-side',
     });
-    expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-placeholder"]')
+    ).not.toBeNull();
     expect(view.container.querySelector('.devhub-xterm-container')).not.toBeNull();
-    expect(mockTerminalInstances).toHaveLength(1);
+    expect(mockTerminalInstances).toHaveLength(0);
 
     mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
     mockNativeVteBridge.resizeNativeVtePanel.mockClear();
@@ -2101,6 +2257,63 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
 
+  test('hides a native panel that finishes opening after the terminal route is hidden', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+
+    let resolveOpen;
+    mockNativeVteBridge.openNativeVtePanel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOpen = resolve;
+        })
+    );
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-open-hidden-race',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
+      expect.objectContaining({ panelId: 'term-native-open-hidden-race' })
+    );
+
+    await rerenderIntoRoot(
+      view.root,
+      React.createElement(TerminalTTY, {
+        id: 'term-native-open-hidden-race',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: false,
+        isActivePanel: false,
+        isVisibleInLayout: false,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+    await flushTerminalEffects();
+
+    mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
+    resolveOpen({ opened: true, reason: null });
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+      panelId: 'term-native-open-hidden-race',
+      visible: false,
+      reason: 'layout-hidden',
+    });
+    expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalledWith(
+      expect.objectContaining({ panelId: 'term-native-open-hidden-race' })
+    );
+  });
+
   test('closes the native lease when the owning terminal session is explicitly removed', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
@@ -2167,8 +2380,8 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(
-      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
-    ).toContain('xterm');
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
+    ).toBeNull();
     expect(mockTerminalInstances.length).toBeGreaterThan(0);
   });
 
@@ -2197,8 +2410,358 @@ describe('TerminalTTY renderer fallback UI', () => {
     const originalTerminal = mockTerminalInstances[0];
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(
-      view.container.querySelector('[data-testid="terminal-renderer-fallback-copy"]')?.textContent
-    ).toContain('paneles vecinos');
+      view.container.querySelector('[data-testid="terminal-renderer-fallback-banner"]')
+    ).toBeNull();
     expect(mockTerminalInstances[0]).toBe(originalTerminal);
+  });
+
+  test('Ctrl+Shift+V pastes into xterm without falling through to workspace shortcuts', async () => {
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('npm test\n'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-paste-shortcut',
+        requestedRendererMode: 'xterm',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    const event = new window.KeyboardEvent('keydown', {
+      key: 'V',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(event);
+    await flushTerminalEffects();
+
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+    expect(mockTerminalInstances[0].paste).toHaveBeenCalledWith('npm test\n');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+V is not intercepted as terminal paste in xterm', async () => {
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('echo hello'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-paste-ctrlv',
+        requestedRendererMode: 'xterm',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    const event = new window.KeyboardEvent('keydown', {
+      key: 'V',
+      ctrlKey: true,
+      shiftKey: false,
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(event);
+    await flushTerminalEffects();
+
+    expect(clipboard.readText).not.toHaveBeenCalled();
+    expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  test('Shift+Insert also pastes into xterm', async () => {
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('echo ok'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-paste-insert',
+        requestedRendererMode: 'xterm',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    const event = new window.KeyboardEvent('keydown', {
+      key: 'Insert',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(event);
+    await flushTerminalEffects();
+
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+    expect(mockTerminalInstances[0].paste).toHaveBeenCalledWith('echo ok');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('terminal context menu exposes paste even with no selection', async () => {
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('pnpm dev'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-context-paste',
+        requestedRendererMode: 'xterm',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    mockTerminalInstances[0].getSelection.mockReturnValue('');
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    shell.dispatchEvent(
+      new window.MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 32,
+        clientY: 48,
+      })
+    );
+    await flushTerminalEffects();
+
+    const pasteButton = view.container.querySelector('[data-testid="terminal-context-menu-paste"]');
+    const copyButton = view.container.querySelector('[data-testid="terminal-context-menu-copy"]');
+    expect(pasteButton).not.toBeNull();
+    expect(copyButton.disabled).toBe(true);
+
+    pasteButton.click();
+    await flushTerminalEffects();
+
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+    expect(mockTerminalInstances[0].paste).toHaveBeenCalledWith('pnpm dev');
+  });
+
+  test('native VTE intercepts DOM paste events and routes them through focus + Tauri bridge', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+    mockNativeVteBridge.pasteNativeVtePanel = jest.fn().mockResolvedValue({ supported: true });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-dom-paste',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    const pasteEvent = new window.Event('paste', {
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(pasteEvent);
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-dom-paste',
+    });
+    expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-dom-paste',
+    });
+    expect(pasteEvent.defaultPrevented).toBe(true);
+  });
+
+  test('native VTE intercepts document-level paste events and routes them through focus + Tauri bridge', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+    mockNativeVteBridge.pasteNativeVtePanel = jest.fn().mockResolvedValue({ supported: true });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-document-paste',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    shell.focus?.();
+    const pasteEvent = new window.Event('paste', {
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(pasteEvent);
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-document-paste',
+    });
+    expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-document-paste',
+    });
+    expect(pasteEvent.defaultPrevented).toBe(true);
+  });
+
+  test('xterm does not intercept DOM paste events', async () => {
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('ignored'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-xterm-dom-paste',
+        requestedRendererMode: 'xterm',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    const pasteEvent = new window.Event('paste', {
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(pasteEvent);
+    await flushTerminalEffects();
+
+    expect(clipboard.readText).not.toHaveBeenCalled();
+    expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled();
+    expect(pasteEvent.defaultPrevented).toBe(false);
+  });
+
+  test('native VTE intercepts paste shortcuts and routes them through focus + Tauri bridge', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+    mockNativeVteBridge.pasteNativeVtePanel = jest.fn().mockResolvedValue({ supported: true });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-paste',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+
+    const pasteEvent = new window.KeyboardEvent('keydown', {
+      key: 'V',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(pasteEvent);
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-paste',
+    });
+    expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-paste',
+    });
+    expect(pasteEvent.defaultPrevented).toBe(true);
+
+    mockNativeVteBridge.focusNativeVtePanel.mockClear();
+    mockNativeVteBridge.pasteNativeVtePanel.mockClear();
+
+    const ctrlVPasteEvent = new window.KeyboardEvent('keydown', {
+      key: 'V',
+      ctrlKey: true,
+      shiftKey: false,
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(ctrlVPasteEvent);
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-paste',
+    });
+    expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
+      panelId: 'term-native-paste',
+    });
+    expect(ctrlVPasteEvent.defaultPrevented).toBe(true);
+
+    // Copy remains native-only because we do not have a JS/Tauri copy bridge.
+    mockNativeVteBridge.focusNativeVtePanel.mockClear();
+    mockNativeVteBridge.pasteNativeVtePanel.mockClear();
+    const copyEvent = new window.KeyboardEvent('keydown', {
+      key: 'C',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    shell.dispatchEvent(copyEvent);
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.focusNativeVtePanel).not.toHaveBeenCalled();
+    expect(mockNativeVteBridge.pasteNativeVtePanel).not.toHaveBeenCalled();
+    expect(copyEvent.defaultPrevented).toBe(false);
   });
 });

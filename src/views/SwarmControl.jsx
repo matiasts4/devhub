@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { Bot } from 'lucide-react';
 import {
   composeControlRoomSnapshot,
   createSwarmLaunchDraft,
@@ -20,10 +21,7 @@ import {
   selectSwarmControlPrimarySurface,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
-import { UiHeader } from '@/components/ui/system';
-import { formatToken } from '@/components/control-room/utils';
-import ControlRoomMetricsPanel from '@/components/control-room/ControlRoomMetricsPanel';
-import ControlRoomContextPanel from '@/components/control-room/ControlRoomContextPanel';
+import ControlRoomHeader from '@/components/control-room/ControlRoomHeader';
 import DirectorQueuePanel from '@/components/control-room/DirectorQueuePanel';
 import AgentsClaimsPanel from '@/components/control-room/AgentsClaimsPanel';
 import WorkspacesPanel from '@/components/control-room/WorkspacesPanel';
@@ -36,8 +34,28 @@ import SwarmPrimarySurface from '@/components/control-room/SwarmPrimarySurface';
 import LaunchpadTemplatesPanel from '@/components/control-room/LaunchpadTemplatesPanel';
 import SwarmTypeCatalogPanel from '@/components/control-room/SwarmTypeCatalogPanel';
 import SwarmLaunchWizardModal from '@/components/control-room/SwarmLaunchWizardModal';
+import { ChromeSurface } from '@/components/ui/chrome-surface';
+import { Button } from '@/components/ui/button';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import ActiveProcessesPanel from '@/components/control-room/ActiveProcessesPanel';
+import StatusSignal from '@/components/ui/StatusSignal';
+import {
+  dataTileStyle,
+  filterBarStyle,
+  inputStyle,
+  panelStyle,
+  pillStyle,
+  sectionSurfaceStyle,
+} from '@/chrome/morphology';
+import {
+  getWorkspaceBreadcrumbStyle,
+  getWorkspacePageContentStyle,
+  getWorkspacePageHeaderStyle,
+  getWorkspacePageShellStyle,
+} from './workspacePageChrome';
 
 void [
+  ControlRoomHeader,
   DirectorQueuePanel,
   AgentsClaimsPanel,
   WorkspacesPanel,
@@ -50,6 +68,7 @@ void [
   LaunchpadTemplatesPanel,
   SwarmTypeCatalogPanel,
   SwarmLaunchWizardModal,
+  ActiveProcessesPanel,
 ];
 
 function buildSnapshotInput({ snapshotInput, fetchedInput, project }) {
@@ -86,6 +105,27 @@ function writeCachedSwarmSnapshot(projectId, snapshotInput) {
   }
 }
 
+function scheduleSwarmRuntimeRequests(requests = [], timersRef = null) {
+  requests.forEach((request) => {
+    const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
+    if (delayMs > 0 && timersRef?.current) {
+      const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
+      const timerId = window.setTimeout(() => {
+        timersRef.current.delete(requestKey);
+        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
+      }, delayMs);
+      timersRef.current.set(requestKey, timerId);
+      return;
+    }
+
+    window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
+  });
+}
+
+export function getSwarmControlLayoutButtonVariant(layout, targetLayout) {
+  return layout === targetLayout ? 'devhubGlass' : 'devhubGhost';
+}
+
 export default function SwarmControl({ snapshotInput = null }) {
   const { project } = useOutletContext() || {};
   const [fetchedInput, setFetchedInput] = useState(null);
@@ -107,6 +147,16 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [launchDraft, setLaunchDraft] = useState(null);
   const [launchResult, setLaunchResult] = useState(null);
   const [launchSubmitState, setLaunchSubmitState] = useState({ submitting: false, error: null });
+  const eventSourceRef = useRef(null);
+  const scheduledLaunchTimersRef = useRef(new Map());
+
+  useEffect(
+    () => () => {
+      scheduledLaunchTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      scheduledLaunchTimersRef.current.clear();
+    },
+    []
+  );
 
   const loadSnapshot = useCallback(async () => {
     if (snapshotInput) return;
@@ -162,6 +212,61 @@ export default function SwarmControl({ snapshotInput = null }) {
     loadSnapshot();
     return undefined;
   }, [loadSnapshot, snapshotInput]);
+
+  useEffect(() => {
+    if (snapshotInput || typeof window === 'undefined' || typeof EventSource === 'undefined') {
+      return undefined;
+    }
+
+    const params = new URLSearchParams();
+    if (project?.id) params.set('project_id', project.id);
+
+    const activeMissionId = fetchedInput?.mission_control?.mission?.mission_id || null;
+    if (activeMissionId) params.set('mission_id', activeMissionId);
+
+    const sseUrl = params.size
+      ? `/api/agenthub/sessions/stream?${params.toString()}`
+      : '/api/agenthub/sessions/stream';
+
+    let isSubscribed = true;
+    const source = new EventSource(sseUrl);
+    eventSourceRef.current = source;
+
+    const handleDirectorFeed = async (event) => {
+      if (!isSubscribed) return;
+
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      const eventMissionId =
+        payload?.mission_id || payload?.director_feed?.handoff?.task?.mission_id || null;
+      if (activeMissionId && eventMissionId && activeMissionId !== eventMissionId) {
+        return;
+      }
+
+      await loadSnapshot();
+    };
+
+    source.addEventListener('director-feed', handleDirectorFeed);
+
+    return () => {
+      isSubscribed = false;
+      source.removeEventListener('director-feed', handleDirectorFeed);
+      source.close();
+      if (eventSourceRef.current === source) {
+        eventSourceRef.current = null;
+      }
+    };
+  }, [
+    fetchedInput?.mission_control?.mission?.mission_id,
+    loadSnapshot,
+    project?.id,
+    snapshotInput,
+  ]);
 
   const snapshot = useMemo(
     () =>
@@ -317,12 +422,14 @@ export default function SwarmControl({ snapshotInput = null }) {
           launchLabel: payload.launch_result?.launchLabel || launchPreview?.launchLabel,
           summaryLines: payload.launch_result?.summaryLines || launchPreview?.summaryLines,
         },
+        launchTrace: payload.launch_result?.launch_trace || null,
         runtimeRequests: payload.launch_result?.runtime_requests || [],
       });
 
-      (payload.launch_result?.runtime_requests || []).forEach((request) => {
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      });
+      scheduleSwarmRuntimeRequests(
+        payload.launch_result?.runtime_requests || [],
+        scheduledLaunchTimersRef
+      );
 
       setLaunchWizardOpen(false);
       setLaunchWizardStep('launch');
@@ -450,223 +557,299 @@ export default function SwarmControl({ snapshotInput = null }) {
 
   return (
     <div
-      className="min-h-full p-6"
-      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
+      className="h-full flex flex-col core-page-shell"
+      style={getWorkspacePageShellStyle()}
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <UiHeader>
-          <UiHeader.Title>
-            <div className="flex flex-col">
-              <span
-                className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+      <div
+        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
+        style={getWorkspacePageHeaderStyle()}
+      >
+        <WorkspacePageTitle
+          icon={Bot}
+          title="Swarm Control"
+          projectName={project?.name || header.workspace_label}
+        />
+
+        <ChromeSurface
+          as="span"
+          surface="pill"
+          tone="accent"
+          className="px-2 py-0.5 text-xs"
+          style={getWorkspaceBreadcrumbStyle()}
+        >
+          <span className="inline-flex items-center gap-2">
+            <StatusSignal
+              tone={header.supervisor_state === 'active' ? 'success' : 'neutral'}
+              animation={header.supervisor_state === 'active' ? 'blink' : 'none'}
+              compact
+            />
+            Supervisor {String(header.supervisor_state || 'unknown').toUpperCase()}
+          </span>
+        </ChromeSurface>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <div style={getWorkspacePageContentStyle()}>
+          <div className="flex flex-col gap-5">
+            <ControlRoomHeader
+              header={header}
+              loading={loading}
+              projectName={header.workspace_label}
+              missionSummary={missionSummary}
+            />
+
+            <SwarmPrimarySurface surface={primarySurface} onPrimaryAction={handlePrimaryAction} />
+
+            {launchResult ? (
+              <section aria-label="Launch summary local">
+                <ChromeSurface asChild surface="panel" emphasized>
+                  <div className="p-4" style={sectionSurfaceStyle({ emphasized: true })}>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p
+                        className="typography-label"
+                      >
+                        Launch snapshot durable
+                      </p>
+                      <h2 className="mt-2 typography-card-title">
+                        {launchResult.summary?.launchLabel}
+                      </h2>
+                      <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        {launchResult.summary?.summaryLines?.[4]}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="devhubGlass"
+                      size="toolbar"
+                      onClick={() => openLaunchWizard({ step: 'launch' })}
+                    >
+                      Reabrir summary
+                    </Button>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
+                      <ChromeSurface key={line} asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          {line}
+                        </div>
+                      </ChromeSurface>
+                    ))}
+                  </div>
+
+                  {launchResult.launchTrace ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <ChromeSurface asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          Strategy · {launchResult.launchTrace.launchStrategy || 'director_first'}
+                        </div>
+                      </ChromeSurface>
+                      <ChromeSurface asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          Bootstrap · {launchResult.launchTrace.bootstrapMode || 'engram_first'}
+                        </div>
+                      </ChromeSurface>
+                      <ChromeSurface asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          Phases · {launchResult.launchTrace.phaseCount || 0} · Memory ·{' '}
+                          {launchResult.launchTrace.memorySnapshotCount || 0}
+                        </div>
+                      </ChromeSurface>
+                    </div>
+                  ) : null}
+
+                  {launchSubmitState.error ? (
+                    <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>
+                      {launchSubmitState.error}
+                    </p>
+                  ) : null}
+                  </div>
+                </ChromeSurface>
+              </section>
+            ) : null}
+
+            {isIdleLaunchpad ? (
+              <section className="grid gap-5 xl:grid-cols-2" aria-label="Lanzador idle">
+                <LaunchpadTemplatesPanel
+                  catalog={launchCatalog}
+                  selectedTemplateId={launchPreview?.draft?.templateId}
+                  onSelectTemplate={(templateId) =>
+                    updateLaunchDraft({ templateId, mode: 'template' })
+                  }
+                  onLaunch={(templateId) =>
+                    openLaunchWizard({ templateId, step: 'team', mode: 'template' })
+                  }
+                />
+
+                <SwarmTypeCatalogPanel
+                  catalog={launchCatalog}
+                  selectedSwarmTypeId={launchPreview?.draft?.swarmTypeId}
+                  onSelectSwarmType={(swarmTypeId) =>
+                    updateLaunchDraft({ swarmTypeId, mode: 'custom' })
+                  }
+                  onLaunch={(swarmTypeId) =>
+                    openLaunchWizard({ swarmTypeId, step: 'configure', mode: 'custom' })
+                  }
+                />
+              </section>
+            ) : null}
+
+            <ChromeSurface asChild surface="panel">
+              <section
+                className="p-4"
+                style={filterBarStyle()}
+                aria-label="Controles operativos"
+              >
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div className="flex-1" style={panelStyle()}>
+                  <label className="flex flex-col gap-2 p-3 text-xs font-medium">
+                    <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
+                    <input
+                      aria-label="Filtrar registros"
+                      className="w-full"
+                      style={inputStyle()}
+                      placeholder="agente, workspace, run, evidencia…"
+                      value={filterText}
+                      onChange={(event) => setFilterText(event.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2 p-2" style={panelStyle()}>
+                  <Button
+                    type="button"
+                    variant={getSwarmControlLayoutButtonVariant(layout, 'grid')}
+                    size="toolbar"
+                    onClick={() => setLayout('grid')}
+                    aria-pressed={layout === 'grid'}
+                  >
+                    Grilla
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={getSwarmControlLayoutButtonVariant(layout, 'stack')}
+                    size="toolbar"
+                    onClick={() => setLayout('stack')}
+                    aria-pressed={layout === 'stack'}
+                  >
+                    Pila
+                  </Button>
+                </div>
+              </div>
+
+              <div
+                className="mt-3 flex flex-wrap gap-2 text-xs"
                 style={{ color: 'var(--text-muted)' }}
               >
-                Swarm / Control Room
-              </span>
-              <span className="text-base font-semibold truncate">
-                {header.workspace_label || 'Swarm / Control Room'}
-              </span>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Supervisor {formatToken(header.supervisor_state)}
-                {loading ? ' · cargando snapshot…' : ''}
-              </span>
-            </div>
-          </UiHeader.Title>
-        </UiHeader>
-
-        <ControlRoomMetricsPanel header={header} />
-
-        <ControlRoomContextPanel header={header} missionSummary={missionSummary} />
-
-        <SwarmPrimarySurface surface={primarySurface} onPrimaryAction={handlePrimaryAction} />
-
-        {launchResult ? (
-          <section aria-label="Launch summary local">
-            <div
-              className="rounded-2xl border p-4"
-              style={{
-                background:
-                  'linear-gradient(180deg, rgba(255,176,64,0.14) 0%, rgba(255,176,64,0.04) 100%)',
-                borderColor: 'rgba(255,176,64,0.22)',
-              }}
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p
-                    className="text-xs font-semibold uppercase tracking-[0.18em]"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Launch snapshot durable
-                  </p>
-                  <h2 className="mt-2 text-lg font-semibold">
-                    {launchResult.summary?.launchLabel}
-                  </h2>
-                  <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {launchResult.summary?.summaryLines?.[4]}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openLaunchWizard({ step: 'launch' })}
-                  className="rounded-xl border px-4 py-2 text-sm font-medium"
-                  style={{
-                    borderColor: 'rgba(255,176,64,0.24)',
-                    background: 'rgba(255,176,64,0.12)',
-                  }}
-                >
-                  Reabrir summary
-                </button>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
+                  {filteredAgents.length} agentes
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
+                  {filteredWorkspaces.length} workspaces
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
+                  {filteredRuns.length} runs
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
+                  {filteredApprovals.length} aprobaciones
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
+                  {filteredErrors.length} errores
+                </ChromeSurface>
               </div>
+              </section>
+            </ChromeSurface>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
-                  <div
-                    key={line}
-                    className="rounded-xl border px-3 py-3 text-sm"
-                    style={{ borderColor: 'var(--border-subtle)' }}
-                  >
-                    {line}
-                  </div>
-                ))}
+            <section className="space-y-3" aria-label="Operaciones activas">
+              <p
+                className="typography-section-label"
+              >
+                Operaciones activas
+              </p>
+              <div
+                className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
+              >
+                <DirectorQueuePanel
+                  queue={effectiveDirectorQueue}
+                  handoffDisabled={handoffUnsafe}
+                  handoffDisabledReason={handoffDisabledReason}
+                  isSubmitting={handoffSubmitState.submitting}
+                  onClaimNext={handleClaimNext}
+                />
+
+                <ApprovalsErrorsPanel
+                  approvals={filteredApprovals}
+                  errors={filteredErrors}
+                  mutationState={approvalMutationState}
+                  onDecision={handleDirectorDecision}
+                />
               </div>
+            </section>
 
-              {launchSubmitState.error ? (
-                <p className="mt-3 text-sm" style={{ color: '#fca5a5' }}>
-                  {launchSubmitState.error}
-                </p>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
+            <section className="space-y-3" aria-label="Procesos OpenCode">
+              <ActiveProcessesPanel />
+            </section>
 
-        {isIdleLaunchpad ? (
-          <LaunchpadTemplatesPanel
-            catalog={launchCatalog}
-            selectedTemplateId={launchPreview?.draft?.templateId}
-            onSelectTemplate={(templateId) => updateLaunchDraft({ templateId, mode: 'template' })}
-            onLaunch={(templateId) =>
-              openLaunchWizard({ templateId, step: 'team', mode: 'template' })
-            }
-          />
-        ) : null}
-        {isIdleLaunchpad ? (
-          <SwarmTypeCatalogPanel
-            catalog={launchCatalog}
-            selectedSwarmTypeId={launchPreview?.draft?.swarmTypeId}
-            onSelectSwarmType={(swarmTypeId) => updateLaunchDraft({ swarmTypeId, mode: 'custom' })}
-            onLaunch={(swarmTypeId) =>
-              openLaunchWizard({ swarmTypeId, step: 'configure', mode: 'custom' })
-            }
-          />
-        ) : null}
+            <section className="space-y-3" aria-label="Mision y evidencia">
+              <p
+                className="typography-section-label"
+              >
+                Mision y evidencia
+              </p>
+              <div
+                className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
+              >
+                <MissionKernelPanel
+                  missionControl={effectiveMissionControl}
+                  onComposerSubmit={handleComposerSubmit}
+                />
+                <EvidenceTimelinePanel items={evidenceTimeline} />
+              </div>
+            </section>
 
-        <div
-          className="flex flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
-          style={{
-            background: 'var(--surface-muted)',
-            borderColor: 'var(--border-subtle)',
-          }}
-        >
-          <label className="flex flex-1 flex-col gap-2 text-xs font-medium">
-            <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
-            <input
-              aria-label="Filtrar registros"
-              className="rounded-lg border px-3 py-2 outline-none"
-              style={{
-                background: 'var(--surface-app)',
-                borderColor: 'var(--border-subtle)',
-                color: 'var(--text-primary)',
-              }}
-              placeholder="agente, workspace, run, evidencia…"
-              value={filterText}
-              onChange={(event) => setFilterText(event.target.value)}
+            <section className="space-y-3" aria-label="Inventario operativo">
+              <p
+                className="typography-section-label"
+              >
+                Inventario operativo
+              </p>
+              <div
+                className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-3' : 'flex flex-col gap-6'}
+              >
+                <AgentsClaimsPanel agents={filteredAgents} />
+                <WorkspacesPanel workspaces={filteredWorkspaces} />
+                <RunsArtifactsPanel
+                  runs={filteredRuns}
+                  selectedRunId={selectedRunId}
+                  onSelectRun={setSelectedRunId}
+                />
+              </div>
+            </section>
+
+            <DiagnosticOverlay
+              diagnostics={diagnostics}
+              expanded={expandedPanels.diagnostics}
+              onToggle={() =>
+                setExpandedPanels((current) => ({
+                  ...current,
+                  diagnostics: !current.diagnostics,
+                }))
+              }
             />
-          </label>
 
-          <div className="flex items-center gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setLayout('grid')}
-              aria-pressed={layout === 'grid'}
-              className="rounded-lg border px-3 py-2"
-              style={{
-                background: layout === 'grid' ? 'var(--surface-elevated)' : 'transparent',
-                borderColor: 'var(--border-subtle)',
-              }}
-            >
-              Grilla
-            </button>
-            <button
-              type="button"
-              onClick={() => setLayout('stack')}
-              aria-pressed={layout === 'stack'}
-              className="rounded-lg border px-3 py-2"
-              style={{
-                background: layout === 'stack' ? 'var(--surface-elevated)' : 'transparent',
-                borderColor: 'var(--border-subtle)',
-              }}
-            >
-              Pila
-            </button>
+            <SwarmLaunchWizardModal
+              open={launchWizardOpen}
+              catalog={launchCatalog}
+              preview={launchPreview}
+              currentStep={launchWizardStep}
+              onClose={() => setLaunchWizardOpen(false)}
+              onStepChange={setLaunchWizardStep}
+              onDraftChange={updateLaunchDraft}
+              onLaunch={handleLaunchSubmit}
+            />
           </div>
         </div>
-
-        <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
-          <DirectorQueuePanel
-            queue={effectiveDirectorQueue}
-            handoffDisabled={handoffUnsafe}
-            handoffDisabledReason={handoffDisabledReason}
-            isSubmitting={handoffSubmitState.submitting}
-            onClaimNext={handleClaimNext}
-          />
-
-          <ApprovalsErrorsPanel
-            approvals={filteredApprovals}
-            errors={filteredErrors}
-            mutationState={approvalMutationState}
-            onDecision={handleDirectorDecision}
-          />
-        </div>
-
-        <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}>
-          <EvidenceTimelinePanel items={evidenceTimeline} />
-          <MissionKernelPanel
-            missionControl={effectiveMissionControl}
-            onComposerSubmit={handleComposerSubmit}
-          />
-        </div>
-
-        <div className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-3' : 'flex flex-col gap-6'}>
-          <AgentsClaimsPanel agents={filteredAgents} />
-          <WorkspacesPanel workspaces={filteredWorkspaces} />
-          <RunsArtifactsPanel
-            runs={filteredRuns}
-            selectedRunId={selectedRunId}
-            onSelectRun={setSelectedRunId}
-          />
-        </div>
-
-        <DiagnosticOverlay
-          diagnostics={diagnostics}
-          expanded={expandedPanels.diagnostics}
-          onToggle={() =>
-            setExpandedPanels((current) => ({
-              ...current,
-              diagnostics: !current.diagnostics,
-            }))
-          }
-        />
-
-        <SwarmLaunchWizardModal
-          open={launchWizardOpen}
-          catalog={launchCatalog}
-          preview={launchPreview}
-          currentStep={launchWizardStep}
-          onClose={() => setLaunchWizardOpen(false)}
-          onStepChange={setLaunchWizardStep}
-          onDraftChange={updateLaunchDraft}
-          onLaunch={handleLaunchSubmit}
-        />
       </div>
     </div>
   );

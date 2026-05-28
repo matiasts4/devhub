@@ -1,44 +1,11 @@
 import React from 'react';
+import { btnPrimaryStyle, dataTileStyle } from '../../chrome/morphology';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
+import SwarmTopologyGraph from './SwarmTopologyGraph';
+import { formatToken } from './utils';
 
 function statLabel(value, singular, plural) {
   return `${value} ${Number(value) === 1 ? singular : plural}`;
-}
-
-function SwarmNode({ member, compact = false }) {
-  const isDirector = member?.isDirector;
-
-  return (
-    <div
-      className={`rounded-2xl border ${compact ? 'p-3' : 'p-4'}`}
-      style={{
-        background: isDirector
-          ? 'radial-gradient(circle at 50% 0%, rgba(255,176,64,0.24), rgba(255,176,64,0.07) 62%, rgba(255,255,255,0.02))'
-          : 'linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018))',
-        borderColor: isDirector ? 'rgba(255,176,64,0.34)' : 'var(--border-subtle)',
-      }}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className={`${compact ? 'h-9 w-9' : 'h-12 w-12'} flex shrink-0 items-center justify-center rounded-full border text-sm font-bold`}
-          style={{
-            background: isDirector ? 'rgba(255,111,0,0.22)' : 'rgba(88,166,255,0.12)',
-            borderColor: isDirector ? 'rgba(255,176,64,0.4)' : 'rgba(88,166,255,0.24)',
-            color: isDirector ? '#ffb040' : 'var(--text-primary)',
-          }}
-        >
-          {member?.label?.charAt(0) || '?'}
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{member?.label || 'Agent'}</p>
-          <p className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
-            {member?.status || 'unknown'}
-            {member?.workspaceId ? ` · ${member.workspaceId}` : ''}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export default function ActiveSwarmTowerPanel({ hero }) {
@@ -48,12 +15,12 @@ export default function ActiveSwarmTowerPanel({ hero }) {
 
   return (
     <SurfaceCard emphasized className="p-5 md:p-6">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.25fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <SurfacePill tone="accent">Swarm activo</SurfacePill>
-            <SurfacePill>{hero?.authority || 'unavailable'}</SurfacePill>
-            <SurfacePill>{hero?.freshness || 'unavailable'}</SurfacePill>
+            <SurfacePill>{formatToken(hero?.authority || 'unavailable')}</SurfacePill>
+            <SurfacePill>{formatToken(hero?.freshness || 'unavailable')}</SurfacePill>
           </div>
 
           <div className="space-y-2">
@@ -61,43 +28,52 @@ export default function ActiveSwarmTowerPanel({ hero }) {
               {hero?.title || 'Swarm activo'}
             </h2>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Estado {hero?.status || 'unknown'} ·{' '}
+              Estado {formatToken(hero?.status || 'unknown')} ·{' '}
               {hero?.highlights?.[0] || 'Tomá el foco principal desde la vista durable.'}
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <SurfacePill tone="accent">
-              {statLabel(hero?.stats?.activeAgents || 0, 'agente activo', 'agentes activos')}
-            </SurfacePill>
-            <SurfacePill>
-              {statLabel(hero?.stats?.queueDepth || 0, 'task en cola', 'tasks en cola')}
-            </SurfacePill>
-            <SurfacePill>
-              {statLabel(
+          <div className="grid gap-2 sm:grid-cols-2">
+            <MetricStat
+              label="Agentes activos"
+              value={statLabel(hero?.stats?.activeAgents || 0, 'agente', 'agentes')}
+            />
+            <MetricStat
+              label="Cola durable"
+              value={statLabel(hero?.stats?.queueDepth || 0, 'task', 'tasks')}
+            />
+            <MetricStat
+              label="Aprobaciones"
+              value={statLabel(
                 hero?.stats?.pendingApprovals || 0,
-                'aprobación pendiente',
-                'aprobaciones pendientes'
+                'pendiente',
+                'pendientes'
               )}
-            </SurfacePill>
-            <SurfacePill>
-              {statLabel(
+            />
+            <MetricStat
+              label="Entregas"
+              value={statLabel(
                 hero?.stats?.pendingDeliveries || 0,
-                'entrega pendiente',
-                'entregas pendientes'
+                'pendiente',
+                'pendientes'
               )}
-            </SurfacePill>
+            />
           </div>
 
           <div className="min-w-0 space-y-3">
             <button
               type="button"
               disabled={hero?.primaryCta?.disabled}
-              className="w-full rounded-xl border px-4 py-3 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full disabled:cursor-not-allowed disabled:opacity-60"
               style={{
-                background: 'rgba(255,176,64,0.12)',
-                borderColor: 'rgba(255,176,64,0.26)',
-                color: 'var(--text-primary)',
+                ...btnPrimaryStyle({ size: 'lg' }),
+                width: '100%',
+                height: 'auto',
+                padding: '0.75rem 1rem',
+                justifyContent: 'flex-start',
+                textAlign: 'left',
+                textTransform: 'none',
+                letterSpacing: 'normal',
               }}
             >
               {hero?.primaryCta?.label || 'Continuar swarm'}
@@ -124,71 +100,51 @@ export default function ActiveSwarmTowerPanel({ hero }) {
                 </p>
               </SurfaceCard>
             ) : null}
+
+            {hero?.identityHealth ? (
+              <SurfaceCard className="p-3">
+                <p
+                  className="text-xs font-semibold uppercase tracking-[0.18em]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Identidad launch
+                </p>
+                <p className="mt-2 text-sm font-medium">
+                  {hero.identityHealth.status === 'healthy'
+                    ? 'Consistente entre UI, DB y runtime'
+                    : `${hero.identityHealth.issueCount} desalineaciones detectadas`}
+                </p>
+                {hero.identityHealth.status !== 'healthy' &&
+                Array.isArray(hero.identityHealth.issues) &&
+                hero.identityHealth.issues.length > 0 ? (
+                  <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {hero.identityHealth.issues[0]}
+                  </p>
+                ) : null}
+              </SurfaceCard>
+            ) : null}
           </div>
         </div>
 
-        <div
-          className="rounded-[26px] border p-4"
-          style={{
-            background: 'linear-gradient(135deg, rgba(5,8,12,0.72), rgba(255,176,64,0.045))',
-            borderColor: 'rgba(255,176,64,0.16)',
-          }}
-          aria-label="Topología visual del swarm activo"
-        >
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p
-                className="text-xs font-semibold uppercase tracking-[0.18em]"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                Roster operativo
-              </p>
-              <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Director central + {workers.length} agentes terminales.
-              </p>
-            </div>
-            <SurfacePill tone="accent">
-              {roster.length || hero?.stats?.activeAgents || 0} miembros
-            </SurfacePill>
-          </div>
-
-          {director ? (
-            <div className="grid gap-4 lg:grid-cols-[1fr_170px_1fr] lg:items-center">
-              <div className="grid gap-3">
-                {workers.slice(0, Math.ceil(workers.length / 2)).map((member) => (
-                  <SwarmNode key={member.id} member={member} compact />
-                ))}
-              </div>
-
-              <div className="relative">
-                <div className="absolute left-1/2 top-0 hidden h-full w-px -translate-x-1/2 bg-[rgba(255,176,64,0.16)] lg:block" />
-                <SwarmNode member={director} />
-              </div>
-
-              <div className="grid gap-3">
-                {workers.slice(Math.ceil(workers.length / 2)).map((member) => (
-                  <SwarmNode key={member.id} member={member} compact />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p
-              className="rounded-2xl border p-4 text-sm"
-              style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-            >
-              Sin roster activo proyectado todavía.
-            </p>
-          )}
-
-          {hero?.topology?.connections?.length ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {hero.topology.connections.slice(0, 6).map((connection) => (
-                <SurfacePill key={connection}>{connection}</SurfacePill>
-              ))}
-            </div>
-          ) : null}
+        <div aria-label="Topología visual del swarm activo">
+          <SwarmTopologyGraph
+            roster={roster}
+            topology={hero?.topology || null}
+            variant="full"
+          />
         </div>
       </div>
     </SurfaceCard>
+  );
+}
+
+function MetricStat({ label, value }) {
+  return (
+    <div className="px-3 py-2.5" style={dataTileStyle()}>
+      <p className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-semibold">{value}</p>
+    </div>
   );
 }

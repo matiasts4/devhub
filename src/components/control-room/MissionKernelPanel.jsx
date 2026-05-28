@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { selectDirectorBriefingPreview } from '@/lib/operations/swarmControl';
+import { codeBlockStyle } from '../../chrome/morphology.js';
 import { formatToken, metaTextStyle, panelShellStyle, renderEmptyCopy } from './utils';
 
 const STATUS_LABELS = Object.freeze({
@@ -38,19 +39,21 @@ function formatMissionToken(value) {
 }
 
 function PresenceGroup({ label, entries = [] }) {
+  const visibleEntries = entries.slice(0, 4);
+
   return (
     <div className="space-y-2">
       <h4 className="text-sm font-semibold">{label}</h4>
       {entries.length === 0
         ? renderEmptyCopy(`Sin presencia ${label.toLowerCase()} en este snapshot.`)
-        : entries.map((entry) => (
+        : visibleEntries.map((entry) => (
             <article
               key={entry.presence_id || `${label}-${entry.agent_id}`}
-              className="rounded-xl border p-3"
+              className="border p-3"
               style={panelShellStyle()}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-medium">{entry.agent_id || 'Agente sin id'}</div>
+                <div className="font-medium text-sm break-all">{entry.agent_id || 'Agente sin id'}</div>
                 <div className="text-xs" style={metaTextStyle()}>
                   {formatMissionToken(entry.effective_state)}
                 </div>
@@ -61,6 +64,11 @@ function PresenceGroup({ label, entries = [] }) {
               </p>
             </article>
           ))}
+      {entries.length > visibleEntries.length ? (
+        <p className="text-xs" style={metaTextStyle()}>
+          +{entries.length - visibleEntries.length} más…
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -78,7 +86,7 @@ function getEligibleParticipants(participants = [], mission = null) {
 function DirectorBriefingPreview({ preview }) {
   return (
     <section
-      className="rounded-lg border p-3"
+      className="border p-3"
       style={panelShellStyle()}
       aria-label="Vista previa para dirección"
     >
@@ -90,7 +98,11 @@ function DirectorBriefingPreview({ preview }) {
       {preview.state === 'ready' ? (
         <pre
           className="mt-3 whitespace-pre-wrap text-xs leading-6"
-          style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono, monospace)' }}
+          style={{
+            ...codeBlockStyle(),
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-mono, monospace)',
+          }}
         >
           {preview.previewText}
         </pre>
@@ -169,19 +181,19 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
 
   return (
     <section
-      className="rounded-2xl border p-4"
+      className="border p-4 h-full min-h-[460px] max-h-[700px] flex flex-col"
       style={panelShellStyle()}
       aria-label="Kernel de misión"
     >
-      <header className="mb-4">
+      <header className="mb-4 shrink-0">
         <h2 className="text-lg font-semibold">Kernel de misión</h2>
         <p className="text-sm" style={metaTextStyle()}>
           Snapshot durable y de solo lectura para dirección dentro de Swarm / Control Room.
         </p>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-2 flex-1 min-h-0">
+        <div className="space-y-4 min-h-0 overflow-y-auto pr-1">
           <MissionOverviewSection mission={mission} />
 
           <RecentMessagesSection recentMessages={recentMessages} />
@@ -191,7 +203,7 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
           <PresenceSummarySection presence={presence} hasPresence={hasPresence} />
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 min-h-0 overflow-y-auto pr-1">
           <ParticipantsSection participants={participants} />
 
           <ComposerSection
@@ -214,7 +226,7 @@ export default function MissionKernelPanel({ missionControl, onComposerSubmit = 
 
 function MissionOverviewSection({ mission }) {
   return (
-    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+    <section className="border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Misión activa</h3>
       {mission ? (
         <div className="mt-3 space-y-2 text-sm">
@@ -236,15 +248,15 @@ function MissionOverviewSection({ mission }) {
 
 function RecentMessagesSection({ recentMessages }) {
   return (
-    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+    <section className="border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Mensajes recientes</h3>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
         {recentMessages.length === 0
           ? renderEmptyCopy('Sin mensajes recientes en este snapshot.')
           : recentMessages.map((message) => (
               <article
                 key={message.message_id}
-                className="rounded-lg border p-3"
+                className="border p-3"
                 style={panelShellStyle()}
               >
                 <div className="font-medium">{message.body_summary || 'Mensaje sin resumen'}</div>
@@ -262,15 +274,15 @@ function RecentMessagesSection({ recentMessages }) {
 
 function PendingDeliveriesSection({ pendingDeliveries }) {
   return (
-    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+    <section className="border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Entregas pendientes</h3>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
         {pendingDeliveries.length === 0
           ? renderEmptyCopy('Sin entregas pendientes en este snapshot.')
           : pendingDeliveries.map((delivery) => (
               <article
                 key={delivery.delivery_id || `${delivery.recipient_agent_id}-${delivery.channel}`}
-                className="rounded-lg border p-3"
+                className="border p-3"
                 style={panelShellStyle()}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -299,9 +311,9 @@ function PendingDeliveriesSection({ pendingDeliveries }) {
 
 function PresenceSummarySection({ presence, hasPresence }) {
   return (
-    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+    <section className="border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Presencia TTL</h3>
-      <div className="mt-3 grid gap-4 lg:grid-cols-3">
+      <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <PresenceGroup label="Activa" entries={presence.active} />
         <PresenceGroup label="Vencida" entries={presence.stale} />
         <PresenceGroup label="Fuera de línea" entries={presence.offline} />
@@ -313,15 +325,15 @@ function PresenceSummarySection({ presence, hasPresence }) {
 
 function ParticipantsSection({ participants }) {
   return (
-    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+    <section className="border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Participantes</h3>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
         {participants.length === 0
           ? renderEmptyCopy('Sin participantes durables en este snapshot.')
           : participants.map((participant) => (
               <article
                 key={participant.participant_id || participant.agent_id}
-                className="rounded-lg border p-3"
+                className="border p-3"
                 style={panelShellStyle()}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -360,7 +372,7 @@ function ComposerSection({
   );
 
   return (
-    <section className="rounded-xl border p-3" style={panelShellStyle()}>
+    <section className="border p-3" style={panelShellStyle()}>
       <h3 className="text-sm font-semibold">Composer local</h3>
       <p className="mt-1 text-xs" style={metaTextStyle()}>
         Redactá una directiva local para participantes activos. Solo persiste mensajes de misión y
@@ -424,7 +436,7 @@ function ComposerSection({
                 return (
                   <label
                     key={participant.participant_id || participant.agent_id}
-                    className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                    className="flex items-center gap-2 border px-3 py-2 text-sm"
                     style={panelShellStyle()}
                   >
                     <input
@@ -457,7 +469,7 @@ function ComposerSection({
             <textarea
               aria-label="Mensaje breve para la misión"
               name="body_summary"
-              className="min-h-[96px] rounded-lg border px-3 py-2 outline-none"
+              className="min-h-[96px] border px-3 py-2 outline-none"
               style={{
                 background: 'var(--surface-app)',
                 borderColor: 'var(--border-subtle)',
@@ -477,7 +489,7 @@ function ComposerSection({
           <button
             type="submit"
             disabled={!canSubmit || isSubmitting}
-            className="rounded-lg border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+            className="border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
             style={{
               background: 'var(--surface-app)',
               borderColor: 'var(--border-subtle)',

@@ -3,7 +3,13 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Mutex;
 #[cfg(target_os = "linux")]
-use std::{cell::RefCell, collections::HashMap, ffi::OsString, path::PathBuf, sync::{mpsc, Once}};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    ffi::OsString,
+    path::PathBuf,
+    sync::{mpsc, Once},
+};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(target_os = "linux")]
@@ -11,6 +17,54 @@ use gtk::prelude::*;
 
 #[cfg(target_os = "linux")]
 use zoha_vte::{traits::TerminalExt, PtyFlags, Terminal};
+
+// GTK clipboard paste handler for Ctrl+Shift+V interception at the VTE terminal level.
+// This intercepts the shortcut BEFORE WebKit/WebView can consume it.
+#[cfg(target_os = "linux")]
+fn handle_ctrl_shift_v_paste_from_clipboard(panel_id: String) {
+    if let Some(display) = gtk::gdk::Display::default() {
+        if let Some(clipboard) = gtk::Clipboard::default(&display) {
+            let panel_id_for_closure = panel_id.clone();
+            clipboard.request_text(move |_clipboard, text| {
+                if let Some(t) = text {
+                    // text is String, registry_paste_panel takes Option<&str>
+                    let _ = registry_paste_panel(&panel_id_for_closure, Some(&t));
+                }
+            });
+        }
+    }
+}
+
+// Key press event handler installed on the VTE terminal to intercept Ctrl+Shift+V.
+// Returns Propagation::Stop to inhibit event propagation and prevent WebKit from processing the shortcut.
+#[cfg(target_os = "linux")]
+fn on_terminal_key_press_event(
+    terminal: &Terminal,
+    event: &gtk::gdk::EventKey,
+) -> gtk::glib::Propagation {
+    use gtk::gdk::ModifierType;
+    let modifiers = event.state();
+    let keyval = event.keyval();
+    // V keyval = 86, v keyval = 118
+    let is_v = keyval == 86u32.into() || keyval == 118u32.into();
+    let is_ctrl_shift_v = modifiers.contains(ModifierType::CONTROL_MASK)
+        && modifiers.contains(ModifierType::SHIFT_MASK)
+        && is_v;
+
+    if is_ctrl_shift_v {
+        // Get the panel ID from the terminal's widget name
+        let widget_name = terminal.widget_name();
+        // Extract panel_id from "devhub-native-vte-terminal-{panel_id}"
+        if let Some(panel_id) = widget_name
+            .as_str()
+            .strip_prefix("devhub-native-vte-terminal-")
+        {
+            handle_ctrl_shift_v_paste_from_clipboard(panel_id.to_string());
+            return gtk::glib::Propagation::Stop;
+        }
+    }
+    gtk::glib::Propagation::Proceed
+}
 
 #[cfg(target_os = "linux")]
 use crate::native_window_host::{
@@ -82,6 +136,15 @@ pub struct NativeVteOpenRequest {
 #[serde(rename_all = "camelCase")]
 pub struct NativeVtePanelRequest {
     pub panel_id: String,
+    pub reason: Option<String>,
+    /// Optional text to paste directly, bypassing GTK clipboard.
+    /// When provided, paste_text() is used instead of paste_clipboard().
+    pub text: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct NativeVteCommandResponse {
+    pub supported: bool,
     pub reason: Option<String>,
 }
 
@@ -161,12 +224,11 @@ fn emit_runtime_session_detected(
     emit_runtime_event(app, payload);
 }
 
-fn emit_panel_activated_runtime_event(
-    app: &AppHandle,
-    panel_id: &str,
-    session_id: Option<&str>,
-) {
-    emit_runtime_event(app, build_panel_activated_event_payload(panel_id, session_id));
+fn emit_panel_activated_runtime_event(app: &AppHandle, panel_id: &str, session_id: Option<&str>) {
+    emit_runtime_event(
+        app,
+        build_panel_activated_event_payload(panel_id, session_id),
+    );
 }
 
 fn emit_runtime_error(
@@ -926,10 +988,7 @@ fn sync_registry_layout_visibility(registry: &NativeVteRegistry) {
 }
 
 #[cfg(target_os = "linux")]
-fn registry_show_panel(
-    registry: &mut NativeVteRegistry,
-    panel_id: &str,
-) -> Result<(), String> {
+fn registry_show_panel(registry: &mut NativeVteRegistry, panel_id: &str) -> Result<(), String> {
     let panel = registry
         .panels
         .get_mut(panel_id)
@@ -1003,6 +1062,10 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
         terminal.set_input_enabled(true);
         terminal.set_rewrap_on_resize(true);
         apply_native_terminal_theme(&terminal);
+
+        // Install Ctrl+Shift+V key event interceptor on the VTE terminal.
+        // This catches the shortcut BEFORE WebKit can consume it, routing paste to VTE.
+        terminal.connect_key_press_event(on_terminal_key_press_event);
 
         let wrapper = gtk::Frame::new(None);
         wrapper.set_widget_name(&format!("devhub-native-vte-host-{}", request.panel_id));
@@ -1117,6 +1180,37 @@ fn registry_focus_panel(panel_id: &str) -> Result<(), String> {
             .get(panel_id)
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         panel.terminal.grab_focus();
+        registry.focused_panel_id = Some(panel_id.to_string());
+        Ok(())
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn registry_paste_panel(panel_id: &str, text: Option<&str>) -> Result<(), String> {
+    with_native_vte_registry(|registry| {
+        registry_show_panel(registry, panel_id)?;
+        let panel = registry
+            .panels
+            .get(panel_id)
+            .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
+        match text {
+            // feed_child sends text as raw keystrokes, bypassing GTK clipboard entirely.
+            // This is the correct fallback when VTE's EditableText trait is not available.
+            // Both Ctrl+Shift+V (via JS invoke) and Shift+Insert (via VTE native) end up
+            // calling feed_child with the same clipboard text — the behavior is consistent.
+            Some(t) => {
+                log::info!(
+                    "[native_vte] registry_paste_panel: feed_child {} bytes into panel '{}'",
+                    t.len(),
+                    panel_id
+                );
+                panel.terminal.feed_child(t.as_bytes());
+            }
+            None => {
+                log::info!("[native_vte] registry_paste_panel: paste_clipboard (no text provided) into panel '{}'", panel_id);
+                panel.terminal.paste_clipboard();
+            }
+        }
         registry.focused_panel_id = Some(panel_id.to_string());
         Ok(())
     })
@@ -1337,6 +1431,71 @@ pub fn native_vte_focus(
 }
 
 #[tauri::command]
+pub fn native_vte_paste(
+    _app: AppHandle,
+    state: State<'_, NativeVteState>,
+    request: NativeVtePanelRequest,
+) -> NativeVteCommandResponse {
+    #[cfg(target_os = "linux")]
+    {
+        let panel_id = request.panel_id;
+        // Clone toOwned to give the closure a 'static lifetime.
+        // The text is short (clipboard content) so this is cheap.
+        let text: Option<String> = request.text.clone();
+        let text_len = text.as_ref().map(|t| t.len()).unwrap_or(0);
+        log::info!(
+            "[native_vte] native_vte_paste called: panel_id='{}', text_len={}",
+            panel_id,
+            text_len
+        );
+        let panel_id_for_paste = panel_id.clone();
+        let window = match _app.get_webview_window("main") {
+            Some(window) => window,
+            None => {
+                log::warn!("[native_vte] native_vte_paste: main window not found");
+                return NativeVteCommandResponse {
+                    supported: false,
+                    reason: Some(OPEN_FAILED_REASON.to_string()),
+                };
+            }
+        };
+
+        match execute_main_thread_job(
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
+            move || registry_paste_panel(&panel_id_for_paste, text.as_deref()),
+        )
+        .and_then(|_| {
+            set_focused_panel_metadata(&state, panel_id.as_str())?;
+            Ok(())
+        }) {
+            Ok(()) => NativeVteCommandResponse {
+                supported: true,
+                reason: None,
+            },
+            Err(reason) => NativeVteCommandResponse {
+                supported: false,
+                reason: Some(reason),
+            },
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = _app;
+        let _ = state;
+        let _ = request;
+        NativeVteCommandResponse {
+            supported: false,
+            reason: unsupported_platform_reason(),
+        }
+    }
+}
+
+#[tauri::command]
 pub fn native_vte_resize(
     _app: AppHandle,
     _state: State<'_, NativeVteState>,
@@ -1449,21 +1608,20 @@ pub fn native_vte_close(
 mod tests {
     use super::{
         build_native_shell_script, build_terminal_exit_event_payload, close_panel_metadata,
-        derive_native_hermes_session_id, derive_native_vte_layout_geometry,
-        derive_terminal_grid, detect_native_session_event, execute_main_thread_job,
-        extract_opencode_session_id, is_hermes_launch_command,
-        native_vte_overlay_layout_passes_through_to_webview, plan_native_vte_open,
-        require_registered_panel, resolve_same_window_host_prep_result,
+        derive_native_hermes_session_id, derive_native_vte_layout_geometry, derive_terminal_grid,
+        detect_native_session_event, execute_main_thread_job, extract_opencode_session_id,
+        is_hermes_launch_command, native_vte_overlay_layout_passes_through_to_webview,
+        plan_native_vte_open, require_registered_panel, resolve_same_window_host_prep_result,
         resolve_same_window_probe_result, set_focused_panel_metadata,
         set_panel_visibility_metadata, shell_single_quote, should_reuse_native_panel,
-        snapshot_native_vte_state, with_noop_child_setup, NativeVteBounds,
-        NativeVteLayoutGeometry, NativeVteState,
+        snapshot_native_vte_state, with_noop_child_setup, NativeVteBounds, NativeVteLayoutGeometry,
+        NativeVteState,
     };
     #[cfg(target_os = "linux")]
     use super::{
         build_native_spawn_argv, build_native_spawn_env_from_iter,
-        derive_hidden_native_vte_panel_bounds, derive_native_vte_panel_geometry, NativeVtePanelGeometry,
-        NATIVE_VTE_SEPARATOR_GUTTER_PX,
+        derive_hidden_native_vte_panel_bounds, derive_native_vte_panel_geometry,
+        NativeVtePanelGeometry, NATIVE_VTE_SEPARATOR_GUTTER_PX,
     };
 
     #[test]

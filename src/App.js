@@ -8,13 +8,6 @@ import {
   useParams,
   useLocation,
 } from 'react-router-dom';
-
-function SettingsRedirect() {
-  useEffect(() => {
-    window.location.replace('/settings/appearance');
-  }, []);
-  return null;
-}
 import { Toaster } from 'sonner';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
@@ -26,25 +19,28 @@ import Scaffolding from './views/Scaffolding';
 import Roadmap from './views/Roadmap';
 import Historial from './views/Historial';
 import Conexiones from './views/Conexiones';
-
+import Ajustes from './views/Ajustes';
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
 import { createClient } from '@/lib/db/localClient';
 import { Loader2 } from 'lucide-react';
 import {
+  applyAccentToDocument,
+  applyMorphologyToDocument,
   applyThemeToDocument,
+  getStoredAccent,
+  getStoredMorphology,
   getStoredTheme,
   applyZoomToDocument,
   getStoredZoom,
   setZoom,
-  applyAppearanceSettings,
-  getStoredAppearance,
 } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
-import { UiShell, UiHeader } from '@/components/ui/system';
+import PageHeader from './components/PageHeader';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
 import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
+import { getWorkspaceShellChromeStyle } from './components/terminal/terminalChromeStyles';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -60,7 +56,7 @@ const PAGE_LABELS = {
   planning: 'planning',
 };
 
-export function WorkspaceLayout() {
+function WorkspaceLayout() {
   const { projectId } = useParams();
   const location = useLocation();
   const isTerminalRoute = location.pathname.includes('/terminales');
@@ -171,77 +167,57 @@ export function WorkspaceLayout() {
   if (!project) return <Navigate to="/hub" replace />;
 
   return (
-    <UiShell
-      className="relative h-screen overflow-hidden bg-surface-app text-text-primary flex-col"
+    <div
+      className="relative flex h-screen overflow-hidden bg-surface-app text-text-primary flex-col"
       style={{
+        ...getWorkspaceShellChromeStyle(),
         borderRadius: '22px',
-        boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
       }}
     >
-      {shouldShowGlobalHeader && (
-        <UiShell.Header>
-          <UiHeader sticky>
-            <UiHeader.Title>
-              DevHub <span className="opacity-40 font-normal mx-2">/</span> {project?.name || ''}
-            </UiHeader.Title>
-            <UiHeader.Actions>
-              <span
-                className="text-[11px] px-3 py-1.5 rounded-full border flex items-center gap-2"
-                style={{
-                  borderColor: 'rgba(255,255,255,0.1)',
-                  background:
-                    'linear-gradient(135deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0.03) 100%)',
-                  color: 'var(--text-secondary)',
-                  backdropFilter: 'blur(12px)',
-                }}
-              >
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-400/90 shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
-                {PAGE_LABELS[currentPage] || currentPage}
-              </span>
-            </UiHeader.Actions>
-          </UiHeader>
-        </UiShell.Header>
-      )}
-
       {/* ── Inner layout: sidebar + content ── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden relative">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Hide sidebar when terminal is maximized and visible */}
         {!(isTerminalMaximized && isTerminalRoute) && (
-          <UiShell.Sidebar>
-            <WorkspaceSidebar
-              project={project}
-              collapsed={collapsed}
-              onToggleCollapse={setCollapsed}
-            />
-          </UiShell.Sidebar>
+          <WorkspaceSidebar
+            project={project}
+            collapsed={collapsed}
+            onToggleCollapse={setCollapsed}
+          />
         )}
 
-        <UiShell.Content
-          className="relative bg-surface-app"
-          style={{
-            display: isTerminalRoute ? 'none' : 'block',
-            scrollbarWidth: 'thin',
-            scrollbarColor: 'var(--border-subtle) transparent',
-          }}
-        >
-          <Outlet context={{ project }} />
-        </UiShell.Content>
-
-        {/* Persistent Terminal IDE Container */}
-        <div
-          className="absolute inset-0 z-10 bg-[#0d0d0d]"
-          style={{ display: isTerminalRoute ? 'block' : 'none' }}
-        >
-          {project && (
-            <TerminalWorkspacesManager
-              cwd={project.local_path}
-              isVisible={isTerminalRoute}
-              projectId={project.id}
-            />
+        <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
+          {shouldShowGlobalHeader && (
+            <PageHeader project={project} pageName={PAGE_LABELS[currentPage] || currentPage} />
           )}
+
+          {/* Main Routed Content */}
+          <main
+            className="flex-1 w-full overflow-y-auto"
+            style={{
+              display: isTerminalRoute ? 'none' : 'block',
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'var(--border-subtle) transparent',
+            }}
+          >
+            <Outlet context={{ project }} />
+          </main>
+
+          {/* Persistent Terminal IDE Container */}
+          <div
+            className="absolute inset-0 z-10 bg-[#0d0d0d]"
+            style={{ ...getWorkspaceShellChromeStyle(), display: isTerminalRoute ? 'block' : 'none' }}
+          >
+            {project && (
+              <TerminalWorkspacesManager
+                cwd={project.local_path}
+                isVisible={isTerminalRoute}
+                projectId={project.id}
+              />
+            )}
+          </div>
         </div>
       </div>
-    </UiShell>
+    </div>
   );
 }
 
@@ -255,8 +231,9 @@ function LegacyAgentHubRedirect() {
 function App() {
   useEffect(() => {
     applyThemeToDocument(getStoredTheme());
+    applyMorphologyToDocument(getStoredMorphology());
+    applyAccentToDocument(getStoredAccent());
     applyZoomToDocument(getStoredZoom());
-    applyAppearanceSettings(getStoredAppearance());
   }, []);
 
   useEffect(() => {
@@ -329,7 +306,7 @@ function App() {
             <Route path="roadmap" element={<Roadmap />} />
             <Route path="historial" element={<Historial />} />
             <Route path="conexiones" element={<Conexiones />} />
-            <Route path="ajustes" element={<SettingsRedirect />} />
+            <Route path="ajustes" element={<Ajustes />} />
             <Route path="swarm" element={<SwarmControl />} />
             <Route path="telegram" element={<TelegramMonitor />} />
             <Route path="agenthub" element={<LegacyAgentHubRedirect />} />

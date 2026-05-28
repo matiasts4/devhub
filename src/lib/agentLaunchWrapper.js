@@ -1,0 +1,247 @@
+/* eslint-env node */
+
+/**
+ * Agent Launch Wrapper — DevHub's own wrapper for swarm agents.
+ *
+ * Generates the environment variables and initial commands that each agent
+ * runs before starting its actual work (opencode/codex/hermes).
+ *
+ * This replaces the need for Plyrium's worktree-add + team-spawn flow.
+ */
+
+import { generateAgentSecret, hashToken } from './swarm/auth.js';
+import { provisionAuthToken, getDb } from '@/lib/db/localDb.js';
+
+/**
+ * Build the environment variables block for an agent.
+ * If agentId and workspaceId are provided, provisions an HMAC auth token
+ * and injects the secret as DEVHUB_AGENT_TOKEN (never logged or echoed).
+ * @param {object} params
+ * @returns {string} Shell export statements
+ */
+export function buildAgentEnvExports({
+  agentId,
+  missionId,
+  role,
+  workspacePath,
+  workspaceId,
+  runId,
+  supervisorUrl,
+}) {
+  const exports = [
+    `export DEVHUB_AGENT_ID="${agentId}"`,
+    `export DEVHUB_MISSION_ID="${missionId}"`,
+    `export DEVHUB_ROLE="${role}"`,
+    `export DEVHUB_WORKSPACE_PATH="${workspacePath}"`,
+    `export DEVHUB_WORKSPACE_ID="${workspaceId || ''}"`,
+    `export DEVHUB_RUN_ID="${runId || ''}"`,
+  ];
+
+  if (supervisorUrl) {
+    exports.push(`export DEVHUB_SUPERVISOR_URL="${supervisorUrl}"`);
+  }
+
+  // AUTH-5: Provision HMAC token and inject as env var
+  if (agentId) {
+    let dbHandle;
+    try {
+      dbHandle = getDb();
+    } catch {
+      // DB not available in test environments — skip token provisioning
+    }
+    if (dbHandle) {
+      const secret = generateAgentSecret();
+      const tokenHash = hashToken(secret);
+      try {
+        provisionAuthToken(dbHandle, {
+          agentId,
+          workspaceId: workspaceId || null,
+          tokenHash,
+          rawSecret: secret,
+          algorithm: 'hmac-sha256',
+        });
+        // NEVER log or echo the secret — inject directly as env var
+        exports.push(`export DEVHUB_AGENT_TOKEN="${secret}"`);
+      } catch {
+        // Token provisioning failed — agent will operate without auth token
+        // Middleware will fall back to dual-mode (unauthenticated)
+      }
+    }
+  }
+
+  return exports.join('\n');
+}
+
+/**
+ * Build the identity verification block that runs at agent startup.
+ * Prints identity, role, cwd, and verifies cwd matches workspace path.
+ * @param {object} params
+ * @returns {string} Shell commands
+ */
+export function buildIdentityVerificationBlock({ agentId, missionId, role, workspacePath }) {
+  return [
+    'echo "=========================================="',
+    `echo "DEVHUB_AGENT_ID=${agentId}"`,
+    `echo "DEVHUB_MISSION_ID=${missionId}"`,
+    `echo "DEVHUB_ROLE=${role}"`,
+    `echo "DEVHUB_WORKSPACE_PATH=${workspacePath}"`,
+    'echo "=========================================="',
+    'echo "--- Identity verified ---"',
+    'echo "Current directory: $(pwd)"',
+    // Verify cwd matches workspace path
+    `if [ "$(pwd)" != "${workspacePath}" ]; then`,
+    `  echo "ERROR: cwd mismatch! Expected ${workspacePath}, got $(pwd)"`,
+    `  echo "ABORTING: Agent will not start in the wrong workspace."`,
+    `  exit 1`,
+    `fi`,
+    `echo "--- CWD verified: $(pwd) === ${workspacePath} ---"`,
+  ].join('\n');
+}
+
+/**
+ * Build the initial heartbeat command.
+ * Signs the request with HMAC-SHA256 using DEVHUB_AGENT_TOKEN.
+ * @param {object} params
+ * @returns {string} curl command to report heartbeat
+ */
+export function buildInitialHeartbeatCommand({
+  supervisorUrl,
+  agentId,
+  missionId,
+  role,
+  workspacePath,
+}) {
+  if (!supervisorUrl) {
+    return '# Heartbeat skipped (no supervisor URL)';
+  }
+
+  const payload = JSON.stringify({
+    agent_id: agentId,
+    mission_id: missionId,
+    role,
+    cwd: workspacePath,
+    state: 'busy',
+    status_summary: 'Agent starting up',
+  });
+
+  return `TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+BODY_HASH=$(printf '%s' '${payload}' | openssl dgst -sha256 | awk '{print $NF}')
+SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
+curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
+  -H "Content-Type: application/json" \\
+  -H "X-Agent-Id: ${agentId}" \\
+  -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
+  -H "X-Agent-Signature: \${SIGNATURE}" \\
+  -d '${payload}' > /dev/null 2>&1 || true`;
+}
+
+/**
+ * Build the exit event command.
+ * Signs the request with HMAC-SHA256 using DEVHUB_AGENT_TOKEN.
+ * @param {object} params
+ * @returns {string} Shell trap command
+ */
+export function buildExitTrapCommand({ supervisorUrl, agentId, missionId }) {
+  if (!supervisorUrl) {
+    return '# Exit trap skipped (no supervisor URL)';
+  }
+
+  return `trap 'EXIT_CODE=$?
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+PAYLOAD="{\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"event_type\\":\\"process_exit\\",\\"exit_code\\":$EXIT_CODE}"
+BODY_HASH=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
+SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
+curl -s -X POST "${supervisorUrl}/api/agenthub/events" \\
+  -H "Content-Type: application/json" \\
+  -H "X-Agent-Id: ${agentId}" \\
+  -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
+  -H "X-Agent-Signature: \${SIGNATURE}" \\
+  -d "$PAYLOAD" \\
+  > /dev/null 2>&1 || true' EXIT`;
+}
+
+/**
+ * Build the complete agent launch wrapper script.
+ *
+ * @param {object} params
+ * @param {string} params.agentId
+ * @param {string} params.missionId
+ * @param {string} params.role
+ * @param {string} params.workspacePath
+ * @param {string} [params.workspaceId]
+ * @param {string} [params.runId]
+ * @param {string} [params.supervisorUrl]
+ * @param {string} params.innerCommand - The actual agent command (opencode/codex/hermes)
+ * @returns {string} Complete shell script
+ */
+export function buildAgentLaunchWrapper({
+  agentId,
+  missionId,
+  role,
+  workspacePath,
+  workspaceId,
+  runId,
+  supervisorUrl,
+  innerCommand,
+}) {
+  const pathValidationBlock = [
+    '# Validate worktree path exists',
+    `if [ ! -d "${workspacePath}" ]; then`,
+    `  echo "ERROR: Worktree path does not exist: ${workspacePath}" >&2`,
+    `  exit 1`,
+    `fi`,
+  ].join('\n');
+
+  const cdBlock = [
+    `# Change to agent's isolated worktree`,
+    `cd "${workspacePath}" || {`,
+    `  echo "ERROR: Failed to cd into worktree: ${workspacePath}" >&2`,
+    `  exit 1`,
+    `}`,
+  ].join('\n');
+
+  const parts = [
+    '#!/usr/bin/env bash',
+    '# DevHub Agent Launch Wrapper',
+    '# Generated by DevHub — does NOT use Plyrium runtime',
+    '',
+    pathValidationBlock,
+    cdBlock,
+    '',
+    buildAgentEnvExports({
+      agentId,
+      missionId,
+      role,
+      workspacePath,
+      workspaceId,
+      runId,
+      supervisorUrl,
+    }),
+    '',
+    buildIdentityVerificationBlock({
+      agentId,
+      missionId,
+      role,
+      workspacePath,
+    }),
+    '',
+    buildInitialHeartbeatCommand({
+      supervisorUrl,
+      agentId,
+      missionId,
+      role,
+      workspacePath,
+    }),
+    '',
+    buildExitTrapCommand({
+      supervisorUrl,
+      agentId,
+      missionId,
+    }),
+    '',
+    '# Execute the actual agent',
+    innerCommand,
+  ];
+
+  return parts.join('\n');
+}

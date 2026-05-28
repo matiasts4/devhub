@@ -8,6 +8,7 @@ import {
   getSiblingSessions,
   tables,
 } from '@/lib/db/localDb.js';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 export async function GET(req) {
   try {
@@ -52,7 +53,7 @@ export async function GET(req) {
   }
 }
 
-export async function POST(req) {
+export const POST = withAuth(async function POST(req) {
   try {
     const body = await req.json();
     const {
@@ -96,4 +97,4 @@ export async function POST(req) {
     console.error('Error creating session:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
+});

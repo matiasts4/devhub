@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
+import { ClipboardPaste, Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
+import {
+  getTerminalAppShellStyle,
+  getTerminalFloatingControlStyle,
+  getTerminalTitleBarStyle,
+  getTerminalViewportFrameStyle,
+} from '@/components/terminal/terminalChromeStyles';
 import {
   closeNativeVtePanel,
   focusNativeVtePanel,
   isNativeVteRuntimeAvailable,
   openNativeVtePanel,
+  pasteNativeVtePanel,
   probeNativeVte,
   resizeNativeVtePanel,
   setNativeVtePanelVisibility,
@@ -214,6 +221,31 @@ export function shouldAutoReconnectTerminal(connectionState, autoFocus) {
   return connectionState === 'disconnected' || connectionState === 'error';
 }
 
+function getClipboardApi() {
+  return globalThis?.navigator?.clipboard || null;
+}
+
+export function resolveTerminalClipboardShortcut(event) {
+  if (!event || event.altKey) return null;
+
+  const key = String(event.key || '');
+  const normalizedKey = key.length === 1 ? key.toLowerCase() : key;
+
+  if (event.ctrlKey) {
+    // Linux terminal semantics:
+    // Ctrl+Shift+C → copy
+    if (event.shiftKey && normalizedKey === 'c') return 'copy';
+    // Ctrl+Shift+V → paste
+    if (event.shiftKey && normalizedKey === 'v') return 'paste';
+  }
+
+  if (!event.ctrlKey && event.shiftKey && normalizedKey === 'Insert') {
+    return 'paste';
+  }
+
+  return null;
+}
+
 export function getTerminalRuntimePlatform(explicitPlatform) {
   if (explicitPlatform) return String(explicitPlatform).toLowerCase();
   if (typeof navigator !== 'undefined') {
@@ -232,6 +264,23 @@ export function getNativeTerminalBounds(element) {
   const height = Number(rect.height || 0);
 
   if (width <= 0 || height <= 0) return null;
+
+  const browserWindow = typeof window !== 'undefined' ? window : null;
+  if (browserWindow) {
+    const viewportWidth = Number(browserWindow.innerWidth || 0);
+    const viewportHeight = Number(browserWindow.innerHeight || 0);
+    const left = Number(rect.left || 0);
+    const top = Number(rect.top || 0);
+    const right = Number(rect.right ?? left + width);
+    const bottom = Number(rect.bottom ?? top + height);
+
+    if (
+      (viewportWidth > 0 && (right <= 0 || left >= viewportWidth)) ||
+      (viewportHeight > 0 && (bottom <= 0 || top >= viewportHeight))
+    ) {
+      return null;
+    }
+  }
 
   return {
     x: Number(rect.left || 0),
@@ -282,15 +331,6 @@ export function resolveTerminalRuntimePhase({
 
   if (!nativeCandidate) return 'xterm';
   if (!isVisibleInLayout) return nativeVteOpened ? 'native-hidden' : 'xterm';
-  if (suspendNativeSurface && nativeSurfacePolicy === 'dock-side-by-side') {
-    return nativeVteOpened
-      ? 'native-opened'
-      : nativeVteProbe?.ready
-        ? 'native-opening'
-        : nativeVteProbe
-          ? 'native-probing'
-          : 'xterm';
-  }
   if (suspendNativeSurface) return nativeVteOpened ? 'native-suspended' : 'xterm';
   if (!isActivePanel)
     return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';
@@ -333,7 +373,7 @@ export function resolveTerminalRendererViewModel({
     ...selection,
     requestedLabel: getTerminalRendererOptionLabel(selection.requestedMode),
     effectiveLabel: getTerminalRendererOptionLabel(selection.effectiveMode),
-    showRecoveryBanner: selection.didFallback,
+    showRecoveryBanner: false,
   };
 }
 
@@ -378,7 +418,9 @@ export default function TerminalTTY({
   nativeSurfacePolicy = 'live',
   runtimePlatform,
   showQuickCopyButton = true,
+  swarmContext = null,
 }) {
+  const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
   const nativePlaceholderRef = useRef(null);
   const termRef = useRef(null);
@@ -398,6 +440,18 @@ export default function TerminalTTY({
   const nativeVteProbeRetryTimerRef = useRef(null);
   const nativeVteProbeRetryDelayRef = useRef(null);
   const shouldRetryNativeVteProbeRef = useRef(false);
+  const hideTimerRef = useRef(null);
+
+  const FONT_SIZE_KEY = 'devhub:terminalFontSize';
+  const [fontSize, setFontSize] = useState(() => {
+    try {
+      const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
+      const parsed = stored ? parseInt(stored, 10) : NaN;
+      return Number.isFinite(parsed) && parsed >= 8 && parsed <= 24 ? parsed : 13;
+    } catch {
+      return 13;
+    }
+  });
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
@@ -423,7 +477,6 @@ export default function TerminalTTY({
     rendererCapabilities,
     nativeVteReady: requestedRendererMode === 'vte-experimental' && nativeVteOpened,
   });
-  const rendererStatusCopy = getTerminalRendererStatusCopy(rendererViewModel);
   const hasSentInitialCommand = useRef(false);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
@@ -603,6 +656,7 @@ export default function TerminalTTY({
   const hideNativeLease = useCallback(
     async (reason = 'inactive') => {
       if (!nativeLeaseRef.current) return;
+      cliLog(`CLIENT:${id}`, 'native VTE hide requested', { reason });
       await Promise.resolve(
         setNativeVtePanelVisibility({
           panelId: id,
@@ -616,9 +670,13 @@ export default function TerminalTTY({
 
   useEffect(() => {
     return () => {
-      hideNativeLease('unmount');
+      if (nativeLeaseRef.current) {
+        closeNativeLease('unmount');
+      } else {
+        hideNativeLease('unmount');
+      }
     };
-  }, [hideNativeLease]);
+  }, [hideNativeLease, closeNativeLease]);
 
   const handleNativeLeaseCommandError = useCallback(
     (error) => {
@@ -637,15 +695,41 @@ export default function TerminalTTY({
 
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
-    const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!bounds) {
+      cliLog(`CLIENT:${id}`, 'native VTE show skipped — invalid bounds');
+      return;
+    }
+    cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds });
     await Promise.resolve(
       setNativeVtePanelVisibility({
         panelId: id,
         visible: true,
-        bounds: bounds || undefined,
+        bounds,
       })
     ).catch(handleNativeLeaseCommandError);
   }, [handleNativeLeaseCommandError, id]);
+
+  const resizeNativeLease = useCallback(async () => {
+    if (!nativeLeaseRef.current) return;
+    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!bounds) {
+      cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
+      return;
+    }
+    cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
+    await Promise.resolve(
+      resizeNativeVtePanel({
+        panelId: id,
+        bounds,
+      })
+    ).catch(handleNativeLeaseCommandError);
+  }, [handleNativeLeaseCommandError, id]);
+
+  const showAndResizeNativeLease = useCallback(async () => {
+    await showNativeLease();
+    await resizeNativeLease();
+  }, [resizeNativeLease, showNativeLease]);
 
   const waitForVisibleDimensions = useCallback(async () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -694,6 +778,8 @@ export default function TerminalTTY({
 
   const sendResize = useCallback(() => {
     if (!termRef.current || !fitRef.current) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
     fitAndResize();
     scrollTerminalToBottom();
     clearTimers();
@@ -840,7 +926,7 @@ export default function TerminalTTY({
       return undefined;
     }
 
-    const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
     if (!bounds) return undefined;
 
     const nativeOpenRequest = {
@@ -852,6 +938,10 @@ export default function TerminalTTY({
     };
 
     const applyNativeOpenResult = (result) => {
+      cliLog(`CLIENT:${id}`, 'native VTE open result', {
+        opened: Boolean(result?.opened),
+        reason: result?.reason || null,
+      });
       if (result?.opened) {
         nativeLeaseRef.current = true;
         setNativeVteOpenFailure(null);
@@ -895,9 +985,26 @@ export default function TerminalTTY({
       return undefined;
     }
 
+    cliLog(`CLIENT:${id}`, 'native VTE open requested', {
+      bounds,
+      cwd: cwd || null,
+      hasInitialCommand: Boolean(initialCommand),
+    });
+
     openNativeVtePanel(nativeOpenRequest)
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled) {
+          if (result?.opened) {
+            Promise.resolve(
+              setNativeVtePanelVisibility({
+                panelId: id,
+                visible: false,
+                reason: 'layout-hidden',
+              })
+            ).catch(handleNativeLeaseCommandError);
+          }
+          return;
+        }
         applyNativeOpenResult(result);
       })
       .catch((error) => {
@@ -939,7 +1046,7 @@ export default function TerminalTTY({
           await setNativeVtePanelVisibility({
             panelId: id,
             visible: false,
-            reason: suspendNativeSurface ? 'suspended' : 'layout-hidden',
+            reason: suspendNativeSurface ? 'dock-side-by-side' : 'layout-hidden',
           });
         } catch (error) {
           handleNativeLeaseCommandError(error);
@@ -973,6 +1080,106 @@ export default function TerminalTTY({
   ]);
 
   useEffect(() => {
+    if (requestedRendererMode !== 'vte-experimental') return undefined;
+
+    const settleTimers = [];
+    let rafId = null;
+
+    const clearScheduledSync = () => {
+      settleTimers.forEach((timerId) => clearTimeout(timerId));
+      settleTimers.length = 0;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    };
+
+    const scheduleShowAndResize = () => {
+      clearScheduledSync();
+      const sync = () => {
+        if (!isVisibleInLayout) return;
+        if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
+        showAndResizeNativeLease();
+      };
+
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        sync();
+      });
+
+      [80, 180, 400].forEach((delayMs) => {
+        settleTimers.push(
+          setTimeout(() => {
+            sync();
+          }, delayMs)
+        );
+      });
+    };
+
+    const handleWorkspaceNativeSurfaceSync = (event) => {
+      const detail = event.detail || {};
+      const activePanelIds = new Set(
+        Array.isArray(detail.activePanelIds) ? detail.activePanelIds.filter(Boolean) : []
+      );
+      const hiddenPanelIds = new Set(
+        Array.isArray(detail.hiddenPanelIds) ? detail.hiddenPanelIds.filter(Boolean) : []
+      );
+
+      if (hiddenPanelIds.has(id)) {
+        clearScheduledSync();
+        if (hideTimerRef.current) {
+          clearTimeout(hideTimerRef.current);
+        }
+        hideTimerRef.current = setTimeout(() => {
+          hideTimerRef.current = null;
+          hideNativeLease(detail.reason || 'workspace-hidden');
+        }, 100);
+        return;
+      }
+
+      if (activePanelIds.has(id)) {
+        if (hideTimerRef.current) {
+          clearTimeout(hideTimerRef.current);
+          hideTimerRef.current = null;
+        }
+        scheduleShowAndResize();
+      }
+    };
+
+    window.addEventListener('devhub:native-vte-workspace-sync', handleWorkspaceNativeSurfaceSync);
+
+    return () => {
+      clearScheduledSync();
+      window.removeEventListener(
+        'devhub:native-vte-workspace-sync',
+        handleWorkspaceNativeSurfaceSync
+      );
+    };
+  }, [
+    hideNativeLease,
+    id,
+    isVisibleInLayout,
+    nativeSurfacePolicy,
+    requestedRendererMode,
+    showAndResizeNativeLease,
+    suspendNativeSurface,
+  ]);
+
+  useEffect(() => {
+    if (requestedRendererMode !== 'vte-experimental' || isVisibleInLayout) return undefined;
+
+    Promise.resolve(
+      setNativeVtePanelVisibility({
+        panelId: id,
+        visible: false,
+        reason: 'layout-hidden',
+      })
+    ).catch(handleNativeLeaseCommandError);
+
+    return undefined;
+  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, requestedRendererMode]);
+
+  useEffect(() => {
     if (!nativeVteOpened || suspendNativeSurface || !autoFocus || !isActivePanel) return undefined;
 
     Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
@@ -992,7 +1199,7 @@ export default function TerminalTTY({
     if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
     const sendNativeResize = () => {
-      const bounds = getNativeTerminalBounds(nativePlaceholderRef.current || containerRef.current);
+      const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
       if (!bounds) return;
       Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(
         handleNativeLeaseCommandError
@@ -1022,7 +1229,7 @@ export default function TerminalTTY({
     sendNativeResize();
     scheduleNativeResizeAfterLayoutSettles();
     window.addEventListener('resize', sendNativeResize);
-    const observedElement = nativePlaceholderRef.current || containerRef.current;
+    const observedElement = containerRef.current || nativePlaceholderRef.current;
     if (typeof ResizeObserver !== 'undefined' && observedElement) {
       nativeResizeObserverRef.current?.disconnect();
       nativeResizeObserverRef.current = new ResizeObserver(() => {
@@ -1041,7 +1248,14 @@ export default function TerminalTTY({
         nativeResizeRafRef.current = null;
       }
     };
-  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, nativeVteOpened, suspendNativeSurface]);
+  }, [
+    handleNativeLeaseCommandError,
+    id,
+    isVisibleInLayout,
+    nativeSurfacePolicy,
+    nativeVteOpened,
+    suspendNativeSurface,
+  ]);
 
   useEffect(() => {
     const handleSessionClosing = (event) => {
@@ -1104,7 +1318,23 @@ export default function TerminalTTY({
       const cwdParam = cwd ? `cwd=${encodeURIComponent(cwd)}` : '';
       const sessionIdParam = id ? `sessionId=${encodeURIComponent(id)}` : '';
       const legacyIdParam = id ? `id=${encodeURIComponent(id)}` : '';
-      const queryParams = [cwdParam, sessionIdParam, legacyIdParam].filter(Boolean).join('&');
+      const swarmRoleParam = swarmContext?.isSwarmRole ? 'isSwarmRole=1' : '';
+      const swarmRoleKeyParam = swarmContext?.roleKey
+        ? `roleKey=${encodeURIComponent(swarmContext.roleKey)}`
+        : '';
+      const swarmLaunchIdParam = swarmContext?.launchId
+        ? `launchId=${encodeURIComponent(swarmContext.launchId)}`
+        : '';
+      const queryParams = [
+        cwdParam,
+        sessionIdParam,
+        legacyIdParam,
+        swarmRoleParam,
+        swarmRoleKeyParam,
+        swarmLaunchIdParam,
+      ]
+        .filter(Boolean)
+        .join('&');
       const queryStr = queryParams ? `?${queryParams}` : '';
 
       console.log(`[TTY:${id}] Connecting to /api/terminal/session${queryStr}`);
@@ -1157,11 +1387,13 @@ export default function TerminalTTY({
 
         // Only send initial command once per component lifecycle to avoid rerunning on fast reconnects
         if (initialCommand && !hasSentInitialCommand.current) {
-          console.log(`[TTY:${id}] Sending initial command: ${initialCommand}`);
+          // Strip recovery suffix if present (added by session recovery mechanism)
+          const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
+          console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
           if (transportRef.current === 'raw') {
-            socket.send(initialCommand + '\r');
+            socket.send(cleanCommand + '\r');
           } else {
-            socket.send(JSON.stringify({ type: 'input', data: initialCommand + '\r' }));
+            socket.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
           }
           hasSentInitialCommand.current = true;
         }
@@ -1253,6 +1485,22 @@ export default function TerminalTTY({
     }
   }, [scrollTerminalToBottom, sendResize, cwd, initialCommand, id]);
 
+  const adjustFontSize = useCallback((delta) => {
+    setFontSize((prev) => {
+      const next = Math.min(24, Math.max(8, prev + delta));
+      try {
+        window.localStorage.setItem(FONT_SIZE_KEY, String(next));
+      } catch {
+        /* ignore */
+      }
+      if (termRef.current) {
+        termRef.current.options.fontSize = next;
+        fitRef.current?.fit();
+      }
+      return next;
+    });
+  }, []);
+
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
     cliLog(`CLIENT:${id}`, 'reconnect() called');
@@ -1260,6 +1508,77 @@ export default function TerminalTTY({
     // connect() already silences and closes the stale socket — just call it directly.
     connect();
   }, [connect]);
+
+  const copyTextToClipboard = useCallback(async (text) => {
+    if (!text) return false;
+
+    try {
+      const clipboardApi = getClipboardApi();
+      if (!clipboardApi?.writeText) {
+        throw new Error('clipboard-unavailable');
+      }
+      await clipboardApi.writeText(text);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+    return true;
+  }, []);
+
+  const handleCopySelection = useCallback(async () => {
+    const text = termRef.current?.getSelection?.() || contextMenu?.text || '';
+    return copyTextToClipboard(text);
+  }, [contextMenu?.text, copyTextToClipboard]);
+
+  const handlePasteIntoTerminal = useCallback(async () => {
+    cliLog('[paste]', 'handlePasteIntoTerminal called');
+    if (shouldUseNativeRenderer) {
+      // Read clipboard content in JS (not GTK) and send it directly to VTE via paste_text.
+      // This bypasses GTK clipboard semantics entirely, ensuring Ctrl+Shift+V and
+      // Shift+Insert paste the exact same content as Ctrl+C/Ctrl+V.
+      const clipboardApi = getClipboardApi();
+      const text = clipboardApi?.readText ? await clipboardApi.readText() : null;
+      cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text?.length ?? 0}`);
+      if (text) {
+        await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
+          handleNativeLeaseCommandError
+        );
+        const result = await pasteNativeVtePanel({ panelId: id, text });
+        cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
+        return Boolean(result?.supported);
+      }
+      return false;
+    }
+
+    const clipboardApi = getClipboardApi();
+    if (!clipboardApi?.readText) return false;
+
+    const text = await clipboardApi.readText();
+    if (!text) return false;
+
+    if (typeof termRef.current?.paste === 'function') {
+      termRef.current.paste(text);
+      return true;
+    }
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      if (transportRef.current === 'raw') {
+        wsRef.current.send(text);
+      } else {
+        wsRef.current.send(JSON.stringify({ type: 'input', data: text }));
+      }
+      return true;
+    }
+
+    return false;
+  }, [handleNativeLeaseCommandError, id, shouldUseNativeRenderer]);
 
   useEffect(() => {
     let mounted = true;
@@ -1323,7 +1642,7 @@ export default function TerminalTTY({
         const terminal = new Terminal({
           cursorBlink: true,
           fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
-          fontSize: 13,
+          fontSize: fontSize,
           lineHeight: 1.4,
           allowTransparency: false,
           theme: getTerminalTheme(),
@@ -1352,6 +1671,8 @@ export default function TerminalTTY({
         });
 
         resizeObserverRef.current = new ResizeObserver(() => {
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
           sendResize();
         });
@@ -1532,10 +1853,8 @@ export default function TerminalTTY({
   const handleContextMenu = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    const text = termRef.current?.getSelection();
-    if (text) {
-      setContextMenu({ x: e.clientX, y: e.clientY, text });
-    }
+    const text = termRef.current?.getSelection?.() || '';
+    setContextMenu({ x: e.clientX, y: e.clientY, text, canCopy: Boolean(text) });
   }, []);
 
   const handleViewportMouseDown = useCallback(() => {
@@ -1556,25 +1875,48 @@ export default function TerminalTTY({
   ]);
 
   const handleCopyFromMenu = useCallback(async () => {
-    if (contextMenu?.text) {
-      try {
-        await navigator.clipboard.writeText(contextMenu.text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch {
-        // Fallback: select all and copy
-        const textarea = document.createElement('textarea');
-        textarea.value = contextMenu.text;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }
-    }
+    await handleCopySelection();
     setContextMenu(null);
-  }, [contextMenu]);
+  }, [handleCopySelection]);
+
+  const handlePasteFromMenu = useCallback(async () => {
+    await handlePasteIntoTerminal().catch(() => false);
+    setContextMenu(null);
+  }, [handlePasteIntoTerminal]);
+
+  const handleViewportPaste = useCallback(
+    (e) => {
+      if (!shouldUseNativeRenderer) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void handlePasteIntoTerminal().catch(() => false);
+    },
+    [handlePasteIntoTerminal, shouldUseNativeRenderer]
+  );
+
+  useEffect(() => {
+    if (!shouldUseNativeRenderer) return;
+
+    const handler = (e) => {
+      const rootElement = terminalRootRef.current;
+      const activeElement = document?.activeElement || null;
+      const eventTarget = e.target instanceof Node ? e.target : null;
+      const belongsToTerminal = Boolean(
+        rootElement &&
+        ((activeElement && rootElement.contains(activeElement)) ||
+          (eventTarget && rootElement.contains(eventTarget)) ||
+          isActivePanel)
+      );
+      if (!belongsToTerminal) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      void handlePasteIntoTerminal().catch(() => false);
+    };
+
+    document.addEventListener('paste', handler, true);
+    return () => document.removeEventListener('paste', handler, true);
+  }, [handlePasteIntoTerminal, isActivePanel, shouldUseNativeRenderer]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -1584,30 +1926,57 @@ export default function TerminalTTY({
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
-  // ── Keyboard shortcut: Ctrl+Shift+C to copy ─────────────────────────────────
+  // ── Keyboard shortcuts: copy/paste ───────────────────────────────────────────
   useEffect(() => {
-    const handler = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'C') {
-        e.preventDefault();
-        e.stopPropagation();
-        const text = termRef.current?.getSelection();
-        if (text) {
-          navigator.clipboard.writeText(text).catch(() => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-          });
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }
+    const handler = async (e) => {
+      const key = e.key || '';
+      const ctrl = e.ctrlKey || false;
+      const shift = e.shiftKey || false;
+      const alt = e.altKey || false;
+
+      // Log immediately to server
+      cliLog('[keydown]', `key=${key} ctrl=${ctrl} shift=${shift} alt=${alt} code=${e.code}`);
+
+      // Determine action
+      let action = resolveTerminalClipboardShortcut(e);
+
+      // Fallback: Ctrl+V with native renderer (Ctrl+Shift+V handled above)
+      if (!action && shouldUseNativeRenderer && ctrl && !shift && !alt) {
+        const norm = key.length === 1 ? key.toLowerCase() : key;
+        if (norm === 'v') action = 'paste';
+      }
+
+      if (!action) return;
+
+      // Check if event belongs to terminal
+      const rootElement = terminalRootRef.current;
+      const activeElement = document?.activeElement || null;
+      const eventTarget = e.target instanceof Node ? e.target : null;
+      const belongsToTerminal = Boolean(
+        rootElement &&
+        ((activeElement && rootElement.contains(activeElement)) ||
+          (eventTarget && rootElement.contains(eventTarget)) ||
+          isActivePanel)
+      );
+
+      cliLog('[keydown]', `action=${action} belongs=${belongsToTerminal}`);
+
+      if (!belongsToTerminal) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (action === 'paste') {
+        cliLog('[keydown]', 'calling handlePasteIntoTerminal');
+        await handlePasteIntoTerminal().catch(() => false);
+      } else if (action === 'copy') {
+        await handleCopySelection();
       }
     };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, []);
+
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [handleCopySelection, handlePasteIntoTerminal, isActivePanel, shouldUseNativeRenderer]);
 
   const isConnected = connectionState === 'connected';
   const showTerminalViewport =
@@ -1626,9 +1995,16 @@ export default function TerminalTTY({
         : 'Desconectado';
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative">
+    <div
+      ref={terminalRootRef}
+      className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative"
+      style={getTerminalAppShellStyle()}
+    >
       {!hideTitleBar && (
-        <div className="devhub-drag-handle h-9 bg-[#212121] flex items-center justify-between px-3 shrink-0 border-b border-white/5 select-none hover:bg-[#2a2a2a] transition-colors group/handle cursor-pointer">
+        <div
+          className="devhub-drag-handle h-9 flex items-center justify-between px-3 shrink-0 border-b select-none transition-colors group/handle cursor-pointer"
+          style={getTerminalTitleBarStyle()}
+        >
           <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none">
             <svg
               className="w-4 h-4 text-gray-400"
@@ -1660,6 +2036,24 @@ export default function TerminalTTY({
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => adjustFontSize(-1)}
+              title="Reducir tamaño de fuente"
+              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <span className="text-[9px] font-bold text-gray-400 hover:text-white leading-none select-none">
+                A-
+              </span>
+            </button>
+            <button
+              onClick={() => adjustFontSize(1)}
+              title="Aumentar tamaño de fuente"
+              className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <span className="text-[11px] font-bold text-gray-400 hover:text-white leading-none select-none">
+                A+
+              </span>
+            </button>
+            <button
               onClick={reconnect}
               className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
             >
@@ -1689,8 +2083,9 @@ export default function TerminalTTY({
           className="relative flex-1 bg-[var(--surface-app)]"
           onContextMenu={handleContextMenu}
           onMouseDown={handleViewportMouseDown}
+          onPaste={handleViewportPaste}
           data-testid="terminal-viewport-shell"
-          style={TERMINAL_VIEWPORT_SHELL_STYLE}
+          style={{ ...TERMINAL_VIEWPORT_SHELL_STYLE, ...getTerminalViewportFrameStyle() }}
         >
           <div
             ref={nativePlaceholderRef}
@@ -1700,8 +2095,9 @@ export default function TerminalTTY({
           >
             {shouldUseNativeRenderer && (
               <div
-                className="absolute inset-0 z-10 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.18)] bg-[var(--surface-app)]"
+                className="absolute inset-0 z-10 rounded-md border bg-[var(--surface-app)]"
                 data-testid="terminal-native-placeholder"
+                style={getTerminalViewportFrameStyle()}
               >
                 <div className="h-full w-full" aria-hidden="true" />
               </div>
@@ -1725,30 +2121,6 @@ export default function TerminalTTY({
               }}
             >
               ↺ Restored shell at {cwd}
-            </div>
-          )}
-
-          {rendererViewModel.showRecoveryBanner && (
-            <div
-              className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 rounded-md border border-amber-400/40 bg-[#1e1a12]/90 px-3 py-2 text-xs text-amber-100 backdrop-blur-sm"
-              data-testid="terminal-renderer-fallback-banner"
-            >
-              <div className="min-w-0">
-                <div className="font-semibold" data-testid="terminal-renderer-fallback-title">
-                  Renderer en fallback: {rendererViewModel.requestedLabel}
-                </div>
-                <div className="truncate" data-testid="terminal-renderer-fallback-copy">
-                  {rendererStatusCopy}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onResetRendererToXterm?.()}
-                className="shrink-0 rounded-md border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-black/30"
-                data-testid="terminal-renderer-reset"
-              >
-                {getTerminalRendererRecoveryActionLabel()}
-              </button>
             </div>
           )}
 
@@ -1795,20 +2167,10 @@ export default function TerminalTTY({
           {isConnected && showQuickCopyButton && (
             <button
               onClick={async () => {
-                if (termRef.current) {
-                  try {
-                    const text = termRef.current.getSelection();
-                    if (text) {
-                      await navigator.clipboard.writeText(text);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    }
-                  } catch {
-                    // Clipboard API may not be available
-                  }
-                }
+                await handleCopySelection();
               }}
-              className="absolute top-2 right-2 z-20 p-1.5 rounded-md bg-[#1e1e1e]/90 border border-white/10 hover:bg-white/10 transition-colors"
+              className="absolute top-2 right-2 z-20 p-1.5 rounded-md border transition-colors"
+              style={getTerminalFloatingControlStyle({ active: true })}
               title="Copiar selección"
             >
               <Copy className={`w-3.5 h-3.5 ${copied ? 'text-[#3fb950]' : 'text-gray-400'}`} />
@@ -1822,13 +2184,24 @@ export default function TerminalTTY({
               style={{
                 left: contextMenu.x,
                 top: contextMenu.y,
-                background: '#1e1e1e',
-                borderColor: '#3a3a3a',
+                ...getTerminalFloatingControlStyle({ active: true }),
               }}
             >
               <button
+                data-testid="terminal-context-menu-paste"
+                onClick={handlePasteFromMenu}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-t-lg"
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 text-gray-400" />
+                Pegar
+                <span className="ml-auto text-[10px] text-gray-500 font-mono">Ctrl+Shift+V</span>
+              </button>
+              <div className="h-px bg-[#3a3a3a] mx-2 my-1" />
+              <button
+                data-testid="terminal-context-menu-copy"
                 onClick={handleCopyFromMenu}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+                disabled={!contextMenu.canCopy}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Copy className="w-3.5 h-3.5 text-gray-400" />
                 Copiar selección
@@ -1837,7 +2210,7 @@ export default function TerminalTTY({
               <div className="h-px bg-[#3a3a3a] mx-2 my-1" />
               <button
                 onClick={() => setContextMenu(null)}
-                className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-lg"
+                className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-b-lg"
               >
                 Cerrar
               </button>

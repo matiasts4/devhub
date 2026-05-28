@@ -81,6 +81,13 @@ class ProcessManager {
     this.processId = null; // DB tracking ID for swarm_processes
     this._signalHandlersRegistered = false;
     this.lastSpawnError = null;
+
+    // Supervisor Daemon state (SVD-1)
+    this._supervisorInterval = null;
+    this._supervisorIntervalMs = 0;
+    this._supervisorLastTickAt = null;
+    this._supervisorTickCount = 0;
+    this._supervisorErrorCount = 0;
   }
 
   // ── Singleton Access ────────────────────────────────────────────
@@ -208,6 +215,8 @@ class ProcessManager {
    */
   async ensure(cwd) {
     if (this.serverProcess && this.serverReady) {
+      // Ensure supervisor daemon is running when server is already up
+      this.startSupervisorDaemon();
       return { pid: this.serverProcess.pid, port: SERVER_PORT };
     }
     if (this.launchPromise) return this.launchPromise;
@@ -220,6 +229,8 @@ class ProcessManager {
 
     // Try to adopt existing process first
     if (await this.adoptExisting()) {
+      // Start supervisor daemon after adopting existing process
+      this.startSupervisorDaemon();
       return { pid: this.readPidFile(), port: SERVER_PORT };
     }
 
@@ -233,6 +244,8 @@ class ProcessManager {
         cwd: cwd || process.cwd(),
         metadata: { adopted: true, source: 'health-check' },
       });
+      // Start supervisor daemon after health-check adoption
+      this.startSupervisorDaemon();
       return { pid: null, port: SERVER_PORT };
     }
 
@@ -240,6 +253,8 @@ class ProcessManager {
     const ok = await this.launchPromise;
     this.launchPromise = null;
     if (!ok) throw new Error(this.lastSpawnError || 'Failed to start OpenCode serve');
+    // Start supervisor daemon after fresh spawn
+    this.startSupervisorDaemon();
     return { pid: this.serverProcess?.pid || this.readPidFile(), port: SERVER_PORT };
   }
 
@@ -384,6 +399,9 @@ class ProcessManager {
    * Graceful shutdown: dispose + SIGTERM + SIGKILL fallback
    */
   async shutdown() {
+    // Stop supervisor daemon first
+    this.stopSupervisorDaemon();
+
     if (!this.serverProcess && !this.serverReady) return;
 
     console.log('[ProcessManager] Shutting down OpenCode server...');
@@ -589,6 +607,87 @@ class ProcessManager {
       allowed: activeCount < maxConcurrent,
       activeCount,
       maxConcurrent,
+    };
+  }
+
+  // ── Supervisor Daemon ─────────────────────────────────────────
+
+  /**
+   * Start the supervisor daemon interval.
+   *
+   * Creates a setInterval that runs evaluateSupervisorTick on each tick.
+   * If already running, returns the existing interval (no-op).
+   * If SUPERVISOR_DAEMON_ENABLED is 'false', logs and returns null.
+   *
+   * @param {number} intervalMs — interval in milliseconds (default 30000)
+   * @returns {NodeJS.Timeout|null} The interval timer, or null if disabled
+   */
+  startSupervisorDaemon(intervalMs = 30000) {
+    const enabled = process.env.SUPERVISOR_DAEMON_ENABLED !== 'false';
+    if (!enabled) {
+      console.log('[ProcessManager] Supervisor daemon disabled by SUPERVISOR_DAEMON_ENABLED=false');
+      return null;
+    }
+
+    if (this._supervisorInterval) {
+      // Already running — no-op
+      return this._supervisorInterval;
+    }
+
+    this._supervisorIntervalMs = intervalMs;
+
+    const { evaluateSupervisorTick } = require('./supervisorDaemon');
+    const { getDb } = require('../db/localDb');
+
+    this._supervisorInterval = setInterval(() => {
+      try {
+        const db = getDb();
+        if (db) {
+          evaluateSupervisorTick(db);
+          this._supervisorTickCount += 1;
+          this._supervisorLastTickAt = new Date().toISOString();
+        }
+      } catch (e) {
+        this._supervisorErrorCount += 1;
+        console.error('[ProcessManager] Supervisor tick error:', e.message);
+      }
+    }, intervalMs);
+
+    if (typeof this._supervisorInterval?.unref === 'function') {
+      this._supervisorInterval.unref();
+    }
+
+    console.log(`[ProcessManager] Supervisor daemon started (interval: ${intervalMs}ms)`);
+    return this._supervisorInterval;
+  }
+
+  /**
+   * Stop the supervisor daemon interval.
+   * Clears the interval and resets internal state.
+   */
+  stopSupervisorDaemon() {
+    if (this._supervisorInterval) {
+      clearInterval(this._supervisorInterval);
+      console.log('[ProcessManager] Supervisor daemon stopped');
+    }
+    this._supervisorInterval = null;
+    this._supervisorIntervalMs = 0;
+    this._supervisorLastTickAt = null;
+    this._supervisorTickCount = 0;
+    this._supervisorErrorCount = 0;
+  }
+
+  /**
+   * Get the current supervisor daemon status.
+   * @returns {{ running: boolean, intervalMs: number, lastTickAt: string|null, tickCount: number, errors: number }}
+   */
+  getSupervisorStatus() {
+    return {
+      running: this._supervisorInterval !== null,
+      intervalMs: this._supervisorIntervalMs || 0,
+      lastTickAt: this._supervisorLastTickAt || null,
+      tickCount: this._supervisorTickCount || 0,
+      errors: this._supervisorErrorCount || 0,
     };
   }
 }

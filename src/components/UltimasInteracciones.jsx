@@ -2,11 +2,11 @@
 import { Terminal, Eye, Rocket, Sparkles, AlertCircle } from "lucide-react";
 
 const interactions = [
-  { id: 1, user: "Dev Admin", action: "Generó módulo de autenticación", target: "AuthService.js", time: "5 min", icon: Terminal, color: "#58A6FF" },
-  { id: 2, user: "NEXUS-7", action: "Revisó 3 componentes UI", target: "UI Components", time: "18 min", icon: Eye, color: "#3FB950" },
-  { id: 3, user: "Pipeline CI/CD", action: "Build exitoso · v0.4.2-beta", target: "Production", time: "32 min", icon: Rocket, color: "#F778BA" },
-  { id: 4, user: "NEXUS-3", action: "Sugirió refactoring crítico", target: "PaymentController", time: "1h", icon: Sparkles, color: "#E3B341" },
-  { id: 5, user: "Sistema", action: "Error detectado y registrado", target: "UserSession.js", time: "2h", icon: AlertCircle, color: "#F778BA" },
+  { id: 1, user: "Dev Admin", action: "Generó módulo de autenticación", target: "AuthService.js", time: "5 min", icon: Terminal, color: "var(--accent-primary)" },
+  { id: 2, user: "NEXUS-7", action: "Revisó 3 componentes UI", target: "UI Components", time: "18 min", icon: Eye, color: "var(--success)" },
+  { id: 3, user: "Pipeline CI/CD", action: "Build exitoso · v0.4.2-beta", target: "Production", time: "32 min", icon: Rocket, color: "var(--accent-pink)" },
+  { id: 4, user: "NEXUS-3", action: "Sugirió refactoring crítico", target: "PaymentController", time: "1h", icon: Sparkles, color: "var(--accent-primary)" },
+  { id: 5, user: "Sistema", action: "Error detectado y registrado", target: "UserSession.js", time: "2h", icon: AlertCircle, color: "var(--danger)" },
 ];
 
 export default function UltimasInteracciones() {
@@ -24,7 +24,7 @@ export default function UltimasInteracciones() {
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#21262D]">
+        <tbody className="divide-y divide-borders-subtle">
           {interactions.map((item, i) => {
             const Icon = item.icon;
             return (

@@ -106,6 +106,21 @@ export default function useAgentRegistryPolling(projectId, options = {}) {
         }
       });
 
+      const hasLiveEvidence = (agent) => {
+        const panelId = agent?._panelId;
+        const opencodeSessionId = agent?._opencodeSessionId;
+
+        if (panelId && liveSessions[panelId]?.alive) {
+          return true;
+        }
+
+        if (!opencodeSessionId) return false;
+
+        return Object.values(liveSessions).some(
+          (session) => session?.alive && session?.opencodeSessionId === opencodeSessionId
+        );
+      };
+
       const combinedAgents = dedupeBy(allAgents, (agent) => agent?.agent_id);
 
       // ── Auto-cleanup stale registry agents ──────────────────────────────────
@@ -121,7 +136,12 @@ export default function useAgentRegistryPolling(projectId, options = {}) {
           'thinking',
           'asking_questions',
         ].includes(String(agent.status || '').toLowerCase());
-        return age > AGENT_HEARTBEAT_STALE_MS && isActiveStatus;
+        if (!(age > AGENT_HEARTBEAT_STALE_MS && isActiveStatus)) {
+          return false;
+        }
+
+        // Do not downgrade agents that still have live PTY evidence.
+        return !hasLiveEvidence(agent);
       });
 
       for (const stale of staleAgents) {

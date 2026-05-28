@@ -16,13 +16,29 @@ const browserAppIgnores = [
 
 const nodeEsmFiles = ['src/app/api/**/*.js', 'src/lib/terminal/**/*.js'];
 
+const swarmCommonJsFiles = [
+  'src/lib/swarm/agentWorkspaceManager.js',
+  'src/lib/swarm/cleanup.js',
+  'src/lib/swarm/integrationWorktree.js',
+  'src/lib/swarm/missionClose.js',
+  'src/lib/swarm/opencodeDeliveryAdapter.js',
+  'src/lib/swarm/opencodeTargetResolver.js',
+  'src/lib/swarm/processManager.js',
+  'src/lib/swarm/reconciliation.js',
+  'src/lib/swarm/supervisorDaemon.js',
+  'src/lib/swarm/supervisorLoop.js',
+  'src/lib/swarm/teamTell.js',
+];
+
 const commonJsAndJestFiles = [
   'bin/**/*.js',
+  'devhub-cli/**/*.js',
   'jest.config.js',
   'lib/**/*.js',
   'scripts/**/*.cjs',
   'tests/**/*.js',
   'src/lib/db/**/*.js',
+  ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
@@ -111,6 +127,7 @@ export default [
     ignores: [
       'node_modules/**',
       '.next/**',
+      '.devhub/**',
       'out/**',
       'devhub-mcp/node_modules/**',
       'devhub-mcp/**',

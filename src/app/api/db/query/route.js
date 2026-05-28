@@ -3,6 +3,18 @@ import localDb from '@/lib/db/localDb';
 
 export const dynamic = 'force-dynamic';
 
+// Debug: log DB path on first access
+let dbPathLogged = false;
+function logDbPath() {
+  if (!dbPathLogged) {
+    dbPathLogged = true;
+    const { resolveDbPath } = require('@/lib/db/pathResolver');
+    console.error(`[db/query] DB_PATH: ${resolveDbPath()}`);
+    console.error(`[db/query] NODE_ENV: ${process.env.NODE_ENV}`);
+    console.error(`[db/query] DEVHUB_DB_PATH: ${process.env.DEVHUB_DB_PATH || '(not set)'}`);
+  }
+}
+
 // Parse select string to extract relations like tasks(count)
 function parseSelect(selectStr) {
   if (!selectStr || selectStr === '*') return { fields: '*', relations: [] };
@@ -28,6 +40,7 @@ function parseSelect(selectStr) {
 
 export async function GET(request) {
   try {
+    logDbPath();
     const { searchParams } = new URL(request.url);
     const table = searchParams.get('table');
     const selectRaw = searchParams.get('select') || '*';
@@ -36,8 +49,11 @@ export async function GET(request) {
     const limitStr = searchParams.get('limit');
 
     // Validate table name against allowlist BEFORE building any SQL
-    const ALLOWED_TABLES = Object.keys(localDb.tables);
+    const tables = localDb.tables || {};
+    const ALLOWED_TABLES = Object.keys(tables);
+
     if (!table || !ALLOWED_TABLES.includes(table)) {
+      console.error(`[db/query] Invalid table: ${table}. Allowed: ${ALLOWED_TABLES.join(', ')}`);
       return NextResponse.json(
         { error: `Invalid table: ${table}. Allowed: ${ALLOWED_TABLES.join(', ')}` },
         { status: 400 }
@@ -49,8 +65,9 @@ export async function GET(request) {
     const orderBy = orderByStr ? JSON.parse(orderByStr) : [];
     const limit = limitStr ? parseInt(limitStr) : null;
 
-    const tableOps = localDb.tables[table];
+    const tableOps = tables[table];
     if (!tableOps) {
+      console.error(`[db/query] Table ops not found for: ${table}`);
       return NextResponse.json({ error: `Table ${table} not found` }, { status: 404 });
     }
 
@@ -105,9 +122,23 @@ export async function GET(request) {
       whereParams.push(limit);
     }
 
+    // Force fresh DB connection to avoid stale cache
     const db = localDb.getDb();
+
+    console.error(`[db/query] DB path check:`, require('@/lib/db/pathResolver').resolveDbPath());
+    console.error(
+      `[db/query] Projects in DB:`,
+      db.prepare('SELECT count(*) as c FROM projects').get().c
+    );
+
     const stmt = db.prepare(sql);
     const rows = stmt.all(...whereParams);
+
+    console.error(`[db/query] Query: ${sql}`);
+    console.error(`[db/query] Rows returned: ${rows.length}`);
+    if (rows.length > 0) {
+      console.error(`[db/query] First row:`, JSON.stringify(rows[0]));
+    }
 
     // Process relations (e.g., tasks(count))
     if (relations.length > 0 && rows.length > 0) {
@@ -126,7 +157,7 @@ export async function GET(request) {
 
     return NextResponse.json(rows);
   } catch (error) {
-    console.error('DB query error:', error.message, error);
+    console.error('[db/query] Error:', error.message, error);
     return NextResponse.json({ error: error.message || 'Query failed' }, { status: 500 });
   }
 }

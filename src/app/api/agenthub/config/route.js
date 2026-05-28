@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSwarmConfig, setSwarmConfig } from '@/lib/db/localDb.js';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 export const runtime = 'nodejs';
 
@@ -15,7 +16,7 @@ export async function GET() {
   }
 }
 
-export async function PUT(req) {
+export const PUT = withAuth(async function PUT(req) {
   try {
     const body = await req.json();
 
@@ -42,4 +43,4 @@ export async function PUT(req) {
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
+});

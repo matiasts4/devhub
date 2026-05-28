@@ -116,6 +116,8 @@ export function saveSessions(sessionsMap) {
       title: session.title || null,
       createdAt: session.createdAt || new Date().toISOString(),
       lastSeenAt: session.lastSeenAt || new Date().toISOString(),
+      lastActivityAt: session.lastActivityAt || null,
+      ptyPid: session.ptyPid ?? null,
       restored: session.restored || false,
     });
   }

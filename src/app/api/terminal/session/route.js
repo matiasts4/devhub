@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
+
+export { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +33,17 @@ function resolveProductionSidecarScript() {
   const envCandidate = process.env.DEVHUB_SIDECAR_PATH;
   const candidates = [
     envCandidate,
-    process.env.APPDIR ? path.join(process.env.APPDIR, 'usr', 'lib', 'DevHub', '_up_', 'sidecar-backend', 'server.js') : null,
+    process.env.APPDIR
+      ? path.join(
+          process.env.APPDIR,
+          'usr',
+          'lib',
+          'DevHub',
+          '_up_',
+          'sidecar-backend',
+          'server.js'
+        )
+      : null,
     process.env.APPDIR ? path.join(process.env.APPDIR, 'sidecar-backend', 'server.js') : null,
     '/usr/lib/DevHub/_up_/sidecar-backend/server.js',
     '/usr/local/lib/DevHub/_up_/sidecar-backend/server.js',
@@ -54,7 +67,20 @@ async function waitForSidecarHealth(port, attempts = 10, delayMs = 200) {
       });
 
       if (response.ok) {
+        // Consume body to fully close the underlying connection
+        try {
+          await response.text();
+        } catch {
+          /* ignore */
+        }
         return true;
+      } else {
+        // Consume body on non-ok responses too
+        try {
+          await response.text();
+        } catch {
+          /* ignore */
+        }
       }
     } catch {
       // Keep retrying while the sidecar boots.
@@ -118,6 +144,12 @@ async function readProductionSidecarPort() {
     const healthResponse = await fetch(`http://127.0.0.1:${port}/health`, {
       cache: 'no-store',
     });
+    // Consume body to fully close the underlying undici connection
+    try {
+      await healthResponse.text();
+    } catch {
+      /* ignore */
+    }
     if (healthResponse.ok) {
       return port;
     }
@@ -129,48 +161,37 @@ async function readProductionSidecarPort() {
 }
 
 export async function GET(request) {
-  if (process.env.NODE_ENV === 'production') {
-    try {
-      const port = await readProductionSidecarPort();
-      if (port) {
-        return NextResponse.json({ port, wsPath: '/tty' });
-      }
-    } catch (e) {
-      console.error('Error reading sidecar port file:', e);
+  // Always check for production sidecar first (works in both dev and prod)
+  try {
+    const port = await readProductionSidecarPort();
+    if (port) {
+      return NextResponse.json({ port, wsPath: '/tty' });
     }
-
-    try {
-      const cwd = request.nextUrl.searchParams.get('cwd');
-      const { ensureTTYServer } = await import('@/lib/terminal/ttyServer');
-      const { port, wsPath } = await ensureTTYServer(cwd);
-      return NextResponse.json({ port, wsPath });
-    } catch (error) {
-      console.error('Failed to initialize local PTY fallback:', error);
-    }
-
-    try {
-      const recovered = await recoverProductionSidecar();
-      if (recovered) {
-        return NextResponse.json(recovered);
-      }
-    } catch (error) {
-      console.error('Failed to recover production sidecar:', error);
-    }
-
-    return NextResponse.json({ error: 'Servidor terminal (sidecar) no encontrado' }, { status: 503 });
+  } catch (e) {
+    console.error('Error checking sidecar:', e);
   }
 
+  // Fallback to local TTY server only if sidecar is not available
   try {
     const cwd = request.nextUrl.searchParams.get('cwd');
     const { ensureTTYServer } = await import('@/lib/terminal/ttyServer');
     const { port, wsPath } = await ensureTTYServer(cwd);
     return NextResponse.json({ port, wsPath });
   } catch (error) {
+    if (process.env.NODE_ENV === 'production') {
+      const recoveredSidecar = await recoverProductionSidecar();
+      if (recoveredSidecar) {
+        return NextResponse.json(recoveredSidecar);
+      }
+
+      return NextResponse.json(
+        { error: 'Servidor terminal (sidecar) no encontrado' },
+        { status: 503 }
+      );
+    }
+
     console.error('Failed to initialize terminal PTY server:', error);
-    return NextResponse.json(
-      { error: 'No se pudo inicializar el servidor PTY.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'No se pudo inicializar el servidor PTY.' }, { status: 500 });
   }
 }
 
@@ -183,40 +204,20 @@ export async function DELETE(request) {
 
   if (process.env.NODE_ENV === 'production') {
     try {
-      const sidecarPort = await readProductionSidecarPort();
-      if (!sidecarPort) {
-        return NextResponse.json(
-          { error: 'Servidor terminal (sidecar) no encontrado' },
-          { status: 503 }
-        );
-      }
-
-      const response = await fetch(`http://127.0.0.1:${sidecarPort}/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-        cache: 'no-store',
-      });
-
-      if (!response.ok) {
-        return NextResponse.json(
-          { error: 'No se pudo cerrar la sesión de terminal.' },
-          { status: response.status }
-        );
-      }
-
-      return NextResponse.json({ success: true, sessionId });
+      const result = await closeTerminalSessionById(sessionId);
+      return NextResponse.json(result);
     } catch (error) {
       console.error('Failed to close production terminal PTY session:', error);
       return NextResponse.json(
         { error: 'No se pudo cerrar la sesión de terminal.' },
-        { status: 500 }
+        { status: error?.status || 500 }
       );
     }
   }
 
   try {
-    const { closeSession } = await import('@/lib/terminal/ttyServer');
-    closeSession(sessionId);
-    return NextResponse.json({ success: true, sessionId });
+    const result = await closeTerminalSessionById(sessionId);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to close terminal PTY session:', error);
     return NextResponse.json(

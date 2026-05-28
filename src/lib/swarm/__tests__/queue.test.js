@@ -32,7 +32,8 @@ describe('SwarmQueue.remove()', () => {
     // Create a fresh SwarmQueue instance for each test.
     // We use jest.isolateModules to get the class, bypassing the singleton.
     jest.isolateModules(() => {
-      const instance = require('../queue.js');
+      const queueModule = require('../queue.js');
+      const instance = queueModule.default || queueModule;
       // Clear the queue array directly (it's a singleton in isolation context)
       instance.queue = [];
       instance.started = false;

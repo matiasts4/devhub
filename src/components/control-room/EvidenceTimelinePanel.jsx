@@ -20,11 +20,11 @@ function formatOccurredAt(value) {
 export default function EvidenceTimelinePanel({ items = [] }) {
   return (
     <section
-      className="rounded-2xl border p-4"
+      className="border p-4 h-full min-h-[420px] max-h-[700px] flex flex-col"
       style={panelShellStyle()}
       aria-label="Timeline de evidencia"
     >
-      <header className="mb-4">
+      <header className="mb-4 shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Timeline de evidencia</h2>
@@ -39,17 +39,17 @@ export default function EvidenceTimelinePanel({ items = [] }) {
         </p>
       </header>
 
-      <div className="max-h-[480px] space-y-3 overflow-y-auto pr-0.5" style={panelListStyle()}>
+      <div className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-0.5" style={panelListStyle()}>
         {items.length === 0
           ? renderEmptyCopy('Sin eventos durables en este snapshot.')
           : items.map((item) => (
               <article
                 key={`${item.kind || 'timeline'}-${item.item_id || item.occurred_at || 'unknown'}`}
-                className="rounded-xl border p-3"
+                className="rounded-xl border p-3 overflow-hidden"
                 style={panelShellStyle()}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-medium text-sm">
+                  <h3 className="font-medium text-sm leading-snug break-words">
                     {item.summary || 'Evento durable sin resumen'}
                   </h3>
                   <StatusPill status={item.kind} />
@@ -59,7 +59,7 @@ export default function EvidenceTimelinePanel({ items = [] }) {
                   {formatOccurredAt(item.occurred_at)}
                 </p>
 
-                <p className="mt-2 text-xs" style={metaTextStyle()}>
+                <p className="mt-2 text-xs break-words" style={metaTextStyle()}>
                   {formatToken(item.authority)} · {formatToken(item.freshness)} ·{' '}
                   {formatEvidence(item.evidence_refs)}
                 </p>
@@ -72,7 +72,7 @@ export default function EvidenceTimelinePanel({ items = [] }) {
 
                 {item.secondary_session_evidence?.length ? (
                   <div
-                    className="mt-3 space-y-2 rounded-lg border px-3 py-2"
+                    className="mt-3 space-y-2 rounded-lg border px-3 py-2 max-h-44 overflow-y-auto"
                     style={panelShellStyle()}
                   >
                     {item.secondary_session_evidence

@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevHub Preview - Amber Command Deck Grounded</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0907;
+      --bg-2: #120f0c;
+      --panel: rgba(26, 20, 15, 0.95);
+      --panel-2: rgba(35, 27, 20, 0.96);
+      --panel-3: rgba(18, 14, 11, 0.92);
+      --line: rgba(229, 196, 145, 0.11);
+      --line-strong: rgba(229, 196, 145, 0.22);
+      --text: #f4ede3;
+      --text-2: #cdbba6;
+      --text-3: #8e7e6b;
+      --amber: #e3b341;
+      --amber-2: #f2cd75;
+      --blue: #7caeff;
+      --green: #58c18f;
+      --pink: #f18aa7;
+      --orange: #ffab64;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-sm: 12px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(227, 179, 65, 0.11), transparent 28%),
+        radial-gradient(circle at 88% 4%, rgba(255, 171, 100, 0.08), transparent 22%),
+        linear-gradient(180deg, #0e0b09 0%, #090807 100%);
+      color: var(--text);
+      font-family: 'Geist', system-ui, sans-serif;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.035) 0.6px, transparent 0.6px);
+      background-size: 18px 18px;
+      opacity: 0.22;
+      mix-blend-mode: soft-light;
+    }
+
+    .mono,
+    .kicker,
+    .metric-value,
+    .badge,
+    .nav-label,
+    .small-meta,
+    .queue-score,
+    .tab,
+    .clock,
+    .terminal-log,
+    .terminal-input,
+    .terminal-tab,
+    .kanban-card small,
+    .milestone-meta,
+    .dependency-chip {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 244px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(11, 9, 8, 0.97), rgba(14, 11, 9, 0.94));
+      padding: 16px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      background: rgba(227, 179, 65, 0.14);
+      border: 1px solid rgba(227, 179, 65, 0.22);
+      color: var(--amber);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: 0.04em;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      color: var(--text-3);
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .sidebar-block {
+      display: grid;
+      gap: 6px;
+    }
+
+    .nav-label {
+      padding: 0 12px 4px;
+      color: var(--text-3);
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .nav-item,
+    .view-link {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      color: var(--text-2);
+      text-decoration: none;
+      background: transparent;
+      font-size: 13px;
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .nav-item.active,
+    .view-link.active,
+    .nav-item:hover,
+    .view-link:hover {
+      color: var(--text);
+      background: rgba(227, 179, 65, 0.09);
+      border-color: rgba(227, 179, 65, 0.18);
+    }
+
+    .sidebar-note {
+      margin-top: auto;
+      padding: 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.028);
+      display: grid;
+      gap: 8px;
+    }
+
+    .sidebar-note strong {
+      font-size: 13px;
+    }
+
+    .sidebar-note p {
+      margin: 0;
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .workspace {
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .workspace-top {
+      padding: 18px 22px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(25, 20, 16, 0.95), rgba(18, 14, 11, 0.95));
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .breadcrumbs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--text-3);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .workspace-top h2 {
+      margin: 10px 0 0;
+      font-size: 30px;
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+
+    .workspace-top p {
+      margin: 8px 0 0;
+      color: var(--text-2);
+      max-width: 72ch;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .top-actions,
+    .route-bar,
+    .page-meta,
+    .metric-row,
+    .toolbar,
+    .toolbar-left,
+    .toolbar-right,
+    .terminal-toolbar,
+    .terminal-tabs,
+    .terminal-status,
+    .card-meta,
+    .card-footer,
+    .milestone-meta,
+    .dependency-grid,
+    .roadmap-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tag,
+    .tab,
+    .action,
+    .search,
+    .badge,
+    .terminal-tab,
+    .dependency-chip {
+      min-height: 38px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 12px;
+      font-size: 12px;
+    }
+
+    .tag.live,
+    .tab.active,
+    .terminal-tab.active,
+    .action.active {
+      color: var(--amber-2);
+      border-color: rgba(227, 179, 65, 0.24);
+      background: rgba(227, 179, 65, 0.08);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 0 14px currentColor;
+    }
+
+    .route-bar {
+      padding: 10px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(12, 10, 9, 0.84);
+    }
+
+    .tab {
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .tab:hover,
+    .terminal-tab:hover,
+    .action:hover {
+      color: var(--text);
+      border-color: var(--line-strong);
+    }
+
+    .view-page {
+      display: none;
+      gap: 12px;
+    }
+
+    .view-page.active {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 316px;
+    }
+
+    .main-stack,
+    .rail-stack {
+      display: grid;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .panel {
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px 20px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .kicker {
+      margin: 0;
+      color: var(--text-3);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .panel-head h3 {
+      margin: 8px 0 0;
+      font-size: 21px;
+      letter-spacing: -0.03em;
+    }
+
+    .panel-head p {
+      margin: 7px 0 0;
+      color: var(--text-2);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .panel-body,
+    .rail-body {
+      padding: 18px 20px 20px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .page-meta {
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      padding: 15px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.022);
+      display: grid;
+      gap: 8px;
+    }
+
+    .metric-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-3);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      font-size: 29px;
+      letter-spacing: -0.05em;
+    }
+
+    .metric small,
+    .body-copy,
+    .queue-item p,
+    .activity-item p,
+    .command-item p,
+    .note p,
+    .timeline p,
+    .roadmap-card p,
+    .release-note p,
+    .terminal-side p {
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    .dashboard-grid,
+    .roadmap-grid,
+    .terminal-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+      gap: 12px;
+    }
+
+    .subpanel,
+    .roadmap-card,
+    .terminal-side,
+    .timeline,
+    .release-note {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.022);
+      display: grid;
+      gap: 12px;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      width: 64%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #bb8428, var(--amber), var(--amber-2));
+      box-shadow: 0 0 18px rgba(227, 179, 65, 0.18);
+    }
+
+    .micro-grid,
+    .release-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .micro-card {
+      padding: 12px 13px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--panel-3);
+    }
+
+    .micro-card strong,
+    .queue-item strong,
+    .activity-item strong,
+    .command-item strong,
+    .roadmap-card strong,
+    .timeline strong,
+    .release-note strong,
+    .terminal-side strong {
+      display: block;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+
+    .timeline-item,
+    .queue-item,
+    .activity-item,
+    .command-item,
+    .release-line {
+      padding: 13px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.025);
+      display: grid;
+      gap: 6px;
+    }
+
+    .small-meta {
+      color: var(--text-3);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .queue-top,
+    .activity-top,
+    .release-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .queue-score {
+      color: var(--amber-2);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .search {
+      width: 210px;
+      outline: none;
+    }
+
+    .action.primary {
+      color: #24170d;
+      background: linear-gradient(180deg, #f1c96f, #dfa73c);
+      border-color: rgba(255, 255, 255, 0.08);
+      font-weight: 600;
+    }
+
+    .kanban {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .kanban-column {
+      padding: 10px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.018);
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .column-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 5px 4px 9px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .column-head strong {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .count {
+      min-height: auto;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-2);
+      font-size: 11px;
+    }
+
+    .kanban-card {
+      padding: 13px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(34, 28, 22, 0.95), rgba(21, 17, 13, 0.95));
+      display: grid;
+      gap: 10px;
+    }
+
+    .kanban-card.blocked {
+      border-color: rgba(241, 138, 167, 0.24);
+      background: linear-gradient(180deg, rgba(43, 24, 30, 0.95), rgba(25, 16, 20, 0.95));
+    }
+
+    .kanban-card h4 {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .badge {
+      min-height: auto;
+      padding: 5px 8px;
+      font-size: 11px;
+    }
+
+    .priority-critical { color: var(--pink); background: rgba(241, 138, 167, 0.09); border-color: rgba(241, 138, 167, 0.18); }
+    .priority-high { color: var(--orange); background: rgba(255, 171, 100, 0.09); border-color: rgba(255, 171, 100, 0.18); }
+    .priority-medium { color: var(--amber); background: rgba(227, 179, 65, 0.08); border-color: rgba(227, 179, 65, 0.18); }
+    .priority-low { color: var(--text-3); }
+    .status-progress { color: var(--blue); background: rgba(124, 174, 255, 0.09); border-color: rgba(124, 174, 255, 0.18); }
+    .status-blocked { color: var(--pink); background: rgba(241, 138, 167, 0.09); border-color: rgba(241, 138, 167, 0.18); }
+    .status-completed { color: var(--green); background: rgba(88, 193, 143, 0.09); border-color: rgba(88, 193, 143, 0.16); }
+
+    .ghost-link {
+      color: var(--text-3);
+      text-decoration: none;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .ghost-link:hover { color: var(--text); }
+
+    .terminal-surface {
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #090705;
+      overflow: hidden;
+      display: grid;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    }
+
+    .terminal-toolbar {
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .terminal-tabs,
+    .terminal-status {
+      gap: 6px;
+    }
+
+    .terminal-body {
+      padding: 16px;
+      min-height: 360px;
+      display: grid;
+      gap: 14px;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(8, 6, 5, 0.96), rgba(6, 5, 4, 0.98));
+      background-size: 28px 28px, 28px 28px, auto;
+    }
+
+    .terminal-log {
+      margin: 0;
+      color: #d8c6af;
+      font-size: 12px;
+      line-height: 1.75;
+      white-space: pre-wrap;
+    }
+
+    .terminal-log .muted { color: #837462; }
+    .terminal-log .warn { color: var(--amber-2); }
+    .terminal-log .good { color: var(--green); }
+    .terminal-log .info { color: var(--blue); }
+
+    .terminal-input {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-2);
+      font-size: 12px;
+    }
+
+    .timeline {
+      gap: 10px;
+    }
+
+    .milestone-row {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .milestone-marker {
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--amber);
+    }
+
+    .milestone-card {
+      padding: 15px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.026);
+      display: grid;
+      gap: 10px;
+    }
+
+    .milestone-card h4 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .milestone-card p {
+      margin: 0;
+      color: var(--text-2);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .dependency-grid {
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .dependency-chip {
+      min-height: auto;
+      padding: 9px 10px;
+      border-radius: 14px;
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .release-line {
+      background: rgba(227, 179, 65, 0.06);
+      border-color: rgba(227, 179, 65, 0.18);
+    }
+
+    .note {
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(227, 179, 65, 0.18);
+      background: rgba(227, 179, 65, 0.07);
+      display: grid;
+      gap: 8px;
+    }
+
+    .note h4,
+    .note p {
+      margin: 0;
+    }
+
+    @media (max-width: 1260px) {
+      .view-page.active,
+      .dashboard-grid,
+      .roadmap-grid,
+      .terminal-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .rail-stack {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .workspace-top,
+      .panel-head,
+      .terminal-toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .metrics,
+      .kanban,
+      .micro-grid,
+      .release-grid,
+      .rail-stack {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .workspace {
+        padding: 12px;
+      }
+
+      .metrics,
+      .kanban,
+      .micro-grid,
+      .release-grid,
+      .rail-stack,
+      .milestone-row {
+        grid-template-columns: 1fr;
+      }
+
+      .search {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><i data-lucide="command"></i></div>
+        <div>
+          <h1>DevHub</h1>
+          <p>amber command deck</p>
+        </div>
+      </div>
+
+      <div class="sidebar-block">
+        <div class="nav-label">Navegacion</div>
+        <a class="nav-item active" href="#"><i data-lucide="folder-kanban"></i> Workspace proyecto</a>
+        <a class="nav-item" href="#"><i data-lucide="layers-3"></i> Browser dock</a>
+        <a class="nav-item" href="#"><i data-lucide="bot"></i> Control plane</a>
+        <a class="nav-item" href="#"><i data-lucide="settings-2"></i> Ajustes locales</a>
+      </div>
+
+      <div class="sidebar-block">
+        <div class="nav-label">Views internas</div>
+        <button class="view-link active" data-view="dashboard"><i data-lucide="layout-dashboard"></i> System Dashboard</button>
+        <button class="view-link" data-view="terminal"><i data-lucide="terminal"></i> Terminal Room</button>
+        <button class="view-link" data-view="kanban"><i data-lucide="layout-kanban"></i> Task Kanban</button>
+        <button class="view-link" data-view="roadmap"><i data-lucide="milestone"></i> Roadmap View</button>
+      </div>
+
+      <div class="sidebar-note">
+        <strong>Grounded fidelity</strong>
+        <p>La preview conserva estructura real de DevHub: sidebar global, header de workspace, vistas de proyecto y contenido atado a tareas, milestones, execution queue y browser truth.</p>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <section class="workspace-top">
+        <div>
+          <div class="breadcrumbs">
+            <span>proyectos</span>
+            <span>/</span>
+            <span>devhub desktop</span>
+            <span>/</span>
+            <span id="breadcrumb-view">system dashboard</span>
+          </div>
+          <h2 id="page-title">DevHub desktop workspace</h2>
+          <p id="page-description">Vista grounded con cuatro rutas internas comparables: dashboard operativo, terminal room, task kanban y roadmap. Todo responde al dominio real del producto en vez de inventar un centro de control ficticio.</p>
+        </div>
+        <div class="top-actions">
+          <div class="tag live"><span class="dot"></span> local workspace</div>
+          <div class="tag">warm dense</div>
+          <div class="tag clock"><i data-lucide="clock-3"></i> <span id="amber-clock">16:42:11</span></div>
+        </div>
+      </section>
+
+      <section class="route-bar" aria-label="Rutas internas del preview">
+        <button class="tab active" data-view="dashboard"><i data-lucide="layout-dashboard"></i> System Dashboard</button>
+        <button class="tab" data-view="terminal"><i data-lucide="terminal"></i> Terminal Room</button>
+        <button class="tab" data-view="kanban"><i data-lucide="columns-4"></i> Task Kanban</button>
+        <button class="tab" data-view="roadmap"><i data-lucide="map-pinned"></i> Roadmap View</button>
+      </section>
+
+      <section class="view-page active" id="view-dashboard">
+        <div class="main-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">System Dashboard</p>
+                <h3>Resumen real de avance, salud de flujo y proxima entrega</h3>
+                <p>La vista combina lo que hoy vive en `ProjectDashboard`, `Tareas` y cola ejecutable: tareas, prediccion, proximo milestone, riesgos y señales del browser dock.</p>
+              </div>
+              <div class="page-meta">
+                <span class="badge"><i data-lucide="sparkles"></i> high fidelity</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="metrics">
+                <article class="metric">
+                  <div class="metric-label"><span>Tareas totales</span><i data-lucide="list-todo"></i></div>
+                  <div class="metric-value">24</div>
+                  <small>roadmap y tareas operativas</small>
+                </article>
+                <article class="metric">
+                  <div class="metric-label"><span>Completadas</span><i data-lucide="check-circle-2"></i></div>
+                  <div class="metric-value" style="color: var(--green);">11</div>
+                  <small>46% del scope ya cerró</small>
+                </article>
+                <article class="metric">
+                  <div class="metric-label"><span>En progreso</span><i data-lucide="clock-3"></i></div>
+                  <div class="metric-value" style="color: var(--blue);">6</div>
+                  <small>UI, runtime y browser dock</small>
+                </article>
+                <article class="metric">
+                  <div class="metric-label"><span>Bloqueadas</span><i data-lucide="shield-alert"></i></div>
+                  <div class="metric-value" style="color: var(--pink);">3</div>
+                  <small>deps empaquetado y origin drift</small>
+                </article>
+              </div>
+
+              <div class="dashboard-grid">
+                <div class="subpanel">
+                  <div>
+                    <p class="kicker">Progress pulse</p>
+                    <h3 style="margin: 6px 0 10px; font-size: 24px;">61% completado</h3>
+                    <div class="progress-track"><div class="progress-bar"></div></div>
+                  </div>
+                  <div class="micro-grid">
+                    <div class="micro-card">
+                      <strong>12 jun</strong>
+                      <span>estimado realista</span>
+                    </div>
+                    <div class="micro-card">
+                      <strong>1.3/d</strong>
+                      <span>velocidad promedio</span>
+                    </div>
+                    <div class="micro-card">
+                      <strong>M3</strong>
+                      <span>browser truth milestone</span>
+                    </div>
+                    <div class="micro-card">
+                      <strong>Media</strong>
+                      <span>confianza IA</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="subpanel">
+                  <div class="timeline-item">
+                    <strong>Proximo hito: Browser Dock veridico</strong>
+                    <p>Resolver estados embed, window y external con copy honesto y selector de workspace visible.</p>
+                    <div class="page-meta"><span>16 junio</span><span>en progreso</span></div>
+                  </div>
+                  <div class="timeline-item">
+                    <strong>Vencimientos cercanos</strong>
+                    <p>Resize observer nativo, smoke empaquetado Linux, ajustes del preview iterator y origen Next 16.</p>
+                    <div class="page-meta"><span>4 tareas</span><span>2 altas</span></div>
+                  </div>
+                  <div class="timeline-item">
+                    <strong>Salud de integracion</strong>
+                    <p>Desktop shell estable, browser dock a medio cerrar, verificacion GTK/VTE todavia bloqueada por build local.</p>
+                    <div class="page-meta"><span>runtime</span><span>at risk</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Project signals</p>
+                <h3>Lo que el producto necesita mostrar sin exagerar</h3>
+                <p>Este bloque traduce el modelo vivo a una lectura densa: progreso, queue, dock status y operator inbox, todo dentro de una sola ruta grounded.</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="micro-grid">
+                <div class="micro-card">
+                  <strong>Dock mode: mixed</strong>
+                  <span>Editor embebido. Browser todavia alterna entre same-window y external.</span>
+                </div>
+                <div class="micro-card">
+                  <strong>Latest run: healthy</strong>
+                  <span>Workspace evidence disponible. Ultimo artifact actualizado hace 6 minutos.</span>
+                </div>
+                <div class="micro-card">
+                  <strong>Operator inbox: 3</strong>
+                  <span>1 approval request, 1 blocked task, 1 agent event sin leer.</span>
+                </div>
+                <div class="micro-card">
+                  <strong>Docs drift: low</strong>
+                  <span>Preview reducido a cuatro direcciones activas y links consistentes.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="rail-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Execution queue</p>
+                <h3>Siguiente trabajo libre</h3>
+              </div>
+            </div>
+            <div class="rail-body">
+              <article class="queue-item">
+                <div class="queue-top">
+                  <strong>Alinear browser dock con estados honestos</strong>
+                  <span class="queue-score">8.9</span>
+                </div>
+                <p>Mayor impacto UX inmediato. Baja la expectativa falsa del browser embebido.</p>
+                <div class="card-meta"><span class="badge priority-high">Alta</span><span class="badge">desbloquea 3</span></div>
+              </article>
+              <article class="queue-item">
+                <div class="queue-top">
+                  <strong>Corregir resize observer del terminal nativo</strong>
+                  <span class="queue-score">8.2</span>
+                </div>
+                <p>Clave para que el layout no congele placeholder al alternar browser, editor y terminal.</p>
+                <div class="card-meta"><span class="badge priority-critical">Critica</span><span class="badge">runtime</span></div>
+              </article>
+              <article class="queue-item">
+                <div class="queue-top">
+                  <strong>Persistir filtros del kanban por proyecto</strong>
+                  <span class="queue-score">7.0</span>
+                </div>
+                <p>Mejora densidad personal: volver al board en el mismo estado sin reset visual.</p>
+                <div class="card-meta"><span class="badge priority-medium">Media</span><span class="badge">UX</span></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Operator inbox</p>
+                <h3>Eventos que importan</h3>
+              </div>
+            </div>
+            <div class="rail-body">
+              <article class="activity-item">
+                <div class="activity-top"><strong>Approval request</strong><span class="badge">qa</span></div>
+                <p>Validar comportamiento de browser maximizado en build empaquetado antes de marcar milestone como completo.</p>
+              </article>
+              <article class="activity-item">
+                <div class="activity-top"><strong>Task blocked</strong><span class="badge status-blocked">blocked</span></div>
+                <p>Host GTK/VTE sigue frenando la historia de terminal same-window en Linux instalado.</p>
+              </article>
+              <article class="activity-item">
+                <div class="activity-top"><strong>Agent event</strong><span class="badge status-progress">running</span></div>
+                <p>SwarmCoder cerrando cleanup de previews y ajuste de iterator compacto.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="note">
+            <h4>Direccion</h4>
+            <p>Amber Command Deck mantiene la temperatura warm y densa, pero la aterriza al producto real. No hay wall of agents ni consola ficticia como protagonista.</p>
+          </section>
+        </aside>
+      </section>
+
+      <section class="view-page" id="view-terminal">
+        <div class="main-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Terminal Room</p>
+                <h3>Console-first, pero integrada al workspace real</h3>
+                <p>La terminal aparece como vista interna del proyecto, no como control-room teatral. Muestra agentes, logs y comandos ligados al repo local y al dock del producto.</p>
+              </div>
+              <div class="page-meta">
+                <span class="badge"><i data-lucide="monitor-up"></i> browser + native</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="terminal-layout">
+                <div class="terminal-surface">
+                  <div class="terminal-toolbar">
+                    <div class="terminal-tabs">
+                      <button class="terminal-tab active"><i data-lucide="terminal"></i> coder.sh</button>
+                      <button class="terminal-tab"><i data-lucide="shield-check"></i> auditor.sh</button>
+                      <button class="terminal-tab"><i data-lucide="bot"></i> director.sh</button>
+                    </div>
+                    <div class="terminal-status">
+                      <span class="badge status-progress">pty attached</span>
+                      <span class="badge">workspace devhub</span>
+                    </div>
+                  </div>
+                  <div class="terminal-body">
+                    <pre class="terminal-log"><span class="muted">matias@devhub:~/ArxonLabs/devhub$</span> devhub-cli workspace status --workspace=desktop
+<span class="good">[ok]</span> workspace ready: browser=external, editor=embedded, terminal=native-host
+<span class="muted">[16:42:11]</span> syncing preview cleanup under public/previews
+<span class="info">[info]</span> opening /public/previews/amber-command-deck-grounded.html
+<span class="warn">[warn]</span> browser same-window placeholder still hidden behind packaged GTK runtime gate
+<span class="muted">[16:42:17]</span> queue candidate score=8.9 -> align browser dock states
+<span class="muted">[16:42:22]</span> queue candidate score=8.2 -> fix native resize observer path
+<span class="info">[info]</span> latest artifact: workspace-evidence.json updated 6m ago
+<span class="good">[ok]</span> operator inbox has 3 relevant items, none dismissed
+<span class="muted">[16:42:29]</span> launch dev server on 127.0.0.1 to avoid origin drift
+<span class="muted">matias@devhub:~/ArxonLabs/devhub$</span> _</pre>
+                    <div class="terminal-input">run smoke for browser dock packaging --target linux-desktop</div>
+                  </div>
+                </div>
+
+                <div class="terminal-side">
+                  <div>
+                    <p class="kicker">Session health</p>
+                    <strong>Native terminal attached</strong>
+                    <p>El terminal conserva prioridad visual porque DevHub es una herramienta personal de deep work. Esta vista lo integra sin romper la estructura de proyecto.</p>
+                  </div>
+                  <div class="timeline-item">
+                    <strong>TTY status</strong>
+                    <p>`/dev/pts/14` activo, shell local viva, no sandbox ficticio.</p>
+                  </div>
+                  <div class="timeline-item">
+                    <strong>Browser dock handshake</strong>
+                    <p>Browser external sano. Same-window sigue marcado como experimental y no se vende como hecho.</p>
+                  </div>
+                  <div class="timeline-item">
+                    <strong>Active commands</strong>
+                    <p>status workspace, tail runtime logs, inspect latest artifacts, run packaged smoke.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="rail-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Command queue</p>
+                <h3>Siguiente lote</h3>
+              </div>
+            </div>
+            <div class="rail-body">
+              <article class="command-item">
+                <strong>smoke desktop --browser=maximized</strong>
+                <p>Validar copy y fallback cuando la ventana dedicada no puede embeber contenido.</p>
+              </article>
+              <article class="command-item">
+                <strong>tail runtime.log</strong>
+                <p>Verificar resize observer y transicion entre browser/editor sin freeze visual.</p>
+              </article>
+              <article class="command-item">
+                <strong>list artifacts</strong>
+                <p>Comprobar evidencia durable antes de cerrar milestone.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Dock states</p>
+                <h3>Truth table</h3>
+              </div>
+            </div>
+            <div class="rail-body">
+              <article class="activity-item">
+                <div class="activity-top"><strong>Editor</strong><span class="badge status-completed">embedded</span></div>
+                <p>Estado estable, redimensiona bien dentro de la app.</p>
+              </article>
+              <article class="activity-item">
+                <div class="activity-top"><strong>Browser</strong><span class="badge priority-high">external</span></div>
+                <p>Modo honesto hoy. Same-window sigue experimental y windowed es fallback preferido.</p>
+              </article>
+              <article class="activity-item">
+                <div class="activity-top"><strong>Terminal</strong><span class="badge status-progress">native host</span></div>
+                <p>Vista flagship. Debe sobrevivir layout swaps y empaquetado Linux.</p>
+              </article>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="view-page" id="view-kanban">
+        <div class="main-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Task Kanban</p>
+                <h3>Board fiel al dominio pending / in_progress / blocked / completed</h3>
+                <p>La vista sigue el modelo actual: prioridades, valor de negocio, fechas, bloqueo, milestones y movimientos reales. Nada de tareas genéricas de swarm.</p>
+              </div>
+              <div class="page-meta"><span class="badge"><i data-lucide="sliders-horizontal"></i> 3 filtros activos</span></div>
+            </div>
+            <div class="panel-body">
+              <div class="toolbar">
+                <div class="toolbar-left">
+                  <input class="search" value="Buscar tarea..." aria-label="Buscar tarea" />
+                  <div class="action"><i data-lucide="milestone"></i> Todos los milestones</div>
+                  <div class="action active"><i data-lucide="zap"></i> Solo desbloqueadas</div>
+                  <div class="action"><i data-lucide="user-round"></i> Asignadas a mi</div>
+                </div>
+                <div class="toolbar-right">
+                  <div class="action"><i data-lucide="bot"></i> Cola agente</div>
+                  <div class="action primary"><i data-lucide="plus"></i> Anadir tarea</div>
+                </div>
+              </div>
+
+              <div class="kanban">
+                <section class="kanban-column">
+                  <header class="column-head">
+                    <strong><span class="dot" style="color: #71717a;"></span>Pendiente</strong>
+                    <span class="count">5</span>
+                  </header>
+                  <article class="kanban-card">
+                    <small>milestone M3</small>
+                    <h4>Unificar browser dock entre embed, window y external con copy real</h4>
+                    <div class="card-meta"><span class="badge priority-high">Alta</span><span class="badge">V:9</span><span class="badge">18 jun</span></div>
+                    <div class="card-footer"><span class="badge">Pendiente</span><a class="ghost-link" href="#">Mover a En progreso</a></div>
+                  </article>
+                  <article class="kanban-card">
+                    <small>milestone M4</small>
+                    <h4>Persistir filtros y ultima columna abierta por proyecto</h4>
+                    <div class="card-meta"><span class="badge priority-medium">Media</span><span class="badge">V:6</span><span class="badge">24 jun</span></div>
+                    <div class="card-footer"><span class="badge">Pendiente</span><a class="ghost-link" href="#">Mover a En progreso</a></div>
+                  </article>
+                  <article class="kanban-card">
+                    <small>milestone M4</small>
+                    <h4>Agregar vista de inbox operator dentro del workspace proyecto</h4>
+                    <div class="card-meta"><span class="badge priority-medium">Media</span><span class="badge">V:7</span><span class="badge">26 jun</span></div>
+                    <div class="card-footer"><span class="badge">Pendiente</span><a class="ghost-link" href="#">Planificar</a></div>
+                  </article>
+                </section>
+
+                <section class="kanban-column">
+                  <header class="column-head">
+                    <strong><span class="dot" style="color: var(--blue);"></span>En progreso</strong>
+                    <span class="count">3</span>
+                  </header>
+                  <article class="kanban-card">
+                    <small>milestone M2</small>
+                    <h4>Cleanup y expansion de previews grounded/aspirational</h4>
+                    <div class="card-meta"><span class="badge priority-high">Alta</span><span class="badge">V:8</span><span class="badge">hoy</span></div>
+                    <div class="card-footer"><span class="badge status-progress">En progreso</span><a class="ghost-link" href="#">Mover a Completada</a></div>
+                  </article>
+                  <article class="kanban-card">
+                    <small>milestone M3</small>
+                    <h4>Revisar browser dock maximizado para que muestre mas contenido real</h4>
+                    <div class="card-meta"><span class="badge priority-high">Alta</span><span class="badge">V:8</span><span class="badge">19 jun</span></div>
+                    <div class="card-footer"><span class="badge status-progress">En progreso</span><a class="ghost-link" href="#">Mover a Bloqueada</a></div>
+                  </article>
+                </section>
+
+                <section class="kanban-column">
+                  <header class="column-head">
+                    <strong><span class="dot" style="color: var(--pink);"></span>Bloqueada</strong>
+                    <span class="count">2</span>
+                  </header>
+                  <article class="kanban-card blocked">
+                    <small>milestone M3</small>
+                    <h4>Validacion GTK/VTE empaquetado dentro de ventana principal</h4>
+                    <div class="card-meta"><span class="badge priority-critical">Critica</span><span class="badge">V:10</span><span class="badge">build deps</span></div>
+                    <div class="card-footer"><span class="badge status-blocked">Bloqueada</span><a class="ghost-link" href="#">Ver dependencias</a></div>
+                  </article>
+                  <article class="kanban-card blocked">
+                    <small>milestone M3</small>
+                    <h4>Corregir origin drift entre localhost y 127.0.0.1 en Next 16</h4>
+                    <div class="card-meta"><span class="badge priority-high">Alta</span><span class="badge">V:8</span><span class="badge">config</span></div>
+                    <div class="card-footer"><span class="badge status-blocked">Bloqueada</span><a class="ghost-link" href="#">Ver fix</a></div>
+                  </article>
+                </section>
+
+                <section class="kanban-column">
+                  <header class="column-head">
+                    <strong><span class="dot" style="color: var(--green);"></span>Completada</strong>
+                    <span class="count">4</span>
+                  </header>
+                  <article class="kanban-card">
+                    <small>milestone M1</small>
+                    <h4>Persistencia de tema y zoom por documento</h4>
+                    <div class="card-meta"><span class="badge priority-low">Baja</span><span class="badge">V:5</span><span class="badge">cerrada</span></div>
+                    <div class="card-footer"><span class="badge status-completed">Completada</span><a class="ghost-link" href="#">Detalle</a></div>
+                  </article>
+                  <article class="kanban-card">
+                    <small>milestone M1</small>
+                    <h4>Sidebar colapsable y rutas base del producto</h4>
+                    <div class="card-meta"><span class="badge priority-medium">Media</span><span class="badge">V:7</span><span class="badge">cerrada</span></div>
+                    <div class="card-footer"><span class="badge status-completed">Completada</span><a class="ghost-link" href="#">Reusar</a></div>
+                  </article>
+                </section>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="rail-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Milestone context</p>
+                <h3>En que sprint cae cada cosa</h3>
+              </div>
+            </div>
+            <div class="rail-body">
+              <article class="timeline-item">
+                <strong>M2 · Preview fidelity</strong>
+                <p>Cierra drift visual y deja comparables las cuatro direcciones activas.</p>
+              </article>
+              <article class="timeline-item">
+                <strong>M3 · Browser truth</strong>
+                <p>Reduce humo en browser dock y diferencia embed/window/external.</p>
+              </article>
+              <article class="timeline-item">
+                <strong>M4 · Workflow memory</strong>
+                <p>Filtros persistidos, inbox visible y operator state mas fuerte.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Board read</p>
+                <h3>Lo que se ve rapido</h3>
+              </div>
+            </div>
+            <div class="rail-body">
+              <article class="activity-item">
+                <div class="activity-top"><strong>Business value</strong><span class="badge">V 5-10</span></div>
+                <p>Se sostiene el mismo modelo real del app. No hay métricas inventadas ni cards de “agents online”.</p>
+              </article>
+              <article class="activity-item">
+                <div class="activity-top"><strong>Blocked state</strong><span class="badge status-blocked">visible</span></div>
+                <p>Los bloqueos siguen presentes porque son parte honesta del flujo productivo.</p>
+              </article>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="view-page" id="view-roadmap">
+        <div class="main-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Roadmap View</p>
+                <h3>Milestones, dependencias y release gates visibles</h3>
+                <p>La vista organiza el trabajo como realmente vive en DevHub: milestones, tareas de alto valor, dependencia entre UI y runtime, y condiciones de cierre antes de marcar progreso.</p>
+              </div>
+              <div class="page-meta"><span class="badge"><i data-lucide="calendar-range"></i> Q2 2026</span></div>
+            </div>
+            <div class="panel-body">
+              <div class="timeline">
+                <div class="milestone-row">
+                  <div class="milestone-marker"><i data-lucide="check"></i></div>
+                  <div class="milestone-card">
+                    <h4>M1 · Workspace foundation</h4>
+                    <p>Sidebar, layout principal, persistencia base, zoom y tokens de superficie ya cerrados.</p>
+                    <div class="milestone-meta"><span class="badge status-completed">completed</span><span class="badge">abril</span><span class="badge">4 tareas</span></div>
+                  </div>
+                </div>
+
+                <div class="milestone-row">
+                  <div class="milestone-marker" style="color: var(--amber-2);"><i data-lucide="loader-circle"></i></div>
+                  <div class="milestone-card">
+                    <h4>M2 · Preview fidelity and route cleanup</h4>
+                    <p>Reducir previews a cuatro direcciones activas, expandir vistas comparables y limpiar el iterator para que se vea mas producto y menos chrome.</p>
+                    <div class="milestone-meta"><span class="badge priority-high">in progress</span><span class="badge">esta semana</span><span class="badge">61%</span></div>
+                    <div class="dependency-grid">
+                      <span class="dependency-chip"><strong>Amber grounded</strong><span>dashboard, terminal, kanban, roadmap</span></span>
+                      <span class="dependency-chip"><strong>Oxide aspirational</strong><span>mismas rutas para evaluar rango visual</span></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="milestone-row">
+                  <div class="milestone-marker" style="color: var(--blue);"><i data-lucide="monitor-up"></i></div>
+                  <div class="milestone-card">
+                    <h4>M3 · Browser dock truthfulness</h4>
+                    <p>Visibilizar estado real de browser embebido vs external y resolver ventana dedicada sin prometer magia donde hoy no la hay.</p>
+                    <div class="milestone-meta"><span class="badge status-progress">queued</span><span class="badge">bloquea QA</span><span class="badge">valor 10</span></div>
+                    <div class="dependency-grid">
+                      <span class="dependency-chip"><strong>Runtime Linux</strong><span>GTK/VTE empaquetado</span></span>
+                      <span class="dependency-chip"><strong>Next dev origin</strong><span>localhost vs 127.0.0.1</span></span>
+                      <span class="dependency-chip"><strong>UI copy</strong><span>badges honestos para cada modo</span></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="milestone-row">
+                  <div class="milestone-marker" style="color: var(--text-3);"><i data-lucide="lock"></i></div>
+                  <div class="milestone-card">
+                    <h4>M4 · Workflow memory</h4>
+                    <p>Persistencia de filtros, operator inbox mas fuerte, cola agente integrada y menos friccion entre sesiones de trabajo.</p>
+                    <div class="milestone-meta"><span class="badge">planned</span><span class="badge">fin de mes</span><span class="badge">depende M3</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Release gates</p>
+                <h3>Que tiene que pasar para cerrar el tramo actual</h3>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="release-grid">
+                <div class="release-note">
+                  <strong>Iterator sin ruido</strong>
+                  <p>Sidebar mas angosta, menos chrome, solo cuatro previews activos y links sin roturas.</p>
+                </div>
+                <div class="release-note">
+                  <strong>Parity de vistas</strong>
+                  <p>Amber y Oxide tienen el mismo rango de evaluacion interna: dashboard, terminal, kanban y roadmap.</p>
+                </div>
+                <div class="release-note">
+                  <strong>No fake swarm theater</strong>
+                  <p>El contenido sigue pegado a tareas, milestones, queue y browser dock del producto real.</p>
+                </div>
+                <div class="release-note">
+                  <strong>Legacy still useful</strong>
+                  <p>Brutalist y Nordic quedan vivos como direcciones visuales, pero con switchers corregidos a la nueva lista.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="rail-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Risk map</p>
+                <h3>Bloqueos estructurales</h3>
+              </div>
+            </div>
+            <div class="rail-body">
+              <article class="queue-item">
+                <div class="queue-top"><strong>Packaged runtime</strong><span class="queue-score">P1</span></div>
+                <p>Sin esto, same-window terminal/browser siguen siendo aspiracionales en binario instalado.</p>
+              </article>
+              <article class="queue-item">
+                <div class="queue-top"><strong>Origin consistency</strong><span class="queue-score">P2</span></div>
+                <p>Drift entre hosts de dev afecta embeds y mensajes de estado.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="note">
+            <h4>Por que esta vista suma</h4>
+            <p>Roadmap ya no queda implícito. Ahora se puede juzgar si la dirección visual soporta milestones, dependencias y release gates, no sólo cards lindas.</p>
+          </section>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const viewMeta = {
+      dashboard: {
+        breadcrumb: 'system dashboard',
+        title: 'DevHub desktop workspace',
+        description: 'Resumen operativo grounded del proyecto: progreso, queue, browser dock truth y estado del workspace local.',
+      },
+      terminal: {
+        breadcrumb: 'terminal room',
+        title: 'Terminal-first project work',
+        description: 'Terminal room integrada al workspace real, con logs, comandos, estado del dock y contexto del proyecto en vez de una mega consola ficticia.',
+      },
+      kanban: {
+        breadcrumb: 'task kanban',
+        title: 'Task board with real product states',
+        description: 'Kanban fiel al modelo actual de DevHub: prioridades, valor de negocio, fechas, bloqueos, milestones y queue agente.',
+      },
+      roadmap: {
+        breadcrumb: 'roadmap view',
+        title: 'Milestones and release gates',
+        description: 'Roadmap visible dentro del preview para evaluar si la dirección soporta hitos, dependencias y decisiones reales del producto.',
+      },
+    };
+
+    const tabs = Array.from(document.querySelectorAll('.tab[data-view]'));
+    const sideLinks = Array.from(document.querySelectorAll('.view-link[data-view]'));
+    const pages = Array.from(document.querySelectorAll('.view-page'));
+    const breadcrumb = document.getElementById('breadcrumb-view');
+    const pageTitle = document.getElementById('page-title');
+    const pageDescription = document.getElementById('page-description');
+
+    function setView(view) {
+      tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.view === view));
+      sideLinks.forEach((link) => link.classList.toggle('active', link.dataset.view === view));
+      pages.forEach((page) => page.classList.toggle('active', page.id === `view-${view}`));
+
+      const meta = viewMeta[view];
+      if (meta) {
+        breadcrumb.textContent = meta.breadcrumb;
+        pageTitle.textContent = meta.title;
+        pageDescription.textContent = meta.description;
+      }
+    }
+
+    [...tabs, ...sideLinks].forEach((control) => {
+      control.addEventListener('click', () => setView(control.dataset.view));
+    });
+
+    function updateClock() {
+      document.getElementById('amber-clock').textContent = new Date().toLocaleTimeString('es-AR', { hour12: false });
+    }
+
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+</body>
+</html>

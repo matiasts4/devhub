@@ -9,6 +9,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Terminal,
 } from 'lucide-react';
 import { getNavItemClasses, getCollapsedWidth } from './sidebarUtils';
 import { Button } from '@/components/ui/button';
@@ -45,8 +46,16 @@ export default function Sidebar({ collapsed, onToggle }) {
           collapsed ? 'px-0 py-3' : 'px-4 py-3'
         } border-b border-white/[0.07] h-12`}
       >
-        <div className="w-6 h-6 rounded-md bg-amber-500/15 border border-amber-500/25 flex items-center justify-center flex-shrink-0 overflow-hidden">
-          <img src="/logo.png" alt="DevHub Logo" className="w-full h-full object-cover" />
+        <div
+          className="h-9 w-9 border-2 flex items-center justify-center"
+          style={{
+            borderColor: 'var(--accent-primary)',
+            backgroundColor: 'var(--accent-primary)',
+            boxShadow: '2px 2px 0 0 var(--accent-shadow)',
+            borderRadius: 0,
+          }}
+        >
+          <Terminal className="w-5 h-5" style={{ color: '#000', strokeWidth: 2.5 }} />
         </div>
         <AnimatePresence initial={false}>
           {!collapsed && (

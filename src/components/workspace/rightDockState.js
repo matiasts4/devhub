@@ -1,3 +1,4 @@
+/* global module */
 const DEFAULT_BROWSER_URL = 'http://localhost:3200/';
 const DEFAULT_SEARCH_URL = 'https://duckduckgo.com/?q=';
 const MIN_RIGHT_DOCK_SIZE = 20;
@@ -10,7 +11,7 @@ const DEFAULT_RIGHT_DOCK_STATE = {
   editMode: false,
   maximized: false,
   maximizedView: 'browser',
-  size: 44,
+  size: 32,
   browserUrl: DEFAULT_BROWSER_URL,
   browserHistory: [DEFAULT_BROWSER_URL],
   browserHistoryIndex: 0,
@@ -31,7 +32,8 @@ function isValidBrowserHostname(hostname) {
   if (normalized === 'localhost') return true;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(normalized)) return true;
   if (normalized.startsWith('[') && normalized.endsWith(']')) return true;
-  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(normalized) && !/^\d+$/.test(normalized)) return true;
+  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(normalized) && !/^\d+$/.test(normalized))
+    return true;
   return normalized.includes('.');
 }
 
@@ -61,7 +63,9 @@ function shouldTreatAsSearchQuery(value) {
 }
 
 function shouldDefaultToHttp(value) {
-  const normalized = String(value || '').trim().replace(/^\/\//, '');
+  const normalized = String(value || '')
+    .trim()
+    .replace(/^\/\//, '');
   if (!normalized) return false;
 
   const hostnameCandidate = normalized.split('/')[0].split('?')[0].split('#')[0];
@@ -117,13 +121,19 @@ function normalizeBrowserUrl(rawValue) {
 function sanitizeRightDockState(rawState = {}) {
   const visible = rawState.visible === true;
   const isLegacyBridgeTab = rawState.activeTab === 'bridge';
-  const activeTab = ['browser', 'editor'].includes(rawState.activeTab) ? rawState.activeTab : 'browser';
+  const activeTab = ['browser', 'editor', 'swarm'].includes(rawState.activeTab)
+    ? rawState.activeTab
+    : 'browser';
   const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
-  const maximizedView = ['browser', 'editor', 'window'].includes(rawState.maximizedView)
+  const maximizedView = ['browser', 'editor', 'swarm', 'window'].includes(rawState.maximizedView)
     ? rawState.maximizedView
-    : (activeTab === 'editor' ? 'editor' : 'browser');
+    : activeTab === 'editor'
+      ? 'editor'
+      : activeTab === 'swarm'
+        ? 'swarm'
+        : 'browser';
   const rawSize = Number(rawState.size);
   const size = Number.isFinite(rawSize)
     ? clamp(rawSize, MIN_RIGHT_DOCK_SIZE, MAX_RIGHT_DOCK_SIZE)
@@ -142,7 +152,9 @@ function sanitizeRightDockState(rawState = {}) {
 
   const browserHistory = normalizedHistory.length > 0 ? normalizedHistory : [normalizedUrl];
   const browserHistoryIndex = clamp(
-    Number.isFinite(Number(rawState.browserHistoryIndex)) ? Number(rawState.browserHistoryIndex) : 0,
+    Number.isFinite(Number(rawState.browserHistoryIndex))
+      ? Number(rawState.browserHistoryIndex)
+      : 0,
     0,
     browserHistory.length - 1
   );

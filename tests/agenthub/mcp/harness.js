@@ -18,6 +18,10 @@
  */
 
 const { TestHarness } = require('../harness');
+const {
+  readExecutionQueueSummary,
+  presentExecutionQueue,
+} = require('../../../src/lib/db/compactReads.js');
 
 class McpTestHarness extends TestHarness {
   constructor(options = {}) {
@@ -255,42 +259,13 @@ class McpTestHarness extends TestHarness {
   _buildExecutionQueue(projectId, { limit = 20, includeBlocked = false } = {}) {
     this._cleanupExpiredLeases(projectId, null);
 
-    const tasks = this.db
-      .prepare(
-        "SELECT * FROM tasks WHERE project_id = ? AND status = 'pending' ORDER BY created_at ASC"
-      )
-      .all(projectId);
-    const allTasks = this.db
-      .prepare('SELECT id, status FROM tasks WHERE project_id = ?')
-      .all(projectId);
-    const deps = this.db.prepare('SELECT * FROM task_dependencies').all();
-    const statusMap = Object.fromEntries(allTasks.map((task) => [task.id, task.status]));
-    const unlockCounts = deps.reduce((acc, dep) => {
-      acc[dep.depends_on] = (acc[dep.depends_on] || 0) + 1;
-      return acc;
-    }, {});
-    const priorityMap = { critical: 4, high: 3, medium: 2, low: 1 };
-
-    return tasks
-      .map((task) => {
-        const taskDeps = deps.filter((dep) => dep.task_id === task.id && dep.tipo === 'blocks');
-        const blockingDeps = taskDeps.filter((dep) => statusMap[dep.depends_on] !== 'completed');
-        const blocked = blockingDeps.length > 0;
-        const score =
-          (priorityMap[task.priority] || 2) * 0.4 +
-          Number(task.business_value ?? 5) * 0.3 +
-          Number(unlockCounts[task.id] || 0) * 0.2;
-        return {
-          ...task,
-          blocked,
-          blocking_dependencies: blockingDeps.map((dep) => dep.depends_on),
-          blocked_reason: blocked ? blockingDeps[0]?.depends_on || null : null,
-          priority_score: blocked ? 0 : score,
-        };
-      })
-      .filter((task) => includeBlocked || !task.blocked)
-      .sort((a, b) => b.priority_score - a.priority_score)
-      .slice(0, limit);
+    // Delegate to shared durable core for parity with production code.
+    const { total, queue } = readExecutionQueueSummary(this.db, {
+      projectId,
+      limit,
+      includeBlocked,
+    });
+    return presentExecutionQueue({ queue, total }).queue;
   }
 
   _filterCompatibilityQueue(queue, deps, pendingTaskIds) {

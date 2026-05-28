@@ -8,7 +8,9 @@ module.exports = {
   },
   modulePathIgnorePatterns: [
     '<rootDir>/.next/',
+    '<rootDir>/.plyrium-forge/',
     '<rootDir>/.plyrium-forge/worktrees/',
+    '<rootDir>/.devhub/worktrees/',
     '<rootDir>/opencode/',
     '<rootDir>/sidecar-backend/',
     '<rootDir>/src-tauri/',
@@ -16,7 +18,10 @@ module.exports = {
   testPathIgnorePatterns: [
     '/node_modules/',
     '<rootDir>/.next/',
+    '<rootDir>/.plyrium-forge/',
     '<rootDir>/.plyrium-forge/worktrees/',
+    '<rootDir>/.devhub/worktrees/',
+    '<rootDir>/.worktrees/',
     '<rootDir>/opencode/',
     '<rootDir>/sidecar-backend/',
     '<rootDir>/src-tauri/',

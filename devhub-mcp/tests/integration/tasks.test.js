@@ -5,9 +5,7 @@
  *   - bulk_create_tasks
  *   - update_task
  *   - add_task_comment
- *   - get_next_task
  *   - get_execution_queue
- *   - claim_next_task
  */
 
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
@@ -353,28 +351,7 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('get_next_task', () => {
-    it('returns a tokenized lease or null message', async () => {
-      if (!projectId) return;
-      const result = await harness.callTool('get_next_task', {
-        project_id: projectId,
-        agent_id: 'test-agent',
-      });
-      // Either returns a task or a message
-      expect(result).toHaveProperty('message');
-      if (result.task) {
-        expect(result.task).toHaveProperty('id');
-        expect(result.task).toHaveProperty('title');
-        expect(result.task.status).toBe('in_progress');
-        expect(result.task.assigned_to).toBe('test-agent');
-        expect(result.task).toHaveProperty('claim_token');
-        expect(result.task).toHaveProperty('claimed_at');
-        expect(result.task).toHaveProperty('lease_expires_at');
-      }
-    });
-  });
-
-  describe('get_execution_queue / claim_next_task', () => {
+  describe('get_execution_queue and MCP public boundary', () => {
     it('returns a scored pending-task queue', async () => {
       if (!projectId) return;
       const result = await harness.callTool('get_execution_queue', {
@@ -389,136 +366,29 @@ describe('MCP Task Tools', () => {
       }
     });
 
-    it('claims the next available task for an agent', async () => {
-      if (!projectId) return;
-      const result = await harness.callTool('claim_next_task', {
-        project_id: projectId,
-        agent_id: 'test-agent-claim',
-      });
-      expect(result).toHaveProperty('claimed');
-      if (result.claimed) {
-        expect(result.task.status).toBe('in_progress');
-        expect(result.task.assigned_to).toBe('test-agent-claim');
-        expect(result.task).toHaveProperty('claim_token');
-        expect(result.task).toHaveProperty('lease_expires_at');
+    it('does not expose runtime task mutation tools on the public MCP surface', async () => {
+      const checks = [
+        ['claim_next_task', { project_id: isolatedProjectId, agent_id: 'agent-public-boundary' }],
+        [
+          'renew_task_lease',
+          { task_id: 'task-x', agent_id: 'agent-public-boundary', claim_token: 'tok' },
+        ],
+        [
+          'release_task',
+          {
+            task_id: 'task-x',
+            agent_id: 'agent-public-boundary',
+            claim_token: 'tok',
+            outcome: 'paused',
+          },
+        ],
+        ['request_supervisor_approval', { task_id: 'task-x', reason_class: 'approval_required' }],
+      ];
+
+      for (const [toolName, args] of checks) {
+        const result = await harness.callTool(toolName, args);
+        expect(result.raw || JSON.stringify(result)).toContain(`Tool ${toolName} not found`);
       }
-    });
-
-    it('renews and releases a claimed lease', async () => {
-      if (!projectId) return;
-
-      const claimed = await harness.callTool('claim_next_task', {
-        project_id: projectId,
-        agent_id: 'test-agent-renew',
-      });
-
-      if (!claimed.claimed || !claimed.task?.claim_token) {
-        expect(claimed).toHaveProperty('message');
-        return;
-      }
-
-      const renewed = await harness.callTool('renew_task_lease', {
-        task_id: claimed.task.id,
-        agent_id: 'test-agent-renew',
-        claim_token: claimed.task.claim_token,
-      });
-
-      expect(renewed.renewed).toBe(true);
-      expect(new Date(renewed.task.lease_expires_at).getTime()).toBeGreaterThanOrEqual(
-        new Date(claimed.task.lease_expires_at).getTime()
-      );
-
-      const released = await harness.callTool('release_task', {
-        task_id: claimed.task.id,
-        agent_id: 'test-agent-renew',
-        claim_token: claimed.task.claim_token,
-        outcome: 'paused',
-      });
-
-      expect(released.released).toBe(true);
-      expect(released.task.status).toBe('pending');
-      expect(released.task.claim_token).toBeNull();
-    });
-
-    it('surfaces supervisor snapshots with reason/evidence fields in queue and task claims', async () => {
-      if (!isolatedProjectId) return;
-
-      const taskResult = await harness.callTool('create_task', {
-        project_id: isolatedProjectId,
-        user_id: userId,
-        title: 'Supervisor Contract Task',
-      });
-
-      const workspaceResult = await harness.callTool('create_agent_workspace', {
-        workspace_id: 'ws-supervisor-contract-1',
-        project_id: isolatedProjectId,
-        agent_id: 'agent-supervisor-contract-1',
-        current_task_id: taskResult.task.id,
-        run_id_or_session_id: 'session-supervisor-contract-1',
-        repo_root: '/repo/devhub',
-        workspace_path: 'workspace://devhub/ws-supervisor-contract-1',
-        base_branch: 'main',
-        status: 'planned',
-      });
-
-      const runResult = await harness.callTool('create_agent_run', {
-        run_id: 'run-supervisor-contract-1',
-        workspace_id: workspaceResult.workspace.id,
-        task_id: taskResult.task.id,
-        agent_id: 'agent-supervisor-contract-1',
-        requested_base_ref: 'f814998dd05cb491caf8637bf570dbd74b539090',
-        baseline_commit: 'f814998dd05cb491caf8637bf570dbd74b539090',
-        status: 'running',
-      });
-
-      const checkpoint = await harness.callTool('request_supervisor_approval', {
-        task_id: taskResult.task.id,
-        workspace_id: workspaceResult.workspace.id,
-        run_id: runResult.run.run_id,
-        reason_class: 'approval_required',
-        evidence_ref: 'evidence://supervisor/contract-1',
-      });
-
-      const queue = await harness.callTool('get_execution_queue', {
-        project_id: isolatedProjectId,
-        limit: 20,
-      });
-      const nextTask = await harness.callTool('get_next_task', {
-        project_id: isolatedProjectId,
-        agent_id: 'agent-supervisor-reader-1',
-      });
-
-      const queuedTask = queue.queue.find((task) => task.id === taskResult.task.id);
-      expect(queuedTask.supervisor).toEqual(
-        expect.objectContaining({
-          supervisor_state: 'awaiting_approval',
-          outcome: 'wait',
-          reason_class: 'approval_required',
-          evidence_ref: 'evidence://supervisor/contract-1',
-          workspace_id: workspaceResult.workspace.id,
-          run_id: runResult.run.run_id,
-          approval_checkpoint_key: checkpoint.checkpoint.checkpoint_key,
-        })
-      );
-      expect(queuedTask.supervisor.approval_checkpoint).toEqual(
-        expect.objectContaining({
-          checkpoint_key: checkpoint.checkpoint.checkpoint_key,
-          status: 'pending',
-          task_id: taskResult.task.id,
-          workspace_id: workspaceResult.workspace.id,
-          run_id: runResult.run.run_id,
-        })
-      );
-      expect(nextTask.task.id).toBe(taskResult.task.id);
-      expect(nextTask.task.supervisor).toEqual(
-        expect.objectContaining({
-          supervisor_state: 'awaiting_approval',
-          outcome: 'wait',
-          reason_class: 'approval_required',
-          evidence_ref: 'evidence://supervisor/contract-1',
-          approval_checkpoint_key: checkpoint.checkpoint.checkpoint_key,
-        })
-      );
     });
   });
 });

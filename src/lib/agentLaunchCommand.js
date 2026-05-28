@@ -10,18 +10,55 @@ export function resolveAgentProgramExecutable(programId = 'hermes') {
   return AGENT_PROGRAM_EXECUTABLES[programId] || AGENT_PROGRAM_EXECUTABLES.hermes;
 }
 
+function shellQuote(value = '') {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
+/**
+ * Build a tmux-wrapped command for swarm agents.
+ * The tmux session survives PTY death (page refresh, network drop).
+ * Session name: devhub-swarm-{launchId}-{roleKey}
+ * Status bar disabled to save vertical space.
+ */
+export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
+  const sessionTarget = shellQuote(tmuxSessionName);
+  const startDirectory = cwd ? ` -c ${shellQuote(cwd)}` : '';
+  const command = shellQuote(innerCommand);
+  return [
+    `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
+    `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,
+    `tmux attach-session -t ${sessionTarget}`,
+  ].join('; ');
+}
+
 export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const executable = resolveAgentProgramExecutable(programId);
   const quotedPrompt = shellQuotePrompt(prompt || '');
   const opencodeAgent = options.opencodeAgent || 'sdd-orchestrator';
+  const modelId = options.modelId || null;
+  const tmuxSessionName = options.tmuxSessionName || null;
 
+  let innerCommand;
   switch (programId) {
     case 'codex':
-      return `${executable} exec --sandbox workspace-write ${quotedPrompt}`;
-    case 'opencode':
-      return `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt}`;
+      innerCommand = `${executable} exec --sandbox workspace-write ${quotedPrompt}`;
+      break;
+    case 'opencode': {
+      innerCommand = modelId
+        ? `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt} --model ${modelId}`
+        : `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt}`;
+      break;
+    }
     case 'hermes':
     default:
-      return `${executable} chat -q ${quotedPrompt}`;
+      innerCommand = `${executable} chat -q ${quotedPrompt}`;
+      break;
   }
+
+  // Wrap in tmux if session name provided (swarm resilience)
+  if (tmuxSessionName) {
+    return buildTmuxWrappedCommand(innerCommand, tmuxSessionName, options.cwd);
+  }
+
+  return innerCommand;
 }

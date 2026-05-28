@@ -133,7 +133,7 @@ export default function TerminalSidePanel({
         style={{ background: 'var(--surface-app)', borderColor: 'var(--border-subtle)' }}
       >
         <header
-          className="flex items-center justify-between border-b px-3 py-2"
+          className="flex items-center justify-between border-b px-2 py-1"
           style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-card)' }}
         >
           <div className="flex items-center gap-2">
@@ -154,7 +154,7 @@ export default function TerminalSidePanel({
         </header>
 
         <div
-          className="flex items-center gap-2 border-b px-3 py-2"
+          className="flex items-center gap-2 border-b px-2 py-1"
           style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-elevated)' }}
         >
           <Search className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
@@ -197,7 +197,7 @@ export default function TerminalSidePanel({
         </div>
 
         <div
-          className="flex h-9 items-end gap-1 overflow-x-auto border-b px-2"
+          className="flex h-9 items-end gap-1 overflow-x-auto border-b px-1"
           style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
         >
           {tabs.map((tab) => {

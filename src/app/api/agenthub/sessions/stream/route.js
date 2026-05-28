@@ -2,13 +2,14 @@
  * SSE Stream: /api/agenthub/sessions/stream
  *
  * Streams real-time session updates via Server-Sent Events.
- * Events: session-update, trace-event, usage-update, heartbeat
+ * Events: session-update, trace-event, usage-update, director-feed, heartbeat
  *
  * Uses polling under the hood (every 2s) comparing state snapshots,
  * then emits deltas over the SSE connection.
  */
 
 import { getDb } from '@/lib/db/localDb.js';
+import { readDirectorFeedSummary } from '@/lib/db/compactReads.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,12 +23,53 @@ function sseEvent(event, data) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+function activeMissionIdFromFeed(feed) {
+  return feed?.items?.[0]?.mission_id || feed?.handoff?.task?.mission_id || null;
+}
+
 /**
  * Returns a flat snapshot of all active sessions with their latest trace count and usage.
  * Enhanced to include full trace rows (not just counts) for real-time UI updates.
  */
-function buildSnapshot(sinceTimestamp) {
+function buildSnapshot(sinceTimestamp, scope = {}) {
   const db = getDb();
+  const projectId = scope?.projectId || null;
+  const missionId = scope?.missionId || null;
+
+  let activeMission;
+  if (missionId) {
+    activeMission = db
+      .prepare(
+        `SELECT mission_id
+         FROM swarm_missions
+         WHERE mission_id = ?
+         LIMIT 1`
+      )
+      .get(missionId);
+  } else if (projectId) {
+    activeMission = db
+      .prepare(
+        `SELECT mission_id
+         FROM swarm_missions
+         WHERE status = 'active' AND project_id = ?
+         ORDER BY updated_at DESC, rowid DESC
+         LIMIT 1`
+      )
+      .get(projectId);
+  } else {
+    activeMission = db
+      .prepare(
+        `SELECT mission_id
+         FROM swarm_missions
+         WHERE status = 'active'
+         ORDER BY updated_at DESC, rowid DESC
+         LIMIT 1`
+      )
+      .get();
+  }
+  const directorFeed = activeMission?.mission_id
+    ? readDirectorFeedSummary(db, { missionId: activeMission.mission_id })
+    : null;
 
   // All sessions
   const sessions = db
@@ -153,9 +195,15 @@ function buildSnapshot(sinceTimestamp) {
     tracesBySession,
     textLengthMap,
     usageMap,
-    _safeParse: (str) => { // expose for use in computeDelta
+    directorFeed,
+    _safeParse: (str) => {
+      // expose for use in computeDelta
       if (!str) return null;
-      try { return JSON.parse(str); } catch { return null; }
+      try {
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
     },
   };
 }
@@ -212,13 +260,14 @@ function computeDelta(prev, curr) {
                WHERE session_id = ? AND trace_type IN ('text', 'reasoning')`
             )
             .all(id)
-            .map((t) => ({ ...t, tool_input: safeParse(t.tool_input), metadata: safeParse(t.metadata) }));
+            .map((t) => ({
+              ...t,
+              tool_input: safeParse(t.tool_input),
+              metadata: safeParse(t.metadata),
+            }));
           // Merge: replace existing text traces by id, add new ones
           const existingIds = new Set(textTraces.map((t) => t.id));
-          sessionTraces = [
-            ...sessionTraces.filter((t) => !existingIds.has(t.id)),
-            ...textTraces,
-          ];
+          sessionTraces = [...sessionTraces.filter((t) => !existingIds.has(t.id)), ...textTraces];
         } catch {
           // Non-critical — fall back to incremental traces
         }
@@ -246,12 +295,27 @@ function computeDelta(prev, curr) {
     }
   }
 
-  return { newSessions, updatedSessions, traceEvents, usageUpdates };
+  const directorFeedChanged =
+    JSON.stringify(prev.directorFeed || null) !== JSON.stringify(curr.directorFeed || null);
+
+  return {
+    newSessions,
+    updatedSessions,
+    traceEvents,
+    usageUpdates,
+    directorFeedChanged,
+    directorFeed: curr.directorFeed || null,
+  };
 }
 
-export async function GET() {
+export async function GET(request) {
   const encoder = new TextEncoder();
-  let prevSnapshot = buildSnapshot();
+  const { searchParams } = new URL(request.url);
+  const scope = {
+    projectId: searchParams.get('project_id') || null,
+    missionId: searchParams.get('mission_id') || null,
+  };
+  let prevSnapshot = buildSnapshot(null, scope);
   prevSnapshot.pollTimestamp = new Date().toISOString();
   let heartbeatTimer = null;
   let pollTimer = null;
@@ -283,7 +347,7 @@ export async function GET() {
           const lastPollTs = prevSnapshot.pollTimestamp
             ? prevSnapshot.pollTimestamp.replace('T', ' ').replace('Z', '').split('.')[0]
             : null;
-          const currSnapshot = buildSnapshot(lastPollTs);
+          const currSnapshot = buildSnapshot(lastPollTs, scope);
           currSnapshot.pollTimestamp = new Date().toISOString();
           const delta = computeDelta(prevSnapshot, currSnapshot);
 
@@ -305,6 +369,19 @@ export async function GET() {
 
           for (const uu of delta.usageUpdates) {
             controller.enqueue(encoder.encode(sseEvent('usage-update', uu)));
+          }
+
+          if (delta.directorFeedChanged && delta.directorFeed) {
+            controller.enqueue(
+              encoder.encode(
+                sseEvent('director-feed', {
+                  mission_id:
+                    delta.directorFeed.items?.[0]?.mission_id ||
+                    activeMissionIdFromFeed(delta.directorFeed),
+                  director_feed: delta.directorFeed,
+                })
+              )
+            );
           }
 
           prevSnapshot = currSnapshot;
@@ -330,3 +407,5 @@ export async function GET() {
     },
   });
 }
+
+export { buildSnapshot, computeDelta, activeMissionIdFromFeed };

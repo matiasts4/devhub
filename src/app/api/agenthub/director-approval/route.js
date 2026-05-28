@@ -12,6 +12,7 @@ import {
 } from '@/lib/db/localDb';
 import { evaluateSupervisorSnapshot } from '@/lib/swarm/supervisorLoop';
 import { gatherOperationalHealth } from '@/app/api/agenthub/operations/health/route';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 
 export const runtime = 'nodejs';
 
@@ -84,7 +85,7 @@ function resolveLatestRun(db, taskId, workspaceId, dependencies = {}) {
   return readRunForWorkspace(db, workspaceId) || readRunForTask(db, taskId) || null;
 }
 
-export async function POST(request, _context, dependencies = {}) {
+export const POST = withAuth(async function POST(request, _context, dependencies = {}) {
   try {
     const body = await request.json();
     const validation = validatePayload(body);
@@ -205,4 +206,4 @@ export async function POST(request, _context, dependencies = {}) {
       { status: 500 }
     );
   }
-}
+});

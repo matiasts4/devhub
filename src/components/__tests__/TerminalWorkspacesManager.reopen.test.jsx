@@ -76,29 +76,6 @@ jest.mock('../NotificationCenter', () => ({
   },
 }));
 
-jest.mock('../AgentRoomSidebar', () => ({
-  __esModule: true,
-  default: ({ resumableSessions = [], resumableStatus = 'empty', resumableError = null }) => {
-    const React = require('react');
-    return React.createElement(
-      'div',
-      {
-        'data-testid': 'agent-room-sidebar-stub',
-        'data-status': resumableStatus,
-        'data-count': String(resumableSessions.length),
-        'data-error': resumableError?.message || '',
-      },
-      resumableSessions.map((session) =>
-        React.createElement(
-          'span',
-          { key: `${session.provider}:${session.sessionId}`, 'data-testid': 'agent-room-history-item' },
-          session.title
-        )
-      )
-    );
-  },
-}));
-
 jest.mock('@/lib/docopsPrompts', () => ({
   enforceDocOpsGateOnLaunchCommand: (value) => value,
 }));
@@ -150,21 +127,29 @@ jest.mock('date-fns', () => ({
   formatDistanceToNow: () => 'just now',
 }));
 
-jest.mock('../workspace/FileExplorerEditorPane', () => ({
-  __esModule: true,
-  default: () => {
-    const React = require('react');
-    return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/FileExplorerEditorPane',
+  () => ({
+    __esModule: true,
+    default: () => {
+      const React = require('react');
+      return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
+    },
+  }),
+  { virtual: true }
+);
 
-jest.mock('../workspace/WorkspaceBridgePane', () => ({
-  __esModule: true,
-  default: () => {
-    const React = require('react');
-    return React.createElement('div', { 'data-testid': 'shared-bridge-pane' });
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/WorkspaceBridgePane',
+  () => ({
+    __esModule: true,
+    default: () => {
+      const React = require('react');
+      return React.createElement('div', { 'data-testid': 'shared-bridge-pane' });
+    },
+  }),
+  { virtual: true }
+);
 
 jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   __esModule: true,
@@ -199,6 +184,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
     mockCatalogState.status = 'empty';
     mockCatalogState.sessions = [];
     mockCatalogState.error = null;
@@ -212,6 +198,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     dom.window.close();
     delete global.localStorage;
+    delete global.fetch;
     jest.clearAllMocks();
   });
 
@@ -244,27 +231,25 @@ describe('TerminalWorkspacesManager reopen menu', () => {
       )
     );
 
-    expect(mockCatalogState.retry).toHaveBeenCalledTimes(1);
+    expect(mockCatalogState.refresh).toHaveBeenCalledTimes(1);
   });
 
-  test('renders the same resumable sessions in topbar and Agent Room history', async () => {
+  test('renders the same resumable sessions in topbar reopen dropdown', async () => {
     mockCatalogState.status = 'success';
-    mockCatalogState.sessions = [createResumableSession({ sessionId: 'oc-1', title: 'Daily sync' })];
+    mockCatalogState.sessions = [
+      createResumableSession({ sessionId: 'oc-1', title: 'Daily sync' }),
+    ];
 
     const view = await renderManager();
-    const historyStub = view.container.querySelector('[data-testid="agent-room-sidebar-stub"]');
 
     expect(view.container.textContent).toContain('Daily sync');
-    expect(historyStub?.getAttribute('data-status')).toBe('success');
-    expect(historyStub?.getAttribute('data-count')).toBe('1');
-    expect(view.container.querySelector('[data-testid="agent-room-history-item"]')?.textContent).toBe(
-      'Daily sync'
-    );
   });
 
   test('reopens an OpenCode session in exactly one new panel and records the run', async () => {
     mockCatalogState.status = 'success';
-    mockCatalogState.sessions = [createResumableSession({ sessionId: 'oc-99', title: 'Recovered session' })];
+    mockCatalogState.sessions = [
+      createResumableSession({ sessionId: 'oc-99', title: 'Recovered session' }),
+    ];
 
     const view = await renderManager();
 
@@ -293,20 +278,19 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     expect(resumedPanel).not.toBeUndefined();
   });
 
-  test('keeps topbar Reopen and Agent Room history in sync through timeout retry recovery', async () => {
+  test('keeps topbar Reopen dropdown in sync through timeout retry recovery', async () => {
     mockCatalogState.status = 'error';
     mockCatalogState.error = createResumableCatalogError();
 
     const view = await renderManager();
-    const historyStubBefore = view.container.querySelector('[data-testid="agent-room-sidebar-stub"]');
 
     expect(view.container.textContent).toContain('OpenCode session listing timed out.');
-    expect(historyStubBefore?.getAttribute('data-status')).toBe('error');
-    expect(historyStubBefore?.getAttribute('data-error')).toBe('OpenCode session listing timed out.');
 
     mockCatalogState.status = 'success';
     mockCatalogState.error = null;
-    mockCatalogState.sessions = [createResumableSession({ sessionId: 'oc-22', title: 'Recovered after retry' })];
+    mockCatalogState.sessions = [
+      createResumableSession({ sessionId: 'oc-22', title: 'Recovered after retry' }),
+    ];
 
     await click(
       Array.from(view.container.querySelectorAll('button')).find((button) =>
@@ -321,20 +305,16 @@ describe('TerminalWorkspacesManager reopen menu', () => {
       })
     );
 
-    const historyStubAfter = view.container.querySelector('[data-testid="agent-room-sidebar-stub"]');
-    expect(mockCatalogState.retry).toHaveBeenCalledTimes(1);
+    expect(mockCatalogState.refresh).toHaveBeenCalledTimes(1);
     expect(view.container.textContent).toContain('Recovered after retry');
     expect(view.container.textContent).not.toContain('OpenCode session listing timed out.');
-    expect(historyStubAfter?.getAttribute('data-status')).toBe('success');
-    expect(historyStubAfter?.getAttribute('data-count')).toBe('1');
-    expect(view.container.querySelector('[data-testid="agent-room-history-item"]')?.textContent).toBe(
-      'Recovered after retry'
-    );
   });
 
   test('shows deterministic failure instead of leaving a blank substitute panel when reopen exits immediately', async () => {
     mockCatalogState.status = 'success';
-    mockCatalogState.sessions = [createResumableSession({ sessionId: 'oc-expired', title: 'Expired session' })];
+    mockCatalogState.sessions = [
+      createResumableSession({ sessionId: 'oc-expired', title: 'Expired session' }),
+    ];
 
     const view = await renderManager();
 
@@ -397,6 +377,58 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     const restoredTerminal = view.container.querySelector('[data-testid="terminal-p1"]');
 
     expect(restoredTerminal?.getAttribute('data-command')).toBe('opencode --session oc-reboot-1');
+  });
+
+  test('dispatches one relaunch event from startup restore plan when runtime has no live terminal', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [
+                  {
+                    id: 'p1',
+                    cwd: '/workspace/devhub',
+                    initialCommand: 'opencode --session oc-startup-1',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: 'p1' },
+      })
+    );
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ terminals: [], processes: [], anomalies: {} }),
+    });
+
+    const relaunchEvents = [];
+    window.addEventListener('devhub:relaunch-panel', (event) => {
+      relaunchEvents.push(event.detail);
+    });
+
+    await renderManager();
+    await flushEffects();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/swarm/runtime-diagnostics',
+      expect.objectContaining({ cache: 'no-store' })
+    );
+    expect(relaunchEvents).toEqual([
+      expect.objectContaining({
+        panelId: 'p1',
+        command: 'opencode --session oc-startup-1',
+      }),
+    ]);
   });
 
   test('migrates legacy Ghostty renderer preference to xterm on reload', async () => {
@@ -525,5 +557,73 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     expect(view.container.textContent).toContain('No recent sessions found.');
     expect(view.container.textContent).not.toContain('Hermes');
     expect(view.container.querySelector('[data-testid="agent-room-history-item"]')).toBeNull();
+  });
+
+  test('posts canonical binding reconciliation when a swarm launch panel detects a verified OpenCode session', async () => {
+    global.fetch = jest.fn(async (url) => {
+      if (url === '/api/swarm/runtime-diagnostics') {
+        return { ok: true, json: async () => ({ terminals: [], processes: [], anomalies: {} }) };
+      }
+      if (url === '/api/agenthub/sessions/launch-session-1/binding') {
+        return {
+          ok: true,
+          json: async () => ({ status: 'reconciled', reason: 'binding_reconciled' }),
+        };
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    await renderManager();
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:run-agent', {
+        detail: {
+          taskId: 'launch-1:coder',
+          command: 'opencode --agent sdd-orchestrator',
+          selectedAgent: 'opencode',
+          launchOrigin: 'swarm-control-launch',
+          roleKey: 'coder',
+          roleLabel: 'Coder',
+          roleAbbrev: 'COD',
+          taskTitle: 'Launch · Coder',
+          promptSummary: 'Coder · Launch',
+          isSwarmRole: true,
+          workspaceId: 'ws-canon-1',
+          runId: 'run-canon-1',
+          sessionId: 'launch-session-1',
+          workspacePath: '/workspace/devhub/.devhub/worktrees/launch-1/coder',
+        },
+      })
+    );
+    await flushEffects();
+
+    const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+    const panelId = runs['launch-1:coder']?.panelId;
+    expect(runs['launch-1:coder']).toEqual(
+      expect.objectContaining({
+        workspaceId: 'ws-canon-1',
+        runId: 'run-canon-1',
+        sessionId: 'launch-session-1',
+      })
+    );
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:opencode-session-detected', {
+        detail: { panelId, sessionId: 'oc-real-1' },
+      })
+    );
+    await flushEffects();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/agenthub/sessions/launch-session-1/binding',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: 'ws-canon-1',
+          run_id: 'run-canon-1',
+          opencode_session_id: 'oc-real-1',
+        }),
+      })
+    );
   });
 });

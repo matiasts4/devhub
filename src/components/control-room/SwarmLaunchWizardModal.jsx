@@ -1,15 +1,52 @@
 import React, { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
+import {
+  btnDangerStyle,
+  btnPrimaryStyle,
+  btnSecondaryStyle,
+  codeBlockStyle,
+  dangerBannerStyle,
+  inputStyle,
+  panelStyle,
+  pillStyle,
+  selectStyle,
+  sectionSurfaceStyle,
+} from '../../chrome/morphology.js';
 
 const STEP_ORDER = ['team', 'configure', 'launch'];
+
+const modalChromeStyle = {
+  ...panelStyle({ emphasized: true }),
+  color: 'var(--text-primary)',
+  borderRadius: '0',
+};
+
+function wizardInsetPanelStyle({ emphasized = false } = {}) {
+  return sectionSurfaceStyle({ emphasized });
+}
+
+const wizardFieldStyle = inputStyle();
+const wizardSelectFieldStyle = selectStyle();
+const wizardHeaderRailStyle = {
+  borderBottomColor: 'var(--border-subtle)',
+  borderBottomWidth: 'var(--chrome-border-width)',
+};
+const wizardLeftRailStyle = {
+  borderRightColor: 'var(--border-subtle)',
+  borderRightWidth: 'var(--chrome-border-width)',
+};
+const wizardRightRailStyle = {
+  borderLeftColor: 'var(--border-subtle)',
+  borderLeftWidth: 'var(--chrome-border-width)',
+};
 
 function TopologyPreview({ topology }) {
   if (!topology) {
     return (
       <div
-        className="rounded-2xl border p-4 text-sm"
-        style={{ borderColor: 'var(--border-subtle)' }}
+        className="border p-4 text-sm"
+        style={wizardInsetPanelStyle()}
       >
         Sin topología reusable definida todavía.
       </div>
@@ -17,7 +54,7 @@ function TopologyPreview({ topology }) {
   }
 
   return (
-    <div className="rounded-2xl border p-4" style={{ borderColor: 'rgba(255,176,64,0.18)' }}>
+    <div className="border p-4" style={wizardInsetPanelStyle({ emphasized: true })}>
       <div className="flex flex-wrap items-center gap-2">
         {(topology.roles || []).map((role, index) => (
           <React.Fragment key={role}>
@@ -49,17 +86,27 @@ function StepButton({ step, currentStep, label, index, onClick }) {
       type="button"
       disabled={!unlocked}
       onClick={() => onClick(step)}
-      className="flex items-center gap-3 rounded-2xl border px-4 py-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
       style={{
-        borderColor: active ? 'rgba(255,176,64,0.28)' : 'var(--border-subtle)',
-        background: active ? 'rgba(255,176,64,0.1)' : 'transparent',
+        ...(active ? btnPrimaryStyle({ size: 'md' }) : btnSecondaryStyle({ size: 'md' })),
+        width: '100%',
+        height: 'auto',
+        justifyContent: 'flex-start',
+        padding: '0.75rem 1rem',
+        textAlign: 'left',
+        textTransform: 'none',
+        letterSpacing: 'normal',
       }}
     >
       <span
-        className="flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold"
         style={{
-          borderColor: active ? 'rgba(255,176,64,0.28)' : 'var(--border-subtle)',
-          background: active ? 'rgba(255,176,64,0.18)' : 'rgba(255,255,255,0.02)',
+          ...pillStyle({ tone: active ? 'accent' : 'neutral' }),
+          width: '1.75rem',
+          height: '1.75rem',
+          padding: 0,
+          justifyContent: 'center',
+          flexShrink: 0,
         }}
       >
         {index + 1}
@@ -78,6 +125,8 @@ export default function SwarmLaunchWizardModal({
   onStepChange,
   onDraftChange,
   onLaunch,
+  submitState,
+  onSubmitStateChange,
 }) {
   useEffect(() => {
     if (!open) return undefined;
@@ -97,6 +146,8 @@ export default function SwarmLaunchWizardModal({
   const teams = Array.isArray(catalog?.teams) ? catalog.teams : [];
   const providers = Array.isArray(catalog?.providers) ? catalog.providers : [];
   const programs = Array.isArray(catalog?.programs) ? catalog.programs : [];
+  const launchStrategies = Array.isArray(catalog?.launch_strategies) ? catalog.launch_strategies : [];
+  const bootstrapModes = Array.isArray(catalog?.bootstrap_modes) ? catalog.bootstrap_modes : [];
 
   const stepDescription = useMemo(() => {
     if (currentStep === 'team') return 'Elegí base operativa: template team o custom team.';
@@ -108,25 +159,22 @@ export default function SwarmLaunchWizardModal({
 
   const modal = (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 px-4 py-8 backdrop-blur-sm"
+      className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-8 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Launch wizard de swarm"
+      style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border"
-        style={{
-          background: 'linear-gradient(180deg, rgba(32,25,20,0.98) 0%, rgba(18,18,18,0.98) 100%)',
-          borderColor: 'rgba(255,176,64,0.18)',
-          color: 'var(--text-primary)',
-        }}
+        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-none border"
+        style={modalChromeStyle}
       >
         <div
           className="flex items-start justify-between gap-4 border-b px-6 py-5"
-          style={{ borderColor: 'rgba(255,176,64,0.14)' }}
+          style={wizardHeaderRailStyle}
         >
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
@@ -144,18 +192,26 @@ export default function SwarmLaunchWizardModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => onClose?.()}
-            className="rounded-full border px-3 py-1.5 text-sm"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            Cerrar
-          </button>
+            <button
+              type="button"
+              onClick={() => onClose?.()}
+              className="text-sm"
+              style={{
+                ...btnSecondaryStyle(),
+                borderRadius: '0',
+                textTransform: 'none',
+                letterSpacing: 'normal',
+              }}
+            >
+              Cerrar
+            </button>
         </div>
 
         <div className="grid flex-1 gap-0 overflow-hidden xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-          <aside className="border-r p-4" style={{ borderColor: 'rgba(255,176,64,0.12)' }}>
+          <aside
+            className="border-r p-4"
+            style={wizardLeftRailStyle}
+          >
             <div className="space-y-3">
               <StepButton
                 step="team"
@@ -181,8 +237,8 @@ export default function SwarmLaunchWizardModal({
             </div>
 
             <div
-              className="mt-6 rounded-2xl border p-4 text-sm"
-              style={{ borderColor: 'var(--border-subtle)' }}
+              className="mt-6 border p-4 text-sm"
+              style={wizardInsetPanelStyle()}
             >
               <p className="font-medium">Topología reusable</p>
               <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -279,12 +335,9 @@ export default function SwarmLaunchWizardModal({
                       aria-label="Launch category"
                       value={draft.category || ''}
                       onChange={(event) => onDraftChange({ category: event.target.value })}
-                      className="w-full rounded-2xl border px-3 py-3"
-                      style={{
-                        background: 'var(--surface-app)',
-                        borderColor: 'var(--border-subtle)',
-                      }}
-                    >
+                        className="w-full"
+                        style={wizardSelectFieldStyle}
+                     >
                       {categories.map((category) => (
                         <option key={category.id} value={category.id}>
                           {category.label}
@@ -299,12 +352,9 @@ export default function SwarmLaunchWizardModal({
                       aria-label="Swarm type"
                       value={draft.swarmTypeId || ''}
                       onChange={(event) => onDraftChange({ swarmTypeId: event.target.value })}
-                      className="w-full rounded-2xl border px-3 py-3"
-                      style={{
-                        background: 'var(--surface-app)',
-                        borderColor: 'var(--border-subtle)',
-                      }}
-                    >
+                        className="w-full"
+                        style={wizardSelectFieldStyle}
+                     >
                       {swarmTypes.map((swarmType) => (
                         <option key={swarmType.id} value={swarmType.id}>
                           {swarmType.label}
@@ -319,12 +369,9 @@ export default function SwarmLaunchWizardModal({
                       aria-label="Launch template"
                       value={draft.templateId || ''}
                       onChange={(event) => onDraftChange({ templateId: event.target.value })}
-                      className="w-full rounded-2xl border px-3 py-3"
-                      style={{
-                        background: 'var(--surface-app)',
-                        borderColor: 'var(--border-subtle)',
-                      }}
-                    >
+                        className="w-full"
+                        style={wizardSelectFieldStyle}
+                     >
                       {templates.map((template) => (
                         <option key={template.id} value={template.id}>
                           {template.label}
@@ -341,12 +388,9 @@ export default function SwarmLaunchWizardModal({
                       onChange={(event) =>
                         onDraftChange({ teamId: event.target.value, mode: 'custom' })
                       }
-                      className="w-full rounded-2xl border px-3 py-3"
-                      style={{
-                        background: 'var(--surface-app)',
-                        borderColor: 'var(--border-subtle)',
-                      }}
-                    >
+                        className="w-full"
+                        style={wizardSelectFieldStyle}
+                     >
                       {teams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.label}
@@ -361,12 +405,9 @@ export default function SwarmLaunchWizardModal({
                       aria-label="Provider model"
                       value={draft.providerId || ''}
                       onChange={(event) => onDraftChange({ providerId: event.target.value })}
-                      className="w-full rounded-2xl border px-3 py-3"
-                      style={{
-                        background: 'var(--surface-app)',
-                        borderColor: 'var(--border-subtle)',
-                      }}
-                    >
+                        className="w-full"
+                        style={wizardSelectFieldStyle}
+                     >
                       {providers.map((provider) => (
                         <option key={provider.id} value={provider.id}>
                           {provider.label}
@@ -375,43 +416,102 @@ export default function SwarmLaunchWizardModal({
                     </select>
                   </label>
 
+                  <label className="space-y-2 text-sm font-medium">
+                    <span>Launch strategy</span>
+                    <select
+                      aria-label="Launch strategy"
+                      value={draft.launchStrategy || ''}
+                      onChange={(event) => onDraftChange({ launchStrategy: event.target.value })}
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
+                      {launchStrategies.map((strategy) => (
+                        <option key={strategy.id} value={strategy.id}>
+                          {strategy.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-2 text-sm font-medium">
+                    <span>Bootstrap mode</span>
+                    <select
+                      aria-label="Bootstrap mode"
+                      value={draft.bootstrapMode || ''}
+                      onChange={(event) => onDraftChange({ bootstrapMode: event.target.value })}
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
+                      {bootstrapModes.map((mode) => (
+                        <option key={mode.id} value={mode.id}>
+                          {mode.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
                   <div className="space-y-3 md:col-span-2">
                     <div>
-                      <p className="text-sm font-medium">Programa por rol</p>
+                      <p className="text-sm font-medium">Programa y modelo por rol</p>
                       <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                        Elegí qué cliente usa cada rol del swarm antes del launch.
+                        Elegí qué cliente y qué modelo usa cada rol del swarm antes del launch.
                       </p>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {(preview?.rolePrograms || []).map((entry) => (
-                        <label key={entry.role_key} className="space-y-2 text-sm font-medium">
-                          <span>{entry.role}</span>
-                          <select
-                            aria-label={`Programa para ${entry.role}`}
-                            value={entry.program_id || ''}
-                            onChange={(event) =>
-                              onDraftChange({
-                                rolePrograms: {
-                                  ...(draft.rolePrograms || {}),
-                                  [entry.role_key]: event.target.value,
-                                },
-                              })
-                            }
-                            className="w-full rounded-2xl border px-3 py-3"
-                            style={{
-                              background: 'var(--surface-app)',
-                              borderColor: 'var(--border-subtle)',
-                            }}
-                          >
-                            {programs.map((program) => (
-                              <option key={program.id} value={program.id}>
-                                {program.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {(preview?.rolePrograms || []).map((entry) => {
+                        const roleModels = Array.isArray(catalog?.models) ? catalog.models : [];
+                        const currentModel = draft.roleModels?.[entry.role_key] || '';
+
+                        return (
+                          <div key={entry.role_key} className="space-y-2">
+                            <span className="text-sm font-medium">{entry.role}</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <select
+                                aria-label={`Programa para ${entry.role}`}
+                                value={entry.program_id || ''}
+                                onChange={(event) =>
+                                  onDraftChange({
+                                    rolePrograms: {
+                                      ...(draft.rolePrograms || {}),
+                                      [entry.role_key]: event.target.value,
+                                    },
+                                  })
+                                }
+                                  className="w-full text-xs"
+                                  style={wizardSelectFieldStyle}
+                               >
+                                {programs.map((program) => (
+                                  <option key={program.id} value={program.id}>
+                                    {program.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <select
+                                aria-label={`Modelo para ${entry.role}`}
+                                value={currentModel}
+                                onChange={(event) =>
+                                  onDraftChange({
+                                    roleModels: {
+                                      ...(draft.roleModels || {}),
+                                      [entry.role_key]: event.target.value,
+                                    },
+                                  })
+                                }
+                                  className="w-full text-xs"
+                                  style={wizardSelectFieldStyle}
+                               >
+                                <option value="">Default del perfil</option>
+                                {roleModels.map((model) => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -421,12 +521,9 @@ export default function SwarmLaunchWizardModal({
                       aria-label="Workspace path"
                       value={draft.workspacePath || ''}
                       onChange={(event) => onDraftChange({ workspacePath: event.target.value })}
-                      className="w-full rounded-2xl border px-3 py-3"
-                      style={{
-                        background: 'var(--surface-app)',
-                        borderColor: 'var(--border-subtle)',
-                      }}
-                    />
+                    className="w-full"
+                    style={wizardFieldStyle}
+                  />
                   </label>
 
                   <label className="space-y-2 text-sm font-medium md:col-span-2">
@@ -436,12 +533,9 @@ export default function SwarmLaunchWizardModal({
                       value={draft.mission || ''}
                       onChange={(event) => onDraftChange({ mission: event.target.value })}
                       rows={5}
-                      className="w-full rounded-2xl border px-3 py-3"
-                      style={{
-                        background: 'var(--surface-app)',
-                        borderColor: 'var(--border-subtle)',
-                      }}
-                    />
+                    className="w-full"
+                    style={wizardFieldStyle}
+                  />
                   </label>
                 </div>
               </div>
@@ -459,14 +553,29 @@ export default function SwarmLaunchWizardModal({
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     {preview?.summaryLines?.map((line) => (
-                      <div
-                        key={line}
-                        className="rounded-2xl border px-3 py-3 text-sm"
-                        style={{ borderColor: 'var(--border-subtle)' }}
-                      >
+                        <div
+                          key={line}
+                          className="border px-3 py-3 text-sm"
+                          style={wizardInsetPanelStyle()}
+                        >
                         {line}
                       </div>
                     ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div
+                      className="border px-3 py-3 text-sm"
+                      style={wizardInsetPanelStyle()}
+                    >
+                      Strategy · {preview?.launchStrategyLabel || 'Director-first bootstrap'}
+                    </div>
+                    <div
+                      className="border px-3 py-3 text-sm"
+                      style={wizardInsetPanelStyle()}
+                    >
+                      Bootstrap · {preview?.bootstrapModeLabel || 'Engram first'}
+                    </div>
                   </div>
                 </SurfaceCard>
 
@@ -494,8 +603,8 @@ export default function SwarmLaunchWizardModal({
                   <SurfaceCard className="p-5">
                     <p className="text-sm font-semibold">Payload local</p>
                     <pre
-                      className="mt-3 overflow-x-auto rounded-2xl border p-3 text-xs"
-                      style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+                      className="mt-3 overflow-x-auto text-xs"
+                      style={{ ...codeBlockStyle(), color: 'var(--text-muted)' }}
                     >
                       {JSON.stringify(draft, null, 2)}
                     </pre>
@@ -505,7 +614,10 @@ export default function SwarmLaunchWizardModal({
             ) : null}
           </main>
 
-          <aside className="border-l p-5" style={{ borderColor: 'rgba(255,176,64,0.12)' }}>
+          <aside
+            className="border-l p-5"
+            style={wizardRightRailStyle}
+          >
             <div className="space-y-4">
               <div>
                 <p className="text-sm font-semibold">Topology preview</p>
@@ -521,6 +633,8 @@ export default function SwarmLaunchWizardModal({
                 <div className="mt-3 space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                   <div>Modo · {preview?.modeLabel || 'Template team'}</div>
                   <div>Category · {preview?.category?.label || 'Sin categoría'}</div>
+                  <div>Strategy · {preview?.launchStrategyLabel || 'Director-first bootstrap'}</div>
+                  <div>Bootstrap · {preview?.bootstrapModeLabel || 'Engram first'}</div>
                   <div>Path · {draft.workspacePath || 'Sin path'}</div>
                 </div>
               </SurfaceCard>
@@ -532,8 +646,13 @@ export default function SwarmLaunchWizardModal({
                     onClick={() =>
                       onStepChange(STEP_ORDER[Math.max(0, STEP_ORDER.indexOf(currentStep) - 1)])
                     }
-                    className="rounded-2xl border px-4 py-3 text-sm font-medium"
-                    style={{ borderColor: 'var(--border-subtle)' }}
+                    className="text-sm font-medium"
+                    style={{
+                      ...btnSecondaryStyle({ size: 'md' }),
+                      width: '100%',
+                      textTransform: 'none',
+                      letterSpacing: 'normal',
+                    }}
                   >
                     Volver
                   </button>
@@ -549,27 +668,82 @@ export default function SwarmLaunchWizardModal({
                         ]
                       )
                     }
-                    className="rounded-2xl border px-4 py-3 text-sm font-medium"
+                    className="text-sm font-medium"
                     style={{
-                      borderColor: 'rgba(255,176,64,0.24)',
-                      background: 'rgba(255,176,64,0.12)',
+                      ...btnPrimaryStyle({ size: 'md' }),
+                      width: '100%',
+                      textTransform: 'none',
+                      letterSpacing: 'normal',
                     }}
                   >
                     Siguiente
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => onLaunch?.()}
-                    disabled={!preview?.isReady}
-                    className="rounded-2xl border px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{
-                      borderColor: 'rgba(255,176,64,0.26)',
-                      background: 'rgba(255,176,64,0.18)',
-                    }}
-                  >
-                    {preview?.isReady ? 'Lanzar swarm local' : 'Completá configuración'}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSubmitStateChange?.({ submitting: false, error: null });
+                        onLaunch?.();
+                      }}
+                      disabled={!preview?.isReady || submitState?.submitting}
+                      className="text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{
+                        ...btnPrimaryStyle({ size: 'md' }),
+                        width: '100%',
+                        textTransform: 'none',
+                        letterSpacing: 'normal',
+                      }}
+                    >
+                      {submitState?.submitting
+                        ? 'Lanzando…'
+                        : preview?.isReady
+                          ? 'Lanzar swarm local'
+                          : 'Completá configuración'}
+                    </button>
+
+                    {submitState?.error ? (
+                      <div
+                        className="border px-3 py-2 text-sm font-medium"
+                        style={dangerBannerStyle()}
+                      >
+                        <div>{submitState.error}</div>
+                        {submitState.error.includes('swarm activo') && (
+                          <button
+                            type="button"
+                            className="mt-2 text-xs font-semibold"
+                            style={{
+                              ...btnDangerStyle({ size: 'xs' }),
+                              textTransform: 'none',
+                              letterSpacing: 'normal',
+                              color: 'var(--danger)',
+                              background:
+                                'color-mix(in srgb, var(--danger) 12%, transparent)',
+                              borderColor:
+                                'color-mix(in srgb, var(--danger) 42%, var(--chrome-border-color))',
+                              boxShadow: 'var(--chrome-shadow-control)',
+                            }}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch('/api/swarm/processes', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ action: 'abort_all_active' }),
+                                });
+                                if (res.ok) {
+                                  onSubmitStateChange?.({ submitting: false, error: null });
+                                }
+                              } catch {
+                                // ignore
+                              }
+                            }}
+                          >
+                            Forzar cancelación de misión activa
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>

@@ -48,11 +48,11 @@ AgentHub expone **tres MCPs nativos** que el LLM puede invocar directamente medi
 
 ### MCP 1 — DevHub MCP (`execute_devhub`)
 
-Conectado al servidor MCP local (`devhub-mcp/server.js`). Permite al agente gestionar proyectos, tareas e hitos en tiempo real.
+Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **24-tool env-invariant surface** para proyectos, tareas, evidencia durable e inbox. Telegram runtime queda fuera del contrato MCP público.
 
 **Endpoint interno:** `POST /api/mcp/devhub`
 
-#### Herramientas disponibles (21+ tools)
+#### Herramientas disponibles (24 tools)
 
 **Proyectos**
 | Tool | Descripción |
@@ -61,7 +61,6 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Permite al agente gest
 | `get_project` | Detalles completos: tasks + milestones incluidos |
 | `update_project` | Actualiza nombre, estado, progreso, color, planning_status |
 | `get_project_context` | Lee el planning_prompt y archivos adjuntos del proyecto |
-| `get_dashboard` | Resumen global: contadores, progreso, próximos hitos |
 
 **Tareas**
 | Tool | Descripción |
@@ -70,7 +69,7 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Permite al agente gest
 | `create_task` | Crea nueva tarea con título, descripción, prioridad, fecha |
 | `update_task` | Modifica estado, prioridad, título, asignación |
 | `add_task_comment` | Agrega comentario/nota técnica a una tarea |
-| `get_next_task` | Devuelve la siguiente tarea priorizada (fórmula matemática) |
+| `get_execution_queue` | Devuelve la cola priorizada con bloqueos |
 
 **Hitos**
 | Tool | Descripción |
@@ -79,22 +78,21 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Permite al agente gest
 | `create_milestone` | Crea un nuevo hito con fecha y descripción |
 | `update_milestone` | Actualiza estado, fecha, descripción de un hito |
 
-**Agentes (Swarm v2)**
+**Runs / artifacts / inbox**
 | Tool | Descripción |
 |------|-------------|
-| `register_agent` | Registra un Worker Agent en el swarm |
-| `heartbeat_agent` | Renueva señal de vida (cada ~1 min para no marcarse como error) |
-| `unregister_agent` | Desvincula un agente del registry |
-| `update_agent_status` | Actualiza estado visual: `working`, `thinking`, `completed`, `error`... |
+| `get_agent_run` | Lee detalle de un run |
+| `list_agent_runs` | Lista runs |
+| `list_agent_artifacts` | Lista artifacts del run |
+| `get_workspace_evidence` | Resume evidencia de workspace/run |
+| `list_operator_inbox` | Lista inbox de operador |
+| `dismiss_inbox_item` | Descarta item de inbox |
 
 **Workspaces (SW-2.1A)**
 | Tool | Descripción |
 |------|-------------|
-| `create_agent_workspace` | Reserva un workspace `planned` en el control plane |
 | `list_agent_workspaces` | Lista workspaces y lifecycle del proyecto |
 | `get_agent_workspace` | Lee un workspace puntual por `workspace_id` |
-| `update_agent_workspace` | Ajusta lifecycle metadata sin ejecutar Git |
-| `report_agent_workspace` | Registra estado observado devuelto por el ejecutor |
 
 Notas de contrato:
 
@@ -104,6 +102,12 @@ Notas de contrato:
 - Baseline congelado: `f814998dd05cb491caf8637bf570dbd74b539090`; `observed_dirty='dirty-excluded'` se conserva textual.
 - Los consumers de AgentHub/Telegram priorizan `workspace_status` y `evidence_ref` para mostrar outcome auditable del workspace.
 - Cuando el `current_tool` contenga verbos Git, AgentHub los oculta: **oculta verbos Git** y deja la mutación real del lado del ejecutor.
+
+Fuera del contrato MCP público actual:
+
+- Telegram MCP helpers.
+- Ghost tools viejas (`get_dashboard`, `get_next_task`, `register_agent`, `heartbeat_agent`, `unregister_agent`, `update_agent_status`).
+- Mutaciones runtime (`claim_next_task`, `renew_task_lease`, `release_task`, `request_supervisor_approval`, `team_tell`, `create/update/report workspace`, `create/complete run`, `append_agent_artifact`).
 
 **Sintaxis en el prompt del LLM:**
 

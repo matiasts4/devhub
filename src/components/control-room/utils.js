@@ -1,4 +1,4 @@
-import React from 'react';
+import { Fragment } from 'react';
 
 const TOKEN_LABELS = Object.freeze({
   unknown: 'desconocido',
@@ -33,6 +33,9 @@ const TOKEN_LABELS = Object.freeze({
   'unknown error': 'error desconocido',
   'unknown source': 'origen desconocido',
   local_snapshot: 'snapshot local',
+  'stale-registry': 'registro stale',
+  'orphaned-process': 'proceso huérfano',
+  'quota-blocked': 'bloqueado por cuota',
 });
 
 const MISSING_SOURCE_LABELS = Object.freeze({
@@ -49,7 +52,7 @@ const MISSING_SOURCE_LABELS = Object.freeze({
 });
 
 // ── Status color palette ──────────────────────────────────────────────────────
-const STATUS_COLORS = Object.freeze({
+export const STATUS_COLORS = Object.freeze({
   // green — healthy / done
   active: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
   running: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
@@ -72,14 +75,17 @@ const STATUS_COLORS = Object.freeze({
   // orange — blocked / conflict
   blocked: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
   conflicted: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
+  quota_blocked: { bg: 'rgba(249,115,22,0.12)', color: '#fb923c', dot: '#f97316' },
   // indigo — lease / special states
   lease_active: { bg: 'rgba(99,102,241,0.12)', color: '#a5b4fc', dot: '#6366f1' },
   // purple — paused / suspended
   paused: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
   orphaned: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
+  orphaned_process: { bg: 'rgba(167,139,250,0.12)', color: '#c4b5fd', dot: '#a78bfa' },
   // gray — idle / stale / unknown
   idle: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   stale: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  stale_registry: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   offline: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unknown: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unavailable: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
@@ -201,104 +207,140 @@ export function panelListStyle() {
   };
 }
 
-// ── Relative time formatting ──────────────────────────────────────────────────
+// ── Compact layout components ─────────────────────────────────────────────────
 
-export function formatRelativeTime(dateString) {
-  if (!dateString) return '';
-  const s = String(dateString).trim();
-  const parsed = Date.parse(s);
-  if (Number.isNaN(parsed)) {
-    // non-ISO string fallback: last 8 chars when > 8 chars
-    return s.length > 8 ? s.slice(-8) : s;
-  }
-  const diffMs = Date.now() - parsed;
-  const diffSec = Math.round(diffMs / 1000);
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHrs = Math.round(diffMin / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.round(diffHrs / 24);
-  return `${diffDays}d ago`;
+/**
+ * Shared panel shell used by compact list panels (AgentsClaimsPanel, etc).
+ */
+export function CompactPanelShell({
+  title,
+  description,
+  count,
+  items,
+  renderItem,
+  emptyMessage,
+  ariaLabel,
+  headerExtra,
+  maxHeight = '300px',
+}) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const resolvedEmptyMessage = emptyMessage || 'Sin datos';
+
+  return (
+    <section
+      className="rounded-xl border p-3"
+      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+      aria-label={ariaLabel || title}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-default)' }}>
+            {title}
+          </h2>
+          {description ? (
+            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {description}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          {headerExtra}
+          <CountBadge count={count} />
+        </div>
+      </div>
+
+      <div
+        data-testid="compact-panel-body"
+        className="flex flex-col gap-2 overflow-y-auto"
+        style={{ ...panelListStyle(), maxHeight, overflowY: 'auto' }}
+      >
+        {safeItems.length === 0
+          ? renderEmptyCopy(resolvedEmptyMessage)
+          : safeItems.map((item, idx) => (
+              <Fragment key={item?.id || item?.key || idx}>{renderItem(item)}</Fragment>
+            ))}
+      </div>
+    </section>
+  );
 }
 
-// ── CompactRow component ─────────────────────────────────────────────────────
+/**
+ * Compact row used inside list panels.
+ */
+export function CompactRow({ status, primary, secondary, badge, timestamp, icon = null }) {
+  const primaryText = truncateId(primary);
+  const hasBadge = badge !== null && badge !== undefined;
+  const timeText = timestamp ? formatRelativeTime(timestamp) : null;
 
-export function CompactRow({ status, primary, secondary, badge, timestamp, icon }) {
-  const primaryText = primary ? truncateId(primary) : '—';
   return (
-    <div data-testid="compact-row" className="flex items-center gap-2">
-      {icon}
-      <StatusPill status={status} />
-      <span data-testid="compact-row-primary" className="text-sm font-medium">
-        {primaryText}
-      </span>
-      {secondary !== undefined && secondary !== null && (
-        <span data-testid="compact-row-secondary" className="text-xs" style={metaTextStyle()}>
-          {secondary}
-        </span>
-      )}
-      {badge !== undefined && badge !== null && (
-        <span data-testid="compact-row-badge" className="text-xs font-medium tabular-nums">
-          {String(badge)}
-        </span>
-      )}
-      {timestamp && (
-        <span data-testid="compact-row-timestamp" className="text-xs" style={metaTextStyle()}>
-          {formatRelativeTime(timestamp)}
-        </span>
-      )}
+    <div className="flex items-center justify-between gap-2" data-testid="compact-row">
+      <div className="flex items-center gap-2">
+        {icon}
+        <StatusPill status={status} />
+        <div className="flex flex-col">
+          <span
+            className="text-xs font-medium"
+            style={{ color: 'var(--text-default)' }}
+            data-testid="compact-row-primary"
+          >
+            {primaryText}
+          </span>
+          {secondary ? (
+            <span
+              className="text-[10px]"
+              style={{ color: 'var(--text-muted)' }}
+              data-testid="compact-row-secondary"
+            >
+              {secondary}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {hasBadge ? (
+          <span
+            data-testid="compact-row-badge"
+            className="rounded-full border px-2 py-0.5 text-[10px] font-medium tabular-nums"
+            style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+          >
+            {badge}
+          </span>
+        ) : null}
+        {timeText ? (
+          <span
+            data-testid="compact-row-timestamp"
+            className="text-[10px] tabular-nums"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {timeText}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-// ── CompactPanelShell component ──────────────────────────────────────────────
+// ── Time formatting ───────────────────────────────────────────────────────────
 
-export function CompactPanelShell({
-  title,
-  description,
-  items,
-  renderItem,
-  emptyMessage,
-  count,
-  maxHeight,
-  headerExtra,
-  ariaLabel,
-}) {
-  const safeItems = Array.isArray(items) ? items : [];
-  const showEmpty = safeItems.length === 0;
-  const bodyMaxHeight = maxHeight || '300px';
-  return (
-    <section
-      aria-label={ariaLabel || title}
-      className="rounded-lg border"
-      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-default)' }}
-    >
-      <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {count > 0 && <CountBadge count={count} />}
-        </div>
-        {headerExtra}
-      </div>
-      {description && (
-        <div className="px-3 pb-1 text-xs" style={metaTextStyle()}>
-          {description}
-        </div>
-      )}
-      <div
-        data-testid="compact-panel-body"
-        style={{ maxHeight: bodyMaxHeight, overflowY: 'auto' }}
-        className="px-3 pb-3"
-      >
-        {showEmpty ? (
-          <div className="py-4 text-center text-xs" style={metaTextStyle()}>
-            {emptyMessage || 'Sin datos'}
-          </div>
-        ) : (
-          safeItems.map(renderItem)
-        )}
-      </div>
-    </section>
-  );
+/**
+ * Formats a date as a relative Spanish string (e.g. "hace 2 minutos").
+ */
+export function formatRelativeTime(dateInput) {
+  if (!dateInput) return '—';
+  const raw = String(dateInput);
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(date.getTime())) return raw.length > 8 ? raw.slice(-8) : raw;
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  const diffMin = Math.round(diffSec / 60);
+  const diffHour = Math.round(diffMin / 60);
+  const diffDay = Math.round(diffHour / 24);
+
+  if (diffSec < 60) return 'now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return date.toLocaleDateString('es-AR');
 }

@@ -11,65 +11,42 @@ jest.mock('lucide-react', () => {
   return new Proxy({}, { get: (_, key) => icon(String(key)) });
 });
 
-jest.mock('@/lib/theme/themes', () => {
-  const APPEARANCE_STORAGE_KEY = 'devhub:appearance';
-  const mockAppearance = { fontFamily: 'Inter', fontScale: 1, density: 'comfortable', zoom: 1 };
-  return {
-    THEMES: {
-      DEEP_SEA: 'deep-sea',
-      NORD: 'nord',
-      DRACULA: 'dracula',
-      LIGHT: 'light',
-    },
-    THEME_OPTIONS: [
-      { id: 'deep-sea', label: 'Deep Sea', description: 'desc' },
-      { id: 'nord', label: 'Nord', description: 'desc' },
-    ],
-    getStoredTheme: jest.fn(() => 'deep-sea'),
-    setTheme: jest.fn((value) => value),
-    getStoredZoom: jest.fn(() => 1),
-    setZoom: jest.fn((value) => value),
-    getStoredAppearance: jest.fn(() => {
-      if (global.localStorage) {
-        const stored = global.localStorage.getItem(APPEARANCE_STORAGE_KEY);
-        if (stored) {
-          try {
-            return JSON.parse(stored);
-          } catch {}
-        }
-      }
-      return mockAppearance;
-    }),
-    setStoredAppearance: jest.fn((value) => {
-      if (global.localStorage) {
-        global.localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(value));
-      }
-      return value;
-    }),
-    applyAppearanceSettings: jest.fn((value) => {
-      if (global.document) {
-        global.document.documentElement.style.setProperty(
-          '--font-scale',
-          String(value.fontScale || 1)
-        );
-        global.document.documentElement.style.setProperty(
-          '--font-family-ui',
-          value.fontFamily || 'Inter'
-        );
-        global.document.documentElement.setAttribute(
-          'data-density',
-          value.density || 'comfortable'
-        );
-      }
-      return value;
-    }),
-    APPEARANCE_STORAGE_KEY,
-  };
-});
+jest.mock('@/lib/theme/themes', () => ({
+  ACCENT_OPTIONS: [
+    { id: 'theme', label: 'Theme sync', description: 'desc', primary: null },
+    { id: 'amber', label: 'Signal Amber', description: 'desc', primary: '#E3B341' },
+  ],
+  THEMES: {
+    DEEP_SEA: 'deep-sea',
+    NORD: 'nord',
+    DRACULA: 'dracula',
+    LIGHT: 'light',
+  },
+  MORPHOLOGIES: {
+    DEFAULT: 'default',
+    BRUTALIST_STAGE: 'brutalist-stage',
+  },
+  THEME_OPTIONS: [
+    { id: 'deep-sea', label: 'Deep Sea', description: 'desc' },
+    { id: 'nord', label: 'Nord', description: 'desc' },
+  ],
+  MORPHOLOGY_OPTIONS: [
+    { id: 'default', label: 'Default', description: 'base chrome' },
+    { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
+  ],
+  getStoredTheme: jest.fn(() => 'deep-sea'),
+  getStoredMorphology: jest.fn(() => 'default'),
+  getStoredAccent: jest.fn(() => 'theme'),
+  setTheme: jest.fn((value) => value),
+  setMorphology: jest.fn((value) => value),
+  setAccent: jest.fn((value) => value),
+  getStoredZoom: jest.fn(() => 1),
+  setZoom: jest.fn((value) => value),
+}));
 
-jest.mock('sonner', () => ({ toast: { success: jest.fn(), error: jest.fn() } }));
-
-const AppearancePage = require('../page').default;
+const appearancePageModule = require('../page');
+const AppearancePage = appearancePageModule.default;
+const themeModule = require('@/lib/theme/themes');
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -122,9 +99,7 @@ describe('Settings appearance page terminal renderer', () => {
   test('shows terminal renderer preference in Settings with GTK VTE and xterm options only', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const select = rendered.container.querySelector(
-      '[data-testid="settings-terminal-renderer-select"]'
-    );
+    const select = rendered.container.querySelector('[data-testid="settings-terminal-renderer-select"]');
     const options = Array.from(select.querySelectorAll('option')).map((option) => option.value);
 
     expect(rendered.container.textContent).toContain('Terminal renderer');
@@ -137,9 +112,7 @@ describe('Settings appearance page terminal renderer', () => {
 
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const select = rendered.container.querySelector(
-      '[data-testid="settings-terminal-renderer-select"]'
-    );
+    const select = rendered.container.querySelector('[data-testid="settings-terminal-renderer-select"]');
     expect(select.value).toBe('xterm');
 
     flushSync(() => {
@@ -148,96 +121,75 @@ describe('Settings appearance page terminal renderer', () => {
     });
     await flushEffects();
 
-    expect(window.localStorage.getItem('devhub_terminal_renderer_default_mode')).toBe(
-      'vte-experimental'
-    );
-  });
-});
-
-describe('Settings appearance page canonical surface', () => {
-  let dom;
-  let rendered;
-
-  beforeEach(() => {
-    dom = installDom();
-    window.localStorage.clear();
-    rendered = null;
+    expect(window.localStorage.getItem('devhub_terminal_renderer_default_mode')).toBe('vte-experimental');
   });
 
-  afterEach(() => {
-    if (rendered?.root) {
-      flushSync(() => rendered.root.unmount());
-    }
-    dom.window.close();
-    delete global.localStorage;
-    jest.clearAllMocks();
-  });
-
-  test('renders UiHeader with Appearance title', async () => {
+  test('shows morphology controls independent from theme selection', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
-    expect(rendered.container.textContent).toContain('Appearance');
+
+    expect(rendered.container.textContent).toContain('Morphology');
+    expect(rendered.container.textContent).toContain('Brutalist Stage');
+    expect(rendered.container.textContent).toContain('Default');
   });
 
-  test('renders legacy AppearanceSection with theme selection', async () => {
+  test('shows independent accent controls and persists accent changes without calling setTheme', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
-    expect(rendered.container.textContent).toContain('Apariencia');
-    expect(rendered.container.textContent).toContain('Tema activo');
-  });
 
-  test('renders font family control', async () => {
-    rendered = await renderIntoDom(React.createElement(AppearancePage));
-    const fontFamilySelect = rendered.container.querySelector(
-      '[data-testid="settings-font-family"]'
-    );
-    expect(fontFamilySelect).not.toBeNull();
-    const options = Array.from(fontFamilySelect.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toContain('Inter');
-    expect(options).toContain('system-ui');
-  });
+    expect(rendered.container.textContent).toContain('Accent signal');
+    expect(rendered.container.textContent).toContain('Theme sync');
+    expect(rendered.container.textContent).toContain('Signal Amber');
 
-  test('renders density control with comfortable and compact options', async () => {
-    rendered = await renderIntoDom(React.createElement(AppearancePage));
-    const densitySelect = rendered.container.querySelector('[data-testid="settings-density"]');
-    expect(densitySelect).not.toBeNull();
-    const options = Array.from(densitySelect.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toContain('comfortable');
-    expect(options).toContain('compact');
-  });
-
-  test('renders font scale control', async () => {
-    rendered = await renderIntoDom(React.createElement(AppearancePage));
-    const fontScaleSelect = rendered.container.querySelector('[data-testid="settings-font-scale"]');
-    expect(fontScaleSelect).not.toBeNull();
-  });
-
-  test('persisting font family change writes to localStorage', async () => {
-    rendered = await renderIntoDom(React.createElement(AppearancePage));
-    const fontFamilySelect = rendered.container.querySelector(
-      '[data-testid="settings-font-family"]'
-    );
+    const accentButton = rendered.container.querySelector('[data-testid="appearance-accent-option-amber"]');
+    expect(accentButton).toBeTruthy();
 
     flushSync(() => {
-      fontFamilySelect.value = 'system-ui';
-      fontFamilySelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+      accentButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     });
     await flushEffects();
 
-    const stored = JSON.parse(window.localStorage.getItem('devhub:appearance') || '{}');
-    expect(stored.fontFamily).toBe('system-ui');
+    expect(themeModule.setAccent).toHaveBeenCalledWith('amber');
+    expect(themeModule.setTheme).not.toHaveBeenCalled();
   });
 
-  test('persisting density change writes to localStorage and applies to document', async () => {
+  test('routes settings section chrome through morphology tokens instead of hardcoded surface shells', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
-    const densitySelect = rendered.container.querySelector('[data-testid="settings-density"]');
+
+    const themeShell = rendered.container.querySelector('[data-testid="appearance-theme-shell"]');
+    const morphologyCard = rendered.container.querySelector(
+      '[data-testid="appearance-morphology-option-default"]'
+    );
+
+    expect(themeShell).toBeTruthy();
+    const themeShellStyle = appearancePageModule.getAppearanceSectionStyle();
+
+    expect(themeShell.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
+    expect(themeShellStyle.background).toContain('var(--chrome-panel-fill)');
+    expect(themeShellStyle.borderColor).toBe('var(--chrome-border-color)');
+    expect(themeShellStyle.background).not.toContain('var(--surface-card)');
+
+    expect(morphologyCard).toBeTruthy();
+    expect(morphologyCard.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
+
+    const activeMorphologyStyle = appearancePageModule.getAppearanceOptionStyle(true);
+    expect(activeMorphologyStyle.background).toBe('var(--chrome-panel-fill-emphasis)');
+    expect(activeMorphologyStyle.borderWidth).toBe('var(--chrome-border-width)');
+  });
+
+  test('changing morphology does not call setTheme', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    const morphologyButton = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Brutalist Stage')
+    );
+
+    expect(morphologyButton).toBeTruthy();
 
     flushSync(() => {
-      densitySelect.value = 'compact';
-      densitySelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+      morphologyButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     });
     await flushEffects();
 
-    const stored = JSON.parse(window.localStorage.getItem('devhub:appearance') || '{}');
-    expect(stored.density).toBe('compact');
-    expect(document.documentElement.getAttribute('data-density')).toBe('compact');
+    expect(themeModule.setMorphology).toHaveBeenCalledWith('brutalist-stage');
+    expect(themeModule.setTheme).not.toHaveBeenCalled();
   });
 });

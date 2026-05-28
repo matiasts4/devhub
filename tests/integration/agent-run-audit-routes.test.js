@@ -135,6 +135,18 @@ function seedExecutionFixture(db, { taskId, agentId, retryCount = 0 }) {
   });
 }
 
+function seedCheckpointComment(db, taskId, createdAt = '2026-05-19T01:04:00.000Z') {
+  db.prepare(
+    `INSERT INTO task_comments (id, task_id, content, author_type, created_at)
+     VALUES (?, ?, ?, 'agent', ?)`
+  ).run(
+    `comment-${taskId}`,
+    taskId,
+    '[git:checkpoint] commit=abc1234 worktree=clean summary="qa approved" docs=[docs/24_Politica_Git_y_Versionado_Agentes.md] checks=[npm test -- tests/integration/agent-run-audit-routes.test.js]',
+    createdAt
+  );
+}
+
 describe('agent execute/qa durable audit integration', () => {
   let db;
 
@@ -150,6 +162,7 @@ describe('agent execute/qa durable audit integration', () => {
 
   it('persists ordered startup and QA approval artifacts without introducing git artifact kinds', async () => {
     seedExecutionFixture(db, { taskId: 'task-approve-1', agentId: 'agent-approve-1' });
+    seedCheckpointComment(db, 'task-approve-1');
 
     const executeResponse = await executeRoute.POST({
       json: async () => ({ task_id: 'task-approve-1', agent_id: 'agent-approve-1' }),

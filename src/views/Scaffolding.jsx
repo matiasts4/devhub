@@ -13,6 +13,22 @@ import {
   Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import {
+  getWorkspaceBreadcrumbStyle,
+  getWorkspacePageContentStyle,
+  getWorkspacePageHeaderStyle,
+  getWorkspaceSectionSurfaceStyle,
+  getWorkspaceSectionHeaderStripStyle,
+  getWorkspaceDataTileStyle,
+} from './workspacePageChrome';
+import {
+  panelStyle,
+  pillStyle,
+  btnPrimaryStyle,
+  btnSecondaryStyle,
+  inputStyle,
+} from '@/chrome/morphology';
 
 const START_MARKER = '__DEVHUB_SCAFFOLD_START__';
 const END_MARKER = '__DEVHUB_SCAFFOLD_DONE__';
@@ -442,31 +458,17 @@ export default function Scaffolding() {
       {/* Sticky header */}
       <div
         className="sticky top-0 z-10 backdrop-blur-sm border-b px-6 py-3 flex items-center justify-between"
-        style={{
-          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
-          borderColor: 'var(--border-subtle)',
-        }}
+        style={getWorkspacePageHeaderStyle()}
       >
         <div className="flex items-center gap-3">
-          <Layers
-            className="w-4 h-4"
-            strokeWidth={1.5}
-            style={{ color: 'var(--accent-primary)' }}
-          />
-          <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Scaffolding & Stack
-          </h1>
+          <WorkspacePageTitle icon={Layers} title="Scaffolding & Stack" />
         </div>
         <button
           type="button"
           data-testid="generar-stack-btn"
           onClick={loadTree}
           className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg transition-all hover:text-[var(--text-primary)] cursor-pointer"
-          style={{
-            background: 'var(--surface-elevated)',
-            border: '1px solid var(--border-strong)',
-            color: 'var(--text-secondary)',
-          }}
+          style={btnSecondaryStyle({ size: 'sm' })}
         >
           {loadingTree ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />
@@ -477,11 +479,11 @@ export default function Scaffolding() {
         </button>
       </div>
 
-      <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
+      <div style={getWorkspacePageContentStyle()}>
         {/* Breadcrumb */}
         <div
           className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
-          style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
+          style={getWorkspaceBreadcrumbStyle()}
         >
           <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -500,11 +502,7 @@ export default function Scaffolding() {
           <div className="lg:col-span-2">
             <div
               className="rounded-2xl overflow-hidden"
-              style={{
-                background: 'var(--surface-card)',
-                border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-soft)',
-              }}
+              style={panelStyle()}
             >
               <CardHeader
                 icon={Layers}
@@ -642,11 +640,7 @@ export default function Scaffolding() {
             {/* Stack Detectado */}
             <div
               className="rounded-2xl overflow-hidden"
-              style={{
-                background: 'var(--surface-card)',
-                border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-soft)',
-              }}
+              style={panelStyle()}
             >
               <CardHeader
                 icon={Check}
@@ -688,11 +682,7 @@ export default function Scaffolding() {
             {/* Sugerencias IA */}
             <div
               className="rounded-2xl overflow-hidden"
-              style={{
-                background: 'var(--surface-card)',
-                border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-soft)',
-              }}
+              style={panelStyle()}
             >
               <CardHeader
                 icon={Rocket}
@@ -734,11 +724,7 @@ export default function Scaffolding() {
             {/* Ultima Generacion */}
             <div
               className="rounded-2xl overflow-hidden"
-              style={{
-                background: 'var(--surface-card)',
-                border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-soft)',
-              }}
+              style={panelStyle()}
             >
               <CardHeader
                 icon={Cpu}

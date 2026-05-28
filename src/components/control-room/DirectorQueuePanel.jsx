@@ -41,7 +41,7 @@ export default function DirectorQueuePanel({
 
   return (
     <section
-      className="rounded-2xl border p-4"
+      className="border p-4"
       style={panelShellStyle()}
       aria-label="Cola del director"
     >

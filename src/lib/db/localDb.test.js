@@ -194,6 +194,10 @@ test('creates agent_workspaces schema with frozen baseline and logical workspace
       'updated_at',
       'completed_at',
       'created_at',
+      'pane_id',
+      'terminal_id',
+      'opencode_pid',
+      'last_heartbeat',
     ])
   );
 

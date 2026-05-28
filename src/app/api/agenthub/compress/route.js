@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { getCopilotToken } from '@/lib/copilot-token';
 import { getDb } from '@/lib/db/localDb';
+import { withAuth } from '@/lib/swarm/withAuth.js';
 import {
   buildCompressionStats,
   estimateMessageTokens,
@@ -34,7 +35,7 @@ async function loadConfig() {
 // Body: { session_id, project_id?, model?, keep_last_n? }
 // Returns: { compressed: true, messages_before, messages_after, tokens_before, tokens_after }
 // ──────────────────────────────────────────────────────────────
-export async function POST(req) {
+export const POST = withAuth(async function POST(req) {
   try {
     const body = await req.json();
     const { session_id, model: modelOverride } = body;
@@ -219,4 +220,4 @@ RESUMEN:`;
     console.error('[compress] Error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
+});

@@ -19,7 +19,7 @@ session history. Use Engram for those.
 
 ## Recommended planning sequence
 
-1. `list_projects` or `get_dashboard` to orient.
+1. `list_projects` or `get_project_context` to orient.
 2. `get_project_context({ project_id })` before generating a plan.
 3. `bulk_create_milestones` for the roadmap.
 4. `bulk_create_tasks` for task decomposition.
@@ -31,14 +31,11 @@ single-create calls when generating full plans.
 
 ## Recommended execution sequence
 
-1. `register_agent` when a worker session starts.
-2. `heartbeat_agent` periodically for long sessions.
-3. `get_execution_queue` when the agent/user wants to inspect options.
-4. `claim_next_task` when the agent is ready to work.
-5. `add_task_comment` for decisions, QA notes, implementation summaries, or
+1. Use `get_execution_queue` when the agent/user wants to inspect options.
+2. Use `add_task_comment` for decisions, QA notes, implementation summaries, or
    blockers that belong on the task.
-6. `update_task` when status changes.
-7. `unregister_agent` on clean shutdown.
+3. Use `update_task` for public task-state changes once evidence is ready.
+4. Handle runtime workspace/run/lease activity outside this public MCP surface.
 
 ### Git gate before `completed` or `qa-ready`
 

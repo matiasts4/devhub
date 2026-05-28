@@ -13,12 +13,152 @@ const DIAGNOSTIC_ORDER = [
   ['mcp', 'MCP'],
   ['process', 'Proceso'],
   ['session_stream', 'Stream de sesión'],
+  ['runtime', 'Runtime'],
 ];
+
+function parseRuntimeEvidenceRef(ref = '') {
+  const raw = String(ref || '').trim();
+  if (!raw) return null;
+
+  const logMatch = raw.match(/^log:\/\/([^:]+):(.+)$/);
+  if (logMatch) {
+    return {
+      kind: 'log',
+      label: logMatch[1],
+      path: logMatch[2],
+    };
+  }
+
+  const crashMatch = raw.match(/^crashdump:\/\/([^:]+):(.+)$/);
+  if (crashMatch) {
+    return {
+      kind: 'crashdump',
+      label: crashMatch[1],
+      path: crashMatch[2],
+    };
+  }
+
+  return {
+    kind: 'generic',
+    label: raw,
+    path: raw,
+  };
+}
+
+async function copyEvidencePath(pathValue) {
+  if (!pathValue || typeof navigator === 'undefined' || !navigator?.clipboard?.writeText) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(pathValue);
+  } catch {
+    // Ignore clipboard failures; this is a convenience action only.
+  }
+}
+
+function buildRuntimeSummaryLines(record = {}) {
+  const metrics = record?.metrics || {};
+  return [
+    `status=${record?.status || 'unknown'}`,
+    `quota_blocked=${Boolean(metrics.quota_blocked)}`,
+    `reattachable_terminals=${Number(metrics.reattachable_terminals || 0)}`,
+    `orphaned_processes=${Number(metrics.orphaned_processes || 0)}`,
+    `stale_registry_agents=${Number(metrics.stale_registry_agents || 0)}`,
+    `total_terminals=${Number(metrics.total_terminals || 0)}`,
+    `total_processes=${Number(metrics.total_processes || 0)}`,
+    `total_registry_agents=${Number(metrics.total_registry_agents || 0)}`,
+  ];
+}
+
+function formatRuntimeMetricLabel(label = '') {
+  const normalized = String(label || '').trim().toLowerCase();
+  if (normalized === 'blocked') return 'bloqueada';
+  if (normalized === 'ok') return 'ok';
+  return label;
+}
+
+async function copyRuntimeSummary(record = {}) {
+  await copyEvidencePath(buildRuntimeSummaryLines(record).join('\n'));
+}
+
+async function copyRuntimeRecord(record = {}) {
+  await copyEvidencePath(JSON.stringify(record || {}, null, 2));
+}
+
+function RuntimeSnapshotActions({ record = null }) {
+  if (!record || typeof record !== 'object') return null;
+
+  const metrics = record.metrics || {};
+  const reattachableCount = Number(metrics.reattachable_terminals || 0);
+  const orphanedProcessCount = Number(metrics.orphaned_processes || 0);
+  const staleRegistryCount = Number(metrics.stale_registry_agents || 0);
+  const quotaBlocked = Boolean(metrics.quota_blocked);
+
+  return (
+    <div className="mt-2 space-y-2" aria-label="Runtime restore summary">
+      <div className="flex flex-wrap gap-2 text-[11px]" style={metaTextStyle()}>
+        <span>Reattachables: {reattachableCount}</span>
+        <span>Orphaned: {orphanedProcessCount}</span>
+        <span>Registro vencido: {staleRegistryCount}</span>
+        <span>Cuota: {formatRuntimeMetricLabel(quotaBlocked ? 'blocked' : 'ok')}</span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => copyRuntimeSummary(record)}
+          className="rounded-md border px-2 py-1 text-[11px]"
+          style={panelShellStyle()}
+        >
+          Copiar resumen runtime
+        </button>
+        <button
+          type="button"
+          onClick={() => copyRuntimeRecord(record)}
+          className="rounded-md border px-2 py-1 text-[11px]"
+          style={panelShellStyle()}
+        >
+          Exportar runtime JSON
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RuntimeEvidenceActions({ refs = [] }) {
+  if (!Array.isArray(refs) || refs.length === 0) return null;
+
+  const parsedRefs = refs.map(parseRuntimeEvidenceRef).filter(Boolean);
+  if (parsedRefs.length === 0) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2" aria-label="Runtime evidence actions">
+      {parsedRefs.map((entry, index) => {
+        const buttonLabel =
+          entry.kind === 'crashdump' ? `Crash: ${entry.label}` : `Log: ${entry.label}`;
+
+        return (
+          <button
+            key={`${entry.path}-${index}`}
+            type="button"
+            onClick={() => copyEvidencePath(entry.path)}
+            title={entry.path}
+            className="rounded-md border px-2 py-1 text-[11px]"
+            style={panelShellStyle()}
+          >
+            {buttonLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, onToggle }) {
   return (
     <section
-      className="rounded-2xl border p-4"
+      className="border p-4"
       style={panelShellStyle()}
       aria-label="Overlay diagnóstico"
     >
@@ -40,7 +180,7 @@ export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, o
       </div>
 
       {expanded ? (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-5">
           {DIAGNOSTIC_ORDER.map(([key, label]) => {
             const record = diagnostics?.[key];
 
@@ -56,6 +196,8 @@ export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, o
                 <p className="mt-2 text-xs" style={metaTextStyle()}>
                   {formatEvidence(record?.evidence_refs)}
                 </p>
+                {key === 'runtime' ? <RuntimeEvidenceActions refs={record?.evidence_refs} /> : null}
+                {key === 'runtime' ? <RuntimeSnapshotActions record={record} /> : null}
                 {record?.missing_source ? (
                   <p className="mt-1 text-xs" style={metaTextStyle()}>
                     {formatMissingSource(record.missing_source)}

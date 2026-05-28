@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { Bot, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { createClient } from '@/lib/db/localClient';
 import {
   buildDocOpsOrchestratorLaunchPrompt,
   enforceDocOpsGateOnLaunchCommand,
@@ -13,7 +12,6 @@ import { getDocOpsContextBudgetPolicy } from '@/lib/docopsPolicy';
 export default function BannerIA({ project }) {
   const [prompt, setPrompt] = useState('');
   const navigate = useNavigate();
-  const db = createClient();
   const docopsBudget = getDocOpsContextBudgetPolicy();
 
   const handleLaunch = async (e) => {
@@ -30,16 +28,6 @@ export default function BannerIA({ project }) {
     } catch {
       // Ignore localStorage failures (private mode / storage disabled)
     }
-
-    // Registrar el agente en UI antes de lanzarlo para visualización en tiempo real
-    await db.from('agent_registry').insert({
-      agent_id: agentId,
-      project_id: project.id,
-      nombre: 'SDD ORCHESTRATOR',
-      modelo_llm: 'OpenCode Local',
-      status: 'working',
-      last_heartbeat: new Date().toISOString(),
-    });
 
     // Saltamos a la vista de terminales
     navigate(`/project/${project.id}/terminales`);

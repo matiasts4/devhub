@@ -15,7 +15,7 @@ import {
 export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectRun }) {
   return (
     <section
-      className="rounded-2xl border p-4"
+      className="border p-4"
       style={panelShellStyle()}
       aria-label="Ejecuciones y artefactos"
     >

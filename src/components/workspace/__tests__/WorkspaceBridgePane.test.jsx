@@ -1107,11 +1107,7 @@ describe('WorkspaceBridgePane', () => {
     Object.defineProperty(window.HTMLIFrameElement.prototype, 'contentDocument', {
       configurable: true,
       get() {
-        return {
-          addEventListener: jest.fn(),
-          removeEventListener: jest.fn(),
-          body: {},
-        };
+        return null;
       },
     });
     Object.defineProperty(window.HTMLIFrameElement.prototype, 'contentWindow', {
@@ -1120,16 +1116,23 @@ describe('WorkspaceBridgePane', () => {
         return {
           postMessage,
           HTMLElement: window.HTMLElement,
+          location: { href: 'http://localhost:3300/' },
+          __DEVHUB_VISUAL_EDIT_PROTOCOL__: false,
+          get document() {
+            throw new Error('cross-origin');
+          },
         };
       },
     });
 
     await click(view.container.querySelector('[data-testid="browser-edit-toggle"]'));
 
-    expect(postMessage.mock.calls).toEqual(expect.arrayContaining([
-      [expect.objectContaining({ action: COMMAND_ACTION.ACTIVATE }), '*'],
-      [expect.objectContaining({ action: COMMAND_ACTION.SET_INTERACTION_MODE }), '*'],
-    ]));
+    await waitForAssertion(() => {
+      expect(postMessage.mock.calls).toEqual(expect.arrayContaining([
+        [expect.objectContaining({ action: COMMAND_ACTION.ACTIVATE }), '*'],
+        [expect.objectContaining({ action: COMMAND_ACTION.SET_INTERACTION_MODE }), '*'],
+      ]));
+    });
     expect(view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src')).toBe(
       '/api/preview-proxy/?url=http%3A%2F%2Flocalhost%3A3300%2F'
     );

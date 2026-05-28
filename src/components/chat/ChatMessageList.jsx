@@ -42,7 +42,7 @@ function UserTurn({
       await navigator.clipboard.writeText(message.content || '');
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    } catch { /* ignore */ }
     onCopyMessage?.(message);
   };
 
@@ -131,7 +131,7 @@ function UserTurn({
                 type="button"
                 size="sm"
                 onClick={() => onSaveEdit?.(message.id)}
-                style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                style={{ background: 'var(--accent-primary)', color: 'var(--primary-foreground, #000)' }}
               >
                 Guardar y regenerar
               </Button>
@@ -182,7 +182,7 @@ function AssistantTurn({
       await navigator.clipboard.writeText(message.content || '');
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    } catch { /* ignore */ }
     onCopyMessage?.(message);
   };
 
@@ -267,7 +267,7 @@ function SubagentTurn({ message, trace, onCancel, onViewInContext, compact = fal
   let meta = {};
   try {
     meta = message.meta ? JSON.parse(message.meta) : {};
-  } catch {}
+  } catch { /* ignore */ }
 
   const status = normalizeSubagentStatus(meta.status || 'success');
   const isRunning = status === 'running';
@@ -687,7 +687,7 @@ export default function ChatMessageList({
         let meta = {};
         try {
           meta = JSON.parse(m.meta || '{}');
-        } catch {}
+        } catch { /* ignore */ }
         map[lastAssistantId].push({
           id: m.id,
           agentProfile: meta.agentProfile || 'Sub-Agent',

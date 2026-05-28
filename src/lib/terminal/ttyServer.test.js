@@ -31,8 +31,9 @@ jest.mock('./sessionStore.js', () => ({
 // --- Mock ws ---
 const mockWssOn = jest.fn();
 const mockWss = { on: mockWssOn };
+const mockWebSocketServer = jest.fn(() => mockWss);
 
-jest.mock('ws', () => ({ WebSocketServer: jest.fn(() => mockWss) }), { virtual: true });
+jest.mock('ws', () => ({ WebSocketServer: mockWebSocketServer }), { virtual: true });
 
 // --- Mock net ---
 jest.mock('net', () => ({
@@ -66,9 +67,16 @@ beforeEach(() => {
   mockLoadSessions.mockReturnValue([]);
   mockPtyProcess.onData.mockImplementation(() => {});
   mockPtyProcess.onExit.mockImplementation(() => {});
+  globalThis.__DEVHUB_TTY_NODE_PTY__ = { spawn: mockPtySpawn };
+  globalThis.__DEVHUB_TTY_WS__ = { WebSocketServer: mockWebSocketServer };
   // Reset global singletons
   delete globalThis.__DEVHUB_TTY_SERVER__;
   delete globalThis.__DEVHUB_TTY_SESSIONS__;
+});
+
+afterEach(() => {
+  delete globalThis.__DEVHUB_TTY_NODE_PTY__;
+  delete globalThis.__DEVHUB_TTY_WS__;
 });
 
 describe('ttyServer — restoreSessions', () => {
@@ -79,6 +87,7 @@ describe('ttyServer — restoreSessions', () => {
         id: 'restored-1',
         cwd: '/home/user/project',
         shell: '/bin/zsh',
+        ptyPid: process.pid,
         title: null,
         createdAt: freshTime,
         lastSeenAt: freshTime,
@@ -88,6 +97,7 @@ describe('ttyServer — restoreSessions', () => {
         id: 'restored-2',
         cwd: '/tmp',
         shell: '/bin/zsh',
+        ptyPid: process.pid,
         title: null,
         createdAt: freshTime,
         lastSeenAt: freshTime,
@@ -112,6 +122,7 @@ describe('ttyServer — restoreSessions', () => {
         id: 'restored-live',
         cwd: '/home/user/project',
         shell: '/bin/zsh',
+        ptyPid: process.pid,
         title: null,
         createdAt: freshTime,
         lastSeenAt: freshTime,
