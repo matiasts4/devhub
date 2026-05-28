@@ -58,7 +58,7 @@ function SectionLabel({ prefix, headingId, children }) {
 function StatCard({ label, value, color, icon: Icon }) {
   return (
     <div
-      className="flex items-center justify-between px-4 py-3 transition-all duration-150 hover:-translate-y-0.5 rounded-none"
+      className="flex items-center justify-between px-4 py-3 transition-all duration-150 hover:-translate-y-0.5"
       style={panelStyle()}
     >
       <div className="space-y-1">
@@ -247,11 +247,7 @@ export default function ProjectDashboard() {
           </ChromeSurface>
 
           {/* Progress bar */}
-          <ChromeSurface
-            className="mb-5 px-4 py-3 rounded-none"
-            surface="panel"
-            style={panelStyle()}
-          >
+          <ChromeSurface className="mb-5 px-4 py-3" surface="panel">
             <div className="flex items-center justify-between mb-2">
               <p className="typography-label">Progreso General</p>
               <span

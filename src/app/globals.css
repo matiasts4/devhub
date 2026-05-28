@@ -36,8 +36,8 @@
 }
 
 [data-morphology='brutalist-stage'] {
-  --chrome-radius-panel: 0.5rem;
-  --chrome-radius-control: 0.5rem;
+  --chrome-radius-panel: 0;
+  --chrome-radius-control: 0;
   --chrome-border-width: 2px;
   --chrome-border-color: var(--border-strong);
   --chrome-shadow-panel: 4px 4px 0 0 var(--border-strong);
