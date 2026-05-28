@@ -1,9 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Palette } from 'lucide-react';
-import { getStoredTheme, setTheme, THEME_OPTIONS, THEMES, getStoredZoom, setZoom } from '@/lib/theme/themes';
-import { Minus, Plus, RotateCcw, Monitor } from 'lucide-react';
+import { Check, Minus, Monitor, Palette, Plus, RotateCcw } from 'lucide-react';
+import {
+  ACCENT_OPTIONS,
+  getStoredAccent,
+  getStoredMorphology,
+  getStoredTheme,
+  MORPHOLOGIES,
+  MORPHOLOGY_OPTIONS,
+  setAccent,
+  setMorphology,
+  setTheme,
+  THEME_OPTIONS,
+  THEMES,
+  getStoredZoom,
+  setZoom,
+} from '@/lib/theme/themes';
+import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
   readTerminalRendererDefaultModeSetting,
   writeTerminalRendererDefaultModeSetting,
@@ -39,15 +53,72 @@ const PREVIEW_BY_THEME = {
     highlight: '#0969DA',
     dots: ['#ef4444', '#f59e0b', '#16a34a'],
   },
+  [THEMES.BRUTALIST_STAGE]: {
+    panel: '#0d0d0d',
+    body: '#080808',
+    line: '#222222',
+    highlight: '#e3b341',
+    dots: ['#f85149', '#e3b341', '#3fb950'],
+  },
 };
+
+export function getAppearanceSectionStyle() {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
+    background: 'linear-gradient(180deg, var(--chrome-panel-fill-emphasis), var(--chrome-panel-fill))',
+  };
+}
+
+export function getAppearanceBadgeStyle() {
+  return {
+    ...chromeSurfaceStyle({ surface: 'pill', tone: 'accent' }),
+    color: 'var(--text-primary)',
+  };
+}
+
+export function getAppearanceOptionStyle(isActive) {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized: isActive }),
+    background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
+    borderColor: isActive
+      ? 'color-mix(in srgb, var(--accent-primary) 35%, var(--chrome-border-color))'
+      : 'var(--chrome-border-color)',
+    transform: isActive ? 'translateY(-1px)' : 'translateY(0)',
+  };
+}
+
+export function getAppearanceControlStyle() {
+  return {
+    ...chromeSurfaceStyle({ surface: 'pill' }),
+    background: 'var(--chrome-control-fill)',
+    color: 'var(--text-primary)',
+  };
+}
+
+export function getAppearanceAccentSwatchStyle(isActive, color) {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized: isActive, tone: isActive ? 'accent' : 'neutral' }),
+    background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
+    borderColor: isActive
+      ? 'color-mix(in srgb, var(--accent-primary) 55%, var(--chrome-border-color))'
+      : 'var(--chrome-border-color)',
+    boxShadow: isActive ? 'var(--chrome-shadow-panel)' : '6px 6px 0 rgba(1, 4, 9, 0.18)',
+    transform: isActive ? 'translate(-2px, -2px)' : 'translate(0, 0)',
+    '--appearance-accent-preview': color ?? 'var(--accent-primary)',
+  };
+}
 
 export default function AppearancePage() {
   const [activeTheme, setActiveTheme] = useState(THEMES.DEEP_SEA);
+  const [activeMorphology, setActiveMorphology] = useState(MORPHOLOGIES.DEFAULT);
+  const [activeAccent, setActiveAccent] = useState('theme');
   const [currentZoom, setCurrentZoom] = useState(1);
   const [terminalRendererMode, setTerminalRendererMode] = useState('vte-experimental');
 
   useEffect(() => {
     setActiveTheme(getStoredTheme());
+    setActiveMorphology(getStoredMorphology());
+    setActiveAccent(getStoredAccent());
     setCurrentZoom(getStoredZoom());
     if (typeof window !== 'undefined') {
       setTerminalRendererMode(readTerminalRendererDefaultModeSetting(window.localStorage));
@@ -64,9 +135,24 @@ export default function AppearancePage() {
     [activeTheme]
   );
 
+  const activeMorphologyLabel = useMemo(
+    () => MORPHOLOGY_OPTIONS.find((morphology) => morphology.id === activeMorphology)?.label ?? 'Default',
+    [activeMorphology]
+  );
+
   const handleSelectTheme = (themeId) => {
     const normalized = setTheme(themeId);
     setActiveTheme(normalized);
+  };
+
+  const handleSelectMorphology = (morphologyId) => {
+    const normalized = setMorphology(morphologyId);
+    setActiveMorphology(normalized);
+  };
+
+  const handleSelectAccent = (accentId) => {
+    const normalized = setAccent(accentId);
+    setActiveAccent(normalized);
   };
 
   const handleTerminalRendererChange = (event) => {
@@ -88,14 +174,12 @@ export default function AppearancePage() {
         </p>
       </div>
 
-      <section
-        className="rounded-2xl border p-6"
-        style={{
-          background: 'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 94%, transparent), color-mix(in srgb, var(--surface-elevated) 45%, transparent))',
-          borderColor: 'var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
-      >
+      <ChromeSurface asChild surface="panel" emphasized>
+        <section
+          data-testid="appearance-theme-shell"
+          className="rounded-2xl border p-6"
+          style={getAppearanceSectionStyle()}
+        >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -108,9 +192,7 @@ export default function AppearancePage() {
           <div
             className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
             style={{
-              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent)',
-              color: 'var(--text-secondary)',
+              ...getAppearanceBadgeStyle(),
             }}
           >
             <Palette size={12} style={{ color: 'var(--accent-primary)' }} />
@@ -129,15 +211,7 @@ export default function AppearancePage() {
                 type="button"
                 onClick={() => handleSelectTheme(option.id)}
                 className="group relative text-left rounded-xl border p-2 transition-all"
-                style={{
-                  background: isActive
-                    ? 'color-mix(in srgb, var(--surface-elevated) 96%, transparent)'
-                    : 'color-mix(in srgb, var(--surface-muted) 88%, transparent)',
-                  borderColor: isActive
-                    ? 'color-mix(in srgb, var(--accent-primary) 42%, transparent)'
-                    : 'var(--border-subtle)',
-                  transform: isActive ? 'translateY(-1px)' : 'translateY(0)',
-                }}
+                style={getAppearanceOptionStyle(isActive)}
               >
                 <div
                   className="relative overflow-hidden rounded-lg border h-40"
@@ -188,23 +262,178 @@ export default function AppearancePage() {
         <div
           className="mt-4 rounded-lg px-3 py-2 text-xs"
           style={{
-            background: 'color-mix(in srgb, var(--surface-muted) 75%, transparent)',
-            border: '1px solid var(--border-subtle)',
+            ...getAppearanceControlStyle(),
             color: 'var(--text-muted)',
           }}
         >
           Your current platform shortcuts and components adapt to this theme automatically.
         </div>
-      </section>
+        </section>
+      </ChromeSurface>
 
-      <section
-        className="rounded-2xl border p-6"
-        style={{
-          background: 'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 94%, transparent), color-mix(in srgb, var(--surface-elevated) 45%, transparent))',
-          borderColor: 'var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
-      >
+      <ChromeSurface asChild surface="panel" emphasized>
+        <section
+          data-testid="appearance-accent-shell"
+          className="rounded-2xl border p-6"
+          style={getAppearanceSectionStyle()}
+        >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
+              Accent signal
+            </h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Override the live accent without changing the base theme palette.
+            </p>
+          </div>
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
+            style={{
+              ...getAppearanceBadgeStyle(),
+            }}
+          >
+            <Palette size={12} style={{ color: 'var(--accent-primary)' }} />
+            Active: {ACCENT_OPTIONS.find((option) => option.id === activeAccent)?.label ?? 'Theme sync'}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {ACCENT_OPTIONS.map((option) => {
+            const isActive = option.id === activeAccent;
+            const swatchStyle = getAppearanceAccentSwatchStyle(isActive, option.primary);
+            return (
+              <button
+                key={option.id}
+                data-testid={`appearance-accent-option-${option.id}`}
+                type="button"
+                onClick={() => handleSelectAccent(option.id)}
+                className="group rounded-xl border p-4 text-left transition-all"
+                style={swatchStyle}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--text-primary)' }}>
+                      {option.label}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                      {option.description}
+                    </p>
+                  </div>
+                  {isActive ? (
+                    <span
+                      className="h-6 min-w-6 px-1.5 rounded-full inline-flex items-center justify-center gap-1 text-[11px] font-medium"
+                      style={{ background: 'var(--accent-primary)', color: 'white' }}
+                    >
+                      <Check size={12} />
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 flex items-center gap-2">
+                  {[0, 1, 2].map((index) => (
+                    <span
+                      key={`${option.id}-accent-preview-${index}`}
+                      className="h-10 flex-1 border"
+                      style={{
+                        borderColor: 'color-mix(in srgb, var(--appearance-accent-preview) 42%, var(--chrome-border-color))',
+                        background:
+                          index === 1
+                            ? 'color-mix(in srgb, var(--appearance-accent-preview) 18%, var(--chrome-panel-fill-emphasis))'
+                            : 'color-mix(in srgb, var(--appearance-accent-preview) 10%, var(--chrome-panel-fill))',
+                        boxShadow:
+                          index === 1
+                            ? 'inset 0 0 0 1px color-mix(in srgb, var(--appearance-accent-preview) 38%, transparent)'
+                            : 'none',
+                      }}
+                    />
+                  ))}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          className="mt-4 rounded-lg px-3 py-2 text-xs"
+          style={{
+            ...getAppearanceControlStyle(),
+            color: 'var(--text-muted)',
+          }}
+        >
+          Preview colors update badges, button chrome, and live status accents across the app.
+        </div>
+        </section>
+      </ChromeSurface>
+
+      <ChromeSurface asChild surface="panel" emphasized>
+        <section
+          className="rounded-2xl border p-6"
+          style={getAppearanceSectionStyle()}
+        >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
+              Morphology
+            </h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Chrome shape and surface treatment stay independent from theme colors.
+            </p>
+          </div>
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
+            style={{
+              ...getAppearanceBadgeStyle(),
+            }}
+          >
+            <Palette size={12} style={{ color: 'var(--accent-primary)' }} />
+            Active: {activeMorphologyLabel}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {MORPHOLOGY_OPTIONS.map((option) => {
+            const isActive = option.id === activeMorphology;
+
+            return (
+              <ChromeSurface key={option.id} asChild surface="panel" emphasized={isActive}>
+                <button
+                  data-testid={`appearance-morphology-option-${option.id}`}
+                  type="button"
+                  onClick={() => handleSelectMorphology(option.id)}
+                  className="group relative text-left rounded-xl border p-4 transition-all"
+                  style={getAppearanceOptionStyle(isActive)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        {option.label}
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {option.description}
+                      </p>
+                    </div>
+                    {isActive ? (
+                      <span
+                        className="h-6 min-w-6 px-1.5 rounded-full inline-flex items-center justify-center gap-1 text-[11px] font-medium"
+                        style={{ background: 'var(--accent-primary)', color: 'white' }}
+                      >
+                        <Check size={12} />
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              </ChromeSurface>
+            );
+          })}
+        </div>
+        </section>
+      </ChromeSurface>
+
+      <ChromeSurface asChild surface="panel" emphasized>
+        <section
+          className="rounded-2xl border p-6"
+          style={getAppearanceSectionStyle()}
+        >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -217,9 +446,7 @@ export default function AppearancePage() {
           <div
             className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
             style={{
-              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent)',
-              color: 'var(--text-secondary)',
+              ...getAppearanceBadgeStyle(),
             }}
           >
             <Monitor size={12} style={{ color: 'var(--accent-primary)' }} />
@@ -237,8 +464,7 @@ export default function AppearancePage() {
             onChange={handleTerminalRendererChange}
             className="h-11 rounded-xl border px-3 text-sm"
             style={{
-              borderColor: 'var(--border-subtle)',
-              background: 'var(--surface-muted)',
+              ...getAppearanceControlStyle(),
               color: 'var(--text-primary)',
             }}
           >
@@ -250,16 +476,14 @@ export default function AppearancePage() {
         <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
           This preference applies to new terminal views. Existing fallbacks and explicit panel recoveries keep working.
         </p>
-      </section>
+        </section>
+      </ChromeSurface>
 
-      <section
-        className="rounded-2xl border p-6"
-        style={{
-          background: 'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 94%, transparent), color-mix(in srgb, var(--surface-elevated) 45%, transparent))',
-          borderColor: 'var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
-      >
+      <ChromeSurface asChild surface="panel" emphasized>
+        <section
+          className="rounded-2xl border p-6"
+          style={getAppearanceSectionStyle()}
+        >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -272,9 +496,7 @@ export default function AppearancePage() {
           <div
             className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
             style={{
-              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent)',
-              color: 'var(--text-secondary)',
+              ...getAppearanceBadgeStyle(),
             }}
           >
             <Monitor size={12} style={{ color: 'var(--accent-primary)' }} />
@@ -287,12 +509,19 @@ export default function AppearancePage() {
             onClick={() => handleZoomChange(currentZoom - 0.1)}
             disabled={currentZoom <= 0.5}
             className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed"
-            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+            style={getAppearanceControlStyle()}
           >
             <Minus size={18} style={{ color: 'var(--text-primary)' }} />
           </button>
           
-          <div className="flex-1 h-2 rounded-full bg-surface-muted border border-border-subtle relative overflow-hidden">
+          <div
+            className="flex-1 h-2 rounded-full relative overflow-hidden"
+            style={{
+              ...getAppearanceControlStyle(),
+              minHeight: '0.5rem',
+              padding: 0,
+            }}
+          >
             <div 
               className="absolute inset-y-0 left-0 bg-accent-primary transition-all duration-300"
               style={{ width: `${((currentZoom - 0.5) / 1.5) * 100}%` }}
@@ -303,7 +532,7 @@ export default function AppearancePage() {
             onClick={() => handleZoomChange(currentZoom + 0.1)}
             disabled={currentZoom >= 2}
             className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed"
-            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+            style={getAppearanceControlStyle()}
           >
             <Plus size={18} style={{ color: 'var(--text-primary)' }} />
           </button>
@@ -312,22 +541,23 @@ export default function AppearancePage() {
             onClick={() => handleZoomChange(1)}
             title="Reset to 100%"
             className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all hover:bg-surface-elevated"
-            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-muted)' }}
+            style={getAppearanceControlStyle()}
           >
             <RotateCcw size={18} style={{ color: 'var(--text-muted)' }} />
           </button>
         </div>
-      </section>
+        </section>
+      </ChromeSurface>
 
       <section
         className="rounded-xl border p-4"
         style={{
-          background: 'color-mix(in srgb, var(--surface-card) 84%, transparent)',
-          borderColor: 'var(--border-subtle)',
+          ...getAppearanceControlStyle(),
+          background: 'var(--chrome-panel-fill)',
         }}
       >
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          Visual direction: contrast-first, subtle depth, and low-noise surfaces inspired by BridgeSpace.
+          Visual direction: contrast-first, harder planes, and morphology-led chrome that stays separate from theme color.
         </p>
       </section>
     </div>

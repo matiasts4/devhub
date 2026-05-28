@@ -25,7 +25,11 @@ import TelegramMonitor from './views/TelegramMonitor';
 import { createClient } from '@/lib/db/localClient';
 import { Loader2 } from 'lucide-react';
 import {
+  applyAccentToDocument,
+  applyMorphologyToDocument,
   applyThemeToDocument,
+  getStoredAccent,
+  getStoredMorphology,
   getStoredTheme,
   applyZoomToDocument,
   getStoredZoom,
@@ -36,6 +40,7 @@ import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
 import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
+import { getWorkspaceShellChromeStyle } from './components/terminal/terminalChromeStyles';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -165,8 +170,8 @@ function WorkspaceLayout() {
     <div
       className="relative flex h-screen overflow-hidden bg-surface-app text-text-primary flex-col"
       style={{
+        ...getWorkspaceShellChromeStyle(),
         borderRadius: '22px',
-        boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
       }}
     >
       {/* ── Inner layout: sidebar + content ── */}
@@ -200,7 +205,7 @@ function WorkspaceLayout() {
           {/* Persistent Terminal IDE Container */}
           <div
             className="absolute inset-0 z-10 bg-[#0d0d0d]"
-            style={{ display: isTerminalRoute ? 'block' : 'none' }}
+            style={{ ...getWorkspaceShellChromeStyle(), display: isTerminalRoute ? 'block' : 'none' }}
           >
             {project && (
               <TerminalWorkspacesManager
@@ -226,6 +231,8 @@ function LegacyAgentHubRedirect() {
 function App() {
   useEffect(() => {
     applyThemeToDocument(getStoredTheme());
+    applyMorphologyToDocument(getStoredMorphology());
+    applyAccentToDocument(getStoredAccent());
     applyZoomToDocument(getStoredZoom());
   }, []);
 

@@ -54,6 +54,10 @@ Add a reusable morphology layer so DevHub can switch chrome language without clo
 
 Remove morphology wiring, keep current theme-only shell, and hide `brutalist-stage` until shared primitives are stable.
 
+## Rollout note
+
+`brutalist-stage` remains a gated morphology lane until terminal guardrail checks pass in Jest and Playwright. Shared page chrome may ship behind the lane first, but terminal geometry, top-zone structure, floating safe-zone chrome, and interaction order stay blocked on those guardrails.
+
 ## Success checks
 
 - [ ] Morphology can switch without duplicating the app shell.

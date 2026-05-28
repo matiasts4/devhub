@@ -17,6 +17,8 @@ import {
   TERMINAL_RENDERER_INHERIT_MODE,
 } from '../terminalRendererPreferences';
 
+const SWARM_LAUNCH_BATCH_DEADLINE_MS = 4500;
+
 export default function useSwarmLaunchController({
   projectId,
   workspaces,
@@ -45,6 +47,8 @@ export default function useSwarmLaunchController({
   });
   const pendingSwarmLaunchRequestsRef = useRef([]);
   const swarmLaunchFlushTimerRef = useRef(null);
+  const swarmLaunchScheduledTimersRef = useRef(new Map());
+  const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
 
   const resolvedSwarmLaunchDraft = useMemo(
     () =>
@@ -97,7 +101,13 @@ export default function useSwarmLaunchController({
         window.clearTimeout(swarmLaunchFlushTimerRef.current);
         swarmLaunchFlushTimerRef.current = null;
       }
+      swarmLaunchScheduledTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      swarmLaunchScheduledTimersRef.current.clear();
       pendingSwarmLaunchRequestsRef.current = [];
+      pendingSwarmLaunchByLaunchIdRef.current.forEach((batch) => {
+        if (batch.timer) window.clearTimeout(batch.timer);
+      });
+      pendingSwarmLaunchByLaunchIdRef.current.clear();
     },
     []
   );
@@ -178,7 +188,19 @@ export default function useSwarmLaunchController({
         }
       }
 
-      (payload.launch_result?.runtime_requests || []).forEach((request) => {
+      const launchRequests = payload.launch_result?.runtime_requests || [];
+      launchRequests.forEach((request) => {
+        const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
+        if (delayMs > 0) {
+          const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
+          const timerId = window.setTimeout(() => {
+            swarmLaunchScheduledTimersRef.current.delete(requestKey);
+            window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
+          }, delayMs);
+          swarmLaunchScheduledTimersRef.current.set(requestKey, timerId);
+          return;
+        }
+
         window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
       });
 
@@ -370,20 +392,50 @@ export default function useSwarmLaunchController({
     ]
   );
 
+  const flushSwarmLaunchBatch = useCallback(
+    (launchId) => {
+      const batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+      if (!batch) return;
+
+      if (batch.timer) {
+        window.clearTimeout(batch.timer);
+        batch.timer = null;
+      }
+
+      pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+      createWorkspaceForSwarmLaunchRequests(batch.requests);
+    },
+    [createWorkspaceForSwarmLaunchRequests]
+  );
+
   const flushPendingSwarmLaunchRequests = useCallback(() => {
     const requests = pendingSwarmLaunchRequestsRef.current;
     pendingSwarmLaunchRequestsRef.current = [];
     swarmLaunchFlushTimerRef.current = null;
-    createWorkspaceForSwarmLaunchRequests(requests);
+    if (requests.length > 0) {
+      createWorkspaceForSwarmLaunchRequests(requests);
+    }
   }, [createWorkspaceForSwarmLaunchRequests]);
 
   const enqueueSwarmLaunchRequest = useCallback(
     (request) => {
-      pendingSwarmLaunchRequestsRef.current.push(request);
-      if (swarmLaunchFlushTimerRef.current) return;
-      swarmLaunchFlushTimerRef.current = window.setTimeout(flushPendingSwarmLaunchRequests, 0);
+      const launchId = request.launchId || 'unknown';
+      let batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+
+      if (!batch) {
+        batch = { requests: [], timer: null };
+        pendingSwarmLaunchByLaunchIdRef.current.set(launchId, batch);
+      }
+
+      batch.requests.push(request);
+
+      if (batch.timer) return;
+
+      batch.timer = window.setTimeout(() => {
+        flushSwarmLaunchBatch(launchId);
+      }, SWARM_LAUNCH_BATCH_DEADLINE_MS);
     },
-    [flushPendingSwarmLaunchRequests]
+    [flushSwarmLaunchBatch]
   );
 
   return {

@@ -1,17 +1,23 @@
 import React from 'react';
 import {
+  dataTileStyle,
+  filterBarStyle,
+  panelStyle,
+  pillStyle,
+  sectionSurfaceStyle,
+} from '../../chrome/morphology';
+import {
   formatEvidence,
   formatMissingSource,
   formatToken,
   metaTextStyle,
-  panelShellStyle,
 } from './utils';
 
 export default function ControlRoomHeader({ header, loading, projectName, missionSummary = null }) {
   return (
     <section
-      className="rounded-2xl border p-5 md:p-6"
-      style={panelShellStyle()}
+      className="p-5 md:p-6"
+      style={panelStyle({ emphasized: true })}
       aria-label="Control Room Header"
     >
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -38,7 +44,7 @@ export default function ControlRoomHeader({ header, loading, projectName, missio
 
       <MissionSummaryStrip missionSummary={missionSummary} />
 
-      <div className="mt-4 rounded-xl border px-3 py-3 text-sm" style={panelShellStyle()}>
+      <div className="mt-4 px-3 py-3 text-sm" style={sectionSurfaceStyle()}>
         <p className="text-xs font-semibold uppercase tracking-[0.15em]" style={metaTextStyle()}>
           Evidencia durable
         </p>
@@ -71,7 +77,7 @@ function MissionSummaryStrip({ missionSummary = null }) {
   const presenceLabel = `${missionSummary.activePresenceCount || 0} activas · ${missionSummary.stalePresenceCount || 0} vencidas · ${missionSummary.offlinePresenceCount || 0} fuera de línea`;
 
   return (
-    <div className="mt-4 rounded-xl border px-3 py-3" style={panelShellStyle()}>
+    <div className="mt-4 px-3 py-3" style={filterBarStyle()}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-1 min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={metaTextStyle()}>
@@ -99,11 +105,7 @@ function MissionSummaryStrip({ missionSummary = null }) {
 }
 
 function SummaryChip({ label }) {
-  return (
-    <span className="rounded-full border px-2.5 py-1" style={panelShellStyle()}>
-      {label}
-    </span>
-  );
+  return <span style={pillStyle()}>{label}</span>;
 }
 
 function pluralize(count, singular, plural) {
@@ -112,7 +114,7 @@ function pluralize(count, singular, plural) {
 
 function MetricCard({ label, value }) {
   return (
-    <div className="rounded-xl border px-3 py-2.5" style={panelShellStyle()}>
+    <div className="px-3 py-2.5" style={dataTileStyle()}>
       <div className="text-[11px] uppercase tracking-wide" style={metaTextStyle()}>
         {label}
       </div>

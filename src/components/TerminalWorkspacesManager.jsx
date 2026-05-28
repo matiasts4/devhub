@@ -2,6 +2,11 @@ import React, { useState, useRef, useEffect, useCallback, useLayoutEffect, useMe
 import { motion } from 'framer-motion';
 import { getWorkspaceAnimProps } from './terminal/workspaceAnimProps';
 import {
+  getTerminalFloatingControlStyle,
+  getWorkspaceShellChromeStyle,
+  getWorkspaceTabChromeStyle,
+} from './terminal/terminalChromeStyles';
+import {
   Plus,
   X,
   Minus,
@@ -128,6 +133,63 @@ const SWARM_ROLE_META = {
 
 function getSwarmSnapshotStorageKey(projectId) {
   return projectId ? `devhub_swarm_control_snapshot:${projectId}` : 'devhub_swarm_control_snapshot';
+}
+
+function readAgentRuns(storage) {
+  if (!storage) return {};
+  try {
+    return JSON.parse(storage.getItem('devhub_agent_runs') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+const SWARM_LAUNCH_BATCH_DEADLINE_MS = 4500;
+
+function getPanelIdsFromColumns(columns = []) {
+  return columns.flatMap((column) => (column?.panels || []).map((panel) => panel.id));
+}
+
+function readWorkspaceSwarmLaunchSummary(storage, workspace) {
+  const workspacePanelIds = new Set(getPanelIdsFromColumns(workspace?.columns || []));
+  if (workspacePanelIds.size === 0) return null;
+
+  const runs = Object.values(readAgentRuns(storage)).filter(
+    (run) =>
+      run?.launchOrigin === 'swarm-control-launch' && workspacePanelIds.has(String(run?.panelId || ''))
+  );
+  if (runs.length === 0) return null;
+
+  const groups = new Map();
+  runs.forEach((run) => {
+    const taskLaunchId = String(run?.taskId || '').split(':')[0];
+    const launchId = run?.launchId || taskLaunchId;
+    if (!launchId) return;
+    const current = groups.get(launchId) || [];
+    current.push(run);
+    groups.set(launchId, current);
+  });
+
+  const [launchId, launchRuns] = [...groups.entries()].sort(([, leftRuns], [, rightRuns]) => {
+    const leftAt = Math.max(...leftRuns.map((run) => Number(run?.launchedAt) || 0));
+    const rightAt = Math.max(...rightRuns.map((run) => Number(run?.launchedAt) || 0));
+    return rightAt - leftAt;
+  })[0] || [null, null];
+
+  if (!launchId || !launchRuns?.length) return null;
+
+  const latestRun = launchRuns.reduce((latest, run) => {
+    const latestAt = Number(latest?.launchedAt) || 0;
+    const nextAt = Number(run?.launchedAt) || 0;
+    return nextAt >= latestAt ? run : latest;
+  }, launchRuns[0]);
+
+  return {
+    launchId,
+    title:
+      latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
+    count: launchRuns.length,
+  };
 }
 
 function createDefaultWorkspaceState() {
@@ -606,13 +668,10 @@ function renderWorkspacePanel(
           aria-label={`Panel ${panelLabel || panel.id} controls`}
         >
           <div
-            className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors ${
-              isActive
-                ? 'border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320]/92 shadow-[0_10px_24px_rgba(2,6,23,0.34)]'
-                : 'border-white/10 bg-[#0d1320]/82 shadow-[0_8px_20px_rgba(2,6,23,0.24)]'
-            }`}
+            className="pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors"
             data-testid={`panel-header-actions-${panel.id}`}
             title={`Panel ${panelLabel || panel.id} actions`}
+            style={getTerminalFloatingControlStyle({ active: isActive })}
           >
             <button
               type="button"
@@ -680,6 +739,7 @@ function renderWorkspacePanel(
       <div
         className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
         data-testid={`panel-body-${panel.id}`}
+        style={getWorkspaceShellChromeStyle({ withBackground: false })}
       >
         <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
           <TerminalTTY
@@ -866,6 +926,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const pendingReopenPanelsRef = useRef(new Map());
   const pendingSwarmLaunchRequestsRef = useRef([]);
   const swarmLaunchFlushTimerRef = useRef(null);
+  const swarmLaunchScheduledTimersRef = useRef(new Map());
+  const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
 
   const [activeWsId, setActiveWsId] = useState(() => createDefaultWorkspaceState().activeWsId);
   const [activePanelIds, setActivePanelIds] = useState(
@@ -879,6 +941,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
+    submitting: false,
+    error: null,
+  });
+  const [swarmTerminateState, setSwarmTerminateState] = useState({
     submitting: false,
     error: null,
   });
@@ -976,7 +1042,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         window.clearTimeout(swarmLaunchFlushTimerRef.current);
         swarmLaunchFlushTimerRef.current = null;
       }
+      swarmLaunchScheduledTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      swarmLaunchScheduledTimersRef.current.clear();
       pendingSwarmLaunchRequestsRef.current = [];
+      pendingSwarmLaunchByLaunchIdRef.current.forEach((batch) => {
+        if (batch.timer) window.clearTimeout(batch.timer);
+      });
+      pendingSwarmLaunchByLaunchIdRef.current.clear();
     },
     []
   );
@@ -1402,6 +1474,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, rightDockState.maximized, rightDockState.visible, workspaceWindows]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
+  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(storage, activeWorkspace);
   const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
   const effectiveRightDockState = activeWorkspaceOwnsDockState
     ? rightDockState
@@ -1610,6 +1683,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
 
       runtimeRequests.forEach((request) => {
+        const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
+        if (delayMs > 0) {
+          const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
+          const timerId = window.setTimeout(() => {
+            swarmLaunchScheduledTimersRef.current.delete(requestKey);
+            window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
+          }, delayMs);
+          swarmLaunchScheduledTimersRef.current.set(requestKey, timerId);
+          return;
+        }
+
         window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
       });
 
@@ -1622,6 +1706,68 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       });
     }
   }, [projectId, swarmLaunchPreview?.draft]);
+
+  const handleTerminateSwarmLaunch = useCallback(async () => {
+    if (!projectId || !activeSwarmLaunchSummary?.launchId) return;
+
+    setSwarmTerminateState({ submitting: true, error: null });
+
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'terminate_swarm_local',
+          project_id: projectId,
+          launch_id: activeSwarmLaunchSummary.launchId,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo terminar el swarm desde terminales.');
+      }
+
+      if (payload.control_room_snapshot_input) {
+        try {
+          localStorage.setItem(
+            getSwarmSnapshotStorageKey(projectId),
+            JSON.stringify(payload.control_room_snapshot_input)
+          );
+        } catch {
+          // Ignore localStorage failures.
+        }
+      }
+
+      (payload?.terminate_result?.terminals?.attempted || []).forEach((panelId) => {
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-session-closing', {
+            detail: { panelId },
+          })
+        );
+      });
+
+      try {
+        const runs = readAgentRuns(storage);
+        Object.keys(runs).forEach((taskId) => {
+          const taskLaunchId = String(taskId || '').split(':')[0];
+          if ((runs[taskId]?.launchId || taskLaunchId) === activeSwarmLaunchSummary.launchId) {
+            delete runs[taskId];
+          }
+        });
+        storage?.setItem('devhub_agent_runs', JSON.stringify(runs));
+      } catch {
+        // Ignore localStorage failures.
+      }
+
+      setSwarmTerminateState({ submitting: false, error: null });
+    } catch (error) {
+      setSwarmTerminateState({
+        submitting: false,
+        error: error?.message || 'No se pudo terminar el swarm desde terminales.',
+      });
+    }
+  }, [activeSwarmLaunchSummary?.launchId, projectId, storage]);
 
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
@@ -1850,11 +1996,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       ? getAllPanelIds(activeWorkspaceForNativeSurface.columns || [])
       : [];
     const hiddenPanelIdsForNativeSurface = workspaces
-      .filter((workspace) => workspace.id !== activeWsId)
-      .flatMap((workspace) => getAllPanelIds(workspace.columns || []));
+      .flatMap((workspace) => {
+        const panelIds = getAllPanelIds(workspace.columns || []);
+        if (workspace.id !== activeWsId) return panelIds;
+        return [];
+      });
 
     const detail = {
       activeWorkspaceId: activeWsId,
+      workspaceId: activeWsId,
       activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
       hiddenPanelIds: isVisible
         ? hiddenPanelIdsForNativeSurface
@@ -2065,6 +2215,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     if (!workspaceToRemove || workspaces.length <= 1) return;
 
     await closeTerminalSessions(getAllPanelIds(workspaceToRemove.columns));
+    await new Promise((resolve) => setTimeout(resolve, 200));
     await closeWorkspaceBrowserWindow(idToRemove);
 
     setWorkspaces((prev) => {
@@ -2289,20 +2440,53 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [cwd, persistAgentRunMetadata, syncActiveWindowSnapshot]
   );
 
+  const flushSwarmLaunchBatch = useCallback(
+    (launchId) => {
+      const batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+      if (!batch) return;
+
+      if (batch.timer) {
+        window.clearTimeout(batch.timer);
+        batch.timer = null;
+      }
+
+      pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+      createWorkspaceForSwarmLaunchRequests(batch.requests);
+    },
+    [createWorkspaceForSwarmLaunchRequests]
+  );
+
   const flushPendingSwarmLaunchRequests = useCallback(() => {
+    // Legacy: flush flat array if still used
     const requests = pendingSwarmLaunchRequestsRef.current;
     pendingSwarmLaunchRequestsRef.current = [];
     swarmLaunchFlushTimerRef.current = null;
-    createWorkspaceForSwarmLaunchRequests(requests);
+    if (requests.length > 0) {
+      createWorkspaceForSwarmLaunchRequests(requests);
+    }
   }, [createWorkspaceForSwarmLaunchRequests]);
 
   const enqueueSwarmLaunchRequest = useCallback(
     (request) => {
-      pendingSwarmLaunchRequestsRef.current.push(request);
-      if (swarmLaunchFlushTimerRef.current) return;
-      swarmLaunchFlushTimerRef.current = window.setTimeout(flushPendingSwarmLaunchRequests, 0);
+      const launchId = request.launchId || 'unknown';
+      let batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+
+      if (!batch) {
+        batch = { requests: [], timer: null };
+        pendingSwarmLaunchByLaunchIdRef.current.set(launchId, batch);
+      }
+
+      batch.requests.push(request);
+
+      // If deadline timer already running for this batch, just accumulate
+      if (batch.timer) return;
+
+      // Start deadline timer — wait long enough for delayed workers to arrive
+      batch.timer = window.setTimeout(() => {
+        flushSwarmLaunchBatch(launchId);
+      }, SWARM_LAUNCH_BATCH_DEADLINE_MS);
     },
-    [flushPendingSwarmLaunchRequests]
+    [flushSwarmLaunchBatch]
   );
 
   const reorderWorkspaceTabs = useCallback((sourceWsId, targetWsId) => {
@@ -3060,6 +3244,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     <motion.div
       ref={managerRootRef}
       className="flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
+      style={getWorkspaceShellChromeStyle()}
       {...getWorkspaceAnimProps(isMaximized)}
       key={isMaximized ? 'maximized' : 'normal'}
     >
@@ -3068,6 +3253,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         key="workspace-top-tab-bar"
         data-testid="workspace-top-tab-bar"
         className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
+        style={getWorkspaceShellChromeStyle()}
       >
         <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
           {workspaces.map((ws, wsIndex) => {
@@ -3114,18 +3300,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 title={workspaceTabLabel}
                 style={{
                   ...getWorkspaceTabStyle(workspaces.length),
-                  ...(activeWsId === ws.id
-                    ? {
-                        background: `rgba(var(--accent-rgb,88,166,255),0.08)`,
-                        borderColor: `rgba(var(--accent-rgb,88,166,255),0.22)`,
-                        boxShadow: `inset 0 -2px 0 rgba(var(--accent-rgb,88,166,255),0.55)`,
-                      }
-                    : dragOverWsId === ws.id && draggedWsId !== ws.id
-                      ? {
-                          background: 'rgba(var(--accent-rgb,88,166,255),0.07)',
-                          borderColor: 'rgba(var(--accent-rgb,88,166,255),0.35)',
-                        }
-                      : {}),
+                  ...getWorkspaceTabChromeStyle({
+                    active: activeWsId === ws.id,
+                    dragOver: dragOverWsId === ws.id && draggedWsId !== ws.id,
+                  }),
                 }}
               >
                 <div className="flex items-center gap-2">
@@ -3299,6 +3477,39 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           >
             <Wand2 className="h-4 w-4" />
           </button>
+          <button
+            type="button"
+            onClick={handleTerminateSwarmLaunch}
+            disabled={!activeSwarmLaunchSummary?.launchId || swarmTerminateState.submitting}
+            className="inline-flex items-center gap-1.5 h-7 rounded-sm px-2 text-rose-300/80 transition-all hover:text-rose-200 hover:bg-rose-400/10 disabled:opacity-40 disabled:hover:bg-transparent"
+            title={
+              activeSwarmLaunchSummary?.launchId
+                ? `Terminar swarm ${activeSwarmLaunchSummary.title}`
+                : 'No hay swarm activo para terminar'
+            }
+            aria-label="Terminar swarm activo"
+            data-testid="workspace-swarm-terminate-button"
+          >
+            <X className="h-4 w-4" />
+            <span className="text-[11px] font-semibold">End swarm</span>
+          </button>
+          {swarmTerminateState.error ? (
+            <span
+              className="max-w-[220px] truncate text-[10px] text-rose-300"
+              data-testid="workspace-swarm-terminate-error"
+              title={swarmTerminateState.error}
+            >
+              {swarmTerminateState.error}
+            </span>
+          ) : activeSwarmLaunchSummary?.launchId ? (
+            <span
+              className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
+              data-testid="workspace-swarm-terminate-summary"
+              title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles`}
+            >
+              {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
+            </span>
+          ) : null}
 
           <div className="w-px h-5 bg-white/10 mx-1" />
 

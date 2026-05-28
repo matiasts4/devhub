@@ -4,6 +4,56 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --chrome-radius-panel: 1rem;
+  --chrome-radius-control: 999px;
+  --chrome-border-width: 1px;
+  --chrome-border-color: var(--border-subtle);
+  --chrome-shadow-panel: var(--shadow-soft);
+  --chrome-shadow-control: 0 10px 24px rgba(1, 4, 9, 0.18);
+  --chrome-panel-fill: var(--surface-card);
+  --chrome-panel-fill-emphasis: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-primary) 12%, transparent),
+    var(--surface-card)
+  );
+  --chrome-control-fill: color-mix(in srgb, var(--surface-card) 84%, transparent);
+  --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  --chrome-press-offset: 0px;
+}
+
+[data-morphology='default'] {
+  --chrome-radius-panel: 0.5rem;
+  --chrome-radius-control: 999px;
+  --chrome-border-width: 1px;
+  --chrome-border-color: var(--border-subtle);
+  --chrome-shadow-panel: var(--shadow-soft);
+  --chrome-shadow-control: 0 10px 24px rgba(1, 4, 9, 0.18);
+  --chrome-panel-fill: var(--surface-card);
+  --chrome-panel-fill-emphasis: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-primary) 12%, transparent),
+    var(--surface-card)
+  );
+  --chrome-control-fill: color-mix(in srgb, var(--surface-card) 84%, transparent);
+  --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  --chrome-press-offset: 0px;
+}
+
+[data-morphology='brutalist-stage'] {
+  --chrome-radius-panel: 0;
+  --chrome-radius-control: 0;
+  --chrome-border-width: 2px;
+  --chrome-border-color: var(--border-strong);
+  --chrome-shadow-panel: 4px 4px 0 0 var(--border-strong);
+  --chrome-shadow-control: 3px 3px 0 0 var(--border-strong);
+  --chrome-panel-fill: var(--surface-card);
+  --chrome-panel-fill-emphasis: var(--surface-elevated);
+  --chrome-control-fill: var(--surface-muted);
+  --chrome-control-fill-hover: var(--surface-hover);
+  --chrome-press-offset: 1px;
+}
+
 /* Tauri window styling - rounded corners and border */
 html,
 body {

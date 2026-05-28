@@ -1,5 +1,5 @@
 /* eslint-env node */
-/* eslint-disable no-undef */
+ 
 
 /**
  * AgentWorkspaceManager — DevHub's own worktree manager.

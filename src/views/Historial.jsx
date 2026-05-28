@@ -10,30 +10,67 @@ import {
   Download,
   BarChart3,
   Flag,
-  Hash,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import StatusSignal from '@/components/ui/StatusSignal';
+import {
+  getWorkspaceDataTileStyle,
+  getWorkspacePageContentStyle,
+  getWorkspacePageHeaderStyle,
+  getWorkspaceSectionHeaderStripStyle,
+  getWorkspaceSectionSurfaceStyle,
+  getWorkspaceStatusPillStyle,
+} from './workspacePageChrome';
+import {
+  pillStyle,
+  panelStyle,
+  btnSecondaryStyle,
+  btnPrimaryStyle,
+  inputStyle,
+} from '@/chrome/morphology';
 
 const STATUS_COLORS = {
-  completed: { color: '#3FB950', bg: 'bg-[#3FB950]/10', text: 'text-success', label: 'Completada' },
+  completed: {
+    color: 'var(--success)',
+    bg: 'bg-[color:var(--success)]/10',
+    text: 'text-success',
+    label: 'Completada',
+  },
   in_progress: {
-    color: '#58A6FF',
-    bg: 'bg-[#58A6FF]/10',
-    text: 'text-accent-primary',
+    color: 'var(--accent-cyan)',
+    bg: 'bg-[color:var(--accent-cyan)]/10',
+    text: 'text-accent-cyan',
     label: 'En Progreso',
   },
-  pending: { color: '#8B949E', bg: 'bg-[#8B949E]/10', text: 'text-text-muted', label: 'Pendiente' },
-  blocked: { color: '#F778BA', bg: 'bg-[#F778BA]/10', text: 'text-danger', label: 'Bloqueada' },
+  pending: {
+    color: 'var(--text-muted)',
+    bg: 'bg-[color:var(--text-muted)]/10',
+    text: 'text-text-muted',
+    label: 'Pendiente',
+  },
+  blocked: {
+    color: 'var(--danger)',
+    bg: 'bg-[color:var(--danger)]/10',
+    text: 'text-danger',
+    label: 'Bloqueada',
+  },
 };
 
 const PRIORITY_COLORS = {
-  critical: '#F778BA',
-  high: '#FFA657',
-  medium: '#E3B341',
-  low: '#8B949E',
+  critical: 'var(--danger)',
+  high: 'var(--warning)',
+  medium: 'var(--accent-primary)',
+  low: 'var(--text-muted)',
 };
+
+function getHistoryTone(status) {
+  if (status === 'completed') return 'success';
+  if (status === 'in_progress') return 'info';
+  if (status === 'blocked') return 'danger';
+  return 'neutral';
+}
 
 function groupByMonth(tasks) {
   const groups = {};
@@ -151,9 +188,7 @@ export default function Historial() {
       {/* Sticky Header */}
       <div
         className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
-        style={{
-          borderColor: 'var(--border-subtle)',
-        }}
+        style={getWorkspacePageHeaderStyle()}
       >
         <div className="flex items-center gap-3">
           <WorkspacePageTitle
@@ -162,7 +197,7 @@ export default function Historial() {
             projectName={project?.name}
             badges={[
               <span
-                className="text-xs px-2 py-0.5 rounded-full"
+                className="text-xs px-2 py-0.5"
                 style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
               >
                 {filtered.length} registros
@@ -177,19 +212,15 @@ export default function Historial() {
             <button
               key={key}
               onClick={() => setFilter(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+              className={`px-3 py-1.5 text-xs font-medium transition-all border ${
                 filterStatus === key
                   ? 'text-text-primary'
                   : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated border-transparent'
               }`}
               style={
                 filterStatus === key
-                  ? {
-                      background: 'var(--surface-elevated)',
-                      borderColor: 'color-mix(in srgb, var(--accent-primary) 30%, transparent)',
-                      boxShadow: 'var(--shadow-soft)',
-                    }
-                  : { border: '1px solid transparent' }
+                  ? pillStyle({ tone: 'accent' })
+                  : pillStyle()
               }
             >
               {label}
@@ -198,58 +229,28 @@ export default function Historial() {
         </div>
       </div>
 
-      <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
-        {/* Breadcrumb */}
-        <div
-          className="rounded-xl border px-4 py-2.5 flex items-center gap-2 mb-6"
-          style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
-        >
-          <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            DevHub
-          </span>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            ›
-          </span>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {project?.name || 'Proyecto'}
-          </span>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            ›
-          </span>
-          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-            Historial
-          </span>
-        </div>
-
+      <div style={getWorkspacePageContentStyle()}>
         {/* Export & Stats */}
         <div className="space-y-6">
           {/* Stats card */}
           <div
-            className="rounded-2xl overflow-hidden fade-in-up"
-            style={{
-              background: 'var(--surface-card)',
-              border: '1px solid var(--border-subtle)',
-              boxShadow: 'var(--shadow-soft)',
-            }}
+            className="overflow-hidden fade-in-up rounded-none"
+            style={getWorkspaceSectionSurfaceStyle({ emphasized: true })}
           >
             <div
               className="flex items-center justify-between px-6 py-4"
-              style={{ borderBottom: '1px solid var(--border-subtle)' }}
+              style={getWorkspaceSectionHeaderStripStyle({ tone: 'accent' })}
             >
               <div className="flex items-center gap-3">
                 <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center"
-                  style={{
-                    background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-                    border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
-                  }}
+                  className="w-9 h-9 flex items-center justify-center rounded-none"
+                  style={pillStyle({ tone: 'accent' })}
                 >
                   <BarChart3 className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
                 </div>
                 <div>
                   <h3
-                    className="font-mono text-sm font-semibold"
+                    className="typography-section-label"
                     style={{ color: 'var(--text-primary)' }}
                   >
                     Resumen del Swarm
@@ -261,12 +262,8 @@ export default function Historial() {
               </div>
               <button
                 onClick={exportarCSV}
-                className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg transition-all"
-                style={{
-                  background: 'color-mix(in srgb, var(--success) 12%, transparent)',
-                  border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)',
-                  color: 'var(--success)',
-                }}
+                className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 transition-all"
+                style={btnSecondaryStyle({ size: 'sm' })}
               >
                 <Download className="w-3.5 h-3.5" />
                 Exportar CSV
@@ -295,13 +292,15 @@ export default function Historial() {
                 ].map((s, i) => (
                   <div
                     key={i}
-                    className="p-4 rounded-xl"
-                    style={{ background: 'var(--surface-muted)' }}
+                    className="p-4 rounded-none"
+                    style={getWorkspaceDataTileStyle(s.color)}
                   >
-                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
+                    <p
+                      className="typography-label mb-2"
+                    >
                       {s.label}
                     </p>
-                    <p className="font-mono text-xl font-bold" style={{ color: s.color }}>
+                    <p className="typography-data text-2xl font-bold" style={{ color: s.color }}>
                       {s.value}
                     </p>
                   </div>
@@ -320,19 +319,13 @@ export default function Historial() {
             </div>
           ) : filtered.length === 0 ? (
             <div
-              className="rounded-2xl overflow-hidden fade-in-up"
-              style={{
-                background: 'var(--surface-card)',
-                border: '1px solid var(--border-subtle)',
-              }}
-            >
+                className="overflow-hidden fade-in-up rounded-none"
+                style={panelStyle()}
+              >
               <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
                 <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                  style={{
-                    background: 'var(--surface-muted)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
+                  className="w-14 h-14 flex items-center justify-center rounded-none"
+                  style={pillStyle()}
                 >
                   <History
                     className="w-7 h-7"
@@ -355,25 +348,17 @@ export default function Historial() {
                 return (
                   <div
                     key={month}
-                    className="rounded-2xl overflow-hidden"
-                    style={{
-                      background: 'var(--surface-card)',
-                      border: '1px solid var(--border-subtle)',
-                      boxShadow: 'var(--shadow-soft)',
-                    }}
+                    className="overflow-hidden rounded-none"
+                    style={panelStyle()}
                   >
                     <button
                       onClick={() => handleToggleMonth(month)}
-                      className="flex items-center gap-3 w-full text-left px-6 py-4 transition-colors cursor-pointer"
+                      className="flex items-center gap-3 w-full text-left px-6 py-4 transition-colors cursor-pointer rounded-none"
                       style={{ borderBottom: isOpen ? '1px solid var(--border-subtle)' : 'none' }}
                     >
                       <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center"
-                        style={{
-                          background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
-                          border:
-                            '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
-                        }}
+                        className="w-9 h-9 flex items-center justify-center rounded-none"
+                        style={pillStyle({ tone: 'accent' })}
                       >
                         <Calendar
                           className="w-4 h-4"
@@ -383,7 +368,7 @@ export default function Historial() {
                       </div>
                       <div className="flex-1">
                         <h3
-                          className="font-mono text-sm font-semibold capitalize"
+                          className="typography-card-title capitalize"
                           style={{ color: 'var(--text-primary)' }}
                         >
                           {month}
@@ -409,8 +394,9 @@ export default function Historial() {
                           <div className="space-y-3">
                             {monthTasks.map((task, i) => {
                               const st = STATUS_COLORS[task.status] || STATUS_COLORS.pending;
-                              const prioColor = PRIORITY_COLORS[task.priority] || '#8B949E';
+                              const prioColor = PRIORITY_COLORS[task.priority] || 'var(--text-muted)';
                               const date = new Date(task.updated_at || task.created_at);
+                              const shouldBlink = task.status === 'in_progress' || task.status === 'blocked';
                               return (
                                 <div
                                   key={task.id}
@@ -418,17 +404,20 @@ export default function Historial() {
                                   style={{ animationDelay: `${i * 30}ms` }}
                                 >
                                   <div
-                                    className="absolute left-3.5 top-3 w-2.5 h-2.5 rounded-full -translate-x-1/2"
+                                    className="absolute left-3.5 top-3 w-2.5 h-2.5 -translate-x-1/2"
                                     style={{
-                                      background: st.color,
-                                      boxShadow: `0 0 0 4px var(--surface-card), 0 0 6px ${st.color}40`,
+                                      boxShadow: '2px 2px 0 0 var(--border-strong)',
                                     }}
-                                  />
+                                  >
+                                    <StatusSignal compact tone={getHistoryTone(task.status)} animation={shouldBlink ? 'blink' : 'none'} />
+                                  </div>
                                   <div
-                                    className="flex-1 rounded-xl p-4 transition-all hover:border-[var(--border-strong)]"
+                                    className="flex-1 p-4 transition-all rounded-none"
                                     style={{
-                                      background: 'var(--surface-muted)',
-                                      border: '1px solid var(--border-subtle)',
+                                      background: 'var(--chrome-panel-fill)',
+                                      border: '1px solid var(--chrome-border-color)',
+                                      boxShadow: 'var(--chrome-shadow-panel)',
+                                      borderRadius: 0,
                                     }}
                                   >
                                     <div className="flex items-start justify-between gap-3">
@@ -438,16 +427,11 @@ export default function Historial() {
                                       >
                                         {task.title}
                                       </p>
-                                      <span
-                                        className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
-                                        style={{
-                                          background: `${st.color}18`,
-                                          color: st.color,
-                                          border: `1px solid ${st.color}30`,
-                                        }}
-                                      >
-                                        {st.label}
-                                      </span>
+                                      <StatusSignal
+                                        label={st.label}
+                                        tone={getHistoryTone(task.status)}
+                                        animation={task.status === 'in_progress' || task.status === 'blocked' ? 'blink' : 'none'}
+                                      />
                                     </div>
                                     {task.description && (
                                       <p
@@ -459,8 +443,13 @@ export default function Historial() {
                                     )}
                                     <div className="flex items-center gap-3 mt-2.5">
                                       <span
-                                        className="text-xs font-medium flex items-center gap-1"
-                                        style={{ color: prioColor }}
+                                        className="text-[11px] font-medium flex items-center gap-1 px-2 py-1"
+                                        style={{
+                                          ...getWorkspaceStatusPillStyle(),
+                                          color: prioColor,
+                                          borderColor: `color-mix(in srgb, ${prioColor} 28%, var(--chrome-border-color))`,
+                                          background: `color-mix(in srgb, ${prioColor} 14%, var(--chrome-control-fill))`,
+                                        }}
                                       >
                                         <Flag className="w-3 h-3" />
                                         {task.priority || 'medium'}

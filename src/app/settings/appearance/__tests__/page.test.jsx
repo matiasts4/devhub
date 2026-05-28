@@ -12,23 +12,41 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock('@/lib/theme/themes', () => ({
+  ACCENT_OPTIONS: [
+    { id: 'theme', label: 'Theme sync', description: 'desc', primary: null },
+    { id: 'amber', label: 'Signal Amber', description: 'desc', primary: '#E3B341' },
+  ],
   THEMES: {
     DEEP_SEA: 'deep-sea',
     NORD: 'nord',
     DRACULA: 'dracula',
     LIGHT: 'light',
   },
+  MORPHOLOGIES: {
+    DEFAULT: 'default',
+    BRUTALIST_STAGE: 'brutalist-stage',
+  },
   THEME_OPTIONS: [
     { id: 'deep-sea', label: 'Deep Sea', description: 'desc' },
     { id: 'nord', label: 'Nord', description: 'desc' },
   ],
+  MORPHOLOGY_OPTIONS: [
+    { id: 'default', label: 'Default', description: 'base chrome' },
+    { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
+  ],
   getStoredTheme: jest.fn(() => 'deep-sea'),
+  getStoredMorphology: jest.fn(() => 'default'),
+  getStoredAccent: jest.fn(() => 'theme'),
   setTheme: jest.fn((value) => value),
+  setMorphology: jest.fn((value) => value),
+  setAccent: jest.fn((value) => value),
   getStoredZoom: jest.fn(() => 1),
   setZoom: jest.fn((value) => value),
 }));
 
-const AppearancePage = require('../page').default;
+const appearancePageModule = require('../page');
+const AppearancePage = appearancePageModule.default;
+const themeModule = require('@/lib/theme/themes');
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -104,5 +122,74 @@ describe('Settings appearance page terminal renderer', () => {
     await flushEffects();
 
     expect(window.localStorage.getItem('devhub_terminal_renderer_default_mode')).toBe('vte-experimental');
+  });
+
+  test('shows morphology controls independent from theme selection', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    expect(rendered.container.textContent).toContain('Morphology');
+    expect(rendered.container.textContent).toContain('Brutalist Stage');
+    expect(rendered.container.textContent).toContain('Default');
+  });
+
+  test('shows independent accent controls and persists accent changes without calling setTheme', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    expect(rendered.container.textContent).toContain('Accent signal');
+    expect(rendered.container.textContent).toContain('Theme sync');
+    expect(rendered.container.textContent).toContain('Signal Amber');
+
+    const accentButton = rendered.container.querySelector('[data-testid="appearance-accent-option-amber"]');
+    expect(accentButton).toBeTruthy();
+
+    flushSync(() => {
+      accentButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.setAccent).toHaveBeenCalledWith('amber');
+    expect(themeModule.setTheme).not.toHaveBeenCalled();
+  });
+
+  test('routes settings section chrome through morphology tokens instead of hardcoded surface shells', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    const themeShell = rendered.container.querySelector('[data-testid="appearance-theme-shell"]');
+    const morphologyCard = rendered.container.querySelector(
+      '[data-testid="appearance-morphology-option-default"]'
+    );
+
+    expect(themeShell).toBeTruthy();
+    const themeShellStyle = appearancePageModule.getAppearanceSectionStyle();
+
+    expect(themeShell.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
+    expect(themeShellStyle.background).toContain('var(--chrome-panel-fill)');
+    expect(themeShellStyle.borderColor).toBe('var(--chrome-border-color)');
+    expect(themeShellStyle.background).not.toContain('var(--surface-card)');
+
+    expect(morphologyCard).toBeTruthy();
+    expect(morphologyCard.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
+
+    const activeMorphologyStyle = appearancePageModule.getAppearanceOptionStyle(true);
+    expect(activeMorphologyStyle.background).toBe('var(--chrome-panel-fill-emphasis)');
+    expect(activeMorphologyStyle.borderWidth).toBe('var(--chrome-border-width)');
+  });
+
+  test('changing morphology does not call setTheme', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    const morphologyButton = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Brutalist Stage')
+    );
+
+    expect(morphologyButton).toBeTruthy();
+
+    flushSync(() => {
+      morphologyButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.setMorphology).toHaveBeenCalledWith('brutalist-stage');
+    expect(themeModule.setTheme).not.toHaveBeenCalled();
   });
 });

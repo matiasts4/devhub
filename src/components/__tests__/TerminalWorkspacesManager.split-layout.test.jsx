@@ -694,6 +694,43 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
   });
 
+  test('keeps floating panel chrome invariants under brutalist-stage morphology', async () => {
+    document.documentElement.dataset.morphology = 'brutalist-stage';
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1' },
+    });
+
+    const view = await renderManager();
+
+    const workspaceTopBar = view.container.querySelector('[data-testid="workspace-top-tab-bar"]');
+    const panelSafeZone = view.container.querySelector('[data-testid="panel-safe-zone-p1"]');
+    const panelChromeOverlay = view.container.querySelector('[data-testid="panel-chrome-overlay-p1"]');
+    const splitRightButton = view.container.querySelector('[data-testid="panel-split-right-p1"]');
+    const closeButton = view.container.querySelector('[data-testid="panel-close-p1"]');
+
+    expect(workspaceTopBar?.getAttribute('data-testid')).toBe('workspace-top-tab-bar');
+    expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
+    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
+    expect(panelSafeZone?.contains(panelChromeOverlay)).toBe(true);
+    expect(panelChromeOverlay?.querySelector('[data-testid="panel-split-right-p1"]')).toBe(
+      splitRightButton
+    );
+    expect(panelChromeOverlay?.querySelector('[data-testid="panel-close-p1"]')).toBe(closeButton);
+  });
+
   test('keeps per-panel split controls working from the floating overlay chrome', async () => {
     persistWorkspaceState({
       workspaces: [
@@ -981,4 +1018,5 @@ describe('TerminalWorkspacesManager split layout', () => {
       'active'
     );
   });
+
 });

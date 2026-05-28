@@ -126,7 +126,7 @@ export default function TaskComments({ taskId }) {
         <button
           type="submit"
           disabled={!newComment.trim() || sending}
-          className="absolute right-2 bottom-2 p-1.5 bg-accent-primary hover:bg-blue-500 rounded-md text-white disabled:opacity-50 transition-all"
+          className="absolute right-2 bottom-2 p-1.5 bg-accent-primary hover:bg-blue-500 rounded-md text-black disabled:opacity-50 transition-all"
         >
           {sending ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />

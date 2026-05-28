@@ -30,7 +30,7 @@ export default function UsageChart({ data = [] }) {
   return (
     <div className="bg-surface-elevated border border-borders-subtle rounded-xl flex flex-col h-full overflow-hidden p-4">
       <div className="flex items-center gap-2 mb-4 text-text-primary">
-        <BarChart3 className="w-4 h-4 text-[#FF007F]" />
+        <BarChart3 className="w-4 h-4" style={{ color: 'var(--accent-pink)' }} />
         <h3 className="font-semibold text-sm">Ejecuciones de Herramientas IA (30d)</h3>
       </div>
       
@@ -47,30 +47,30 @@ export default function UsageChart({ data = [] }) {
             >
               <defs>
                 <linearGradient id="colorTools" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00F0FF" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#00F0FF" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="var(--accent-cyan)" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="var(--accent-cyan)" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
               <XAxis 
                 dataKey="date" 
                 tickFormatter={(tick) => format(parseISO(tick), "d MMM", { locale: es })}
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
                 dy={10}
               />
               <YAxis 
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
               />
               <Tooltip content={<CustomTooltip />} />
               <Area 
                 type="monotone" 
                 dataKey="tools" 
                 name="Herramientas"
-                stroke="#00F0FF" 
+                stroke="var(--accent-cyan)" 
                 strokeWidth={2}
                 fillOpacity={1} 
                 fill="url(#colorTools)" 

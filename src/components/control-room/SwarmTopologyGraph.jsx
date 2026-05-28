@@ -209,7 +209,7 @@ function TopologyNode({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={onClick}
-      className={`absolute select-none flex items-center gap-2 px-2.5 py-1.5 rounded-xl border backdrop-blur-md transition-all duration-300 ${
+      className={`absolute select-none flex items-center gap-2 px-2.5 py-1.5 rounded-none border-2 transition-all duration-300 ${
         isActive ? 'topology-node-active-glow' : ''
       }`}
       style={{
@@ -222,21 +222,19 @@ function TopologyNode({
         borderColor: selected
           ? 'var(--accent-primary)'
           : highlighted
-            ? 'rgba(255,255,255,0.22)'
-            : 'rgba(255,255,255,0.06)',
+            ? '#27272a'
+            : '#27272a',
         background: selected
-          ? 'rgba(var(--accent-rgb,88,166,255),0.15)'
+          ? '#141416'
           : node.isDirector
-            ? 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(15,23,42,0.85))'
-            : 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(15,23,42,0.85))',
+            ? '#141416'
+            : '#141416',
         boxShadow: selected
-          ? '0 0 18px rgba(var(--accent-rgb,88,166,255),0.25)'
+          ? '4px 4px 0px 0px var(--accent-primary)'
           : highlighted
-            ? '0 6px 16px rgba(0,0,0,0.6)'
-            : '0 4px 10px rgba(0,0,0,0.4)',
+            ? '4px 4px 0px 0px #27272a'
+            : '3px 3px 0px 0px #27272a',
         transform: highlighted || selected ? 'scale(1.04)' : 'scale(1)',
-        '--glow-color-soft': `${theme.dot}18`,
-        '--glow-color-bright': `${theme.dot}44`,
         transition:
           'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s, background-color 0.2s, box-shadow 0.2s',
       }}
@@ -245,14 +243,14 @@ function TopologyNode({
     >
       {/* Icon Wrapper on the Left */}
       <div
-        className="relative flex items-center justify-center shrink-0 rounded-lg"
+        className="relative flex items-center justify-center shrink-0 rounded-none"
         style={{
           width: compact ? '22px' : '28px',
           height: compact ? '22px' : '28px',
           background: node.isDirector ? 'rgba(245,158,11,0.18)' : 'rgba(255,255,255,0.05)',
           border: node.isDirector
-            ? '1px solid rgba(245,158,11,0.35)'
-            : '1px solid rgba(255,255,255,0.09)',
+            ? '2px solid #27150a'
+            : '2px solid #27272a',
         }}
       >
         <IconComponent
@@ -266,10 +264,10 @@ function TopologyNode({
 
         {/* Status Dot / Ring Indicator */}
         <span
-          className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0b0f19]"
+          className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-none border-2 border-[#0b0f19]"
           style={{
             background: theme.dot,
-            boxShadow: isActive ? `0 0 6px ${theme.dot}` : 'none',
+            boxShadow: 'none',
           }}
         />
       </div>
@@ -310,20 +308,17 @@ function injectStyles() {
     .topology-edge-active {
       animation: topology-dash-flow 1.2s linear infinite;
     }
-    @keyframes topology-pulse-ring {
-      0% { transform: scale(1); opacity: 0.6; }
-      70% { transform: scale(1.35); opacity: 0; }
-      100% { transform: scale(1.35); opacity: 0; }
+    @keyframes brutal-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
     }
     .topology-pulse {
-      animation: topology-pulse-ring 2s ease-out infinite;
-    }
-    @keyframes topology-node-glow {
-      0%, 100% { box-shadow: 0 0 12px var(--glow-color-soft), inset 0 1px 1px rgba(255,255,255,0.1); }
-      50% { box-shadow: 0 0 20px var(--glow-color-bright), inset 0 1px 1px rgba(255,255,255,0.2); }
+      animation: brutal-blink 1s ease-in-out infinite;
     }
     .topology-node-active-glow {
-      animation: topology-node-glow 2s ease-in-out infinite;
+      animation: none;
+      border-color: var(--accent-primary) !important;
+      box-shadow: 4px 4px 0px 0px var(--accent-primary) !important;
     }
   `;
   document.head.appendChild(style);
@@ -612,12 +607,12 @@ export default function SwarmTopologyGraph({
   if (nodes.length === 0) {
     return (
       <div
-        className={`flex items-center justify-center rounded-xl border text-xs ${className}`}
-        style={{
-          borderColor: 'var(--border-subtle)',
-          color: 'var(--text-muted)',
-          height: compact ? '80px' : '120px',
-        }}
+      className={`flex items-center justify-center border text-xs ${className}`}
+      style={{
+        borderColor: 'var(--border-subtle)',
+        color: 'var(--text-muted)',
+        height: compact ? '80px' : '120px',
+      }}
       >
         No topology data available
       </div>
@@ -626,10 +621,10 @@ export default function SwarmTopologyGraph({
 
   return (
     <div
-      className={`w-full overflow-hidden rounded-2xl border ${className}`}
+      className={`w-full overflow-hidden border ${className}`}
       style={{
         borderColor: 'var(--border-subtle)',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))',
+        background: 'var(--chrome-panel-fill)',
       }}
     >
       {/* Header */}
@@ -668,7 +663,7 @@ export default function SwarmTopologyGraph({
           minHeight: compact ? '160px' : '280px',
           background: compact
             ? 'var(--surface-muted)'
-            : 'radial-gradient(circle at 20% 30%, rgba(56,189,248,0.06), transparent 35%), radial-gradient(circle at 80% 70%, rgba(34,197,94,0.06), transparent 35%), var(--surface-muted)',
+            : 'var(--surface-muted)',
           cursor: dragState ? 'grabbing' : 'default',
         }}
         onClick={() => {
@@ -735,9 +730,12 @@ export default function SwarmTopologyGraph({
             <div className="flex items-center justify-between gap-4 animate-fadeIn">
               <div className="flex items-center gap-3 min-w-0">
                 <div
-                  className="flex items-center justify-center rounded-lg p-2 bg-white/5 border border-white/10 shrink-0"
+                  className="flex items-center justify-center rounded-lg p-2 shrink-0"
                   style={{
                     color: selectedNodeObj.isDirector ? '#fbbf24' : 'var(--text-secondary)',
+                    border: '2px solid #27272a',
+                    background: '#141416',
+                    boxShadow: '3px 3px 0px 0px #27272a',
                   }}
                 >
                   <SelectedIconComponent className="w-5 h-5" />
@@ -748,15 +746,15 @@ export default function SwarmTopologyGraph({
                       {selectedNodeObj.label}
                     </span>
                     <span
-                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-medium"
+                      className="inline-flex items-center rounded-none px-2 py-0.5 text-[9px] font-medium border-2"
                       style={{
-                        background: selectedNodeTheme.bg,
+                        background: '#141416',
                         color: selectedNodeTheme.color,
-                        border: `1px solid ${selectedNodeTheme.dot}22`,
+                        borderColor: selectedNodeTheme.dot,
                       }}
                     >
                       <span
-                        className="mr-1 h-1 w-1 rounded-full animate-pulse"
+                        className="mr-1 h-1 w-1 rounded-none"
                         style={{ background: selectedNodeTheme.dot }}
                       />
                       {formatToken(selectedNodeObj.status)}

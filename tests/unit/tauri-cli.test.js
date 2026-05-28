@@ -124,6 +124,12 @@ describe('tauri cli wrapper', () => {
     ]);
   });
 
+  test('buildDevReadyProbeUrl targets a stable JSON readiness route', () => {
+    expect(api.buildDevReadyProbeUrl('http://localhost:3100')).toBe(
+      'http://localhost:3100/api/agenthub/config'
+    );
+  });
+
   test('resolveTauriCliArgs keeps dev args untouched when dev server is not ready', () => {
     const args = api.resolveTauriCliArgs({
       args: ['dev'],
@@ -155,7 +161,7 @@ describe('tauri cli wrapper', () => {
       [
         '-e',
         expect.stringContaining('const target = process.argv[1];'),
-        'http://localhost:3100',
+        'http://localhost:3100/api/agenthub/config',
       ],
       expect.objectContaining({ stdio: 'ignore' })
     );

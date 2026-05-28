@@ -19,6 +19,12 @@ const TONE_STYLES = {
     border: 'color-mix(in srgb, var(--warning) 25%, transparent)',
     bg: 'color-mix(in srgb, var(--warning) 10%, transparent)',
   },
+  danger: {
+    dot: 'var(--danger)',
+    text: 'var(--danger)',
+    border: 'color-mix(in srgb, var(--danger) 25%, transparent)',
+    bg: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+  },
   neutral: {
     dot: 'var(--text-muted)',
     text: 'var(--text-muted)',
@@ -35,7 +41,13 @@ export default function StatusSignal({
 }) {
   const style = TONE_STYLES[tone] || TONE_STYLES.neutral;
   const dotClass =
-    animation === 'pulse' ? 'animate-pulse' : animation === 'ping' ? 'animate-ping' : '';
+    animation === 'pulse'
+      ? 'animate-pulse'
+      : animation === 'ping'
+        ? 'animate-ping'
+        : animation === 'blink'
+          ? 'status-signal-blink'
+          : '';
 
   if (compact && !label) {
     return (

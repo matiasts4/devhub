@@ -1470,6 +1470,55 @@ describe('GET /api/agenthub/operations/health', () => {
     });
   });
 
+  test('terminates one swarm launch locally and returns refreshed control-room input', async () => {
+    const terminateSwarmLaunch = jest.fn().mockResolvedValue({
+      launchId: 'launch-abc',
+      terminated: true,
+    });
+    const response = await require('../../../src/app/api/agenthub/operations/health/route').POST(
+      new Request('http://localhost/api/agenthub/operations/health?project_id=proj-1', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'terminate_swarm_local',
+          project_id: 'proj-1',
+          launch_id: 'launch-abc',
+        }),
+      }),
+      undefined,
+      {
+        terminateSwarmLaunch,
+        getProcessStatus: async () => ({ running: true, healthy: true, pid: 1, port: 4154 }),
+        getQueueStatus: () => ({ length: 0, items: [] }),
+        getActiveAgentCount: () => 0,
+        getMcpStatus: async () => ({ servers: [], note: 'cached' }),
+        getSessionsHealth: async () => ({
+          active_sessions: [],
+          stale_sessions: [],
+          aborted_count: 0,
+          live_check_available: true,
+          checked_at: '2026-05-22T10:00:00.000Z',
+        }),
+        getTelegramStatus: async () => ({
+          bot_connected: true,
+          active_chats: 0,
+          recent_errors: 0,
+          last_activity: '2026-05-22T10:00:00.000Z',
+        }),
+        getRuntimeDiagnostics: async () => null,
+        getExecutionQueue: async () => ({ total: 0, queue: [] }),
+        getMissionSnapshot: async () => null,
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(terminateSwarmLaunch).toHaveBeenCalledWith('launch-abc', expect.any(Object));
+    expect(payload.terminate_result).toEqual({ launchId: 'launch-abc', terminated: true });
+    expect(payload.control_room_snapshot_input).toEqual(
+      expect.objectContaining({ director_queue: expect.any(Object) })
+    );
+  });
+
   test('treats active reviewers as ineligible and keeps handoff disabled without claiming', async () => {
     const getMissionSnapshot = jest.fn().mockResolvedValue({
       participants: [
@@ -1934,6 +1983,8 @@ describe('GET /api/agenthub/operations/health', () => {
           swarmTypeId: 'delivery-swarm',
           teamId: 'feature-delivery-team',
           providerId: 'github-copilot/gpt-5.4-mini',
+          launchStrategy: 'director_first',
+          bootstrapMode: 'engram_first',
           workspacePath: '/workspace/devhub',
           rolePrograms: {
             director: 'codex',
@@ -1956,14 +2007,20 @@ describe('GET /api/agenthub/operations/health', () => {
         launch_trace: expect.objectContaining({
           traceType: 'swarm_launch',
           traceSessionId: expect.stringContaining('director-session'),
+          launchStrategy: 'director_first',
+          bootstrapMode: 'engram_first',
           runtimeRequestCount: 5,
           failedRoleCount: 0,
+          phaseCount: 4,
+          memorySnapshotCount: 4,
           durationMs: expect.any(Number),
         }),
         runtime_requests: expect.arrayContaining([
           expect.objectContaining({
             selectedAgent: 'codex',
             taskId: expect.stringContaining('director'),
+            launchPhase: 'bootstrap',
+            startAfterMs: 0,
             command: expect.stringContaining(
               '/home/matias/.nvm/versions/node/v24.14.0/bin/codex exec --sandbox workspace-write'
             ),
@@ -1977,21 +2034,29 @@ describe('GET /api/agenthub/operations/health', () => {
           expect.objectContaining({
             selectedAgent: 'hermes',
             taskId: expect.stringContaining('coder'),
+            launchPhase: 'fanout',
+            startAfterMs: 4000,
             command: expect.stringContaining('/home/matias/.local/bin/hermes chat -q'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('auditor'),
+            launchPhase: 'fanout',
+            startAfterMs: 4000,
             command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('devops'),
+            launchPhase: 'fanout',
+            startAfterMs: 4000,
             command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('architect'),
+            launchPhase: 'fanout',
+            startAfterMs: 4000,
             command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
         ]),
@@ -2000,13 +2065,13 @@ describe('GET /api/agenthub/operations/health', () => {
     expect(payload.control_room_snapshot_input).toEqual(
       expect.objectContaining({
         supervisor: expect.objectContaining({
-          supervisor_state: 'lease_active',
-          active_agents: 5,
+          supervisor_state: 'dispatch_pending',
+          active_agents: 0,
           authority: 'authoritative',
           freshness: 'current',
         }),
-        workspaces: expect.arrayContaining([expect.objectContaining({ status: 'ready' })]),
-        runs: expect.arrayContaining([expect.objectContaining({ status: 'running' })]),
+        workspaces: expect.arrayContaining([expect.objectContaining({ status: 'provisioning' })]),
+        runs: expect.arrayContaining([expect.objectContaining({ status: 'planned' })]),
         artifacts: [],
         evidence_timeline: expect.arrayContaining([
           expect.objectContaining({ kind: 'mission_message' }),
@@ -2054,7 +2119,11 @@ describe('GET /api/agenthub/operations/health', () => {
     );
     expect(builderSession?.opencode_session_id).toBeNull();
     expect(directorPresence).toEqual(
-      expect.objectContaining({ presence_state: 'busy', runtime_surface: 'swarm-control-launch' })
+      expect.objectContaining({
+        presence_state: 'waiting',
+        runtime_surface: 'swarm-control-launch',
+        status_summary: expect.stringContaining('esperando primer heartbeat'),
+      })
     );
 
     const launchTrace = db
@@ -2073,16 +2142,37 @@ describe('GET /api/agenthub/operations/health', () => {
         launchId: payload.launch_result.launchId,
         missionId: payload.launch_result.mission_id,
         directorSessionId: directorSession.id,
+        launchStrategy: 'director_first',
+        bootstrapMode: 'engram_first',
         runtimeRequestCount: 5,
+        phaseCount: 4,
+        memorySnapshotCount: 4,
       })
+    );
+    expect(traceMetadata.phaseEvents).toEqual([
+      expect.objectContaining({ phase: 'bootstrap_start' }),
+      expect.objectContaining({ phase: 'bootstrap_complete' }),
+      expect.objectContaining({ phase: 'fanout_start' }),
+      expect.objectContaining({ phase: 'fanout_complete' }),
+    ]);
+    expect(traceMetadata.memorySnapshots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ phase: 'bootstrap_start', pid: expect.any(Number) }),
+        expect.objectContaining({ phase: 'bootstrap_complete', pid: expect.any(Number) }),
+        expect.objectContaining({ phase: 'fanout_start', pid: expect.any(Number) }),
+        expect.objectContaining({ phase: 'fanout_complete', pid: expect.any(Number) }),
+      ])
     );
     expect(traceMetadata.runtimeRequests).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           roleKey: 'director',
+          launchPhase: 'bootstrap',
+          startAfterMs: 0,
           sessionId: directorSession.id,
           commandPreview: expect.any(String),
         }),
+        expect.objectContaining({ roleKey: 'coder', launchPhase: 'fanout', startAfterMs: 4000 }),
       ])
     );
     expect(traceMetadata.runtimeRequests[0].commandPreview).not.toContain('DEVHUB_AGENT_TOKEN');

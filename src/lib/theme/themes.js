@@ -1,4 +1,6 @@
 export const THEME_STORAGE_KEY = 'devhub:theme';
+export const MORPHOLOGY_STORAGE_KEY = 'devhub:morphology';
+export const ACCENT_STORAGE_KEY = 'devhub:accent';
 export const APP_ZOOM_STORAGE_KEY = 'devhub:zoom';
 
 export function getStoredZoom() {
@@ -34,6 +36,27 @@ export const THEMES = {
   TOKYO_NIGHT: 'tokyo-night',
   MONOKAI: 'monokai',
   SYNTHWAVE: 'synthwave',
+  BRUTALIST_STAGE: 'brutalist-stage',
+};
+
+export const MORPHOLOGIES = {
+  DEFAULT: 'default',
+  BRUTALIST_STAGE: 'brutalist-stage',
+};
+
+export const ACCENTS = {
+  THEME: 'theme',
+  AMBER: 'amber',
+  MINT: 'mint',
+  VIOLET: 'violet',
+  ORANGE: 'orange',
+  ROSE: 'rose',
+  CYAN: 'cyan',
+  BLUE: 'blue',
+  RED: 'red',
+  WHITE: 'white',
+  LIME: 'lime',
+  ORANGE_LIGHT: 'orange-light',
 };
 
 export const THEME_OPTIONS = [
@@ -85,6 +108,100 @@ export const THEME_OPTIONS = [
     description: 'Retro futurista con neones retro.',
     accent: '#FE4450',
   },
+  {
+    id: THEMES.BRUTALIST_STAGE,
+    label: 'Brutalist Stage',
+    description: 'Negro plano con acento amarillo. Bordes duros, sin suavidad.',
+    accent: '#E3B341',
+  },
+];
+
+export const MORPHOLOGY_OPTIONS = [
+  {
+    id: MORPHOLOGIES.DEFAULT,
+    label: 'Default',
+    description: 'Current shared chrome with neutral shell geometry.',
+  },
+  {
+    id: MORPHOLOGIES.BRUTALIST_STAGE,
+    label: 'Brutalist Stage',
+    description: 'Sharper borders, flatter surfaces, stage-like shell chrome.',
+  },
+];
+
+export const ACCENT_OPTIONS = [
+  {
+    id: ACCENTS.THEME,
+    label: 'Theme sync',
+    description: 'Follow the active theme accent automatically.',
+    primary: null,
+  },
+  {
+    id: ACCENTS.AMBER,
+    label: 'Signal Amber',
+    description: 'Warm caution-strip accent from the brutalist preview.',
+    primary: '#E3B341',
+  },
+  {
+    id: ACCENTS.MINT,
+    label: 'Mint Grid',
+    description: 'Sharper operational green for online and queue states.',
+    primary: '#3FB950',
+  },
+  {
+    id: ACCENTS.VIOLET,
+    label: 'Violet Stack',
+    description: 'Cold violet signal for system-heavy screens.',
+    primary: '#D2A8FF',
+  },
+  {
+    id: ACCENTS.ORANGE,
+    label: 'Burnt Orange',
+    description: 'Hot orange slab close to the preview rail controls.',
+    primary: '#F97316',
+  },
+  {
+    id: ACCENTS.ROSE,
+    label: 'Rose Pulse',
+    description: 'High-contrast rose for alert and live states.',
+    primary: '#F778BA',
+  },
+  {
+    id: ACCENTS.CYAN,
+    label: 'Cyan Teal',
+    description: 'Bright cyan-teal for futuristic and tech-forward screens.',
+    primary: '#22D3EE',
+  },
+  {
+    id: ACCENTS.BLUE,
+    label: 'Core Blue',
+    description: 'Trustworthy blue for dashboards and analytics.',
+    primary: '#60A5FA',
+  },
+  {
+    id: ACCENTS.RED,
+    label: 'Alert Red',
+    description: 'High-visibility red for errors and critical states.',
+    primary: '#F87171',
+  },
+  {
+    id: ACCENTS.WHITE,
+    label: 'Off-White',
+    description: 'Subtle light gray for minimal or high-contrast themes.',
+    primary: '#E5E7EB',
+  },
+  {
+    id: ACCENTS.LIME,
+    label: 'Lime Fresh',
+    description: 'Energetic lime green for success and completion.',
+    primary: '#A3E635',
+  },
+  {
+    id: ACCENTS.ORANGE_LIGHT,
+    label: 'Soft Orange',
+    description: 'Milder orange for secondary accents.',
+    primary: '#FB923C',
+  },
 ];
 
 export function normalizeTheme(value) {
@@ -92,9 +209,29 @@ export function normalizeTheme(value) {
   return all.includes(value) ? value : THEMES.DEEP_SEA;
 }
 
+export function normalizeMorphology(value) {
+  const all = Object.values(MORPHOLOGIES);
+  return all.includes(value) ? value : MORPHOLOGIES.DEFAULT;
+}
+
+export function normalizeAccent(value) {
+  const all = Object.values(ACCENTS);
+  return all.includes(value) ? value : ACCENTS.THEME;
+}
+
 export function getStoredTheme() {
   if (typeof window === 'undefined') return THEMES.DEEP_SEA;
   return normalizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+}
+
+export function getStoredMorphology() {
+  if (typeof window === 'undefined') return MORPHOLOGIES.DEFAULT;
+  return normalizeMorphology(window.localStorage.getItem(MORPHOLOGY_STORAGE_KEY));
+}
+
+export function getStoredAccent() {
+  if (typeof window === 'undefined') return ACCENTS.THEME;
+  return normalizeAccent(window.localStorage.getItem(ACCENT_STORAGE_KEY));
 }
 
 export function applyThemeToDocument(theme) {
@@ -102,14 +239,48 @@ export function applyThemeToDocument(theme) {
   document.documentElement.setAttribute('data-theme', normalizeTheme(theme));
 }
 
+export function applyMorphologyToDocument(morphology) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-morphology', normalizeMorphology(morphology));
+}
+
+export function applyAccentToDocument(accent) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-accent', normalizeAccent(accent));
+}
+
 export function setStoredTheme(theme) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(THEME_STORAGE_KEY, normalizeTheme(theme));
+}
+
+export function setStoredMorphology(morphology) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(MORPHOLOGY_STORAGE_KEY, normalizeMorphology(morphology));
+}
+
+export function setStoredAccent(accent) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(ACCENT_STORAGE_KEY, normalizeAccent(accent));
 }
 
 export function setTheme(theme) {
   const normalized = normalizeTheme(theme);
   applyThemeToDocument(normalized);
   setStoredTheme(normalized);
+  return normalized;
+}
+
+export function setMorphology(morphology) {
+  const normalized = normalizeMorphology(morphology);
+  applyMorphologyToDocument(normalized);
+  setStoredMorphology(normalized);
+  return normalized;
+}
+
+export function setAccent(accent) {
+  const normalized = normalizeAccent(accent);
+  applyAccentToDocument(normalized);
+  setStoredAccent(normalized);
   return normalized;
 }

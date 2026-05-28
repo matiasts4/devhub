@@ -34,8 +34,25 @@ import SwarmPrimarySurface from '@/components/control-room/SwarmPrimarySurface';
 import LaunchpadTemplatesPanel from '@/components/control-room/LaunchpadTemplatesPanel';
 import SwarmTypeCatalogPanel from '@/components/control-room/SwarmTypeCatalogPanel';
 import SwarmLaunchWizardModal from '@/components/control-room/SwarmLaunchWizardModal';
+import { ChromeSurface } from '@/components/ui/chrome-surface';
+import { Button } from '@/components/ui/button';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import ActiveProcessesPanel from '@/components/control-room/ActiveProcessesPanel';
+import StatusSignal from '@/components/ui/StatusSignal';
+import {
+  dataTileStyle,
+  filterBarStyle,
+  inputStyle,
+  panelStyle,
+  pillStyle,
+  sectionSurfaceStyle,
+} from '@/chrome/morphology';
+import {
+  getWorkspaceBreadcrumbStyle,
+  getWorkspacePageContentStyle,
+  getWorkspacePageHeaderStyle,
+  getWorkspacePageShellStyle,
+} from './workspacePageChrome';
 
 void [
   ControlRoomHeader,
@@ -88,6 +105,27 @@ function writeCachedSwarmSnapshot(projectId, snapshotInput) {
   }
 }
 
+function scheduleSwarmRuntimeRequests(requests = [], timersRef = null) {
+  requests.forEach((request) => {
+    const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
+    if (delayMs > 0 && timersRef?.current) {
+      const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
+      const timerId = window.setTimeout(() => {
+        timersRef.current.delete(requestKey);
+        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
+      }, delayMs);
+      timersRef.current.set(requestKey, timerId);
+      return;
+    }
+
+    window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
+  });
+}
+
+export function getSwarmControlLayoutButtonVariant(layout, targetLayout) {
+  return layout === targetLayout ? 'devhubGlass' : 'devhubGhost';
+}
+
 export default function SwarmControl({ snapshotInput = null }) {
   const { project } = useOutletContext() || {};
   const [fetchedInput, setFetchedInput] = useState(null);
@@ -110,6 +148,15 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [launchResult, setLaunchResult] = useState(null);
   const [launchSubmitState, setLaunchSubmitState] = useState({ submitting: false, error: null });
   const eventSourceRef = useRef(null);
+  const scheduledLaunchTimersRef = useRef(new Map());
+
+  useEffect(
+    () => () => {
+      scheduledLaunchTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      scheduledLaunchTimersRef.current.clear();
+    },
+    []
+  );
 
   const loadSnapshot = useCallback(async () => {
     if (snapshotInput) return;
@@ -375,12 +422,14 @@ export default function SwarmControl({ snapshotInput = null }) {
           launchLabel: payload.launch_result?.launchLabel || launchPreview?.launchLabel,
           summaryLines: payload.launch_result?.summaryLines || launchPreview?.summaryLines,
         },
+        launchTrace: payload.launch_result?.launch_trace || null,
         runtimeRequests: payload.launch_result?.runtime_requests || [],
       });
 
-      (payload.launch_result?.runtime_requests || []).forEach((request) => {
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      });
+      scheduleSwarmRuntimeRequests(
+        payload.launch_result?.runtime_requests || [],
+        scheduledLaunchTimersRef
+      );
 
       setLaunchWizardOpen(false);
       setLaunchWizardStep('launch');
@@ -509,11 +558,11 @@ export default function SwarmControl({ snapshotInput = null }) {
   return (
     <div
       className="h-full flex flex-col core-page-shell"
-      style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
+      style={getWorkspacePageShellStyle()}
     >
       <div
         className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
-        style={{ borderColor: 'var(--border-subtle)' }}
+        style={getWorkspacePageHeaderStyle()}
       >
         <WorkspacePageTitle
           icon={Bot}
@@ -521,17 +570,27 @@ export default function SwarmControl({ snapshotInput = null }) {
           projectName={project?.name || header.workspace_label}
         />
 
-        <span
-          className="text-xs px-2 py-0.5 rounded-full"
-          style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
+        <ChromeSurface
+          as="span"
+          surface="pill"
+          tone="accent"
+          className="px-2 py-0.5 text-xs"
+          style={getWorkspaceBreadcrumbStyle()}
         >
-          Supervisor {String(header.supervisor_state || 'unknown').toUpperCase()}
-        </span>
+          <span className="inline-flex items-center gap-2">
+            <StatusSignal
+              tone={header.supervisor_state === 'active' ? 'success' : 'neutral'}
+              animation={header.supervisor_state === 'active' ? 'blink' : 'none'}
+              compact
+            />
+            Supervisor {String(header.supervisor_state || 'unknown').toUpperCase()}
+          </span>
+        </ChromeSurface>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="p-4 md:p-6">
-          <div className="mx-auto flex max-w-[1400px] flex-col gap-5">
+        <div style={getWorkspacePageContentStyle()}>
+          <div className="flex flex-col gap-5">
             <ControlRoomHeader
               header={header}
               loading={loading}
@@ -543,60 +602,70 @@ export default function SwarmControl({ snapshotInput = null }) {
 
             {launchResult ? (
               <section aria-label="Launch summary local">
-                <div
-                  className="rounded-2xl border p-4"
-                  style={{
-                    background:
-                      'linear-gradient(180deg, rgba(255,176,64,0.14) 0%, rgba(255,176,64,0.04) 100%)',
-                    borderColor: 'rgba(255,176,64,0.22)',
-                  }}
-                >
+                <ChromeSurface asChild surface="panel" emphasized>
+                  <div className="p-4" style={sectionSurfaceStyle({ emphasized: true })}>
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
                       <p
-                        className="text-xs font-semibold uppercase tracking-[0.18em]"
-                        style={{ color: 'var(--text-muted)' }}
+                        className="typography-label"
                       >
                         Launch snapshot durable
                       </p>
-                      <h2 className="mt-2 text-lg font-semibold">
+                      <h2 className="mt-2 typography-card-title">
                         {launchResult.summary?.launchLabel}
                       </h2>
                       <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                         {launchResult.summary?.summaryLines?.[4]}
                       </p>
                     </div>
-                    <button
+                    <Button
                       type="button"
+                      variant="devhubGlass"
+                      size="toolbar"
                       onClick={() => openLaunchWizard({ step: 'launch' })}
-                      className="rounded-xl border px-4 py-2 text-sm font-medium"
-                      style={{
-                        borderColor: 'rgba(255,176,64,0.24)',
-                        background: 'rgba(255,176,64,0.12)',
-                      }}
                     >
                       Reabrir summary
-                    </button>
+                    </Button>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
                     {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
-                      <div
-                        key={line}
-                        className="rounded-xl border px-3 py-3 text-sm"
-                        style={{ borderColor: 'var(--border-subtle)' }}
-                      >
-                        {line}
-                      </div>
+                      <ChromeSurface key={line} asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          {line}
+                        </div>
+                      </ChromeSurface>
                     ))}
                   </div>
 
+                  {launchResult.launchTrace ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <ChromeSurface asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          Strategy · {launchResult.launchTrace.launchStrategy || 'director_first'}
+                        </div>
+                      </ChromeSurface>
+                      <ChromeSurface asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          Bootstrap · {launchResult.launchTrace.bootstrapMode || 'engram_first'}
+                        </div>
+                      </ChromeSurface>
+                      <ChromeSurface asChild surface="pill">
+                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                          Phases · {launchResult.launchTrace.phaseCount || 0} · Memory ·{' '}
+                          {launchResult.launchTrace.memorySnapshotCount || 0}
+                        </div>
+                      </ChromeSurface>
+                    </div>
+                  ) : null}
+
                   {launchSubmitState.error ? (
-                    <p className="mt-3 text-sm" style={{ color: '#fca5a5' }}>
+                    <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>
                       {launchSubmitState.error}
                     </p>
                   ) : null}
-                </div>
+                  </div>
+                </ChromeSurface>
               </section>
             ) : null}
 
@@ -626,56 +695,46 @@ export default function SwarmControl({ snapshotInput = null }) {
               </section>
             ) : null}
 
-            <section
-              className="rounded-xl border p-4"
-              style={{
-                background: 'var(--surface-muted)',
-                borderColor: 'var(--border-subtle)',
-              }}
-              aria-label="Controles operativos"
-            >
+            <ChromeSurface asChild surface="panel">
+              <section
+                className="p-4"
+                style={filterBarStyle()}
+                aria-label="Controles operativos"
+              >
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                <label className="flex flex-1 flex-col gap-2 text-xs font-medium">
-                  <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
-                  <input
-                    aria-label="Filtrar registros"
-                    className="rounded-lg border px-3 py-2 outline-none"
-                    style={{
-                      background: 'var(--surface-app)',
-                      borderColor: 'var(--border-subtle)',
-                      color: 'var(--text-primary)',
-                    }}
-                    placeholder="agente, workspace, run, evidencia…"
-                    value={filterText}
-                    onChange={(event) => setFilterText(event.target.value)}
-                  />
-                </label>
+                <div className="flex-1" style={panelStyle()}>
+                  <label className="flex flex-col gap-2 p-3 text-xs font-medium">
+                    <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
+                    <input
+                      aria-label="Filtrar registros"
+                      className="w-full"
+                      style={inputStyle()}
+                      placeholder="agente, workspace, run, evidencia…"
+                      value={filterText}
+                      onChange={(event) => setFilterText(event.target.value)}
+                    />
+                  </label>
+                </div>
 
-                <div className="flex items-center gap-2 text-xs">
-                  <button
+                <div className="flex items-center gap-2 p-2" style={panelStyle()}>
+                  <Button
                     type="button"
+                    variant={getSwarmControlLayoutButtonVariant(layout, 'grid')}
+                    size="toolbar"
                     onClick={() => setLayout('grid')}
                     aria-pressed={layout === 'grid'}
-                    className="rounded-lg border px-3 py-2"
-                    style={{
-                      background: layout === 'grid' ? 'var(--surface-elevated)' : 'transparent',
-                      borderColor: 'var(--border-subtle)',
-                    }}
                   >
                     Grilla
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant={getSwarmControlLayoutButtonVariant(layout, 'stack')}
+                    size="toolbar"
                     onClick={() => setLayout('stack')}
                     aria-pressed={layout === 'stack'}
-                    className="rounded-lg border px-3 py-2"
-                    style={{
-                      background: layout === 'stack' ? 'var(--surface-elevated)' : 'transparent',
-                      borderColor: 'var(--border-subtle)',
-                    }}
                   >
                     Pila
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -683,43 +742,28 @@ export default function SwarmControl({ snapshotInput = null }) {
                 className="mt-3 flex flex-wrap gap-2 text-xs"
                 style={{ color: 'var(--text-muted)' }}
               >
-                <span
-                  className="rounded-full border px-2.5 py-1"
-                  style={{ borderColor: 'var(--border-subtle)' }}
-                >
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
                   {filteredAgents.length} agentes
-                </span>
-                <span
-                  className="rounded-full border px-2.5 py-1"
-                  style={{ borderColor: 'var(--border-subtle)' }}
-                >
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
                   {filteredWorkspaces.length} workspaces
-                </span>
-                <span
-                  className="rounded-full border px-2.5 py-1"
-                  style={{ borderColor: 'var(--border-subtle)' }}
-                >
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
                   {filteredRuns.length} runs
-                </span>
-                <span
-                  className="rounded-full border px-2.5 py-1"
-                  style={{ borderColor: 'var(--border-subtle)' }}
-                >
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
                   {filteredApprovals.length} aprobaciones
-                </span>
-                <span
-                  className="rounded-full border px-2.5 py-1"
-                  style={{ borderColor: 'var(--border-subtle)' }}
-                >
+                </ChromeSurface>
+                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
                   {filteredErrors.length} errores
-                </span>
+                </ChromeSurface>
               </div>
-            </section>
+              </section>
+            </ChromeSurface>
 
             <section className="space-y-3" aria-label="Operaciones activas">
               <p
-                className="text-xs font-semibold uppercase tracking-[0.18em]"
-                style={{ color: 'var(--text-muted)' }}
+                className="typography-section-label"
               >
                 Operaciones activas
               </p>
@@ -749,8 +793,7 @@ export default function SwarmControl({ snapshotInput = null }) {
 
             <section className="space-y-3" aria-label="Mision y evidencia">
               <p
-                className="text-xs font-semibold uppercase tracking-[0.18em]"
-                style={{ color: 'var(--text-muted)' }}
+                className="typography-section-label"
               >
                 Mision y evidencia
               </p>
@@ -767,8 +810,7 @@ export default function SwarmControl({ snapshotInput = null }) {
 
             <section className="space-y-3" aria-label="Inventario operativo">
               <p
-                className="text-xs font-semibold uppercase tracking-[0.18em]"
-                style={{ color: 'var(--text-muted)' }}
+                className="typography-section-label"
               >
                 Inventario operativo
               </p>

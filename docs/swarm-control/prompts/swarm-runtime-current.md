@@ -59,9 +59,21 @@ You are the DIRECTOR for the visible tmux swarm already running for this mission
 ## Verified current behavior summary
 
 - Swarm coordination is centered on the visible tmux roster.
+- Visible swarm roles now use dedicated role profiles instead of collapsing everything into generic worker identities.
 - `delegate`, `delegation_list`, and `delegation_read` are intentionally not part of the default director workflow.
-- Hidden/shadow workers are disabled by default at the prompt level.
+- Hidden/shadow workers are blocked at config level for visible swarm workers via `permission.task: "deny"`.
 - Runtime prompt/config changes do not hot-reload; restart OpenCode after changing the global files.
+
+## Verified visible swarm profiles
+
+| Role | Agent profile | Default model | Hidden task spawning |
+| --- | --- | --- | --- |
+| Director | `swarm-director` | `opencode-go/qwen3.6-plus` | denied |
+| Coder | `swarm-coder` | `opencode-go/deepseek-v4-flash` | denied |
+| DevOps | `swarm-devops` | `opencode-go/deepseek-v4-flash` | denied |
+| Architect | `swarm-architect` | `opencode/claude-sonnet-4.6` | denied |
+| Auditor | `swarm-auditor` | `opencode-go/qwen3.6-plus` | denied |
+| QA | `swarm-qa` | `opencode-go/deepseek-v4-flash` | denied |
 
 ## Repo-side swarm behavior fixes
 
@@ -81,6 +93,9 @@ Only prompt path references verified directly from `~/.config/opencode/opencode.
 | `gentle-orchestrator` | `~/.config/opencode/prompts/swarm/swarm-director.md` |
 | `swarm-director`      | `~/.config/opencode/prompts/swarm/swarm-director.md` |
 | `swarm-coder`         | `~/.config/opencode/prompts/swarm/swarm-coder.md`    |
+| `swarm-devops`        | `~/.config/opencode/prompts/swarm/swarm-devops.md`   |
+| `swarm-architect`     | `~/.config/opencode/prompts/swarm/swarm-architect.md` |
+| `swarm-auditor`       | `~/.config/opencode/prompts/swarm/swarm-auditor.md`  |
 | `swarm-explorer`      | `~/.config/opencode/prompts/swarm/swarm-explorer.md` |
 | `swarm-qa`            | `~/.config/opencode/prompts/swarm/swarm-qa.md`       |
 | `swarm-reviewer`      | `~/.config/opencode/prompts/swarm/swarm-reviewer.md` |

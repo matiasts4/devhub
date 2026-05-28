@@ -628,160 +628,218 @@ describe('SwarmControl control room composition', () => {
 
   test('launches through the durable route and dispatches runtime requests after the wizard completes', async () => {
     const launchEvents = [];
+    const scheduledTimers = [];
     const handleLaunchEvent = (event) => launchEvents.push(event.detail);
-    window.addEventListener('devhub:run-agent', handleLaunchEvent);
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          control_room_snapshot_input: buildIdleLaunchpadInput(),
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          control_room_snapshot_input: buildControlRoomInput({
-            supervisor: {
-              ...buildControlRoomInput().supervisor,
-              supervisor_state: 'lease_active',
-              active_agents: 3,
-              queue_depth: 0,
-            },
-            mission_control: {
-              ...buildPreviewInput().mission_control,
-              mission: {
-                ...buildPreviewInput().mission_control.mission,
-                title: 'Lanzar Arranque limpio guiado',
-                status: 'active',
+    const originalSetTimeout = window.setTimeout.bind(window);
+    const originalClearTimeout = window.clearTimeout.bind(window);
+    const setTimeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+      if (!Number.isFinite(delay) || delay <= 0) {
+        return originalSetTimeout(callback, delay, ...args);
+      }
+
+      const timerId = scheduledTimers.length + 1;
+      scheduledTimers.push({ timerId, callback, delay, args });
+      return timerId;
+    });
+    const clearTimeoutSpy = jest.spyOn(window, 'clearTimeout').mockImplementation((timerId) => {
+      const timerIndex = scheduledTimers.findIndex((timer) => timer.timerId === timerId);
+      if (timerIndex >= 0) {
+        scheduledTimers.splice(timerIndex, 1);
+        return;
+      }
+      originalClearTimeout(timerId);
+    });
+    try {
+      window.addEventListener('devhub:run-agent', handleLaunchEvent);
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            control_room_snapshot_input: buildIdleLaunchpadInput(),
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            control_room_snapshot_input: buildControlRoomInput({
+              supervisor: {
+                ...buildControlRoomInput().supervisor,
+                supervisor_state: 'dispatch_pending',
+                active_agents: 0,
+                queue_depth: 0,
               },
+              mission_control: {
+                ...buildPreviewInput().mission_control,
+                mission: {
+                  ...buildPreviewInput().mission_control.mission,
+                  title: 'Lanzar Arranque limpio guiado',
+                  status: 'active',
+                },
+              },
+            }),
+            launch_result: {
+              launchId: 'launch-1',
+              launchLabel: 'Lanzar Arranque limpio guiado',
+              launch_trace: {
+                traceId: 'trace-launch-1',
+                traceType: 'swarm_launch',
+                traceSessionId: 'launch-1-director-session',
+                launchStrategy: 'director_first',
+                bootstrapMode: 'engram_first',
+                phaseCount: 4,
+                memorySnapshotCount: 4,
+              },
+              summaryLines: [
+                'Template team · Delivery',
+                'Arranque limpio guiado · Delivery swarm',
+                'Launchpad Scout Team · GPT-5.4 mini',
+              ],
+              runtime_requests: [
+                {
+                  taskId: 'launch-1-director',
+                  selectedAgent: 'codex',
+                  command:
+                    '/home/matias/.nvm/versions/node/v24.14.0/bin/codex exec --sandbox workspace-write "Director launch"',
+                  launchOrigin: 'swarm-control-launch',
+                  launchPhase: 'bootstrap',
+                  startAfterMs: 0,
+                  promptSummary: 'Director · Arranque limpio guiado',
+                  taskTitle: 'Lanzar Arranque limpio guiado · Director',
+                },
+                {
+                  taskId: 'launch-1-builder',
+                  selectedAgent: 'opencode',
+                  command:
+                    '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt "Builder launch"',
+                  launchOrigin: 'swarm-control-launch',
+                  launchPhase: 'fanout',
+                  startAfterMs: 4000,
+                  promptSummary: 'Builder · Arranque limpio guiado',
+                  taskTitle: 'Lanzar Arranque limpio guiado · Builder',
+                },
+              ],
             },
           }),
-          launch_result: {
-            launchId: 'launch-1',
-            launchLabel: 'Lanzar Arranque limpio guiado',
-            summaryLines: [
-              'Template team · Delivery',
-              'Arranque limpio guiado · Delivery swarm',
-              'Launchpad Scout Team · GPT-5.4 mini',
-            ],
-            runtime_requests: [
-              {
-                taskId: 'launch-1-director',
-                selectedAgent: 'codex',
-                command:
-                  '/home/matias/.nvm/versions/node/v24.14.0/bin/codex exec --sandbox workspace-write "Director launch"',
-                launchOrigin: 'swarm-control-launch',
-                promptSummary: 'Director · Arranque limpio guiado',
-                taskTitle: 'Lanzar Arranque limpio guiado · Director',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            control_room_snapshot_input: buildControlRoomInput({
+              supervisor: {
+                ...buildControlRoomInput().supervisor,
+                supervisor_state: 'dispatch_pending',
+                active_agents: 0,
+                queue_depth: 0,
               },
-              {
-                taskId: 'launch-1-builder',
-                selectedAgent: 'opencode',
-                command:
-                  '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt "Builder launch"',
-                launchOrigin: 'swarm-control-launch',
-                promptSummary: 'Builder · Arranque limpio guiado',
-                taskTitle: 'Lanzar Arranque limpio guiado · Builder',
+              mission_control: {
+                ...buildPreviewInput().mission_control,
+                mission: {
+                  ...buildPreviewInput().mission_control.mission,
+                  title: 'Lanzar Arranque limpio guiado',
+                  status: 'active',
+                },
               },
-            ],
-          },
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          control_room_snapshot_input: buildControlRoomInput({
-            supervisor: {
-              ...buildControlRoomInput().supervisor,
-              supervisor_state: 'lease_active',
-              active_agents: 3,
-              queue_depth: 0,
-            },
-            mission_control: {
-              ...buildPreviewInput().mission_control,
-              mission: {
-                ...buildPreviewInput().mission_control.mission,
-                title: 'Lanzar Arranque limpio guiado',
-                status: 'active',
-              },
-            },
+            }),
           }),
-        }),
-      });
+        });
 
-    const view = await renderSwarmControl();
-    const wizardTrigger = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Abrir wizard')
-    );
-
-    expect(wizardTrigger).not.toBeNull();
-    await click(wizardTrigger);
-
-    expect(document.body.textContent).toContain('Launch wizard');
-    expect(document.body.textContent).toContain('Template team');
-    expect(document.body.textContent).toContain('Team');
-    expect(document.body.textContent).toContain('Configure');
-    expect(document.body.textContent).toContain('Launch');
-
-    const nextButtons = () =>
-      Array.from(document.body.querySelectorAll('button')).filter((button) =>
-        button.textContent?.includes('Siguiente')
+      const view = await renderSwarmControl();
+      const wizardTrigger = Array.from(view.container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Abrir wizard')
       );
 
-    await click(nextButtons()[0]);
-    expect(document.body.textContent).toContain('Path operativo');
-    expect(document.body.textContent).toContain('Mission');
+      expect(wizardTrigger).not.toBeNull();
+      await click(wizardTrigger);
 
-    await click(nextButtons()[0]);
-    expect(document.body.textContent).toContain('Summary');
-    expect(document.body.textContent).toContain('Payload local');
-    expect(document.body.textContent).toContain('Topology preview');
+      expect(document.body.textContent).toContain('Launch wizard');
+      expect(document.body.textContent).toContain('Template team');
+      expect(document.body.textContent).toContain('Team');
+      expect(document.body.textContent).toContain('Configure');
+      expect(document.body.textContent).toContain('Launch');
 
-    const launchButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Lanzar swarm local')
-    );
-    expect(launchButton).not.toBeNull();
+      const nextButtons = () =>
+        Array.from(document.body.querySelectorAll('button')).filter((button) =>
+          button.textContent?.includes('Siguiente')
+        );
 
-    await click(launchButton);
+      await click(nextButtons()[0]);
+      expect(document.body.textContent).toContain('Path operativo');
+      expect(document.body.textContent).toContain('Mission');
 
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      2,
-      '/api/agenthub/operations/health',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-    );
+      await click(nextButtons()[0]);
+      expect(document.body.textContent).toContain('Summary');
+      expect(document.body.textContent).toContain('Payload local');
+      expect(document.body.textContent).toContain('Topology preview');
 
-    const launchPayload = JSON.parse(global.fetch.mock.calls[1][1].body);
-    expect(launchPayload).toEqual(
-      expect.objectContaining({
-        action: 'launch_swarm_local',
-        project_id: 'project-1',
-        draft: expect.objectContaining({
-          templateId: 'clean-slate',
-          workspacePath: '/workspace/devhub',
-        }),
-      })
-    );
-    expect(view.container.textContent).toContain('Launch snapshot durable');
-    expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
-    expect(view.container.textContent).toContain('Swarm activo');
-    expect(view.container.textContent).not.toContain('Lanzá un swarm nuevo');
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      3,
-      '/api/agenthub/operations/health?project_id=project-1',
-      { cache: 'no-store' }
-    );
-    expect(launchEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
-        expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
-      ])
-    );
+      const launchButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Lanzar swarm local')
+      );
+      expect(launchButton).not.toBeNull();
 
-    window.removeEventListener('devhub:run-agent', handleLaunchEvent);
+      await click(launchButton);
+
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/agenthub/operations/health',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      const launchPayload = JSON.parse(global.fetch.mock.calls[1][1].body);
+      expect(launchPayload).toEqual(
+        expect.objectContaining({
+          action: 'launch_swarm_local',
+          project_id: 'project-1',
+          draft: expect.objectContaining({
+            templateId: 'clean-slate',
+            workspacePath: '/workspace/devhub',
+          }),
+        })
+      );
+      expect(view.container.textContent).toContain('Launch snapshot durable');
+      expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+      expect(view.container.textContent).toContain('Swarm activo');
+      expect(view.container.textContent).toContain('Strategy · director_first');
+      expect(view.container.textContent).toContain('Bootstrap · engram_first');
+      expect(view.container.textContent).toContain('Phases · 4 · Memory · 4');
+      expect(view.container.textContent).toContain('0/');
+      expect(view.container.textContent).not.toContain('Lanzá un swarm nuevo');
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        3,
+        '/api/agenthub/operations/health?project_id=project-1',
+        { cache: 'no-store' }
+      );
+      expect(launchEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
+        ])
+      );
+      expect(launchEvents).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
+        ])
+      );
+
+      expect(scheduledTimers).toEqual([
+        expect.objectContaining({ delay: 4000 }),
+      ]);
+
+      scheduledTimers[0].callback(...scheduledTimers[0].args);
+
+      expect(launchEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
+          expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
+        ])
+      );
+    } finally {
+      window.removeEventListener('devhub:run-agent', handleLaunchEvent);
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
   });
 
   test('lets swarm type cards open the wizard in custom mode and keeps topology preview visible', async () => {
@@ -849,6 +907,33 @@ describe('SwarmControl control room composition', () => {
       fullText.indexOf('Kernel de misión')
     );
     expect(fullText).toContain('Timeline de evidencia');
+  });
+
+  test('toggles layout controls while keeping the same operational sections visible', async () => {
+    const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    const gridButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Grilla')
+    );
+    const stackButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Pila')
+    );
+
+    expect(gridButton).not.toBeNull();
+    expect(stackButton).not.toBeNull();
+    expect(gridButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(stackButton?.getAttribute('aria-pressed')).toBe('false');
+
+    await click(stackButton);
+
+    expect(gridButton?.getAttribute('aria-pressed')).toBe('false');
+    expect(stackButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(view.container.textContent).toContain('Aprobaciones y errores');
+    expect(view.container.textContent).toContain('Kernel de misión');
+
+    await click(gridButton);
+
+    expect(gridButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(stackButton?.getAttribute('aria-pressed')).toBe('false');
   });
 
   test('renders ordered director queue rows inside a bounded read-only panel', async () => {

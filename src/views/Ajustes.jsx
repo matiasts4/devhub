@@ -30,9 +30,21 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
-import { getStoredTheme, setTheme, THEMES, THEME_OPTIONS } from '@/lib/theme/themes';
+import {
+  ACCENT_OPTIONS,
+  getStoredAccent,
+  getStoredMorphology,
+  getStoredTheme,
+  MORPHOLOGY_OPTIONS,
+  setAccent,
+  setMorphology,
+  setTheme,
+  THEMES,
+  THEME_OPTIONS,
+} from '@/lib/theme/themes';
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
   DOCUMENTATION_POLICY_OPTIONS,
   PROJECT_TYPE_OPTIONS,
@@ -47,8 +59,18 @@ import {
   BarChart3,
   Palette as ProjectPalette,
 } from 'lucide-react';
+import { getWorkspaceBreadcrumbStyle, getWorkspacePageContentStyle } from './workspacePageChrome';
+import {
+  panelStyle,
+  pillStyle,
+  btnPrimaryStyle,
+  btnSecondaryStyle,
+  btnDangerStyle,
+  dangerBannerStyle,
+  inputStyle,
+} from '@/chrome/morphology';
 
-const ACCENT_COLORS = [
+const PROJECT_ACCENT_COLORS = [
   '#58A6FF',
   '#3FB950',
   '#F778BA',
@@ -129,7 +151,48 @@ const THEME_PREVIEW_BY_ID = {
     highlight: '#fe4450',
     dots: ['#ff6b6b', '#feca57', '#72f1b8'],
   },
+  [THEMES.BRUTALIST_STAGE]: {
+    body: '#0d0d0d',
+    panel: '#141414',
+    accent: '#e3b341',
+    border: '#333333',
+    line: '#333333',
+    highlight: '#e3b341',
+    dots: ['#e3b341', '#333333', '#0d0d0d'],
+  },
 };
+
+export function getSettingsShellStyle({ emphasized = false } = {}) {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized }),
+    background: emphasized
+      ? 'linear-gradient(180deg, var(--chrome-panel-fill-emphasis), var(--chrome-panel-fill))'
+      : 'var(--chrome-panel-fill)',
+    borderRadius: 0,
+  };
+}
+
+export function getSettingsControlStyle({ emphasized = false, tone = 'neutral' } = {}) {
+  return {
+    ...chromeSurfaceStyle({ surface: 'pill', emphasized, tone }),
+    background: emphasized ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-control-fill)',
+    borderRadius: 0,
+  };
+}
+
+export function getSettingsAccentOptionStyle(isActive, color) {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized: isActive, tone: isActive ? 'accent' : 'neutral' }),
+    background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
+    borderColor: isActive
+      ? 'color-mix(in srgb, var(--accent-primary) 55%, var(--chrome-border-color))'
+      : 'var(--chrome-border-color)',
+    boxShadow: isActive ? 'var(--chrome-shadow-panel)' : '6px 6px 0 rgba(1, 4, 9, 0.18)',
+    transform: isActive ? 'translate(-2px, -2px)' : 'translate(0, 0)',
+    borderRadius: 0,
+    '--settings-accent-preview': color ?? 'var(--accent-primary)',
+  };
+}
 
 /* ── Small reusable components ─────────────────────────────────────────── */
 
@@ -137,7 +200,7 @@ function Toggle({ checked, onChange }) {
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer"
+      className="relative w-11 h-6 flex items-center rounded-none transition-colors duration-200 focus:outline-none cursor-pointer"
       style={{
         background: checked
           ? 'var(--success)'
@@ -160,20 +223,18 @@ function ThemeOptionCard({ option, active, onClick }) {
     <button
       type="button"
       onClick={() => onClick(option.id)}
-      className={`w-full rounded-xl border p-2.5 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : 'hover:border-borders-strong'}`}
+      className={`w-full border p-2.5 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : 'hover:border-borders-strong'}`}
       style={{
+        ...getSettingsShellStyle({ emphasized: active }),
         borderColor: active
           ? 'color-mix(in srgb, var(--accent-primary) 45%, transparent)'
-          : 'var(--border-subtle)',
-        background: active
-          ? 'color-mix(in srgb, var(--surface-elevated) 92%, transparent)'
-          : 'var(--surface-card)',
-        boxShadow: active ? 'var(--shadow-soft)' : 'none',
+          : 'var(--chrome-border-color)',
       }}
     >
       <div
-        className="relative overflow-hidden rounded-lg border h-28"
+        className="relative overflow-hidden border h-28"
         style={{
+          borderRadius: 0,
           background: preview.body,
           borderColor: active
             ? 'color-mix(in srgb, var(--accent-primary) 35%, transparent)'
@@ -193,21 +254,21 @@ function ThemeOptionCard({ option, active, onClick }) {
               />
             ))}
           </div>
-          <span className="h-3.5 w-7 rounded" style={{ background: preview.highlight }} />
+          <span className="h-3.5 w-7" style={{ borderRadius: 0, background: preview.highlight }} />
         </div>
         <div className="p-2 h-[calc(100%-1.75rem)] grid grid-cols-[28%_1fr] gap-1.5">
           <div
-            className="rounded"
-            style={{ background: preview.panel, border: `1px solid ${preview.line}` }}
+            className="rounded-none"
+            style={{ background: preview.panel, border: `1px solid ${preview.line}`, borderRadius: 0 }}
           />
           <div className="flex flex-col gap-1.5">
             <div
-              className="h-3 rounded"
-              style={{ width: '50%', background: `${preview.highlight}30` }}
+              className="h-3 rounded-none"
+              style={{ width: '50%', background: `${preview.highlight}30`, borderRadius: 0 }}
             />
             <div
-              className="flex-1 rounded"
-              style={{ background: preview.panel, border: `1px solid ${preview.line}` }}
+              className="flex-1 rounded-none"
+              style={{ background: preview.panel, border: `1px solid ${preview.line}`, borderRadius: 0 }}
             />
           </div>
         </div>
@@ -238,6 +299,43 @@ function ThemeOptionCard({ option, active, onClick }) {
   );
 }
 
+function MorphologyOptionCard({ option, active, onClick }) {
+  return (
+    <button
+      data-testid={`ajustes-morphology-option-${option.id}`}
+      type="button"
+      onClick={() => onClick(option.id)}
+      className={`w-full border p-3 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : ''}`}
+      style={{
+        ...getSettingsShellStyle({ emphasized: active }),
+        borderColor: active
+          ? 'color-mix(in srgb, var(--accent-primary) 24%, var(--chrome-border-color))'
+          : 'var(--chrome-border-color)',
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {option.label}
+        </p>
+        {active ? (
+          <span
+            className="inline-flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-medium"
+            style={{
+              ...getSettingsControlStyle(),
+              color: 'var(--text-primary)',
+            }}
+          >
+            Activa
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+        {option.description}
+      </p>
+    </button>
+  );
+}
+
 function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
   if (!open) return null;
   const stepData = ONBOARDING_STEPS[step];
@@ -249,11 +347,11 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
       style={{ background: 'rgba(0,0,0,0.45)' }}
     >
       <div
-        className="w-full max-w-lg rounded-2xl p-6"
+        className="w-full max-w-lg p-6"
         style={{
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-lifted)',
+          ...getSettingsShellStyle({ emphasized: true }),
+          borderRadius: 0,
+          boxShadow: '4px 4px 0 0 var(--border-strong)',
         }}
       >
         <div className="flex items-center justify-between gap-3 mb-5">
@@ -290,11 +388,11 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
             type="button"
             onClick={onPrev}
             disabled={step === 0}
-            className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg disabled:opacity-50"
+            className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-none disabled:opacity-50"
             style={{
-              border: '1px solid var(--border-subtle)',
+              ...getSettingsControlStyle(),
               color: 'var(--text-secondary)',
-              background: 'var(--surface-muted)',
+              borderRadius: 0,
             }}
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Atrás
@@ -302,8 +400,8 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
           <button
             type="button"
             onClick={isLast ? onClose : onNext}
-            className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg"
-            style={{ background: 'var(--accent-primary)', color: 'white' }}
+            className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-none"
+            style={{ background: 'var(--accent-primary)', color: 'white', borderRadius: 0 }}
           >
             {isLast ? <Rocket className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
             {isLast ? 'Terminar' : 'Siguiente'}
@@ -360,6 +458,8 @@ export default function Ajustes() {
 
   // Theme
   const [activeTheme, setActiveTheme] = useState(THEMES.DEEP_SEA);
+  const [activeMorphology, setActiveMorphology] = useState('default');
+  const [activeAccent, setActiveAccent] = useState('theme');
   const [themeFilter, setThemeFilter] = useState('all'); // all | dark | light
 
   // Tabs
@@ -410,8 +510,14 @@ export default function Ajustes() {
 
   useEffect(() => {
     const storedTheme = getStoredTheme();
+    const storedMorphology = getStoredMorphology();
+    const storedAccent = getStoredAccent();
     setActiveTheme(storedTheme);
+    setActiveMorphology(storedMorphology);
+    setActiveAccent(storedAccent);
     setTheme(storedTheme);
+    setMorphology(storedMorphology);
+    setAccent(storedAccent);
     const onboardingDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
     if (!onboardingDone) setWizardOpen(true);
     // Load swarm settings
@@ -422,6 +528,20 @@ export default function Ajustes() {
     const next = setTheme(themeId);
     setActiveTheme(next);
     toast.success(`Tema aplicado: ${THEME_OPTIONS.find((t) => t.id === next)?.label || next}`);
+  }, []);
+
+  const handleMorphologyChange = useCallback((morphologyId) => {
+    const next = setMorphology(morphologyId);
+    setActiveMorphology(next);
+    toast.success(
+      `Morfologia aplicada: ${MORPHOLOGY_OPTIONS.find((m) => m.id === next)?.label || next}`
+    );
+  }, []);
+
+  const handleAccentChange = useCallback((accentId) => {
+    const next = setAccent(accentId);
+    setActiveAccent(next);
+    toast.success(`Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}`);
   }, []);
 
   const finishOnboarding = useCallback(() => {
@@ -549,20 +669,19 @@ export default function Ajustes() {
     <div className="space-y-6">
       {/* Project identity card */}
       <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
+        className="overflow-hidden"
+        style={{ ...panelStyle(), borderRadius: 0 }}
       >
         <div
           className="flex items-center gap-3 px-6 py-4"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          style={{
+            borderBottom: `var(--chrome-border-width) solid var(--chrome-border-color)`,
+            background: 'var(--chrome-panel-fill-emphasis)',
+          }}
         >
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: `${color}18`, border: `1px solid ${color}30` }}
+<div
+            className="w-9 h-9 rounded-none flex items-center justify-center"
+            style={pillStyle({ tone: 'accent' })}
           >
             <LayoutGrid className="w-4 h-4" style={{ color }} />
           </div>
@@ -591,12 +710,8 @@ export default function Ajustes() {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
-                style={{
-                  background: 'var(--surface-muted)',
-                  border: '1px solid var(--border-strong)',
-                  color: 'var(--text-primary)',
-                }}
+className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
+                style={inputStyle()}
               />
             </div>
             <div>
@@ -609,12 +724,8 @@ export default function Ajustes() {
               <select
                 value={status}
                 onChange={(e) => setProjectStatus(e.target.value)}
-                className="w-full text-sm rounded-lg px-3 py-2.5 focus:outline-none appearance-none"
-                style={{
-                  background: 'var(--surface-muted)',
-                  border: '1px solid var(--border-strong)',
-                  color: 'var(--text-primary)',
-                }}
+                className="w-full text-sm rounded-none px-3 py-2.5 focus:outline-none appearance-none cursor-pointer"
+                style={inputStyle()}
               >
                 <option value="active">Activo</option>
                 <option value="paused">Pausado</option>
@@ -649,12 +760,11 @@ export default function Ajustes() {
                       key={value}
                       type="button"
                       onClick={() => setProjectType(value)}
-                      className="rounded-lg border px-3 py-2 text-left transition-all"
+                      className="rounded-none border px-3 py-2 text-left transition-all"
                       style={{
-                        borderColor: selected
-                          ? 'color-mix(in srgb, var(--accent-primary) 35%, transparent)'
-                          : 'var(--border-subtle)',
-                        background: selected ? 'var(--surface-elevated)' : 'var(--surface-muted)',
+                        ...panelStyle({ emphasized: selected, tone: selected ? 'accent' : 'neutral' }),
+                        borderRadius: 0,
+                        boxShadow: selected ? 'var(--chrome-shadow-control)' : '4px 4px 0 0 var(--border-strong)',
                       }}
                     >
                       <div className="flex items-center gap-2">
@@ -692,12 +802,11 @@ export default function Ajustes() {
                       key={value}
                       type="button"
                       onClick={() => setDocumentationPolicy(value)}
-                      className="w-full rounded-lg border px-3 py-2.5 text-left transition-all"
+                      className="w-full rounded-none border px-3 py-2.5 text-left transition-all"
                       style={{
-                        borderColor: selected
-                          ? 'color-mix(in srgb, var(--accent-primary) 35%, transparent)'
-                          : 'var(--border-subtle)',
-                        background: selected ? 'var(--surface-elevated)' : 'var(--surface-muted)',
+                        ...panelStyle({ emphasized: selected, tone: selected ? 'accent' : 'neutral' }),
+                        borderRadius: 0,
+                        boxShadow: selected ? 'var(--chrome-shadow-control)' : '4px 4px 0 0 var(--border-strong)',
                       }}
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -735,12 +844,8 @@ export default function Ajustes() {
               rows={3}
               value={planningPrompt}
               onChange={(e) => setPlanningPrompt(e.target.value)}
-              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
-              style={{
-                background: 'var(--surface-muted)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text-primary)',
-              }}
+              className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
+              style={{ ...inputStyle(), minHeight: '4rem' }}
             />
           </div>
 
@@ -755,12 +860,8 @@ export default function Ajustes() {
               rows={2}
               value={description}
               onChange={(e) => setDesc(e.target.value)}
-              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
-              style={{
-                background: 'var(--surface-muted)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text-primary)',
-              }}
+              className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition-colors resize-none cursor-pointer"
+              style={{ ...inputStyle(), minHeight: '3rem' }}
             />
           </div>
 
@@ -776,22 +877,14 @@ export default function Ajustes() {
                 value={localPath}
                 onChange={(e) => setLocalPath(e.target.value)}
                 placeholder="/home/usuario/proyectos/mi-app"
-                className="flex-1 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
-                style={{
-                  background: 'var(--surface-muted)',
-                  border: '1px solid var(--border-strong)',
-                  color: 'var(--text-primary)',
-                }}
+                className="flex-1 rounded-none px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
+                style={inputStyle()}
               />
               <button
                 type="button"
                 onClick={handleSelectFolder}
-                className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer"
-                style={{
-                  background: 'var(--surface-elevated)',
-                  border: '1px solid var(--border-strong)',
-                  color: 'var(--text-secondary)',
-                }}
+                className="w-10 h-10 rounded-none flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                style={btnSecondaryStyle({ size: 'sm' })}
                 title="Explorar carpetas"
               >
                 <FolderOpen className="w-4 h-4" />
@@ -807,7 +900,7 @@ export default function Ajustes() {
               Color de acento
             </label>
             <div className="flex items-center gap-2.5">
-              {ACCENT_COLORS.map((c) => (
+              {PROJECT_ACCENT_COLORS.map((c) => (
                 <button
                   key={c}
                   type="button"
@@ -830,8 +923,8 @@ export default function Ajustes() {
             <button
               onClick={saveProject}
               disabled={savingProject}
-              className="flex items-center gap-2 text-white font-medium px-5 py-2.5 rounded-lg text-xs transition-all disabled:opacity-50 hover:brightness-110"
-              style={{ background: 'var(--success)' }}
+              className="flex items-center gap-2 font-medium px-5 py-2.5 rounded-none text-xs transition-all disabled:opacity-50 cursor-pointer"
+              style={btnPrimaryStyle({ size: 'sm' })}
             >
               {savingProject ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -849,20 +942,24 @@ export default function Ajustes() {
   const renderThemeTab = () => (
     <div className="space-y-6">
       {/* Active theme banner */}
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)' }}
-      >
+      <ChromeSurface asChild surface="panel" emphasized>
+        <div
+          data-testid="ajustes-appearance-shell"
+          className="overflow-hidden"
+          style={getSettingsShellStyle({ emphasized: true })}
+        >
         <div
           className="flex items-center justify-between px-6 py-4"
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
         >
           <div className="flex items-center gap-3">
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              className="w-9 h-9 rounded-none flex items-center justify-center"
               style={{
-                background: `${activeThemeData?.accent}18`,
-                border: `1px solid ${activeThemeData?.accent}30`,
+                ...pillStyle({ tone: 'accent' }),
+                borderRadius: 0,
+                background: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 14%, var(--chrome-control-fill))`,
+                borderColor: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 28%, var(--chrome-border-color))`,
               }}
             >
               <Palette className="w-4 h-4" style={{ color: activeThemeData?.accent }} />
@@ -885,11 +982,11 @@ export default function Ajustes() {
           <button
             type="button"
             onClick={() => setWizardOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-none text-xs"
             style={{
-              background: 'var(--surface-elevated)',
-              border: '1px solid var(--border-subtle)',
+              ...getSettingsControlStyle(),
               color: 'var(--text-secondary)',
+              borderRadius: 0,
             }}
           >
             <Sparkles className="w-3.5 h-3.5" />
@@ -910,11 +1007,20 @@ export default function Ajustes() {
             <button
               key={key}
               onClick={() => setThemeFilter(key)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none text-xs font-medium transition-all"
+              style={
                 themeFilter === key
-                  ? 'bg-surface-elevated text-text-primary border-[#388BFD]/30'
-                  : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated border-transparent'
-              }`}
+                  ? {
+                      ...pillStyle({ tone: 'accent' }),
+                      color: 'var(--text-primary)',
+                      borderRadius: 0,
+                    }
+                  : {
+                      ...pillStyle(),
+                      color: 'var(--text-muted)',
+                      borderRadius: 0,
+                    }
+              }
             >
               <Icon className="w-3 h-3" />
               {label}
@@ -924,7 +1030,7 @@ export default function Ajustes() {
 
         {/* Theme grid */}
         <div className="p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {filteredThemes.map((option) => (
               <ThemeOptionCard
                 key={option.id}
@@ -935,7 +1041,112 @@ export default function Ajustes() {
             ))}
           </div>
         </div>
-      </div>
+
+        {/* Accent selector */}
+        <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h4 className="font-mono text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--text-primary)' }}>
+                Color de tema
+              </h4>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                Elegí una señal brutalist independiente del tema base.
+              </p>
+            </div>
+            <span
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em]"
+              style={{
+                ...getSettingsControlStyle({ emphasized: true, tone: 'accent' }),
+                color: 'var(--text-primary)',
+                borderRadius: 0,
+              }}
+            >
+              <Palette className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
+              {ACCENT_OPTIONS.find((option) => option.id === activeAccent)?.label ?? 'Theme sync'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {ACCENT_OPTIONS.map((option) => {
+              const isActive = activeAccent === option.id;
+              return (
+                <button
+                  key={option.id}
+                  data-testid={`ajustes-accent-option-${option.id}`}
+                  type="button"
+                  onClick={() => handleAccentChange(option.id)}
+                  className="border p-4 text-left transition-all"
+                  style={getSettingsAccentOptionStyle(isActive, option.primary)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--text-primary)' }}>
+                        {option.label}
+                      </p>
+                      <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                        {option.description}
+                      </p>
+                    </div>
+                    {isActive ? (
+                      <span
+                        className="h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-xs font-medium"
+                        style={{ background: 'var(--accent-primary)', color: 'white' }}
+                      >
+                        <Check className="w-3 h-3" />
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-2">
+                    {[0, 1, 2].map((index) => (
+                      <span
+                        key={`${option.id}-accent-preview-${index}`}
+                        className="h-8 flex-1 border"
+                        style={{
+                          borderRadius: 0,
+                          borderColor: 'color-mix(in srgb, var(--settings-accent-preview) 42%, var(--chrome-border-color))',
+                          background:
+                            index === 1
+                              ? 'color-mix(in srgb, var(--settings-accent-preview) 18%, var(--chrome-panel-fill-emphasis))'
+                              : 'color-mix(in srgb, var(--settings-accent-preview) 10%, var(--chrome-panel-fill))',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="mb-4">
+            <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Morphology
+            </h4>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+              Separa el lenguaje de chrome del color del tema activo.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {MORPHOLOGY_OPTIONS.map((option) => (
+              <ChromeSurface
+                key={option.id}
+                asChild
+                surface="panel"
+                emphasized={activeMorphology === option.id}
+              >
+                <MorphologyOptionCard
+                  option={option}
+                  active={activeMorphology === option.id}
+                  onClick={handleMorphologyChange}
+                />
+              </ChromeSurface>
+            ))}
+          </div>
+        </div>
+        </div>
+      </ChromeSurface>
     </div>
   );
 
@@ -945,24 +1156,24 @@ export default function Ajustes() {
     <div className="space-y-6">
       {/* Swarm Status Card */}
       <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
+        className="overflow-hidden"
+        style={{ ...panelStyle(), borderRadius: 0 }}
       >
         <div
           className="flex items-center gap-3 px-6 py-4"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          style={{
+            borderBottom: `var(--chrome-border-width) solid var(--chrome-border-color)`,
+            background: 'var(--chrome-panel-fill-emphasis)',
+          }}
         >
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            className="w-9 h-9 rounded-none flex items-center justify-center"
             style={{
               background: swarmStatus?.running
                 ? 'color-mix(in srgb, var(--success) 12%, transparent)'
                 : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
               border: `1px solid ${swarmStatus?.running ? 'color-mix(in srgb, var(--success) 25%, transparent)' : 'color-mix(in srgb, var(--text-muted) 20%, transparent)'}`,
+              borderRadius: 0,
             }}
           >
             <Server
@@ -985,19 +1196,21 @@ export default function Ajustes() {
           </div>
           <div className="ml-auto">
             <span
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-none"
               style={{
                 background: swarmStatus?.running
                   ? 'color-mix(in srgb, var(--success) 12%, transparent)'
                   : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
                 color: swarmStatus?.running ? 'var(--success)' : 'var(--text-muted)',
                 border: `1px solid ${swarmStatus?.running ? 'color-mix(in srgb, var(--success) 25%, transparent)' : 'color-mix(in srgb, var(--text-muted) 20%, transparent)'}`,
+                borderRadius: 0,
               }}
             >
               <span
-                className="w-2 h-2 rounded-full"
+                className="w-2 h-2 rounded-none"
                 style={{
                   background: swarmStatus?.running ? 'var(--success)' : 'var(--text-muted)',
+                  borderRadius: 0,
                 }}
               />
               {swarmStatus?.running ? 'Activo' : 'Inactivo'}
@@ -1032,10 +1245,13 @@ export default function Ajustes() {
               ].map(({ label, value, color }) => (
                 <div
                   key={label}
-                  className="rounded-xl px-4 py-3"
+                  className="px-4 py-3"
                   style={{
-                    background: 'var(--surface-muted)',
-                    border: '1px solid var(--border-subtle)',
+                    ...panelStyle(),
+                    borderRadius: 0,
+                    background: `color-mix(in srgb, ${color} 10%, var(--chrome-panel-fill))`,
+                    borderColor: `color-mix(in srgb, ${color} 24%, var(--chrome-border-color))`,
+                    boxShadow: '4px 4px 0 0 var(--border-strong)',
                   }}
                 >
                   <p
@@ -1056,23 +1272,19 @@ export default function Ajustes() {
 
       {/* Swarm Configuration Card */}
       <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
+        className="overflow-hidden"
+        style={{ ...panelStyle(), borderRadius: 0 }}
       >
         <div
           className="flex items-center gap-3 px-6 py-4"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          style={{
+            borderBottom: `var(--chrome-border-width) solid var(--chrome-border-color)`,
+            background: 'var(--chrome-panel-fill-emphasis)',
+          }}
         >
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{
-              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
-            }}
+            className="w-9 h-9 rounded-none flex items-center justify-center"
+            style={pillStyle({ tone: 'accent' })}
           >
             <SlidersHorizontal className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
           </div>
@@ -1138,11 +1350,11 @@ export default function Ajustes() {
                   </div>
                 </div>
                 <span
-                  className="text-lg font-mono font-bold px-3 py-1 rounded-lg"
+                  className="text-lg font-mono font-bold px-3 py-1 rounded-none"
                   style={{
-                    background: 'var(--surface-muted)',
-                    border: '1px solid var(--border-strong)',
+                    ...getSettingsControlStyle({ emphasized: true, tone: 'accent' }),
                     color: 'var(--accent-primary)',
+                    borderRadius: 0,
                   }}
                 >
                   {swarmConfig.max_concurrent_swarms}
@@ -1163,8 +1375,9 @@ export default function Ajustes() {
                       max_concurrent_swarms: parseInt(e.target.value, 10),
                     }))
                   }
-                  className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
+                  className="flex-1 h-2 rounded-none appearance-none cursor-pointer"
                   style={{
+                    borderRadius: 0,
                     background: `linear-gradient(to right, var(--accent-primary) ${((swarmConfig.max_concurrent_swarms - 1) / 19) * 100}%, var(--surface-muted) ${((swarmConfig.max_concurrent_swarms - 1) / 19) * 100}%)`,
                   }}
                 />
@@ -1186,8 +1399,8 @@ export default function Ajustes() {
               <button
                 onClick={saveSwarmSettings}
                 disabled={savingSwarm}
-                className="flex items-center gap-2 text-white font-medium px-5 py-2.5 rounded-lg text-xs transition-all disabled:opacity-50"
-                style={{ background: 'var(--success)' }}
+                className="flex items-center gap-2 text-white font-medium px-5 py-2.5 rounded-none text-xs transition-all disabled:opacity-50"
+                style={{ background: 'var(--success)', borderRadius: 0 }}
               >
                 {savingSwarm ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1206,20 +1419,19 @@ export default function Ajustes() {
   const renderProfileTab = () => (
     <div className="space-y-6">
       <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
+        className="overflow-hidden"
+        style={{ ...panelStyle(), borderRadius: 0 }}
       >
         <div
           className="flex items-center gap-3 px-6 py-4"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          style={{
+            borderBottom: `var(--chrome-border-width) solid var(--chrome-border-color)`,
+            background: 'var(--chrome-panel-fill-emphasis)',
+          }}
         >
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: '#D2A8FF18', border: '1px solid #D2A8FF30' }}
+            className="w-9 h-9 rounded-none flex items-center justify-center"
+            style={pillStyle({ tone: 'accent' })}
           >
             <User className="w-4 h-4" style={{ color: '#D2A8FF' }} />
           </div>
@@ -1239,8 +1451,12 @@ export default function Ajustes() {
         <div className="p-6 space-y-4">
           {profile && (
             <div
-              className="flex items-center gap-3 p-3 rounded-lg"
-              style={{ background: 'var(--surface-muted)' }}
+              className="flex items-center gap-3 p-3 rounded-none"
+              style={{
+                ...panelStyle({ emphasized: true }),
+                borderRadius: 0,
+                boxShadow: 'var(--chrome-shadow-control)',
+              }}
             >
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center font-mono text-sm font-bold"
@@ -1273,24 +1489,16 @@ export default function Ajustes() {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Tu nombre"
-              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
-              style={{
-                background: 'var(--surface-muted)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text-primary)',
-              }}
+              className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
+              style={inputStyle()}
             />
           </div>
 
           <button
             onClick={saveProfile}
             disabled={savingProfile}
-            className="flex items-center gap-2 font-medium px-5 py-2.5 rounded-lg text-xs transition-all disabled:opacity-50"
-            style={{
-              background: 'var(--surface-elevated)',
-              border: '1px solid var(--border-strong)',
-              color: 'var(--text-secondary)',
-            }}
+            className="flex items-center gap-2 font-medium px-5 py-2.5 rounded-none text-xs transition-all disabled:opacity-50"
+            style={{ ...btnSecondaryStyle({ size: 'sm' }), color: 'var(--text-secondary)' }}
           >
             {savingProfile ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1307,20 +1515,19 @@ export default function Ajustes() {
   const renderPrefsTab = () => (
     <div className="space-y-6">
       <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
+        className="overflow-hidden"
+        style={{ ...panelStyle(), borderRadius: 0 }}
       >
         <div
           className="flex items-center gap-3 px-6 py-4"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          style={{
+            borderBottom: `var(--chrome-border-width) solid var(--chrome-border-color)`,
+            background: 'var(--chrome-panel-fill-emphasis)',
+          }}
         >
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: '#E3B34118', border: '1px solid #E3B34130' }}
+            className="w-9 h-9 rounded-none flex items-center justify-center"
+            style={pillStyle({ tone: 'accent' })}
           >
             <Settings className="w-4 h-4" style={{ color: '#E3B341' }} />
           </div>
@@ -1384,22 +1591,16 @@ export default function Ajustes() {
   const renderDangerTab = () => (
     <div className="space-y-6">
       <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          background: 'var(--surface-card)',
-          border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
-        }}
+        className="overflow-hidden"
+        style={{ ...panelStyle({ tone: 'danger' }), borderRadius: 0 }}
       >
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{ borderBottom: '1px solid color-mix(in srgb, var(--danger) 15%, transparent)' }}
         >
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{
-              background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
-            }}
+            className="w-9 h-9 rounded-none flex items-center justify-center"
+            style={pillStyle({ tone: 'danger' })}
           >
             <AlertTriangle className="w-4 h-4" style={{ color: 'var(--danger)' }} />
           </div>
@@ -1426,12 +1627,8 @@ export default function Ajustes() {
               </div>
               <button
                 onClick={() => setDeleteConfirm(true)}
-                className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-lg transition-all shrink-0"
-                style={{
-                  background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
-                  border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
-                  color: 'var(--danger)',
-                }}
+                className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-none transition-all shrink-0"
+                style={{ ...btnDangerStyle({ size: 'sm' }), boxShadow: 'var(--chrome-shadow-control)' }}
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Eliminar
@@ -1440,11 +1637,8 @@ export default function Ajustes() {
           ) : (
             <div className="space-y-4">
               <div
-                className="flex items-start gap-3 p-3 rounded-lg"
-                style={{
-                  background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
-                  border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
-                }}
+                className="flex items-start gap-3 p-3 rounded-none"
+                style={dangerBannerStyle()}
               >
                 <AlertTriangle
                   className="w-5 h-5 shrink-0 mt-0.5"
@@ -1462,24 +1656,16 @@ export default function Ajustes() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteConfirm(false)}
-                  className="flex-1 py-2.5 rounded-lg text-sm transition-all"
-                  style={{
-                    border: '1px solid var(--border-strong)',
-                    color: 'var(--text-muted)',
-                    background: 'var(--surface-muted)',
-                  }}
+                  className="flex-1 py-2.5 rounded-none text-sm transition-all"
+                  style={{ ...btnSecondaryStyle({ size: 'md' }), width: '100%', color: 'var(--text-muted)' }}
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={deleteProject}
                   disabled={deleting}
-                  className="flex-1 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
-                  style={{
-                    background: 'color-mix(in srgb, var(--danger) 16%, transparent)',
-                    border: '1px solid color-mix(in srgb, var(--danger) 42%, transparent)',
-                    color: 'var(--danger)',
-                  }}
+                  className="flex-1 py-2.5 rounded-none text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+                  style={{ ...btnDangerStyle({ size: 'md' }), width: '100%' }}
                 >
                   {deleting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1515,20 +1701,8 @@ export default function Ajustes() {
         </div>
       </div>
 
-      <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
-        {/* Breadcrumb */}
-        <div className="rounded-xl px-4 py-2.5 flex items-center gap-2 mb-6 core-panel shadow-sm">
-          <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            DevHub
-          </span>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            ›
-          </span>
-          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-            Ajustes
-          </span>
-        </div>
+      <div style={getWorkspacePageContentStyle()}>
+        
 
         {/* Tab navigation */}
         <div
@@ -1539,19 +1713,23 @@ export default function Ajustes() {
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-none text-xs font-medium transition-all whitespace-nowrap ${
                 activeTab === key
                   ? 'text-text-primary'
-                  : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated'
+                  : 'text-text-muted hover:text-text-primary'
               }`}
               style={
                 activeTab === key
                   ? {
-                      background: 'var(--surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                      boxShadow: 'var(--shadow-soft)',
+                      ...getSettingsControlStyle({ emphasized: true }),
+                      color: 'var(--text-primary)',
                     }
-                  : { border: '1px solid transparent' }
+                  : {
+                      ...getSettingsControlStyle(),
+                      background: 'transparent',
+                      borderColor: 'transparent',
+                      boxShadow: 'none',
+                    }
               }
             >
               <Icon className="w-3.5 h-3.5" />

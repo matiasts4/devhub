@@ -28,67 +28,235 @@ import { toast } from 'sonner';
 import Select from 'react-select';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
+import { chromeSurfaceStyle } from '@/components/ui/chrome-surface';
+import {
+  btnDangerStyle,
+  btnPrimaryStyle,
+  btnSecondaryStyle,
+  kanbanCardStyle,
+  kanbanColumnHeaderStyle,
+  kanbanColumnStyle,
+  panelHeaderStripStyle,
+  pillStyle,
+  sectionSurfaceStyle,
+} from '@/chrome/morphology';
+import {
+  getWorkspaceFilterBarStyle,
+  getWorkspacePageContentStyle,
+  getWorkspacePageShellStyle,
+  getWorkspaceStatusPillStyle,
+} from './workspacePageChrome';
 import {
   buildDocOpsTaskPrompt,
   enforceDocOpsGateOnLaunchCommand,
   shellQuotePrompt,
 } from '@/lib/docopsPrompts';
 
+const COLOR_VARS = {
+  muted: 'var(--text-muted)',
+  primary: 'var(--accent-primary)',
+  pending: 'var(--warning, var(--accent-secondary))',
+  in_progress: 'var(--accent-cyan)',
+  pink: 'var(--accent-pink)',
+  danger: 'var(--danger)',
+  success: 'var(--success)',
+  high: 'var(--accent-orange, var(--accent-secondary))',
+  medium: 'var(--warning, var(--accent-primary))',
+};
+
 const COLUMNS = [
-  { id: 'pending', label: 'Pendiente', color: '#484F58', bg: '#484F5810' },
-  { id: 'in_progress', label: 'En Progreso', color: '#58A6FF', bg: '#58A6FF10' },
-  { id: 'blocked', label: 'Bloqueada', color: '#F778BA', bg: '#F778BA10' },
-  { id: 'completed', label: 'Completada', color: '#3FB950', bg: '#3FB95010' },
+  { id: 'pending', label: 'Pendiente', color: COLOR_VARS.pending, bg: `color-mix(in srgb, ${COLOR_VARS.pending} 15%, transparent)` },
+  { id: 'in_progress', label: 'En Progreso', color: COLOR_VARS.in_progress, bg: `color-mix(in srgb, ${COLOR_VARS.in_progress} 15%, transparent)` },
+  { id: 'blocked', label: 'Bloqueada', color: COLOR_VARS.danger, bg: `color-mix(in srgb, ${COLOR_VARS.danger} 15%, transparent)` },
+  { id: 'completed', label: 'Completada', color: COLOR_VARS.success, bg: `color-mix(in srgb, ${COLOR_VARS.success} 15%, transparent)` },
 ];
 
 const PRIORITY = {
-  critical: { label: 'Crítica', color: '#F778BA', val: 4 },
-  high: { label: 'Alta', color: '#FFA657', val: 3 },
-  medium: { label: 'Media', color: '#E3B341', val: 2 },
-  low: { label: 'Baja', color: '#8B949E', val: 1 },
+  critical: { label: 'Crítica', color: COLOR_VARS.pink, val: 4 },
+  high: { label: 'Alta', color: COLOR_VARS.high, val: 3 },
+  medium: { label: 'Media', color: COLOR_VARS.medium, val: 2 },
+  low: { label: 'Baja', color: COLOR_VARS.muted, val: 1 },
 };
+
+function mixChromeAccent(accent = 'var(--accent-primary)', amount = 18) {
+  return `color-mix(in srgb, ${accent} ${amount}%, var(--chrome-border-color))`;
+}
+
+function resolveAccent(accent = 'var(--accent-primary)', accentVar) {
+  return accentVar || accent;
+}
+
+function getTaskFieldChromeStyle() {
+  return {
+    background: 'var(--chrome-control-fill)',
+    borderColor: 'var(--chrome-border-color)',
+    borderWidth: 'var(--chrome-border-width)',
+    borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+    color: 'var(--text-primary)',
+    boxShadow: 'var(--chrome-shadow-control)',
+  };
+}
+
+function getTaskIconBadgeStyle(accent = 'var(--accent-primary)') {
+  const resolvedAccent = resolveAccent(accent);
+  return {
+    ...chromeSurfaceStyle({ surface: 'pill', tone: 'accent' }),
+    width: '1.9rem',
+    height: '1.9rem',
+    borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+    background: `color-mix(in srgb, ${resolvedAccent} 12%, var(--chrome-control-fill-hover))`,
+    borderColor: mixChromeAccent(resolvedAccent, 28),
+    color: resolvedAccent,
+  };
+}
+
+export function getTaskModalShellStyle() {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
+    background: 'var(--chrome-panel-fill-emphasis)',
+    borderRadius: '0',
+    backdropFilter: 'none',
+    boxShadow: 'var(--chrome-shadow-panel)',
+  };
+}
+
+export function getToolbarToggleRailStyle() {
+  return {
+    ...chromeSurfaceStyle({ surface: 'pill' }),
+    background: 'var(--chrome-control-fill)',
+    borderRadius: 'calc(var(--chrome-radius-control) + 2px)',
+    boxShadow: 'var(--chrome-shadow-control)',
+  };
+}
+
+export function getTaskCardChromeStyle({ blocked = false, accent = 'var(--accent-primary)', accentVar } = {}) {
+  const resolvedAccent = resolveAccent(accent, accentVar);
+  return {
+    ...kanbanCardStyle(),
+    background: blocked
+      ? 'color-mix(in srgb, var(--danger) 8%, var(--chrome-panel-fill))'
+      : 'var(--chrome-panel-fill)',
+    borderColor: blocked ? 'color-mix(in srgb, var(--danger) 30%, var(--chrome-border-color))' : mixChromeAccent(resolvedAccent, 18),
+    borderRadius: 'calc(var(--chrome-radius-panel) - 2px)',
+    boxShadow: 'var(--chrome-shadow-panel)',
+  };
+}
+
+export function getMoveMenuChromeStyle() {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
+    background: 'var(--chrome-panel-fill-emphasis)',
+    borderRadius: 'calc(var(--chrome-radius-panel) - 2px)',
+  };
+}
+
+export function getQueueHeroStyle() {
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
+    background: 'var(--chrome-panel-fill-emphasis)',
+    borderRadius: 'var(--chrome-radius-panel)',
+    boxShadow: 'var(--chrome-shadow-panel)',
+  };
+}
+
+export function getQueueRowStyle({ accent = 'var(--accent-primary)', accentVar } = {}) {
+  const resolvedAccent = resolveAccent(accent, accentVar);
+  return {
+    ...chromeSurfaceStyle({ surface: 'panel' }),
+    background: 'var(--chrome-panel-fill)',
+    borderColor: mixChromeAccent(resolvedAccent, 22),
+    borderRadius: 'calc(var(--chrome-radius-panel) - 2px)',
+    boxShadow: 'var(--chrome-shadow-panel)',
+  };
+}
+
+export function getKanbanDetailPillStyle({ accent = 'var(--accent-primary)', accentVar } = {}) {
+  const resolvedAccent = resolveAccent(accent, accentVar);
+  return {
+    ...pillStyle(),
+    background: `color-mix(in srgb, ${resolvedAccent} 10%, var(--chrome-control-fill))`,
+    borderColor: mixChromeAccent(resolvedAccent, 24),
+    borderWidth: 'var(--chrome-border-width)',
+    borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+    color: 'var(--text-secondary)',
+  };
+}
+
+export function getKanbanColumnShellStyle({ accent = 'var(--accent-primary)', accentVar } = {}) {
+  const resolvedAccent = resolveAccent(accent, accentVar);
+  return {
+    ...kanbanColumnStyle(),
+    background: 'var(--chrome-panel-fill)',
+    borderColor: mixChromeAccent(resolvedAccent, 20),
+    boxShadow: 'var(--chrome-shadow-panel)',
+  };
+}
+
+export function getKanbanColumnHeaderStyle({ accent = 'var(--accent-primary)', accentVar } = {}) {
+  const resolvedAccent = resolveAccent(accent, accentVar);
+  return {
+    ...kanbanColumnHeaderStyle(),
+    background: `color-mix(in srgb, ${resolvedAccent} 20%, var(--chrome-panel-fill-emphasis))`,
+    borderBottomColor: mixChromeAccent(resolvedAccent, 34),
+  };
+}
+
+export function getKanbanColumnCountStyle({ accent = 'var(--accent-primary)', accentVar } = {}) {
+  const resolvedAccent = resolveAccent(accent, accentVar);
+  return {
+    ...pillStyle(),
+    background: `color-mix(in srgb, ${resolvedAccent} 16%, var(--chrome-control-fill-hover))`,
+    borderColor: mixChromeAccent(resolvedAccent, 32),
+    color: resolvedAccent,
+    minWidth: '2.5rem',
+  };
+}
 
 // Custom select styles matching PlanningMode design
 const selectStyles = {
   control: (base, state) => ({
     ...base,
-    background: '#0d1117',
-    borderColor: state.isFocused ? '#58A6FF50' : '#30363d',
-    borderRadius: '8px',
-    color: '#f0f6fc',
+    ...getTaskFieldChromeStyle(),
+    borderColor: state.isFocused ? mixChromeAccent('var(--accent-primary)', 30) : 'var(--chrome-border-color)',
+    color: 'var(--text-primary)',
     fontSize: '12px',
-    boxShadow: state.isFocused ? '0 0 0 2px #58A6FF15' : 'none',
+    boxShadow: state.isFocused
+      ? 'var(--chrome-shadow-control), 0 0 0 1px color-mix(in srgb, var(--accent-primary) 26%, transparent)'
+      : 'var(--chrome-shadow-control)',
     minHeight: '36px',
-    '&:hover': { borderColor: '#484F58' },
+    '&:hover': { borderColor: mixChromeAccent('var(--accent-primary)', 20) },
   }),
   menu: (base) => ({
     ...base,
-    background: '#161b26',
-    border: '1px solid #30363d',
-    borderRadius: '10px',
+    ...getMoveMenuChromeStyle(),
     overflow: 'hidden',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
   }),
   option: (base, state) => ({
     ...base,
-    background: state.isFocused ? '#1c2333' : '#161b26',
-    color: '#f0f6fc',
+    background: state.isFocused ? 'var(--chrome-control-fill-hover)' : 'transparent',
+    color: 'var(--text-primary)',
     fontSize: '12px',
   }),
-  multiValue: (base) => ({ ...base, background: '#1c2333', borderRadius: '6px' }),
-  multiValueLabel: (base) => ({ ...base, color: '#f0f6fc', fontSize: '11px' }),
+  multiValue: (base) => ({
+    ...base,
+    ...getKanbanDetailPillStyle(),
+    borderRadius: 'calc(var(--chrome-radius-control) - 4px)',
+  }),
+  multiValueLabel: (base) => ({ ...base, color: 'var(--text-primary)', fontSize: '11px' }),
   multiValueRemove: (base) => ({
     ...base,
-    color: '#8b949e',
-    '&:hover': { background: '#F778BA20', color: '#F778BA' },
+    color: 'var(--text-muted)',
+    '&:hover': { background: 'color-mix(in srgb, var(--danger) 16%, transparent)', color: 'var(--danger)' },
   }),
-  placeholder: (base) => ({ ...base, color: '#484F58', fontSize: '12px' }),
-  input: (base) => ({ ...base, color: '#f0f6fc' }),
-  singleValue: (base) => ({ ...base, color: '#f0f6fc' }),
+  placeholder: (base) => ({ ...base, color: 'var(--text-muted)', fontSize: '12px' }),
+  input: (base) => ({ ...base, color: 'var(--text-primary)' }),
+  singleValue: (base) => ({ ...base, color: 'var(--text-primary)' }),
 };
 
 // ─── Styled Select Wrapper ────────────────────────────────────────────────────
 function StyledSelect({ label, value, onChange, options, placeholder }) {
+  const fieldStyle = getTaskFieldChromeStyle();
+
   return (
     <div>
       {label && (
@@ -100,7 +268,8 @@ function StyledSelect({ label, value, onChange, options, placeholder }) {
         <select
           value={value}
           onChange={onChange}
-          className="w-full appearance-none bg-surface-app border border-borders-strong rounded-lg px-3 py-2 pr-8 text-sm text-text-primary focus:outline-none focus:border-[#58A6FF]/50 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors cursor-pointer"
+          className="w-full appearance-none bg-surface-app border border-borders-strong px-3 py-2 pr-8 text-sm text-text-primary focus:outline-none focus:border-[var(--accent-primary)]/50 focus:ring-1 focus:ring-[var(--accent-primary)]/10 transition-colors cursor-pointer"
+          style={fieldStyle}
         >
           {placeholder && <option value="">{placeholder}</option>}
           {options.map((o) => (
@@ -109,7 +278,10 @@ function StyledSelect({ label, value, onChange, options, placeholder }) {
             </option>
           ))}
         </select>
-        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+        <ChevronDown
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none"
+          style={{ color: 'var(--text-muted)' }}
+        />
       </div>
     </div>
   );
@@ -223,20 +395,30 @@ function TaskModal({
     .filter((t) => t.id !== existingTask?.id)
     .map((t) => ({ value: t.id, label: t.title }));
 
+  const modalShellStyle = getTaskModalShellStyle();
+  const iconBadgeStyle = getTaskIconBadgeStyle();
+  const fieldStyle = getTaskFieldChromeStyle();
+
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 top-[46px] bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
       <div
-        className="bg-surface-card border border-borders-strong rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[92vh]"
+        className="fixed inset-0 flex items-center justify-center z-50 p-4"
+        style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
+        onClick={onClose}
+      >
+      <div
+        className="w-full max-w-lg flex flex-col max-h-[92vh]"
+        data-testid="task-modal-shell"
+        style={modalShellStyle}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-borders-subtle">
+        <div
+          className="flex items-center justify-between px-5 py-4"
+          style={panelHeaderStripStyle()}
+        >
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#58A6FF]/10 border border-[#58A6FF]/20 flex items-center justify-center">
-              <ListTodo className="w-3.5 h-3.5 text-[#58A6FF]" strokeWidth={1.5} />
+            <div className="w-7 h-7 border flex items-center justify-center" style={iconBadgeStyle}>
+              <ListTodo className="w-3.5 h-3.5" strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
             </div>
             <h2 className="font-mono font-bold text-text-primary text-sm">
               {existingTask ? 'Editar Tarea' : 'Nueva Tarea'}
@@ -244,7 +426,14 @@ function TaskModal({
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-lg hover:bg-surface-elevated flex items-center justify-center text-text-muted hover:text-white transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center text-text-muted hover:text-white transition-colors cursor-pointer"
+            style={{
+              ...btnSecondaryStyle({ size: 'xs' }),
+              width: '1.75rem',
+              minWidth: '1.75rem',
+              padding: 0,
+              color: 'var(--text-muted)',
+            }}
           >
             <X className="w-4 h-4" />
           </button>
@@ -263,7 +452,8 @@ function TaskModal({
                 value={form.title}
                 onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
                 placeholder="Describe la tarea brevemente..."
-                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]/50 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors cursor-pointer"
+                className="w-full bg-surface-app border border-borders-strong px-3 py-2.5 text-sm text-white placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]/50 focus:ring-1 focus:ring-[var(--accent-primary)]/10 transition-colors cursor-pointer"
+                style={fieldStyle}
               />
             </div>
 
@@ -277,7 +467,8 @@ function TaskModal({
                 value={form.description}
                 onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                 placeholder="Contexto, criterios de aceptación..."
-                className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]/50 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors resize-none leading-relaxed cursor-pointer"
+                className="w-full bg-surface-app border border-borders-strong px-3 py-2.5 text-sm text-white placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]/50 focus:ring-1 focus:ring-[var(--accent-primary)]/10 transition-colors resize-none leading-relaxed cursor-pointer"
+                style={fieldStyle}
               />
             </div>
 
@@ -309,19 +500,25 @@ function TaskModal({
                   {Object.entries(PRIORITY).map(([k, v]) => (
                     <button
                       key={k}
-                      type="button"
-                      onClick={() => setForm((p) => ({ ...p, priority: k }))}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all"
-                      style={
-                        form.priority === k
-                          ? {
-                              background: `${v.color}18`,
-                              borderColor: `${v.color}40`,
-                              color: v.color,
-                            }
-                          : { background: '#0d1117', borderColor: '#30363d', color: '#8b949e' }
-                      }
-                    >
+                        type="button"
+                        onClick={() => setForm((p) => ({ ...p, priority: k }))}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border transition-all"
+                        style={
+                          form.priority === k
+                            ? {
+                                ...pillStyle(),
+                                background: `color-mix(in srgb, ${v.color} 12%, var(--chrome-control-fill))`,
+                                borderColor: mixChromeAccent(v.color, 30),
+                                borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                                color: v.color,
+                              }
+                            : {
+                                ...pillStyle(),
+                                borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                                color: 'var(--text-muted)',
+                              }
+                        }
+                      >
                       <Flag className="w-3 h-3" />
                       {v.label}
                     </button>
@@ -340,11 +537,12 @@ function TaskModal({
                     min="1"
                     max="10"
                     value={form.business_value}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, business_value: parseInt(e.target.value) }))
-                    }
-                    className="w-full accent-[#58A6FF] cursor-pointer"
-                  />
+                   onChange={(e) =>
+                     setForm((p) => ({ ...p, business_value: parseInt(e.target.value) }))
+                   }
+                    className="w-full accent-[var(--accent-primary)] cursor-pointer"
+                     style={{ accentColor: 'var(--accent-primary)' }}
+                   />
                   <div className="flex justify-between text-[11px] text-text-muted mt-1">
                     <span>Mínimo (1)</span>
                     <span>Core (10)</span>
@@ -365,7 +563,7 @@ function TaskModal({
             </div>
 
             {/* Dependencies */}
-            <div className="pt-1 border-t border-borders-subtle">
+            <div className="pt-1" style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}>
               <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                 Depende de (Bloqueada por)
               </label>
@@ -380,7 +578,10 @@ function TaskModal({
             </div>
 
             {blocksTasks.length > 0 && (
-              <div className="bg-surface-elevated p-3 rounded-lg border border-borders-subtle">
+              <div
+                className="p-3"
+                style={getTaskCardChromeStyle({ accent: 'var(--accent-primary)' })}
+              >
                 <p className="text-xs text-text-muted mb-1.5 font-semibold uppercase tracking-wider">
                   Bloquea a ({blocksTasks.length}):
                 </p>
@@ -397,18 +598,29 @@ function TaskModal({
           </form>
 
           {existingTask && (
-            <div className="mt-6 pt-6 border-t border-borders-subtle">
+            <div className="mt-6 pt-6" style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}>
               <TaskComments taskId={existingTask.id} />
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-borders-subtle bg-surface-app flex gap-2 rounded-b-2xl">
+        <div
+          className="px-5 py-4 flex gap-2"
+          style={{
+            ...sectionSurfaceStyle(),
+            borderLeft: 'none',
+            borderRight: 'none',
+            borderBottom: 'none',
+            borderRadius: 0,
+            boxShadow: 'none',
+          }}
+        >
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-borders-strong text-text-muted text-sm hover:text-white hover:border-borders-strong transition-all"
+            className="px-4 py-2.5 border border-borders-strong text-text-muted text-sm hover:text-white hover:border-borders-strong transition-all"
+            style={btnSecondaryStyle({ size: 'md' })}
           >
             Cancelar
           </button>
@@ -416,7 +628,8 @@ function TaskModal({
             type="submit"
             form="task-form"
             disabled={saving}
-            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#58A6FF] to-[#2F81F7] text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 hover:from-[#79C0FF] hover:to-[#58A6FF] transition-all"
+            className="flex-1 py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+            style={{ ...btnPrimaryStyle({ size: 'md' }), flex: 1 }}
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {saving ? 'Guardando...' : 'Guardar Tarea'}
@@ -501,21 +714,45 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
 
   return (
     <div className="space-y-3">
-      <div className="bg-surface-elevated border border-borders-subtle rounded-xl p-4 flex items-start gap-4">
-        <div className="p-2.5 bg-[#58A6FF]/10 rounded-xl border border-[#58A6FF]/20">
-          <Bot className="w-5 h-5 text-[#58A6FF]" strokeWidth={1.5} />
+      <div
+        className="border px-5 py-4 flex items-start justify-between gap-4"
+        data-testid="agent-queue-hero"
+        style={getQueueHeroStyle()}
+      >
+        <div className="flex items-start gap-4">
+          <div className="p-2.5 border" style={getTaskIconBadgeStyle()}>
+            <Bot className="w-5 h-5 text-[var(--accent-primary)]" strokeWidth={1.5} />
+          </div>
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="h-2.5 w-2.5 animate-pulse border" style={getWorkspaceStatusPillStyle({ tone: 'accent' })} />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                autonomous execution queue
+              </span>
+            </div>
+            <h3 className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-text-primary">
+              [A] task launch rail
+            </h3>
+            <p className="mt-1 max-w-[44ch] text-xs leading-relaxed text-text-muted">
+              Pending tasks ranked by urgency, business value, and unblock impact. Launch from here when the board says go.
+            </p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-white font-semibold text-sm mb-0.5">Cola de Agentes Autónomos</h3>
-          <p className="text-xs text-text-muted leading-relaxed">
-            Tareas ordenadas por urgencia, valor de negocio y desbloqueadores. Solo incluye tareas
-            libres de bloqueos.
-          </p>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span
+            className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.22em]"
+            style={getWorkspaceStatusPillStyle({ tone: 'accent' })}
+          >
+            {queue.length} ready
+          </span>
         </div>
       </div>
 
       {queue.length === 0 ? (
-        <div className="p-10 text-center border border-dashed border-borders-subtle rounded-xl">
+        <div
+          className="p-10 text-center border border-dashed border-borders-subtle rounded-none"
+          style={getQueueRowStyle()}
+        >
           <Bot className="w-8 h-8 text-text-muted mx-auto mb-2" strokeWidth={1} />
           <p className="text-sm text-text-muted">No hay tareas libres disponibles para agentes.</p>
         </div>
@@ -524,41 +761,54 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
           {queue.map((task, i) => (
             <div
               key={task.id}
-              className="bg-surface-card border border-borders-subtle rounded-xl p-4 flex items-center justify-between group hover:border-[#58A6FF]/30 transition-all"
+              className="bg-surface-card border border-borders-subtle rounded-none p-4 flex items-center justify-between group hover:border-[var(--accent-primary)]/30 transition-all"
+              data-testid={`agent-queue-row-${task.id}`}
+              style={getQueueRowStyle({ accent: task.priorityObj.color })}
             >
               <div className="flex-1 flex items-center gap-4">
-                <div className="flex flex-col items-center justify-center bg-surface-app border border-borders-strong w-12 h-12 rounded-lg shrink-0">
+                <div
+                  className="flex flex-col items-center justify-center w-12 h-12 shrink-0"
+                  style={getTaskCardChromeStyle({ accent: task.priorityObj.color })}
+                >
                   <span className="text-white font-mono font-bold text-sm leading-none">
                     {task.score.toFixed(1)}
                   </span>
                   <span className="text-xs text-text-muted uppercase mt-0.5">Score</span>
                 </div>
                 <div>
-                  <h4 className="text-white font-medium text-sm">{task.title}</h4>
+                  <h4 className="font-mono text-sm font-bold uppercase tracking-[0.14em] text-white">
+                    {task.title}
+                  </h4>
                   <div className="flex items-center gap-3 mt-1 opacity-80">
                     <span
-                      className="text-xs flex items-center gap-1"
+                      className="text-[10px] uppercase tracking-[0.18em] flex items-center gap-1"
                       style={{ color: task.priorityObj.color }}
                     >
                       <Flag className="w-3 h-3" /> {task.priorityObj.label}
                     </span>
                     {task.m_title && (
-                      <span className="text-xs text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md border border-borders-subtle">
+                      <span
+                        className="text-xs text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md border border-borders-subtle"
+                        style={getKanbanDetailPillStyle({ accent: task.priorityObj.color })}
+                      >
                         {task.m_title}
                       </span>
                     )}
-                    <span className="text-xs text-text-muted">Desbloquea: {task.unlocks}</span>
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">
+                        unlocks {task.unlocks}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
               <div className="flex gap-2">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleCopy(task);
                   }}
-                  className="bg-surface-elevated text-text-muted hover:text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all border border-borders-subtle hover:border-borders-strong"
+                  className="bg-surface-elevated text-text-muted hover:text-white px-3 py-2 text-xs font-semibold flex items-center gap-2 transition-all border border-borders-subtle hover:border-borders-strong"
                   title="Copiar prompt"
+                  style={{ ...btnSecondaryStyle({ size: 'sm' }), color: 'var(--text-muted)' }}
                 >
                   {copiedTask === task.id ? (
                     <Check className="w-3.5 h-3.5" />
@@ -571,7 +821,8 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
                     e.stopPropagation();
                     handleRunAgent(task);
                   }}
-                  className="bg-[#58A6FF]/10 text-[#58A6FF] border border-[#58A6FF]/20 hover:bg-[#58A6FF] hover:text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all"
+                  className="px-4 py-2 text-xs font-semibold flex items-center gap-2 transition-all"
+                  style={btnPrimaryStyle({ size: 'sm' })}
                 >
                   <Zap className="w-3.5 h-3.5" /> Ejecutar con Worker
                 </button>
@@ -697,58 +948,136 @@ export default function Tareas() {
   const activeFiltersCount = [fMilestone, fSearch, fUnlocked, fMyTasks].filter(Boolean).length;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col" style={getWorkspacePageShellStyle()}>
       {/* Content */}
-      <div className="flex-1 overflow-hidden p-5 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 backdrop-blur-xl">
-              <Button
-                onClick={() => setViewMode('kanban')}
-                variant={viewMode === 'kanban' ? 'devhubGlass' : 'devhubGhost'}
-                size="toolbar"
-                className={viewMode === 'kanban' ? 'text-text-primary border-white/16 bg-white/[0.09]' : ''}
-              >
-                <LayoutDashboard className="w-3.5 h-3.5" /> Kanban
-              </Button>
-              <Button
-                onClick={() => setViewMode('agent')}
-                variant={viewMode === 'agent' ? 'devhubGlass' : 'devhubGhost'}
-                size="toolbar"
-                className={viewMode === 'agent' ? 'text-[var(--text-primary)] border-white/16 bg-white/[0.09]' : ''}
-              >
-                <Bot className="w-3.5 h-3.5" /> Cola Agente
-              </Button>
+      <div className="flex-1 overflow-hidden flex flex-col gap-5" style={getWorkspacePageContentStyle()}>
+        <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
+          <div className="border px-5 py-4" style={getQueueHeroStyle()}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="h-2.5 w-2.5 animate-pulse border" style={getWorkspaceStatusPillStyle({ tone: 'accent' })} />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                workspace task grid
+              </span>
             </div>
-
-            <PresenceAvatars projectId={project?.id} />
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <h2 className="font-mono text-base font-bold uppercase tracking-[0.22em] text-white">
+                  [+] task_kanban_board
+                </h2>
+                <p className="mt-1 max-w-[56ch] text-xs leading-relaxed text-text-muted">
+                  Wider execution board for blockers, milestones, and movement between lanes. Built to feel closer to the brutalist preview, not a soft SaaS grid.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:min-w-[360px]">
+                {COLUMNS.map((column) => {
+                  const count = visibleTasks.filter((task) => task.status === column.id).length;
+                  return (
+                    <div
+                      key={`hero-count-${column.id}`}
+                      className="border px-3 py-2"
+                      style={getKanbanColumnCountStyle({ accent: column.color })}
+                    >
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+                        {column.label}
+                      </div>
+                      <div className="mt-1 font-mono text-xl font-bold leading-none">{count}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
+          <div className="border px-5 py-4" style={getQueueRowStyle()}>
+            <div className="flex h-full flex-col gap-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div
+                    className="flex items-center gap-1 border p-1"
+                    style={getToolbarToggleRailStyle()}
+                  >
+                    <Button
+                      onClick={() => setViewMode('kanban')}
+                      variant={viewMode === 'kanban' ? 'devhubGlass' : 'devhubGhost'}
+                      size="toolbar"
+                      className={viewMode === 'kanban' ? 'text-text-primary' : ''}
+                      style={
+                        viewMode === 'kanban'
+                          ? pillStyle({ tone: 'accent' })
+                          : pillStyle()
+                      }
+                    >
+                      <LayoutDashboard className="w-3.5 h-3.5" /> Tablero
+                    </Button>
+                    <Button
+                      onClick={() => setViewMode('agent')}
+                      variant={viewMode === 'agent' ? 'devhubGlass' : 'devhubGhost'}
+                      size="toolbar"
+                      className={viewMode === 'agent' ? 'text-[var(--text-primary)]' : ''}
+                      style={
+                        viewMode === 'agent'
+                          ? pillStyle({ tone: 'accent' })
+                          : pillStyle()
+                      }
+                    >
+                      <Bot className="w-3.5 h-3.5" /> Cola Agente
+                    </Button>
+                  </div>
 
-          <Button
-            onClick={() => {
-              setEditingTask(null);
-              setInitialStatus('pending');
-              setModalOpen(true);
-            }}
-            variant="devhubPrimary"
-            size="toolbar"
-          >
-            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Añadir Tarea
-          </Button>
+                  <PresenceAvatars projectId={project?.id} />
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setEditingTask(null);
+                    setInitialStatus('pending');
+                    setModalOpen(true);
+                  }}
+                  variant="devhubPrimary"
+                  size="toolbar"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Añadir Tarea
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="border px-3 py-2" style={getWorkspaceStatusPillStyle({ tone: 'accent' })}>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+                    visible
+                  </div>
+                  <div className="mt-1 font-mono text-xl font-bold leading-none">{visibleTasks.length}</div>
+                </div>
+                <div className="border px-3 py-2" style={getWorkspaceStatusPillStyle({ tone: 'neutral' })}>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+                    filtered
+                  </div>
+                  <div className="mt-1 font-mono text-xl font-bold leading-none">{activeFiltersCount}</div>
+                </div>
+                <div className="border px-3 py-2" style={getWorkspaceStatusPillStyle({ tone: 'neutral' })}>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+                    milestones
+                  </div>
+                  <div className="mt-1 font-mono text-xl font-bold leading-none">{milestones.length}</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Filter bar */}
         {viewMode === 'kanban' && (
           <div
-            className="core-panel rounded-xl p-3 flex flex-wrap items-center gap-2.5"
-            style={{ background: 'var(--surface-card, #161b26)' }}
+            className="border p-4 flex flex-wrap items-center gap-3"
+            style={getWorkspaceFilterBarStyle()}
+            data-testid="tareas-filter-bar"
           >
             {/* Filter icon + label */}
-            <div className="flex items-center gap-1.5 text-text-muted pr-1 border-r border-borders-subtle mr-1">
+            <div className="flex items-center gap-2 text-text-muted pr-3 border-r border-borders-subtle mr-1">
               <Filter className="w-3.5 h-3.5" />
-              <span className="text-xs font-semibold uppercase tracking-wider">Filtros</span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.22em]">signal filters</span>
               {activeFiltersCount > 0 && (
-                <span className="text-[11px] bg-[#58A6FF] text-white rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                <span
+                  className="text-[11px] text-white w-6 h-6 flex items-center justify-center font-bold"
+                  style={getKanbanColumnCountStyle({ accentVar: 'var(--accent-primary)' })}
+                >
                   {activeFiltersCount}
                 </span>
               )}
@@ -761,7 +1090,8 @@ export default function Tareas() {
                 placeholder="Buscar tarea..."
                 value={fSearch}
                 onChange={(e) => setFSearch(e.target.value)}
-                className="bg-surface-app border border-borders-subtle text-xs text-text-primary placeholder-[#484F58] pl-7 pr-3 py-1.5 rounded-lg w-44 outline-none focus:border-[#58A6FF]/40 focus:ring-1 focus:ring-[#58A6FF]/10 transition-colors cursor-pointer"
+                className="bg-surface-app border border-borders-subtle text-xs text-text-primary placeholder-[var(--text-muted)] pl-7 pr-3 py-1.5 w-44 outline-none focus:border-[var(--accent-primary)]/40 focus:ring-1 focus:ring-[var(--accent-primary)]/10 transition-colors cursor-pointer"
+                style={getTaskFieldChromeStyle()}
               />
             </div>
 
@@ -771,8 +1101,9 @@ export default function Tareas() {
               <select
                 value={fMilestone}
                 onChange={(e) => setFMilestone(e.target.value)}
-                className="appearance-none bg-surface-app border border-borders-subtle text-xs text-text-primary pl-7 pr-7 py-1.5 rounded-lg outline-none focus:border-[#58A6FF]/40 cursor-pointer"
-              >
+                  className="appearance-none bg-surface-app border border-borders-subtle text-xs text-text-primary pl-7 pr-7 py-1.5 outline-none focus:border-[var(--accent-primary)]/40 cursor-pointer"
+                  style={getTaskFieldChromeStyle()}
+                >
                 <option value="">Todos los Milestones</option>
                 {milestones.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -786,13 +1117,15 @@ export default function Tareas() {
             {/* Toggle pills */}
             <button
               onClick={() => setFUnlocked((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${fUnlocked ? 'bg-[#58A6FF]/10 border-[#58A6FF]/30 text-[#58A6FF]' : 'bg-surface-app border-borders-subtle text-text-muted hover:text-text-primary hover:border-borders-strong'}`}
+              className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] border transition-all"
+              style={fUnlocked ? pillStyle({ tone: 'accent' }) : pillStyle()}
             >
               <Zap className="w-3 h-3" /> Solo desbloqueadas
             </button>
             <button
               onClick={() => setFMyTasks((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${fMyTasks ? 'bg-[#3FB950]/10 border-[#3FB950]/30 text-[#3FB950]' : 'bg-surface-app border-borders-subtle text-text-muted hover:text-text-primary hover:border-borders-strong'}`}
+              className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] border transition-all"
+              style={fMyTasks ? pillStyle({ tone: 'success' }) : pillStyle()}
             >
               Asignadas a mí
             </button>
@@ -816,7 +1149,7 @@ export default function Tareas() {
         {/* Board / Agent View */}
         {loading ? (
           <div className="flex items-center justify-center flex-1 py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-[#58A6FF]" />
+            <Loader2 className="w-8 h-8 animate-spin text-[var(--accent-primary)]" />
           </div>
         ) : viewMode === 'agent' ? (
           <AgentQueueView
@@ -827,39 +1160,47 @@ export default function Tareas() {
             navigate={navigate}
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-4 items-start">
             {COLUMNS.map((col) => {
               const colTasks = visibleTasks.filter((t) => t.status === col.id);
               return (
                 <div
                   key={col.id}
-                  className="core-panel rounded-xl overflow-hidden flex flex-col max-h-[80vh] shadow-sm"
-                  style={{ background: 'var(--surface-card, #161b26)' }}
+                  className="overflow-hidden flex min-h-[74vh] flex-col"
+                  style={getKanbanColumnShellStyle({ accent: col.color })}
                 >
                   {/* Column header */}
                   <div
-                    className="flex items-center justify-between px-4 py-3 border-b border-borders-subtle"
-                    style={{ borderTop: `2px solid ${col.color}` }}
+                    className="flex items-start justify-between gap-3 px-4 py-4 border-b border-borders-subtle"
+                    style={getKanbanColumnHeaderStyle({ accent: col.color })}
                   >
-                    <div className="flex items-center gap-2">
+                    <div>
+                      <div className="mb-1 flex items-center gap-2">
+                        <span
+                          className={`h-2.5 w-2.5 border ${col.id === 'in_progress' ? 'animate-pulse' : ''}`}
+                          style={{ background: col.color, borderColor: mixChromeAccent(col.color, 28) }}
+                        />
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                          {col.id.replace('_', ' ')}
+                        </span>
+                      </div>
                       <span
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: col.color }}
-                      />
-                      <span
-                        className="text-xs font-bold uppercase tracking-wider"
+                        className="font-mono text-xs font-bold uppercase tracking-[0.2em]"
                         style={{ color: col.color }}
                       >
                         {col.label}
                       </span>
                     </div>
-                    <span className="font-mono text-xs text-text-muted bg-surface-elevated px-2 py-0.5 rounded-full border border-borders-subtle">
+                    <span
+                      className="font-mono text-sm font-bold px-3 py-2 text-center"
+                      style={getKanbanColumnCountStyle({ accent: col.color })}
+                    >
                       {colTasks.length}
                     </span>
                   </div>
 
                   {/* Tasks */}
-                  <div className="p-2.5 flex-1 overflow-y-auto space-y-2 custom-scrollbar">
+                  <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                     {colTasks.map((task) => {
                       const prio = PRIORITY[task.priority] || PRIORITY.medium;
                       const nextCols = COLUMNS.filter((c) => c.id !== col.id);
@@ -867,42 +1208,48 @@ export default function Tareas() {
                         .filter((d) => d.task_id === task.id && d.tipo === 'blocks')
                         .some((d) => statusMap[d.depends_on] !== 'completed');
 
-                      return (
-                        <div
-                          key={task.id}
+                        return (
+                          <div
+                            key={task.id}
                           onClick={() => {
                             setEditingTask(task);
                             setModalOpen(true);
                           }}
-                          className={`bg-surface-card border border-borders-strong rounded-xl p-3 hover:shadow-lg transition-all cursor-pointer group relative ${isBlocked ? 'border-danger/30 bg-red-950/5' : 'border-borders-subtle hover:border-borders-strong'}`}
+                          className="border px-4 py-4 transition-all cursor-pointer group relative border-borders-subtle hover:border-borders-strong hover:-translate-y-px"
+                          data-testid={`task-card-${task.id}`}
+                          style={getTaskCardChromeStyle({ blocked: isBlocked, accent: prio.color })}
                         >
                           {isBlocked && (
-                            <div className="flex items-center gap-1 text-[11px] text-danger font-semibold mb-1.5">
+                            <div className="mb-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-danger">
                               <ShieldAlert className="w-3 h-3" /> BLOQUEADA
                             </div>
                           )}
-                          <p className="text-xs text-text-primary font-medium leading-snug mb-2.5 pr-5">
+                          <p className="mb-3 pr-5 font-mono text-[11px] font-bold uppercase leading-snug tracking-[0.14em] text-text-primary">
                             {task.title}
                           </p>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
-                                className="text-[11px] font-semibold flex items-center gap-0.5"
+                                className="text-[10px] font-semibold uppercase tracking-[0.18em] flex items-center gap-1"
                                 style={{ color: prio.color }}
                               >
-                                <Flag className="w-2.5 h-2.5" />
+                                <Flag className="w-3 h-3" /> {prio.label}
                               </span>
                               {task.business_value && (
                                 <span
-                                  className="text-[11px] text-[#58A6FF] font-mono"
+                                  className="px-2 py-1 text-[10px] text-[var(--accent-primary)] font-mono uppercase tracking-[0.18em]"
                                   title="Valor Negocio"
+                                  style={getKanbanDetailPillStyle({ accentVar: 'var(--accent-primary)' })}
                                 >
                                   V:{task.business_value}
                                 </span>
                               )}
                               {task.due_date && (
-                                <span className="text-[11px] text-text-muted flex items-center gap-0.5">
-                                  <Calendar className="w-2.5 h-2.5" />
+                                <span
+                                  className="flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-text-muted border"
+                                  style={getKanbanDetailPillStyle({ accent: prio.color })}
+                                >
+                                  <Calendar className="w-3 h-3" />
                                   {new Date(task.due_date).toLocaleDateString('es-ES', {
                                     day: '2-digit',
                                     month: 'short',
@@ -916,15 +1263,34 @@ export default function Tareas() {
                               className="relative group/move"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <button className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-white transition-all p-1 bg-surface-elevated rounded-lg border border-borders-subtle">
+                                <button
+                                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-white transition-all p-1.5 bg-surface-elevated border border-borders-subtle"
+                                style={{
+                                  ...btnSecondaryStyle({ size: 'xs' }),
+                                  padding: '0.375rem',
+                                  minWidth: 'auto',
+                                  color: 'var(--text-muted)',
+                                }}
+                              >
                                 <ChevronDown className="w-3 h-3" />
                               </button>
-                              <div className="absolute right-0 top-7 bg-surface-card border border-borders-subtle rounded-xl py-1 hidden group-hover/move:block z-10 w-36 shadow-xl">
+                              <div
+                                className="absolute right-0 top-8 bg-surface-card border border-borders-subtle py-1 hidden group-hover/move:block z-10 w-40 shadow-xl"
+                                data-testid={`task-move-menu-${task.id}`}
+                                style={getMoveMenuChromeStyle()}
+                              >
                                 {nextCols.map((nc) => (
                                   <button
                                     key={nc.id}
                                     onClick={() => moveTask(task.id, nc.id)}
                                     className="w-full text-left px-3 py-1.5 text-xs text-text-muted hover:text-white hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
+                                    style={{
+                                      ...pillStyle(),
+                                      width: '100%',
+                                      justifyContent: 'flex-start',
+                                      borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                                      color: 'var(--text-muted)',
+                                    }}
                                   >
                                     <span
                                       className="w-1.5 h-1.5 rounded-full"
@@ -937,6 +1303,7 @@ export default function Tareas() {
                                   <button
                                     onClick={() => deleteTask(task.id)}
                                     className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-red-500/10 flex items-center gap-2 transition-colors cursor-pointer"
+                                    style={{ ...btnDangerStyle({ size: 'xs' }), width: '100%', justifyContent: 'flex-start' }}
                                   >
                                     <Trash2 className="w-3 h-3" /> Eliminar
                                   </button>
@@ -954,7 +1321,17 @@ export default function Tareas() {
                         setInitialStatus(col.id);
                         setModalOpen(true);
                       }}
-                      className="w-full py-2 text-xs text-text-muted hover:text-white hover:bg-surface-elevated rounded-xl transition-all flex items-center justify-center gap-1 border border-dashed border-borders-subtle"
+                      className="w-full py-3 text-[10px] font-semibold uppercase tracking-[0.2em] hover:text-white transition-all flex items-center justify-center gap-1 border"
+                      style={{
+                        ...btnSecondaryStyle({ size: 'sm' }),
+                        width: '100%',
+                        borderRadius: 0,
+                        borderStyle: 'solid',
+                        borderColor: col.color,
+                        background: `color-mix(in srgb, ${col.color} 18%, var(--chrome-control-fill))`,
+                        color: 'var(--text-primary)',
+                        boxShadow: 'var(--chrome-shadow-control)',
+                      }}
                     >
                       <Plus className="w-3 h-3" /> Añadir
                     </button>

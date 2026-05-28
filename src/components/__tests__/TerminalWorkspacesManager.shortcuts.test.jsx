@@ -271,8 +271,9 @@ describe('TerminalWorkspacesManager shortcuts', () => {
 
     const event = await dispatchShortcut({ key: 'PageDown', ctrlKey: true, shiftKey: true });
 
-    expect(getActiveWorkspaceTabLabel(view.container)).toBe('Workspace 1');
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws2');
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
+    expect(getPersistedWorkspaceState().activeWsId).toBe('ws2');
     expect(event.defaultPrevented).toBe(true);
   });
 
@@ -292,8 +293,9 @@ describe('TerminalWorkspacesManager shortcuts', () => {
 
     const event = await dispatchShortcut({ key: 'PageUp', ctrlKey: true, shiftKey: true });
 
-    expect(getActiveWorkspaceTabLabel(view.container)).toBe('Workspace 3');
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws3');
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p3');
+    expect(getPersistedWorkspaceState().activeWsId).toBe('ws3');
     expect(event.defaultPrevented).toBe(true);
   });
 

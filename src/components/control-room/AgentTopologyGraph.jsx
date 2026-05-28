@@ -151,10 +151,10 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
 
   if (!director) {
     return (
-      <div
-        className="flex h-28 items-center justify-center rounded-xl border text-xs"
-        style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-      >
+    <div
+      className="flex h-28 items-center justify-center border text-xs"
+      style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+    >
         Sin topología activa: no hay Director ni agentes vivos en este snapshot.
       </div>
     );
@@ -162,10 +162,10 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
 
   return (
     <div
-      className="w-full overflow-hidden rounded-2xl border"
+      className="w-full overflow-hidden border"
       style={{
         borderColor: 'var(--border-subtle)',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))',
+        background: 'var(--chrome-panel-fill)',
       }}
     >
       <div
@@ -197,8 +197,7 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
         style={{
           minHeight: '320px',
           height: `${layout.height}px`,
-          background:
-            'radial-gradient(circle at 20% 25%, rgba(56,189,248,0.10), transparent 28%), radial-gradient(circle at 80% 70%, rgba(34,197,94,0.10), transparent 32%), var(--surface-muted)',
+          background: 'var(--surface-muted)',
         }}
       >
         <svg
@@ -239,20 +238,20 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
                 onMouseEnter={() => setHoveredNode(node.id)}
                 onMouseLeave={() => setHoveredNode(null)}
                 onClick={() => onViewAgent?.(node.id)}
-                className="absolute flex items-center justify-center rounded-full border text-sm font-semibold"
+                className="absolute flex items-center justify-center rounded-none border-2 text-sm font-semibold"
                 style={{
                   left: `${node.x - node.r}px`,
                   top: `${node.y - node.r}px`,
                   width: `${node.r * 2}px`,
                   height: `${node.r * 2}px`,
                   color: node.isDirector ? '#fbbf24' : 'var(--text-primary)',
-                  borderColor: highlighted ? theme.dot : `${theme.dot}88`,
+                  borderColor: highlighted ? '#22c55e' : '#3f3f46',
                   background: node.isDirector
-                    ? 'radial-gradient(circle at 30% 25%, rgba(245,158,11,0.34), rgba(15,23,42,0.9))'
-                    : 'radial-gradient(circle at 30% 25%, rgba(59,130,246,0.28), rgba(15,23,42,0.9))',
+                    ? '#141416'
+                    : '#141416',
                   boxShadow: highlighted
-                    ? `0 0 0 1px ${theme.dot}, 0 0 28px ${theme.dot}66`
-                    : `0 0 0 1px ${theme.dot}66`,
+                    ? '3px 3px 0px 0px #22c55e'
+                    : '3px 3px 0px 0px #27272a',
                 }}
                 title={`${node.label} · ${formatToken(node.status)}`}
                 aria-label={`${node.label} estado ${formatToken(node.status)}`}
@@ -274,8 +273,8 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
                 >
                   {node.label}
                 </p>
-                <div className="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px]" style={{ background: theme.bg, color: theme.color }}>
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: theme.dot }} />
+                <div className="mt-1 inline-flex items-center gap-1 rounded-none border-2 px-2 py-0.5 text-[10px]" style={{ background: '#141416', color: theme.color, borderColor: theme.dot }}>
+                  <span className="h-1.5 w-1.5 rounded-none" style={{ background: theme.dot }} />
                   {formatToken(node.status)}
                 </div>
               </div>

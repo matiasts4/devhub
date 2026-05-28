@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
+
+export { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -201,50 +204,20 @@ export async function DELETE(request) {
 
   if (process.env.NODE_ENV === 'production') {
     try {
-      const sidecarPort = await readProductionSidecarPort();
-      if (!sidecarPort) {
-        return NextResponse.json(
-          { error: 'Servidor terminal (sidecar) no encontrado' },
-          { status: 503 }
-        );
-      }
-
-      const response = await fetch(
-        `http://127.0.0.1:${sidecarPort}/sessions/${encodeURIComponent(sessionId)}`,
-        {
-          method: 'DELETE',
-          cache: 'no-store',
-        }
-      );
-
-      // Consume body to fully close the underlying undici connection
-      try {
-        await response.text();
-      } catch {
-        /* ignore */
-      }
-
-      if (!response.ok) {
-        return NextResponse.json(
-          { error: 'No se pudo cerrar la sesión de terminal.' },
-          { status: response.status }
-        );
-      }
-
-      return NextResponse.json({ success: true, sessionId });
+      const result = await closeTerminalSessionById(sessionId);
+      return NextResponse.json(result);
     } catch (error) {
       console.error('Failed to close production terminal PTY session:', error);
       return NextResponse.json(
         { error: 'No se pudo cerrar la sesión de terminal.' },
-        { status: 500 }
+        { status: error?.status || 500 }
       );
     }
   }
 
   try {
-    const { closeSession } = await import('@/lib/terminal/ttyServer');
-    closeSession(sessionId);
-    return NextResponse.json({ success: true, sessionId });
+    const result = await closeTerminalSessionById(sessionId);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to close terminal PTY session:', error);
     return NextResponse.json(

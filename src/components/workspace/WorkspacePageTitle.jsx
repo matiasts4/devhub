@@ -1,5 +1,18 @@
 import { Fragment } from 'react';
 
+export function getWorkspacePageTitleProjectBadgeProps() {
+  return {
+    className:
+      'text-xs px-2 py-0.5 rounded-[var(--chrome-radius-control)] border-[length:var(--chrome-border-width)] truncate max-w-[220px]',
+    style: {
+      borderColor: 'var(--chrome-border-color)',
+      background: 'var(--chrome-control-fill)',
+      boxShadow: 'var(--chrome-shadow-control)',
+      color: 'var(--text-muted)',
+    },
+  };
+}
+
 export default function WorkspacePageTitle({
   icon: Icon,
   title,
@@ -7,6 +20,8 @@ export default function WorkspacePageTitle({
   badges = [],
   iconClassName = 'w-4 h-4',
 }) {
+  const projectBadgeProps = getWorkspacePageTitleProjectBadgeProps();
+
   return (
     <div className="flex items-center gap-3 flex-wrap min-w-0">
       {Icon ? (
@@ -18,7 +33,7 @@ export default function WorkspacePageTitle({
       </h1>
 
       {projectName ? (
-        <span className="text-xs px-2 py-0.5 rounded-full bg-surface-elevated border border-borders-strong text-text-muted truncate max-w-[220px]">
+        <span data-chrome-surface="project-badge" {...projectBadgeProps}>
           {projectName}
         </span>
       ) : null}

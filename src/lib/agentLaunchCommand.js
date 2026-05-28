@@ -10,6 +10,10 @@ export function resolveAgentProgramExecutable(programId = 'hermes') {
   return AGENT_PROGRAM_EXECUTABLES[programId] || AGENT_PROGRAM_EXECUTABLES.hermes;
 }
 
+function shellQuote(value = '') {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
 /**
  * Build a tmux-wrapped command for swarm agents.
  * The tmux session survives PTY death (page refresh, network drop).
@@ -17,11 +21,13 @@ export function resolveAgentProgramExecutable(programId = 'hermes') {
  * Status bar disabled to save vertical space.
  */
 export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
-  const command = cwd ? `cd "${cwd}" && ${innerCommand}` : innerCommand;
+  const sessionTarget = shellQuote(tmuxSessionName);
+  const startDirectory = cwd ? ` -c ${shellQuote(cwd)}` : '';
+  const command = shellQuote(innerCommand);
   return [
-    `tmux new-session -A -d -s "${tmuxSessionName}" '${command}' 2>/dev/null || true`,
-    `tmux set-option -t "${tmuxSessionName}" status off 2>/dev/null || true`,
-    `tmux attach-session -t "${tmuxSessionName}"`,
+    `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
+    `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,
+    `tmux attach-session -t ${sessionTarget}`,
   ].join('; ');
 }
 

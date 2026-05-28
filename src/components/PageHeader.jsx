@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
-import { X, Minus, Plus } from 'lucide-react';
+import { X, Minus, Plus, Terminal as TerminalIcon } from 'lucide-react';
 import NotificationCenter from './NotificationCenter';
 
 /**
@@ -76,11 +76,19 @@ export default function PageHeader({
     >
       {/* Left: App Icon + Project Name */}
       <div className="flex items-center gap-3 min-w-0" style={{ WebkitAppRegion: 'no-drag' }}>
-        <div className="w-7 h-7 rounded-full overflow-hidden border flex items-center justify-center shadow-sm">
-          <img src="/logo.png" alt="DevHub logo" className="w-full h-full object-cover" />
+        <div
+          className="h-9 w-9 border-2 flex items-center justify-center"
+          style={{
+            borderColor: 'var(--accent-primary)',
+            backgroundColor: 'var(--accent-primary)',
+            boxShadow: '2px 2px 0 0 var(--accent-shadow)',
+            borderRadius: 0,
+          }}
+        >
+          <TerminalIcon className="w-5 h-5" style={{ color: '#000', strokeWidth: 2.5 }} />
         </div>
         <span className="font-semibold text-text-primary text-[12px] tracking-[0.02em] opacity-90 truncate">
-          DevHub <span className="opacity-40 font-normal mx-2">/</span> {project?.name || ''}
+          DEVHUB <span className="opacity-40 font-normal mx-2">/</span> {project?.name || ''}
         </span>
       </div>
 
@@ -92,25 +100,12 @@ export default function PageHeader({
         {children}
       </div>
 
-      {/* Right: Notifications + Page Indicator + Window Controls */}
+      {/* Right: Notifications + Window Controls */}
       <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' }}>
         <NotificationCenter projectId={project?.id} variant="topbar" />
-        <div
-          className="text-[11px] px-3 py-1.5 rounded-full border shadow-sm flex items-center gap-2"
-          style={{
-            borderColor: 'rgba(255,255,255,0.1)',
-            background:
-              'linear-gradient(135deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0.03) 100%)',
-            color: 'var(--text-secondary)',
-            backdropFilter: 'blur(12px)',
-          }}
-        >
-          <div className="w-1.5 h-1.5 rounded-full bg-amber-400/90 shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
-          {pageName}
-        </div>
 
         {/* Window Controls - Circular macOS style */}
-          <div className="flex items-center gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]">
+        <div className="flex items-center gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]">
           <button
             onClick={handleWinMinimize}
             className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"

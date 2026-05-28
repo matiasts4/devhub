@@ -120,7 +120,7 @@ export function buildInitialHeartbeatCommand({
     mission_id: missionId,
     role,
     cwd: workspacePath,
-    state: 'booting',
+    state: 'busy',
     status_summary: 'Agent starting up',
   });
 

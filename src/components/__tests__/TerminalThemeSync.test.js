@@ -84,4 +84,30 @@ describe('buildXtermTheme()', () => {
       expect(typeof theme[key]).toBe('string');
     });
   });
+
+  test('morphology chrome vars do not mutate xterm theme mappings', () => {
+    const baseline = buildXtermTheme(makeGetVar());
+    const chromeShifted = buildXtermTheme(
+      makeGetVar({
+        '--chrome-panel-fill': 'rgba(12, 16, 24, 0.95)',
+        '--chrome-panel-fill-emphasis': 'rgba(18, 24, 34, 0.98)',
+        '--chrome-border-color': 'rgba(240, 246, 252, 0.14)',
+        '--chrome-radius-panel': '28px',
+      })
+    );
+
+    expect(chromeShifted).toEqual(baseline);
+  });
+
+  test('theme hue changes still propagate through xterm independently of morphology chrome', () => {
+    const theme = buildXtermTheme(
+      makeGetVar({
+        '--accent-primary': '#e6b450',
+        '--chrome-panel-fill': 'rgba(30, 30, 30, 0.92)',
+      })
+    );
+
+    expect(theme.cursor).toBe('#e6b450');
+    expect(theme.background).toBe('transparent');
+  });
 });

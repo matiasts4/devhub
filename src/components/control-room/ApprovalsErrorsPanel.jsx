@@ -20,7 +20,7 @@ export default function ApprovalsErrorsPanel({
 }) {
   return (
     <section
-      className="rounded-2xl border p-4"
+      className="border p-4"
       style={panelShellStyle()}
       aria-label="Aprobaciones y errores"
     >

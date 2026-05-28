@@ -92,7 +92,7 @@ export default function EquipoSettings({ projectId }) {
           type="submit" 
           disabled={inviting || !email}
           className="px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition-all"
-          style={{ background: "var(--accent-primary)", color: "#fff", opacity: (inviting || !email) ? 0.5 : 1 }}
+          style={{ background: "var(--accent-primary)", color: "var(--primary-foreground, #000)", opacity: (inviting || !email) ? 0.5 : 1 }}
         >
           {inviting ? <Loader2 className="w-3 h-3 animate-spin"/> : "Invitar"}
         </button>

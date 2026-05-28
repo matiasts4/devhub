@@ -67,10 +67,10 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
   });
 
   describe('REQ-CWD-2: Tmux session CWD flag', () => {
-    test('buildTmuxWrappedCommand with cwd prefixes cd into command', () => {
+    test('buildTmuxWrappedCommand with cwd uses tmux -c start directory', () => {
       const cwd = '/repo/.devhub/worktrees/launch-abc/coder';
       const result = buildTmuxWrappedCommand('echo hello', 'sess-1', cwd);
-      expect(result).toContain(`cd "${cwd}"`);
+      expect(result).toContain(`tmux new-session -A -d -s 'sess-1' -c '${cwd}' 'echo hello'`);
     });
 
     test('buildTmuxWrappedCommand without cwd remains backward compatible', () => {
@@ -84,7 +84,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
         tmuxSessionName: 'sess-test',
         cwd: '/repo/.devhub/worktrees/launch-abc/coder',
       });
-      expect(result).toContain('cd "/repo/.devhub/worktrees/launch-abc/coder"');
+      expect(result).toContain(`-c '/repo/.devhub/worktrees/launch-abc/coder'`);
     });
 
     test('buildAgentLaunchCommand without cwd is backward compatible', () => {
@@ -93,6 +93,13 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
       });
       expect(result).toContain('tmux new-session');
       expect(result).not.toContain('cd "');
+    });
+
+    test('buildTmuxWrappedCommand safely escapes embedded single quotes', () => {
+      const result = buildTmuxWrappedCommand(`printf '%s\\n' 'hello'`, 'sess-quote', "/tmp/agent's-worktree");
+      expect(result).toContain(`-s 'sess-quote'`);
+      expect(result).toContain(`-c '/tmp/agent'"'"'s-worktree'`);
+      expect(result).toContain(`'printf '"'"'%s\\n'"'"' '"'"'hello'"'"''`);
     });
   });
 });

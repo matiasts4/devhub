@@ -1577,6 +1577,36 @@ export function selectControlRoomErrors(snapshot = {}) {
   return asArray(snapshot.errors);
 }
 
+function buildSwarmLaunchStrategies() {
+  return [
+    {
+      id: 'director_first',
+      label: 'Director-first bootstrap',
+      summary: 'Prepara al Director primero y deja el fan-out explícito como segunda fase.',
+    },
+    {
+      id: 'parallel_all',
+      label: 'Parallel all roles',
+      summary: 'Mantiene el fan-out inmediato para todos los roles desde el launch inicial.',
+    },
+  ];
+}
+
+function buildSwarmBootstrapModes() {
+  return [
+    {
+      id: 'engram_first',
+      label: 'Engram first',
+      summary: 'El Director arranca leyendo contexto durable antes de repartir foco.',
+    },
+    {
+      id: 'skip_bootstrap',
+      label: 'Skip bootstrap',
+      summary: 'Salta el checkpoint inicial y deja constancia explícita en el trace.',
+    },
+  ];
+}
+
 export function selectSwarmLaunchCatalog(snapshot = {}) {
   const templates = buildSwarmTemplateCatalog();
   const categories = buildSwarmLaunchCategories();
@@ -1585,6 +1615,8 @@ export function selectSwarmLaunchCatalog(snapshot = {}) {
   const teams = buildSwarmLaunchTeams();
   const swarmTypes = buildSwarmTypeCatalog();
   const models = buildSwarmLaunchModels();
+  const launchStrategies = buildSwarmLaunchStrategies();
+  const bootstrapModes = buildSwarmBootstrapModes();
   const recommendedTemplateId = selectRecommendedTemplateId(snapshot);
   const recommendedTemplate = findTemplateById(templates, recommendedTemplateId);
   const orderedTemplates = [
@@ -1602,6 +1634,8 @@ export function selectSwarmLaunchCatalog(snapshot = {}) {
     templates: orderedTemplates,
     swarm_types: swarmTypes,
     models,
+    launch_strategies: launchStrategies,
+    bootstrap_modes: bootstrapModes,
   };
 }
 
@@ -1618,6 +1652,8 @@ export function createSwarmLaunchDraft({
   const teams = asArray(resolvedCatalog.teams);
   const templates = asArray(resolvedCatalog.templates);
   const swarmTypes = asArray(resolvedCatalog.swarm_types);
+  const launchStrategies = asArray(resolvedCatalog.launch_strategies);
+  const bootstrapModes = asArray(resolvedCatalog.bootstrap_modes);
   const desiredSwarmTypeId = preferredSwarmTypeId || draft.swarmTypeId || null;
   const preferredTemplateForSwarmType = desiredSwarmTypeId
     ? findTemplateBySwarmTypeId(templates, desiredSwarmTypeId)
@@ -1643,6 +1679,12 @@ export function createSwarmLaunchDraft({
     providers,
     draft.providerId || template?.default_provider_id || swarmType?.default_provider_id
   );
+  const launchStrategy =
+    findRecordById(launchStrategies, draft.launchStrategy || null) ||
+    findRecordById(launchStrategies, 'director_first');
+  const bootstrapMode =
+    findRecordById(bootstrapModes, draft.bootstrapMode || null) ||
+    findRecordById(bootstrapModes, 'engram_first');
   const topology = team?.topology || template?.topology || swarmType?.topology || null;
   const rolePrograms = mergeRolePrograms(
     buildDefaultRolePrograms(topology, 'opencode'),
@@ -1651,12 +1693,25 @@ export function createSwarmLaunchDraft({
   const projectPath =
     project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
 
-  // Default model: DeepSeek V4 Flash for all roles (lightweight for testing)
   const DEFAULT_SWARM_MODEL = 'opencode-go/deepseek-v4-flash';
+  const SWARM_ROLE_DEFAULT_MODELS = Object.freeze({
+    director: 'opencode-go/qwen3.6-plus',
+    coder: 'opencode-go/deepseek-v4-flash',
+    builder: 'opencode-go/deepseek-v4-flash',
+    qa: 'opencode-go/deepseek-v4-flash',
+    auditor: 'opencode-go/qwen3.6-plus',
+    reviewer: 'opencode-go/qwen3.6-plus',
+    devops: 'opencode-go/deepseek-v4-flash',
+    recovery_ops: 'opencode-go/deepseek-v4-flash',
+    architect: 'opencode/claude-sonnet-4.6',
+    scout: 'opencode-go/qwen3.5-plus',
+    analyst: 'opencode-go/qwen3.5-plus',
+    evidence: 'opencode-go/qwen3.5-plus',
+  });
   const defaultRoleModels = topology?.roles
     ? topology.roles.reduce((acc, role) => {
         const key = slugifyRoleKey(role);
-        if (key) acc[key] = DEFAULT_SWARM_MODEL;
+        if (key) acc[key] = SWARM_ROLE_DEFAULT_MODELS[key] || DEFAULT_SWARM_MODEL;
         return acc;
       }, {})
     : {};
@@ -1668,6 +1723,8 @@ export function createSwarmLaunchDraft({
     swarmTypeId: swarmType?.id || null,
     teamId: team?.id || null,
     providerId: provider?.id || null,
+    launchStrategy: launchStrategy?.id || 'director_first',
+    bootstrapMode: bootstrapMode?.id || 'engram_first',
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
     roleModels: Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
@@ -1683,6 +1740,11 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
   const swarmType = findRecordById(resolvedCatalog.swarm_types, resolvedDraft.swarmTypeId);
   const team = findRecordById(resolvedCatalog.teams, resolvedDraft.teamId);
   const provider = findRecordById(resolvedCatalog.providers, resolvedDraft.providerId);
+  const launchStrategy = findRecordById(
+    resolvedCatalog.launch_strategies,
+    resolvedDraft.launchStrategy
+  );
+  const bootstrapMode = findRecordById(resolvedCatalog.bootstrap_modes, resolvedDraft.bootstrapMode);
   const topology = team?.topology || template?.topology || swarmType?.topology || null;
   const rolePrograms = buildRoleProgramPreview(
     topology,
@@ -1698,9 +1760,13 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
     swarmType,
     team,
     provider,
+    launchStrategy,
+    bootstrapMode,
     topology,
     rolePrograms,
     modeLabel,
+    launchStrategyLabel: launchStrategy?.label || 'Director-first bootstrap',
+    bootstrapModeLabel: bootstrapMode?.label || 'Engram first',
     launchLabel:
       resolvedDraft.mode === 'custom'
         ? `Lanzar ${swarmType?.label || 'custom swarm'}`
@@ -1726,7 +1792,7 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
 
 /**
  * Mapea un role_key de swarm a un perfil de agente OpenCode.
- * Director usa gentle-orchestrator; workers usan perfiles swarm-* livianos.
+ * Director y workers visibles usan perfiles dedicados por rol.
  */
 export function buildRoleAgentProfile(roleKey = '') {
   const mapping = {
@@ -1734,13 +1800,13 @@ export function buildRoleAgentProfile(roleKey = '') {
     coder: 'swarm-coder',
     builder: 'swarm-coder',
     qa: 'swarm-qa',
-    auditor: 'swarm-reviewer',
+    auditor: 'swarm-auditor',
     reviewer: 'swarm-reviewer',
-    devops: 'swarm-coder',
-    architect: 'swarm-explorer',
+    devops: 'swarm-devops',
+    architect: 'swarm-architect',
     scout: 'swarm-explorer',
     analyst: 'swarm-explorer',
-    recovery_ops: 'swarm-coder',
+    recovery_ops: 'swarm-devops',
     evidence: 'swarm-explorer',
   };
   return mapping[roleKey] || 'swarm-coder';

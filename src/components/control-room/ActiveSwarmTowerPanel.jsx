@@ -1,4 +1,5 @@
 import React from 'react';
+import { btnPrimaryStyle, dataTileStyle } from '../../chrome/morphology';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import SwarmTopologyGraph from './SwarmTopologyGraph';
 import { formatToken } from './utils';
@@ -63,11 +64,16 @@ export default function ActiveSwarmTowerPanel({ hero }) {
             <button
               type="button"
               disabled={hero?.primaryCta?.disabled}
-              className="w-full rounded-xl border px-4 py-3 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full disabled:cursor-not-allowed disabled:opacity-60"
               style={{
-                background: 'rgba(255,176,64,0.12)',
-                borderColor: 'rgba(255,176,64,0.26)',
-                color: 'var(--text-primary)',
+                ...btnPrimaryStyle({ size: 'lg' }),
+                width: '100%',
+                height: 'auto',
+                padding: '0.75rem 1rem',
+                justifyContent: 'flex-start',
+                textAlign: 'left',
+                textTransform: 'none',
+                letterSpacing: 'normal',
               }}
             >
               {hero?.primaryCta?.label || 'Continuar swarm'}
@@ -134,13 +140,7 @@ export default function ActiveSwarmTowerPanel({ hero }) {
 
 function MetricStat({ label, value }) {
   return (
-    <div
-      className="rounded-xl border px-3 py-2.5"
-      style={{
-        borderColor: 'var(--border-subtle)',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))',
-      }}
-    >
+    <div className="px-3 py-2.5" style={dataTileStyle()}>
       <p className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
         {label}
       </p>

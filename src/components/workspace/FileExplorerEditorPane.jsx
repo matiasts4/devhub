@@ -33,6 +33,12 @@ import {
   readEditorPaneState,
   writeEditorPaneState,
 } from './editorPaneState';
+import {
+  panelStyle,
+  pillStyle,
+  btnSecondaryStyle,
+  inputStyle,
+} from '@/chrome/morphology';
 import 'highlight.js/styles/github-dark.css';
 
 const DOCUMENT_VIEW_MODES = {
@@ -441,9 +447,10 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   return (
     <div
       data-testid="shared-editor-pane"
-      className={`flex flex-col min-h-0 ${embedded ? 'h-full bg-[linear-gradient(180deg,#0b1320_0%,#08101a_100%)]' : 'flex-1'}`}
+      className={`flex flex-col min-h-0 ${embedded ? 'h-full' : 'flex-1'}`}
+      style={{ background: embedded ? 'var(--chrome-panel-fill)' : undefined }}
     >
-      <div className="px-4 py-2 border-b border-borders-subtle bg-[color-mix(in_srgb,var(--surface-app)_90%,#050914)] flex items-center justify-between gap-3">
+      <div className="px-4 py-2 border-b border-borders-subtle flex items-center justify-between gap-3" style={{ background: 'var(--chrome-panel-fill-emphasis)', borderBottomColor: 'var(--chrome-border-color)' }}>
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted font-semibold">
             Workspace files
@@ -455,6 +462,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
           className="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-md hover:bg-surface-elevated cursor-pointer"
           title="Recargar árbol de archivos"
           aria-label="Recargar árbol de archivos"
+          style={btnSecondaryStyle({ size: 'xs' })}
         >
           <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.5} />
         </button>
@@ -477,14 +485,16 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
               setIsTreeCollapsed(false);
               persistLegacyTreeCollapsedPref(false);
             }}
+            className="flex flex-col h-full"
+            style={{ overflow: 'clip' }}
           >
             {!isTreeCollapsed ? (
               <aside
-                className="h-full border-r border-borders-subtle bg-surface-app flex flex-col"
+                className="h-full flex flex-col border-r border-borders-subtle bg-surface-app"
                 data-testid="editor-tree-panel"
               >
-                <div className="border-b border-borders-subtle px-2 py-2">
-                  <div className="flex items-center gap-2 rounded-lg border border-borders-subtle bg-surface-elevated px-2.5 py-2">
+                <div className="flex-shrink-0 border-b border-borders-subtle px-2 py-2">
+                  <div className="flex items-center gap-2 border border-borders-subtle px-2.5 py-2" style={inputStyle()}>
                     <input
                       type="search"
                       value={searchQuery}
@@ -507,14 +517,15 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                     ) : null}
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-2">
+                <div className="flex-1 min-h-0 overflow-y-auto p-2" style={{ overscrollBehavior: 'contain' }}>
                   {treeLoading ? (
-                    <div className="p-2 space-y-2">
+                    <div className="p-2 space-y-3">
                       {[1, 2, 3, 4, 5, 6].map((i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <div className="w-3.5 h-3.5 bg-surface-elevated rounded-sm animate-pulse" />
+                        <div key={i} className="flex items-center gap-2" style={{ animationDelay: `${i * 80}ms` }}>
+                          <div className="w-3.5 h-3.5 rounded-sm animate-pulse" style={{ background: 'var(--chrome-control-fill)' }} />
                           <div
-                            className={`h-3 bg-surface-elevated rounded animate-pulse ${i % 2 === 0 ? 'w-24' : 'w-16'}`}
+                            className={`h-3 rounded animate-pulse ${i % 2 === 0 ? 'w-28' : 'w-20'}`}
+                            style={{ background: 'var(--chrome-control-fill)' }}
                           />
                         </div>
                       ))}
@@ -558,17 +569,18 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
 
           {!isTreeCollapsed && <ResizableHandle className="bg-surface-elevated" />}
 
-          <ResizablePanel defaultSize={embedded ? 66 : 74} minSize={45}>
-            <section className="h-full flex flex-col">
+          <ResizablePanel defaultSize={embedded ? 66 : 74} minSize={45} className="flex flex-col h-full" style={{ overflow: 'clip' }}>
+            <section className="h-full flex flex-col overflow-hidden">
               <div className="px-4 py-2.5 border-b border-borders-subtle bg-surface-app flex items-center justify-between gap-3">
                 <div className="min-w-0 flex items-center gap-2 flex-1">
                   <button
                     type="button"
                     onClick={handleTreeToggle}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-borders-subtle bg-surface-elevated text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary cursor-pointer flex-shrink-0"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-borders-subtle text-text-muted transition-colors hover:text-text-primary cursor-pointer flex-shrink-0"
                     title={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
                     aria-label={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
                     data-testid="editor-tree-toggle"
+                    style={btnSecondaryStyle({ size: 'xs' })}
                   >
                     {isTreeCollapsed ? (
                       <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
@@ -591,18 +603,18 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {showPreviewToggle && (
-                    <div className="inline-flex rounded-md border border-borders-subtle bg-surface-elevated p-0.5">
+                    <div className="inline-flex rounded-md border border-borders-subtle p-0.5" style={{ background: 'var(--chrome-control-fill)' }}>
                       <button
                         type="button"
                         onClick={() => handleDocumentViewModeChange(DOCUMENT_VIEW_MODES.PREVIEW)}
-                        className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? 'bg-accent-primary text-white' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
+                        className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
                       >
                         Preview
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDocumentViewModeChange(DOCUMENT_VIEW_MODES.RAW)}
-                        className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.RAW ? 'bg-accent-primary text-white' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
+                        className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.RAW ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
                       >
                         Raw
                       </button>
@@ -613,14 +625,14 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
               </div>
 
               {fileError ? (
-                <div className="m-4 p-4 rounded-lg border border-[#F778BA33] bg-[#F778BA11] text-danger text-xs flex items-start gap-2">
+                <div className="m-4 p-4 border border-[#F778BA33] bg-[#F778BA11] text-danger text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>{fileError}</span>
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 relative bg-[#0b1220]">
+                <div className="flex-1 min-h-0 relative overflow-y-auto" style={{ background: 'var(--chrome-panel-fill)', overscrollBehavior: 'contain' }}>
                   {(selectedPath || '').toLowerCase().match(/\.pdf$/) ? (
-                    <iframe src={content} className="w-full h-full border-none bg-[#0b1220] relative z-10" title="PDF Viewer" />
+                    <iframe src={content} className="w-full h-full border-none relative z-10" style={{ background: 'var(--chrome-panel-fill)' }} title="PDF Viewer" />
                   ) : (selectedPath || '').toLowerCase().match(/\.(png|jpe?g|gif|webp|svg)$/) ? (
                     <div className="flex items-center justify-center h-full bg-surface-base/50 p-8 overflow-auto">
                       <img src={content} className="max-w-full max-h-full object-contain shadow-xl rounded pointer-events-none" alt={selectedPath} />
@@ -643,22 +655,34 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                       </a>
                     </div>
                   ) : isMarkdown && markdownViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? (
-                    <div className="filesystem-markdown-shell">
-                      <div className="filesystem-markdown-preview">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[[safeHighlight, { ignoreMissing: true }]]}
-                          components={{
-                            code: InlineCode,
-                            pre: BlockCode,
-                          }}
-                        >
-                          {content || ''}
-                        </ReactMarkdown>
+                    fileLoading ? (
+                      <div className="flex-1 flex items-center justify-center h-full">
+                        <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
                       </div>
-                    </div>
+                    ) : (
+                      <div className="filesystem-markdown-shell">
+                        <div className="filesystem-markdown-preview">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[[safeHighlight, { ignoreMissing: true }]]}
+                            components={{
+                              code: InlineCode,
+                              pre: BlockCode,
+                            }}
+                          >
+                            {content || ''}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
+                    )
                   ) : isLatex && latexViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? (
-                    <LatexDocumentPreview content={content} filePath={selectedPath} />
+                    fileLoading ? (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
+                      </div>
+                    ) : (
+                      <LatexDocumentPreview content={content} filePath={selectedPath} />
+                    )
                   ) : (
                     <Editor
                       height="100%"
@@ -676,8 +700,44 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                         padding: { top: 16 },
                       }}
                       loading={
-                        <div className="flex h-full w-full items-center justify-center bg-[#0b1220]">
-                          <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
+                        <div
+                          className="flex h-full w-full flex-col"
+                          style={{
+                            background: 'var(--chrome-panel-fill)',
+                            borderTop: 'var(--chrome-border-width) solid var(--chrome-border-color)',
+                          }}
+                        >
+                          <div
+                            className="flex items-center justify-between px-4 py-3"
+                            style={{
+                              background: 'var(--chrome-panel-fill-emphasis)',
+                              borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)',
+                              boxShadow: 'var(--chrome-shadow-control)',
+                            }}
+                          >
+                            <div className="h-3 w-28" style={pillStyle()} />
+                            <div className="flex items-center gap-2">
+                              <div className="h-3 w-12" style={pillStyle()} />
+                              <Loader2 className="w-4 h-4 animate-spin text-accent-primary" />
+                            </div>
+                          </div>
+                          <div className="flex-1 p-4" style={{ background: 'var(--chrome-panel-fill)' }}>
+                            <div
+                              className="h-full w-full p-4"
+                              style={{
+                                ...panelStyle(),
+                                borderRadius: 'var(--chrome-radius-panel)',
+                                boxShadow: 'var(--chrome-shadow-panel)',
+                              }}
+                            >
+                              <div className="space-y-3">
+                                <div className="h-3 w-11/12" style={pillStyle()} />
+                                <div className="h-3 w-10/12" style={pillStyle()} />
+                                <div className="h-3 w-9/12" style={pillStyle()} />
+                                <div className="h-3 w-7/12" style={pillStyle()} />
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       }
                     />

@@ -4,11 +4,11 @@ import { es } from 'date-fns/locale';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const eventTypeConfig = {
-  session_start: { icon: PlayCircle, color: 'text-[#00F0FF]', bg: 'bg-[#00F0FF]/10' },
-  tool_execute: { icon: Activity, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-  tool_complete: { icon: CheckCircle, color: 'text-[#39FF14]', bg: 'bg-[#39FF14]/10' },
-  session_error: { icon: XCircle, color: 'text-[#FF007F]', bg: 'bg-[#FF007F]/10' },
-  session_done: { icon: CheckCircle, color: 'text-[#39FF14]', bg: 'bg-[#39FF14]/10' },
+  session_start: { icon: PlayCircle, color: 'text-[var(--accent-cyan)]', bg: 'bg-[var(--accent-cyan)]/10' },
+  tool_execute: { icon: Activity, color: 'text-[var(--accent-purple)]', bg: 'bg-[var(--accent-purple)]/10' },
+  tool_complete: { icon: CheckCircle, color: 'text-[var(--accent-green)]', bg: 'bg-[var(--accent-green)]/10' },
+  session_error: { icon: XCircle, color: 'text-[var(--accent-pink)]', bg: 'bg-[var(--accent-pink)]/10' },
+  session_done: { icon: CheckCircle, color: 'text-[var(--accent-green)]', bg: 'bg-[var(--accent-green)]/10' },
 };
 
 export default function AgentActivityFeed({
@@ -102,7 +102,7 @@ export default function AgentActivityFeed({
     <div className="bg-surface-elevated border border-borders-subtle rounded-xl flex flex-col h-full overflow-hidden">
       <div className="px-4 py-3 border-b border-borders-subtle flex justify-between items-center bg-surface-card">
         <div className="flex items-center gap-2 text-text-primary">
-          <Terminal className="w-4 h-4 text-[#00F0FF]" />
+          <Terminal className="w-4 h-4" style={{ color: 'var(--accent-cyan)' }} />
           <h3 className="font-semibold text-sm">Monitor de Actividad (En Vivo)</h3>
         </div>
         <div className="flex items-center gap-2">
@@ -122,8 +122,8 @@ export default function AgentActivityFeed({
           ) : (
             <>
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#39FF14] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#39FF14]"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent-green)] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent-green)]"></span>
               </span>
               <span className="text-[10px] text-text-muted uppercase tracking-wider">
                 SSE Ready

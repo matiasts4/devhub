@@ -1656,6 +1656,8 @@ describe('composeControlRoomSnapshot', () => {
       swarmTypeId: 'delivery-swarm',
       teamId: 'feature-delivery-team',
       providerId: 'github-copilot/gpt-5.4-mini',
+      launchStrategy: 'director_first',
+      bootstrapMode: 'engram_first',
       workspacePath: '/home/matias/ArxonLabs/devhub',
       rolePrograms: {
         director: 'opencode',
@@ -1665,11 +1667,11 @@ describe('composeControlRoomSnapshot', () => {
         architect: 'opencode',
       },
       roleModels: {
-        director: 'opencode-go/deepseek-v4-flash',
+        director: 'opencode-go/qwen3.6-plus',
         coder: 'opencode-go/deepseek-v4-flash',
-        auditor: 'opencode-go/deepseek-v4-flash',
+        auditor: 'opencode-go/qwen3.6-plus',
         devops: 'opencode-go/deepseek-v4-flash',
-        architect: 'opencode-go/deepseek-v4-flash',
+        architect: 'opencode/claude-sonnet-4.6',
       },
       mission:
         'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
@@ -1714,6 +1716,8 @@ describe('composeControlRoomSnapshot', () => {
       expect.objectContaining({
         modeLabel: 'Custom team',
         launchLabel: 'Lanzar Recovery swarm',
+        launchStrategyLabel: 'Director-first bootstrap',
+        bootstrapModeLabel: 'Engram first',
         isReady: true,
         topology: expect.objectContaining({
           label: 'Director → Recovery Ops → Evidence → QA',
@@ -1757,24 +1761,27 @@ describe('buildRoleAgentProfile', () => {
   test('maps coder and builder to swarm-coder', () => {
     expect(buildRoleAgentProfile('coder')).toBe('swarm-coder');
     expect(buildRoleAgentProfile('builder')).toBe('swarm-coder');
-    expect(buildRoleAgentProfile('devops')).toBe('swarm-coder');
-    expect(buildRoleAgentProfile('recovery_ops')).toBe('swarm-coder');
   });
 
   test('maps qa to swarm-qa', () => {
     expect(buildRoleAgentProfile('qa')).toBe('swarm-qa');
   });
 
-  test('maps auditor and reviewer to swarm-reviewer', () => {
-    expect(buildRoleAgentProfile('auditor')).toBe('swarm-reviewer');
+  test('maps auditor and reviewer to dedicated review profiles', () => {
+    expect(buildRoleAgentProfile('auditor')).toBe('swarm-auditor');
     expect(buildRoleAgentProfile('reviewer')).toBe('swarm-reviewer');
   });
 
-  test('maps explorer roles to swarm-explorer', () => {
-    expect(buildRoleAgentProfile('architect')).toBe('swarm-explorer');
+  test('maps architect to swarm-architect and explorer roles to swarm-explorer', () => {
+    expect(buildRoleAgentProfile('architect')).toBe('swarm-architect');
     expect(buildRoleAgentProfile('scout')).toBe('swarm-explorer');
     expect(buildRoleAgentProfile('analyst')).toBe('swarm-explorer');
     expect(buildRoleAgentProfile('evidence')).toBe('swarm-explorer');
+  });
+
+  test('maps devops-style roles to swarm-devops', () => {
+    expect(buildRoleAgentProfile('devops')).toBe('swarm-devops');
+    expect(buildRoleAgentProfile('recovery_ops')).toBe('swarm-devops');
   });
 
   test('falls back to swarm-coder for unknown roles', () => {

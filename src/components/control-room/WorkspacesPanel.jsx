@@ -14,7 +14,7 @@ import {
 
 export default function WorkspacesPanel({ workspaces = [] }) {
   return (
-    <section className="rounded-2xl border p-4" style={panelShellStyle()} aria-label="Workspaces">
+    <section className="border p-4" style={panelShellStyle()} aria-label="Workspaces">
       <header className="mb-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Workspaces</h2>

@@ -2,7 +2,10 @@ const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
-const { buildRightDockStorageKey } = require('../workspace/rightDockState');
+const {
+  DEFAULT_RIGHT_DOCK_STATE,
+  buildRightDockStorageKey,
+} = require('../workspace/rightDockState');
 const {
   buildBrowserWindowStorageKey,
   buildBrowserWindowLabel,
@@ -422,6 +425,62 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(document.body.textContent).toContain('Launch wizard');
   });
 
+  test('shows terminate swarm action for active workspace launch and posts launch-scoped terminate request', async () => {
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({
+        'launch-1:director': {
+          panelId: 'p1',
+          taskId: 'launch-1:director',
+          taskTitle: 'Terminal swarm · Director',
+          launchOrigin: 'swarm-control-launch',
+          launchedAt: 100,
+        },
+      })
+    );
+
+    global.fetch = jest.fn((url, options) => {
+      if (url === '/api/swarm/runtime-diagnostics') {
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      if (url === '/api/agenthub/operations/health') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            terminate_result: { launchId: 'launch-1', terminated: true },
+            control_room_snapshot_input: { mission_control: { mission: { mission_id: 'launch-1' } } },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-terminate-summary"]')?.textContent
+    ).toContain('Terminal swarm');
+
+    await click(view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]'));
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'terminate_swarm_local',
+        project_id: 'project-1',
+        launch_id: 'launch-1',
+      }),
+    });
+    expect(JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}')).toEqual({});
+  });
+
   test('batches swarm runtime requests into a dedicated workspace instead of replacing the same split', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
@@ -431,30 +490,138 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    ['director', 'coder', 'auditor', 'devops', 'architect'].forEach((role) => {
+    // Capture the batch deadline timer so we can fire it manually
+    let batchDeadlineCallback = null;
+    const origSetTimeout = window.setTimeout;
+    const setTimeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((fn, delay) => {
+      if (delay === 4500) {
+        batchDeadlineCallback = fn;
+        return origSetTimeout(() => {}, 0); // dummy timer ID
+      }
+      return origSetTimeout(fn, delay);
+    });
+
+    try {
+      ['director', 'coder', 'auditor', 'devops', 'architect'].forEach((role) => {
+        window.dispatchEvent(
+          new window.CustomEvent('devhub:run-agent', {
+            detail: {
+              taskId: `launch-1:${role}`,
+              selectedAgent: 'opencode',
+              command: `opencode --prompt ${role}`,
+              launchOrigin: 'swarm-control-launch',
+              taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
+              launchId: 'launch-1',
+              roleKey: role,
+            },
+          })
+        );
+      });
+
+      await flushEffects();
+      await flushEffects();
+
+      // Before firing deadline: no workspace created yet
+      const visibleShellBefore = getVisibleWorkspaceShell(view.container);
+      expect(visibleShellBefore?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(1);
+
+      // Fire the batch deadline to flush all accumulated requests
+      if (batchDeadlineCallback) batchDeadlineCallback();
+      await flushEffects();
+      await flushEffects();
+
+      const visibleShell = getVisibleWorkspaceShell(view.container);
+      expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
+      expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+
+      const persistedRuns = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+      expect(Object.keys(persistedRuns)).toHaveLength(5);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  test('preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    let batchDeadlineCallback = null;
+    const origSetTimeout = window.setTimeout;
+    const setTimeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((fn, delay) => {
+      if (delay === 4500) {
+        batchDeadlineCallback = fn;
+        return origSetTimeout(() => {}, 0);
+      }
+      return origSetTimeout(fn, delay);
+    });
+
+    try {
+      // Phase 1: director arrives immediately (simulates startAfterMs: 0)
       window.dispatchEvent(
         new window.CustomEvent('devhub:run-agent', {
           detail: {
-            taskId: `launch-1:${role}`,
+            taskId: 'launch-2:director',
             selectedAgent: 'opencode',
-            command: `opencode --prompt ${role}`,
+            command: 'opencode --prompt director',
             launchOrigin: 'swarm-control-launch',
-            taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
+            taskTitle: 'Lanzar Arranque limpio guiado · director',
+            launchId: 'launch-2',
+            roleKey: 'director',
+            startAfterMs: 0,
           },
         })
       );
-    });
 
-    await flushEffects();
-    await flushEffects();
+      await flushEffects();
 
-    const visibleShell = getVisibleWorkspaceShell(view.container);
-    expect(visibleShell?.textContent).toContain('p2');
-    expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
-    expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+      // Director is buffered, no workspace yet
+      const shellAfterDirector = getVisibleWorkspaceShell(view.container);
+      expect(shellAfterDirector?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(1);
 
-    const persistedRuns = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
-    expect(Object.keys(persistedRuns)).toHaveLength(5);
+      // Phase 2: workers arrive later (simulates startAfterMs: 4000)
+      ['coder', 'auditor', 'devops', 'architect'].forEach((role) => {
+        window.dispatchEvent(
+          new window.CustomEvent('devhub:run-agent', {
+            detail: {
+              taskId: `launch-2:${role}`,
+              selectedAgent: 'opencode',
+              command: `opencode --prompt ${role}`,
+              launchOrigin: 'swarm-control-launch',
+              taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
+              launchId: 'launch-2',
+              roleKey: role,
+              startAfterMs: 4000,
+            },
+          })
+        );
+      });
+
+      await flushEffects();
+
+      // Still buffered, no flush yet
+      expect(batchDeadlineCallback).not.toBeNull();
+
+      // Fire deadline — all 5 roles should be in one batch
+      batchDeadlineCallback();
+      await flushEffects();
+      await flushEffects();
+
+      const visibleShell = getVisibleWorkspaceShell(view.container);
+      // 3-column layout: 5 panels total with director in its own column
+      expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
+      expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
+
+      // Verify 3 columns exist (director + 2 worker columns)
+      const columnContainers = visibleShell?.querySelectorAll('[data-testid^="workspace-column-c"]');
+      expect(columnContainers.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
   });
 
   test('opening right dock editor side-by-side keeps native terminal policy live without mutating fullscreen state', async () => {
@@ -903,7 +1070,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     ).not.toBeNull();
     expect(
       view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.style.width
-    ).toBe('44%');
+    ).toBe(`${DEFAULT_RIGHT_DOCK_STATE.size}%`);
   });
 
   test('keeps the same browser iframe mounted when switching between browser and editor tabs', async () => {
@@ -1098,7 +1265,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       view.container
         .querySelector('[data-testid="workspace-right-dock-panel"]')
         ?.getAttribute('data-panel-size')
-    ).toBe('44');
+    ).toBe(String(DEFAULT_RIGHT_DOCK_STATE.size));
 
     await click(view.container.querySelector('[data-testid="browser-toggle-workspace-maximize"]'));
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
@@ -1109,7 +1276,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       view.container
         .querySelector('[data-testid="workspace-right-dock-panel"]')
         ?.getAttribute('data-panel-size')
-    ).toBe('44');
+    ).toBe(String(DEFAULT_RIGHT_DOCK_STATE.size));
   });
 
   test('dock drag overlay never blocks editor interactions and clears after pointer release', async () => {

@@ -20,7 +20,7 @@ function formatOccurredAt(value) {
 export default function EvidenceTimelinePanel({ items = [] }) {
   return (
     <section
-      className="rounded-2xl border p-4 h-full min-h-[420px] max-h-[700px] flex flex-col"
+      className="border p-4 h-full min-h-[420px] max-h-[700px] flex flex-col"
       style={panelShellStyle()}
       aria-label="Timeline de evidencia"
     >

@@ -5,6 +5,37 @@ import processManager from '@/lib/swarm/processManager';
 const OPENCODE_PORT = process.env.OPENCODE_PORT || 4154;
 const OPENCODE_URL = `http://127.0.0.1:${OPENCODE_PORT}`;
 
+export async function abortAgentHubSessionById(
+  sessionId,
+  {
+    fetchImpl = fetch,
+    updateSessionStatusImpl = updateSessionStatus,
+    processManagerImpl = processManager,
+    opencodeUrl = OPENCODE_URL,
+  } = {}
+) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  if (!normalizedSessionId) {
+    throw new Error('sessionId is required');
+  }
+
+  const res = await fetchImpl(`${opencodeUrl}/session/${normalizedSessionId}/abort`, {
+    method: 'POST',
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    const error = new Error(`OpenCode abort failed: ${errText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  updateSessionStatusImpl(normalizedSessionId, 'aborted');
+  processManagerImpl.untrackSession(normalizedSessionId);
+
+  return { success: true };
+}
+
 /**
  * POST /api/agenthub/sessions/[sessionId]/abort
  *
@@ -14,25 +45,10 @@ const OPENCODE_URL = `http://127.0.0.1:${OPENCODE_PORT}`;
 export async function POST(_req, { params }) {
   try {
     const { sessionId } = await params;
-
-    const res = await fetch(`${OPENCODE_URL}/session/${sessionId}/abort`, {
-      method: 'POST',
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      return NextResponse.json(
-        { error: `OpenCode abort failed: ${errText}` },
-        { status: res.status }
-      );
-    }
-
-    updateSessionStatus(sessionId, 'aborted');
-    processManager.untrackSession(sessionId);
-
-    return NextResponse.json({ success: true });
+    const result = await abortAgentHubSessionById(sessionId);
+    return NextResponse.json(result);
   } catch (err) {
     console.error('Error aborting OpenCode session:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: err?.status || 500 });
   }
 }

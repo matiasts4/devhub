@@ -77,7 +77,7 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('curl');
       expect(result).toContain('/api/agenthub/presence/heartbeat');
       expect(result).toContain('launch-abc-coder');
-      expect(result).toContain('booting');
+      expect(result).toContain('busy');
     });
 
     test('returns comment when no supervisor URL', () => {

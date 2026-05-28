@@ -1,7 +1,17 @@
 'use client';
 export default function MetricCard({
-  id, title, value, subtitle, icon, accentColor, progressValue, badge, trend, index,
+  id, title, value, subtitle, icon, accentColor, accentVar, progressValue, badge, trend, index,
 }) {
+  // Support both legacy accentColor (hex) and new accentVar (CSS variable name)
+  const accent = accentVar ? `var(${accentVar})` : accentColor;
+  // For transparent backgrounds, use color-mix with CSS variables or hex alpha for legacy
+  const accentAlpha = accentVar
+    ? `color-mix(in srgb, var(${accentVar}) 14%, transparent)`
+    : `${accentColor}14`;
+  const accentBorder = accentVar
+    ? `color-mix(in srgb, var(${accentVar}) 22%, transparent)`
+    : `${accentColor}22`;
+
   return (
     <div
       data-testid={`metric-card-${id}`}
@@ -9,10 +19,10 @@ export default function MetricCard({
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="flex items-start justify-between mb-3">
-        <p className="text-sm font-semibold" style={{ color: accentColor }}>{title}</p>
+        <p className="text-sm font-semibold" style={{ color: accent }}>{title}</p>
         <span
           className="text-[11px] font-medium px-1.5 py-0.5 rounded-full"
-          style={{ color: accentColor, background: `${accentColor}14`, border: `1px solid ${accentColor}22` }}
+          style={{ color: accent, background: accentAlpha, border: `1px solid ${accentBorder}` }}
         >
           {badge}
         </span>
@@ -22,7 +32,7 @@ export default function MetricCard({
       <div className="h-[3px] bg-surface-elevated rounded-full overflow-hidden mb-2">
         <div
           className="h-full rounded-full transition-all duration-700"
-          style={{ width: `${progressValue}%`, background: accentColor }}
+          style={{ width: `${progressValue}%`, background: accent }}
         />
       </div>
       <p className="text-xs text-text-muted">{trend}</p>

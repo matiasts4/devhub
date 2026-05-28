@@ -1,10 +1,18 @@
 'use client';
-import dynamic from 'next/dynamic';
 
-// BrowserRouter uses browser-only APIs (document, history) — disable SSR.
-// This is the correct pattern for React Router SPAs in Next.js static export.
-const App = dynamic(() => import('@/App'), { ssr: false });
+import { useEffect, useState } from 'react';
+import App from '@/App';
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null;
+  }
+
   return <App />;
 }

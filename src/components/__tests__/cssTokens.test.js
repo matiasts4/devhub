@@ -49,6 +49,27 @@ describe('CSS Tokens — globals.css', () => {
     expect(css).toMatch(/--text-primary\s*:\s*oklch\(/);
   });
 
+  test('defines morphology chrome token families on the shared runtime stylesheet', () => {
+    expect(css).toMatch(/--chrome-radius-panel\s*:/);
+    expect(css).toMatch(/--chrome-radius-control\s*:/);
+    expect(css).toMatch(/--chrome-border-width\s*:/);
+    expect(css).toMatch(/--chrome-shadow-panel\s*:/);
+    expect(css).toMatch(/--chrome-shadow-control\s*:/);
+    expect(css).toMatch(/--chrome-panel-fill\s*:/);
+    expect(css).toMatch(/--chrome-control-fill\s*:/);
+    expect(css).toMatch(/--chrome-press-offset\s*:/);
+  });
+
+  test('defines a brutalist-stage morphology override block without owning theme hue tokens', () => {
+    const match = css.match(/\[data-morphology=['"]brutalist-stage['"]\]\s*\{([\s\S]*?)\n\s*\}/);
+    expect(match).not.toBeNull();
+    expect(match[1]).toMatch(/--chrome-radius-panel\s*:/);
+    expect(match[1]).toMatch(/--chrome-radius-control\s*:/);
+    expect(match[1]).toMatch(/--chrome-border-width\s*:/);
+    expect(match[1]).not.toMatch(/--accent-primary\s*:/);
+    expect(match[1]).not.toMatch(/--surface-app\s*:/);
+  });
+
   test('xterm viewport keeps native vertical scrolling enabled', () => {
     expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-y:\s*auto\s*!important;/);
     expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-x:\s*hidden\s*!important;/);
@@ -101,5 +122,9 @@ describe('CSS Tokens — index.css cleanup', () => {
       const accentLine = rootMatch[1].match(/--accent-primary\s*:[^\n;]+/);
       expect(accentLine).toBeNull();
     }
+  });
+
+  test('index.css imports or mirrors the morphology runtime token layer needed by the desktop shell', () => {
+    expect(indexCss).toMatch(/data-morphology|globals\.css/);
   });
 });

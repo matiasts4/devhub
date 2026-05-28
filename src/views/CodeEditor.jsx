@@ -5,6 +5,7 @@ import { FileCode2 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import FileExplorerEditorPane from '@/components/workspace/FileExplorerEditorPane';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import { getWorkspacePageHeaderStyle } from './workspacePageChrome';
 
 export default function CodeEditor() {
   const { project } = useOutletContext() || {};
@@ -16,7 +17,7 @@ export default function CodeEditor() {
 
   return (
     <div className="h-full min-h-screen core-page-shell flex flex-col">
-      <div className="sticky top-0 z-10 core-sticky-header border-b border-borders-subtle px-6 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between" style={getWorkspacePageHeaderStyle()}>
         <div className="flex min-w-0 items-start gap-3">
           <div className="min-w-0">
             <WorkspacePageTitle

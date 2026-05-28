@@ -20,11 +20,25 @@ import {
   Globe,
   Zap,
   Info,
-  Hash,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import {
+  getWorkspacePageContentStyle,
+  getWorkspacePageHeaderStyle,
+  getWorkspaceSectionSurfaceStyle,
+  getWorkspaceSectionHeaderStripStyle,
+  getWorkspaceStatusPillStyle,
+  getWorkspaceDataTileStyle,
+} from './workspacePageChrome';
+import {
+  panelStyle,
+  pillStyle,
+  btnPrimaryStyle,
+  btnSecondaryStyle,
+  inputStyle,
+} from '@/chrome/morphology';
 
 const TYPE_CONFIG = {
   github: { label: 'GitHub', color: '#F0F6FC', Icon: Code2, desc: 'Repositorios y PRs' },
@@ -72,7 +86,7 @@ function AddConnectionModal({ onClose, onCreated }) {
       onClick={onClose}
     >
       <div
-        className="bg-surface-card border border-borders-strong rounded-2xl p-6 w-full max-w-md shadow-2xl fade-in-up"
+        className="bg-surface-card border border-borders-strong rounded-none p-6 w-full max-w-md shadow-2xl fade-in-up"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -103,7 +117,7 @@ function AddConnectionModal({ onClose, onCreated }) {
               value={form.name}
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
               placeholder="ej. GitHub Personal"
-              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors cursor-pointer"
+              className="w-full bg-surface-app border border-borders-strong px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors cursor-pointer"
             />
           </div>
 
@@ -120,7 +134,7 @@ function AddConnectionModal({ onClose, onCreated }) {
                     key={k}
                     type="button"
                     onClick={() => setForm((p) => ({ ...p, type: k }))}
-                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all"
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-none border text-center transition-all"
                     style={
                       isSelected
                         ? { background: `${v.color}12`, borderColor: `${v.color}40` }
@@ -164,7 +178,7 @@ function AddConnectionModal({ onClose, onCreated }) {
               value={form.endpoint_url}
               onChange={(e) => setForm((p) => ({ ...p, endpoint_url: e.target.value }))}
               placeholder="https://api.example.com o stdio://..."
-              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors font-mono text-xs cursor-pointer"
+              className="w-full bg-surface-app border border-borders-strong px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors font-mono text-xs cursor-pointer"
             />
           </div>
 
@@ -178,7 +192,7 @@ function AddConnectionModal({ onClose, onCreated }) {
               value={form.api_key}
               onChange={(e) => setForm((p) => ({ ...p, api_key: e.target.value }))}
               placeholder="sk-..."
-              className="w-full bg-surface-app border border-borders-strong rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors cursor-pointer"
+              className="w-full bg-surface-app border border-borders-strong px-3 py-2.5 text-sm text-white placeholder-[#484F58] focus:outline-none focus:border-[#D2A8FF]/50 focus:ring-1 focus:ring-[#D2A8FF]/10 transition-colors cursor-pointer"
             />
           </div>
 
@@ -187,14 +201,15 @@ function AddConnectionModal({ onClose, onCreated }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-borders-strong text-text-muted text-sm hover:text-white transition-all"
+              className="flex-1 py-2.5 border border-borders-strong text-text-muted text-sm hover:text-white transition-all"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#D2A8FF]/80 to-[#D2A8FF] text-[#0d1117] text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 hover:brightness-110 transition-all"
+              className="flex-1 py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all cursor-pointer"
+              style={btnPrimaryStyle({ size: 'md' })}
             >
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {saving ? 'Creando...' : 'Crear Conexión'}
@@ -258,10 +273,7 @@ export default function Conexiones() {
       {/* Sticky Header */}
       <div
         className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between core-sticky-header"
-        style={{
-          background: 'color-mix(in srgb, var(--surface-app) 90%, transparent)',
-          borderColor: 'var(--border-subtle)',
-        }}
+        style={getWorkspacePageHeaderStyle()}
       >
         <div className="flex items-center gap-3">
           <WorkspacePageTitle
@@ -276,51 +288,26 @@ export default function Conexiones() {
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 text-white font-semibold px-3.5 py-2 rounded-lg text-xs transition-all active:scale-95"
-          style={{ background: 'var(--success)' }}
+          className="flex items-center gap-1.5 font-semibold px-3.5 py-2 text-xs transition-all active:scale-95 cursor-pointer"
+          style={btnPrimaryStyle({ size: 'sm' })}
         >
           <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Nueva Conexión
         </button>
       </div>
 
-      <div className="px-6 py-6 w-full max-w-[1200px] mx-auto">
-        {/* Breadcrumb */}
-        <div
-          className="rounded-xl px-4 py-2.5 flex items-center gap-2 mb-6 core-toolbar-card"
-          style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
-        >
-          <Hash className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            DevHub
-          </span>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            ›
-          </span>
-          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-            Conexiones MCP
-          </span>
-        </div>
-
+      <div style={getWorkspacePageContentStyle()}>
         {/* Info Banner — as a card with header */}
         <div
-          className="rounded-2xl overflow-hidden mb-6 fade-in-up core-panel"
-          style={{
-            background: 'var(--surface-card)',
-            border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
-          }}
+          className="overflow-hidden mb-6 fade-in-up core-panel"
+          style={panelStyle({ tone: 'accent' })}
         >
           <div
             className="flex items-center gap-3 px-6 py-4"
-            style={{
-              borderBottom: '1px solid color-mix(in srgb, var(--accent-primary) 15%, transparent)',
-            }}
+            style={getWorkspaceSectionHeaderStripStyle({ tone: 'accent' })}
           >
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{
-                background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
-              }}
+              className="w-9 h-9 rounded-none flex items-center justify-center"
+              style={pillStyle({ tone: 'accent' })}
             >
               <Zap
                 className="w-4 h-4"
@@ -330,7 +317,7 @@ export default function Conexiones() {
             </div>
             <div>
               <h3
-                className="font-mono text-sm font-semibold"
+                className="typography-card-title"
                 style={{ color: 'var(--accent-primary)' }}
               >
                 Model Context Protocol (MCP)
@@ -353,26 +340,22 @@ export default function Conexiones() {
 
         {/* Stats — as a card with header */}
         <div
-          className="rounded-2xl overflow-hidden mb-6 fade-in-up core-panel"
-          style={{
-            background: 'var(--surface-card)',
-            border: '1px solid var(--border-subtle)',
-            boxShadow: 'var(--shadow-soft)',
-          }}
+          className="overflow-hidden mb-6 fade-in-up core-panel"
+          style={getWorkspaceSectionSurfaceStyle()}
         >
           <div
             className="flex items-center gap-3 px-6 py-4"
-            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+            style={getWorkspaceSectionHeaderStripStyle()}
           >
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: 'var(--success)18', border: '1px solid var(--success)30' }}
+              className="w-9 h-9 rounded-none flex items-center justify-center"
+              style={pillStyle({ tone: 'success' })}
             >
               <Wifi className="w-4 h-4" style={{ color: 'var(--success)' }} strokeWidth={1.5} />
             </div>
             <div>
               <h3
-                className="font-mono text-sm font-semibold"
+                className="typography-card-title"
                 style={{ color: 'var(--text-primary)' }}
               >
                 Estado de Conexiones
@@ -392,10 +375,10 @@ export default function Conexiones() {
               ].map((s, i) => (
                 <div
                   key={i}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl core-kpi-card"
+                  className="flex items-center justify-between px-4 py-3 rounded-none core-kpi-card"
                   style={{
-                    background: 'var(--surface-muted)',
-                    border: '1px solid var(--border-subtle)',
+                    ...getWorkspaceDataTileStyle(s.color),
+                    background: `color-mix(in srgb, ${s.color} 12%, var(--chrome-panel-fill))`,
                   }}
                 >
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -412,23 +395,16 @@ export default function Conexiones() {
 
         {/* Connections list — as a card with header */}
         <div
-          className="rounded-2xl overflow-hidden fade-in-up core-panel"
-          style={{
-            background: 'var(--surface-card)',
-            border: '1px solid var(--border-subtle)',
-            boxShadow: 'var(--shadow-soft)',
-          }}
+          className="overflow-hidden fade-in-up core-panel"
+          style={panelStyle()}
         >
           <div
             className="flex items-center gap-3 px-6 py-4"
-            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+            style={getWorkspaceSectionHeaderStripStyle({ tone: 'neutral' })}
           >
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{
-                background: 'var(--accent-primary)18',
-                border: '1px solid var(--accent-primary)30',
-              }}
+              className="w-9 h-9 rounded-none flex items-center justify-center"
+              style={pillStyle({ tone: 'accent' })}
             >
               <Plug2
                 className="w-4 h-4"
@@ -438,7 +414,7 @@ export default function Conexiones() {
             </div>
             <div>
               <h3
-                className="font-mono text-sm font-semibold"
+                className="typography-card-title"
                 style={{ color: 'var(--text-primary)' }}
               >
                 Conexiones Configuradas
@@ -461,11 +437,8 @@ export default function Conexiones() {
             ) : connections.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
                 <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                  style={{
-                    background: 'var(--surface-muted)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
+                  className="w-14 h-14 rounded-none flex items-center justify-center"
+                  style={pillStyle()}
                 >
                   <Plug2
                     className="w-7 h-7"
@@ -492,7 +465,7 @@ export default function Conexiones() {
                   return (
                     <div
                       key={conn.id}
-                      className="rounded-xl overflow-hidden transition-all fade-in-up hover:border-[var(--border-strong)]"
+                      className="overflow-hidden transition-all fade-in-up hover:border-[var(--border-strong)]"
                       style={{
                         background: 'var(--surface-muted)',
                         border: '1px solid var(--border-subtle)',
@@ -507,10 +480,11 @@ export default function Conexiones() {
                         {/* Type icon */}
                         <div className="relative shrink-0">
                           <div
-                            className="w-9 h-9 rounded-xl flex items-center justify-center"
+                            className="w-9 h-9 rounded-none flex items-center justify-center"
                             style={{
-                              background: `${typeCfg.color}12`,
-                              border: `1px solid ${typeCfg.color}25`,
+                              ...pillStyle(),
+                              background: `color-mix(in srgb, ${typeCfg.color} 12%, var(--chrome-control-fill))`,
+                              borderColor: `color-mix(in srgb, ${typeCfg.color} 30%, var(--chrome-border-color))`,
                             }}
                           >
                             <typeCfg.Icon
@@ -541,8 +515,8 @@ export default function Conexiones() {
                               className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md border"
                               style={{
                                 color: typeCfg.color,
-                                background: `${typeCfg.color}10`,
-                                borderColor: `${typeCfg.color}25`,
+                                background: `color-mix(in srgb, ${typeCfg.color} 10%, var(--chrome-control-fill))`,
+                                borderColor: `color-mix(in srgb, ${typeCfg.color} 24%, var(--chrome-border-color))`,
                               }}
                             >
                               {typeCfg.label}
@@ -574,7 +548,7 @@ export default function Conexiones() {
                               toggleActive(conn);
                             }}
                             disabled={toggling === conn.id}
-                            className="text-xs px-3 py-1.5 rounded-lg border font-medium transition-all disabled:opacity-40"
+                            className="text-xs px-3 py-1.5 border font-medium transition-all disabled:opacity-40"
                             style={{
                               borderColor: conn.is_active
                                 ? 'color-mix(in srgb, var(--danger) 25%, transparent)'
@@ -660,7 +634,7 @@ export default function Conexiones() {
                                 Endpoint
                               </p>
                               <code
-                                className="text-xs font-mono px-3 py-1.5 rounded-lg border block truncate"
+                                className="text-xs font-mono px-3 py-1.5 border block truncate"
                                 style={{
                                   color: 'var(--accent-primary)',
                                   background: 'var(--surface-elevated)',
@@ -674,7 +648,7 @@ export default function Conexiones() {
                           <div className="flex gap-2 pt-1">
                             <button
                               onClick={() => deleteConnection(conn.id, conn.name)}
-                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all hover:text-[var(--danger)] hover:border-[color-mix(in_srgb,var(--danger)_40%,transparent)] cursor-pointer"
+                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 border transition-all hover:text-[var(--danger)] hover:border-[color-mix(in_srgb,var(--danger)_40%,transparent)] cursor-pointer"
                               style={{
                                 borderColor: 'color-mix(in srgb, var(--danger) 20%, transparent)',
                                 color: 'color-mix(in srgb, var(--danger) 70%, transparent)',
