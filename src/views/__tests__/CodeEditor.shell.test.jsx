@@ -6,27 +6,39 @@ const { JSDOM } = require('jsdom');
 const mockUseOutletContext = jest.fn();
 const mockFileExplorerEditorPane = jest.fn();
 
-jest.mock('react-router-dom', () => ({
-  useOutletContext: () => mockUseOutletContext(),
-}), { virtual: true });
+jest.mock(
+  'react-router-dom',
+  () => ({
+    useOutletContext: () => mockUseOutletContext(),
+  }),
+  { virtual: true }
+);
 
-jest.mock('@/components/workspace/FileExplorerEditorPane', () => ({
-  __esModule: true,
-  default: (props) => {
-    const React = require('react');
-    mockFileExplorerEditorPane(props);
+jest.mock(
+  '@/components/workspace/FileExplorerEditorPane',
+  () => ({
+    __esModule: true,
+    default: (props) => {
+      const React = require('react');
+      mockFileExplorerEditorPane(props);
 
-    React.useEffect(() => {
-      props.onContextChange?.({
-        projectPath: props.project?.local_path,
-        currentFilePath: 'src/components/TerminalDock.jsx',
-        breadcrumb: ['src', 'components', 'TerminalDock.jsx'],
-      });
-    }, [props]);
+      React.useEffect(() => {
+        props.onContextChange?.({
+          projectPath: props.project?.local_path,
+          currentFilePath: 'src/components/TerminalDock.jsx',
+          breadcrumb: ['src', 'components', 'TerminalDock.jsx'],
+        });
+      }, [props]);
 
-    return React.createElement('div', { 'data-testid': 'shared-editor-pane' }, 'shared editor pane');
-  },
-}), { virtual: true });
+      return React.createElement(
+        'div',
+        { 'data-testid': 'shared-editor-pane' },
+        'shared editor pane'
+      );
+    },
+  }),
+  { virtual: true }
+);
 
 jest.mock('@monaco-editor/react', () => () => {
   const React = require('react');
@@ -180,13 +192,29 @@ describe('CodeEditor route shell', () => {
     const view = await renderIntoDom(React.createElement(CodeEditor));
 
     expect(view.container.textContent).toContain('/workspace/devhub');
-    expect(view.container.querySelector('[data-testid="code-editor-current-file"]')?.textContent).toContain(
-      'src/components/TerminalDock.jsx'
-    );
-    expect(view.container.querySelector('[data-testid="code-editor-current-breadcrumb"]')?.textContent).toContain(
-      'src / components / TerminalDock.jsx'
-    );
+    expect(
+      view.container.querySelector('[data-testid="code-editor-current-file"]')?.textContent
+    ).toContain('src/components/TerminalDock.jsx');
+    expect(
+      view.container.querySelector('[data-testid="code-editor-current-breadcrumb"]')?.textContent
+    ).toContain('src / components / TerminalDock.jsx');
     expect(view.container.textContent).toContain('Editor de Código');
     expect(view.container.textContent).toContain('DevHub');
+  });
+
+  test('keeps the route shell height-contained instead of forcing page scroll', async () => {
+    const view = await renderIntoDom(React.createElement(CodeEditor));
+
+    const shell = view.container.querySelector('.core-page-shell');
+    expect(shell.classList.contains('min-h-0')).toBe(true);
+    expect(shell.classList.contains('overflow-hidden')).toBe(true);
+    expect(shell.classList.contains('min-h-screen')).toBe(false);
+
+    const paneHost = view.container.querySelector(
+      '[data-testid="shared-editor-pane"]'
+    )?.parentElement;
+    expect(paneHost.classList.contains('h-full')).toBe(true);
+    expect(paneHost.classList.contains('w-full')).toBe(true);
+    expect(paneHost.classList.contains('overflow-hidden')).toBe(true);
   });
 });

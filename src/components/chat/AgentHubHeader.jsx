@@ -1,4 +1,5 @@
-import { Brain, Server, History, ChevronDown, Plus, Trash2, Archive, Loader2 } from 'lucide-react';
+import { Brain, Server, History, ChevronDown, Plus, Archive, Loader2, Trash2 } from 'lucide-react';
+import { UiHeader } from '@/components/ui/system';
 import { MIN_MESSAGES_FOR_COMPRESSION } from '@/lib/agenthubCompression';
 import {
   DropdownMenu,
@@ -9,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export default function SessionHeader({
+export default function AgentHubHeader({
   currentSession,
   sessions,
   currentSessionId,
@@ -30,39 +31,36 @@ export default function SessionHeader({
       : `Se necesitan al menos ${MIN_MESSAGES_FOR_COMPRESSION} mensajes para comprimir`;
 
   return (
-    <div
-      className="flex-shrink-0 h-[52px] px-3 border-b flex items-center justify-between gap-2"
-      style={{ background: 'var(--surface-app)', borderColor: 'var(--border-subtle)' }}
-    >
-      {/* Identity + current session name */}
-      <div className="flex items-center gap-2 min-w-0">
-        <div
-          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
-          style={{
-            background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
-          }}
-        >
-          <Brain className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} />
-        </div>
-        <div className="min-w-0">
-          <p
-            className="text-[11px] font-bold uppercase tracking-wider leading-none mb-0.5"
-            style={{ color: 'var(--text-primary)' }}
+    <UiHeader>
+      <UiHeader.Title>
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+            style={{
+              background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
+            }}
           >
-            Agent Hub
-          </p>
-          <p
-            className="text-[10px] truncate leading-none"
-            style={{ color: 'var(--text-muted)', maxWidth: '150px' }}
-          >
-            {currentSession?.title || 'Nueva sesión'}
-          </p>
+            <Brain className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} />
+          </div>
+          <div className="min-w-0">
+            <p
+              className="text-[11px] font-bold uppercase tracking-wider leading-none mb-0.5"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Agent Hub
+            </p>
+            <p
+              className="text-[10px] truncate leading-none"
+              style={{ color: 'var(--text-muted)', maxWidth: '150px' }}
+            >
+              {currentSession?.title || 'Nueva sesión'}
+            </p>
+          </div>
         </div>
-      </div>
+      </UiHeader.Title>
 
-      {/* Actions — compact, icon-first */}
-      <div className="flex items-center gap-1 shrink-0">
+      <UiHeader.Actions>
         {/* MCP Servers toggle */}
         <button
           onClick={onToggleMCP}
@@ -227,7 +225,7 @@ export default function SessionHeader({
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
-      </div>
-    </div>
+      </UiHeader.Actions>
+    </UiHeader>
   );
 }

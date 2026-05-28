@@ -44,7 +44,7 @@ import { createClient } from '@/lib/db/localClient';
 
 const db = createClient();
 import ChatInput from '@/components/chat/ChatInput';
-import SessionHeader from '@/components/chat/SessionHeader';
+import AgentHubHeader from '@/components/chat/AgentHubHeader';
 import ChatMessageList from '@/components/chat/ChatMessageList';
 import { enforceDocOpsGateOnLaunchCommand, shellQuotePrompt } from '@/lib/docopsPrompts';
 import { detectMcpOutput } from '@/components/chat/utils/detectMcpOutput';
@@ -1627,7 +1627,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
             headerCollapsed ? 'max-h-0 opacity-0' : 'max-h-80 opacity-100'
           }`}
         >
-          <SessionHeader
+          <AgentHubHeader
             currentSession={currentSession}
             sessions={sessions}
             currentSessionId={currentSessionId}
