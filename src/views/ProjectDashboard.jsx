@@ -15,6 +15,7 @@ import {
 import { createClient } from '@/lib/db/localClient';
 import { Button } from '@/components/ui/button';
 import { ChromeSurface } from '@/components/ui/chrome-surface';
+import { panelStyle, btnPrimaryStyle, progressTrackStyle } from '@/chrome/morphology';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
   getWorkspacePageContentStyle,
@@ -22,43 +23,6 @@ import {
   getWorkspacePageShellStyle,
   getWorkspaceStatusPillStyle,
 } from './workspacePageChrome';
-
-// ─── Brutalist 3D chrome (matches brutalist-tech.html preview) ───
-
-const brutalPanelStyle = (options = {}) => ({
-  background: options.background || 'var(--chrome-panel-fill)',
-  border: `2px solid ${options.borderColor || 'var(--chrome-border-color)'}`,
-  boxShadow: `4px 4px 0 0 ${options.shadowColor || 'var(--border-strong)'}`,
-  borderRadius: 0,
-});
-
-const brutalPanelActiveStyle = (options = {}) => ({
-  background: options.background || 'var(--chrome-panel-fill)',
-  border: `2px solid ${options.borderColor || 'var(--accent-primary)'}`,
-  boxShadow: `4px 4px 0 0 ${options.shadowColor || 'var(--accent-primary)'}`,
-  borderRadius: 0,
-});
-
-const brutalBtnPrimaryStyle = {
-  background: 'var(--accent-primary)',
-  border: '2px solid var(--accent-primary)',
-  color: '#000',
-  boxShadow: '3px 3px 0 0 var(--accent-shadow)',
-  fontWeight: 700,
-  fontSize: '11px',
-  textTransform: 'uppercase',
-  letterSpacing: '0.08em',
-  transition: 'all 0.15s ease',
-};
-
-const brutalProgressTrackStyle = {
-  background: 'var(--chrome-panel-fill)',
-  border: '2px solid var(--border-strong)',
-  boxShadow: '3px 3px 0 0 var(--border-strong)',
-  borderRadius: 0,
-  height: '12px',
-  padding: '2px',
-};
 
 function DashboardPill({ children, className = '', tone = 'neutral', style = undefined }) {
   return (
@@ -77,10 +41,7 @@ function DashboardPill({ children, className = '', tone = 'neutral', style = und
 function SectionLabel({ prefix, headingId, children }) {
   return (
     <div className="flex items-center gap-3">
-      <span
-        className="typography-section-label"
-        style={{ color: 'var(--text-muted)' }}
-      >
+      <span className="typography-section-label" style={{ color: 'var(--text-muted)' }}>
         <span style={{ color: 'var(--accent-primary)' }}>[+]</span> {prefix}
       </span>
       <h3
@@ -98,24 +59,15 @@ function StatCard({ label, value, color, icon: Icon }) {
   return (
     <div
       className="flex items-center justify-between px-4 py-3 transition-all duration-150 hover:-translate-y-0.5 rounded-none"
-      style={brutalPanelStyle()}
+      style={panelStyle()}
     >
       <div className="space-y-1">
-        <p className="typography-label">
-          {label}
-        </p>
+        <p className="typography-label">{label}</p>
         <p className="typography-data text-2xl font-black leading-none" style={{ color }}>
           {String(value).padStart(2, '0')}
         </p>
       </div>
-      <div
-        className="flex h-10 w-10 items-center justify-center rounded-none"
-        style={{
-          background: 'var(--surface-muted)',
-          border: '2px solid var(--border-subtle)',
-          borderRadius: 0,
-        }}
-      >
+      <div className="flex h-10 w-10 items-center justify-center" style={panelStyle()}>
         <Icon className="h-5 w-5" style={{ color: 'var(--text-muted)' }} strokeWidth={1.75} />
       </div>
     </div>
@@ -203,24 +155,17 @@ export default function ProjectDashboard() {
   }
 
   return (
-    <div
-      className="h-full flex flex-col core-page-shell"
-      style={getWorkspacePageShellStyle()}
-    >
+    <div className="h-full flex flex-col core-page-shell" style={getWorkspacePageShellStyle()}>
       <div
         className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
         style={getWorkspacePageHeaderStyle()}
       >
-        <WorkspacePageTitle
-          icon={LayoutDashboard}
-          title="Dashboard"
-          projectName={project?.name}
-        />
+        <WorkspacePageTitle icon={LayoutDashboard} title="Dashboard" projectName={project?.name} />
 
         <button
           onClick={() => navigate(`/project/${project?.id}/tareas`)}
           className="inline-flex items-center justify-center gap-1.5 px-3.5 h-8 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_var(--border-strong)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[0px_0px_0_0_var(--border-strong)]"
-          style={brutalBtnPrimaryStyle}
+          style={btnPrimaryStyle({ size: 'sm' })}
         >
           <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
           Nueva Tarea
@@ -247,11 +192,7 @@ export default function ProjectDashboard() {
         <div className="relative z-10" style={getWorkspacePageContentStyle()}>
           {/* Section header */}
           <div className="mb-4">
-            <h2
-              className="typography-title"
-            >
-              SYSTEM_DASHBOARD
-            </h2>
+            <h2 className="typography-title">SYSTEM_DASHBOARD</h2>
             <p className="typography-label mt-1">
               Estadísticas brutas de tareas y rendimiento del proyecto.
             </p>
@@ -261,7 +202,7 @@ export default function ProjectDashboard() {
           <ChromeSurface
             className="mb-5 flex flex-col overflow-hidden"
             surface="panel"
-            style={brutalPanelStyle()}
+            style={panelStyle()}
           >
             <div
               className="flex items-center justify-between px-4 py-3"
@@ -270,15 +211,37 @@ export default function ProjectDashboard() {
                 background: 'var(--surface-elevated)',
               }}
             >
-              <SectionLabel prefix="PROJECT_SUMMARY" headingId="h3-resumen">Resumen del Proyecto</SectionLabel>
+              <SectionLabel prefix="PROJECT_SUMMARY" headingId="h3-resumen">
+                Resumen del Proyecto
+              </SectionLabel>
             </div>
 
             <div className="p-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <StatCard label="Tareas totales" value={total} color="var(--text-muted)" icon={ListTodo} />
-                <StatCard label="Completadas" value={completed} color="var(--success)" icon={CheckCircle2} />
-                <StatCard label="En progreso" value={inProgress} color="var(--accent-primary)" icon={Clock} />
-                <StatCard label="Bloqueadas" value={blocked} color="var(--danger)" icon={AlertTriangle} />
+                <StatCard
+                  label="Tareas totales"
+                  value={total}
+                  color="var(--text-muted)"
+                  icon={ListTodo}
+                />
+                <StatCard
+                  label="Completadas"
+                  value={completed}
+                  color="var(--success)"
+                  icon={CheckCircle2}
+                />
+                <StatCard
+                  label="En progreso"
+                  value={inProgress}
+                  color="var(--accent-primary)"
+                  icon={Clock}
+                />
+                <StatCard
+                  label="Bloqueadas"
+                  value={blocked}
+                  color="var(--danger)"
+                  icon={AlertTriangle}
+                />
               </div>
             </div>
           </ChromeSurface>
@@ -287,17 +250,18 @@ export default function ProjectDashboard() {
           <ChromeSurface
             className="mb-5 px-4 py-3 rounded-none"
             surface="panel"
-            style={brutalPanelStyle()}
+            style={panelStyle()}
           >
             <div className="flex items-center justify-between mb-2">
-              <p className="typography-label">
-                Progreso General
-              </p>
-              <span className="typography-data text-xl font-black" style={{ color: 'var(--text-primary)' }}>
+              <p className="typography-label">Progreso General</p>
+              <span
+                className="typography-data text-xl font-black"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 {compPct}%
               </span>
             </div>
-            <div style={brutalProgressTrackStyle}>
+            <div style={progressTrackStyle()}>
               <div
                 className="h-full transition-all duration-700"
                 style={{
@@ -307,7 +271,10 @@ export default function ProjectDashboard() {
                 }}
               />
             </div>
-            <div className="flex justify-between text-[10px] font-bold mt-1.5" style={{ color: 'var(--text-muted)' }}>
+            <div
+              className="flex justify-between text-[10px] font-bold mt-1.5"
+              style={{ color: 'var(--text-muted)' }}
+            >
               <span>{completed} completadas</span>
               <span>{total - completed} pendientes</span>
             </div>
@@ -319,7 +286,7 @@ export default function ProjectDashboard() {
             <ChromeSurface
               className="xl:col-span-2 flex flex-col overflow-hidden"
               surface="panel"
-              style={brutalPanelStyle()}
+              style={panelStyle()}
             >
               <div
                 className="flex items-center justify-between px-4 py-3"
@@ -328,7 +295,9 @@ export default function ProjectDashboard() {
                   background: 'var(--surface-elevated)',
                 }}
               >
-                <SectionLabel prefix="PRÓXIMAS_TAREAS" headingId="h3-tareas">Próximas Tareas</SectionLabel>
+                <SectionLabel prefix="PRÓXIMAS_TAREAS" headingId="h3-tareas">
+                  Próximas Tareas
+                </SectionLabel>
                 <button
                   onClick={() => navigate(`/project/${project?.id}/tareas`)}
                   className="text-[10px] font-bold uppercase tracking-wider transition-colors hover:text-[var(--text-primary)] cursor-pointer"
@@ -340,7 +309,10 @@ export default function ProjectDashboard() {
 
               <div className="flex-1 overflow-y-auto space-y-1.5 p-3">
                 {upcomingTasks.length === 0 ? (
-                  <p className="px-2 py-4 text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                  <p
+                    className="px-2 py-4 text-[10px] font-bold"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     No hay tareas con fecha límite próximas.
                   </p>
                 ) : (
@@ -361,15 +333,24 @@ export default function ProjectDashboard() {
                             className="w-2.5 h-2.5 shrink-0"
                             style={{
                               background: isOverdue ? 'var(--danger)' : 'var(--accent-primary)',
-                              animation: !isOverdue ? 'devhub-status-blink 1s steps(1) infinite' : 'none',
+                              animation: !isOverdue
+                                ? 'devhub-status-blink 1s steps(1) infinite'
+                                : 'none',
                             }}
                           />
                           <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>
+                            <p
+                              className="text-[10px] font-black uppercase tracking-wider"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
                               {task.title}
                             </p>
-                            <p className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>
-                              {isOverdue ? 'Vencida' : 'Due'}: {new Date(task.due_date).toLocaleDateString('es-ES', {
+                            <p
+                              className="text-[9px] font-bold"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {isOverdue ? 'Vencida' : 'Due'}:{' '}
+                              {new Date(task.due_date).toLocaleDateString('es-ES', {
                                 day: '2-digit',
                                 month: 'short',
                               })}
@@ -413,7 +394,7 @@ export default function ProjectDashboard() {
               <ChromeSurface
                 className="flex flex-col overflow-hidden"
                 surface="panel"
-                style={brutalPanelStyle()}
+                style={panelStyle()}
               >
                 <div
                   className="flex items-center gap-3 px-4 py-3"
@@ -422,7 +403,9 @@ export default function ProjectDashboard() {
                     background: 'var(--surface-elevated)',
                   }}
                 >
-                  <SectionLabel prefix="PRÓXIMO_HITO" headingId="h3-hito">Próximo Hito</SectionLabel>
+                  <SectionLabel prefix="PRÓXIMO_HITO" headingId="h3-hito">
+                    Próximo Hito
+                  </SectionLabel>
                 </div>
 
                 <div className="p-4">
@@ -474,7 +457,8 @@ export default function ProjectDashboard() {
                       className="text-[10px] font-bold flex items-center gap-1.5"
                       style={{ color: 'var(--success)' }}
                     >
-                      <Trophy className="w-3.5 h-3.5 text-yellow-400" /> ¡Todos los hitos completados!
+                      <Trophy className="w-3.5 h-3.5 text-yellow-400" /> ¡Todos los hitos
+                      completados!
                     </p>
                   )}
                 </div>
@@ -484,7 +468,7 @@ export default function ProjectDashboard() {
               <ChromeSurface
                 className="relative overflow-hidden flex flex-col"
                 surface="panel"
-                style={brutalPanelActiveStyle()}
+                style={panelStyle({ tone: 'accent' })}
               >
                 <div
                   className="absolute top-0 left-0 w-full h-1"
@@ -499,7 +483,9 @@ export default function ProjectDashboard() {
                     background: 'rgba(227, 179, 65, 0.08)',
                   }}
                 >
-                  <SectionLabel prefix="DELIVERY_PREDICTION" headingId="h3-prediccion">Fecha Estimada de Entrega</SectionLabel>
+                  <SectionLabel prefix="DELIVERY_PREDICTION" headingId="h3-prediccion">
+                    Fecha Estimada de Entrega
+                  </SectionLabel>
                   <DashboardPill
                     style={{
                       border: '1px solid var(--accent-primary)',
@@ -549,12 +535,15 @@ export default function ProjectDashboard() {
                         <span style={{ color: 'var(--text-muted)' }}>
                           Velocidad: {prediction.speed} tareas/d
                         </span>
-                        <span style={{ color: 'var(--accent-primary)' }}>Confianza: {prediction.confidence}</span>
+                        <span style={{ color: 'var(--accent-primary)' }}>
+                          Confianza: {prediction.confidence}
+                        </span>
                       </div>
                     </div>
                   ) : (
                     <p className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
-                      No hay suficientes datos de tareas completadas para calcular una predicción precisa.
+                      No hay suficientes datos de tareas completadas para calcular una predicción
+                      precisa.
                     </p>
                   )}
                 </div>

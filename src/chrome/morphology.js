@@ -78,8 +78,8 @@ export function btnPrimaryStyle({ size = 'sm' } = {}) {
     background: 'var(--accent-primary)',
     border: `var(--chrome-border-width) solid var(--accent-primary)`,
     color: '#0d1117',
-    boxShadow: '3px 3px 0 0 var(--accent-shadow)',
-    borderRadius: '0',
+    boxShadow: 'var(--chrome-shadow-control)',
+    borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
@@ -132,7 +132,7 @@ export function btnDangerStyle({ size = 'sm' } = {}) {
     background: 'var(--danger)',
     border: `var(--chrome-border-width) solid var(--danger)`,
     color: '#fff',
-    boxShadow: '3px 3px 0 0 color-mix(in srgb, var(--danger) 60%, #000)',
+    boxShadow: 'var(--chrome-shadow-control)',
     borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     cursor: 'pointer',
@@ -341,7 +341,8 @@ export function kanbanColumnHeaderStyle({ tone = 'neutral' } = {}) {
     return {
       ...base,
       borderBottomColor: 'var(--accent-primary)',
-      background: 'color-mix(in srgb, var(--accent-primary) 12%, var(--chrome-panel-fill-emphasis))',
+      background:
+        'color-mix(in srgb, var(--accent-primary) 12%, var(--chrome-panel-fill-emphasis))',
     };
   }
 

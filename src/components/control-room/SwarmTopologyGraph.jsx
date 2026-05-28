@@ -219,21 +219,9 @@ function TopologyNode({
         height: `${h}px`,
         cursor: 'grab',
         zIndex: selected ? 20 : highlighted ? 15 : 10,
-        borderColor: selected
-          ? 'var(--accent-primary)'
-          : highlighted
-            ? '#27272a'
-            : '#27272a',
-        background: selected
-          ? '#141416'
-          : node.isDirector
-            ? '#141416'
-            : '#141416',
-        boxShadow: selected
-          ? '4px 4px 0px 0px var(--accent-primary)'
-          : highlighted
-            ? '4px 4px 0px 0px #27272a'
-            : '3px 3px 0px 0px #27272a',
+        borderColor: selected ? 'var(--accent-primary)' : 'var(--chrome-border-color)',
+        background: selected ? 'var(--chrome-panel-fill)' : 'var(--chrome-panel-fill)',
+        boxShadow: 'var(--chrome-shadow-control)',
         transform: highlighted || selected ? 'scale(1.04)' : 'scale(1)',
         transition:
           'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s, background-color 0.2s, box-shadow 0.2s',
@@ -249,8 +237,8 @@ function TopologyNode({
           height: compact ? '22px' : '28px',
           background: node.isDirector ? 'rgba(245,158,11,0.18)' : 'rgba(255,255,255,0.05)',
           border: node.isDirector
-            ? '2px solid #27150a'
-            : '2px solid #27272a',
+            ? '2px solid var(--accent-shadow)'
+            : 'var(--chrome-border-width) solid var(--chrome-border-color)',
         }}
       >
         <IconComponent
@@ -607,12 +595,12 @@ export default function SwarmTopologyGraph({
   if (nodes.length === 0) {
     return (
       <div
-      className={`flex items-center justify-center border text-xs ${className}`}
-      style={{
-        borderColor: 'var(--border-subtle)',
-        color: 'var(--text-muted)',
-        height: compact ? '80px' : '120px',
-      }}
+        className={`flex items-center justify-center border text-xs ${className}`}
+        style={{
+          borderColor: 'var(--border-subtle)',
+          color: 'var(--text-muted)',
+          height: compact ? '80px' : '120px',
+        }}
       >
         No topology data available
       </div>
@@ -661,9 +649,7 @@ export default function SwarmTopologyGraph({
         style={{
           height: `${containerSize.height}px`,
           minHeight: compact ? '160px' : '280px',
-          background: compact
-            ? 'var(--surface-muted)'
-            : 'var(--surface-muted)',
+          background: compact ? 'var(--surface-muted)' : 'var(--surface-muted)',
           cursor: dragState ? 'grabbing' : 'default',
         }}
         onClick={() => {
@@ -733,9 +719,9 @@ export default function SwarmTopologyGraph({
                   className="flex items-center justify-center rounded-lg p-2 shrink-0"
                   style={{
                     color: selectedNodeObj.isDirector ? '#fbbf24' : 'var(--text-secondary)',
-                    border: '2px solid #27272a',
-                    background: '#141416',
-                    boxShadow: '3px 3px 0px 0px #27272a',
+                    border: 'var(--chrome-border-width) solid var(--chrome-border-color)',
+                    background: 'var(--chrome-panel-fill)',
+                    boxShadow: 'var(--chrome-shadow-control)',
                   }}
                 >
                   <SelectedIconComponent className="w-5 h-5" />
@@ -748,7 +734,7 @@ export default function SwarmTopologyGraph({
                     <span
                       className="inline-flex items-center rounded-none px-2 py-0.5 text-[9px] font-medium border-2"
                       style={{
-                        background: '#141416',
+                        background: 'var(--chrome-panel-fill)',
                         color: selectedNodeTheme.color,
                         borderColor: selectedNodeTheme.dot,
                       }}

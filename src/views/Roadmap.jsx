@@ -74,10 +74,10 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
   }
 
   return (
-      <div
-        className="fixed inset-0 flex items-center justify-center z-50 p-4"
-        style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
-      >
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50 p-4"
+      style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
+    >
       <div
         className="p-6 w-full max-w-md fade-in-up"
         style={{
@@ -304,10 +304,7 @@ export default function Roadmap() {
               <Flag className="w-4 h-4" style={{ color: accentColor }} />
             </div>
             <div>
-              <h3
-                className="typography-card-title"
-                style={{ color: 'var(--text-primary)' }}
-              >
+              <h3 className="typography-card-title" style={{ color: 'var(--text-primary)' }}>
                 Progreso del Proyecto
               </h3>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -354,10 +351,7 @@ export default function Roadmap() {
 
         {/* Timeline */}
         {loading ? (
-          <div
-            className="overflow-hidden fade-in-up"
-            style={panelStyle()}
-          >
+          <div className="overflow-hidden fade-in-up" style={panelStyle()}>
             <div className="flex items-center justify-center py-20">
               <Loader2
                 className="w-7 h-7 animate-spin"
@@ -366,15 +360,9 @@ export default function Roadmap() {
             </div>
           </div>
         ) : milestones.length === 0 ? (
-          <div
-            className="overflow-hidden fade-in-up"
-            style={panelStyle()}
-          >
+          <div className="overflow-hidden fade-in-up" style={panelStyle()}>
             <div className="flex flex-col items-center justify-center py-16 gap-4 text-center p-6">
-              <div
-                className="w-14 h-14 flex items-center justify-center"
-                style={pillStyle()}
-              >
+              <div className="w-14 h-14 flex items-center justify-center" style={pillStyle()}>
                 <MapPin
                   className="w-7 h-7"
                   strokeWidth={1.5}
@@ -412,13 +400,13 @@ export default function Roadmap() {
                     className="relative pl-14 group"
                     style={{ animationDelay: `${i * 60}ms` }}
                   >
-            {/* Timeline dot */}
-            <div
-              className="absolute left-3 top-5 w-4 h-4 rounded-none border-2 flex items-center justify-center cursor-pointer transition-transform hover:scale-110"
+                    {/* Timeline dot */}
+                    <div
+                      className="absolute left-3 top-5 w-4 h-4 rounded-none border-2 flex items-center justify-center cursor-pointer transition-transform hover:scale-110"
                       style={{
                         borderColor: cfg.color,
                         background: ms.status === 'completed' ? cfg.color : 'var(--surface-app)',
-                        boxShadow: '2px 2px 0px 0px ' + cfg.color,
+                        boxShadow: 'var(--chrome-shadow-control)',
                       }}
                       onClick={() => toggleComplete(ms)}
                       title="Clic para marcar completado"
@@ -439,13 +427,11 @@ export default function Roadmap() {
                     <div
                       className="overflow-hidden transition-all hover:bg-surface-elevated rounded-none"
                       style={{
-                        ...getWorkspaceSectionSurfaceStyle({ emphasized: ms.status !== 'planned' }),
-                        borderRadius: '0',
-                        border: '2px solid var(--border-strong)',
-                        boxShadow: '4px 4px 0px 0px var(--border-strong)',
-                        borderColor: isOverdue
-                          ? 'var(--danger)'
-                          : 'var(--border-strong)',
+                        ...panelStyle({
+                          emphasized: ms.status !== 'planned',
+                          tone: isOverdue ? 'danger' : 'neutral',
+                        }),
+                        borderRadius: 'var(--chrome-radius-panel)',
                       }}
                     >
                       {/* Card header */}
@@ -480,7 +466,9 @@ export default function Roadmap() {
                               <StatusSignal
                                 label={cfg.label}
                                 tone={getRoadmapTone(ms.status)}
-                                animation={cfg.pulse && ms.status !== 'completed' ? 'blink' : 'none'}
+                                animation={
+                                  cfg.pulse && ms.status !== 'completed' ? 'blink' : 'none'
+                                }
                               />
                               {isOverdue && (
                                 <StatusSignal label="Vencido" tone="danger" animation="blink" />
@@ -493,7 +481,9 @@ export default function Roadmap() {
                             onClick={() => toggleComplete(ms)}
                             className="cursor-pointer hover:-translate-y-px active:translate-y-0"
                             style={{
-                              ...pillStyle({ tone: ms.status === 'completed' ? 'neutral' : 'accent' }),
+                              ...pillStyle({
+                                tone: ms.status === 'completed' ? 'neutral' : 'accent',
+                              }),
                               cursor: 'pointer',
                             }}
                           >
@@ -524,7 +514,10 @@ export default function Roadmap() {
                           </p>
                         )}
                         {ms.due_date && (
-                          <div className="mt-3 inline-flex items-center gap-1.5 px-2 py-1 text-[11px]" style={getWorkspaceStatusPillStyle()}>
+                          <div
+                            className="mt-3 inline-flex items-center gap-1.5 px-2 py-1 text-[11px]"
+                            style={getWorkspaceStatusPillStyle()}
+                          >
                             <Clock className="w-3 h-3" strokeWidth={1.5} />
                             <span>
                               Objetivo:{' '}

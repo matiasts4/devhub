@@ -26,7 +26,6 @@ export function setZoom(zoom) {
   return rounded;
 }
 
-
 export const THEMES = {
   DEEP_SEA: 'deep-sea',
   NORD: 'nord',
@@ -42,6 +41,7 @@ export const THEMES = {
 export const MORPHOLOGIES = {
   DEFAULT: 'default',
   BRUTALIST_STAGE: 'brutalist-stage',
+  AURA: 'aura',
 };
 
 export const ACCENTS = {
@@ -126,6 +126,11 @@ export const MORPHOLOGY_OPTIONS = [
     id: MORPHOLOGIES.BRUTALIST_STAGE,
     label: 'Brutalist Stage',
     description: 'Sharper borders, flatter surfaces, stage-like shell chrome.',
+  },
+  {
+    id: MORPHOLOGIES.AURA,
+    label: 'Aura',
+    description: 'Glassmorphism with semi-transparent surfaces and soft glow effects.',
   },
 ];
 

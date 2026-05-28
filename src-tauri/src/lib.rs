@@ -30,6 +30,43 @@ fn nextjs_port() -> u16 {
     }
 }
 
+fn sidecar_port() -> u16 {
+    std::env::var("SIDECAR_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or_else(|| if cfg!(debug_assertions) { 4001 } else { 4000 })
+}
+
+fn ws_port() -> u16 {
+    std::env::var("DEVHUB_WS_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or_else(|| if cfg!(debug_assertions) { 3402 } else { 3401 })
+}
+
+fn tty_port() -> u16 {
+    std::env::var("DEVHUB_TTY_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or_else(|| if cfg!(debug_assertions) { 4078 } else { 4077 })
+}
+
+fn devhub_dir() -> PathBuf {
+    let p = std::env::var("DEVHUB_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            if cfg!(debug_assertions) {
+                dirs::home_dir().unwrap().join(".devhub-dev")
+            } else {
+                dirs::home_dir().unwrap().join(".devhub")
+            }
+        });
+    if !p.exists() {
+        let _ = fs::create_dir_all(&p);
+    }
+    p
+}
+
 fn is_port_ready(port: u16) -> bool {
     TcpStream::connect_timeout(
         &format!("127.0.0.1:{}", port).parse().unwrap(),
@@ -228,11 +265,7 @@ fn find_devhub_pid_on_port(port: u16) -> Option<u32> {
 }
 
 fn get_devhub_dir() -> PathBuf {
-    let p = dirs::home_dir().unwrap().join(".devhub");
-    if !p.exists() {
-        let _ = fs::create_dir_all(&p);
-    }
-    p
+    devhub_dir()
 }
 
 fn get_sidecar_pid_file() -> PathBuf {
@@ -314,10 +347,10 @@ fn get_installed_build_id() -> Option<u64> {
 fn check_existing_sidecar() -> Option<u32> {
     let pid_file = get_sidecar_pid_file();
     if !pid_file.exists() {
-        if let Some(pid) = find_devhub_pid_on_port(4000) {
+        if let Some(pid) = find_devhub_pid_on_port(sidecar_port()) {
             let _ = fs::write(&pid_file, pid.to_string());
-            let _ = fs::write(get_sidecar_port_file(), "4000");
-            println!("[DevHub] Sidecar adoptado por puerto 4000 con PID {}.", pid);
+            let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
+            println!("[DevHub] Sidecar adoptado por puerto {} con PID {}.", sidecar_port(), pid);
             return Some(pid);
         }
         return None;
@@ -340,7 +373,7 @@ fn check_existing_sidecar() -> Option<u32> {
                     }
                 }
                 if !get_sidecar_port_file().exists() {
-                    let _ = fs::write(get_sidecar_port_file(), "4000");
+                    let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
                 }
                 println!("[DevHub] Sidecar ya activo con PID {} (build-id OK).", pid);
                 return Some(pid);
@@ -349,12 +382,12 @@ fn check_existing_sidecar() -> Option<u32> {
     }
     // PID file obsoleto — limpiarlo
     let _ = fs::remove_file(&pid_file);
-    if let Some(pid) = find_devhub_pid_on_port(4000) {
+    if let Some(pid) = find_devhub_pid_on_port(sidecar_port()) {
         let _ = fs::write(&pid_file, pid.to_string());
-        let _ = fs::write(get_sidecar_port_file(), "4000");
+        let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
         println!(
-            "[DevHub] Sidecar readoptado por puerto 4000 con PID {}.",
-            pid
+            "[DevHub] Sidecar readoptado por puerto {} con PID {}.",
+            sidecar_port(), pid
         );
         return Some(pid);
     }
@@ -417,7 +450,11 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
     let sidecar_command = app
         .shell()
         .sidecar("devhub-server")
-        .expect("No se encontró el sidecar 'devhub-server'");
+        .expect("No se encontró el sidecar 'devhub-server'")
+        .env("DEVHUB_HOME", devhub_dir().to_string_lossy().as_ref())
+        .env("SIDECAR_PORT", sidecar_port().to_string())
+        .env("DEVHUB_WS_PORT", ws_port().to_string())
+        .env("DEVHUB_TTY_PORT", tty_port().to_string());
 
     let (mut rx, _child) = sidecar_command.spawn().expect("Error al lanzar el sidecar");
 
@@ -456,7 +493,7 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
 fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()> {
     let has_valid_sidecar = check_existing_sidecar().is_some();
     let next_ready = nextjs_route_is_ready(nextjs_port());
-    let sidecar_ready = is_port_ready(4000);
+    let sidecar_ready = is_port_ready(sidecar_port());
 
     if has_valid_sidecar && next_ready && sidecar_ready {
         return Ok(());
