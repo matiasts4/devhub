@@ -49,11 +49,11 @@ Esto responde a **cómo** le habla el usuario al sistema.
 
 Esto responde a **hasta dónde** puede accionar el agente.
 
-| Modo | Alcance | Qué puede hacer |
-| --- | --- | --- |
-| Observador | Lectura | Ver logs, estado, terminales, agentes, páginas, timeline y métricas. |
-| Operador de aplicación | Control local de la app | Abrir terminales, lanzar procesos, abrir browser, cambiar layout, enfocar vistas, seguir logs. |
-| Director general | Dirección sistémica | Todo lo anterior, más crear agentes, delegar tareas, coordinar runs y usar el subsistema swarm cuando convenga. |
+| Modo                   | Alcance                 | Qué puede hacer                                                                                                 |
+| ---------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Observador             | Lectura                 | Ver logs, estado, terminales, agentes, páginas, timeline y métricas.                                            |
+| Operador de aplicación | Control local de la app | Abrir terminales, lanzar procesos, abrir browser, cambiar layout, enfocar vistas, seguir logs.                  |
+| Director general       | Dirección sistémica     | Todo lo anterior, más crear agentes, delegar tareas, coordinar runs y usar el subsistema swarm cuando convenga. |
 
 Punto importante: **voz y texto no son modos de autoridad**. Son sólo canales de entrada. El verdadero diseño difícil está en los modos de autoridad.
 
@@ -61,9 +61,9 @@ Punto importante: **voz y texto no son modos de autoridad**. Son sólo canales d
 
 Este punto hay que dejarlo cristalino.
 
-| Superficie | Rol real |
-| --- | --- |
-| `swarm-director` | Director especializado del swarm y de la coordinación multiagente visible. |
+| Superficie                 | Rol real                                                                                                                      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `swarm-director`           | Director especializado del swarm y de la coordinación multiagente visible.                                                    |
 | Director general propuesto | Director superior de toda la aplicación. Usa `swarm-director` cuando necesita coordinación de swarm, pero no se limita a eso. |
 
 ### Diferencia funcional
@@ -107,10 +107,10 @@ Eso evita dos errores graves:
 
 La mejor dirección sigue siendo una vista tipo **Control Room** u **Operator View** con tres capas:
 
-| Capa | Función |
-| --- | --- |
-| Intención | Entrada por texto o voz y selector visible de modo de autoridad. |
-| Ejecución | Terminales, browser, agentes, tareas y procesos vivos. |
+| Capa           | Función                                                              |
+| -------------- | -------------------------------------------------------------------- |
+| Intención      | Entrada por texto o voz y selector visible de modo de autoridad.     |
+| Ejecución      | Terminales, browser, agentes, tareas y procesos vivos.               |
 | Observabilidad | Timeline, logs, confirmaciones, errores, resultados y estado activo. |
 
 ### Inspiración correcta
@@ -168,17 +168,17 @@ La dirección correcta es:
 
 ## Arquitectura propuesta
 
-| Componente | Rol |
-| --- | --- |
-| Intent Router | Traduce intención natural a acciones tipadas. |
-| Mode Resolver | Determina si la intención cae en Observador, Operador o Director General. |
-| Action Policy Layer | Aplica permisos, confirmaciones, límites y allowlists. |
-| Terminal Adapter | Crea, reusa y observa terminales/procesos. |
-| Browser Adapter | Abre páginas, navega y conecta automatización browser-side. |
-| View Adapter | Abre, enfoca o reorganiza vistas y paneles dentro de la app. |
-| Swarm Adapter | Invoca capacidades equivalentes a `swarm-director` sin duplicarlas. |
-| Execution Timeline | Registra cada paso, tool, error, confirmación y resultado. |
-| Voice Gateway | Maneja STT, wake word y confirmaciones cuando se habilite voz. |
+| Componente          | Rol                                                                       |
+| ------------------- | ------------------------------------------------------------------------- |
+| Intent Router       | Traduce intención natural a acciones tipadas.                             |
+| Mode Resolver       | Determina si la intención cae en Observador, Operador o Director General. |
+| Action Policy Layer | Aplica permisos, confirmaciones, límites y allowlists.                    |
+| Terminal Adapter    | Crea, reusa y observa terminales/procesos.                                |
+| Browser Adapter     | Abre páginas, navega y conecta automatización browser-side.               |
+| View Adapter        | Abre, enfoca o reorganiza vistas y paneles dentro de la app.              |
+| Swarm Adapter       | Invoca capacidades equivalentes a `swarm-director` sin duplicarlas.       |
+| Execution Timeline  | Registra cada paso, tool, error, confirmación y resultado.                |
+| Voice Gateway       | Maneja STT, wake word y confirmaciones cuando se habilite voz.            |
 
 ## Decisiones preliminares para no perdernos
 
@@ -189,6 +189,24 @@ Estas no son decisiones finales de implementación. Son decisiones de enfoque pa
 3. El valor inicial está en controlar bien **terminal + browser + estado de la app**, no en prometer autonomía total desde el día uno.
 4. La voz debe tratarse como un canal adicional, no como el centro conceptual del sistema.
 5. La vista debe priorizar **claridad operativa** antes que espectacularidad visual.
+
+## Consolidación de IA y Compatibilidad con OpenCode (MiniMax 2.7)
+
+Para garantizar la paridad operativa con OpenCode y aprovechar su velocidad en ejecuciones y control interno de la aplicación, el **Director General Operativo** utilizará **MiniMax 2.7** como su proveedor de IA estándar.
+
+### Estrategia de Integración y Código Existente
+
+1. **Resolución Unificada de Alias (`ModelConsolidator.js`)**:
+   El sistema consolidará los alias de modelos entrantes (`minimax-2.7`, `minimax-m2.7`, `minimax`, `opencode-minimax`) hacia el identificador canónico `opencode-go/minimax-m2.7`. Esto asegura consistencia en todas las fases de orquestación de la app.
+
+2. **Ejecución Nativa vía OpenCode CLI (`agenthub/chat/route.js`)**:
+   Cuando el rol activo se resuelva como un agente de la suite, la llamada de chat se delegará a través del cliente local de OpenCode mediante el spawn de terminal:
+   `opencode run --model <model> --format json`
+   Esto permite que el modelo organice el enjambre, acceda a los contextos y herramientas de la terminal, y devuelva la estructura de tokens optimizada.
+
+3. **Foco del Modelo Proveedor**:
+   - **Orquestación de Acciones Internas**: Traducir las intenciones del usuario en comandos permitidos, gestionar permisos, y monitorear la ejecución del terminal.
+   - **Observabilidad en Tiempo Real**: Analizar el estado de los procesos y reportar desviaciones al timeline operativo unificado.
 
 ## Escenarios semilla
 
