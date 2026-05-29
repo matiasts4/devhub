@@ -8,14 +8,15 @@ use sysinfo::System;
 use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::ShellExt;
 
-mod native_vte;
 mod native_browser;
+mod native_vte;
 mod native_window_host;
 
 use native_browser::{
     native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
     native_browser_open, native_browser_probe, native_browser_reload, native_browser_resize,
-    native_browser_select_all, native_browser_selector_command, native_browser_set_visibility, NativeBrowserState,
+    native_browser_select_all, native_browser_selector_command, native_browser_set_visibility,
+    NativeBrowserState,
 };
 use native_vte::{
     native_vte_close, native_vte_focus, native_vte_open, native_vte_paste, native_vte_probe,
@@ -198,7 +199,10 @@ fn wait_for_nextjs_ready(max_attempts: usize, context: &str) -> bool {
 fn schedule_main_window_recovery(app: tauri::AppHandle, reason: &str) {
     let reason = reason.to_string();
     thread::spawn(move || {
-        if !wait_for_nextjs_ready(NEXTJS_READY_RECOVERY_ATTEMPTS, &format!("recovery: {}", reason)) {
+        if !wait_for_nextjs_ready(
+            NEXTJS_READY_RECOVERY_ATTEMPTS,
+            &format!("recovery: {}", reason),
+        ) {
             log::error!(
                 "[DevHub] ❌ Next.js siguió sin responder; la ventana principal queda oculta para evitar una pantalla en blanco."
             );
@@ -254,10 +258,12 @@ fn cleanup_zombie_ports() {
                                 .collect::<Vec<_>>()
                                 .join(" ");
                             if is_devhub_runtime_process(&name, &cmdline) {
-log::info!(
-                                "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
-                                pid, port, name
-                            );
+                                log::info!(
+                                    "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
+                                    pid,
+                                    port,
+                                    name
+                                );
                                 process.kill();
                             }
                         }
@@ -408,7 +414,11 @@ fn check_existing_sidecar() -> Option<u32> {
         if let Some(pid) = find_devhub_pid_on_port(sidecar_port()) {
             let _ = fs::write(&pid_file, pid.to_string());
             let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
-            log::info!("[DevHub] Sidecar adoptado por puerto {} con PID {}.", sidecar_port(), pid);
+            log::info!(
+                "[DevHub] Sidecar adoptado por puerto {} con PID {}.",
+                sidecar_port(),
+                pid
+            );
             return Some(pid);
         }
         return None;
@@ -445,7 +455,8 @@ fn check_existing_sidecar() -> Option<u32> {
         let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
         log::info!(
             "[DevHub] Sidecar readoptado por puerto {} con PID {}.",
-            sidecar_port(), pid
+            sidecar_port(),
+            pid
         );
         return Some(pid);
     }
@@ -513,10 +524,26 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         .env("SIDECAR_PORT", sidecar_port().to_string())
         .env("DEVHUB_WS_PORT", ws_port().to_string())
         .env("DEVHUB_TTY_PORT", tty_port().to_string())
-        .env("NODE_PATH", devhub_dir().join("standalone").join("node_modules").to_string_lossy().as_ref())
-        .env("DEVHUB_NODE_BIN", std::env::var("DEVHUB_NODE_BIN").unwrap_or_default())
-        .env("DEVHUB_NPM_BIN", std::env::var("DEVHUB_NPM_BIN").unwrap_or_default())
-        .env("DEVHUB_ALLOW_NODE24", std::env::var("DEVHUB_ALLOW_NODE24").unwrap_or_default());
+        .env(
+            "NODE_PATH",
+            devhub_dir()
+                .join("standalone")
+                .join("node_modules")
+                .to_string_lossy()
+                .as_ref(),
+        )
+        .env(
+            "DEVHUB_NODE_BIN",
+            std::env::var("DEVHUB_NODE_BIN").unwrap_or_default(),
+        )
+        .env(
+            "DEVHUB_NPM_BIN",
+            std::env::var("DEVHUB_NPM_BIN").unwrap_or_default(),
+        )
+        .env(
+            "DEVHUB_ALLOW_NODE24",
+            std::env::var("DEVHUB_ALLOW_NODE24").unwrap_or_default(),
+        );
 
     let (mut rx, _child) = sidecar_command.spawn().expect("Error al lanzar el sidecar");
 
