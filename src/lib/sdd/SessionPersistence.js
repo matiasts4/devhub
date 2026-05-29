@@ -7,7 +7,7 @@
 
 'use strict';
 
-const crypto = require('crypto');
+const { generateSessionId, buildTmuxSessionName } = require('./sessionIdUtils');
 
 // ---------------------------------------------------------------------------
 // SQLite schema for swarm_sessions
@@ -61,6 +61,10 @@ let _db = null;
 
 function getDb() {
   if (!_db) {
+    // Guard: only load SQLite in Node.js runtime (not browser)
+    if (typeof window !== 'undefined') {
+      throw new Error('SessionPersistence.getDb() is server-only');
+    }
     // Lazy load to avoid circular deps
     const { getDb: getSharedDb } = require('../db/shared');
     _db = getSharedDb();
@@ -77,23 +81,6 @@ function getDb() {
 
 function resetDb() {
   _db = null;
-}
-
-/**
- * Generate a consistent session ID.
- */
-function generateSessionId() {
-  return crypto.randomUUID();
-}
-
-/**
- * Generate tmux session name from sessionId.
- * Format: devhub-swarm-{sessionId_short}
- */
-function buildTmuxSessionName(sessionId) {
-  if (!sessionId) return null;
-  const short = sessionId.replace(/-/g, '').substring(0, 12);
-  return `devhub-swarm-${short}`;
 }
 
 /**

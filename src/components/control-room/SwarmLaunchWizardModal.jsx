@@ -16,6 +16,17 @@ import {
 
 const STEP_ORDER = ['team', 'configure', 'launch'];
 
+const SDD_PHASES = [
+  { id: 'sdd-explore', label: 'Explore' },
+  { id: 'sdd-propose', label: 'Propose' },
+  { id: 'sdd-design', label: 'Design' },
+  { id: 'sdd-spec', label: 'Spec' },
+  { id: 'sdd-tasks', label: 'Tasks' },
+  { id: 'sdd-apply', label: 'Apply' },
+  { id: 'sdd-verify', label: 'Verify' },
+  { id: 'sdd-archive', label: 'Archive' },
+];
+
 const modalChromeStyle = {
   ...panelStyle({ emphasized: true }),
   color: 'var(--text-primary)',
@@ -525,6 +536,55 @@ export default function SwarmLaunchWizardModal({
                     style={wizardFieldStyle}
                   />
                   </label>
+
+                  <div className="space-y-3 md:col-span-2">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                        <input
+                          type="checkbox"
+                          aria-label="Enable SDD mode"
+                          checked={draft.sddEnabled || false}
+                          onChange={(event) => onDraftChange({ sddEnabled: event.target.checked })}
+                          className="w-4 h-4 accent-[var(--accent-primary)]"
+                        />
+                        <span>SDD Enabled</span>
+                      </label>
+                    </div>
+
+                    {draft.sddEnabled && (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="space-y-2 text-sm font-medium">
+                          <span>Change name</span>
+                          <input
+                            aria-label="Change name"
+                            value={draft.changeName || ''}
+                            onChange={(event) => onDraftChange({ changeName: event.target.value })}
+                            placeholder="e.g. swarm-sdd-integration"
+                            className="w-full"
+                            style={wizardFieldStyle}
+                          />
+                        </label>
+
+                        <label className="space-y-2 text-sm font-medium">
+                          <span>Initial phase</span>
+                          <select
+                            aria-label="Initial SDD phase"
+                            value={draft.phase || ''}
+                            onChange={(event) => onDraftChange({ phase: event.target.value })}
+                            className="w-full"
+                            style={wizardSelectFieldStyle}
+                          >
+                            <option value="">Select phase...</option>
+                            {SDD_PHASES.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                  </div>
 
                   <label className="space-y-2 text-sm font-medium md:col-span-2">
                     <span>Mission</span>

@@ -17,7 +17,12 @@ export function resolveAgentProgramExecutable(programId = 'hermes') {
 function buildSddPrompt(prompt, options = {}) {
   // Lazy-load to avoid circular deps
   const { buildPrompt } = require('./sdd/SwarmPromptEngine');
-  const { generateSessionId, buildTmuxSessionName, persistSession } = require('./sdd/SessionPersistence');
+  const { generateSessionId, buildTmuxSessionName } = require('./sdd/sessionIdUtils');
+  // SessionPersistence is server-only (uses SQLite). In the browser, persistSession is a no-op.
+  const persistSession =
+    typeof window === 'undefined'
+      ? require('./sdd/SessionPersistence').persistSession
+      : async () => {};
 
   const {
     role = null,

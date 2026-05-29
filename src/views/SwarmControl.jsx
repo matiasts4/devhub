@@ -817,7 +817,11 @@ export default function SwarmControl({ snapshotInput = null }) {
               <div
                 className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-3' : 'flex flex-col gap-6'}
               >
-                <AgentsClaimsPanel agents={filteredAgents} />
+                <AgentsClaimsPanel
+                  agents={filteredAgents}
+                  missionId={missionControl?.mission?.mission_id}
+                  onReactivate={loadSnapshot}
+                />
                 <WorkspacesPanel workspaces={filteredWorkspaces} />
                 <RunsArtifactsPanel
                   runs={filteredRuns}

@@ -711,7 +711,7 @@ describe('SwarmControl control room composition', () => {
                   taskId: 'launch-1-builder',
                   selectedAgent: 'opencode',
                   command:
-                    '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt "Builder launch"',
+                    '/home/matias/.opencode/bin/opencode --agent swarm-director --prompt "Builder launch"',
                   launchOrigin: 'swarm-control-launch',
                   launchPhase: 'fanout',
                   startAfterMs: 4000,

@@ -1673,6 +1673,11 @@ describe('composeControlRoomSnapshot', () => {
         devops: 'opencode-go/deepseek-v4-flash',
         architect: 'opencode/claude-sonnet-4.6',
       },
+      sddOptions: {
+        sddEnabled: false,
+        phase: null,
+        changeName: null,
+      },
       mission:
         'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
     });

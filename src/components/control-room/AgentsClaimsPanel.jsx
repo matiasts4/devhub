@@ -11,25 +11,34 @@ import {
   StatusPill,
   truncateId,
 } from './utils';
+import SwarmPhaseBadge from '@/components/SwarmPhaseBadge';
+import SwarmReactivateButton from '@/components/SwarmReactivateButton';
 
-export default function AgentsClaimsPanel({ agents = [] }) {
+export default function AgentsClaimsPanel({ agents = [], missionId = null, onReactivate = null }) {
+  // Wrap renderAgent in a closure so it has access to missionId and onReactivate
+  const renderAgentWithContext = (agent) =>
+    renderAgent(agent, { missionId, onReactivate });
+
   return (
     <CompactPanelShell
       title="Agentes y asignaciones"
       description="Tareas reclamadas, lease, workspace y autoridad."
       count={agents.length}
       items={agents}
-      renderItem={renderAgent}
+      renderItem={renderAgentWithContext}
       emptyMessage="Sin agentes durables en este snapshot."
       ariaLabel="Agentes y asignaciones"
     />
   );
 }
 
-function renderAgent(agent) {
+function renderAgent(agent, ctx) {
+  const { missionId, onReactivate } = ctx || {};
   const leaseText = agent.lease_expires_at
     ? `Lease: ${formatRelativeTime(agent.lease_expires_at)}`
     : 'Sin lease';
+
+  const canReactivate = agent.supervisor_state === 'paused' || agent.supervisor_state === 'idle';
 
   return (
     <div
@@ -37,13 +46,25 @@ function renderAgent(agent) {
       className="rounded-lg border px-2 py-1.5"
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-default)' }}
     >
-      <CompactRow
-        status={agent.supervisor_state}
-        primary={agent.agent_id}
-        secondary={`${agent.task_id ? truncateId(agent.task_id) : 'Sin tarea'} · ${leaseText}`}
-        badge={null}
-        timestamp={agent.freshness}
-      />
+      <div className="flex items-center justify-between gap-2">
+        <CompactRow
+          status={agent.supervisor_state}
+          primary={agent.agent_id}
+          secondary={`${agent.task_id ? truncateId(agent.task_id) : 'Sin tarea'} · ${leaseText}`}
+          badge={agent.phase ? <SwarmPhaseBadge phase={agent.phase} /> : null}
+          timestamp={agent.freshness}
+        />
+        {canReactivate && missionId && (
+          <SwarmReactivateButton
+            missionId={missionId}
+            agentId={agent.agent_id}
+            sessionId={agent.session_id}
+            sessionStatus={agent.supervisor_state}
+            onReactivate={onReactivate}
+            className="flex-shrink-0"
+          />
+        )}
+      </div>
 
       {/* Compact meta row */}
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 px-2">
