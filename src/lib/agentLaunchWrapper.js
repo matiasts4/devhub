@@ -124,7 +124,12 @@ export function buildInitialHeartbeatCommand({
     status_summary: 'Agent starting up',
   });
 
-  return `HEARTBEAT_PAYLOAD='${payload}'
+  // Escape single quotes for safe embedding in single-quoted shell variable.
+  // Single quote in payload would break: HEARTBEAT_PAYLOAD='{"role":"it's"}'
+  // Fix: replace ' with '\'' (end quote, escaped quote, restart quote)
+  const escapedPayload = payload.replace(/'/g, "'\\''");
+
+  return `HEARTBEAT_PAYLOAD='${escapedPayload}'
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 BODY_HASH=$(printf '%s' "$HEARTBEAT_PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
 SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')

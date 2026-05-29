@@ -96,10 +96,59 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     });
 
     test('buildTmuxWrappedCommand safely escapes embedded single quotes', () => {
-      const result = buildTmuxWrappedCommand(`printf '%s\\n' 'hello'`, 'sess-quote', "/tmp/agent's-worktree");
+      const result = buildTmuxWrappedCommand(
+        `printf '%s\n' 'hello'`,
+        'sess-quote',
+        "/tmp/agent's-worktree"
+      );
       expect(result).toContain(`-s 'sess-quote'`);
       expect(result).toContain(`-c '/tmp/agent'"'"'s-worktree'`);
-      expect(result).toContain(`'printf '"'"'%s\\n'"'"' '"'"'hello'"'"''`);
+      expect(result).toContain(`'printf '"'"'%s\n'"'"' '"'"'hello'"'"''`);
+    });
+  });
+
+  describe('Single-quote escaping in HEARTBEAT_PAYLOAD (zsh:44 fix)', () => {
+    test('HEARTBEAT_PAYLOAD escapes single quotes in workspacePath', () => {
+      const paramsWithQuote = {
+        ...baseParams,
+        workspacePath: "/repo/.devhub/worktrees/launch-abc/coder's-workspace",
+        role: 'coder',
+      };
+      const result = buildAgentLaunchWrapper(paramsWithQuote);
+      // The heartbeat line must exist and contain the escaped quote
+      const heartbeatLine = result.split('\n').find((l) => l.startsWith('HEARTBEAT_PAYLOAD='));
+      expect(heartbeatLine).toBeDefined();
+      // In the JSON representation, \' appears as \\' (backslash escaped)
+      expect(heartbeatLine).toContain("\\'");
+    });
+
+    test('HEARTBEAT_PAYLOAD escapes single quotes in role', () => {
+      const paramsWithQuote = {
+        ...baseParams,
+        role: "dev's-assistant",
+      };
+      const result = buildAgentLaunchWrapper(paramsWithQuote);
+      const heartbeatLine = result.split('\n').find((l) => l.startsWith('HEARTBEAT_PAYLOAD='));
+      expect(heartbeatLine).toBeDefined();
+      expect(heartbeatLine).toContain("\\'");
+    });
+
+    test('wrapper script is valid bash when payload has single quotes', () => {
+      const paramsWithQuote = {
+        ...baseParams,
+        workspacePath: "/tmp/agent's-space",
+        role: "tester's-role",
+        innerCommand: 'echo "hello"',
+      };
+      const result = buildAgentLaunchWrapper(paramsWithQuote);
+      // The script should have balanced quotes — parse it with bash -n
+      // This verifies the fix doesn't introduce new quoting issues
+      const { execSync } = require('child_process');
+      try {
+        execSync(`bash -n <<'SCRIPT'\n${result}\nSCRIPT`, { encoding: 'utf8' });
+      } catch (err) {
+        throw new Error(`Generated wrapper is invalid bash: ${err.message}\nScript:\n${result}`);
+      }
     });
   });
 });
