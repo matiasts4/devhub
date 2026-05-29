@@ -865,6 +865,7 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE agent_hub_sessions ADD COLUMN custom_name TEXT',
     "ALTER TABLE agent_hub_sessions ADD COLUMN visibility TEXT DEFAULT 'visible'",
     'ALTER TABLE agent_hub_sessions ADD COLUMN error_message TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN run_id_or_session_id TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN last_error_class TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN reservation_token TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN correlation_id TEXT',
@@ -1123,6 +1124,7 @@ const MCP_SCHEMA_SQL = `
 `;
 
 const MCP_ALTER_STATEMENTS = [
+  'ALTER TABLE agent_workspaces ADD COLUMN run_id_or_session_id TEXT',
   'ALTER TABLE tasks ADD COLUMN milestone_id TEXT',
   'ALTER TABLE tasks ADD COLUMN business_value INTEGER DEFAULT 5',
   'ALTER TABLE tasks ADD COLUMN stale_alert INTEGER DEFAULT 0',
