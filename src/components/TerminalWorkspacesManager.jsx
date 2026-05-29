@@ -157,7 +157,8 @@ function readWorkspaceSwarmLaunchSummary(storage, workspace) {
 
   const runs = Object.values(readAgentRuns(storage)).filter(
     (run) =>
-      run?.launchOrigin === 'swarm-control-launch' && workspacePanelIds.has(String(run?.panelId || ''))
+      run?.launchOrigin === 'swarm-control-launch' &&
+      workspacePanelIds.has(String(run?.panelId || ''))
   );
   if (runs.length === 0) return null;
 
@@ -187,8 +188,7 @@ function readWorkspaceSwarmLaunchSummary(storage, workspace) {
 
   return {
     launchId,
-    title:
-      latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
+    title: latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
     count: launchRuns.length,
   };
 }
@@ -2005,12 +2005,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const activePanelIdsForNativeSurface = activeWorkspaceForNativeSurface
       ? getAllPanelIds(activeWorkspaceForNativeSurface.columns || [])
       : [];
-    const hiddenPanelIdsForNativeSurface = workspaces
-      .flatMap((workspace) => {
-        const panelIds = getAllPanelIds(workspace.columns || []);
-        if (workspace.id !== activeWsId) return panelIds;
-        return [];
-      });
+    const hiddenPanelIdsForNativeSurface = workspaces.flatMap((workspace) => {
+      const panelIds = getAllPanelIds(workspace.columns || []);
+      if (workspace.id !== activeWsId) return panelIds;
+      return [];
+    });
 
     const detail = {
       activeWorkspaceId: activeWsId,
@@ -3152,7 +3151,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           const panel = col.panels.find((p) => p.id === panelId);
           if (panel) {
             cwd = panel.cwd;
-            const sessionMatch = (panel.initialCommand || '').match(/opencode\s+--session\s+([\w-]+)/i);
+            const sessionMatch = (panel.initialCommand || '').match(
+              /opencode\s+--session\s+([\w-]+)/i
+            );
             sessionId = sessionMatch ? sessionMatch[1] : null;
             if ((panel.initialCommand || '').includes('opencode')) {
               sessionType = 'opencode-durable';
@@ -3249,14 +3250,20 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     };
 
     window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);
-    window.addEventListener('devhub:terminal-settings-modal-requested', handleTerminalSettingsModalRequested);
+    window.addEventListener(
+      'devhub:terminal-settings-modal-requested',
+      handleTerminalSettingsModalRequested
+    );
     window.addEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
 
     return () => {
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
       window.removeEventListener('devhub:relaunch-panel', handleRelaunchPanel);
-      window.removeEventListener('devhub:terminal-settings-modal-requested', handleTerminalSettingsModalRequested);
+      window.removeEventListener(
+        'devhub:terminal-settings-modal-requested',
+        handleTerminalSettingsModalRequested
+      );
       window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
     };
   }, [failPendingReopen, storage, terminalStateStorageKey]);
@@ -3322,7 +3329,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       className="flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
       style={getWorkspaceShellChromeStyle()}
       {...getWorkspaceAnimProps(isMaximized)}
-      key={isMaximized ? 'maximized' : 'normal'}
     >
       {/* Top Workspace Tab Bar */}
       <div
