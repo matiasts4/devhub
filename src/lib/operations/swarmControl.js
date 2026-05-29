@@ -135,7 +135,7 @@ function buildSwarmTemplateCatalog() {
       category: 'delivery',
       swarm_type_id: 'delivery-swarm',
       default_team_id: 'feature-delivery-team',
-      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      default_provider_id: 'github-copilot/gpt-4o-mini',
       default_mission:
         'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
       topology: {
@@ -163,7 +163,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['handoff-first', 'checkpoint-safe'],
       category: 'delivery',
       default_team_id: 'feature-delivery-team',
-      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      default_provider_id: 'github-copilot/gpt-4o-mini',
       topology: {
         label: 'Director → Coder / Auditor / DevOps / Architect',
         roles: ['Director', 'Coder', 'Auditor', 'DevOps', 'Architect'],
@@ -204,7 +204,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['context-first', 'evidence-trace'],
       category: 'research',
       default_team_id: 'launchpad-scout-team',
-      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      default_provider_id: 'github-copilot/gpt-4o-mini',
       topology: {
         label: 'Director → Scout → Analyst → Director',
         roles: ['Director', 'Scout', 'Analyst'],
@@ -247,13 +247,13 @@ function buildSwarmLaunchProviders() {
       summary: 'Mayor criterio para recovery, approvals y decisiones delicadas.',
     },
     {
-      id: 'github-copilot/gpt-5.4-mini',
-      label: 'GPT-5.4 mini',
+      id: 'github-copilot/gpt-4o-mini',
+      label: 'GPT-4o mini (OpenAI)',
       summary: 'Modo pruebas: menor consumo por request para swarms y validación rápida.',
     },
     {
-      id: 'github-copilot/gpt-5.4',
-      label: 'GPT-5.4',
+      id: 'github-copilot/gpt-4o',
+      label: 'GPT-4o (OpenAI)',
       summary: 'Bueno para planning, scouting y coordinación de launchpad.',
     },
   ];
@@ -1592,12 +1592,12 @@ function buildSwarmLaunchStrategies() {
   return [
     {
       id: 'director_first',
-      label: 'Director-first bootstrap',
+      label: 'Bootstrap director primero',
       summary: 'Prepara al Director primero y deja el fan-out explícito como segunda fase.',
     },
     {
       id: 'parallel_all',
-      label: 'Parallel all roles',
+      label: 'Paralelo todos los roles',
       summary: 'Mantiene el fan-out inmediato para todos los roles desde el launch inicial.',
     },
   ];
@@ -1607,12 +1607,12 @@ function buildSwarmBootstrapModes() {
   return [
     {
       id: 'engram_first',
-      label: 'Engram first',
+      label: 'Engram primero',
       summary: 'El Director arranca leyendo contexto durable antes de repartir foco.',
     },
     {
       id: 'skip_bootstrap',
-      label: 'Skip bootstrap',
+      label: 'Omitir inicialización',
       summary: 'Salta el checkpoint inicial y deja constancia explícita en el trace.',
     },
   ];
@@ -1705,8 +1705,9 @@ export function createSwarmLaunchDraft({
     project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
 
   // Phase 2: SDD integration — detect if SDD mode is active
-  const sddEnabled = process.env.SDD_ENABLED === 'true';
-  const sddPhase = draft.sddPhase || null;
+  // Wizard checkbox sets draft.sddEnabled; env var is fallback for CLI usage
+  const sddEnabled = draft.sddEnabled === true || process.env.SDD_ENABLED === 'true';
+  const sddPhase = draft.phase || null;
 
   const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M2.7';
   const SWARM_ROLE_DEFAULT_MODELS = Object.freeze({
@@ -1772,7 +1773,7 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
     resolvedDraft.rolePrograms,
     resolvedCatalog.programs
   );
-  const modeLabel = resolvedDraft.mode === 'custom' ? 'Custom team' : 'Template team';
+  const modeLabel = resolvedDraft.mode === 'custom' ? 'Equipo personalizado' : 'Equipo plantilla';
 
   return {
     draft: resolvedDraft,
@@ -1786,17 +1787,17 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
     topology,
     rolePrograms,
     modeLabel,
-    launchStrategyLabel: launchStrategy?.label || 'Director-first bootstrap',
-    bootstrapModeLabel: bootstrapMode?.label || 'Engram first',
+    launchStrategyLabel: launchStrategy?.label || 'Bootstrap director primero',
+    bootstrapModeLabel: bootstrapMode?.label || 'Engram primero',
     launchLabel:
       resolvedDraft.mode === 'custom'
-        ? `Lanzar ${swarmType?.label || 'custom swarm'}`
-        : `Lanzar ${template?.label || 'template team'}`,
+        ? `Lanzar ${swarmType?.label || 'swarm personalizado'}`
+        : `Lanzar ${template?.label || 'equipo plantilla'}`,
     summaryLines: [
       `${modeLabel} · ${category?.label || 'Sin categoría'}`,
       `${template?.label || 'Sin plantilla'} · ${swarmType?.label || 'Sin tipo'}`,
-      `${team?.label || 'Sin team'} · ${provider?.label || 'Sin provider'}`,
-      resolvedDraft.workspacePath || 'Sin path',
+      `${team?.label || 'Sin equipo'} · ${provider?.label || 'Sin proveedor'}`,
+      resolvedDraft.workspacePath || 'Sin ruta',
       resolvedDraft.mission || 'Sin misión',
     ],
     isReady: Boolean(

@@ -1982,7 +1982,7 @@ describe('GET /api/agenthub/operations/health', () => {
           templateId: 'clean-slate',
           swarmTypeId: 'delivery-swarm',
           teamId: 'feature-delivery-team',
-          providerId: 'github-copilot/gpt-5.4-mini',
+          providerId: 'github-copilot/gpt-4o-mini',
           launchStrategy: 'director_first',
           bootstrapMode: 'engram_first',
           workspacePath: '/workspace/devhub',

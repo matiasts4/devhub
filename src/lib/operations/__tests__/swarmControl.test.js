@@ -1655,7 +1655,7 @@ describe('composeControlRoomSnapshot', () => {
       templateId: 'clean-slate',
       swarmTypeId: 'delivery-swarm',
       teamId: 'feature-delivery-team',
-      providerId: 'github-copilot/gpt-5.4-mini',
+      providerId: 'github-copilot/gpt-4o-mini',
       launchStrategy: 'director_first',
       bootstrapMode: 'engram_first',
       workspacePath: '/home/matias/ArxonLabs/devhub',
@@ -1719,17 +1719,17 @@ describe('composeControlRoomSnapshot', () => {
 
     expect(preview).toEqual(
       expect.objectContaining({
-        modeLabel: 'Custom team',
+        modeLabel: 'Equipo personalizado',
         launchLabel: 'Lanzar Recovery swarm',
-        launchStrategyLabel: 'Director-first bootstrap',
-        bootstrapModeLabel: 'Engram first',
+        launchStrategyLabel: 'Bootstrap director primero',
+        bootstrapModeLabel: 'Engram primero',
         isReady: true,
         topology: expect.objectContaining({
           label: 'Director → Recovery Ops → Evidence → QA',
           roles: expect.arrayContaining(['Director', 'Recovery Ops', 'Evidence', 'QA']),
         }),
         summaryLines: expect.arrayContaining([
-          'Custom team · Recovery',
+          'Equipo personalizado · Recovery',
           'Resolver aprobaciones y destrabar · Recovery swarm',
           'Amber Recovery Cell · Claude Opus 4',
           '/tmp/devhub-recovery',

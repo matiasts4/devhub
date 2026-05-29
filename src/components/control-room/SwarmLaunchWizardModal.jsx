@@ -189,13 +189,13 @@ export default function SwarmLaunchWizardModal({
         >
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
-              <SurfacePill tone="accent">Launch wizard</SurfacePill>
+              <SurfacePill tone="accent">Asistente de lanzamiento</SurfacePill>
               <SurfacePill>{preview?.modeLabel || 'Template team'}</SurfacePill>
               <SurfacePill>{preview?.category?.label || 'Sin categoría'}</SurfacePill>
             </div>
             <div>
               <h2 className="text-2xl font-semibold tracking-tight">
-                {preview?.launchLabel || 'Configurar launch'}
+                {preview?.launchLabel || 'Configurar lanzamiento'}
               </h2>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                 {stepDescription}
@@ -227,21 +227,21 @@ export default function SwarmLaunchWizardModal({
               <StepButton
                 step="team"
                 currentStep={currentStep}
-                label="Team"
+                label="Equipo"
                 index={0}
                 onClick={onStepChange}
               />
               <StepButton
                 step="configure"
                 currentStep={currentStep}
-                label="Configure"
+                label="Configurar"
                 index={1}
                 onClick={onStepChange}
               />
               <StepButton
                 step="launch"
                 currentStep={currentStep}
-                label="Launch"
+                label="Lanzar"
                 index={2}
                 onClick={onStepChange}
               />
@@ -341,9 +341,9 @@ export default function SwarmLaunchWizardModal({
               <div className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Category</span>
+                    <span>Categoría</span>
                     <select
-                      aria-label="Launch category"
+                      aria-label="Categoría de lanzamiento"
                       value={draft.category || ''}
                       onChange={(event) => onDraftChange({ category: event.target.value })}
                         className="w-full"
@@ -358,9 +358,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Swarm type</span>
+                    <span>Tipo de swarm</span>
                     <select
-                      aria-label="Swarm type"
+                      aria-label="Tipo de swarm"
                       value={draft.swarmTypeId || ''}
                       onChange={(event) => onDraftChange({ swarmTypeId: event.target.value })}
                         className="w-full"
@@ -375,9 +375,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Template</span>
+                    <span>Plantilla</span>
                     <select
-                      aria-label="Launch template"
+                      aria-label="Plantilla de lanzamiento"
                       value={draft.templateId || ''}
                       onChange={(event) => onDraftChange({ templateId: event.target.value })}
                         className="w-full"
@@ -392,9 +392,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Team</span>
+                    <span>Equipo</span>
                     <select
-                      aria-label="Team preset"
+                      aria-label="Equipo predefinido"
                       value={draft.teamId || ''}
                       onChange={(event) =>
                         onDraftChange({ teamId: event.target.value, mode: 'custom' })
@@ -411,9 +411,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Provider</span>
+                    <span>Proveedor</span>
                     <select
-                      aria-label="Provider model"
+                      aria-label="Modelo proveedor"
                       value={draft.providerId || ''}
                       onChange={(event) => onDraftChange({ providerId: event.target.value })}
                         className="w-full"
@@ -428,9 +428,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Launch strategy</span>
+                    <span>Estrategia de lanzamiento</span>
                     <select
-                      aria-label="Launch strategy"
+                      aria-label="Estrategia de lanzamiento"
                       value={draft.launchStrategy || ''}
                       onChange={(event) => onDraftChange({ launchStrategy: event.target.value })}
                       className="w-full"
@@ -445,9 +445,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Bootstrap mode</span>
+                    <span>Modo de inicialización</span>
                     <select
-                      aria-label="Bootstrap mode"
+                      aria-label="Modo de inicialización"
                       value={draft.bootstrapMode || ''}
                       onChange={(event) => onDraftChange({ bootstrapMode: event.target.value })}
                       className="w-full"
@@ -527,9 +527,9 @@ export default function SwarmLaunchWizardModal({
                   </div>
 
                   <label className="space-y-2 text-sm font-medium md:col-span-2">
-                    <span>Path operativo</span>
+                    <span>Ruta operativa</span>
                     <input
-                      aria-label="Workspace path"
+                      aria-label="Ruta del workspace"
                       value={draft.workspacePath || ''}
                       onChange={(event) => onDraftChange({ workspacePath: event.target.value })}
                     className="w-full"
@@ -547,14 +547,14 @@ export default function SwarmLaunchWizardModal({
                           onChange={(event) => onDraftChange({ sddEnabled: event.target.checked })}
                           className="w-4 h-4 accent-[var(--accent-primary)]"
                         />
-                        <span>SDD Enabled</span>
+                        <span>Modo SDD</span>
                       </label>
                     </div>
 
                     {draft.sddEnabled && (
                       <div className="grid gap-4 md:grid-cols-2">
                         <label className="space-y-2 text-sm font-medium">
-                          <span>Change name</span>
+                          <span>Nombre del cambio</span>
                           <input
                             aria-label="Change name"
                             value={draft.changeName || ''}
@@ -566,7 +566,7 @@ export default function SwarmLaunchWizardModal({
                         </label>
 
                         <label className="space-y-2 text-sm font-medium">
-                          <span>Initial phase</span>
+                          <span>Fase inicial</span>
                           <select
                             aria-label="Initial SDD phase"
                             value={draft.phase || ''}
@@ -574,7 +574,7 @@ export default function SwarmLaunchWizardModal({
                             className="w-full"
                             style={wizardSelectFieldStyle}
                           >
-                            <option value="">Select phase...</option>
+                            <option value="">Seleccionar fase...</option>
                             {SDD_PHASES.map((p) => (
                               <option key={p.id} value={p.id}>
                                 {p.label}
@@ -587,7 +587,7 @@ export default function SwarmLaunchWizardModal({
                   </div>
 
                   <label className="space-y-2 text-sm font-medium md:col-span-2">
-                    <span>Mission</span>
+                    <span>Misión</span>
                     <textarea
                       aria-label="Launch mission"
                       value={draft.mission || ''}
@@ -603,9 +603,9 @@ export default function SwarmLaunchWizardModal({
 
             {currentStep === 'launch' ? (
               <div className="space-y-5">
-                <SurfaceCard emphasized className="p-5">
-                  <div className="flex flex-wrap gap-2">
-                    <SurfacePill tone="accent">Summary</SurfacePill>
+                  <SurfaceCard emphasized className="p-5">
+                    <div className="flex flex-wrap gap-2">
+                      <SurfacePill tone="accent">Resumen</SurfacePill>
                     <SurfacePill>{preview?.template?.label || 'Sin plantilla'}</SurfacePill>
                     <SurfacePill>{preview?.team?.label || 'Sin team'}</SurfacePill>
                     <SurfacePill>{preview?.provider?.label || 'Sin provider'}</SurfacePill>
@@ -628,20 +628,20 @@ export default function SwarmLaunchWizardModal({
                       className="border px-3 py-3 text-sm"
                       style={wizardInsetPanelStyle()}
                     >
-                      Strategy · {preview?.launchStrategyLabel || 'Director-first bootstrap'}
+                      Estrategia · {preview?.launchStrategyLabel || 'Bootstrap director primero'}
                     </div>
                     <div
                       className="border px-3 py-3 text-sm"
                       style={wizardInsetPanelStyle()}
                     >
-                      Bootstrap · {preview?.bootstrapModeLabel || 'Engram first'}
+                      Inicialización · {preview?.bootstrapModeLabel || 'Engram primero'}
                     </div>
                   </div>
                 </SurfaceCard>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <SurfaceCard className="p-5">
-                    <p className="text-sm font-semibold">Roster previsto</p>
+                    <p className="text-sm font-semibold">Equipo planificado</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {(preview?.topology?.roles || []).map((role) => (
                         <SurfacePill key={role}>{role}</SurfacePill>
@@ -678,9 +678,9 @@ export default function SwarmLaunchWizardModal({
             className="border-l p-5"
             style={wizardRightRailStyle}
           >
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-semibold">Topology preview</p>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Vista previa de topología</p>
                 <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                   Reutilizable para launch y handoff inicial.
                 </p>
@@ -689,13 +689,13 @@ export default function SwarmLaunchWizardModal({
               <TopologyPreview topology={preview?.topology} />
 
               <SurfaceCard className="p-4">
-                <p className="text-sm font-semibold">Snapshot-first summary</p>
-                <div className="mt-3 space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  <div>Modo · {preview?.modeLabel || 'Template team'}</div>
-                  <div>Category · {preview?.category?.label || 'Sin categoría'}</div>
-                  <div>Strategy · {preview?.launchStrategyLabel || 'Director-first bootstrap'}</div>
-                  <div>Bootstrap · {preview?.bootstrapModeLabel || 'Engram first'}</div>
-                  <div>Path · {draft.workspacePath || 'Sin path'}</div>
+                <p className="text-sm font-semibold">Resumen snapshot</p>
+                  <div className="mt-3 space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <div>Modo · {preview?.modeLabel || 'Equipo plantilla'}</div>
+                  <div>Categoría · {preview?.category?.label || 'Sin categoría'}</div>
+                  <div>Estrategia · {preview?.launchStrategyLabel || 'Bootstrap director primero'}</div>
+                  <div>Inicialización · {preview?.bootstrapModeLabel || 'Engram primero'}</div>
+                  <div>Ruta · {draft.workspacePath || 'Sin ruta'}</div>
                 </div>
               </SurfaceCard>
 

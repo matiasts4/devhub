@@ -752,11 +752,11 @@ describe('SwarmControl control room composition', () => {
       expect(wizardTrigger).not.toBeNull();
       await click(wizardTrigger);
 
-      expect(document.body.textContent).toContain('Launch wizard');
-      expect(document.body.textContent).toContain('Template team');
-      expect(document.body.textContent).toContain('Team');
-      expect(document.body.textContent).toContain('Configure');
-      expect(document.body.textContent).toContain('Launch');
+      expect(document.body.textContent).toContain('Asistente de lanzamiento');
+      expect(document.body.textContent).toContain('Equipo plantilla');
+      expect(document.body.textContent).toContain('Equipo');
+      expect(document.body.textContent).toContain('Configurar');
+      expect(document.body.textContent).toContain('Lanzar');
 
       const nextButtons = () =>
         Array.from(document.body.querySelectorAll('button')).filter((button) =>
@@ -764,13 +764,13 @@ describe('SwarmControl control room composition', () => {
         );
 
       await click(nextButtons()[0]);
-      expect(document.body.textContent).toContain('Path operativo');
-      expect(document.body.textContent).toContain('Mission');
+      expect(document.body.textContent).toContain('Ruta operativa');
+      expect(document.body.textContent).toContain('Misión');
 
       await click(nextButtons()[0]);
-      expect(document.body.textContent).toContain('Summary');
+      expect(document.body.textContent).toContain('Resumen');
       expect(document.body.textContent).toContain('Payload local');
-      expect(document.body.textContent).toContain('Topology preview');
+      expect(document.body.textContent).toContain('Vista previa de topología');
 
       const launchButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
         button.textContent?.includes('Lanzar swarm local')
@@ -851,8 +851,8 @@ describe('SwarmControl control room composition', () => {
     expect(configureButtons.length).toBeGreaterThan(0);
     await click(configureButtons[1]);
 
-    expect(document.body.textContent).toContain('Custom team');
-    expect(document.body.textContent).toContain('Topology preview');
+    expect(document.body.textContent).toContain('Equipo personalizado');
+    expect(document.body.textContent).toContain('Vista previa de topología');
     expect(document.body.textContent).toContain('Director → Recovery Ops → Evidence → QA');
   });
 
