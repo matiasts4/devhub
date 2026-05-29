@@ -153,8 +153,8 @@ function buildStandardPrompt(role, vars = {}) {
 function getPromptMode(options = {}) {
   if (options.forcePhaseContract) return 'phase-contract';
   if (options.forceStandard) return 'standard';
-  // Default: check SDD_ENABLED env var
-  return process.env.SDD_ENABLED === 'true' ? 'phase-contract' : 'standard';
+  // Default: SDD is enabled unless explicitly disabled via env var
+  return process.env.SDD_ENABLED !== 'false' ? 'phase-contract' : 'standard';
 }
 
 /**

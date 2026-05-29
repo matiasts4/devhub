@@ -153,6 +153,9 @@ describe('SwarmPromptEngine', () => {
       process.env.SDD_ENABLED = 'true';
       expect(getPromptMode({})).toBe('phase-contract');
 
+      delete process.env.SDD_ENABLED;
+      expect(getPromptMode({})).toBe('phase-contract');
+
       process.env.SDD_ENABLED = 'false';
       expect(getPromptMode({})).toBe('standard');
 
@@ -171,13 +174,23 @@ describe('SwarmPromptEngine', () => {
       process.env.SDD_ENABLED = original;
     });
 
-    test('builds standard prompt when SDD_ENABLED is not set', () => {
+    test('builds standard prompt when SDD_ENABLED=false', () => {
+      const original = process.env.SDD_ENABLED;
+      process.env.SDD_ENABLED = 'false';
+      const prompt = buildPrompt('coder', 'sdd-apply', {
+        mission_id: 'm-123',
+      });
+      expect(prompt).not.toContain('Phase Contract');
+      process.env.SDD_ENABLED = original;
+    });
+
+    test('builds phase-contract prompt when SDD_ENABLED is not set', () => {
       const original = process.env.SDD_ENABLED;
       delete process.env.SDD_ENABLED;
       const prompt = buildPrompt('coder', 'sdd-apply', {
         mission_id: 'm-123',
       });
-      expect(prompt).not.toContain('Phase Contract');
+      expect(prompt).toContain('Phase Contract');
       process.env.SDD_ENABLED = original;
     });
   });

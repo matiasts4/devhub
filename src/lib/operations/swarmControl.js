@@ -1705,8 +1705,11 @@ export function createSwarmLaunchDraft({
     project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
 
   // Phase 2: SDD integration — detect if SDD mode is active
-  // Wizard checkbox sets draft.sddEnabled; env var is fallback for CLI usage
-  const sddEnabled = draft.sddEnabled === true || process.env.SDD_ENABLED === 'true';
+  // Wizard checkbox sets draft.sddEnabled; default is TRUE (SDD enabled)
+  // Env var SDD_ENABLED='false' can explicitly disable for CLI usage
+  const sddEnabled = draft.sddEnabled !== undefined
+    ? draft.sddEnabled === true
+    : process.env.SDD_ENABLED !== 'false';
   const sddPhase = draft.phase || null;
 
   const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M2.7';
@@ -1841,7 +1844,7 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
 
   // When changeName + phase provided, return SDD-enriched profile object
   if (changeName !== null && phase !== null) {
-    const sddEnabled = process.env.SDD_ENABLED === 'true';
+    const sddEnabled = process.env.SDD_ENABLED !== 'false';
 
     if (sddEnabled) {
       // Lazy-load to avoid circular deps

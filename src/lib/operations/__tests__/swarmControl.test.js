@@ -1674,7 +1674,7 @@ describe('composeControlRoomSnapshot', () => {
         architect: 'minimax-coding-plan/MiniMax-M2.7',
       },
       sddOptions: {
-        sddEnabled: false,
+        sddEnabled: true,
         phase: null,
         changeName: null,
       },
