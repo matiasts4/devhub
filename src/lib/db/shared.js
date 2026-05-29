@@ -20,11 +20,13 @@ function getDb() {
         const stats = fs.statSync(DB_PATH);
         if (stats.size > 0) {
           const tempDb = new Database(DB_PATH, { readonly: true });
-          const projectCount = tempDb.prepare('SELECT count(*) as c FROM projects').get().c;
+          const integrity = tempDb.prepare('PRAGMA integrity_check').get();
           tempDb.close();
 
-          if (projectCount === 0) {
-            console.error('[localDb] WARNING: DB exists but projects table is empty!');
+          if (integrity.integrity_check !== 'ok') {
+            console.error(
+              `[localDb] WARNING: DB integrity check failed: ${integrity.integrity_check}`
+            );
             needsRecovery = true;
           } else {
             const backupPath = `${DB_PATH}.backup-${Date.now()}`;
@@ -59,9 +61,9 @@ function getDb() {
             try {
               if (!fs.existsSync(fileName)) return false;
               const tempDb = new Database(fileName, { readonly: true });
-              const count = tempDb.prepare('SELECT count(*) as c FROM projects').get().c;
+              const integrity = tempDb.prepare('PRAGMA integrity_check').get();
               tempDb.close();
-              return count > 0;
+              return integrity.integrity_check === 'ok';
             } catch {
               return false;
             }
@@ -97,6 +99,35 @@ function getDb() {
 
     const { ensureAllSchema } = require('./schema');
     ensureAllSchema(_db);
+
+    // Post-schema safety net: detect WAL-replay corruption before using the handle.
+    // If integrity_check fails here, the handle is unsafe — close and recreate clean.
+    const postIntegrity = _db.prepare('PRAGMA integrity_check').get();
+    if (postIntegrity.integrity_check !== 'ok') {
+      console.error('[localDb] CRITICAL: Post-schema integrity check failed — resetting DB');
+      _db.close();
+      _db = null;
+      try {
+        fs.unlinkSync(DB_PATH);
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.unlinkSync(`${DB_PATH}-wal`);
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.unlinkSync(`${DB_PATH}-shm`);
+      } catch {
+        /* ignore */
+      }
+      _db = new Database(DB_PATH, { fileMustExist: false, readonly: false });
+      _db.pragma('journal_mode = WAL');
+      _db.pragma('foreign_keys = ON');
+      _db.pragma('busy_timeout = 5000');
+      ensureAllSchema(_db);
+    }
 
     const finalCount = _db.prepare('SELECT count(*) as c FROM projects').get().c;
     if (finalCount === 0) {
