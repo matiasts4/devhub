@@ -124,15 +124,16 @@ export function buildInitialHeartbeatCommand({
     status_summary: 'Agent starting up',
   });
 
-  return `TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-BODY_HASH=$(printf '%s' '${payload}' | openssl dgst -sha256 | awk '{print $NF}')
+  return `HEARTBEAT_PAYLOAD='${payload}'
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+BODY_HASH=$(printf '%s' "$HEARTBEAT_PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
 SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
 curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
   -H "Content-Type: application/json" \\
   -H "X-Agent-Id: ${agentId}" \\
   -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
   -H "X-Agent-Signature: \${SIGNATURE}" \\
-  -d '${payload}' > /dev/null 2>&1 || true`;
+  -d "$HEARTBEAT_PAYLOAD" > /dev/null 2>&1 || true`;
 }
 
 /**
@@ -146,18 +147,21 @@ export function buildExitTrapCommand({ supervisorUrl, agentId, missionId }) {
     return '# Exit trap skipped (no supervisor URL)';
   }
 
-  return `trap 'EXIT_CODE=$?
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-PAYLOAD="{\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"event_type\\":\\"process_exit\\",\\"exit_code\\":$EXIT_CODE}"
-BODY_HASH=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
-SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
-curl -s -X POST "${supervisorUrl}/api/agenthub/events" \\
-  -H "Content-Type: application/json" \\
-  -H "X-Agent-Id: ${agentId}" \\
-  -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
-  -H "X-Agent-Signature: \${SIGNATURE}" \\
-  -d "$PAYLOAD" \\
-  > /dev/null 2>&1 || true' EXIT`;
+  return `_devhub_exit_handler() {
+  local EXIT_CODE=$?
+  local TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+  local PAYLOAD="{\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"event_type\\":\\"process_exit\\",\\"exit_code\\":$EXIT_CODE}"
+  local BODY_HASH=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
+  local SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
+  curl -s -X POST "${supervisorUrl}/api/agenthub/events" \\
+    -H "Content-Type: application/json" \\
+    -H "X-Agent-Id: ${agentId}" \\
+    -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
+    -H "X-Agent-Signature: \${SIGNATURE}" \\
+    -d "$PAYLOAD" \\
+    > /dev/null 2>&1 || true
+}
+trap _devhub_exit_handler EXIT`;
 }
 
 /**
