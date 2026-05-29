@@ -288,6 +288,25 @@ function persistAgentRuns(runs) {
   window.localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
 }
 
+function collectWorkspaceSyncDetails() {
+  const events = [];
+  const handler = (event) => {
+    events.push(event.detail);
+  };
+  window.addEventListener('devhub:native-vte-workspace-sync', handler);
+  return {
+    events,
+    cleanup: () => window.removeEventListener('devhub:native-vte-workspace-sync', handler),
+  };
+}
+
+function getLatestWorkspaceSync(events, workspaceId) {
+  const matching = workspaceId
+    ? events.filter((detail) => detail?.workspaceId === workspaceId)
+    : events;
+  return matching[matching.length - 1] || null;
+}
+
 describe('TerminalWorkspacesManager split layout', () => {
   let dom;
 
@@ -1017,6 +1036,137 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(view.container.querySelector('[data-testid="terminal-active-p2"]')?.textContent).toBe(
       'active'
     );
+  });
+
+  test('emits only the focused panel as active for native workspace sync', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+            {
+              id: 'c2',
+              panels: [
+                {
+                  id: 'p2',
+                  cwd: '/workspace/devhub',
+                  initialCommand: 'opencode --session ses_split',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p2' },
+    });
+
+    const sync = collectWorkspaceSyncDetails();
+    const view = await renderManager();
+
+    view.container
+      .querySelector('[data-testid="panel-focus-p1"]')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    const latest = getLatestWorkspaceSync(sync.events, 'ws1');
+    expect(latest).not.toBeNull();
+    expect(latest.activePanelIds).toEqual(['p1']);
+    expect(latest.hiddenPanelIds).toEqual(expect.arrayContaining(['p2']));
+    expect(latest.hiddenPanelIds).not.toContain('p1');
+
+    sync.cleanup();
+  });
+
+  test('emits non-rendered focused-mode siblings as hidden for native workspace sync', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [
+                { id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' },
+                {
+                  id: 'p2',
+                  cwd: '/workspace/devhub',
+                  initialCommand: 'opencode --session ses_vertical',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p2' },
+    });
+
+    const sync = collectWorkspaceSyncDetails();
+    const view = await renderManager();
+
+    view.container
+      .querySelector('[data-testid="panel-focus-p2"]')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    const latest = getLatestWorkspaceSync(sync.events, 'ws1');
+    expect(latest).not.toBeNull();
+    expect(latest.activePanelIds).toEqual(['p2']);
+    expect(latest.hiddenPanelIds).toContain('p1');
+
+    sync.cleanup();
+  });
+
+  test('emits previous workspace panels as hidden after workspace switch', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+          ],
+        },
+        {
+          id: 'ws2',
+          name: 'Workspace 2',
+          columns: [
+            {
+              id: 'c2',
+              panels: [{ id: 'p2', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1', ws2: 'p2' },
+    });
+
+    const sync = collectWorkspaceSyncDetails();
+    const view = await renderManager();
+
+    view.container
+      .querySelector('[title="Workspace 2"]')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    const latest = getLatestWorkspaceSync(sync.events, 'ws2');
+    expect(latest).not.toBeNull();
+    expect(latest.activePanelIds).toEqual(['p2']);
+    expect(latest.hiddenPanelIds).toContain('p1');
+    expect(latest.hiddenPanelIds).not.toContain('p2');
+
+    sync.cleanup();
   });
 
 });

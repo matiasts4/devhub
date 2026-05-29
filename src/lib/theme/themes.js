@@ -3,6 +3,7 @@ export const MORPHOLOGY_STORAGE_KEY = 'devhub:morphology';
 export const ACCENT_STORAGE_KEY = 'devhub:accent';
 export const APP_ZOOM_STORAGE_KEY = 'devhub:zoom';
 export const APPEARANCE_STORAGE_KEY = 'devhub:appearance';
+export const PALETTE_STORAGE_KEY = 'devhub:palette';
 
 const DEFAULT_APPEARANCE = {
   fontFamily: 'Inter',
@@ -86,12 +87,14 @@ export const THEMES = {
   MONOKAI: 'monokai',
   SYNTHWAVE: 'synthwave',
   BRUTALIST_STAGE: 'brutalist-stage',
+  SWITCHYARD: 'switchyard',
 };
 
 export const MORPHOLOGIES = {
   DEFAULT: 'default',
   BRUTALIST_STAGE: 'brutalist-stage',
   AURA: 'aura',
+  SWITCHYARD: 'switchyard',
 };
 
 export const ACCENTS = {
@@ -108,6 +111,33 @@ export const ACCENTS = {
   LIME: 'lime',
   ORANGE_LIGHT: 'orange-light',
 };
+
+export const PALETTES = {
+  MINERAL: 'mineral',
+  COBALT: 'cobalt',
+  ALLOY: 'alloy',
+};
+
+export const PALETTE_OPTIONS = [
+  {
+    id: PALETTES.MINERAL,
+    label: 'Mineral Teal',
+    description: 'Cold-mineral dark with teal accent.',
+    primary: '#63d0c2',
+  },
+  {
+    id: PALETTES.COBALT,
+    label: 'Cobalt Relay',
+    description: 'Blue accent, navy-dark surface.',
+    primary: '#7a93ff',
+  },
+  {
+    id: PALETTES.ALLOY,
+    label: 'Alloy Sand',
+    description: 'Bronze accent, warm dark surface.',
+    primary: '#d4a16a',
+  },
+];
 
 export const THEME_OPTIONS = [
   {
@@ -164,6 +194,12 @@ export const THEME_OPTIONS = [
     description: 'Negro plano con acento amarillo. Bordes duros, sin suavidad.',
     accent: '#E3B341',
   },
+  {
+    id: THEMES.SWITCHYARD,
+    label: 'Switchyard',
+    description: 'Mineral dark con grid sutil y acento teal. Control room aesthetic.',
+    accent: '#63d0c2',
+  },
 ];
 
 export const MORPHOLOGY_OPTIONS = [
@@ -181,6 +217,11 @@ export const MORPHOLOGY_OPTIONS = [
     id: MORPHOLOGIES.AURA,
     label: 'Aura',
     description: 'Glassmorphism with semi-transparent surfaces and soft glow effects.',
+  },
+  {
+    id: MORPHOLOGIES.SWITCHYARD,
+    label: 'Switchyard',
+    description: 'Metallic dark with teal/cobalt/bronze palette axis.',
   },
 ];
 
@@ -337,5 +378,32 @@ export function setAccent(accent) {
   const normalized = normalizeAccent(accent);
   applyAccentToDocument(normalized);
   setStoredAccent(normalized);
+  return normalized;
+}
+
+export function normalizePalette(value) {
+  const all = Object.values(PALETTES);
+  return all.includes(value) ? value : PALETTES.MINERAL;
+}
+
+export function getStoredPalette() {
+  if (typeof window === 'undefined') return PALETTES.MINERAL;
+  return normalizePalette(window.localStorage.getItem(PALETTE_STORAGE_KEY));
+}
+
+export function setStoredPalette(palette) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PALETTE_STORAGE_KEY, normalizePalette(palette));
+}
+
+export function applyPaletteToDocument(palette) {
+  if (typeof document === 'undefined') return;
+  document.body.setAttribute('data-palette', normalizePalette(palette));
+}
+
+export function setPalette(palette) {
+  const normalized = normalizePalette(palette);
+  applyPaletteToDocument(normalized);
+  setStoredPalette(normalized);
   return normalized;
 }

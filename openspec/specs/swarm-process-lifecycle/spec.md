@@ -25,7 +25,7 @@ The system MUST provide a singleton process manager module that owns the complet
 
 ### REQ-2: Spawn Coordination — Single Instance Guarantee
 
-The system MUST ensure that only one OpenCode `serve` process runs on port 4153 at any time, regardless of how many components (bot, Next.js API routes, UI) attempt to start it. If a process is already bound to port 4153, the system MUST adopt it rather than spawn a duplicate.
+The system MUST ensure that only one OpenCode `serve` process runs on port 4153 at any time, regardless of how many components (bot, Next.js API routes, UI) attempt to start it. If a process is already bound to port 4153, the system MUST adopt it rather than spawn a duplicate. OpenCode durable sessions with `sessionType=opencode-durable` and an `opencodeSessionId` are relaunched via `opencode --session <id>` command-based resume, covered under this adopt-over-spawn guarantee.
 
 #### Scenario: First component spawns process
 

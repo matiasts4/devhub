@@ -94,13 +94,16 @@ describe('saveSessions', () => {
     const written = mockFs.writeFileSync.mock.calls[0][1];
     const parsed = JSON.parse(written);
 
-    expect(parsed.version).toBe(1);
+    expect(parsed.version).toBe(3);
     expect(Array.isArray(parsed.sessions)).toBe(true);
     expect(parsed.sessions).toHaveLength(1);
     expect(parsed.sessions[0].id).toBe('term-1');
     expect(parsed.sessions[0].cwd).toBe('/home/user/project');
     expect(parsed.sessions[0].shell).toBe('/bin/zsh');
     expect(parsed.sessions[0].title).toBe('My Terminal');
+    expect(parsed.sessions[0].sessionType).toBe('shell-ephemeral'); // classified by classifySession
+    expect(parsed.sessions[0].opencodeSessionId).toBeNull();
+    expect(parsed.sessions[0].ptyPid).toBeNull();
   });
 
   it('creates the ~/.devhub directory if it does not exist', async () => {

@@ -26,6 +26,8 @@ jest.mock('./sessionStore.js', () => ({
   loadSessions: mockLoadSessions,
   getSessionFilePath: () => '/mock-home/.devhub/terminal-sessions.json',
   STALE_TTL_MS: 7 * 24 * 60 * 60 * 1000,
+  // classifySession: forward to actual implementation for restoreSessions branching
+  classifySession: jest.requireActual('./sessionStore.js').classifySession,
 }));
 
 // --- Mock ws ---

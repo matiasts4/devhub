@@ -573,6 +573,7 @@ function buildActiveRoster(snapshot = {}) {
             isDirector: participant.role_in_mission === 'director',
             workspaceId: agent.workspace_id || null,
             runId: agent.run_id || null,
+            phase: agent.phase || null,
           };
         })
       : selectControlRoomAgents(snapshot).map((agent, index) => {
@@ -586,6 +587,7 @@ function buildActiveRoster(snapshot = {}) {
             isDirector: /director/i.test(role),
             workspaceId: agent.workspace_id || null,
             runId: agent.run_id || null,
+            phase: agent.phase || null,
           };
         });
 
@@ -1199,6 +1201,10 @@ function normalizeAgent(agent = {}, liveHintsByAgent = {}) {
     evidence_ref: status.evidence_ref,
     evidence_refs: status.evidence_refs,
     missing_source: status.evidence_ref ? null : 'agent evidence',
+    // phase: SDD phase this agent is executing (e.g. 'sdd-design', 'sdd-apply').
+    // Populated by swarm infrastructure when launching with SDD context.
+    // Enables SwarmPhaseBadge on agent cards in the DevHub UI.
+    phase: agent.phase || null,
     live_hint: liveHint
       ? {
           status: liveHint.status || null,
@@ -1223,6 +1229,11 @@ function normalizeWorkspace(workspace = {}) {
     evidence_ref: status.evidence_ref,
     evidence_refs: status.evidence_refs,
     missing_source: status.evidence_ref ? null : 'workspace evidence',
+    // WSN-3 / WSN-S7: preserve naming metadata for semantic label derivation on restore
+    sessionType: workspace.sessionType || null,
+    swarmRole: workspace.swarmRole || null,
+    swarmId: workspace.swarmId || null,
+    workspace_label: workspace.workspace_label || null,
   };
 }
 
@@ -1693,6 +1704,10 @@ export function createSwarmLaunchDraft({
   const projectPath =
     project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
 
+  // Phase 2: SDD integration — detect if SDD mode is active
+  const sddEnabled = process.env.SDD_ENABLED === 'true';
+  const sddPhase = draft.sddPhase || null;
+
   const DEFAULT_SWARM_MODEL = 'opencode-go/deepseek-v4-flash';
   const SWARM_ROLE_DEFAULT_MODELS = Object.freeze({
     director: 'opencode-go/qwen3.6-plus',
@@ -1729,6 +1744,12 @@ export function createSwarmLaunchDraft({
     rolePrograms,
     roleModels: Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
     mission: draft.mission ?? template?.default_mission ?? '',
+    // Phase 2: SDD options — pass sddEnabled + sddPhase to buildAgentLaunchCommand
+    sddOptions: {
+      sddEnabled,
+      phase: sddPhase,
+      changeName: draft.changeName || null,
+    },
   };
 }
 
@@ -1787,14 +1808,19 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
       team?.id &&
       provider?.id
     ),
+    // Phase 2: SDD options for buildAgentLaunchCommand wiring
+    sddOptions: resolvedDraft.sddOptions,
   };
 }
 
 /**
  * Mapea un role_key de swarm a un perfil de agente OpenCode.
  * Director y workers visibles usan perfiles dedicados por rol.
+ *
+ * SDD-enhanced version: when changeName + phase are provided, wires
+ * SwarmPromptEngine for Phase Contract prompts and injects SDD_ENABLED flag.
  */
-export function buildRoleAgentProfile(roleKey = '') {
+export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = null) {
   const mapping = {
     director: 'swarm-director',
     coder: 'swarm-coder',
@@ -1809,7 +1835,48 @@ export function buildRoleAgentProfile(roleKey = '') {
     recovery_ops: 'swarm-devops',
     evidence: 'swarm-explorer',
   };
-  return mapping[roleKey] || 'swarm-coder';
+
+  const profileKey = mapping[roleKey] || 'swarm-coder';
+
+  // When changeName + phase provided, return SDD-enriched profile object
+  if (changeName !== null && phase !== null) {
+    const sddEnabled = process.env.SDD_ENABLED === 'true';
+
+    if (sddEnabled) {
+      // Lazy-load to avoid circular deps
+      let SwarmPromptEngine;
+      try {
+        SwarmPromptEngine = require('../sdd/SwarmPromptEngine');
+      } catch {
+        SwarmPromptEngine = null;
+      }
+
+      const vars = {
+        change_name: changeName,
+        phase,
+        artifacts: 'spec, design, tasks',
+        mission_id: null,
+        role: roleKey,
+        session_id: '{{session_id}}',
+      };
+
+      const prompt = SwarmPromptEngine
+        ? SwarmPromptEngine.buildPrompt(roleKey, phase, vars, { forcePhaseContract: true })
+        : null;
+
+      return {
+        profileKey,
+        sddEnabled: true,
+        phase,
+        changeName,
+        prompt,
+      };
+    }
+
+    return { profileKey, sddEnabled: false, phase, changeName };
+  }
+
+  return profileKey;
 }
 
 /**

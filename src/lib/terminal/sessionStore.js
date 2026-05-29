@@ -14,6 +14,19 @@ import path from 'path';
 
 export const STALE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+const SCHEMA_VERSION = 3;
+
+const VALID_RESTORE_POLICIES = new Set(['auto', 'manual', 'off']);
+
+/**
+ * Sanitizes a restorePolicy value to a valid enum member.
+ * Unknown, null, undefined, or empty-string values → 'auto'.
+ */
+function sanitizeRestorePolicy(policy) {
+  if (VALID_RESTORE_POLICIES.has(policy)) return policy;
+  return 'auto';
+}
+
 /**
  * Returns the session file path, always evaluating os.homedir() at call time.
  * Exported as a function so tests can mock os.homedir() before calling.
@@ -95,6 +108,17 @@ export function readPersistedSessionEvidence({ terminalId, now = Date.now() } = 
 }
 
 /**
+ * Classifies a session into one of three mutually exclusive types.
+ * @param {object} session
+ * @returns {'pty-durable'|'opencode-durable'|'shell-ephemeral'}
+ */
+export function classifySession(session) {
+  if (session?.opencodeSessionId) return 'opencode-durable';
+  if (session?.ptyPid) return 'pty-durable';
+  return 'shell-ephemeral';
+}
+
+/**
  * saveSessions — atomically write sessions Map to disk.
  *
  * @param {Map<string, object>} sessionsMap - Map of terminalId → session data
@@ -109,6 +133,7 @@ export function saveSessions(sessionsMap) {
 
   const sessions = [];
   for (const [id, session] of sessionsMap.entries()) {
+    const sessionType = classifySession(session);
     sessions.push({
       id: session.id || id,
       cwd: session.cwd || '',
@@ -118,11 +143,17 @@ export function saveSessions(sessionsMap) {
       lastSeenAt: session.lastSeenAt || new Date().toISOString(),
       lastActivityAt: session.lastActivityAt || null,
       ptyPid: session.ptyPid ?? null,
+      opencodeSessionId: session.opencodeSessionId ?? null,
+      initialCommand: session.initialCommand ?? null,
+      swarmRole: session.swarmRole ?? null,
+      swarmId: session.swarmId ?? null,
+      sessionType,
       restored: session.restored || false,
+      restorePolicy: session.restorePolicy || 'auto',
     });
   }
 
-  const json = JSON.stringify({ version: 1, sessions }, null, 2);
+  const json = JSON.stringify({ version: SCHEMA_VERSION, sessions }, null, 2);
   const tmpPath = filePath + '.tmp';
 
   fs.writeFileSync(tmpPath, json, 'utf8');
@@ -131,6 +162,7 @@ export function saveSessions(sessionsMap) {
 
 /**
  * loadSessions — read sessions from disk, filter stale ones, mark restored: true.
+ * Migrates version < 2 sessions to include sessionType.
  *
  * @returns {Array<object>} array of session objects with restored: true
  */
@@ -142,5 +174,11 @@ export function loadSessions() {
     return now - lastSeen < STALE_TTL_MS;
   });
 
-  return fresh.map((s) => ({ ...s, restored: true }));
+  return fresh.map((s) => {
+    // Migrate v1 sessions: reclassify and bump version
+    const sessionType = s.sessionType || classifySession(s);
+    // Migrate v2→v3: add restorePolicy default; sanitize any existing value
+    const restorePolicy = sanitizeRestorePolicy(s.restorePolicy);
+    return { ...s, sessionType, restorePolicy, restored: true };
+  });
 }

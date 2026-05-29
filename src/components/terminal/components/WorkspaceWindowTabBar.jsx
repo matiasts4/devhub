@@ -116,7 +116,9 @@ function WorkspaceWindowTabBar({
               {workspaces.length > 1 && (
                 <button
                   onClick={(e) => onRemoveWorkspace(e, ws.id)}
+                  data-testid={`workspace-close-${ws.id}`}
                   className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded ml-1.5 transition-opacity"
+                  aria-label={`Close ${ws.name}`}
                 >
                   <X className="w-3 h-3" />
                 </button>

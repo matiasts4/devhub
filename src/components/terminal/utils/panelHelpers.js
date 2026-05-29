@@ -40,7 +40,7 @@ function createDefaultWorkspaceState() {
   };
 }
 
-function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds) {
+function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds, workspaceLabelOverride = null) {
   const fallbackState = createDefaultWorkspaceState();
   if (!Array.isArray(rawWorkspaces) || rawWorkspaces.length === 0) {
     return fallbackState;
@@ -128,12 +128,23 @@ function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds
     nextActivePanelIds[workspaceId] =
       (originalActivePanelId && panelIdMap.get(originalActivePanelId)) || firstPanelId;
 
+    // WSN-2 / WSN-S4: use workspace_label (from snapshot override or stored) before workspace.name
+    const storedLabel =
+      typeof workspaceLabelOverride === 'function'
+        ? workspaceLabelOverride(workspace, workspaceIndex)
+        : typeof workspaceLabelOverride === 'object' && workspaceLabelOverride !== null
+          ? workspaceLabelOverride[workspace?.id || workspaceId] || workspace?.workspace_label || null
+          : workspace?.workspace_label || null;
+    const displayName =
+      storedLabel ||
+      (typeof workspace?.name === 'string' && workspace.name.trim()
+        ? workspace.name
+        : `Workspace ${workspaceIndex + 1}`);
+
     return {
       id: workspaceId,
-      name:
-        typeof workspace?.name === 'string' && workspace.name.trim()
-          ? workspace.name
-          : `Workspace ${workspaceIndex + 1}`,
+      name: displayName,
+      workspace_label: storedLabel || null,
       columns,
     };
   });

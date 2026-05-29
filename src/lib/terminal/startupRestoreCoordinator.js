@@ -4,6 +4,7 @@ export const RESTORE_ACTION = Object.freeze({
   RESTORE_READY: 'restore-ready',
   REATTACH_LIVE_TERMINAL: 'reattach-live-terminal',
   RESUME_OPENCODE_SESSION: 'resume-opencode-session',
+  RESTORE_SHELL_EMERGENT: 'restore-shell-emergent',
   PROCESS_ORPHAN: 'process-orphan',
   METADATA_STALE: 'metadata-stale',
   QUOTA_BLOCKED: 'quota-blocked',
@@ -75,6 +76,7 @@ export function buildRestoreManifestFromWorkspaceState({
         workspaceId: workspace?.id || null,
         cwd: panel?.cwd || null,
         opencodeSessionId: agentRun?.opencodeSessionId || opencodeMatch?.[1] || null,
+        restorePolicy: agentRun?.restorePolicy || null,
         runId: agentRun?.runId || null,
         launchId: agentRun?.launchId || null,
         missionId: agentRun?.missionId || null,
@@ -184,6 +186,16 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         opencodeSessionId: session.opencodeSessionId,
         reason: 'session-resume-needed',
       });
+    } else if (!runtimeTerminal && session.cwd) {
+      // shell-ephemeral: no ptyPid, no opencode session — needs respawn via cwd/shell
+      nextAction = createAction({
+        action: RESTORE_ACTION.RESTORE_SHELL_EMERGENT,
+        terminalId: session.terminalId,
+        panelId: session.panelId,
+        workspaceId: session.workspaceId,
+        opencodeSessionId: null,
+        reason: 'shell-emergent-needs-respawn',
+      });
     } else if (runtimeTerminal?.alive) {
       nextAction = createAction({
         action: RESTORE_ACTION.RESTORE_READY,
@@ -201,6 +213,27 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         workspaceId: session.workspaceId,
         opencodeSessionId: session.opencodeSessionId,
         reason: 'no-runtime-evidence',
+      });
+    }
+
+    // Policy gating: 'manual' → TERMINATED (no auto restore), 'off' → skip entirely
+    const policy = session.restorePolicy;
+    // const isAuto = policy === 'auto' || policy == null || policy === undefined;
+    const isManual = policy === 'manual';
+    const isOff = policy === 'off';
+
+    // If 'off', do not emit any action — session stays in sessionStore but is not dispatched
+    if (isOff) return;
+
+    // If 'manual', emit TERMINATED action instead of the computed nextAction
+    if (isManual) {
+      nextAction = createAction({
+        action: RESTORE_ACTION.TERMINATED,
+        terminalId: session.terminalId,
+        panelId: session.panelId,
+        workspaceId: session.workspaceId,
+        opencodeSessionId: session.opencodeSessionId,
+        reason: 'restore-policy-manual',
       });
     }
 

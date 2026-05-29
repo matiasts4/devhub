@@ -287,8 +287,8 @@ describe('restoreSessions respawns shell-ephemeral sessions', () => {
   });
 });
 
-describe('devhub_restore_in_progress mutex flag', () => {
-  it('sets flag before restore and clears it after', async () => {
+describe('devhub_generic_restore_in_progress mutex flag', () => {
+  it('sets devhub_generic_restore_in_progress flag before restore and clears it after', async () => {
     const { saveSessions } = await import('./sessionStore.js');
 
     const sessionsMap = new Map([
@@ -310,12 +310,12 @@ describe('devhub_restore_in_progress mutex flag', () => {
     const sessions = getOrInitSessions();
     sessions.clear();
 
-    expect(localStorageMock.data['devhub_restore_in_progress']).toBeUndefined();
+    expect(localStorageMock.data['devhub_generic_restore_in_progress']).toBeUndefined();
 
     restoreSessions();
 
     // Flag should be cleared after restore completes
-    expect(localStorageMock.data['devhub_restore_in_progress']).toBeUndefined();
+    expect(localStorageMock.data['devhub_generic_restore_in_progress']).toBeUndefined();
   });
 
   it('flag is cleared even if restore throws', async () => {
@@ -344,7 +344,7 @@ describe('devhub_restore_in_progress mutex flag', () => {
     restoreSessions();
 
     // Flag must be cleared even on error
-    expect(localStorageMock.data['devhub_restore_in_progress']).toBeUndefined();
+    expect(localStorageMock.data['devhub_generic_restore_in_progress']).toBeUndefined();
   });
 });
 

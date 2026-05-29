@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import cwdGuard from './cwdGuard.js';
-import { saveSessions, loadSessions } from './sessionStore.js';
+import { saveSessions, loadSessions, classifySession } from './sessionStore.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -172,8 +172,6 @@ function resolveMcpServerPath() {
   );
 }
 
-const MCP_SERVER_PATH = resolveMcpServerPath();
-
 function loadTerminalDependency(globalKey, moduleName) {
   if (globalThis[globalKey]) {
     return globalThis[globalKey];
@@ -186,6 +184,8 @@ function loadTerminalDependency(globalKey, moduleName) {
 // instead of getting stubbed or mangled by Next.js's dev compiler.
 const pty = loadTerminalDependency('__DEVHUB_TTY_NODE_PTY__', 'node-pty');
 const { WebSocketServer } = loadTerminalDependency('__DEVHUB_TTY_WS__', 'ws');
+
+const MCP_SERVER_PATH = resolveMcpServerPath();
 
 const GLOBAL_TTY_KEY = '__DEVHUB_TTY_SERVER__';
 const GLOBAL_TTY_SESSIONS_KEY = '__DEVHUB_TTY_SESSIONS__';
@@ -955,46 +955,129 @@ function startIdleCleanup(sessions) {
 /**
  * restoreSessions — loads persisted sessions from disk and recreates PTY processes.
  * Called once at startup. No-op if no file exists.
- * ZOMBIE CLEANUP: Skips sessions whose PTY processes are no longer alive.
- * REQUIRES ptyPid: sessions without a saved ptyPid are skipped entirely.
+ *
+ * Session branching:
+ * - opencode-durable: skip (React handles via opencode --session)
+ * - pty-durable: verify PTY pid still alive via process.kill(pid, 0), then createSession
+ * - shell-ephemeral: respawn via createSession({ cwd, shell, restored: true }) — no ptyPid check
+ *
+ * Mutex: sets devhub_restore_in_progress flag in localStorage before restore begins,
+ * clears it after all restores complete. React reads this flag to block relaunch dispatches.
  */
 export function restoreSessions() {
   const saved = loadSessions();
   let zombieCount = 0;
   let skippedNoPid = 0;
+  let shellEphemeralRestored = 0;
   const sessions = getOrInitSessions();
+
+  // Set mutex flag before restore begins
+  // Note: devhub_generic_restore_in_progress is for generic (pty-durable + shell-ephemeral) restores.
+  // opencode-durable sessions are skipped here (React handles them via opencode --session).
+  // For backward compatibility, startupRestoreCoordinator.js and TerminalWorkspacesManager.jsx
+  // still read devhub_restore_in_progress (Phase 6 will switch them to devhub_opencode_restore_in_progress).
+  try {
+    if (typeof globalThis.localStorage !== 'undefined') {
+      globalThis.localStorage.setItem('devhub_generic_restore_in_progress', 'true');
+    }
+  } catch {
+    // localStorage not available — skip mutex
+  }
 
   for (const s of saved) {
     try {
-      // Must have a saved ptyPid — without it we cannot verify the process
+      const sessionType = s.sessionType || classifySession(s);
+
+      // opencode-durable: React handles via opencode --session; skip backend restore
+      if (sessionType === 'opencode-durable') {
+        ttyLog('RESTORE', `skipping opencode-durable session — React handles it`, { id: s.id });
+        continue;
+      }
+
+      // pty-durable: must have a saved ptyPid — verify process is still alive
+      if (sessionType === 'pty-durable') {
+        if (!s.ptyPid) {
+          ttyLog('RESTORE', `skipping pty-durable session without ptyPid`, { id: s.id });
+          skippedNoPid++;
+          continue;
+        }
+
+        try {
+          process.kill(s.ptyPid, 0); // Signal 0 = check if process exists
+        } catch {
+          // Process is dead — skip restoration and log
+          ttyLog('ZOMBIE_CLEANUP', `skipping dead pty-durable session`, { id: s.id, pid: s.ptyPid });
+          zombieCount++;
+          continue;
+        }
+
+        const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+
+        // Verify the newly spawned PTY is actually alive
+        if (restored.ptyPid && typeof process.kill === 'function') {
+          try {
+            process.kill(restored.ptyPid, 0);
+          } catch {
+            // Spawned process died immediately — remove from disk
+            ttyLog('ZOMBIE_CLEANUP', `restored pty-durable session died on spawn, removing from disk`, {
+              id: s.id,
+              pid: restored.ptyPid,
+            });
+            sessions.delete(s.id);
+            zombieCount++;
+          }
+        }
+        continue;
+      }
+
+      // shell-ephemeral: respawn without ptyPid check
+      if (sessionType === 'shell-ephemeral') {
+        if (!s.cwd || !s.shell) {
+          ttyLog('RESTORE', `skipping shell-ephemeral without cwd/shell`, { id: s.id });
+          skippedNoPid++;
+          continue;
+        }
+
+        try {
+          const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+          ttyLog('RESTORE', `restored shell-ephemeral session`, {
+            id: s.id,
+            cwd: s.cwd,
+            shell: s.shell,
+            newPid: restored.ptyPid,
+          });
+          shellEphemeralRestored++;
+        } catch (ephemeralErr) {
+          ttyLog('RESTORE', `failed to restore shell-ephemeral session`, {
+            id: s.id,
+            error: ephemeralErr?.message,
+          });
+        }
+        continue;
+      }
+
+      // Fallback for sessions without sessionType and no identifiable type markers
+      // (legacy v1 sessions that somehow weren't migrated)
       if (!s.ptyPid) {
-        ttyLog('RESTORE', `skipping session without ptyPid`, { id: s.id });
+        ttyLog('RESTORE', `skipping legacy session without ptyPid or sessionType`, { id: s.id });
         skippedNoPid++;
         continue;
       }
 
-      // Check if the PTY process is still alive before restoring
+      // Legacy pty-durable without sessionType — treat as pty-durable
       try {
-        process.kill(s.ptyPid, 0); // Signal 0 = check if process exists
+        process.kill(s.ptyPid, 0);
       } catch {
-        // Process is dead — skip restoration and log
-        ttyLog('ZOMBIE_CLEANUP', `skipping dead session`, { id: s.id, pid: s.ptyPid });
+        ttyLog('ZOMBIE_CLEANUP', `skipping dead legacy session`, { id: s.id, pid: s.ptyPid });
         zombieCount++;
         continue;
       }
 
       const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
-
-      // Verify the newly spawned PTY is actually alive
       if (restored.ptyPid && typeof process.kill === 'function') {
         try {
           process.kill(restored.ptyPid, 0);
         } catch {
-          // Spawned process died immediately — remove from disk
-          ttyLog('ZOMBIE_CLEANUP', `restored session died on spawn, removing from disk`, {
-            id: s.id,
-            pid: restored.ptyPid,
-          });
           sessions.delete(s.id);
           zombieCount++;
         }
@@ -1005,6 +1088,16 @@ export function restoreSessions() {
     }
   }
 
+  // Clear mutex flag after all restores complete
+  // Uses devhub_generic_restore_in_progress — the generic restore mutex key.
+  try {
+    if (typeof globalThis.localStorage !== 'undefined') {
+      globalThis.localStorage.removeItem('devhub_generic_restore_in_progress');
+    }
+  } catch {
+    // localStorage not available — skip
+  }
+
   if (zombieCount > 0) {
     console.log(
       `[ttyServer][ZOMBIE_CLEANUP] Cleaned up ${zombieCount} dead session(s) from previous run`
@@ -1012,6 +1105,9 @@ export function restoreSessions() {
   }
   if (skippedNoPid > 0) {
     console.log(`[ttyServer][RESTORE] Skipped ${skippedNoPid} session(s) without saved ptyPid`);
+  }
+  if (shellEphemeralRestored > 0) {
+    console.log(`[ttyServer][RESTORE] Restored ${shellEphemeralRestored} shell-ephemeral session(s)`);
   }
 }
 

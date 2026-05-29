@@ -20,9 +20,17 @@ function normalizeWorkspaceRecord(record = null) {
   const workspaceId = asString(record.workspaceId || record.id);
   if (!workspaceId) return null;
 
+  // Derive workspace_label from swarm metadata
+  const workspaceLabel =
+    record.workspace_label ||
+    (record.swarmRole ? `swarm-${record.swarmRole}` : null) ||
+    (record.swarmId ? `swarm-${record.swarmId}` : null) ||
+    null;
+
   return {
     workspaceId,
     name: asString(record.name),
+    workspace_label: workspaceLabel,
     tabs: asArray(record.tabs).filter((tab) => typeof tab === 'string'),
     layout: record.layout && typeof record.layout === 'object' ? record.layout : null,
     activePanelId: asString(record.activePanelId),
@@ -42,10 +50,13 @@ function normalizeTerminalSessionRecord(record = null) {
     rendererRequested: asString(record.rendererRequested),
     rendererEffective: asString(record.rendererEffective),
     opencodeSessionId: asString(record.opencodeSessionId),
+    sessionType: asString(record.sessionType),
+    initialCommand: asString(record.initialCommand),
     runId: asString(record.runId),
     launchId: asString(record.launchId),
     missionId: asString(record.missionId),
     lastDisconnectReason: asString(record.lastDisconnectReason),
+    restorePolicy: asString(record.restorePolicy),
   };
 }
 

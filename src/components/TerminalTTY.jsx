@@ -59,6 +59,23 @@ export function getXtermContainerAnimProps(visible) {
   };
 }
 
+const DEFAULT_TERMINAL_FONT_FAMILY =
+  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+
+export function resolveTerminalFontFamily() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
+    return DEFAULT_TERMINAL_FONT_FAMILY;
+  }
+
+  const cssMonoStack = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue('--font-family-mono')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cssMonoStack || DEFAULT_TERMINAL_FONT_FAMILY;
+}
+
 export function shouldShowTerminalViewport(isInitializing, initError) {
   return !isInitializing && !initError;
 }
@@ -70,7 +87,8 @@ export function shouldShowTerminalStatusOverlay(isInitializing, initError, conne
     initError ||
     connectionState === 'error' ||
     connectionState === 'disconnected' ||
-    connectionState === 'terminated'
+    connectionState === 'terminated' ||
+    connectionState === 'suspended'
   );
 }
 
@@ -96,6 +114,61 @@ export function stabilizeTerminalRenderer(term) {
   }
 
   return refreshTerminalViewport(term);
+}
+
+export function isTerminalViewportNearBottom(term, threshold = 2) {
+  const activeBuffer = term?.buffer?.active;
+  const baseY = activeBuffer?.baseY;
+  const viewportY = activeBuffer?.viewportY ?? activeBuffer?.ydisp;
+
+  if (!Number.isInteger(baseY) || !Number.isInteger(viewportY)) {
+    return false;
+  }
+
+  return baseY - viewportY <= threshold;
+}
+
+export function getTerminalViewportScrollOffset(term) {
+  const activeBuffer = term?.buffer?.active;
+  const viewportY = activeBuffer?.viewportY ?? activeBuffer?.ydisp;
+  return Number.isInteger(viewportY) ? viewportY : null;
+}
+
+export function restoreTerminalViewportScroll(term, targetViewportY) {
+  if (!term || typeof term.scrollToLine !== 'function') return false;
+  if (!Number.isInteger(targetViewportY)) return false;
+
+  const buffer = term?.buffer?.active;
+  if (!buffer) return false;
+
+  // After resize/reflow the buffer line count can change.
+  // Clamp to valid range so scrollToLine does not silently default to top.
+  const totalLines = buffer.length;
+  const rows = term.rows;
+  let clampedY = targetViewportY;
+  if (typeof totalLines === 'number' && typeof rows === 'number' && !Number.isNaN(totalLines) && !Number.isNaN(rows)) {
+    const maxY = Math.max(0, totalLines - rows);
+    clampedY = Math.max(0, Math.min(targetViewportY, maxY));
+  }
+
+  try {
+    term.scrollToLine(clampedY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function shouldRunTerminalViewportReactivation({
+  isActivePanel,
+  isVisibleInLayout = true,
+  documentVisibilityState,
+} = {}) {
+  return Boolean(
+    isActivePanel &&
+    isVisibleInLayout &&
+    documentVisibilityState !== 'hidden'
+  );
 }
 
 export function isTerminalRendererReady(term) {
@@ -138,6 +211,7 @@ export function fitTerminalViewport({
     if (isStaleXtermRendererError(error)) return false;
     throw error;
   }
+
   stabilizeTerminalRenderer(term);
 
   if (socket?.readyState === websocketOpenState) {
@@ -419,6 +493,7 @@ export default function TerminalTTY({
   runtimePlatform,
   showQuickCopyButton = true,
   swarmContext = null,
+  connectionState: externalConnectionState,
 }) {
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
@@ -455,7 +530,7 @@ export default function TerminalTTY({
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
-  const [connectionState, setConnectionState] = useState('idle');
+  const [internalConnectionState, setInternalConnectionState] = useState('idle');
   const [copied, setCopied] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [restoredToast, setRestoredToast] = useState(false);
@@ -464,6 +539,10 @@ export default function TerminalTTY({
   const [nativeVteOpened, setNativeVteOpened] = useState(false);
   const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
+  const [terminalRuntimeNonce, setTerminalRuntimeNonce] = useState(0);
+  // External connectionState prop takes precedence (allows parent to set 'suspended')
+  const connectionState = externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
+  const setConnectionState = externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
   const rendererCapabilities = getTerminalRendererRuntimeCapabilities({
@@ -483,6 +562,8 @@ export default function TerminalTTY({
   const timeoutRef = useRef(null);
   const initTimeoutRef = useRef(null);
   const autoScrollRafRef = useRef(null);
+  const xtermInstanceTokenRef = useRef(0);
+  const consecutiveStaleFitFailuresRef = useRef(0);
   const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
@@ -509,7 +590,7 @@ export default function TerminalTTY({
     requestedRendererMode,
     runtimePlatform: resolvedRuntimePlatform,
     tauriAvailable,
-  });
+  }) && connectionState !== 'suspended';
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -520,6 +601,11 @@ export default function TerminalTTY({
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
+    }
+
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+      initTimeoutRef.current = null;
     }
 
     if (nativeVteProbeRetryTimerRef.current) {
@@ -737,14 +823,19 @@ export default function TerminalTTY({
       if (!container) return false;
 
       const rect = container.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && document.visibilityState !== 'hidden') {
+      if (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        (typeof document === 'undefined' || document.visibilityState !== 'hidden')
+      ) {
         return true;
       }
 
       await new Promise((resolve) => {
-        rafRef.current = requestAnimationFrame(() => {
-          timeoutRef.current = setTimeout(resolve, 40);
-        });
+        initTimeoutRef.current = setTimeout(() => {
+          initTimeoutRef.current = null;
+          resolve();
+        }, 40);
       });
     }
 
@@ -761,10 +852,24 @@ export default function TerminalTTY({
     });
 
     logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
-  }, [logViewportDiagnostic]);
 
-  const scrollTerminalToBottom = useCallback(() => {
+    if (!fitWorked) {
+      consecutiveStaleFitFailuresRef.current += 1;
+      if (consecutiveStaleFitFailuresRef.current >= 3) {
+        consecutiveStaleFitFailuresRef.current = 0;
+        disposeXtermRuntime();
+        clearTimers();
+        setTerminalRuntimeNonce((n) => n + 1);
+        cliLog(`CLIENT:${id}`, 'force xterm runtime reinit after stale fits');
+      }
+    } else {
+      consecutiveStaleFitFailuresRef.current = 0;
+    }
+  }, [logViewportDiagnostic, disposeXtermRuntime, clearTimers, id]);
+
+  const scrollTerminalToBottom = useCallback((force = false) => {
     if (!termRef.current) return;
+    if (!force && !isTerminalViewportNearBottom(termRef.current)) return;
 
     if (autoScrollRafRef.current) {
       cancelAnimationFrame(autoScrollRafRef.current);
@@ -780,43 +885,90 @@ export default function TerminalTTY({
     if (!termRef.current || !fitRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
+    const instanceToken = xtermInstanceTokenRef.current;
     fitAndResize();
-    scrollTerminalToBottom();
+    if (shouldStickToBottom) {
+      scrollTerminalToBottom(true);
+    }
     clearTimers();
     rafRef.current = requestAnimationFrame(() => {
+      if (xtermInstanceTokenRef.current !== instanceToken) return;
       fitAndResize();
-      scrollTerminalToBottom();
+      if (shouldStickToBottom) {
+        scrollTerminalToBottom(true);
+      }
     });
     timeoutRef.current = setTimeout(() => {
+      if (xtermInstanceTokenRef.current !== instanceToken) return;
       fitAndResize();
-      scrollTerminalToBottom();
+      if (shouldStickToBottom) {
+        scrollTerminalToBottom(true);
+      }
     }, 120);
   }, [fitAndResize, clearTimers, scrollTerminalToBottom]);
 
   const reactivateTerminalViewport = useCallback(() => {
+    if (
+      !shouldRunTerminalViewportReactivation({
+        isActivePanel,
+        isVisibleInLayout,
+        documentVisibilityState: typeof document !== 'undefined' ? document.visibilityState : 'visible',
+      })
+    ) {
+      return;
+    }
+
     logViewportDiagnostic('reactivate-start');
+    const savedViewportY = getTerminalViewportScrollOffset(termRef.current);
+    const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
     const repaint = () => {
       stabilizeTerminalRenderer(termRef.current);
-      scrollTerminalToBottom();
+      if (shouldStickToBottom) {
+        scrollTerminalToBottom(true);
+      }
     };
 
+    const instanceToken = xtermInstanceTokenRef.current;
     sendResize();
     repaint();
 
+    // Restore scroll position if the user was not at bottom,
+    // guarding against xterm.js resize/fit resetting the viewport.
+    if (!shouldStickToBottom && savedViewportY != null) {
+      restoreTerminalViewportScroll(termRef.current, savedViewportY);
+    }
+
     rafRef.current = requestAnimationFrame(() => {
+      if (xtermInstanceTokenRef.current !== instanceToken) return;
       repaint();
+
+      if (!shouldStickToBottom && savedViewportY != null) {
+        restoreTerminalViewportScroll(termRef.current, savedViewportY);
+      }
 
       if (autoFocus) {
         termRef.current?.focus?.();
       }
 
       timeoutRef.current = setTimeout(() => {
+        if (xtermInstanceTokenRef.current !== instanceToken) return;
         sendResize();
         repaint();
+        if (!shouldStickToBottom && savedViewportY != null) {
+          restoreTerminalViewportScroll(termRef.current, savedViewportY);
+        }
         logViewportDiagnostic('reactivate-settled');
       }, 120);
     });
-  }, [autoFocus, logViewportDiagnostic, scrollTerminalToBottom, sendResize]);
+  }, [
+    autoFocus,
+    isActivePanel,
+    isVisibleInLayout,
+    logViewportDiagnostic,
+    scrollTerminalToBottom,
+    sendResize,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -893,8 +1045,77 @@ export default function TerminalTTY({
     closeNativeLease,
     id,
     isActivePanel,
+    isVisibleInLayout,
     nativeVteProbeAttempt,
     requestedRendererMode,
+    tauriAvailable,
+  ]);
+
+  useEffect(() => {
+    if (
+      nativeVteOpened ||
+      !shouldOpenNativeVtePanel({
+        isActivePanel,
+        isVisibleInLayout,
+        suspendNativeSurface,
+        nativeVteOpenFailure,
+        nativeVteProbe: nativeVteProbeResult,
+        requestedRendererMode,
+        runtimePlatform: resolvedRuntimePlatform,
+        tauriAvailable,
+      })
+    ) {
+      return undefined;
+    }
+
+    if (getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current)) {
+      return undefined;
+    }
+
+    let retryQueued = false;
+    let rafId = null;
+
+    const retryNativeOpenWhenBoundsRecover = () => {
+      if (retryQueued) return;
+
+      const recoveredBounds = getNativeTerminalBounds(
+        containerRef.current || nativePlaceholderRef.current
+      );
+      if (!recoveredBounds) return;
+
+      retryQueued = true;
+      cliLog(`CLIENT:${id}`, 'native VTE bounds recovered — retry open', {
+        bounds: recoveredBounds,
+      });
+      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
+    };
+
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      retryNativeOpenWhenBoundsRecover();
+    });
+
+    const intervalId = setInterval(retryNativeOpenWhenBoundsRecover, 250);
+    window.addEventListener('resize', retryNativeOpenWhenBoundsRecover);
+
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      clearInterval(intervalId);
+      window.removeEventListener('resize', retryNativeOpenWhenBoundsRecover);
+    };
+  }, [
+    id,
+    isActivePanel,
+    isVisibleInLayout,
+    nativeVteOpenFailure,
+    nativeVteOpened,
+    nativeVteProbeResult,
+    nativeVteRecoveryAttempt,
+    requestedRendererMode,
+    resolvedRuntimePlatform,
+    suspendNativeSurface,
     tauriAvailable,
   ]);
 
@@ -1403,8 +1624,11 @@ export default function TerminalTTY({
       socket.onmessage = (event) => {
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
+            const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
             termRef.current?.write(event.data);
-            scrollTerminalToBottom();
+            if (shouldStickToBottom) {
+              scrollTerminalToBottom(true);
+            }
           }
           return;
         }
@@ -1413,8 +1637,11 @@ export default function TerminalTTY({
           const payload = JSON.parse(event.data);
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
+            const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
             termRef.current?.write(payload.data);
-            scrollTerminalToBottom();
+            if (shouldStickToBottom) {
+              scrollTerminalToBottom(true);
+            }
             return;
           }
 
@@ -1453,8 +1680,11 @@ export default function TerminalTTY({
           }
         } catch {
           if (typeof event.data === 'string' && event.data.length > 0) {
+            const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
             termRef.current?.write(event.data);
-            scrollTerminalToBottom();
+            if (shouldStickToBottom) {
+              scrollTerminalToBottom(true);
+            }
           }
         }
       };
@@ -1624,29 +1854,18 @@ export default function TerminalTTY({
           return;
         }
 
-        const ready = await waitForVisibleDimensions();
-        cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
-          ready,
-          width: containerRef.current?.getBoundingClientRect().width,
-          height: containerRef.current?.getBoundingClientRect().height,
-        });
-        if (!mounted || !containerRef.current) {
-          cliLog(
-            `CLIENT:${id}`,
-            'initializeTerminal() aborted — unmounted after waitForVisibleDimensions'
-          );
-          setIsInitializing(false);
-          return;
-        }
-
         const terminal = new Terminal({
           cursorBlink: true,
-          fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+          fontFamily: resolveTerminalFontFamily(),
           fontSize: fontSize,
+          letterSpacing: 0,
           lineHeight: 1.4,
           allowTransparency: false,
           theme: getTerminalTheme(),
         });
+
+        xtermInstanceTokenRef.current += 1;
+        consecutiveStaleFitFailuresRef.current = 0;
 
         const fitAddon = new FitAddon();
         const searchAddon = new SearchAddon();
@@ -1654,11 +1873,13 @@ export default function TerminalTTY({
         terminal.loadAddon(searchAddon);
         terminal.open(containerRef.current);
 
-        logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
+        const initialRect = containerRef.current.getBoundingClientRect();
+        const initiallyVisible =
+          initialRect.width > 0 &&
+          initialRect.height > 0 &&
+          (typeof document === 'undefined' || document.visibilityState !== 'hidden');
 
-        if (ready) {
-          fitAddon.fit();
-        }
+        logViewportDiagnostic(initiallyVisible ? 'terminal-open-visible' : 'terminal-open-pending');
 
         terminal.onData((data) => {
           if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -1674,7 +1895,13 @@ export default function TerminalTTY({
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
+          // Preserve scroll position across resize events (e.g., workspace switches)
+          const savedViewportY = getTerminalViewportScrollOffset(termRef.current);
+          const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
           sendResize();
+          if (!shouldStickToBottom && savedViewportY != null) {
+            restoreTerminalViewportScroll(termRef.current, savedViewportY);
+          }
         });
         resizeObserverRef.current.observe(containerRef.current);
 
@@ -1686,7 +1913,51 @@ export default function TerminalTTY({
         setIsInitializing(false);
         connect();
 
-        sendResize();
+        if (initiallyVisible) {
+          sendResize();
+
+          // Re-fit after fonts load to recalibrate character metrics.
+          // xterm.js CharMeasure may use fallback font metrics if the
+          // preferred font has not finished loading at open time.
+          if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+            void document.fonts
+              .load(`${fontSize}px "JetBrains Mono"`)
+              .then(() => {
+                if (termRef.current && fitRef.current && mounted) {
+                  cliLog(`CLIENT:${id}`, 'font-load-refit', { fontSize });
+                  sendResize();
+                }
+              })
+              .catch(() => {});
+          }
+
+          return;
+        }
+
+        void waitForVisibleDimensions()
+          .then((ready) => {
+            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
+              ready,
+              width: containerRef.current?.getBoundingClientRect().width,
+              height: containerRef.current?.getBoundingClientRect().height,
+            });
+
+            if (!mounted || !containerRef.current || !termRef.current || !fitRef.current) {
+              return;
+            }
+
+            if (ready) {
+              sendResize();
+              return;
+            }
+
+            logViewportDiagnostic('terminal-open-timeout');
+          })
+          .catch((error) => {
+            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions failed', {
+              error: error?.message,
+            });
+          });
       } catch (error) {
         console.error(`[TTY:${id}] initializeTerminal() failed:`, error);
         cliLog(`CLIENT:${id}`, 'initializeTerminal() failed', { error: error?.message });
@@ -1735,6 +2006,7 @@ export default function TerminalTTY({
     runtimePhase,
     sendResize,
     shouldBootXterm,
+    terminalRuntimeNonce,
     waitForVisibleDimensions,
   ]);
 
@@ -1761,16 +2033,14 @@ export default function TerminalTTY({
 
   // Handle focus when tab becomes active
   useEffect(() => {
-    if (!autoFocus || !termRef.current) return undefined;
+    if (!autoFocus || !termRef.current || !isActivePanel || !isVisibleInLayout) return undefined;
 
     const focusTimer = setTimeout(() => {
-      termRef.current?.focus?.();
-      scrollTerminalToBottom();
       reactivateTerminalViewport();
     }, 50);
 
     return () => clearTimeout(focusTimer);
-  }, [autoFocus, reactivateTerminalViewport, scrollTerminalToBottom]);
+  }, [autoFocus, isActivePanel, isVisibleInLayout, reactivateTerminalViewport]);
 
   // Auto-reconnect when disconnected or error, with exponential backoff.
   // No hard attempt limit — the EBADF server fix prevents infinite hammering.
@@ -1813,7 +2083,14 @@ export default function TerminalTTY({
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
+      if (
+        document.visibilityState === 'visible' &&
+        shouldRunTerminalViewportReactivation({
+          isActivePanel,
+          isVisibleInLayout,
+          documentVisibilityState: document.visibilityState,
+        })
+      ) {
         logViewportDiagnostic('visibility-visible');
         reactivateTerminalViewport();
         queueNativeVteProbeRetry(0);
@@ -1826,28 +2103,49 @@ export default function TerminalTTY({
       queueNativeVteProbeRetry();
     };
     const handleWindowFocus = () => {
+      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
+        return;
+      }
       logViewportDiagnostic('window-focus');
       reactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
     };
     const handlePageShow = () => {
+      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
+        return;
+      }
       logViewportDiagnostic('pageshow');
       reactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
+    };
+
+    const handleLayoutSettled = () => {
+      if (isActivePanel && isVisibleInLayout) {
+        sendResize();
+      }
     };
 
     window.addEventListener('resize', handleWindowResize);
     window.addEventListener('focus', handleWindowFocus);
     window.addEventListener('pageshow', handlePageShow);
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
 
     return () => {
       window.removeEventListener('resize', handleWindowResize);
       window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('pageshow', handlePageShow);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
     };
-  }, [logViewportDiagnostic, queueNativeVteProbeRetry, reactivateTerminalViewport, sendResize]);
+  }, [
+    isActivePanel,
+    isVisibleInLayout,
+    logViewportDiagnostic,
+    queueNativeVteProbeRetry,
+    reactivateTerminalViewport,
+    sendResize,
+  ]);
 
   // ── Custom context menu for terminal ────────────────────────────────────────
   const handleContextMenu = useCallback((e) => {
@@ -1986,13 +2284,16 @@ export default function TerminalTTY({
     initError,
     connectionState
   );
+  const isSuspended = connectionState === 'suspended';
   const statusLabel = isConnected
     ? 'Conectado'
     : connectionState === 'connecting'
       ? 'Conectando...'
       : connectionState === 'terminated'
         ? 'Finalizada'
-        : 'Desconectado';
+        : isSuspended
+          ? 'Suspendida'
+          : 'Desconectado';
 
   return (
     <div
@@ -2059,6 +2360,25 @@ export default function TerminalTTY({
             >
               <RotateCcw className="w-3 h-3 text-gray-400 group-hover:text-white" strokeWidth={2} />
             </button>
+            {isSuspended && (
+              <button
+                data-testid="terminal-settings-gear-btn"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent('devhub:terminal-settings-modal-requested', {
+                      detail: { panelId: id },
+                    })
+                  )
+                }
+                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
+                title="Configuración"
+              >
+                <svg className="w-3.5 h-3.5 text-yellow-500 group-hover:text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+            )}
             {onClose && (
               <button
                 onClick={onClose}
@@ -2133,7 +2453,7 @@ export default function TerminalTTY({
           )}
 
           {/* Error/Disconnected overlay */}
-          {showTerminalStatusOverlay && (
+          {showTerminalStatusOverlay && connectionState !== 'suspended' && (
             <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
               <WifiOff className="w-8 h-8 text-red-400" />
               <span className="text-red-400 font-semibold">
@@ -2159,6 +2479,38 @@ export default function TerminalTTY({
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Reconectar
+              </button>
+            </div>
+          )}
+
+          {/* Suspended state overlay */}
+          {showTerminalStatusOverlay && connectionState === 'suspended' && (
+            <div
+              className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm"
+              data-testid="terminal-suspended-overlay"
+            >
+              <svg className="w-8 h-8 text-yellow-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span className="text-yellow-500 font-semibold">Sesión suspendida</span>
+              <span className="text-gray-500 text-center max-w-xs">
+                {cwd ? `Panel en pausa — ${cwd}` : 'Panel en pausa — restaurá manualmente para continuar'}
+              </span>
+              <button
+                data-testid="terminal-suspended-continue-btn"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent('devhub:manual-revive-requested', {
+                      detail: { panelId: id, sessionId: id },
+                    })
+                  );
+                }}
+                className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Continuar
               </button>
             </div>
           )}

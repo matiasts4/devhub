@@ -25,7 +25,18 @@ jest.mock('@/lib/theme/themes', () => ({
   MORPHOLOGIES: {
     DEFAULT: 'default',
     BRUTALIST_STAGE: 'brutalist-stage',
+    SWITCHYARD: 'switchyard',
   },
+  PALETTES: {
+    MINERAL: 'mineral',
+    COBALT: 'cobalt',
+    ALLOY: 'alloy',
+  },
+  PALETTE_OPTIONS: [
+    { id: 'mineral', label: 'Mineral Teal', description: 'Cold-mineral dark with teal accent.', primary: '#63d0c2' },
+    { id: 'cobalt', label: 'Cobalt Relay', description: 'Blue accent, navy-dark surface.', primary: '#7a93ff' },
+    { id: 'alloy', label: 'Alloy Sand', description: 'Bronze accent, warm dark surface.', primary: '#d4a16a' },
+  ],
   THEME_OPTIONS: [
     { id: 'deep-sea', label: 'Deep Sea', description: 'desc' },
     { id: 'nord', label: 'Nord', description: 'desc' },
@@ -33,15 +44,25 @@ jest.mock('@/lib/theme/themes', () => ({
   MORPHOLOGY_OPTIONS: [
     { id: 'default', label: 'Default', description: 'base chrome' },
     { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
+    { id: 'switchyard', label: 'Switchyard', description: 'Metallic dark with palette axis.' },
   ],
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
   getStoredAccent: jest.fn(() => 'theme'),
+  getStoredPalette: jest.fn(() => 'mineral'),
   setTheme: jest.fn((value) => value),
   setMorphology: jest.fn((value) => value),
   setAccent: jest.fn((value) => value),
+  setPalette: jest.fn((value) => value),
   getStoredZoom: jest.fn(() => 1),
   setZoom: jest.fn((value) => value),
+}));
+
+jest.mock('@/lib/terminal/restorePreferences', () => ({
+  RESTORE_POLICY: { AUTO: 'auto', MANUAL: 'manual', OFF: 'off' },
+  RESTORE_PREFERENCES_STORAGE_KEY: 'devhub_terminal_restore_prefs',
+  readTerminalRestorePreferences: jest.fn(() => ({ opencode: 'auto', generic: 'auto', swarm: 'auto' })),
+  writeTerminalRestorePreferences: jest.fn(),
 }));
 
 const appearancePageModule = require('../page');
@@ -191,5 +212,130 @@ describe('Settings appearance page terminal renderer', () => {
 
     expect(themeModule.setMorphology).toHaveBeenCalledWith('brutalist-stage');
     expect(themeModule.setTheme).not.toHaveBeenCalled();
+  });
+});
+
+describe('Settings appearance page terminal restore preferences', () => {
+  let dom;
+  let rendered;
+  let restorePreferencesModule;
+
+  beforeEach(() => {
+    dom = installDom();
+    window.localStorage.clear();
+    rendered = null;
+    restorePreferencesModule = require('@/lib/terminal/restorePreferences');
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'auto', generic: 'auto', swarm: 'auto' });
+    restorePreferencesModule.writeTerminalRestorePreferences.mockClear();
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    jest.clearAllMocks();
+  });
+
+  test('shows all three session types with independent restore policy selectors', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    expect(rendered.container.textContent).toContain('Restauración de Terminales');
+    expect(rendered.container.textContent).toContain('OpenCode');
+    expect(rendered.container.textContent).toContain('Shell Genérico');
+    expect(rendered.container.textContent).toContain('Swarm');
+  });
+
+  test('shows default auto policy when no saved preferences exist', async () => {
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'auto', generic: 'auto', swarm: 'auto' });
+
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
+    const genericSelect = rendered.container.querySelector('[data-testid="restore-policy-generic"]');
+    const swarmSelect = rendered.container.querySelector('[data-testid="restore-policy-swarm"]');
+
+    expect(opencodeSelect.value).toBe('auto');
+    expect(genericSelect.value).toBe('auto');
+    expect(swarmSelect.value).toBe('auto');
+  });
+
+  test('reads saved preferences from localStorage on mount', async () => {
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'manual', generic: 'off', swarm: 'auto' });
+
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
+    const genericSelect = rendered.container.querySelector('[data-testid="restore-policy-generic"]');
+    const swarmSelect = rendered.container.querySelector('[data-testid="restore-policy-swarm"]');
+
+    expect(opencodeSelect.value).toBe('manual');
+    expect(genericSelect.value).toBe('off');
+    expect(swarmSelect.value).toBe('auto');
+  });
+
+  test('changing a policy persists to localStorage via writeTerminalRestorePreferences', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
+
+    flushSync(() => {
+      opencodeSelect.value = 'manual';
+      opencodeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(restorePreferencesModule.writeTerminalRestorePreferences).toHaveBeenCalledWith(
+      window.localStorage,
+      { opencode: 'manual' }
+    );
+  });
+
+  test('all three session types have independent selectors that do not affect each other', async () => {
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'auto', generic: 'auto', swarm: 'auto' });
+
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    // Change only OpenCode
+    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
+    flushSync(() => {
+      opencodeSelect.value = 'manual';
+      opencodeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(restorePreferencesModule.writeTerminalRestorePreferences).toHaveBeenLastCalledWith(
+      window.localStorage,
+      { opencode: 'manual' }
+    );
+
+    // Change only Shell Genérico
+    restorePreferencesModule.writeTerminalRestorePreferences.mockClear();
+    const genericSelect = rendered.container.querySelector('[data-testid="restore-policy-generic"]');
+    flushSync(() => {
+      genericSelect.value = 'off';
+      genericSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(restorePreferencesModule.writeTerminalRestorePreferences).toHaveBeenLastCalledWith(
+      window.localStorage,
+      { generic: 'off' }
+    );
+
+    // Change only Swarm
+    restorePreferencesModule.writeTerminalRestorePreferences.mockClear();
+    const swarmSelect = rendered.container.querySelector('[data-testid="restore-policy-swarm"]');
+    flushSync(() => {
+      swarmSelect.value = 'manual';
+      swarmSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(restorePreferencesModule.writeTerminalRestorePreferences).toHaveBeenLastCalledWith(
+      window.localStorage,
+      { swarm: 'manual' }
+    );
   });
 });

@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -5,7 +8,12 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(target_os = "linux")]
-use std::{cell::RefCell, fs, path::{Path, PathBuf}, sync::{mpsc, Once}};
+use std::{
+    cell::RefCell,
+    fs,
+    path::{Path, PathBuf},
+    sync::{mpsc, Once},
+};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::*;
@@ -19,8 +27,8 @@ use javascriptcore::ValueExt;
 #[cfg(target_os = "linux")]
 use webkit2gtk::{
     CookieManagerExt, CookiePersistentStorage, UserContentInjectedFrames, UserContentManager,
-    UserContentManagerExt, UserScript, UserScriptInjectionTime, WebContext, WebView,
-    WebViewExt, WebViewExtManual, WebsiteDataManager, WebsiteDataManagerExt,
+    UserContentManagerExt, UserScript, UserScriptInjectionTime, WebContext, WebView, WebViewExt,
+    WebViewExtManual, WebsiteDataManager, WebsiteDataManagerExt,
 };
 
 #[cfg(target_os = "linux")]
@@ -270,7 +278,9 @@ fn ensure_directory(path: &Path) -> Result<PathBuf, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn derive_native_browser_profile_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
+fn derive_native_browser_profile_paths(
+    app: &AppHandle,
+) -> Result<(PathBuf, PathBuf, PathBuf), String> {
     let data_root = app
         .path()
         .app_local_data_dir()
@@ -292,7 +302,10 @@ fn derive_native_browser_profile_paths(app: &AppHandle) -> Result<(PathBuf, Path
 }
 
 #[cfg(target_os = "linux")]
-fn create_native_browser_capabilities(selector_ready: bool, persistent_profile: bool) -> NativeBrowserCapabilities {
+fn create_native_browser_capabilities(
+    selector_ready: bool,
+    persistent_profile: bool,
+) -> NativeBrowserCapabilities {
     NativeBrowserCapabilities {
         persistent_profile,
         selector: NativeBrowserSelectorCapability {
@@ -302,7 +315,12 @@ fn create_native_browser_capabilities(selector_ready: bool, persistent_profile: 
 }
 
 #[cfg(target_os = "linux")]
-fn normalize_probe_response(ready: bool, reason: Option<String>, persistent_profile: bool, selector_ready: bool) -> NativeBrowserProbeResponse {
+fn normalize_probe_response(
+    ready: bool,
+    reason: Option<String>,
+    persistent_profile: bool,
+    selector_ready: bool,
+) -> NativeBrowserProbeResponse {
     NativeBrowserProbeResponse {
         ready,
         reason,
@@ -312,7 +330,12 @@ fn normalize_probe_response(ready: bool, reason: Option<String>, persistent_prof
 }
 
 #[cfg(not(target_os = "linux"))]
-fn normalize_probe_response(ready: bool, reason: Option<String>, persistent_profile: bool, selector_ready: bool) -> NativeBrowserProbeResponse {
+fn normalize_probe_response(
+    ready: bool,
+    reason: Option<String>,
+    persistent_profile: bool,
+    selector_ready: bool,
+) -> NativeBrowserProbeResponse {
     let _ = selector_ready;
     NativeBrowserProbeResponse {
         ready,
@@ -359,7 +382,13 @@ fn ensure_linux_probe_preconditions(request: &NativeBrowserProbeRequest) -> Resu
         return Err("tauri-unavailable".to_string());
     }
 
-    if request.panel_id.as_deref().unwrap_or_default().trim().is_empty() {
+    if request
+        .panel_id
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+    {
         return Err(PROBE_FAILED_REASON.to_string());
     }
 
@@ -422,8 +451,12 @@ fn prepare_same_window_host(app: &AppHandle, failure_reason: &str) -> Result<(),
         let overlay_present = children.iter().any(widget_matches_native_overlay);
         let direct_webview_accessible = webview.is::<gtk::Widget>();
 
-        resolve_same_window_probe_result(children.len(), overlay_present, direct_webview_accessible)
-            .map_err(|_| failure_reason.clone())?;
+        resolve_same_window_probe_result(
+            children.len(),
+            overlay_present,
+            direct_webview_accessible,
+        )
+        .map_err(|_| failure_reason.clone())?;
 
         ensure_native_browser_host(window, Some(webview))
             .map(|_| ())
@@ -681,7 +714,8 @@ fn register_native_browser_selector_bridge(
     panel_id: &str,
     user_content_manager: &UserContentManager,
 ) -> Result<(), String> {
-    let _ = user_content_manager.register_script_message_handler(NATIVE_BROWSER_SELECTOR_HANDLER_NAME);
+    let _ =
+        user_content_manager.register_script_message_handler(NATIVE_BROWSER_SELECTOR_HANDLER_NAME);
     let selector_context = NativeBrowserSelectorContext {
         panel_id: panel_id.to_string(),
         app: app.clone(),
@@ -691,7 +725,10 @@ fn register_native_browser_selector_bridge(
         Some(NATIVE_BROWSER_SELECTOR_HANDLER_NAME),
         move |_manager, message| {
             let Some(js_value) = message.js_value() else {
-                emit_native_browser_event(&selector_context.app, selector_error_payload(&selector_context.panel_id, SELECTOR_UNAVAILABLE_REASON));
+                emit_native_browser_event(
+                    &selector_context.app,
+                    selector_error_payload(&selector_context.panel_id, SELECTOR_UNAVAILABLE_REASON),
+                );
                 return;
             };
 
@@ -699,7 +736,8 @@ fn register_native_browser_selector_bridge(
                 .to_json(0)
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| js_value.to_str().to_string());
-            let payload = map_selector_event_payload(&selector_context.panel_id, Some(raw_payload.as_str()));
+            let payload =
+                map_selector_event_payload(&selector_context.panel_id, Some(raw_payload.as_str()));
             emit_native_browser_event(&selector_context.app, payload);
         },
     );
@@ -716,7 +754,10 @@ fn register_native_browser_selector_bridge(
 }
 
 #[cfg(target_os = "linux")]
-fn build_native_browser_webview(app: &AppHandle, panel_id: &str) -> Result<(WebView, NativeBrowserSelectorContext), String> {
+fn build_native_browser_webview(
+    app: &AppHandle,
+    panel_id: &str,
+) -> Result<(WebView, NativeBrowserSelectorContext), String> {
     let (data_dir, cache_dir, cookie_file) = derive_native_browser_profile_paths(app)?;
     let website_data_manager = WebsiteDataManager::builder()
         .base_data_directory(data_dir.to_string_lossy())
@@ -727,7 +768,10 @@ fn build_native_browser_webview(app: &AppHandle, panel_id: &str) -> Result<(WebV
         .build();
 
     if let Some(cookie_manager) = website_data_manager.cookie_manager() {
-        cookie_manager.set_persistent_storage(cookie_file.to_string_lossy().as_ref(), CookiePersistentStorage::Sqlite);
+        cookie_manager.set_persistent_storage(
+            cookie_file.to_string_lossy().as_ref(),
+            CookiePersistentStorage::Sqlite,
+        );
     } else {
         return Err(PROFILE_INIT_FAILED_REASON.to_string());
     }
@@ -735,7 +779,8 @@ fn build_native_browser_webview(app: &AppHandle, panel_id: &str) -> Result<(WebV
     let web_context = WebContext::with_website_data_manager(&website_data_manager);
     let user_content_manager = UserContentManager::new();
     register_native_browser_selector_bridge(app, panel_id, &user_content_manager)?;
-    let webview = WebView::new_with_context_and_user_content_manager(&web_context, &user_content_manager);
+    let webview =
+        WebView::new_with_context_and_user_content_manager(&web_context, &user_content_manager);
 
     Ok((
         webview,
@@ -799,14 +844,17 @@ fn registry_open_panel(_app: &AppHandle, request: &NativeBrowserOpenRequest) -> 
             return Ok(());
         }
 
-        let (webview, selector_context) = build_native_browser_webview(_app, request.panel_id.as_str())?;
+        let (webview, selector_context) =
+            build_native_browser_webview(_app, request.panel_id.as_str())?;
         webview.load_uri(request.url.as_str());
         webview.set_hexpand(true);
         webview.set_vexpand(true);
 
         let wrapper = gtk::Frame::new(None);
         wrapper.set_widget_name(&format!("devhub-native-browser-host-{}", request.panel_id));
-        wrapper.style_context().add_class("devhub-native-browser-host");
+        wrapper
+            .style_context()
+            .add_class("devhub-native-browser-host");
         wrapper.set_shadow_type(gtk::ShadowType::None);
         wrapper.set_halign(gtk::Align::Fill);
         wrapper.set_valign(gtk::Align::Fill);
@@ -945,14 +993,20 @@ fn selector_command_script(action: &str, mode: Option<&str>) -> Result<String, S
 }
 
 #[cfg(target_os = "linux")]
-fn registry_selector_command(panel_id: &str, action: &str, mode: Option<&str>) -> Result<(), String> {
+fn registry_selector_command(
+    panel_id: &str,
+    action: &str,
+    mode: Option<&str>,
+) -> Result<(), String> {
     with_native_browser_registry(|registry| {
         let panel = registry
             .panels
             .get(panel_id)
             .ok_or_else(|| PANEL_NOT_FOUND_REASON.to_string())?;
         let script = selector_command_script(action, mode)?;
-        panel.webview.run_javascript(&script, None::<&gio::Cancellable>, |_| {});
+        panel
+            .webview
+            .run_javascript(&script, None::<&gio::Cancellable>, |_| {});
         Ok(())
     })
 }
@@ -965,7 +1019,9 @@ pub fn native_browser_probe(
 ) -> NativeBrowserProbeResponse {
     #[cfg(target_os = "linux")]
     {
-        match ensure_linux_probe_preconditions(&request).and_then(|_| inspect_same_window_host(&app)) {
+        match ensure_linux_probe_preconditions(&request)
+            .and_then(|_| inspect_same_window_host(&app))
+        {
             Ok(()) => match derive_native_browser_profile_paths(&app) {
                 Ok(_) => normalize_probe_response(true, None, true, true),
                 Err(reason) => normalize_probe_response(false, Some(reason), false, false),
@@ -1013,10 +1069,15 @@ pub fn native_browser_open(
                 },
                 {
                     let app = app.clone();
-                    move || registry_open_panel(&app, &NativeBrowserOpenRequest {
-                        bounds: Some(bounds),
-                        ..request_for_ui
-                    })
+                    move || {
+                        registry_open_panel(
+                            &app,
+                            &NativeBrowserOpenRequest {
+                                bounds: Some(bounds),
+                                ..request_for_ui
+                            },
+                        )
+                    }
                 },
             )
         }) {
@@ -1065,7 +1126,11 @@ pub fn native_browser_load_url(
 
         match window.and_then(|window| {
             execute_main_thread_job(
-                |job| window.run_on_main_thread(job).map_err(|error| error.to_string()),
+                |job| {
+                    window
+                        .run_on_main_thread(job)
+                        .map_err(|error| error.to_string())
+                },
                 move || registry_load_panel_url(&panel_id, &url),
             )
         }) {
@@ -1106,7 +1171,11 @@ pub fn native_browser_reload(
 
         match window.and_then(|window| {
             execute_main_thread_job(
-                |job| window.run_on_main_thread(job).map_err(|error| error.to_string()),
+                |job| {
+                    window
+                        .run_on_main_thread(job)
+                        .map_err(|error| error.to_string())
+                },
                 move || registry_reload_panel(&panel_id),
             )
         }) {
@@ -1149,7 +1218,11 @@ pub fn native_browser_resize(
             .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
 
         execute_main_thread_job(
-            |job| window.run_on_main_thread(job).map_err(|error| error.to_string()),
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
             move || registry_resize_panel(&panel_id, &bounds),
         )
     }
@@ -1177,7 +1250,11 @@ pub fn native_browser_focus(
             .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
 
         execute_main_thread_job(
-            |job| window.run_on_main_thread(job).map_err(|error| error.to_string()),
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
             move || registry_focus_panel(&panel_id_for_focus),
         )?;
 
@@ -1213,7 +1290,11 @@ pub fn native_browser_set_visibility(
             .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
 
         execute_main_thread_job(
-            |job| window.run_on_main_thread(job).map_err(|error| error.to_string()),
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
             move || registry_set_panel_visibility(&panel_id, visible, bounds),
         )
     }
@@ -1269,7 +1350,11 @@ pub fn native_browser_selector_command(
 
         match window.and_then(|window| {
             execute_main_thread_job(
-                |job| window.run_on_main_thread(job).map_err(|error| error.to_string()),
+                |job| {
+                    window
+                        .run_on_main_thread(job)
+                        .map_err(|error| error.to_string())
+                },
                 move || registry_selector_command(&panel_id, &action, mode.as_deref()),
             )
         }) {
@@ -1310,7 +1395,11 @@ pub fn native_browser_close(
             .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
 
         execute_main_thread_job(
-            |job| window.run_on_main_thread(job).map_err(|error| error.to_string()),
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
             move || registry_close_panel(&panel_id_for_close),
         )?;
 
@@ -1349,7 +1438,12 @@ mod tests {
 
     #[test]
     fn probe_payload_shapes_failure_reason_without_claiming_capability() {
-        let response = normalize_probe_response(false, Some(PROFILE_INIT_FAILED_REASON.to_string()), false, false);
+        let response = normalize_probe_response(
+            false,
+            Some(PROFILE_INIT_FAILED_REASON.to_string()),
+            false,
+            false,
+        );
 
         assert_eq!(response.ready, false);
         assert_eq!(response.reason.as_deref(), Some(PROFILE_INIT_FAILED_REASON));
@@ -1370,10 +1464,19 @@ mod tests {
 
     #[test]
     fn selector_command_script_maps_supported_actions() {
-        assert!(selector_command_script("activate", Some("select")).unwrap().contains("activate"));
-        assert!(selector_command_script("deactivate", None).unwrap().contains("deactivate"));
-        assert!(selector_command_script("clear-selection", None).unwrap().contains("clearSelection"));
-        assert_eq!(selector_command_script("noop", None), Err(INVALID_SELECTOR_ACTION_REASON.to_string()));
+        assert!(selector_command_script("activate", Some("select"))
+            .unwrap()
+            .contains("activate"));
+        assert!(selector_command_script("deactivate", None)
+            .unwrap()
+            .contains("deactivate"));
+        assert!(selector_command_script("clear-selection", None)
+            .unwrap()
+            .contains("clearSelection"));
+        assert_eq!(
+            selector_command_script("noop", None),
+            Err(INVALID_SELECTOR_ACTION_REASON.to_string())
+        );
     }
 
     #[test]
@@ -1423,10 +1526,7 @@ mod tests {
                     width: 180.0,
                     height: 48.0,
                 },
-                attributes: HashMap::from([(
-                    "data-testid".to_string(),
-                    "hero-cta".to_string(),
-                )]),
+                attributes: HashMap::from([("data-testid".to_string(), "hero-cta".to_string(),)]),
             })
         );
     }

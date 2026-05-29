@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -14,6 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::*;
+#[cfg(target_os = "linux")]
+use gtk::{gio, pango};
 
 #[cfg(target_os = "linux")]
 use zoha_vte::{traits::TerminalExt, PtyFlags, Terminal};
@@ -762,6 +766,20 @@ fn normalize_terminal_metrics(terminal: &Terminal) -> Option<(i32, i32)> {
 }
 
 #[cfg(target_os = "linux")]
+fn resolve_native_system_monospace_font() -> Option<pango::FontDescription> {
+    let font_name = gio::Settings::new("org.gnome.desktop.interface")
+        .string("monospace-font-name")
+        .trim()
+        .to_string();
+
+    if font_name.is_empty() {
+        return None;
+    }
+
+    Some(pango::FontDescription::from_string(&font_name))
+}
+
+#[cfg(target_os = "linux")]
 #[derive(Debug, PartialEq, Eq)]
 struct NativeVteLayoutGeometry {
     terminal_x: i32,
@@ -1061,6 +1079,9 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
         terminal.set_widget_name(&format!("devhub-native-vte-terminal-{}", request.panel_id));
         terminal.set_input_enabled(true);
         terminal.set_rewrap_on_resize(true);
+        if let Some(system_font) = resolve_native_system_monospace_font() {
+            terminal.set_font(Some(&system_font));
+        }
         apply_native_terminal_theme(&terminal);
 
         // Install Ctrl+Shift+V key event interceptor on the VTE terminal.

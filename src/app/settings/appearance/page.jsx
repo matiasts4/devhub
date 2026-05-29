@@ -6,11 +6,14 @@ import {
   ACCENT_OPTIONS,
   getStoredAccent,
   getStoredMorphology,
+  getStoredPalette,
   getStoredTheme,
   MORPHOLOGIES,
   MORPHOLOGY_OPTIONS,
+  PALETTE_OPTIONS,
   setAccent,
   setMorphology,
+  setPalette,
   setTheme,
   THEME_OPTIONS,
   THEMES,
@@ -22,6 +25,11 @@ import {
   readTerminalRendererDefaultModeSetting,
   writeTerminalRendererDefaultModeSetting,
 } from '@/components/terminal/terminalRendererPreferences';
+import {
+  RESTORE_POLICY,
+  readTerminalRestorePreferences,
+  writeTerminalRestorePreferences,
+} from '@/lib/terminal/restorePreferences';
 
 
 const PREVIEW_BY_THEME = {
@@ -59,6 +67,13 @@ const PREVIEW_BY_THEME = {
     line: '#222222',
     highlight: '#e3b341',
     dots: ['#f85149', '#e3b341', '#3fb950'],
+  },
+  [THEMES.SWITCHYARD]: {
+    panel: '#111d22',
+    body: '#091014',
+    line: 'rgba(99, 208, 194, 0.18)',
+    highlight: '#63d0c2',
+    dots: ['#43d19e', '#63d0c2', '#7a93ff'],
   },
 };
 
@@ -112,16 +127,21 @@ export default function AppearancePage() {
   const [activeTheme, setActiveTheme] = useState(THEMES.DEEP_SEA);
   const [activeMorphology, setActiveMorphology] = useState(MORPHOLOGIES.DEFAULT);
   const [activeAccent, setActiveAccent] = useState('theme');
+  const [activePalette, setActivePalette] = useState('mineral');
   const [currentZoom, setCurrentZoom] = useState(1);
   const [terminalRendererMode, setTerminalRendererMode] = useState('vte-experimental');
+  const [restorePrefs, setRestorePrefs] = useState({ opencode: RESTORE_POLICY.AUTO, generic: RESTORE_POLICY.AUTO, swarm: RESTORE_POLICY.AUTO });
 
   useEffect(() => {
     setActiveTheme(getStoredTheme());
     setActiveMorphology(getStoredMorphology());
     setActiveAccent(getStoredAccent());
+    setActivePalette(getStoredPalette());
     setCurrentZoom(getStoredZoom());
     if (typeof window !== 'undefined') {
       setTerminalRendererMode(readTerminalRendererDefaultModeSetting(window.localStorage));
+      const saved = readTerminalRestorePreferences(window.localStorage);
+      setRestorePrefs(saved);
     }
   }, []);
 
@@ -155,12 +175,25 @@ export default function AppearancePage() {
     setActiveAccent(normalized);
   };
 
+  const handleSelectPalette = (paletteId) => {
+    const normalized = setPalette(paletteId);
+    setActivePalette(normalized);
+  };
+
   const handleTerminalRendererChange = (event) => {
     const nextMode = event.target.value;
     if (typeof window !== 'undefined') {
       writeTerminalRendererDefaultModeSetting(window.localStorage, nextMode);
     }
     setTerminalRendererMode(nextMode);
+  };
+
+  const handleRestorePolicyChange = (sessionType) => (event) => {
+    const nextPolicy = event.target.value;
+    if (typeof window !== 'undefined') {
+      writeTerminalRestorePreferences(window.localStorage, { [sessionType]: nextPolicy });
+    }
+    setRestorePrefs((prev) => ({ ...prev, [sessionType]: nextPolicy }));
   };
 
   return (
@@ -426,6 +459,46 @@ export default function AppearancePage() {
             );
           })}
         </div>
+
+        {activeMorphology === MORPHOLOGIES.SWITCHYARD && (
+          <div className="mt-4 flex items-center gap-2">
+            {PALETTE_OPTIONS.map((palette) => {
+              const isPaletteActive = palette.id === activePalette;
+              return (
+                <button
+                  key={palette.id}
+                  data-testid={`appearance-palette-option-${palette.id}`}
+                  type="button"
+                  onClick={() => handleSelectPalette(palette.id)}
+                  className="flex-1 rounded-xl border py-3 px-4 text-left transition-all"
+                  style={{
+                    background: isPaletteActive
+                      ? 'var(--chrome-panel-fill-emphasis)'
+                      : 'var(--chrome-panel-fill)',
+                    borderColor: isPaletteActive
+                      ? 'color-mix(in srgb, var(--accent-primary) 35%, var(--chrome-border-color))'
+                      : 'var(--chrome-border-color)',
+                    boxShadow: isPaletteActive ? 'var(--chrome-shadow-panel)' : 'none',
+                    transform: isPaletteActive ? 'translateY(-1px)' : 'translateY(0)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-3 w-3 rounded-full flex-shrink-0"
+                      style={{ background: palette.primary }}
+                    />
+                    <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {palette.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {palette.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        )}
         </section>
       </ChromeSurface>
 
@@ -546,6 +619,56 @@ export default function AppearancePage() {
             <RotateCcw size={18} style={{ color: 'var(--text-muted)' }} />
           </button>
         </div>
+        </section>
+      </ChromeSurface>
+
+      <ChromeSurface asChild surface="panel" emphasized>
+        <section
+          className="rounded-2xl border p-6"
+          style={getAppearanceSectionStyle()}
+        >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
+              Restauración de Terminales
+            </h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Elige cómo se restauran las terminales al iniciar DevHub.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {[
+            { key: 'opencode', label: 'OpenCode' },
+            { key: 'generic', label: 'Shell Genérico' },
+            { key: 'swarm', label: 'Swarm' },
+          ].map(({ key, label }) => (
+            <div key={key} className="flex items-center justify-between max-w-sm">
+              <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                {label}
+              </label>
+              <select
+                data-testid={`restore-policy-${key}`}
+                value={restorePrefs[key]}
+                onChange={handleRestorePolicyChange(key)}
+                className="h-11 rounded-xl border px-3 text-sm"
+                style={{
+                  ...getAppearanceControlStyle(),
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <option value={RESTORE_POLICY.AUTO}>Automático</option>
+                <option value={RESTORE_POLICY.MANUAL}>Manual</option>
+                <option value={RESTORE_POLICY.OFF}>Desactivado</option>
+              </select>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+          Automático: restaura al iniciar. Manual: panel suspendido hasta que hagas clic en continuar. Desactivado: ignora esta terminal al inicio.
+        </p>
         </section>
       </ChromeSurface>
 

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - Obsidian Glass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --obsidian-bg: #0a0a0c;
+            --obsidian-panel: rgba(18, 18, 22, 0.85);
+            --obsidian-elevated: rgba(25, 25, 32, 0.9);
+            --obsidian-border: rgba(255, 255, 255, 0.06);
+            --obsidian-border-hover: rgba(255, 255, 255, 0.12);
+            --obsidian-accent: #a78bfa;
+            --obsidian-accent-dim: rgba(167, 139, 250, 0.15);
+            --obsidian-text: #f4f4f5;
+            --obsidian-text-dim: rgba(244, 244, 245, 0.5);
+            --obsidian-text-muted: rgba(244, 244, 245, 0.3);
+        }
+
+        body {
+            font-family: 'Inter', 'Geist', sans-serif;
+            background: var(--obsidian-bg);
+            background-image:
+                radial-gradient(ellipse at 0% 0%, rgba(167, 139, 250, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 100% 100%, rgba(139, 92, 246, 0.04) 0%, transparent 50%);
+            color: var(--obsidian-text);
+        }
+
+        /* Glass Morphology */
+        .glass-panel {
+            background: var(--obsidian-panel);
+            border: 1px solid var(--obsidian-border);
+            backdrop-filter: blur(20px);
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .glass-panel-elevated {
+            background: var(--obsidian-elevated);
+            border: 1px solid var(--obsidian-border-hover);
+            backdrop-filter: blur(24px);
+            box-shadow:
+                0 12px 40px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .glass-btn-primary {
+            background: linear-gradient(135deg, var(--obsidian-accent), #8b5cf6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #0a0a0c;
+            font-weight: 700;
+            box-shadow:
+                0 4px 16px rgba(167, 139, 250, 0.25),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .glass-btn-primary:hover {
+            box-shadow:
+                0 8px 24px rgba(167, 139, 250, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .glass-btn-secondary {
+            background: rgba(167, 139, 250, 0.08);
+            border: 1px solid rgba(167, 139, 250, 0.2);
+            color: var(--obsidian-accent);
+            font-weight: 600;
+            backdrop-filter: blur(8px);
+        }
+
+        .glass-btn-secondary:hover {
+            background: rgba(167, 139, 250, 0.15);
+            border-color: rgba(167, 139, 250, 0.35);
+        }
+
+        .glass-node {
+            background: rgba(18, 18, 22, 0.7);
+            border: 1px solid var(--obsidian-border);
+            backdrop-filter: blur(12px);
+        }
+
+        .glass-node-active {
+            background: rgba(167, 139, 250, 0.1);
+            border-color: rgba(167, 139, 250, 0.3);
+            box-shadow: 0 0 20px rgba(167, 139, 250, 0.1);
+        }
+
+        .glass-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--obsidian-border), transparent);
+        }
+
+        .accent-bar {
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, var(--obsidian-accent) 50%, transparent 100%);
+            box-shadow: 0 0 12px rgba(167, 139, 250, 0.4);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        @keyframes soft-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .pulse-soft {
+            animation: soft-pulse 2s ease-in-out infinite;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--obsidian-accent), #c4b5fd);
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col">
+    <!-- Top Bar -->
+    <div class="glass-panel border-b border-white/5 px-4 py-2.5 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" style="background: var(--obsidian-accent); box-shadow: 0 0 8px var(--obsidian-accent);"></div>
+                <span class="text-sm font-semibold tracking-wide">DevHub</span>
+            </div>
+            <div class="glass-divider h-4 w-px"></div>
+            <span class="text-xs" style="color: var(--obsidian-text-dim);">/project/acme-platform</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <button class="glass-btn-secondary px-3 py-1.5 text-xs">Theme</button>
+            <button class="glass-btn-primary px-4 py-2 text-xs">+ New Task</button>
+        </div>
+    </div>
+
+    <div class="accent-bar"></div>
+
+    <!-- Main Layout -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-56 glass-panel border-r border-white/5 p-4 flex flex-col gap-4">
+            <div class="glass-btn-secondary py-2 px-3 text-xs flex items-center gap-2 cursor-pointer">
+                <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                Dashboard
+            </div>
+            <div class="glass-btn-secondary py-2 px-3 text-xs flex items-center gap-2 cursor-pointer glass-node-active">
+                <i data-lucide="layers" class="w-4 h-4"></i>
+                Tasks
+            </div>
+            <div class="glass-btn-secondary py-2 px-3 text-xs flex items-center gap-2 cursor-pointer">
+                <i data-lucide="git-branch" class="w-4 h-4"></i>
+                Roadmap
+            </div>
+            <div class="glass-btn-secondary py-2 px-3 text-xs flex items-center gap-2 cursor-pointer">
+                <i data-lucide="terminal" class="w-4 h-4"></i>
+                Swarm
+            </div>
+
+            <div class="glass-divider"></div>
+
+            <div class="text-[10px] font-semibold uppercase tracking-wider" style="color: var(--obsidian-text-muted);">Projects</div>
+            <div class="space-y-1">
+                <div class="glass-node-active p-2 cursor-pointer rounded-lg">
+                    <div class="text-xs font-medium">ACME Platform</div>
+                    <div class="text-[10px]" style="color: var(--obsidian-text-muted);">8 tasks</div>
+                </div>
+                <div class="glass-node p-2 cursor-pointer rounded-lg opacity-70">
+                    <div class="text-xs font-medium">Mobile App</div>
+                    <div class="text-[10px]" style="color: var(--obsidian-text-muted);">12 tasks</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <div class="glass-panel p-4 flex items-center justify-between">
+                <div>
+                    <h1 class="text-lg font-semibold">Task Board</h1>
+                    <p class="text-xs mt-0.5" style="color: var(--obsidian-text-dim);">ACME Platform — Sprint 03</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs px-3 py-1.5 rounded-full" style="background: rgba(74, 222, 128, 0.1); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.2);">3 Active</span>
+                    <span class="text-xs px-3 py-1.5 rounded-full" style="background: rgba(251, 146, 60, 0.1); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.2);">5 Queue</span>
+                </div>
+            </div>
+
+            <!-- Task Columns -->
+            <div class="flex-1 flex gap-4 p-4 overflow-hidden">
+                <!-- Active -->
+                <div class="flex-1 flex flex-col gap-3">
+                    <div class="flex items-center gap-2 pb-2" style="border-bottom: 1px solid rgba(74, 222, 128, 0.2);">
+                        <div class="status-indicator pulse-soft" style="background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);"></div>
+                        <span class="text-xs font-semibold" style="color: #4ade80;">Active</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: rgba(74, 222, 128, 0.1); color: #4ade80;">2</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-3">
+                        <div class="glass-panel-elevated p-4 space-y-3 cursor-pointer">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-medium">Implement authentication flow</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded" style="background: rgba(167, 139, 250, 0.15); color: var(--obsidian-accent);">HIGH</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs" style="color: var(--obsidian-text-dim);">
+                                <span>#0847</span>
+                                <span>—</span>
+                                <span>Backend</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 68%;"></div>
+                            </div>
+                            <div class="flex items-center justify-between text-[10px]" style="color: var(--obsidian-text-muted);">
+                                <span>68%</span>
+                                <span>Est. 2h</span>
+                            </div>
+                        </div>
+
+                        <div class="glass-panel-elevated p-4 space-y-3 cursor-pointer">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-medium">Design system tokens</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded" style="background: rgba(167, 139, 250, 0.15); color: var(--obsidian-accent);">MED</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs" style="color: var(--obsidian-text-dim);">
+                                <span>#0845</span>
+                                <span>—</span>
+                                <span>Frontend</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 35%;"></div>
+                            </div>
+                            <div class="flex items-center justify-between text-[10px]" style="color: var(--obsidian-text-muted);">
+                                <span>35%</span>
+                                <span>Est. 4h</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Queue -->
+                <div class="flex-1 flex flex-col gap-3">
+                    <div class="flex items-center gap-2 pb-2" style="border-bottom: 1px solid rgba(251, 146, 60, 0.2);">
+                        <div class="status-indicator" style="background: #fb923c;"></div>
+                        <span class="text-xs font-semibold" style="color: #fb923c;">Queue</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: rgba(251, 146, 60, 0.1); color: #fb923c;">5</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-3">
+                        <div class="glass-node p-3 cursor-pointer">
+                            <span class="text-sm font-medium">Database migration</span>
+                            <div class="flex items-center gap-2 text-[10px] mt-1" style="color: var(--obsidian-text-muted);">
+                                <span>#0848</span>
+                                <span>—</span>
+                                <span>Backend</span>
+                            </div>
+                        </div>
+                        <div class="glass-node p-3 cursor-pointer">
+                            <span class="text-sm font-medium">API rate limiting</span>
+                            <div class="flex items-center gap-2 text-[10px] mt-1" style="color: var(--obsidian-text-muted);">
+                                <span>#0846</span>
+                                <span>—</span>
+                                <span>DevOps</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Done -->
+                <div class="flex-1 flex flex-col gap-3">
+                    <div class="flex items-center gap-2 pb-2" style="border-bottom: 1px solid rgba(167, 139, 250, 0.2);">
+                        <i data-lucide="check-circle" class="w-4 h-4" style="color: var(--obsidian-accent);"></i>
+                        <span class="text-xs font-semibold" style="color: var(--obsidian-accent);">Done</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: rgba(167, 139, 250, 0.1); color: var(--obsidian-accent);">12</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-2">
+                        <div class="glass-node p-3 cursor-pointer opacity-50">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-medium line-through">Setup CI/CD pipeline</span>
+                                <i data-lucide="check" class="w-4 h-4" style="color: var(--obsidian-accent);"></i>
+                            </div>
+                            <div class="flex items-center gap-2 text-[10px] mt-1" style="color: var(--obsidian-text-muted);">
+                                <span>#0830</span>
+                                <span>—</span>
+                                <span>DevOps</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Panel -->
+        <aside class="w-64 glass-panel border-l border-white/5 p-4 flex flex-col gap-4">
+            <div>
+                <span class="text-xs font-semibold uppercase tracking-wider" style="color: var(--obsidian-text-muted);">Sprint Progress</span>
+            </div>
+            <div class="glass-panel-elevated p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-2xl font-bold" style="color: var(--obsidian-accent);">67%</span>
+                    <span class="text-xs" style="color: var(--obsidian-text-dim);">14/21 tasks</span>
+                </div>
+                <div class="progress-bar h-2">
+                    <div class="progress-fill" style="width: 67%;"></div>
+                </div>
+            </div>
+
+            <div class="glass-divider"></div>
+
+            <div>
+                <span class="text-xs font-semibold uppercase tracking-wider" style="color: var(--obsidian-text-muted);">Team</span>
+            </div>
+            <div class="space-y-2">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background: linear-gradient(135deg, #4ade80, #22c55e); color: #0a0a0c;">JD</div>
+                    <div class="flex-1">
+                        <div class="text-xs font-medium">Jane Doe</div>
+                        <div class="text-[10px]" style="color: var(--obsidian-text-muted);">3 tasks</div>
+                    </div>
+                    <div class="status-indicator pulse-soft" style="background: #4ade80;"></div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background: linear-gradient(135deg, #fb923c, #f97316); color: #0a0a0c;">MK</div>
+                    <div class="flex-1">
+                        <div class="text-xs font-medium">Mike Kim</div>
+                        <div class="text-[10px]" style="color: var(--obsidian-text-muted);">2 tasks</div>
+                    </div>
+                    <div class="status-indicator pulse-soft" style="background: #fb923c;"></div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background: linear-gradient(135deg, var(--obsidian-accent), #8b5cf6); color: #0a0a0c;">SA</div>
+                    <div class="flex-1">
+                        <div class="text-xs font-medium">Sam Ali</div>
+                        <div class="text-[10px]" style="color: var(--obsidian-text-muted);">1 task</div>
+                    </div>
+                    <div class="status-indicator" style="background: var(--obsidian-text-muted);"></div>
+                </div>
+            </div>
+        </aside>
+    </div>
+</body>
+</html>

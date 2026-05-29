@@ -119,6 +119,7 @@ function installDom() {
   global.HTMLElement = dom.window.HTMLElement;
   global.Node = dom.window.Node;
   global.MouseEvent = dom.window.MouseEvent;
+  global.WheelEvent = dom.window.WheelEvent;
 
   return dom;
 }
@@ -428,6 +429,92 @@ describe('FileExplorerEditorPane', () => {
 
     const treeScroll = view.container.querySelector('[data-testid="editor-tree-scroll-region"]');
     expect(treeScroll.classList.contains('overscroll-contain')).toBe(true);
+
+    const readmeNode = await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+    await click(readmeNode);
+
+    const previewScroll = await waitForElement(() =>
+      view.container.querySelector('[data-testid="editor-preview-scroll-region"]')
+    );
+    expect(previewScroll.classList.contains('overscroll-contain')).toBe(true);
+  });
+
+  test('embedded markdown preview exposes a horizontal document rail for narrow docks', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-embedded-preview', local_path: '/workspace/devhub' },
+        workspaceId: 'ws-embedded-preview',
+        embedded: true,
+      })
+    );
+
+    const readmeNode = await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+    await click(readmeNode);
+
+    const previewScroll = await waitForElement(() =>
+      view.container.querySelector('[data-testid="editor-preview-scroll-region"]')
+    );
+    const rail = await waitForElement(() =>
+      view.container.querySelector('[data-testid="editor-document-preview-rail"]')
+    );
+    const horizontalScrollbar = await waitForElement(() =>
+      view.container.querySelector('[data-testid="editor-preview-horizontal-scrollbar"]')
+    );
+    const scrollbarSpacer = horizontalScrollbar.firstElementChild;
+    const markdownShell = view.container.querySelector('.filesystem-markdown-shell--embedded');
+    const markdownPreview = view.container.querySelector('.filesystem-markdown-preview--embedded');
+
+    expect(previewScroll.classList.contains('overflow-x-auto')).toBe(true);
+    expect(rail.classList.contains('filesystem-document-surface--embedded')).toBe(true);
+    expect(horizontalScrollbar).not.toBeNull();
+    expect(scrollbarSpacer).not.toBeNull();
+    expect(markdownShell).not.toBeNull();
+    expect(markdownPreview).not.toBeNull();
+    expect(rail.style.minWidth).toBe(scrollbarSpacer.style.minWidth);
+
+    Object.defineProperty(previewScroll, 'clientWidth', {
+      configurable: true,
+      value: 320,
+    });
+    Object.defineProperty(previewScroll, 'scrollWidth', {
+      configurable: true,
+      value: 960,
+    });
+    Object.defineProperty(horizontalScrollbar, 'clientWidth', {
+      configurable: true,
+      value: 240,
+    });
+    Object.defineProperty(horizontalScrollbar, 'scrollWidth', {
+      configurable: true,
+      value: 720,
+    });
+
+    flushSync(() => {
+      previewScroll.scrollLeft = 160;
+      previewScroll.dispatchEvent(new window.Event('scroll', { bubbles: true }));
+    });
+
+    expect(horizontalScrollbar.scrollLeft).toBe(120);
+
+    flushSync(() => {
+      horizontalScrollbar.scrollLeft = 240;
+      horizontalScrollbar.dispatchEvent(new window.Event('scroll', { bubbles: true }));
+    });
+
+    expect(previewScroll.scrollLeft).toBe(320);
+
+    flushSync(() => {
+      horizontalScrollbar.dispatchEvent(
+        new window.WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          deltaY: 48,
+        })
+      );
+    });
+
+    expect(horizontalScrollbar.scrollLeft).toBe(288);
+    expect(previewScroll.scrollLeft).toBe(384);
   });
 
   test('uses an empty state before any file is selected and avoids mounting monaco eagerly', async () => {

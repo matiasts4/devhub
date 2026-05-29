@@ -35,6 +35,7 @@ import {
   syncWorkspaceCountersMonotonic,
 } from './terminal/workspaceStateHelpers';
 import NotificationCenter from './NotificationCenter';
+import TerminalSettingsModal from './TerminalSettingsModal';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -938,6 +939,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [gridCommand, setGridCommand] = useState('opencode');
   const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
   const [swarmLaunchWizardOpen, setSwarmLaunchWizardOpen] = useState(false);
+  const [terminalSettingsModal, setTerminalSettingsModal] = useState({
+    open: false,
+    panelId: null,
+    sessionId: null,
+    cwd: null,
+    sessionType: 'opencode-durable',
+    restorePolicy: 'manual',
+  });
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
@@ -1260,7 +1269,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
           if (
             action.action === RESTORE_ACTION.RESTORE_READY ||
-            action.action === RESTORE_ACTION.REATTACH_LIVE_TERMINAL
+            action.action === RESTORE_ACTION.REATTACH_LIVE_TERMINAL ||
+            action.action === RESTORE_ACTION.TERMINATED
           ) {
             return;
           }
@@ -3128,6 +3138,68 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       failPendingReopen(panelId);
     };
 
+    // Opens the terminal settings modal when the gear icon is clicked on a suspended panel.
+    const handleTerminalSettingsModalRequested = (e) => {
+      const { panelId } = e.detail || {};
+      if (!panelId) return;
+
+      let sessionId = null;
+      let cwd = null;
+      let sessionType = 'opencode-durable';
+
+      for (const ws of workspacesRef.current) {
+        for (const col of ws.columns) {
+          const panel = col.panels.find((p) => p.id === panelId);
+          if (panel) {
+            cwd = panel.cwd;
+            const sessionMatch = (panel.initialCommand || '').match(/opencode\s+--session\s+([\w-]+)/i);
+            sessionId = sessionMatch ? sessionMatch[1] : null;
+            if ((panel.initialCommand || '').includes('opencode')) {
+              sessionType = 'opencode-durable';
+            } else if ((panel.initialCommand || '').includes('pty')) {
+              sessionType = 'pty-durable';
+            } else {
+              sessionType = 'shell-ephemeral';
+            }
+            break;
+          }
+        }
+        if (sessionId) break;
+      }
+
+      setTerminalSettingsModal({
+        open: true,
+        panelId,
+        sessionId: sessionId || panelId,
+        cwd,
+        sessionType,
+        restorePolicy: 'manual',
+      });
+    };
+
+    // Handles manual session revival triggered by TerminalSettingsModal's "Continuar sesión" CTA.
+    const handleManualReviveRequested = (e) => {
+      const { panelId, sessionId } = e.detail || {};
+      if (!panelId) return;
+
+      const targetSessionId = sessionId || panelId;
+      const newCommand = `opencode --session ${targetSessionId}`;
+
+      setWorkspaces((prev) =>
+        prev.map((ws) => ({
+          ...ws,
+          columns: ws.columns.map((col) => ({
+            ...col,
+            panels: col.panels.map((p) => {
+              if (p.id !== panelId) return p;
+              if (p.initialCommand === newCommand) return p;
+              return { ...p, initialCommand: newCommand };
+            }),
+          })),
+        }))
+      );
+    };
+
     window.addEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
     window.addEventListener('devhub:terminal-exit', handleTerminalExit);
 
@@ -3177,11 +3249,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     };
 
     window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);
+    window.addEventListener('devhub:terminal-settings-modal-requested', handleTerminalSettingsModalRequested);
+    window.addEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
 
     return () => {
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
       window.removeEventListener('devhub:relaunch-panel', handleRelaunchPanel);
+      window.removeEventListener('devhub:terminal-settings-modal-requested', handleTerminalSettingsModalRequested);
+      window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
     };
   }, [failPendingReopen, storage, terminalStateStorageKey]);
 
@@ -3960,6 +4036,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         onLaunch={handleTerminalSwarmLaunch}
         submitState={swarmLaunchSubmitState}
         onSubmitStateChange={setSwarmLaunchSubmitState}
+      />
+
+      <TerminalSettingsModal
+        open={terminalSettingsModal.open}
+        onClose={() => setTerminalSettingsModal((prev) => ({ ...prev, open: false }))}
+        panelId={terminalSettingsModal.panelId}
+        sessionId={terminalSettingsModal.sessionId}
+        sessionType={terminalSettingsModal.sessionType}
+        restorePolicy={terminalSettingsModal.restorePolicy}
+        cwd={terminalSettingsModal.cwd}
       />
     </motion.div>
   );

@@ -101,6 +101,60 @@ describe('normalizeWorkspaceState', () => {
     expect(state.workspaces[0].columns[0].id).toMatch(/^c\d+$/);
     expect(state.workspaces[0].columns[0].panels[0].id).toMatch(/^p\d+$/);
   });
+
+  // WSN-2 / WSN-S4: workspace_label override takes precedence over workspace.name
+  test('uses workspace_label from override before workspace.name', () => {
+    const raw = [
+      {
+        id: 'ws1',
+        name: 'My Workspace',
+        columns: [{ panels: [{ id: 'p1' }] }],
+      },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws1', { ws1: 'p1' }, { ws1: 'swarm-director' });
+    expect(state.workspaces[0].name).toBe('swarm-director');
+    expect(state.workspaces[0].workspace_label).toBe('swarm-director');
+  });
+
+  test('uses stored workspace_label field when no override provided', () => {
+    const raw = [
+      {
+        id: 'ws2',
+        name: 'Raw Name',
+        workspace_label: 'swarm-coder',
+        columns: [{ panels: [{ id: 'p2' }] }],
+      },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws2', { ws2: 'p2' });
+    expect(state.workspaces[0].name).toBe('swarm-coder');
+    expect(state.workspaces[0].workspace_label).toBe('swarm-coder');
+  });
+
+  test('falls back to workspace.name when no workspace_label available', () => {
+    const raw = [
+      {
+        id: 'ws3',
+        name: 'Clean Workspace',
+        columns: [{ panels: [{ id: 'p3' }] }],
+      },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws3', { ws3: 'p3' });
+    expect(state.workspaces[0].name).toBe('Clean Workspace');
+    expect(state.workspaces[0].workspace_label).toBeNull();
+  });
+
+  test('override function receives workspace and index', () => {
+    const raw = [
+      { id: 'ws-a', name: 'Alpha', columns: [{ panels: [{ id: 'p1' }] }] },
+      { id: 'ws-b', name: 'Beta', columns: [{ panels: [{ id: 'p2' }] }] },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws-a', { 'ws-a': 'p1' }, (ws, idx) => {
+      if (ws.swarmRole) return `override-${ws.swarmRole}`;
+      return null;
+    });
+    // First workspace (no swarmRole) falls back to name
+    expect(state.workspaces[0].name).toBe('Alpha');
+  });
 });
 
 describe('normalizeWorkspaceWindows', () => {
