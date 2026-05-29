@@ -1,6 +1,6 @@
 /**
  * @module ModelConsolidator
- * Model alias resolution → opencode-go/minimax-m2.7
+ * Model alias resolution → minimax-coding-plan/MiniMax-M2.7
  * Strict TDD capability detection
  * TDD cycle evidence format for apply-progress
  */
@@ -16,22 +16,22 @@ const fs = require('fs');
 
 const MODEL_ALIAS_MAP = {
   // Unified model for all swarm roles
-  'minimax-2.7': 'opencode-go/minimax-m2.7',
-  'minimax-m2.7': 'opencode-go/minimax-m2.7',
-  'minimax': 'opencode-go/minimax-m2.7',
-  'mm2.7': 'opencode-go/minimax-m2.7',
-  'opencode-minimax': 'opencode-go/minimax-m2.7',
+  'minimax-2.7': 'minimax-coding-plan/MiniMax-M2.7',
+  'minimax-m2.7': 'minimax-coding-plan/MiniMax-M2.7',
+  minimax: 'minimax-coding-plan/MiniMax-M2.7',
+  'mm2.7': 'minimax-coding-plan/MiniMax-M2.7',
+  'opencode-minimax': 'minimax-coding-plan/MiniMax-M2.7',
   // Legacy aliases from existing profiles
-  'claude-sonnet-4-20250514': 'opencode-go/minimax-m2.7',
-  'claude-opus-4-20250514': 'opencode-go/minimax-m2.7',
-  'github-copilot/gpt-5.4-mini': 'opencode-go/minimax-m2.7',
-  'github-copilot/gpt-5.4': 'opencode-go/minimax-m2.7',
+  'claude-sonnet-4-20250514': 'minimax-coding-plan/MiniMax-M2.7',
+  'claude-opus-4-20250514': 'minimax-coding-plan/MiniMax-M2.7',
+  'github-copilot/gpt-5.4-mini': 'minimax-coding-plan/MiniMax-M2.7',
+  'github-copilot/gpt-5.4': 'minimax-coding-plan/MiniMax-M2.7',
   // Generic fallbacks
-  'default': 'opencode-go/minimax-m2.7',
-  'swarm-default': 'opencode-go/minimax-m2.7',
+  default: 'minimax-coding-plan/MiniMax-M2.7',
+  'swarm-default': 'minimax-coding-plan/MiniMax-M2.7',
   // null/undefined handling
-  null: 'opencode-go/minimax-m2.7',
-  undefined: 'opencode-go/minimax-m2.7',
+  null: 'minimax-coding-plan/MiniMax-M2.7',
+  undefined: 'minimax-coding-plan/MiniMax-M2.7',
 };
 
 /**
@@ -56,7 +56,7 @@ function getModelAliases(modelId) {
  * Check if a model ID is the unified model.
  */
 function isUnifiedModel(modelId) {
-  return modelId === 'opencode-go/minimax-m2.7';
+  return modelId === 'minimax-coding-plan/MiniMax-M2.7';
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +175,7 @@ function recordRedPhase(evidence, { taskId, testCode, expectedBehavior }) {
 /**
  * Record a GREEN phase (implementation passes tests).
  */
-function recordGreenPhase(evidence, { taskId, implementation, testsPassed }) {
+function recordGreenPhase(evidence, { taskId: _taskId, implementation, testsPassed }) {
   const lastCycle = evidence.cycles[evidence.cycles.length - 1];
   if (lastCycle && lastCycle.phase === 'RED') {
     lastCycle.implementation = implementation;
@@ -188,7 +188,7 @@ function recordGreenPhase(evidence, { taskId, implementation, testsPassed }) {
 /**
  * Record a REFACTOR phase.
  */
-function recordRefactorPhase(evidence, { taskId, beforeCode, afterCode, reason }) {
+function recordRefactorPhase(evidence, { taskId: _taskId, beforeCode, afterCode, reason }) {
   const lastCycle = evidence.cycles[evidence.cycles.length - 1];
   if (lastCycle && lastCycle.phase === 'GREEN') {
     lastCycle.refactor = { beforeCode, afterCode, reason };
@@ -247,7 +247,14 @@ function formatTDDEvidence(evidence) {
 /**
  * Format a complete apply-progress artifact.
  */
-function formatApplyProgress({ changeName, phase, tasks = [], tddEvidence = null, deviations = [], notes = [] }) {
+function formatApplyProgress({
+  changeName,
+  phase,
+  tasks = [],
+  tddEvidence = null,
+  deviations = [],
+  notes = [],
+}) {
   const lines = [
     `# Apply Progress: ${changeName}`,
     '',

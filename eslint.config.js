@@ -7,6 +7,7 @@ const browserAppFiles = ['src/**/*.{js,jsx,ts,tsx}'];
 const browserAppIgnores = [
   'src/app/api/**',
   'src/lib/db/**/*.js',
+  'src/lib/sdd/**/*.js',
   'src/lib/terminal/**/*.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
@@ -38,6 +39,7 @@ const commonJsAndJestFiles = [
   'scripts/**/*.cjs',
   'tests/**/*.js',
   'src/lib/db/**/*.js',
+  'src/lib/sdd/**/*.js',
   ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
   'src/test-support/**/*.js',

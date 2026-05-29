@@ -197,12 +197,10 @@ Para garantizar la paridad operativa con OpenCode y aprovechar su velocidad en e
 ### Estrategia de Integración y Código Existente
 
 1. **Resolución Unificada de Alias (`ModelConsolidator.js`)**:
-   El sistema consolidará los alias de modelos entrantes (`minimax-2.7`, `minimax-m2.7`, `minimax`, `opencode-minimax`) hacia el identificador canónico `opencode-go/minimax-m2.7`. Esto asegura consistencia en todas las fases de orquestación de la app.
+   El sistema consolidará los alias de modelos entrantes (`minimax-2.7`, `minimax-m2.7`, `minimax`, `opencode-minimax`) hacia el identificador canónico `minimax-coding-plan/MiniMax-M2.7`. Esto asegura consistencia en todas las fases de orquestación de la app.
 
-2. **Ejecución Nativa vía OpenCode CLI (`agenthub/chat/route.js`)**:
-   Cuando el rol activo se resuelva como un agente de la suite, la llamada de chat se delegará a través del cliente local de OpenCode mediante el spawn de terminal:
-   `opencode run --model <model> --format json`
-   Esto permite que el modelo organice el enjambre, acceda a los contextos y herramientas de la terminal, y devuelva la estructura de tokens optimizada.
+2. **Integración Nativa en la Capa del Proveedor**:
+   En lugar de depender de llamadas externas crudas, el modelo se integra directamente a través del plan de suscripción oficial configurado (`minimax-coding-plan`). Esto permite que el motor de ejecución nativo orqueste las llamadas y mantenga el control sobre el timeline operativo sin exponer detalles del wrapper de ejecución.
 
 3. **Foco del Modelo Proveedor**:
    - **Orquestación de Acciones Internas**: Traducir las intenciones del usuario en comandos permitidos, gestionar permisos, y monitorear la ejecución del terminal.

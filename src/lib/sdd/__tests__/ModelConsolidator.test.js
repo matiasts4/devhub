@@ -18,58 +18,62 @@ const {
 
 describe('ModelConsolidator', () => {
   describe('resolveModelAlias()', () => {
-    test('resolves minimax-2.7 to opencode-go/minimax-m2.7', () => {
-      expect(resolveModelAlias('minimax-2.7')).toBe('opencode-go/minimax-m2.7');
+    test('resolves minimax-2.7 to minimax-coding-plan/MiniMax-M2.7', () => {
+      expect(resolveModelAlias('minimax-2.7')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
-    test('resolves minimax-m2.7 to opencode-go/minimax-m2.7', () => {
-      expect(resolveModelAlias('minimax-m2.7')).toBe('opencode-go/minimax-m2.7');
+    test('resolves minimax-m2.7 to minimax-coding-plan/MiniMax-M2.7', () => {
+      expect(resolveModelAlias('minimax-m2.7')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
-    test('resolves minimax to opencode-go/minimax-m2.7', () => {
-      expect(resolveModelAlias('minimax')).toBe('opencode-go/minimax-m2.7');
+    test('resolves minimax to minimax-coding-plan/MiniMax-M2.7', () => {
+      expect(resolveModelAlias('minimax')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
-    test('resolves mm2.7 to opencode-go/minimax-m2.7', () => {
-      expect(resolveModelAlias('mm2.7')).toBe('opencode-go/minimax-m2.7');
+    test('resolves mm2.7 to minimax-coding-plan/MiniMax-M2.7', () => {
+      expect(resolveModelAlias('mm2.7')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
     test('resolves legacy Claude aliases to unified model', () => {
-      expect(resolveModelAlias('claude-sonnet-4-20250514')).toBe('opencode-go/minimax-m2.7');
-      expect(resolveModelAlias('claude-opus-4-20250514')).toBe('opencode-go/minimax-m2.7');
+      expect(resolveModelAlias('claude-sonnet-4-20250514')).toBe(
+        'minimax-coding-plan/MiniMax-M2.7'
+      );
+      expect(resolveModelAlias('claude-opus-4-20250514')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
     test('resolves legacy GPT aliases to unified model', () => {
-      expect(resolveModelAlias('github-copilot/gpt-5.4-mini')).toBe('opencode-go/minimax-m2.7');
-      expect(resolveModelAlias('github-copilot/gpt-5.4')).toBe('opencode-go/minimax-m2.7');
+      expect(resolveModelAlias('github-copilot/gpt-5.4-mini')).toBe(
+        'minimax-coding-plan/MiniMax-M2.7'
+      );
+      expect(resolveModelAlias('github-copilot/gpt-5.4')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
     test('resolves default and swarm-default to unified model', () => {
-      expect(resolveModelAlias('default')).toBe('opencode-go/minimax-m2.7');
-      expect(resolveModelAlias('swarm-default')).toBe('opencode-go/minimax-m2.7');
+      expect(resolveModelAlias('default')).toBe('minimax-coding-plan/MiniMax-M2.7');
+      expect(resolveModelAlias('swarm-default')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
     test('resolves null and undefined to unified model', () => {
-      expect(resolveModelAlias(null)).toBe('opencode-go/minimax-m2.7');
-      expect(resolveModelAlias(undefined)).toBe('opencode-go/minimax-m2.7');
+      expect(resolveModelAlias(null)).toBe('minimax-coding-plan/MiniMax-M2.7');
+      expect(resolveModelAlias(undefined)).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
     test('normalizes and trims input', () => {
-      expect(resolveModelAlias('  MINIMAX-2.7  ')).toBe('opencode-go/minimax-m2.7');
+      expect(resolveModelAlias('  MINIMAX-2.7  ')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
     test('falls back to unified model for unknown aliases', () => {
-      expect(resolveModelAlias('unknown-model-xyz')).toBe('opencode-go/minimax-m2.7');
+      expect(resolveModelAlias('unknown-model-xyz')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
     test('returns MODEL_ALIAS_MAP for reference', () => {
-      expect(MODEL_ALIAS_MAP['minimax-2.7']).toBe('opencode-go/minimax-m2.7');
+      expect(MODEL_ALIAS_MAP['minimax-2.7']).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
   });
 
   describe('getModelAliases()', () => {
     test('returns all aliases for the unified model', () => {
-      const aliases = getModelAliases('opencode-go/minimax-m2.7');
+      const aliases = getModelAliases('minimax-coding-plan/MiniMax-M2.7');
       expect(aliases).toContain('minimax-2.7');
       expect(aliases).toContain('minimax-m2.7');
       expect(aliases).toContain('minimax');
@@ -84,8 +88,8 @@ describe('ModelConsolidator', () => {
   });
 
   describe('isUnifiedModel()', () => {
-    test('returns true for opencode-go/minimax-m2.7', () => {
-      expect(isUnifiedModel('opencode-go/minimax-m2.7')).toBe(true);
+    test('returns true for minimax-coding-plan/MiniMax-M2.7', () => {
+      expect(isUnifiedModel('minimax-coding-plan/MiniMax-M2.7')).toBe(true);
     });
 
     test('returns false for other models', () => {
@@ -118,11 +122,11 @@ describe('ModelConsolidator', () => {
   describe('canImplementTDD()', () => {
     test('returns true for MiniMax 2.7 (unified model)', () => {
       expect(canImplementTDD('minimax-2.7')).toBe(true);
-      expect(canImplementTDD('opencode-go/minimax-m2.7')).toBe(true);
+      expect(canImplementTDD('minimax-coding-plan/MiniMax-M2.7')).toBe(true);
     });
 
     test('returns true for all resolved models (alias resolution unifies to minimax-m2.7)', () => {
-      // All known aliases resolve to opencode-go/minimax-m2.7 which CAN implement TDD
+      // All known aliases resolve to minimax-coding-plan/MiniMax-M2.7 which CAN implement TDD
       expect(canImplementTDD('minimax-2.7')).toBe(true);
       expect(canImplementTDD('claude-sonnet-4-20250514')).toBe(true);
       expect(canImplementTDD('github-copilot/gpt-5.4-mini')).toBe(true);
@@ -135,7 +139,7 @@ describe('ModelConsolidator', () => {
     test('returns capability details for MiniMax 2.7', () => {
       const cap = getTDDCapability('minimax-2.7');
       expect(cap.canImplement).toBe(true);
-      expect(cap.modelId).toBe('opencode-go/minimax-m2.7');
+      expect(cap.modelId).toBe('minimax-coding-plan/MiniMax-M2.7');
       expect(cap.strictTddRequired).toBe(false); // default
     });
 
@@ -211,7 +215,12 @@ describe('ModelConsolidator', () => {
 
     test('recordRefactorPhase does nothing without a GREEN cycle', () => {
       const evidence = createTDDEvidence();
-      recordRefactorPhase(evidence, { taskId: '5.1', beforeCode: 'a', afterCode: 'b', reason: 'r' });
+      recordRefactorPhase(evidence, {
+        taskId: '5.1',
+        beforeCode: 'a',
+        afterCode: 'b',
+        reason: 'r',
+      });
       expect(evidence.cycles.length).toBe(0);
     });
 
@@ -240,7 +249,11 @@ describe('ModelConsolidator', () => {
 
     test('formats evidence with cycles as markdown table', () => {
       const evidence = createTDDEvidence();
-      recordRedPhase(evidence, { taskId: '5.1', testCode: 'test code', expectedBehavior: 'behaves' });
+      recordRedPhase(evidence, {
+        taskId: '5.1',
+        testCode: 'test code',
+        expectedBehavior: 'behaves',
+      });
       recordGreenPhase(evidence, { taskId: '5.1', implementation: 'impl', testsPassed: true });
       completeTDDEvidence(evidence, true);
 
@@ -255,7 +268,12 @@ describe('ModelConsolidator', () => {
       const evidence = createTDDEvidence();
       recordRedPhase(evidence, { taskId: '5.1', testCode: 't', expectedBehavior: 'b' });
       recordGreenPhase(evidence, { taskId: '5.1', implementation: 'i', testsPassed: true });
-      recordRefactorPhase(evidence, { taskId: '5.1', beforeCode: 'a', afterCode: 'b', reason: 'r' });
+      recordRefactorPhase(evidence, {
+        taskId: '5.1',
+        beforeCode: 'a',
+        afterCode: 'b',
+        reason: 'r',
+      });
 
       const formatted = formatTDDEvidence(evidence);
       expect(formatted).toContain('✓'); // refactor is marked
