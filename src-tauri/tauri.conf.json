@@ -45,7 +45,11 @@
     "externalBin": ["binaries/devhub-server"],
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
+        "files": {
+          "../packaging/linux/devhub-launcher": "/usr/lib/DevHub/bin/devhub-launcher",
+          "../packaging/linux/DevHub.desktop": "/usr/share/applications/DevHub.desktop"
+        }
       }
     }
   }
