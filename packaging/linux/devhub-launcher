@@ -1,0 +1,58 @@
+#!/bin/bash
+# DevHub Packaged Launcher
+# Installed to /usr/lib/DevHub/bin/devhub-launcher — desktop app ELF is /usr/bin/devhub
+#
+# This wrapper is the Exec= target for the desktop entry.
+# It sources NVM if available, resolves node/npm, exports DEVHUB_NODE_BIN/NPM_BIN,
+# then execs the desktop app ELF. Detached-friendly: no terminal dependency.
+#
+# IMPORTANT: This script must NEVER be installed to /usr/bin/devhub — that path
+# is reserved for the actual Tauri ELF binary installed by the deb package.
+
+set -e
+
+DEVHUB_APP_ELF="/usr/bin/devhub"
+
+# ── NVM bootstrap ────────────────────────────────────────────────────────────
+# Only source NVM if it looks like a real installation (not empty/missing).
+# On non-interactive desktop sessions (gtk-launch, .desktop Exec), PATH is minimal.
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+    export NVM_DIR="$HOME/.nvm"
+    # shellcheck disable=SC1091
+    \. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
+    # Activate the default NVM node so the wrapper sees a consistent version.
+    nvm use --silent default >/dev/null 2>&1 || true
+fi
+
+# ── Resolve node/npm before forwarding to app ─────────────────────────────────
+# These env vars tell the sidecar which node/npm to use — avoiding bare PATH
+# lookups that can resolve to wrong ABI in mixed nvm/Volta/node-gyt environments.
+
+DEVHUB_NODE_BIN="${DEVHUB_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+DEVHUB_NPM_BIN="${DEVHUB_NPM_BIN:-$(command -v npm 2>/dev/null || true)}"
+
+if [ -z "$DEVHUB_NODE_BIN" ] || [ ! -x "$DEVHUB_NODE_BIN" ]; then
+    DEVHUB_NODE_BIN="/usr/bin/node"
+fi
+if [ -z "$DEVHUB_NPM_BIN" ] || [ ! -x "$DEVHUB_NPM_BIN" ]; then
+    DEVHUB_NPM_BIN="/usr/bin/npm"
+fi
+
+# Detect Node >= 24 resolved intentionally — signal to sidecar not to fallback.
+# When the launcher resolves a Node 24 path (via nvm or direct PATH), the sidecar's
+# select_runtime_node_bin() would otherwise fall back to Node 22 for stability.
+# DEVHUB_ALLOW_NODE24=1 tells it the launcher deliberately chose Node 24; use it.
+if [ -x "$DEVHUB_NODE_BIN" ]; then
+    _node_version=$("$DEVHUB_NODE_BIN" --version 2>/dev/null || true)
+    case "$_node_version" in
+        v24.*|v25.*|v26.*)
+            export DEVHUB_ALLOW_NODE24=1
+            ;;
+    esac
+fi
+
+export DEVHUB_NODE_BIN
+export DEVHUB_NPM_BIN
+
+# ── Launch desktop app ELF with absolute path (detached-friendly) ──────────────
+exec "$DEVHUB_APP_ELF" "$@"
