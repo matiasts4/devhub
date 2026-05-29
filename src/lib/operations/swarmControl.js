@@ -1708,20 +1708,20 @@ export function createSwarmLaunchDraft({
   const sddEnabled = process.env.SDD_ENABLED === 'true';
   const sddPhase = draft.sddPhase || null;
 
-  const DEFAULT_SWARM_MODEL = 'opencode-go/deepseek-v4-flash';
+  const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M2.7';
   const SWARM_ROLE_DEFAULT_MODELS = Object.freeze({
-    director: 'opencode-go/qwen3.6-plus',
-    coder: 'opencode-go/deepseek-v4-flash',
-    builder: 'opencode-go/deepseek-v4-flash',
-    qa: 'opencode-go/deepseek-v4-flash',
-    auditor: 'opencode-go/qwen3.6-plus',
-    reviewer: 'opencode-go/qwen3.6-plus',
-    devops: 'opencode-go/deepseek-v4-flash',
-    recovery_ops: 'opencode-go/deepseek-v4-flash',
-    architect: 'opencode/claude-sonnet-4.6',
-    scout: 'opencode-go/qwen3.5-plus',
-    analyst: 'opencode-go/qwen3.5-plus',
-    evidence: 'opencode-go/qwen3.5-plus',
+    director: 'minimax-coding-plan/MiniMax-M2.7',
+    coder: 'minimax-coding-plan/MiniMax-M2.7',
+    builder: 'minimax-coding-plan/MiniMax-M2.7',
+    qa: 'minimax-coding-plan/MiniMax-M2.7',
+    auditor: 'minimax-coding-plan/MiniMax-M2.7',
+    reviewer: 'minimax-coding-plan/MiniMax-M2.7',
+    devops: 'minimax-coding-plan/MiniMax-M2.7',
+    recovery_ops: 'minimax-coding-plan/MiniMax-M2.7',
+    architect: 'minimax-coding-plan/MiniMax-M2.7',
+    scout: 'minimax-coding-plan/MiniMax-M2.7',
+    analyst: 'minimax-coding-plan/MiniMax-M2.7',
+    evidence: 'minimax-coding-plan/MiniMax-M2.7',
   });
   const defaultRoleModels = topology?.roles
     ? topology.roles.reduce((acc, role) => {
@@ -1884,6 +1884,12 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
  */
 export function buildSwarmLaunchModels() {
   return [
+    {
+      id: 'minimax-coding-plan/MiniMax-M2.7',
+      label: 'MiniMax M2.7',
+      summary: 'Modelo por token plan — óptimo para swarm roles con contratos SDD.',
+      recommended_for: ['director', 'coder', 'builder', 'qa', 'auditor', 'reviewer', 'devops', 'architect', 'explorer', 'scout', 'analyst', 'evidence'],
+    },
     {
       id: 'opencode-go/deepseek-v4-flash',
       label: 'DeepSeek V4 Flash',
