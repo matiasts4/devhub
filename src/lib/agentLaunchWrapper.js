@@ -11,6 +11,7 @@
 
 import { generateAgentSecret, hashToken } from './swarm/auth.js';
 import { provisionAuthToken, getDb } from '@/lib/db/localDb.js';
+import { getLlmProviderConfigSync } from './llmProviderConfig.js';
 
 /**
  * Build the environment variables block for an agent.
@@ -29,6 +30,7 @@ export function buildAgentEnvExports({
   supervisorUrl,
   tmuxSessionName,
   directorSessionName,
+  modelProvider,
 }) {
   const exports = [
     `export DEVHUB_AGENT_ID="${agentId}"`,
@@ -76,6 +78,15 @@ export function buildAgentEnvExports({
         // Token provisioning failed — agent will operate without auth token
         // Middleware will fall back to dual-mode (unauthenticated)
       }
+    }
+  }
+
+  // MINIMAX-1: Inject MiniMax MCP subscription env vars for Zed agents
+  if (modelProvider === 'minimax') {
+    const config = getLlmProviderConfigSync('minimax');
+    if (config) {
+      exports.push(`export ANTHROPIC_BASE_URL="${config.ANTHROPIC_BASE_URL}"`);
+      exports.push(`export ANTHROPIC_MODEL="${config.MINIMAX_MODEL}"`);
     }
   }
 
@@ -374,6 +385,7 @@ export function buildAgentLaunchWrapper({
   directorTmuxSession,
   bootstrapPrompt,
   innerCommand,
+  modelProvider,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',
@@ -409,6 +421,7 @@ export function buildAgentLaunchWrapper({
       supervisorUrl,
       tmuxSessionName,
       directorSessionName: directorTmuxSession,
+      modelProvider,
     }),
     '',
     buildIdentityVerificationBlock({
