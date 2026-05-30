@@ -277,6 +277,11 @@ function buildSwarmLaunchPrograms() {
       label: 'Hermes',
       summary: 'Cliente alternativo para flujos simples o apoyo operativo.',
     },
+    {
+      id: 'zed',
+      label: 'Zed / OpenCode + MiniMax M2.7',
+      summary: 'Zed — Senior Architect con MiniMax M2.7 via OpenCode subscription.',
+    },
   ];
 }
 
@@ -1714,6 +1719,7 @@ export function createSwarmLaunchDraft({
     scout: 'minimax-coding-plan/MiniMax-M2.7',
     analyst: 'minimax-coding-plan/MiniMax-M2.7',
     evidence: 'minimax-coding-plan/MiniMax-M2.7',
+    zed: 'minimax-coding-plan/MiniMax-M2.7',
   });
   const defaultRoleModels = topology?.roles
     ? topology.roles.reduce((acc, role) => {
@@ -1832,6 +1838,7 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
     analyst: 'swarm-explorer',
     recovery_ops: 'swarm-devops',
     evidence: 'swarm-explorer',
+    zed: 'swarm-director',
   };
 
   const profileKey = mapping[roleKey] || 'swarm-coder';
@@ -2255,3 +2262,21 @@ function emptySidebarModel(sessionId) {
 }
 
 export { normalizeMissionControl };
+
+/**
+ * Selects DG bridge observable state from a snapshot.
+ * DG state is managed by useDirectorGeneralBridge; this selector
+ * provides a consistent derivation interface matching the existing pattern.
+ *
+ * @param {Object} snapshot — control room snapshot
+ * @returns {Object} DG observable state subset
+ */
+export function selectDGObservableState(snapshot = {}) {
+  return {
+    activeMissionId: snapshot._dgBridge?.activeMissionId || null,
+    timelineRows: snapshot._dgBridge?.timelineRows || [],
+    pollingState: snapshot._dgBridge?.pollingState || 'idle',
+    pendingApproval: snapshot._dgBridge?.pendingApproval || null,
+    error: snapshot._dgBridge?.error || null,
+  };
+}
