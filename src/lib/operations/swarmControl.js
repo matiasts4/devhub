@@ -461,11 +461,11 @@ function buildActivePrimaryCta(snapshot = {}) {
   }
 
   return {
-    kind: 'anchor',
-    target: 'director-queue',
-    label: 'Continuar desde cola durable',
-    disabled: true,
-    reason: 'No hay foco durable inmediato en este snapshot.',
+    kind: 'action',
+    target: 'terminate-swarm',
+    label: 'Finalizar swarm',
+    disabled: false,
+    reason: null,
   };
 }
 
@@ -670,6 +670,7 @@ function buildLaunchIdentityHealth(snapshot = {}) {
 function buildActiveHero(snapshot = {}) {
   const header = selectControlRoomHeader(snapshot);
   const missionSummary = selectDirectorMissionSummary(snapshot);
+  const missionControl = selectControlRoomMission(snapshot);
   const directorQueue = selectDirectorQueue(snapshot);
   const nextQueueItem = asArray(directorQueue.items)[0] || null;
   const roster = buildActiveRoster(snapshot);
@@ -685,6 +686,7 @@ function buildActiveHero(snapshot = {}) {
     identityHealth,
     roster,
     topology: buildActiveTopology(roster),
+    launchId: missionControl?.mission?.launch_id || missionControl?.mission?.mission_id || null,
     highlights: [
       missionSummary.latestMessageSummary || 'Seguí el foco activo desde la cola durable.',
       nextQueueItem?.title || 'Sin siguiente task durable confirmado.',

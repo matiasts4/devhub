@@ -64,6 +64,11 @@ export default function ActiveSwarmTowerPanel({ hero }) {
             <button
               type="button"
               disabled={hero?.primaryCta?.disabled}
+              onClick={() => {
+                const cta = hero?.primaryCta;
+                if (!cta || cta?.disabled) return;
+                onPrimaryAction?.(cta);
+              }}
               className="w-full disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 ...btnPrimaryStyle({ size: 'lg' }),

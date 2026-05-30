@@ -47,6 +47,7 @@ import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
 import { prepareAgentWorktree } from '@/lib/swarm/agentWorkspaceManager';
 import { terminateSwarmLaunch } from '@/lib/swarm/terminateLaunch';
 import { withAuth } from '@/lib/swarm/withAuth.js';
+import { execSync } from 'child_process';
 
 export const runtime = 'nodejs';
 
@@ -149,12 +150,20 @@ function buildLaunchCommand(
     opencodeAgent: agentProfile,
     modelId,
     tmuxSessionName,
+    // Terminal PTY sessions are already created inside tmux by ttyServer.
+    // Wrapping swarm launches in a second tmux session causes nested attach
+    // failures and the panel exits right after the identity banner.
+    disableTmuxWrap: true,
+    // `opencode --prompt` is non-interactive in current CLI builds. Start the
+    // TUI first and inject the mission prompt into the already-running panel.
+    interactiveBootstrapPrompt: programId === 'opencode',
   });
   return buildAgentLaunchWrapper({
     agentId: `${launchId}-${roleKey}`,
     missionId: launchId,
     role: roleKey,
     workspacePath,
+    bootstrapPrompt: programId === 'opencode' ? prompt : '',
     innerCommand,
   });
 }
@@ -2079,6 +2088,61 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       return NextResponse.json({
         terminate_result: terminateResult,
         control_room_snapshot_input: refreshedSnapshot.control_room_snapshot_input || null,
+      });
+    }
+
+    if (payload?.action === 'prune_all_worktrees') {
+      const repoRoot = String(payload?.repo_root || '').trim();
+      if (!repoRoot) {
+        return NextResponse.json({ error: 'repo_root es requerido.' }, { status: 400 });
+      }
+
+      const { pruneWorktrees, safeRemoveWorktree } = require('@/lib/swarm/cleanup');
+
+      function listWorktreesForPrune(root) {
+        try {
+          const output = execSync('git worktree list --porcelain', {
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+            cwd: root,
+          }).trim();
+          if (!output) return [];
+
+          const worktrees = [];
+          let current = null;
+
+          for (const line of output.split('\n')) {
+            if (line.startsWith('worktree ')) {
+              if (current) worktrees.push(current);
+              current = { path: line.slice('worktree '.length), head: '', branch: '' };
+            } else if (line.startsWith('head ') && current) {
+              current.head = line.slice('head '.length);
+            } else if (line.startsWith('branch ') && current) {
+              current.branch = line.slice('branch '.length);
+            }
+          }
+          if (current) worktrees.push(current);
+          return worktrees;
+        } catch {
+          return [];
+        }
+      }
+
+      const diskWorktrees = listWorktreesForPrune(repoRoot);
+      const devhubWorktrees = diskWorktrees.filter((wt) => wt.path.includes('.devhub/worktrees'));
+
+      const removeResults = [];
+      for (const wt of devhubWorktrees) {
+        const result = safeRemoveWorktree({ repoRoot, worktreePath: wt.path }, { force: true });
+        removeResults.push({ path: wt.path, ...result });
+      }
+
+      const pruneResult = pruneWorktrees(repoRoot);
+
+      return NextResponse.json({
+        worktrees_removed: removeResults,
+        prune_result: pruneResult,
+        summary: `Removed ${removeResults.filter((r) => r.success).length} of ${removeResults.length} worktrees.`,
       });
     }
 

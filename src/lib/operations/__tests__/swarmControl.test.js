@@ -1563,8 +1563,10 @@ describe('composeControlRoomSnapshot', () => {
         mode: 'active',
         hero: expect.objectContaining({
           primaryCta: expect.objectContaining({
-            disabled: true,
-            reason: 'No hay foco durable inmediato en este snapshot.',
+            kind: 'action',
+            target: 'terminate-swarm',
+            label: 'Finalizar swarm',
+            disabled: false,
           }),
         }),
       })

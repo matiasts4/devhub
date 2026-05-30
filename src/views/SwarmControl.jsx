@@ -147,6 +147,8 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [launchDraft, setLaunchDraft] = useState(null);
   const [launchResult, setLaunchResult] = useState(null);
   const [launchSubmitState, setLaunchSubmitState] = useState({ submitting: false, error: null });
+  const [terminateState, setTerminateState] = useState({ submitting: false, error: null });
+  const [pruneState, setPruneState] = useState({ submitting: false, error: null, result: null });
   const eventSourceRef = useRef(null);
   const scheduledLaunchTimersRef = useRef(new Map());
 
@@ -384,9 +386,99 @@ export default function SwarmControl({ snapshotInput = null }) {
           mode: 'template',
         });
       }
+      if (cta?.target === 'terminate-swarm') {
+        handleTerminateSwarmLaunch();
+      }
     },
-    [launchCatalog?.recommended_template_id, openLaunchWizard]
+    [launchCatalog?.recommended_template_id, openLaunchWizard, handleTerminateSwarmLaunch]
   );
+
+  const handleTerminateSwarmLaunch = useCallback(async () => {
+    const launchId = primarySurface?.hero?.launchId;
+    if (!project?.id || !launchId) {
+      setTerminateState({ submitting: false, error: 'No hay swarm activo para finalizar.' });
+      return;
+    }
+
+    setTerminateState({ submitting: true, error: null });
+
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'terminate_swarm_local',
+          project_id: project.id,
+          launch_id: launchId,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo finalizar el swarm.');
+      }
+
+      const nextInput =
+        payload?.control_room_snapshot_input ||
+        payload?.control_room_input ||
+        null;
+      if (nextInput) {
+        writeCachedSwarmSnapshot(project.id, nextInput);
+        mergeFetchedInput(nextInput);
+      } else {
+        try {
+          localStorage.removeItem(getSwarmSnapshotStorageKey(project.id));
+        } catch {
+          // ignore
+        }
+        setFetchedInput(null);
+      }
+
+      setTerminateState({ submitting: false, error: null });
+    } catch (error) {
+      setTerminateState({
+        submitting: false,
+        error: error?.message || 'No se pudo finalizar el swarm.',
+      });
+    }
+  }, [primarySurface, project]);
+
+  const handlePruneAllWorktrees = useCallback(async () => {
+    if (!project?.localPath) {
+      setPruneState({ submitting: false, error: 'Proyecto sin localPath.', result: null });
+      return;
+    }
+
+    setPruneState({ submitting: true, error: null, result: null });
+
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'prune_all_worktrees',
+          repo_root: project.localPath,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudieron podar los worktrees.');
+      }
+
+      setPruneState({
+        submitting: false,
+        error: null,
+        result: payload,
+      });
+    } catch (error) {
+      setPruneState({
+        submitting: false,
+        error: error?.message || 'No se pudieron podar los worktrees.',
+        result: null,
+      });
+    }
+  }, [project]);
 
   const handleLaunchSubmit = useCallback(async () => {
     if (!project?.id) return;
@@ -852,6 +944,38 @@ export default function SwarmControl({ snapshotInput = null }) {
               onDraftChange={updateLaunchDraft}
               onLaunch={handleLaunchSubmit}
             />
+
+            {terminateState.error ? (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {terminateState.error}
+              </div>
+            ) : null}
+
+            {pruneState.result ? (
+              <div className="mt-3 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+                {pruneState.result.summary}
+              </div>
+            ) : pruneState.error ? (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {pruneState.error}
+              </div>
+            ) : null}
+
+            {project?.localPath ? (
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={pruneState.submitting}
+                  onClick={handlePruneAllWorktrees}
+                  className="inline-flex items-center gap-1.5 rounded-sm border border-red-500/30 px-3 py-1.5 text-xs text-red-300 transition-all hover:border-red-400/50 hover:text-red-200 hover:bg-red-500/10 disabled:opacity-40"
+                >
+                  {pruneState.submitting ? 'Podendoting…' : 'Podar todos los worktrees .devhub'}
+                </button>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Elimina todos los worktrees de swarm en este repo
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

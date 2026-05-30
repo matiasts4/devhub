@@ -7,7 +7,7 @@ export default function SwarmPrimarySurface({ surface, onPrimaryAction }) {
   if (surface?.mode === 'active') {
     return (
       <section aria-label="Superficie primaria de swarm">
-        <ActiveSwarmTowerPanel hero={surface.hero} />
+        <ActiveSwarmTowerPanel hero={surface.hero} onPrimaryAction={onPrimaryAction} />
       </section>
     );
   }
