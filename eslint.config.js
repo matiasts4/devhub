@@ -20,6 +20,7 @@ const nodeEsmFiles = [
   'src/app/api/**/*.js',
   'src/lib/terminal/**/*.js',
   'src/lib/operator/**/*.js',
+  'src/lib/directorGeneral/useDirectorGeneralBridge.js',
 ];
 
 const swarmCommonJsFiles = [
@@ -47,7 +48,9 @@ const commonJsAndJestFiles = [
   'src/lib/sdd/**/*.js',
   ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
-  'src/lib/directorGeneral/**/*.js',
+  'src/lib/directorGeneral/polling.js',
+  'src/lib/directorGeneral/timeline.js',
+  'src/lib/directorGeneral/bridge.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',

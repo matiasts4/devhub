@@ -30,6 +30,8 @@ import ApprovalsErrorsPanel from '@/components/control-room/ApprovalsErrorsPanel
 import DiagnosticOverlay from '@/components/control-room/DiagnosticOverlay';
 import MissionKernelPanel from '@/components/control-room/MissionKernelPanel';
 import EvidenceTimelinePanel from '@/components/control-room/EvidenceTimelinePanel';
+import DGObserverSidebar from '@/components/control-room/DGObserverSidebar';
+import { useDirectorGeneralBridge } from '@/lib/directorGeneral';
 import SwarmPrimarySurface from '@/components/control-room/SwarmPrimarySurface';
 import LaunchpadTemplatesPanel from '@/components/control-room/LaunchpadTemplatesPanel';
 import SwarmTypeCatalogPanel from '@/components/control-room/SwarmTypeCatalogPanel';
@@ -39,6 +41,7 @@ import { Button } from '@/components/ui/button';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import ActiveProcessesPanel from '@/components/control-room/ActiveProcessesPanel';
 import StatusSignal from '@/components/ui/StatusSignal';
+import OperatorTimelineFeed from '@/components/OperatorTimeline/OperatorTimelineFeed.jsx';
 import {
   dataTileStyle,
   filterBarStyle,
@@ -150,6 +153,9 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [terminateState, setTerminateState] = useState({ submitting: false, error: null });
   const [pruneState, setPruneState] = useState({ submitting: false, error: null, result: null });
   const eventSourceRef = useRef(null);
+
+  // DG bridge state — reads projectId from context
+  const dg = useDirectorGeneralBridge({ projectId: project?.id });
   const scheduledLaunchTimersRef = useRef(new Map());
 
   useEffect(
@@ -418,10 +424,7 @@ export default function SwarmControl({ snapshotInput = null }) {
         throw new Error(payload?.error || 'No se pudo finalizar el swarm.');
       }
 
-      const nextInput =
-        payload?.control_room_snapshot_input ||
-        payload?.control_room_input ||
-        null;
+      const nextInput = payload?.control_room_snapshot_input || payload?.control_room_input || null;
       if (nextInput) {
         writeCachedSwarmSnapshot(project.id, nextInput);
         mergeFetchedInput(nextInput);
@@ -648,10 +651,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const filteredErrors = useMemo(() => errors.filter(matchesFilter), [errors, matchesFilter]);
 
   return (
-    <div
-      className="h-full flex flex-col core-page-shell"
-      style={getWorkspacePageShellStyle()}
-    >
+    <div className="h-full flex flex-col core-page-shell" style={getWorkspacePageShellStyle()}>
       <div
         className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
         style={getWorkspacePageHeaderStyle()}
@@ -696,66 +696,62 @@ export default function SwarmControl({ snapshotInput = null }) {
               <section aria-label="Launch summary local">
                 <ChromeSurface asChild surface="panel" emphasized>
                   <div className="p-4" style={sectionSurfaceStyle({ emphasized: true })}>
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <p
-                        className="typography-label"
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="typography-label">Launch snapshot durable</p>
+                        <h2 className="mt-2 typography-card-title">
+                          {launchResult.summary?.launchLabel}
+                        </h2>
+                        <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                          {launchResult.summary?.summaryLines?.[4]}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="devhubGlass"
+                        size="toolbar"
+                        onClick={() => openLaunchWizard({ step: 'launch' })}
                       >
-                        Launch snapshot durable
-                      </p>
-                      <h2 className="mt-2 typography-card-title">
-                        {launchResult.summary?.launchLabel}
-                      </h2>
-                      <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {launchResult.summary?.summaryLines?.[4]}
-                      </p>
+                        Reabrir summary
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="devhubGlass"
-                      size="toolbar"
-                      onClick={() => openLaunchWizard({ step: 'launch' })}
-                    >
-                      Reabrir summary
-                    </Button>
-                  </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
-                      <ChromeSurface key={line} asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          {line}
-                        </div>
-                      </ChromeSurface>
-                    ))}
-                  </div>
-
-                  {launchResult.launchTrace ? (
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
-                      <ChromeSurface asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          Strategy · {launchResult.launchTrace.launchStrategy || 'director_first'}
-                        </div>
-                      </ChromeSurface>
-                      <ChromeSurface asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          Bootstrap · {launchResult.launchTrace.bootstrapMode || 'engram_first'}
-                        </div>
-                      </ChromeSurface>
-                      <ChromeSurface asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          Phases · {launchResult.launchTrace.phaseCount || 0} · Memory ·{' '}
-                          {launchResult.launchTrace.memorySnapshotCount || 0}
-                        </div>
-                      </ChromeSurface>
+                      {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
+                        <ChromeSurface key={line} asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            {line}
+                          </div>
+                        </ChromeSurface>
+                      ))}
                     </div>
-                  ) : null}
 
-                  {launchSubmitState.error ? (
-                    <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>
-                      {launchSubmitState.error}
-                    </p>
-                  ) : null}
+                    {launchResult.launchTrace ? (
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <ChromeSurface asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            Strategy · {launchResult.launchTrace.launchStrategy || 'director_first'}
+                          </div>
+                        </ChromeSurface>
+                        <ChromeSurface asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            Bootstrap · {launchResult.launchTrace.bootstrapMode || 'engram_first'}
+                          </div>
+                        </ChromeSurface>
+                        <ChromeSurface asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            Phases · {launchResult.launchTrace.phaseCount || 0} · Memory ·{' '}
+                            {launchResult.launchTrace.memorySnapshotCount || 0}
+                          </div>
+                        </ChromeSurface>
+                      </div>
+                    ) : null}
+
+                    {launchSubmitState.error ? (
+                      <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>
+                        {launchSubmitState.error}
+                      </p>
+                    ) : null}
                   </div>
                 </ChromeSurface>
               </section>
@@ -788,77 +784,94 @@ export default function SwarmControl({ snapshotInput = null }) {
             ) : null}
 
             <ChromeSurface asChild surface="panel">
-              <section
-                className="p-4"
-                style={filterBarStyle()}
-                aria-label="Controles operativos"
-              >
-              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                <div className="flex-1" style={panelStyle()}>
-                  <label className="flex flex-col gap-2 p-3 text-xs font-medium">
-                    <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
-                    <input
-                      aria-label="Filtrar registros"
-                      className="w-full"
-                      style={inputStyle()}
-                      placeholder="agente, workspace, run, evidencia…"
-                      value={filterText}
-                      onChange={(event) => setFilterText(event.target.value)}
-                    />
-                  </label>
+              <section className="p-4" style={filterBarStyle()} aria-label="Controles operativos">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div className="flex-1" style={panelStyle()}>
+                    <label className="flex flex-col gap-2 p-3 text-xs font-medium">
+                      <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
+                      <input
+                        aria-label="Filtrar registros"
+                        className="w-full"
+                        style={inputStyle()}
+                        placeholder="agente, workspace, run, evidencia…"
+                        value={filterText}
+                        onChange={(event) => setFilterText(event.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-2" style={panelStyle()}>
+                    <Button
+                      type="button"
+                      variant={getSwarmControlLayoutButtonVariant(layout, 'grid')}
+                      size="toolbar"
+                      onClick={() => setLayout('grid')}
+                      aria-pressed={layout === 'grid'}
+                    >
+                      Grilla
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={getSwarmControlLayoutButtonVariant(layout, 'stack')}
+                      size="toolbar"
+                      onClick={() => setLayout('stack')}
+                      aria-pressed={layout === 'stack'}
+                    >
+                      Pila
+                    </Button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 p-2" style={panelStyle()}>
-                  <Button
-                    type="button"
-                    variant={getSwarmControlLayoutButtonVariant(layout, 'grid')}
-                    size="toolbar"
-                    onClick={() => setLayout('grid')}
-                    aria-pressed={layout === 'grid'}
+                <div
+                  className="mt-3 flex flex-wrap gap-2 text-xs"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
                   >
-                    Grilla
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={getSwarmControlLayoutButtonVariant(layout, 'stack')}
-                    size="toolbar"
-                    onClick={() => setLayout('stack')}
-                    aria-pressed={layout === 'stack'}
+                    {filteredAgents.length} agentes
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
                   >
-                    Pila
-                  </Button>
+                    {filteredWorkspaces.length} workspaces
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
+                  >
+                    {filteredRuns.length} runs
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
+                  >
+                    {filteredApprovals.length} aprobaciones
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
+                  >
+                    {filteredErrors.length} errores
+                  </ChromeSurface>
                 </div>
-              </div>
-
-              <div
-                className="mt-3 flex flex-wrap gap-2 text-xs"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredAgents.length} agentes
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredWorkspaces.length} workspaces
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredRuns.length} runs
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredApprovals.length} aprobaciones
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredErrors.length} errores
-                </ChromeSurface>
-              </div>
               </section>
             </ChromeSurface>
 
             <section className="space-y-3" aria-label="Operaciones activas">
-              <p
-                className="typography-section-label"
-              >
-                Operaciones activas
-              </p>
+              <p className="typography-section-label">Operaciones activas</p>
               <div
                 className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
               >
@@ -875,6 +888,11 @@ export default function SwarmControl({ snapshotInput = null }) {
                   errors={filteredErrors}
                   mutationState={approvalMutationState}
                   onDecision={handleDirectorDecision}
+                  dgPendingApproval={dg.pendingApproval}
+                  dgMissionId={dg.activeMissionId}
+                  onDGDApprove={dg.onApprove}
+                  onDGDReject={dg.onReject}
+                  dgError={dg.error}
                 />
               </div>
             </section>
@@ -884,11 +902,7 @@ export default function SwarmControl({ snapshotInput = null }) {
             </section>
 
             <section className="space-y-3" aria-label="Mision y evidencia">
-              <p
-                className="typography-section-label"
-              >
-                Mision y evidencia
-              </p>
+              <p className="typography-section-label">Mision y evidencia</p>
               <div
                 className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
               >
@@ -896,16 +910,36 @@ export default function SwarmControl({ snapshotInput = null }) {
                   missionControl={effectiveMissionControl}
                   onComposerSubmit={handleComposerSubmit}
                 />
-                <EvidenceTimelinePanel items={evidenceTimeline} />
+                <div className="flex flex-col gap-3">
+                  <p className="typography-section-label">Evidence</p>
+                  <EvidenceTimelinePanel
+                    items={evidenceTimeline}
+                    dgTimelineRows={dg.timelineRows}
+                  />
+                </div>
+                <div className="flex flex-col gap-3">
+                  <p className="typography-section-label">Timeline</p>
+                  <OperatorTimelineFeed rollup limit={20} />
+                </div>
+                <div className="flex flex-col gap-3">
+                  <p className="typography-section-label">Director General</p>
+                  <DGObserverSidebar
+                    activeMissionId={dg.activeMissionId}
+                    timelineRows={dg.timelineRows}
+                    pollingState={dg.pollingState}
+                    pendingApproval={dg.pendingApproval}
+                    error={dg.error}
+                    lastPollAt={dg.lastPollAt}
+                    retry={dg.retryMission}
+                    onApprove={dg.onApprove}
+                    onReject={dg.onReject}
+                  />
+                </div>
               </div>
             </section>
 
             <section className="space-y-3" aria-label="Inventario operativo">
-              <p
-                className="typography-section-label"
-              >
-                Inventario operativo
-              </p>
+              <p className="typography-section-label">Inventario operativo</p>
               <div
                 className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-3' : 'flex flex-col gap-6'}
               >
