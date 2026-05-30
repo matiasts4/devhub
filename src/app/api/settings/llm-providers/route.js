@@ -37,7 +37,56 @@ async function saveConfig(config) {
   await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
 }
 
-export async function GET() {
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const providerKey = searchParams.get('provider');
+
+  if (providerKey) {
+    const cfg = await loadConfig();
+    const provider = cfg?.providers?.[providerKey];
+    if (!provider) {
+      return NextResponse.json({ error: 'Proveedor no encontrado' }, { status: 404 });
+    }
+    // Individual provider response — consistent format for all providers
+    switch (providerKey) {
+      case 'minimax':
+        return NextResponse.json({
+          id: 'minimax',
+          name: 'MiniMax M2.7',
+          enabled: provider.enabled !== false,
+          status: provider.enabled !== false ? 'active' : 'disabled',
+        });
+      case 'openrouter':
+        return NextResponse.json({
+          id: 'openrouter',
+          name: 'OpenRouter',
+          enabled: !!provider.OPENROUTER_API_KEY,
+          status: provider.OPENROUTER_API_KEY ? 'active' : 'no-api-key',
+        });
+      case 'copilot':
+        return NextResponse.json({
+          id: 'copilot',
+          name: 'GitHub Copilot',
+          enabled: !!provider.COPILOT_OAUTH_TOKEN,
+          status: provider.COPILOT_OAUTH_TOKEN ? 'active' : 'no-token',
+        });
+      case 'opencode':
+        return NextResponse.json({
+          id: 'opencode',
+          name: 'OpenCode',
+          enabled: provider.enabled !== false,
+          status: provider.enabled !== false ? 'active' : 'disabled',
+        });
+      default:
+        return NextResponse.json({
+          id: providerKey,
+          name: providerKey,
+          enabled: provider.enabled !== false,
+          status: provider.enabled !== false ? 'active' : 'disabled',
+        });
+    }
+  }
+
   const cfg = await loadConfig();
   return NextResponse.json(cfg);
 }
