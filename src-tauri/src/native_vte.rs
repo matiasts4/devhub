@@ -1215,17 +1215,18 @@ fn registry_paste_panel(panel_id: &str, text: Option<&str>) -> Result<(), String
             .get(panel_id)
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         match text {
-            // feed_child sends text as raw keystrokes, bypassing GTK clipboard entirely.
-            // This is the correct fallback when VTE's EditableText trait is not available.
-            // Both Ctrl+Shift+V (via JS invoke) and Shift+Insert (via VTE native) end up
-            // calling feed_child with the same clipboard text — the behavior is consistent.
+            // paste_text is a VTE-native paste method (available since VTE 0.68).
+            // It handles bracketed paste mode and throttling correctly, avoiding
+            // the ~5s delay caused by feed_child sending raw keystrokes byte-by-byte.
+            // Both Ctrl+Shift+V (via JS invoke) and Shift+Insert (via VTE native)
+            // now use the same optimized paste path.
             Some(t) => {
                 log::info!(
-                    "[native_vte] registry_paste_panel: feed_child {} bytes into panel '{}'",
+                    "[native_vte] registry_paste_panel: paste_text {} bytes into panel '{}'",
                     t.len(),
                     panel_id
                 );
-                panel.terminal.feed_child(t.as_bytes());
+                panel.terminal.paste_text(t);
             }
             None => {
                 log::info!("[native_vte] registry_paste_panel: paste_clipboard (no text provided) into panel '{}'", panel_id);
