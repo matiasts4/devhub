@@ -3,6 +3,7 @@ import {
   mergeControlRoomStatus,
   normalizeEvidenceRefs,
 } from '@/lib/operations/contracts';
+import { buildPrompt } from '../sdd/SwarmPromptEngine';
 
 export function getSourceByKey(snapshot, key) {
   return snapshot?.sources?.find((source) => source.key === key) || null;
@@ -1824,14 +1825,6 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
     const sddEnabled = process.env.SDD_ENABLED !== 'false';
 
     if (sddEnabled) {
-      // Lazy-load to avoid circular deps
-      let SwarmPromptEngine;
-      try {
-        SwarmPromptEngine = require('../sdd/SwarmPromptEngine');
-      } catch {
-        SwarmPromptEngine = null;
-      }
-
       const vars = {
         change_name: changeName,
         phase,
@@ -1841,9 +1834,7 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
         session_id: '{{session_id}}',
       };
 
-      const prompt = SwarmPromptEngine
-        ? SwarmPromptEngine.buildPrompt(roleKey, phase, vars, { forcePhaseContract: true })
-        : null;
+      const prompt = buildPrompt(roleKey, phase, vars, { forcePhaseContract: true });
 
       return {
         profileKey,

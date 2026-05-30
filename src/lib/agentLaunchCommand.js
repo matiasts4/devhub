@@ -1,4 +1,7 @@
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
+import { buildPrompt } from './sdd/SwarmPromptEngine';
+import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
+import { persistSession } from './sdd/SessionPersistence';
 
 export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
   opencode: '/home/matias/.opencode/bin/opencode',
@@ -15,14 +18,9 @@ export function resolveAgentProgramExecutable(programId = 'hermes') {
 // ---------------------------------------------------------------------------
 
 function buildSddPrompt(prompt, options = {}) {
-  // Lazy-load to avoid circular deps
-  const { buildPrompt } = require('./sdd/SwarmPromptEngine');
-  const { generateSessionId, buildTmuxSessionName } = require('./sdd/sessionIdUtils');
   // SessionPersistence is server-only (uses SQLite). In the browser, persistSession is a no-op.
-  const persistSession =
-    typeof window === 'undefined'
-      ? require('./sdd/SessionPersistence').persistSession
-      : async () => {};
+  const safePersistSession =
+    typeof window === 'undefined' ? persistSession : async () => {};
 
   const {
     role = null,
@@ -52,7 +50,7 @@ function buildSddPrompt(prompt, options = {}) {
   const interpolatedPrompt = buildPrompt(role, phase, vars, { forcePhaseContract: true });
 
   // Persist session async (fire-and-forget)
-  persistSession({
+  safePersistSession({
     sessionId,
     agentId: options.agentId || null,
     missionId,

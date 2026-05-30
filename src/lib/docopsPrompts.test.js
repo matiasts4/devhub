@@ -1,12 +1,12 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import {
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {
   buildDocOpsGateLanguage,
   buildDocOpsGatePrompt,
   buildDocumentationPolicyMetadata,
   buildDocumentationPolicySummary,
   enforceDocOpsGateOnLaunchCommand,
-} from './docopsPrompts.js';
+} = require('./docopsPrompts.js');
 
 test('DocOps gate language includes the shared budget policy', () => {
   const language = buildDocOpsGateLanguage();
