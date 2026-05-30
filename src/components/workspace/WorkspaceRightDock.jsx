@@ -3,6 +3,7 @@
 import FileExplorerEditorPane from './FileExplorerEditorPane';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
+import WorkspaceOperatorObserverPane from './WorkspaceOperatorObserverPane';
 
 export default function WorkspaceRightDock({
   project,
@@ -20,6 +21,7 @@ export default function WorkspaceRightDock({
   const isBrowserActive = dockState.activeTab === 'browser';
   const isEditorActive = dockState.activeTab === 'editor';
   const isSwarmActive = dockState.activeTab === 'swarm';
+  const isOperatorActive = dockState.activeTab === 'operator';
 
   return (
     <section
@@ -27,7 +29,10 @@ export default function WorkspaceRightDock({
       data-testid="workspace-right-dock"
     >
       <div className="flex-1 min-h-0" data-testid="workspace-right-dock-shell">
-        <div className={isBrowserActive ? 'h-full min-h-0' : 'hidden'} aria-hidden={!isBrowserActive}>
+        <div
+          className={isBrowserActive ? 'h-full min-h-0' : 'hidden'}
+          aria-hidden={!isBrowserActive}
+        >
           <WorkspaceBrowserPane
             projectId={project?.id}
             workspaceId={workspaceId}
@@ -54,6 +59,15 @@ export default function WorkspaceRightDock({
             onDockStateChange={onDockStateChange}
           />
         </div>
+
+        {isOperatorActive && (
+          <div className="h-full min-h-0">
+            <WorkspaceOperatorObserverPane
+              sessionId={null}
+              onClose={() => onDockStateChange?.({ activeTab: 'browser' })}
+            />
+          </div>
+        )}
       </div>
     </section>
   );
