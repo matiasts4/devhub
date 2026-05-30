@@ -43,10 +43,16 @@ export async function GET(request) {
     execution_id: searchParams.get('execution_id') || undefined,
     actor_id: searchParams.get('actor_id') || undefined,
     stage: searchParams.get('stage')
-      ? searchParams.get('stage').split(',').map((s) => s.trim())
+      ? searchParams
+          .get('stage')
+          .split(',')
+          .map((s) => s.trim())
       : undefined,
     status: searchParams.get('status')
-      ? searchParams.get('status').split(',').map((s) => s.trim())
+      ? searchParams
+          .get('status')
+          .split(',')
+          .map((s) => s.trim())
       : undefined,
     since: searchParams.get('since') || undefined,
     limit: Math.min(Number(searchParams.get('limit')) || 50, 200),
@@ -73,7 +79,7 @@ export async function POST(request) {
   let body;
   try {
     body = await request.json();
-  } catch (_) {
+  } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
@@ -87,10 +93,7 @@ export async function POST(request) {
 
   for (const { field, label } of requiredFields) {
     if (!body[field]) {
-      return NextResponse.json(
-        { error: `Missing required field: ${label}` },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: `Missing required field: ${label}` }, { status: 400 });
     }
   }
 
@@ -137,7 +140,7 @@ export async function POST(request) {
   setImmediate(() => {
     try {
       purgeOldEntries();
-    } catch (_) {
+    } catch {
       // Non-blocking — do not fail the request on purge error
     }
   });
