@@ -1,6 +1,20 @@
+import fs from 'fs';
+import path from 'path';
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
+
+// Static MiniMax config — read once at module startup (D-2 single source of truth)
+let _minimaxConfig = null;
+export { _minimaxConfig };
+try {
+  const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
+  const raw = fs.readFileSync(configPath, 'utf8');
+  const parsed = JSON.parse(raw);
+  _minimaxConfig = parsed?.providers?.minimax ?? null;
+} catch {
+  _minimaxConfig = null;
+}
 
 export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
   opencode: '/home/matias/.opencode/bin/opencode',
@@ -112,7 +126,15 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
     case 'opencode': {
       // Add --session flag when SDD session is active
       const sessionFlag = sessionId ? ` --session ${sessionId}` : '';
-      if (interactiveBootstrapPrompt) {
+      if (options.role === 'zed') {
+        // MINIMAX-2: Zed routes to OpenCode with MiniMax subscription flags (D-5)
+        const model = _minimaxConfig?.MINIMAX_MODEL ?? 'minimax-coding-plan/MiniMax-M2.7';
+        const baseUrl = _minimaxConfig?.ANTHROPIC_BASE_URL ?? 'https://api.minimax.io/anthropic';
+        const agent = opencodeAgent || 'swarm-director';
+        innerCommand = modelId
+          ? `${executable} --agent ${agent} --model ${modelId} --base-url ${baseUrl}${sessionFlag}`
+          : `${executable} --agent ${agent} --model ${model} --base-url ${baseUrl}${sessionFlag}`;
+      } else if (interactiveBootstrapPrompt) {
         innerCommand = modelId
           ? `${executable} --agent ${opencodeAgent} --model ${modelId}${sessionFlag}`
           : `${executable} --agent ${opencodeAgent}${sessionFlag}`;

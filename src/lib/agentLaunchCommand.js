@@ -7,6 +7,7 @@ import {
   resolveAgentProgramExecutable,
   buildTmuxWrappedCommand as buildTmuxWrappedCommandShared,
   buildAgentLaunchCommand as buildAgentLaunchCommandPure,
+  _minimaxConfig,
 } from './agentLaunchCommand.shared';
 
 // ---------------------------------------------------------------------------
@@ -123,7 +124,15 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
     case 'opencode': {
       // Add --session flag when SDD session is active
       const sessionFlag = sessionId ? ` --session ${sessionId}` : '';
-      if (interactiveBootstrapPrompt) {
+      if (options.role === 'zed') {
+        // MINIMAX-2: Zed routes to OpenCode with MiniMax subscription flags (D-5)
+        const model = _minimaxConfig?.MINIMAX_MODEL ?? 'minimax-coding-plan/MiniMax-M2.7';
+        const baseUrl = _minimaxConfig?.ANTHROPIC_BASE_URL ?? 'https://api.minimax.io/anthropic';
+        const agent = opencodeAgent || 'swarm-director';
+        innerCommand = modelId
+          ? `${executable} --agent ${agent} --model ${modelId} --base-url ${baseUrl}${sessionFlag}`
+          : `${executable} --agent ${agent} --model ${model} --base-url ${baseUrl}${sessionFlag}`;
+      } else if (interactiveBootstrapPrompt) {
         innerCommand = modelId
           ? `${executable} --agent ${opencodeAgent} --model ${modelId}${sessionFlag}`
           : `${executable} --agent ${opencodeAgent}${sessionFlag}`;
