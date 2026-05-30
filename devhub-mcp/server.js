@@ -52,7 +52,6 @@ const {
   parseEvidenceRef,
   validateAgentArtifactInput,
 } = require(fromWorkspaceRoot('src/lib/db/agentRunArtifacts.js'));
-
 const DB_DRIVER = (process.env.DEVHUB_MCP_DB_DRIVER || 'sqlite').toLowerCase();
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY =

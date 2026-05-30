@@ -252,10 +252,44 @@ export function buildHeartbeatLoopCommand({
 _devhub_heartbeat_loop &)`;
 }
 
+/**
+ * Build a background polling loop for pending deliveries.
+ * Runs a subshell that polls operations/health every 60 seconds to get
+ * tasks assigned to this agent via pending_deliveries.
+ * Uses /api/agenthub/operations/health with action=agent_heartbeat.
+ */
+export function buildPendingDeliveriesPollingCommand({ supervisorUrl, agentId, missionId }) {
+  if (!supervisorUrl) {
+    return '# pending_deliveries polling skipped (no supervisor URL)';
+  }
+
+  return `(_devhub_pending_deliveries_loop() {
+  while true; do
+    sleep 60
+    PENDING_RESP=$(curl -s -X POST "\${DEVHUB_SUPERVISOR_URL}/api/agenthub/operations/health" \\
+      -H "Content-Type: application/json" \\
+      -H "X-Agent-Id: ${agentId}" \\
+      -d "{\\"action\\":\\"agent_heartbeat\\",\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"status_summary\\":\\"checking pending deliveries\\"}" 2>&1)
+    if echo "$PENDING_RESP" | grep -q "pending_deliveries"; then
+      COUNT=$(echo "$PENDING_RESP" | grep -o '"pending_deliveries":\\[[^]]*\\]' | grep -o '"delivery_id":"[^"]*"' | wc -l)
+      if [ "$COUNT" -gt 0 ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PENDING_DELIVERIES] Found $COUNT pending deliveries" >> /tmp/devhub-pending-deliveries.log
+        # Log each pending delivery for the agent to pick up
+        echo "$PENDING_RESP" | grep -o '"payload":{[^}]*}' >> /tmp/devhub-pending-deliveries.log 2>&1 || true
+      fi
+    fi
+  done
+}
+_devhub_pending_deliveries_loop &)`;
+}
+
 export function buildDirectorTmuxInjection(directorTmuxSession) {
   if (!directorTmuxSession) {
     return '# _devhub_tell_director skipped (no director tmux session)';
   }
+
+  const match = directorTmuxSession.match(/devhub-swarm-([^-]+)-director/);
+  const launchId = match ? match[1] : 'unknown';
 
   return [
     '# Create a local bin directory for agent helpers',
@@ -273,6 +307,7 @@ export function buildDirectorTmuxInjection(directorTmuxSession) {
     '  exit 0',
     'fi',
     'echo "[$(date \'+%Y-%m-%d %H:%M:%S\')] [DIRECTOR_TELL] Sending to ${DEVHUB_DIRECTOR_SESSION}: $_msg" >> /tmp/devhub-tell-director-debug.log 2>&1',
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [\${DEVHUB_ROLE:-worker}] $_msg" >> "/tmp/devhub-swarm-${launchId}.log" 2>/dev/null || true`,
     'tmux send-keys -t "${DEVHUB_DIRECTOR_SESSION}" "STATUS_UPDATE: $_msg" C-m >/dev/null 2>&1 || true',
     'EOF',
     'chmod +x /tmp/devhub-bin/_devhub_tell_director',
@@ -399,6 +434,12 @@ export function buildAgentLaunchWrapper({
       missionId,
       role,
       workspacePath,
+    }),
+    '',
+    buildPendingDeliveriesPollingCommand({
+      supervisorUrl,
+      agentId,
+      missionId,
     }),
     '',
     buildExitTrapCommand({

@@ -107,7 +107,14 @@ function describeLaunchRole(roleKey = '') {
   );
 }
 
-function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = [] }) {
+function buildLaunchPrompt({
+  role,
+  roleKey,
+  mission,
+  workspacePath,
+  hierarchy = [],
+  launchId = null,
+}) {
   const normalizedRoleKey = String(roleKey || '')
     .trim()
     .toLowerCase();
@@ -131,8 +138,8 @@ function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = 
     ? [
         '',
         '=== Sistema de Status ===',
-        '- Los workers envian status updates via tmux al panel del Director.',
-        '- Escucha estos mensajes en tu pane: STATUS_UPDATE arrive en tiempo real.',
+        `- Los workers envian status updates via tmux y a un log compartido en /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log`,
+        `- Puedes ver los mensajes leyendo ese archivo (ej: cat /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log o tail).`,
         '- NO hagas polling a los workers — los updates llegan automaticamente.',
         '',
         '=== Comportamiento del Director ===',
@@ -149,7 +156,7 @@ function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = 
     ? [
         '',
         '=== Reporte de Status ===',
-        '- Usa _devhub_tell_director para enviar status al Director.',
+        `- Usa _devhub_tell_director para enviar status al Director. Escribe tanto en el tmux del Director como en el log compartido: /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log`,
         '- Eventos: task_start, found_issue, task_complete, needs_help, blocked.',
         '- Ejemplo: _devhub_tell_director "task_start: Implementando feature X"',
         '',
@@ -1019,6 +1026,7 @@ function configureLaunchRole({
     mission: resolvedDraft.mission,
     workspacePath: worktreePath,
     hierarchy: preview.topology?.roles || [],
+    launchId,
   });
   const workspaceLease = prepareAgentWorkspaceLease(
     writeDb,
@@ -2248,7 +2256,8 @@ export const POST = withAuth(async function POST(request, _context, dependencies
           mission_id,
           agent_id,
           workspace_id: workspace_id || null,
-          presence_state: 'active',
+          runtime_surface: LOCAL_SWARM_RUNTIME_SURFACE,
+          presence_state: 'busy',
           status_summary: status_summary || 'heartbeat',
           last_seen_at: now,
           updated_at: now,
