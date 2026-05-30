@@ -427,10 +427,12 @@ function hasActiveSwarm(snapshot = {}) {
   // Check if at least one agent is non-offline (stale counts as potentially live).
   // 'stale' means the agent hasn't pinged recently but is not confirmed dead.
   // Only 'offline' and 'unknown' mean the agent is confirmed gone.
-  const hasNonOfflineAgent = agents.length > 0 && agents.some((agent) => {
-    const status = String(agent.supervisor_state || agent.status || '').toLowerCase();
-    return status !== 'offline' && status !== 'unknown';
-  });
+  const hasNonOfflineAgent =
+    agents.length > 0 &&
+    agents.some((agent) => {
+      const status = String(agent.supervisor_state || agent.status || '').toLowerCase();
+      return status !== 'offline' && status !== 'unknown';
+    });
 
   // If the database has an active mission, but we have agents and ALL are confirmed offline/unknown,
   // then the swarm is actually dead.
@@ -515,9 +517,13 @@ function buildActiveRoster(snapshot = {}) {
   const resolveRosterStatus = (baseStatus, agent, isDirector = false) => {
     const normalizedSupervisorState = String(agent?.supervisor_state || '').toLowerCase();
     const normalizedLiveHintStatus = String(agent?.live_hint?.status || '').toLowerCase();
-    const hasLiveActivity = ['running', 'working', 'active', 'thinking', 'asking_questions'].includes(
-      normalizedLiveHintStatus
-    );
+    const hasLiveActivity = [
+      'running',
+      'working',
+      'active',
+      'thinking',
+      'asking_questions',
+    ].includes(normalizedLiveHintStatus);
 
     if (hasLiveActivity) {
       return normalizedLiveHintStatus;
@@ -559,7 +565,11 @@ function buildActiveRoster(snapshot = {}) {
             id: agent.agent_id || `agent-${index}`,
             label: role,
             role,
-            status: resolveRosterStatus(agent.supervisor_state || 'active', agent, /director/i.test(role)),
+            status: resolveRosterStatus(
+              agent.supervisor_state || 'active',
+              agent,
+              /director/i.test(role)
+            ),
             isDirector: /director/i.test(role),
             workspaceId: agent.workspace_id || null,
             runId: agent.run_id || null,
@@ -1685,7 +1695,9 @@ export function createSwarmLaunchDraft({
   // Phase 2: SDD integration — detect if SDD mode is active
   // Wizard checkbox sets draft.sddEnabled; default is TRUE (SDD enabled)
   // Env var SDD_ENABLED='false' can explicitly disable for CLI usage
-  const sddEnabled = draft.sddEnabled === true || (draft.sddEnabled === undefined && process.env.SDD_ENABLED !== 'false');
+  const sddEnabled =
+    draft.sddEnabled === true ||
+    (draft.sddEnabled === undefined && process.env.SDD_ENABLED !== 'false');
   const sddPhase = draft.phase || null;
 
   const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M2.7';
@@ -1722,7 +1734,8 @@ export function createSwarmLaunchDraft({
     bootstrapMode: bootstrapMode?.id || 'engram_first',
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
-    roleModels: Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
+    roleModels:
+      Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
     mission: draft.mission ?? template?.default_mission ?? '',
     // Phase 2: SDD options — pass sddEnabled + sddPhase to buildAgentLaunchCommand
     // Also expose sddEnabled at top level for SwarmLaunchWizardModal checkbox binding
@@ -1747,7 +1760,10 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
     resolvedCatalog.launch_strategies,
     resolvedDraft.launchStrategy
   );
-  const bootstrapMode = findRecordById(resolvedCatalog.bootstrap_modes, resolvedDraft.bootstrapMode);
+  const bootstrapMode = findRecordById(
+    resolvedCatalog.bootstrap_modes,
+    resolvedDraft.bootstrapMode
+  );
   const topology = team?.topology || template?.topology || swarmType?.topology || null;
   const rolePrograms = buildRoleProgramPreview(
     topology,
@@ -1860,7 +1876,20 @@ export function buildSwarmLaunchModels() {
       id: 'minimax-coding-plan/MiniMax-M2.7',
       label: 'MiniMax M2.7',
       summary: 'Modelo por token plan — óptimo para swarm roles con contratos SDD.',
-      recommended_for: ['director', 'coder', 'builder', 'qa', 'auditor', 'reviewer', 'devops', 'architect', 'explorer', 'scout', 'analyst', 'evidence'],
+      recommended_for: [
+        'director',
+        'coder',
+        'builder',
+        'qa',
+        'auditor',
+        'reviewer',
+        'devops',
+        'architect',
+        'explorer',
+        'scout',
+        'analyst',
+        'evidence',
+      ],
     },
     {
       id: 'opencode-go/deepseek-v4-flash',
@@ -1895,6 +1924,333 @@ export function selectSwarmControlPrimarySurface(snapshot = {}) {
   return {
     mode,
     hero: mode === 'active' ? buildActiveHero(snapshot) : buildIdleHero(snapshot),
+  };
+}
+
+/**
+ * Builds a FeedItem from a mission_messages row.
+ * message_kind 'directive'    → operator-prompt
+ * message_kind 'status'        → agent-reply  (sender is an agent)
+ * Other kinds are excluded from the transcript feed.
+ */
+function missionMessageToFeedItem(row) {
+  if (!row || !row.message_id) return null;
+  const isOperator = row.message_kind === 'directive';
+  const isAgent = row.message_kind === 'status';
+  if (!isOperator && !isAgent) return null;
+
+  return {
+    id: `msg:${row.message_id}`,
+    type: isOperator ? 'operator-prompt' : 'agent-reply',
+    role: isOperator ? 'operator' : 'agent',
+    text: row.body_summary || '',
+    timestamp: row.created_at || null,
+    occurredAt: row.created_at || null,
+  };
+}
+
+/**
+ * Builds a FeedItem from an agent_events row (action-executed).
+ */
+function agentEventToFeedItem(row) {
+  if (!row || !row.id) return null;
+  let status = 'running';
+  let completedAt = null;
+  let error = null;
+
+  if (row.event_type === 'task_completed') {
+    status = 'done';
+    completedAt = row.created_at || null;
+  } else if (row.event_type === 'crash_detected' || row.event_type === 'heartbeat_missed') {
+    status = 'failed';
+    completedAt = row.created_at || null;
+    try {
+      const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+      error = payload?.error || payload?.reason || 'Execution failed';
+    } catch {
+      error = 'Execution failed';
+    }
+  }
+
+  let argsSummary = '';
+  try {
+    const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+    argsSummary = payload?.summary || payload?.next_action || payload?.tool_name || '';
+  } catch {
+    argsSummary = '';
+  }
+
+  return {
+    id: `action:${row.id}`,
+    type: 'action-executed',
+    tool: row.event_type || 'unknown',
+    argsSummary: String(argsSummary).slice(0, 120),
+    startedAt: row.created_at || null,
+    completedAt,
+    status,
+    error,
+    occurredAt: row.created_at || null,
+  };
+}
+
+/**
+ * Derives progress step items from agent_events task transitions.
+ * Returns { progressItems, currentStepIndex, totalSteps }
+ */
+function deriveProgressFromEvents(eventRows = []) {
+  const taskEvents = eventRows
+    .filter((e) =>
+      ['task_started', 'task_progress', 'task_completed', 'needs_help', 'crash_detected'].includes(
+        e.event_type
+      )
+    )
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+
+  if (taskEvents.length === 0) {
+    return { progressItems: [], currentStepIndex: -1, totalSteps: 0 };
+  }
+
+  const progressItems = [];
+  let stepIndex = 0;
+  let currentStepIndex = -1;
+
+  for (const event of taskEvents) {
+    stepIndex += 1;
+    let item = null;
+
+    if (event.event_type === 'task_started' || event.event_type === 'task_progress') {
+      let stepLabel = `Step ${stepIndex}`;
+      try {
+        const payload = JSON.parse(event.payload_json || '{}');
+        stepLabel = payload?.summary || payload?.next_action || `Step ${stepIndex}`;
+      } catch {
+        /* use default */
+      }
+
+      item = {
+        id: `progress:${event.id}`,
+        type: 'progress-active',
+        stepIndex,
+        totalSteps: stepIndex, // will be updated when total is known
+        stepLabel,
+        occurredAt: event.created_at || null,
+      };
+      currentStepIndex = stepIndex - 1; // 0-based index of active item
+    } else if (event.event_type === 'task_completed') {
+      let stepLabel = `Step ${stepIndex}`;
+      try {
+        const payload = JSON.parse(event.payload_json || '{}');
+        stepLabel = payload?.summary || payload?.next_action || `Step ${stepIndex}`;
+      } catch {
+        /* use default */
+      }
+
+      item = {
+        id: `progress:${event.id}`,
+        type: 'progress-done',
+        stepIndex,
+        totalSteps: stepIndex,
+        stepLabel,
+        completedAt: event.created_at || null,
+        occurredAt: event.created_at || null,
+      };
+    } else if (event.event_type === 'needs_help' || event.event_type === 'crash_detected') {
+      let stepLabel = `Step ${stepIndex}`;
+      let errorMsg = 'Step encountered an error';
+      try {
+        const payload = JSON.parse(event.payload_json || '{}');
+        stepLabel = payload?.summary || payload?.next_action || `Step ${stepIndex}`;
+        errorMsg = payload?.error || payload?.reason || errorMsg;
+      } catch {
+        /* use default */
+      }
+
+      item = {
+        id: `progress:${event.id}`,
+        type: 'progress-failed',
+        stepIndex,
+        totalSteps: stepIndex,
+        stepLabel,
+        error: errorMsg,
+        occurredAt: event.created_at || null,
+      };
+    }
+
+    if (item) progressItems.push(item);
+  }
+
+  // Update totalSteps on all progress-active items
+  const totalSteps = progressItems.length;
+  progressItems.forEach((item) => {
+    if (item.type === 'progress-active') {
+      item.totalSteps = totalSteps;
+    }
+  });
+
+  return { progressItems, currentStepIndex, totalSteps };
+}
+
+/**
+ * getOperatorSidebarModel — returns the operator observer sidebar feed model.
+ *
+ * @param {Object} opts
+ * @param {string|null} opts.sessionId  — run_id of the active mission session
+ * @param {string|null} opts.watermark — last seen occurredAt; returns only newer items if set
+ * @param {number}     opts.limit      — max items per load (default 200)
+ * @param {Function}  opts.fetchImpl   — fetch implementation (for test injection)
+ */
+export async function getOperatorSidebarModel({
+  sessionId = null,
+  watermark = null,
+  limit = 200,
+  fetchImpl = fetch,
+} = {}) {
+  try {
+    const base =
+      typeof window !== 'undefined' && window.location
+        ? window.location.origin
+        : 'http://localhost';
+
+    // Fetch the control room snapshot which contains mission + events
+    const response = await fetchImpl(
+      `${base}/api/agenthub/operations/health?project_id=&_sidebar=1`,
+      { cache: 'no-store' }
+    );
+
+    if (!response.ok) {
+      return emptySidebarModel(sessionId);
+    }
+
+    const payload = await response.json();
+    const input =
+      payload.control_room_input ||
+      payload.control_room_snapshot_input ||
+      payload.control_room ||
+      null;
+
+    if (!input) return emptySidebarModel(sessionId);
+
+    const missionControl = input.mission_control || {};
+    const mission = missionControl.mission || null;
+
+    // Resolve active mission
+    let activeMission = null;
+    if (mission?.mission_id) {
+      if (!sessionId || mission.run_id === sessionId || mission.mission_id === sessionId) {
+        activeMission = mission;
+      }
+    }
+
+    if (!activeMission) {
+      return emptySidebarModel(sessionId);
+    }
+
+    const missionId = activeMission.mission_id;
+
+    // Fetch messages + events for this mission via the events API
+    const [messagesResp, eventsResp] = await Promise.all([
+      fetchImpl(
+        `${base}/api/agenthub/events?mission_id=${encodeURIComponent(missionId)}&limit=${limit}`,
+        { cache: 'no-store' }
+      ),
+      fetchImpl(
+        `${base}/api/agenthub/events?mission_id=${encodeURIComponent(missionId)}&event_type=&limit=${limit}`,
+        { cache: 'no-store' }
+      ),
+    ]);
+
+    let messages = [];
+    let events = [];
+
+    if (messagesResp.ok) {
+      const msgPayload = await messagesResp.json();
+      messages = msgPayload.events || [];
+    }
+    if (eventsResp.ok) {
+      const evtPayload = await eventsResp.json();
+      events = evtPayload.events || [];
+    }
+
+    // Filter by watermark if provided
+    const items = [];
+    const allRaw = [
+      ...messages.map((m) => ({ ...m, _kind: 'message' })),
+      ...events.map((e) => ({ ...e, _kind: 'event' })),
+    ];
+
+    for (const raw of allRaw) {
+      const occurredAt = raw.created_at || raw.occurred_at || null;
+      if (watermark && occurredAt && occurredAt <= watermark) continue;
+
+      if (raw._kind === 'message') {
+        const item = missionMessageToFeedItem(raw);
+        if (item) items.push(item);
+      } else {
+        const item = agentEventToFeedItem(raw);
+        if (item) items.push(item);
+      }
+    }
+
+    // Derive progress from events
+    const { progressItems } = deriveProgressFromEvents(events);
+    items.push(...progressItems);
+
+    // Sort by occurredAt ascending
+    items.sort((a, b) => {
+      const ta = a.occurredAt ? Date.parse(a.occurredAt) : 0;
+      const tb = b.occurredAt ? Date.parse(b.occurredAt) : 0;
+      return ta - tb;
+    });
+
+    // Apply limit
+    const hasMore = items.length > limit;
+    const feedItems = items.slice(0, limit);
+
+    // Compute watermark from last item
+    const lastItem = feedItems[feedItems.length - 1] || null;
+    const computedWatermark = lastItem?.occurredAt || null;
+
+    // Derive current progress summary
+    const activeProgress = progressItems.find((p) => p.type === 'progress-active') || null;
+    const progress = activeProgress
+      ? {
+          currentStep: activeProgress.stepIndex,
+          totalSteps: activeProgress.totalSteps,
+          stepLabel: activeProgress.stepLabel,
+          status: 'running',
+        }
+      : progressItems.length > 0
+        ? {
+            currentStep: progressItems[progressItems.length - 1].stepIndex,
+            totalSteps: progressItems[progressItems.length - 1].totalSteps,
+            stepLabel: progressItems[progressItems.length - 1].stepLabel,
+            status:
+              progressItems[progressItems.length - 1].type === 'progress-failed'
+                ? 'failed'
+                : 'done',
+          }
+        : null;
+
+    return {
+      sessionId: missionId,
+      feedItems,
+      progress,
+      watermark: computedWatermark,
+      hasMore,
+    };
+  } catch (err) {
+    console.error('[getOperatorSidebarModel]', err.message);
+    return emptySidebarModel(sessionId);
+  }
+}
+
+function emptySidebarModel(sessionId) {
+  return {
+    sessionId: sessionId || null,
+    feedItems: [],
+    progress: null,
+    watermark: null,
+    hasMore: false,
   };
 }
 
