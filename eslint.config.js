@@ -9,13 +9,18 @@ const browserAppIgnores = [
   'src/lib/db/**/*.js',
   'src/lib/sdd/**/*.js',
   'src/lib/terminal/**/*.js',
+  'src/lib/operator/**/*.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',
   'src/**/__tests__/**',
 ];
 
-const nodeEsmFiles = ['src/app/api/**/*.js', 'src/lib/terminal/**/*.js'];
+const nodeEsmFiles = [
+  'src/app/api/**/*.js',
+  'src/lib/terminal/**/*.js',
+  'src/lib/operator/**/*.js',
+];
 
 const swarmCommonJsFiles = [
   'src/lib/swarm/agentWorkspaceManager.js',
