@@ -1,6 +1,8 @@
 'use client';
 
+import PropTypes from 'prop-types';
 import FileExplorerEditorPane from './FileExplorerEditorPane';
+import OperatorActionCard from '@/components/workspace/OperatorActionCard';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 import WorkspaceOperatorObserverPane from './WorkspaceOperatorObserverPane';
@@ -17,7 +19,15 @@ export default function WorkspaceRightDock({
   onWorkspaceWindowSelect,
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
+  executionCards,
+  onCardConfirm,
+  onCardCancel,
 }) {
+  WorkspaceRightDock.propTypes = {
+    executionCards: PropTypes.array,
+    onCardConfirm: PropTypes.func,
+    onCardCancel: PropTypes.func,
+  };
   const isBrowserActive = dockState.activeTab === 'browser';
   const isEditorActive = dockState.activeTab === 'editor';
   const isSwarmActive = dockState.activeTab === 'swarm';
@@ -69,6 +79,23 @@ export default function WorkspaceRightDock({
           </div>
         )}
       </div>
+
+      {/* Operator action cards — always visible, below tab content */}
+      {(executionCards?.length ?? 0) > 0 && (
+        <div className="border-t border-[var(--border-subtle)] p-3">
+          <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
+            Operator Actions
+          </div>
+          {executionCards.map((card) => (
+            <OperatorActionCard
+              key={card.id}
+              card={card}
+              onConfirm={onCardConfirm}
+              onCancel={onCardCancel}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

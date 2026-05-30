@@ -48,6 +48,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { formatDistanceToNow } from 'date-fns';
 import WorkspaceRightDock from './workspace/WorkspaceRightDock';
+import useOperatorActions from './workspace/hooks/useOperatorActions';
 import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
 import {
@@ -1923,6 +1924,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return sanitizeRightDockState(resolvedState);
     });
   }, []);
+
+  // Operator action cards — execution cards + confirmation/cancel handlers wired into the dock
+  const {
+    cards: operatorCards,
+    dispatchAction,
+    confirmCard,
+    cancelCard,
+  } = useOperatorActions({ onDockStateChange: updateRightDockState });
+
+  const handleOperatorAction = useCallback(
+    (verb, params) => dispatchAction(verb, params),
+    [dispatchAction]
+  );
 
   const updateBrowserWindowState = useCallback((wsId, nextValue) => {
     if (!wsId) return;
@@ -4214,6 +4228,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 onWorkspaceWindowRemove={(windowId) =>
                   removeWindowFromWorkspace(activeWorkspace.id, windowId)
                 }
+                executionCards={operatorCards}
+                onCardConfirm={confirmCard}
+                onCardCancel={cancelCard}
               />
               {isDraggingDock ? (
                 <div
