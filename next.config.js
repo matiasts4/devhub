@@ -36,10 +36,10 @@ const nextConfig = {
       { protocol: 'https', hostname: 'api.qrserver.com' },
     ],
   },
-  // Clean URLs for Tauri (Tauri abre http://localhost:3000, no archivos estáticos)
-  trailingSlash: true,
-  // Keep /api/* endpoints slashless; redirecting to /api/*/ breaks app router API handlers.
-  skipTrailingSlashRedirect: true,
+  // Tauri serves from Next standalone; keep slash behavior neutral
+  // to avoid double-slash redirects that break the proxy rewrite chain.
+  trailingSlash: false,
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   serverExternalPackages: ['node-pty', 'ws', 'better-sqlite3'],
   output: 'standalone',
   // Next.js 16: Turbopack es el bundler por defecto

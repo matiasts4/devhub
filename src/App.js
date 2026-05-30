@@ -34,6 +34,8 @@ import {
   applyZoomToDocument,
   getStoredZoom,
   setZoom,
+  getStoredTerminalHeaderStyle,
+  getStoredTerminalAccentBarVisible,
 } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
@@ -105,6 +107,28 @@ function WorkspaceLayout() {
     return () => window.removeEventListener('devhub:toggle-maximize', handleMaximizeToggle);
   }, []);
 
+  // Sync terminal-view attribute on html for CSS targeting
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (isTerminalRoute) {
+      document.documentElement.setAttribute('data-terminal-view', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-terminal-view');
+    }
+  }, [isTerminalRoute]);
+
+  // Apply terminal zone appearance (header style + accent bar) on mount.
+  // Uses 'dragon' as default if no stored preference exists.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const headerStyle = getStoredTerminalHeaderStyle();
+    const accentBarVisible = getStoredTerminalAccentBarVisible();
+    const container = document.querySelector('[data-terminal-container]');
+    if (!container) return;
+    container.setAttribute('data-terminal-header-style', headerStyle);
+    container.setAttribute('data-terminal-accent-bar', String(accentBarVisible));
+  }, []);
+
   useEffect(() => {
     if (!projectId || !uiPrefsReady) return;
     saveUIPref(projectId, 'sidebarCollapsed', collapsed);
@@ -170,7 +194,9 @@ function WorkspaceLayout() {
     <div
       className="relative flex h-screen overflow-hidden bg-surface-app text-text-primary flex-col"
       style={{
-        ...getWorkspaceShellChromeStyle(),
+        ...(isTerminalRoute
+          ? { borderWidth: 0, boxShadow: 'none' }
+          : getWorkspaceShellChromeStyle()),
         borderRadius: '22px',
       }}
     >
@@ -205,6 +231,8 @@ function WorkspaceLayout() {
           {/* Persistent Terminal IDE Container */}
           <div
             className="absolute inset-0 z-10 bg-[#0d0d0d]"
+            data-terminal-container
+            data-terminal-view={isTerminalRoute ? 'true' : undefined}
             style={{ ...getWorkspaceShellChromeStyle(), display: isTerminalRoute ? 'block' : 'none' }}
           >
             {project && (

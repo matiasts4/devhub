@@ -146,26 +146,40 @@ function buildLaunchCommand(
 ) {
   const agentProfile = roleKey ? buildRoleAgentProfile(roleKey) : 'sdd-orchestrator';
   const tmuxSessionName = launchId && roleKey ? `devhub-swarm-${launchId}-${roleKey}` : null;
+  
+  console.log(`[SWARM_LAUNCH_CMD] Building command for role: ${roleKey}`);
+  console.log(`[SWARM_LAUNCH_CMD] Agent profile: ${agentProfile}`);
+  console.log(`[SWARM_LAUNCH_CMD] TMUX session: ${tmuxSessionName}`);
+  console.log(`[SWARM_LAUNCH_CMD] Model: ${modelId}`);
+  console.log(`[SWARM_LAUNCH_CMD] Program: ${programId}`);
+  console.log(`[SWARM_LAUNCH_CMD] Prompt length: ${prompt?.length || 0} chars`);
+  
   const innerCommand = buildAgentLaunchCommand(programId, prompt, {
     opencodeAgent: agentProfile,
     modelId,
     tmuxSessionName,
-    // Terminal PTY sessions are already created inside tmux by ttyServer.
-    // Wrapping swarm launches in a second tmux session causes nested attach
-    // failures and the panel exits right after the identity banner.
-    disableTmuxWrap: true,
     // `opencode --prompt` is non-interactive in current CLI builds. Start the
     // TUI first and inject the mission prompt into the already-running panel.
     interactiveBootstrapPrompt: programId === 'opencode',
   });
-  return buildAgentLaunchWrapper({
+  
+  console.log(`[SWARM_LAUNCH_CMD] Inner command: ${innerCommand}`);
+  
+  const wrapper = buildAgentLaunchWrapper({
     agentId: `${launchId}-${roleKey}`,
     missionId: launchId,
     role: roleKey,
     workspacePath,
+    tmuxSessionName,
     bootstrapPrompt: programId === 'opencode' ? prompt : '',
     innerCommand,
   });
+  
+  console.log(`[SWARM_LAUNCH_CMD] Wrapper length: ${wrapper.length} chars`);
+  console.log(`[SWARM_LAUNCH_CMD] Has bootstrap prompt: ${wrapper.includes('DEVHUB_BOOTSTRAP')}`);
+  console.log(`[SWARM_LAUNCH_CMD] Has DEVHUB_TMUX_SESSION export: ${wrapper.includes('DEVHUB_TMUX_SESSION')}`);
+  
+  return wrapper;
 }
 
 function summarizeLaunchPrompt(prompt = '', maxLength = 240) {
