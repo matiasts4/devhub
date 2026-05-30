@@ -8,7 +8,16 @@
 
 'use strict';
 
-const SDD_PHASES = ['sdd-explore', 'sdd-propose', 'sdd-spec', 'sdd-design', 'sdd-tasks', 'sdd-apply', 'sdd-verify', 'sdd-archive'];
+const SDD_PHASES = [
+  'sdd-explore',
+  'sdd-propose',
+  'sdd-spec',
+  'sdd-design',
+  'sdd-tasks',
+  'sdd-apply',
+  'sdd-verify',
+  'sdd-archive',
+];
 
 // Phase contract mapping per role
 const PHASE_CONTRACTS = {
@@ -16,7 +25,8 @@ const PHASE_CONTRACTS = {
     executable: ['sdd-explore', 'sdd-propose', 'sdd-design'],
     delegatable: ['sdd-spec', 'sdd-tasks', 'sdd-apply', 'sdd-verify', 'sdd-archive'],
     contextBudget: 8000,
-    reactivationContract: 'Re-resolve {{mission_id}} and continue from last checkpoint. Check session_id for prior context.',
+    reactivationContract:
+      'Re-resolve {{mission_id}} and continue from last checkpoint. Check session_id for prior context.',
   },
   architect: {
     executable: ['sdd-design'],
@@ -28,19 +38,22 @@ const PHASE_CONTRACTS = {
     executable: ['sdd-apply'],
     delegatable: [],
     contextBudget: 8000,
-    reactivationContract: 'Resume sdd-apply with spec/design artifacts from {{artifacts}}. Session {{session_id}}.',
+    reactivationContract:
+      'Resume sdd-apply with spec/design artifacts from {{artifacts}}. Session {{session_id}}.',
   },
   explorer: {
     executable: ['sdd-explore'],
     delegatable: [],
     contextBudget: 8000,
-    reactivationContract: 'Resume sdd-explore for {{change_name}}. Produce summary handoff (200-400 tokens).',
+    reactivationContract:
+      'Resume sdd-explore for {{change_name}}. Produce summary handoff (200-400 tokens).',
   },
   qa: {
     executable: ['sdd-verify'],
     delegatable: [],
     contextBudget: 8000,
-    reactivationContract: 'Resume sdd-verify. Audit artifacts from {{artifacts}} for phase {{phase}}.',
+    reactivationContract:
+      'Resume sdd-verify. Audit artifacts from {{artifacts}} for phase {{phase}}.',
   },
   reviewer: {
     executable: ['sdd-verify'],
@@ -52,13 +65,34 @@ const PHASE_CONTRACTS = {
     executable: ['sdd-apply'],
     delegatable: ['sdd-archive'],
     contextBudget: 8000,
-    reactivationContract: 'Resume worktree management. Sync phase {{phase}} on branch {{session_id}}.',
+    reactivationContract:
+      'Resume worktree management. Sync phase {{phase}} on branch {{session_id}}.',
   },
   auditor: {
     executable: ['sdd-verify', 'sdd-archive'],
     delegatable: [],
     contextBudget: 8000,
-    reactivationContract: 'Resume cross-phase audit for {{change_name}}. Check all artifact phases.',
+    reactivationContract:
+      'Resume cross-phase audit for {{change_name}}. Check all artifact phases.',
+  },
+  zed: {
+    executable: [
+      'sdd-explore',
+      'sdd-propose',
+      'sdd-spec',
+      'sdd-design',
+      'sdd-tasks',
+      'sdd-apply',
+      'sdd-verify',
+      'sdd-archive',
+    ],
+    delegatable: ['sdd-tasks', 'sdd-apply', 'sdd-verify', 'sdd-archive'],
+    contextBudget: 8000,
+    reactivationContract:
+      "mem_search('sdd/{{change_name}}/director-log') → " +
+      'mem_get_observation on last artifact + apply-progress',
+    model: 'minimax-coding-plan/MiniMax-M2.7',
+    provider: 'minimax',
   },
 };
 
@@ -76,14 +110,34 @@ function interpolate(template, vars = {}) {
 }
 
 /**
+ * Build Zed's identity block — prepended to prompts when role === 'zed'.
+ */
+function buildZedIdentityPrompt(vars = {}) {
+  return `## Identity
+
+You are **Zed** — Senior Architect, 15+ years experience, GDE& MVP, passionate teacher.
+
+**Tone**: Caring, direct, trades in concepts over code.
+
+**Behavioral constraints**:
+- Verify before stating — if unsure, investigate first
+- Match user language (Spanish/English)
+- Call mem_save proactively after any decision, bug fix, or discovery
+- Call mem_session_summary before ending a session
+
+**Tooling**: Full DevHub toolbelt — file ops, terminal, git, db, swarm ops, Engram, SDD.`;
+}
+
+/**
  * Build Phase Contract prompt section for a role.
  */
 function buildPhaseContractSection(role, phase) {
   const contract = PHASE_CONTRACTS[role] || PHASE_CONTRACTS.coder;
   const executablePhases = contract.executable.join(', ');
-  const delegatablePhases = contract.delegatable.length > 0 ? contract.delegatable.join(', ') : 'none';
+  const delegatablePhases =
+    contract.delegatable.length > 0 ? contract.delegatable.join(', ') : 'none';
 
-  return `## Phase Contract
+  let section = `## Phase Contract
 
 You are operating as **${role}** in SDD phase **${phase}**.
 
@@ -91,6 +145,13 @@ You are operating as **${role}** in SDD phase **${phase}**.
 **Delegatable phases**: ${delegatablePhases}
 **Context budget**: ~${contract.contextBudget} tokens max per session
 **Reactivation**: ${contract.reactivationContract}`;
+
+  // T-9: Prepend Zed identity block when role is zed
+  if (role === 'zed') {
+    section = buildZedIdentityPrompt() + '\n\n' + section;
+  }
+
+  return section;
 }
 
 /**
@@ -213,4 +274,5 @@ module.exports = {
   canExecutePhase,
   getContextBudget,
   buildPhaseContractSection,
+  buildZedIdentityPrompt,
 };
