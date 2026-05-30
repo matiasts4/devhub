@@ -5,10 +5,7 @@ const {
   buildXtermTheme,
 } = require('../../src/components/terminal/TerminalThemeSync');
 
-const {
-  TERMINAL_HEADER_STYLES,
-  THEME_OPTIONS,
-} = require('../../src/lib/theme/themes');
+const { TERMINAL_HEADER_STYLES, THEME_OPTIONS } = require('../../src/lib/theme/themes');
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -81,8 +78,7 @@ describe('buildXtermTheme — terminal CSS var priority', () => {
     document.documentElement.style.setProperty('--terminal-fg', '#ffffff');
     document.documentElement.style.setProperty('--accent-primary', '#58A6FF');
 
-    const resolver = (name) =>
-      document.documentElement.style.getPropertyValue(name).trim();
+    const resolver = (name) => document.documentElement.style.getPropertyValue(name).trim();
     const theme = buildXtermTheme(resolver);
 
     expect(theme.background).toBe('#1a1a1a');
@@ -94,8 +90,7 @@ describe('buildXtermTheme — terminal CSS var priority', () => {
     document.documentElement.style.setProperty('--accent-primary', '#58A6FF');
     // --terminal-bg intentionally not set
 
-    const resolver = (name) =>
-      document.documentElement.style.getPropertyValue(name).trim();
+    const resolver = (name) => document.documentElement.style.getPropertyValue(name).trim();
     const theme = buildXtermTheme(resolver);
 
     expect(theme.background).toBe('#0d1117');
@@ -106,8 +101,7 @@ describe('buildXtermTheme — terminal CSS var priority', () => {
     document.documentElement.style.setProperty('--terminal-fg', '#ffeecc');
     document.documentElement.style.setProperty('--accent-primary', '#58A6FF');
 
-    const resolver = (name) =>
-      document.documentElement.style.getPropertyValue(name).trim();
+    const resolver = (name) => document.documentElement.style.getPropertyValue(name).trim();
     const theme = buildXtermTheme(resolver);
 
     expect(theme.foreground).toBe('#ffeecc');

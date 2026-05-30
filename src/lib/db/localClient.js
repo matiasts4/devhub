@@ -13,6 +13,74 @@
 
 // ── Client-side query builder (uses fetch to API routes) ──────────────────────
 
+function extractErrorMessage(input, fallback) {
+  if (typeof input === 'string' && input.trim()) {
+    return input;
+  }
+
+  if (input instanceof Error && typeof input.message === 'string' && input.message.trim()) {
+    return input.message;
+  }
+
+  if (input && typeof input === 'object') {
+    if (typeof input.message === 'string' && input.message.trim()) {
+      return input.message;
+    }
+
+    if (typeof input.error === 'string' && input.error.trim()) {
+      return input.error;
+    }
+
+    if (input.error && typeof input.error === 'object') {
+      const nestedMessage = extractErrorMessage(input.error, '');
+      if (nestedMessage) {
+        return nestedMessage;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeClientError(input, fallbackMessage, extras = {}) {
+  const error = {
+    message: extractErrorMessage(input, fallbackMessage),
+  };
+
+  if (input instanceof Error && input.name) {
+    error.name = input.name;
+  }
+
+  if (extras.status) {
+    error.status = extras.status;
+  }
+
+  if (extras.statusText) {
+    error.statusText = extras.statusText;
+  }
+
+  return error;
+}
+
+async function readErrorPayload(response) {
+  const contentType = response.headers?.get?.('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  const text = await response.text().catch(() => '');
+  return text ? { error: text } : null;
+}
+
+async function buildResponseError(response, fallbackMessage) {
+  const payload = await readErrorPayload(response).catch(() => null);
+  return normalizeClientError(payload, fallbackMessage, {
+    status: response.status,
+    statusText: response.statusText,
+  });
+}
+
 class LocalQueryClient {
   constructor(table) {
     this.table = table;
@@ -99,34 +167,37 @@ class LocalQueryClient {
   }
 
   async execute() {
-    const params = new URLSearchParams();
-    params.set('table', this.table);
-    params.set('select', this._select);
+    try {
+      const params = new URLSearchParams();
+      params.set('table', this.table);
+      params.set('select', this._select);
 
-    if (this._where.length > 0) {
-      params.set('where', JSON.stringify(this._where));
-    }
-    if (this._orderBy.length > 0) {
-      params.set('orderBy', JSON.stringify(this._orderBy));
-    }
-    if (this._limitVal) {
-      params.set('limit', String(this._limitVal));
-    }
+      if (this._where.length > 0) {
+        params.set('where', JSON.stringify(this._where));
+      }
+      if (this._orderBy.length > 0) {
+        params.set('orderBy', JSON.stringify(this._orderBy));
+      }
+      if (this._limitVal) {
+        params.set('limit', String(this._limitVal));
+      }
 
-    const response = await fetch(`/api/db/query?${params.toString()}`, {
-      cache: 'no-store',
-    });
+      const response = await fetch(`/api/db/query?${params.toString()}`, {
+        cache: 'no-store',
+      });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || 'Query failed' } };
-    }
+      if (!response.ok) {
+        return { data: null, error: await buildResponseError(response, 'Query failed') };
+      }
 
-    let data = await response.json();
-    if (this._single && Array.isArray(data) && data.length > 0) {
-      data = data[0];
+      let data = await response.json();
+      if (this._single && Array.isArray(data) && data.length > 0) {
+        data = data[0];
+      }
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error: normalizeClientError(error, 'Query failed') };
     }
-    return { data, error: null };
   }
 
   // For insert/update/delete - returns a chainable builder
@@ -155,27 +226,36 @@ class LocalQueryClient {
 
   // Override execute to handle mutations
   async _executeMutation() {
-    const response = await fetch('/api/db/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: this.table,
-        action: this._action,
-        data: this._actionData,
-        where: this._where,
-      }),
-    });
+    try {
+      const response = await fetch('/api/db/mutate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: this.table,
+          action: this._action,
+          data: this._actionData,
+          where: this._where,
+        }),
+      });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || `${this._action} failed` } };
-    }
+      if (!response.ok) {
+        return {
+          data: null,
+          error: await buildResponseError(response, `${this._action} failed`),
+        };
+      }
 
-    let result = await response.json();
-    if (this._single && Array.isArray(result) && result.length > 0) {
-      result = result[0];
+      let result = await response.json();
+      if (this._single && Array.isArray(result) && result.length > 0) {
+        result = result[0];
+      }
+      return { data: result, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: normalizeClientError(error, `${this._action} failed`),
+      };
     }
-    return { data: result, error: null };
   }
 }
 

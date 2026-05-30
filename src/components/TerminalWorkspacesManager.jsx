@@ -153,7 +153,12 @@ function getPanelIdsFromColumns(columns = []) {
   return columns.flatMap((column) => (column?.panels || []).map((panel) => panel.id));
 }
 
-function readWorkspaceSwarmLaunchSummary(storage, workspace, projectId = null, swarmControlSnapshot = null) {
+function readWorkspaceSwarmLaunchSummary(
+  storage,
+  workspace,
+  projectId = null,
+  swarmControlSnapshot = null
+) {
   const workspacePanelIds = new Set(getPanelIdsFromColumns(workspace?.columns || []));
 
   // 1. If we have panel IDs, filter devhub_agent_runs within the workspace
@@ -201,23 +206,26 @@ function readWorkspaceSwarmLaunchSummary(storage, workspace, projectId = null, s
 
       return {
         launchId,
-        title: latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
+        title:
+          latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
         count: launchRuns.length,
       };
     }
   }
 
   // 3. Fallback to cached swarm control snapshot (state or local storage)
-  const snapshotToUse = swarmControlSnapshot || (() => {
-    if (projectId && storage) {
-      try {
-        return JSON.parse(storage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null');
-      } catch {
-        return null;
+  const snapshotToUse =
+    swarmControlSnapshot ||
+    (() => {
+      if (projectId && storage) {
+        try {
+          return JSON.parse(storage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null');
+        } catch {
+          return null;
+        }
       }
-    }
-    return null;
-  })();
+      return null;
+    })();
 
   if (snapshotToUse) {
     const mission = snapshotToUse.mission_control?.mission || snapshotToUse.mission;
@@ -1058,7 +1066,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [swarmControlSnapshot, setSwarmControlSnapshot] = useState(() => {
     if (typeof window === 'undefined' || !projectId) return null;
     try {
-      return JSON.parse(window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null');
+      return JSON.parse(
+        window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null'
+      );
     } catch {
       return null;
     }
@@ -1068,7 +1078,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const raw = projectId ? window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId)) : null;
+      const raw = projectId
+        ? window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId))
+        : null;
       setSwarmControlSnapshot(raw ? JSON.parse(raw) : null);
     } catch {
       setSwarmControlSnapshot(null);
@@ -1082,10 +1094,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     let isSubscribed = true;
     const fetchHealth = async () => {
       try {
-        const base = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost';
-        const response = await fetch(new URL(`/api/agenthub/operations/health?project_id=${projectId}`, base).toString(), {
-          cache: 'no-store',
-        });
+        const base =
+          typeof window !== 'undefined' && window.location
+            ? window.location.origin
+            : 'http://localhost';
+        const response = await fetch(
+          new URL(`/api/agenthub/operations/health?project_id=${projectId}`, base).toString(),
+          {
+            cache: 'no-store',
+          }
+        );
         if (!response.ok) return;
         const payload = await response.json();
         const nextInput =
@@ -1582,7 +1600,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, rightDockState.maximized, rightDockState.visible, workspaceWindows]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
-  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(storage, activeWorkspace, projectId, swarmControlSnapshot);
+  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(
+    storage,
+    activeWorkspace,
+    projectId,
+    swarmControlSnapshot
+  );
   const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
   const effectiveRightDockState = activeWorkspaceOwnsDockState
     ? rightDockState
@@ -1602,7 +1625,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
   const shouldSuspendNativeSurfaces =
-    isGridLauncherOpen || swarmLaunchWizardOpen || restoreSettingsModal.open || isDraggingDock || isDraggingInternalSplit;
+    isGridLauncherOpen ||
+    swarmLaunchWizardOpen ||
+    restoreSettingsModal.open ||
+    isDraggingDock ||
+    isDraggingInternalSplit;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,

@@ -511,27 +511,6 @@ function buildActiveRoster(snapshot = {}) {
   );
   const participants = asArray(missionControl.participants);
 
-  const hasRuntimeQuotaBlocked = Boolean(runtimeMetrics.quota_blocked);
-  const hasRuntimeOrphanedProcess = Number(runtimeMetrics.orphaned_processes || 0) > 0;
-  const hasRuntimeStaleRegistry = Number(runtimeMetrics.stale_registry_agents || 0) > 0;
-
-  const hasLiveAgentRegistryMismatch = selectControlRoomAgents(snapshot).some((agent) => {
-    const normalizedSupervisorState = String(agent?.supervisor_state || '').toLowerCase();
-    const normalizedLiveHintStatus = String(agent?.live_hint?.status || '').toLowerCase();
-    const hasLiveActivity = ['running', 'working', 'active', 'thinking', 'asking_questions'].includes(
-      normalizedLiveHintStatus
-    );
-    return normalizedSupervisorState === 'idle' && hasLiveActivity;
-  });
-
-  const globalRuntimeStatus = hasRuntimeQuotaBlocked
-    ? 'quota-blocked'
-    : hasRuntimeStaleRegistry || hasLiveAgentRegistryMismatch
-      ? 'stale-registry'
-      : hasRuntimeOrphanedProcess
-        ? 'orphaned-process'
-        : null;
-
   const resolveRosterStatus = (baseStatus, agent, isDirector = false) => {
     const normalizedSupervisorState = String(agent?.supervisor_state || '').toLowerCase();
     const normalizedLiveHintStatus = String(agent?.live_hint?.status || '').toLowerCase();
@@ -539,12 +518,8 @@ function buildActiveRoster(snapshot = {}) {
       normalizedLiveHintStatus
     );
 
-    if (normalizedSupervisorState === 'idle' && hasLiveActivity) {
-      return 'stale-registry';
-    }
-
-    if (isDirector && globalRuntimeStatus) {
-      return globalRuntimeStatus;
+    if (hasLiveActivity) {
+      return normalizedLiveHintStatus;
     }
 
     return baseStatus;
@@ -1709,9 +1684,7 @@ export function createSwarmLaunchDraft({
   // Phase 2: SDD integration — detect if SDD mode is active
   // Wizard checkbox sets draft.sddEnabled; default is TRUE (SDD enabled)
   // Env var SDD_ENABLED='false' can explicitly disable for CLI usage
-  const sddEnabled = draft.sddEnabled !== undefined
-    ? draft.sddEnabled === true
-    : process.env.SDD_ENABLED !== 'false';
+  const sddEnabled = draft.sddEnabled === true || (draft.sddEnabled === undefined && process.env.SDD_ENABLED !== 'false');
   const sddPhase = draft.phase || null;
 
   const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M2.7';
@@ -1751,6 +1724,8 @@ export function createSwarmLaunchDraft({
     roleModels: Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
     mission: draft.mission ?? template?.default_mission ?? '',
     // Phase 2: SDD options — pass sddEnabled + sddPhase to buildAgentLaunchCommand
+    // Also expose sddEnabled at top level for SwarmLaunchWizardModal checkbox binding
+    sddEnabled,
     sddOptions: {
       sddEnabled,
       phase: sddPhase,

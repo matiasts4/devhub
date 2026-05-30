@@ -161,7 +161,7 @@ describe('tauri cli wrapper', () => {
       [
         '-e',
         expect.stringContaining('const target = process.argv[1];'),
-        'http://localhost:3100/api/agenthub/config',
+        'http://127.0.0.1:3100/api/agenthub/config',
       ],
       expect.objectContaining({ stdio: 'ignore' })
     );

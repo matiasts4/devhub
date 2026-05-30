@@ -219,6 +219,29 @@ function prepareAgentWorktree({ repoRoot, launchId, roleKey, baseRef = 'HEAD' })
   // Add the worktree
   gitExec(['worktree', 'add', worktreePath, branchName], repoRoot);
 
+  // Copy opencode.json and swarm prompts so OpenCode can find profiles
+  // when launched from the worktree directory
+  const opencodeJsonSrc = path.join(repoRoot, 'opencode.json');
+  const opencodeJsonDst = path.join(worktreePath, 'opencode.json');
+  if (fs.existsSync(opencodeJsonSrc)) {
+    fs.copyFileSync(opencodeJsonSrc, opencodeJsonDst);
+  }
+  const promptsSrc = path.join(repoRoot, 'docs', 'prompts', 'swarm');
+  const promptsDst = path.join(worktreePath, 'docs', 'prompts', 'swarm');
+  if (fs.existsSync(promptsSrc)) {
+    if (!fs.existsSync(promptsDst)) {
+      fs.mkdirSync(promptsDst, { recursive: true });
+    }
+    const promptFiles = fs.readdirSync(promptsSrc);
+    for (const file of promptFiles) {
+      const srcFile = path.join(promptsSrc, file);
+      const dstFile = path.join(promptsDst, file);
+      if (fs.statSync(srcFile).isFile()) {
+        fs.copyFileSync(srcFile, dstFile);
+      }
+    }
+  }
+
   // Validate
   const validation = validateWorktreePath(worktreePath);
   if (!validation.valid) {

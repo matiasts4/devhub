@@ -27,6 +27,7 @@ export function buildAgentEnvExports({
   workspaceId,
   runId,
   supervisorUrl,
+  tmuxSessionName,
 }) {
   const exports = [
     `export DEVHUB_AGENT_ID="${agentId}"`,
@@ -36,6 +37,10 @@ export function buildAgentEnvExports({
     `export DEVHUB_WORKSPACE_ID="${workspaceId || ''}"`,
     `export DEVHUB_RUN_ID="${runId || ''}"`,
   ];
+
+  if (tmuxSessionName) {
+    exports.push(`export DEVHUB_TMUX_SESSION="${tmuxSessionName}"`);
+  }
 
   if (supervisorUrl) {
     exports.push(`export DEVHUB_SUPERVISOR_URL="${supervisorUrl}"`);
@@ -80,21 +85,77 @@ export function buildAgentEnvExports({
  */
 export function buildIdentityVerificationBlock({ agentId, missionId, role, workspacePath }) {
   return [
-    'echo "=========================================="',
-    `echo "DEVHUB_AGENT_ID=${agentId}"`,
-    `echo "DEVHUB_MISSION_ID=${missionId}"`,
-    `echo "DEVHUB_ROLE=${role}"`,
-    `echo "DEVHUB_WORKSPACE_PATH=${workspacePath}"`,
-    'echo "=========================================="',
-    'echo "--- Identity verified ---"',
-    'echo "Current directory: $(pwd)"',
+    'DEVHUB_LOG_FILE="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
+    '{',
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] =========================================="`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_AGENT_ID=${agentId}"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_MISSION_ID=${missionId}"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_ROLE=${role}"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_WORKSPACE_PATH=${workspacePath}"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] =========================================="`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- Identity verified ---"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] Current directory: $(pwd)"`,
     // Verify cwd matches workspace path
     `if [ "$(pwd)" != "${workspacePath}" ]; then`,
-    `  echo "ERROR: cwd mismatch! Expected ${workspacePath}, got $(pwd)"`,
-    `  echo "ABORTING: Agent will not start in the wrong workspace."`,
+    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: cwd mismatch! Expected ${workspacePath}, got $(pwd)"`,
+    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ABORTING: Agent will not start in the wrong workspace."`,
     `  exit 1`,
     `fi`,
-    `echo "--- CWD verified: $(pwd) === ${workspacePath} ---"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- CWD verified: $(pwd) === ${workspacePath} ---"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- Log file: /tmp/devhub-swarm-${role}.log ---"`,
+    '} >> "$DEVHUB_LOG_FILE" 2>&1',
+  ].join('\n');
+}
+
+function buildBootstrapPromptBlock(prompt = '') {
+  if (!String(prompt || '').trim()) {
+    return '';
+  }
+
+  return [
+    '# Queue the bootstrap prompt into the panel tmux session after OpenCode starts.',
+    'DEVHUB_LOG_FILE="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
+    '# Prevent duplicate prompt injections using a lock file',
+    'BOOTSTRAP_LOCK="/tmp/devhub-bootstrap-${DEVHUB_MISSION_ID:-unknown}-${DEVHUB_ROLE:-agent}.lock"',
+    '',
+    '_devhub_bootstrap_prompt() {',
+    '  {',
+    '    # Deduplication: skip if already injected',
+    '    if [ -f "$BOOTSTRAP_LOCK" ]; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] SKIP: Prompt already injected (lock exists: $BOOTSTRAP_LOCK)"`,
+    '      return 0',
+    '    fi',
+    '    # Create lock file with PID to identify which process injected',
+    '    echo "$$" > "$BOOTSTRAP_LOCK"',
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Starting bootstrap prompt injection..."`,
+    '    if ! command -v tmux >/dev/null 2>&1; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: tmux not found. Cannot inject prompt."`,
+    '      return 1',
+    '    fi',
+    '    # Detect current tmux session - prefer explicit DEVHUB_TMUX_SESSION over auto-detect',
+    '    # to avoid race conditions when multiple agents start simultaneously',
+    '    local _tmux_session',
+    '    _tmux_session="${DEVHUB_TMUX_SESSION:-}"',
+    '    if [ -z "${_tmux_session:-}" ]; then',
+    '      _tmux_session=$(tmux display-message -p "#S" 2>/dev/null) || true',
+    '    fi',
+    '    if [ -z "${_tmux_session:-}" ]; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: Cannot detect tmux session. Cannot inject prompt."`,
+    '      return 1',
+    '    fi',
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Detected tmux session: \${_tmux_session}"`,
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Waiting 10s for OpenCode to initialize..."`,
+    '    sleep 10',
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Loading prompt into tmux session \${_tmux_session}..."`,
+    "    tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'",
+    prompt,
+    'DEVHUB_BOOTSTRAP_PROMPT',
+    `    tmux paste-buffer -t "\${_tmux_session}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed"`,
+    `    tmux send-keys -t "\${_tmux_session}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys failed"`,
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete."`,
+    '  } >> "$DEVHUB_LOG_FILE" 2>&1',
+    '}',
+    '(_devhub_bootstrap_prompt) &',
   ].join('\n');
 }
 
@@ -191,6 +252,8 @@ export function buildAgentLaunchWrapper({
   workspaceId,
   runId,
   supervisorUrl,
+  tmuxSessionName,
+  bootstrapPrompt,
   innerCommand,
 }) {
   const pathValidationBlock = [
@@ -225,6 +288,7 @@ export function buildAgentLaunchWrapper({
       workspaceId,
       runId,
       supervisorUrl,
+      tmuxSessionName,
     }),
     '',
     buildIdentityVerificationBlock({
@@ -233,6 +297,8 @@ export function buildAgentLaunchWrapper({
       role,
       workspacePath,
     }),
+    '',
+    buildBootstrapPromptBlock(bootstrapPrompt),
     '',
     buildInitialHeartbeatCommand({
       supervisorUrl,
@@ -248,8 +314,17 @@ export function buildAgentLaunchWrapper({
       missionId,
     }),
     '',
-    '# Execute the actual agent',
-    innerCommand,
+    '# Setup logging for agent output',
+    'AGENT_LOG="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Starting agent: \${DEVHUB_ROLE}" >> "$AGENT_LOG"`,
+    '',
+    '# Execute the actual agent - capture both stdout and stderr to log',
+    '# This helps diagnose crashes like ArrayLimit errors',
+    '{',
+    '  ' + innerCommand + ' 2>&1',
+    '} >> "$AGENT_LOG" 2>&1',
+    'AGENT_EXIT_CODE=$?',
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Agent exited with code: \${AGENT_EXIT_CODE}" >> "$AGENT_LOG"`,
   ];
 
   return parts.join('\n');

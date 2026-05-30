@@ -1675,6 +1675,7 @@ describe('composeControlRoomSnapshot', () => {
         devops: 'minimax-coding-plan/MiniMax-M2.7',
         architect: 'minimax-coding-plan/MiniMax-M2.7',
       },
+      sddEnabled: true,
       sddOptions: {
         sddEnabled: true,
         phase: null,

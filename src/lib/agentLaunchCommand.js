@@ -96,9 +96,13 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const opencodeAgent = options.opencodeAgent || 'sdd-orchestrator';
   const modelId = options.modelId || null;
   const tmuxSessionNameOption = options.tmuxSessionName || null;
+  const disableTmuxWrap = options.disableTmuxWrap === true;
+  const interactiveBootstrapPrompt = options.interactiveBootstrapPrompt === true;
 
-  // SDD session + prompt integration (Phase 2)
-  const sddEnabled = options.sddEnabled || process.env.SDD_ENABLED === 'true';
+  // SDD session integration must be opt-in at the call site. Letting a global
+  // env flag inject --session into every OpenCode launch breaks normal swarm
+  // launches because the internal DevHub session ID is not an OpenCode ses_* ID.
+  const sddEnabled = options.sddEnabled === true;
   const { prompt: resolvedPrompt, sessionId, tmuxSessionName: sddTmuxSessionName } = buildSddPrompt(
     prompt,
     {
@@ -125,9 +129,15 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
     case 'opencode': {
       // Add --session flag when SDD session is active
       const sessionFlag = sessionId ? ` --session ${sessionId}` : '';
-      innerCommand = modelId
-        ? `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt} --model ${modelId}${sessionFlag}`
-        : `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt}${sessionFlag}`;
+      if (interactiveBootstrapPrompt) {
+        innerCommand = modelId
+          ? `${executable} --agent ${opencodeAgent} --model ${modelId}${sessionFlag}`
+          : `${executable} --agent ${opencodeAgent}${sessionFlag}`;
+      } else {
+        innerCommand = modelId
+          ? `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt} --model ${modelId}${sessionFlag}`
+          : `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt}${sessionFlag}`;
+      }
       break;
     }
     case 'hermes':
@@ -137,7 +147,7 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   }
 
   // Wrap in tmux if session name provided (swarm resilience)
-  if (tmuxSessionName) {
+  if (!disableTmuxWrap && tmuxSessionName) {
     return buildTmuxWrappedCommand(innerCommand, tmuxSessionName, options.cwd);
   }
 

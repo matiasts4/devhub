@@ -448,7 +448,9 @@ describe('TerminalWorkspacesManager right dock', () => {
           ok: true,
           json: async () => ({
             terminate_result: { launchId: 'launch-1', terminated: true },
-            control_room_snapshot_input: { mission_control: { mission: { mission_id: 'launch-1' } } },
+            control_room_snapshot_input: {
+              mission_control: { mission: { mission_id: 'launch-1' } },
+            },
           }),
         });
       }
@@ -506,7 +508,9 @@ describe('TerminalWorkspacesManager right dock', () => {
             ok: true,
             json: async () => ({
               terminate_result: { launchId: 'launch-cached-123', terminated: true },
-              control_room_snapshot_input: { mission_control: { mission: { status: 'terminated' } } },
+              control_room_snapshot_input: {
+                mission_control: { mission: { status: 'terminated' } },
+              },
             }),
           });
         }
@@ -552,7 +556,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       }),
     });
 
-    const cached = JSON.parse(window.localStorage.getItem('devhub_swarm_control_snapshot:project-1') || '{}');
+    const cached = JSON.parse(
+      window.localStorage.getItem('devhub_swarm_control_snapshot:project-1') || '{}'
+    );
     expect(cached?.mission_control?.mission?.status).toBe('terminated');
   });
 
@@ -692,7 +698,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
 
       // Verify 3 columns exist (director + 2 worker columns)
-      const columnContainers = visibleShell?.querySelectorAll('[data-testid^="workspace-column-c"]');
+      const columnContainers = visibleShell?.querySelectorAll(
+        '[data-testid^="workspace-column-c"]'
+      );
       expect(columnContainers.length).toBeGreaterThanOrEqual(3);
     } finally {
       setTimeoutSpy.mockRestore();

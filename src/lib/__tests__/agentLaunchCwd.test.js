@@ -95,6 +95,79 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
       expect(result).not.toContain('cd "');
     });
 
+    test('buildAgentLaunchCommand can skip tmux wrapping when the terminal is already tmux-backed', () => {
+      const result = buildAgentLaunchCommand('opencode', 'do work', {
+        opencodeAgent: 'swarm-director',
+        modelId: 'minimax-coding-plan/MiniMax-M2.7',
+        tmuxSessionName: 'sess-test',
+        disableTmuxWrap: true,
+      });
+
+      expect(result).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+      expect(result).toContain('--model minimax-coding-plan/MiniMax-M2.7');
+      expect(result).not.toContain('tmux new-session');
+      expect(result).not.toContain('tmux attach-session');
+    });
+
+    test('buildAgentLaunchCommand can start interactive OpenCode without --prompt for post-launch bootstrap', () => {
+      const result = buildAgentLaunchCommand('opencode', 'do work', {
+        opencodeAgent: 'swarm-director',
+        modelId: 'minimax-coding-plan/MiniMax-M2.7',
+        interactiveBootstrapPrompt: true,
+      });
+
+      expect(result).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+      expect(result).toContain('--model minimax-coding-plan/MiniMax-M2.7');
+      expect(result).not.toContain('--prompt');
+    });
+
+    test('buildAgentLaunchCommand does not inherit SDD session injection from env', () => {
+      const original = process.env.SDD_ENABLED;
+      process.env.SDD_ENABLED = 'true';
+
+      try {
+        const result = buildAgentLaunchCommand('opencode', 'do work', {
+          opencodeAgent: 'swarm-director',
+          interactiveBootstrapPrompt: true,
+        });
+
+        expect(result).not.toContain('--session ');
+      } finally {
+        if (original === undefined) {
+          delete process.env.SDD_ENABLED;
+        } else {
+          process.env.SDD_ENABLED = original;
+        }
+      }
+    });
+
+    test('buildAgentLaunchCommand includes --session when SDD is explicitly enabled', async () => {
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ isError: false, content: [{ text: 'ok' }] }),
+      });
+
+      try {
+        const result = buildAgentLaunchCommand('opencode', 'do work', {
+          opencodeAgent: 'swarm-director',
+          interactiveBootstrapPrompt: true,
+          sddEnabled: true,
+          agentId: 'launch-abc-coder',
+          sessionId: 'ses_explicit_123',
+        });
+
+        expect(result).toContain('--session ses_explicit_123');
+        await Promise.resolve();
+      } finally {
+        if (originalFetch === undefined) {
+          delete global.fetch;
+        } else {
+          global.fetch = originalFetch;
+        }
+      }
+    });
+
     test('buildTmuxWrappedCommand safely escapes embedded single quotes', () => {
       const result = buildTmuxWrappedCommand(
         `printf '%s\n' 'hello'`,
@@ -149,6 +222,22 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
       } catch (err) {
         throw new Error(`Generated wrapper is invalid bash: ${err.message}\nScript:\n${result}`);
       }
+    });
+
+    test('wrapper can bootstrap the initial prompt into an interactive OpenCode session', () => {
+      const result = buildAgentLaunchWrapper({
+        ...baseParams,
+        innerCommand:
+          '/home/matias/.opencode/bin/opencode --agent swarm-director --model minimax-coding-plan/MiniMax-M2.7',
+        bootstrapPrompt: 'Rol: Director\nMisión: prueba',
+      });
+
+      expect(result).toContain('_devhub_bootstrap_prompt()');
+      expect(result).toContain('sleep 3');
+      expect(result).toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
+      expect(result).toContain('tmux paste-buffer -t "${DEVHUB_TMUX_SESSION}"');
+      expect(result).toContain('tmux send-keys -t "${DEVHUB_TMUX_SESSION}" C-m');
+      expect(result).toContain('Rol: Director\nMisión: prueba');
     });
   });
 });

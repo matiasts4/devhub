@@ -93,3 +93,11 @@ test('non-DocOps launch commands are left intact', () => {
 
   assert.equal(enforceDocOpsGateOnLaunchCommand(command), command);
 });
+
+test('wrapped swarm launch scripts are left intact', () => {
+  const command = `#!/usr/bin/env bash
+cd "/tmp/worktree"
+tmux new-session -A -d -s 'devhub-swarm-1-coder' 'opencode --agent sdd-orchestrator --prompt "You are executing SDD change **x** as **coder** in phase **sdd-apply**.\nMission ID: m1\nSession ID: s1" --model minimax' 2>/dev/null || true; tmux attach-session -t 'devhub-swarm-1-coder'`;
+
+  assert.equal(enforceDocOpsGateOnLaunchCommand(command), command);
+});

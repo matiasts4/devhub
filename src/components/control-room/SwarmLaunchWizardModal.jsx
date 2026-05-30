@@ -2,13 +2,13 @@ import React, { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import {
+  brutalPanelStyle,
   btnDangerStyle,
   btnPrimaryStyle,
   btnSecondaryStyle,
   codeBlockStyle,
   dangerBannerStyle,
   inputStyle,
-  panelStyle,
   pillStyle,
   selectStyle,
   sectionSurfaceStyle,
@@ -28,9 +28,9 @@ const SDD_PHASES = [
 ];
 
 const modalChromeStyle = {
-  ...panelStyle({ emphasized: true }),
+  ...brutalPanelStyle({ emphasized: true }),
   color: 'var(--text-primary)',
-  borderRadius: '0',
+  borderRadius: 0,
 };
 
 function wizardInsetPanelStyle({ emphasized = false } = {}) {

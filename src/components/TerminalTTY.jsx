@@ -146,7 +146,12 @@ export function restoreTerminalViewportScroll(term, targetViewportY) {
   const totalLines = buffer.length;
   const rows = term.rows;
   let clampedY = targetViewportY;
-  if (typeof totalLines === 'number' && typeof rows === 'number' && !Number.isNaN(totalLines) && !Number.isNaN(rows)) {
+  if (
+    typeof totalLines === 'number' &&
+    typeof rows === 'number' &&
+    !Number.isNaN(totalLines) &&
+    !Number.isNaN(rows)
+  ) {
     const maxY = Math.max(0, totalLines - rows);
     clampedY = Math.max(0, Math.min(targetViewportY, maxY));
   }
@@ -164,11 +169,7 @@ export function shouldRunTerminalViewportReactivation({
   isVisibleInLayout = true,
   documentVisibilityState,
 } = {}) {
-  return Boolean(
-    isActivePanel &&
-    isVisibleInLayout &&
-    documentVisibilityState !== 'hidden'
-  );
+  return Boolean(isActivePanel && isVisibleInLayout && documentVisibilityState !== 'hidden');
 }
 
 export function isTerminalRendererReady(term) {
@@ -541,8 +542,10 @@ export default function TerminalTTY({
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
   const [terminalRuntimeNonce, setTerminalRuntimeNonce] = useState(0);
   // External connectionState prop takes precedence (allows parent to set 'suspended')
-  const connectionState = externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
-  const setConnectionState = externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
+  const connectionState =
+    externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
+  const setConnectionState =
+    externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
   const rendererCapabilities = getTerminalRendererRuntimeCapabilities({
@@ -580,18 +583,19 @@ export default function TerminalTTY({
   });
   const shouldUseNativeRenderer =
     rendererViewModel.effectiveMode === 'vte-experimental' && runtimePhase !== 'fallback-xterm';
-  const shouldBootXterm = shouldBootXtermRuntime({
-    isActivePanel,
-    isVisibleInLayout,
-    suspendNativeSurface,
-    nativeSurfacePolicy,
-    nativeVteOpenFailure,
-    nativeVteOpened,
-    nativeVteProbe: nativeVteProbeResult,
-    requestedRendererMode,
-    runtimePlatform: resolvedRuntimePlatform,
-    tauriAvailable,
-  }) && connectionState !== 'suspended';
+  const shouldBootXterm =
+    shouldBootXtermRuntime({
+      isActivePanel,
+      isVisibleInLayout,
+      suspendNativeSurface,
+      nativeSurfacePolicy,
+      nativeVteOpenFailure,
+      nativeVteOpened,
+      nativeVteProbe: nativeVteProbeResult,
+      requestedRendererMode,
+      runtimePlatform: resolvedRuntimePlatform,
+      tauriAvailable,
+    }) && connectionState !== 'suspended';
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -937,7 +941,8 @@ export default function TerminalTTY({
       !shouldRunTerminalViewportReactivation({
         isActivePanel,
         isVisibleInLayout,
-        documentVisibilityState: typeof document !== 'undefined' ? document.visibilityState : 'visible',
+        documentVisibilityState:
+          typeof document !== 'undefined' ? document.visibilityState : 'visible',
       })
     ) {
       return;
@@ -2401,7 +2406,13 @@ export default function TerminalTTY({
                 className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
                 title="Configuración"
               >
-                <svg className="w-3.5 h-3.5 text-yellow-500 group-hover:text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <svg
+                  className="w-3.5 h-3.5 text-yellow-500 group-hover:text-yellow-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
@@ -2517,14 +2528,22 @@ export default function TerminalTTY({
               className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm"
               data-testid="terminal-suspended-overlay"
             >
-              <svg className="w-8 h-8 text-yellow-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-8 h-8 text-yellow-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
               <span className="text-yellow-500 font-semibold">Sesión suspendida</span>
               <span className="text-gray-500 text-center max-w-xs">
-                {cwd ? `Panel en pausa — ${cwd}` : 'Panel en pausa — restaurá manualmente para continuar'}
+                {cwd
+                  ? `Panel en pausa — ${cwd}`
+                  : 'Panel en pausa — restaurá manualmente para continuar'}
               </span>
               <button
                 data-testid="terminal-suspended-continue-btn"

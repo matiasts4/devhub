@@ -49,8 +49,6 @@
   --chrome-press-offset: 1px;
 }
 
-
-
 [data-morphology='aura'] {
   --chrome-radius-panel: 1.25rem;
   --chrome-radius-control: 1rem;
@@ -80,12 +78,20 @@
   --chrome-radius-control: 12px;
   --chrome-border-width: 1px;
   --chrome-border-color: rgba(99, 208, 194, 0.18);
-  --chrome-shadow-panel: 0 18px 30px rgba(0,0,0,0.34), inset 0 1px 0 rgba(228,255,251,0.05);
-  --chrome-shadow-control: 0 8px 20px rgba(0,0,0,0.22);
+  --chrome-shadow-panel: 0 18px 30px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(228, 255, 251, 0.05);
+  --chrome-shadow-control: 0 8px 20px rgba(0, 0, 0, 0.22);
   --chrome-panel-fill: color-mix(in srgb, var(--surface-card) 60%, var(--accent-primary) 6%);
-  --chrome-panel-fill-emphasis: color-mix(in srgb, var(--surface-elevated) 55%, var(--accent-primary) 12%);
+  --chrome-panel-fill-emphasis: color-mix(
+    in srgb,
+    var(--surface-elevated) 55%,
+    var(--accent-primary) 12%
+  );
   --chrome-control-fill: color-mix(in srgb, var(--surface-card) 70%, var(--accent-primary) 5%);
-  --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 72%, var(--accent-primary) 8%);
+  --chrome-control-fill-hover: color-mix(
+    in srgb,
+    var(--surface-elevated) 72%,
+    var(--accent-primary) 8%
+  );
   --chrome-press-offset: 0px;
   --accent-primary: #63d0c2;
   --accent-glow: rgba(99, 208, 194, 0.16);
@@ -99,7 +105,12 @@
     linear-gradient(rgba(228, 255, 251, 0.02) 1px, transparent 1px),
     linear-gradient(90deg, rgba(228, 255, 251, 0.012) 1px, transparent 1px),
     linear-gradient(180deg, #10181d 0%, #070b0d 100%);
-  background-size: auto, auto, 24px 24px, 24px 24px, auto;
+  background-size:
+    auto,
+    auto,
+    24px 24px,
+    24px 24px,
+    auto;
 }
 
 [data-morphology='switchyard'] body[data-palette='cobalt'] {
@@ -115,7 +126,12 @@
     linear-gradient(rgba(228, 255, 251, 0.02) 1px, transparent 1px),
     linear-gradient(90deg, rgba(228, 255, 251, 0.012) 1px, transparent 1px),
     linear-gradient(180deg, #101822 0%, #070b14 100%);
-  background-size: auto, auto, 24px 24px, 24px 24px, auto;
+  background-size:
+    auto,
+    auto,
+    24px 24px,
+    24px 24px,
+    auto;
 }
 
 [data-morphology='switchyard'] body[data-palette='alloy'] {
@@ -127,11 +143,16 @@
 [data-morphology='switchyard'] body[data-palette='alloy'] {
   background-image:
     radial-gradient(circle at top left, rgba(212, 161, 106, 0.18), transparent 24%),
-    radial-gradient(circle at top right, rgba(212, 161, 106, 0.10), transparent 22%),
+    radial-gradient(circle at top right, rgba(212, 161, 106, 0.1), transparent 22%),
     linear-gradient(rgba(255, 248, 228, 0.02) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 248, 228, 0.012) 1px, transparent 1px),
     linear-gradient(180deg, #14120d 0%, #0a0907 100%);
-  background-size: auto, auto, 24px 24px, 24px 24px, auto;
+  background-size:
+    auto,
+    auto,
+    24px 24px,
+    24px 24px,
+    auto;
 }
 
 /* ─── Terminal Zone — base fallbacks applied before header style overrides ─── */
@@ -146,7 +167,11 @@
 /* Dragon style — gradient header + accent bar */
 [data-terminal-container][data-terminal-header-style='dragon'] {
   --terminal-header-bg: var(--surface-card);
-  --terminal-header-gradient: linear-gradient(180deg, var(--surface-elevated), var(--chrome-panel-fill));
+  --terminal-header-gradient: linear-gradient(
+    180deg,
+    var(--surface-elevated),
+    var(--chrome-panel-fill)
+  );
   --terminal-accent-bar: var(--accent-primary);
 }
 

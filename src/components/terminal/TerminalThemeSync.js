@@ -27,7 +27,8 @@ export function buildTerminalChromeVars(style) {
     case 'dragon':
       return {
         '--terminal-header-bg': 'var(--surface-card)',
-        '--terminal-header-gradient': 'linear-gradient(180deg, var(--surface-elevated), var(--chrome-panel-fill))',
+        '--terminal-header-gradient':
+          'linear-gradient(180deg, var(--surface-elevated), var(--chrome-panel-fill))',
         '--terminal-accent-bar': 'var(--accent-primary)',
       };
     case 'minimal':
@@ -39,7 +40,8 @@ export function buildTerminalChromeVars(style) {
     case 'gradient':
       return {
         '--terminal-header-bg': 'var(--surface-card)',
-        '--terminal-header-gradient': 'linear-gradient(180deg, var(--surface-elevated), var(--surface-card))',
+        '--terminal-header-gradient':
+          'linear-gradient(180deg, var(--surface-elevated), var(--surface-card))',
         '--terminal-accent-bar': 'transparent',
       };
     case 'plain':

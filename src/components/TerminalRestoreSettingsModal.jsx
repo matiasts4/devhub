@@ -98,17 +98,15 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
         >
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-                <span
-                  className="inline-flex items-center gap-1"
-                  style={pillStyle({ tone: 'accent' })}
-                >
-                  ⚙ Configuración
-                </span>
+              <span
+                className="inline-flex items-center gap-1"
+                style={pillStyle({ tone: 'accent' })}
+              >
+                ⚙ Configuración
+              </span>
             </div>
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">
-                Restauración de Terminales
-              </h2>
+              <h2 className="text-2xl font-semibold tracking-tight">Restauración de Terminales</h2>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                 Elegí cómo se restauran las terminales al iniciar DevHub.
               </p>
@@ -129,10 +127,7 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="space-y-4">
             {SESSION_TYPES.map(({ key, label }) => (
-              <div
-                key={key}
-                className="flex items-center justify-between gap-4"
-              >
+              <div key={key} className="flex items-center justify-between gap-4">
                 <label
                   htmlFor={`restore-policy-${key}`}
                   className="text-sm font-semibold"
@@ -140,10 +135,7 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
                 >
                   {label}
                 </label>
-                <Select
-                  value={restorePrefs[key]}
-                  onValueChange={handlePolicyChange(key)}
-                >
+                <Select value={restorePrefs[key]} onValueChange={handlePolicyChange(key)}>
                   <SelectTrigger
                     id={`restore-policy-${key}`}
                     data-testid={`restore-policy-modal-${key}`}
@@ -224,11 +216,7 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
           className="flex items-center justify-end gap-2 border-t px-6 py-4"
           style={panelHeaderStripStyle()}
         >
-          <button
-            type="button"
-            onClick={onClose}
-            style={btnSecondaryStyle()}
-          >
+          <button type="button" onClick={onClose} style={btnSecondaryStyle()}>
             Cerrar
           </button>
         </div>

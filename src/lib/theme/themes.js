@@ -434,12 +434,17 @@ export function normalizeTerminalHeaderStyle(value) {
 
 export function getStoredTerminalHeaderStyle() {
   if (typeof window === 'undefined') return TERMINAL_HEADER_STYLES.DRAGON;
-  return normalizeTerminalHeaderStyle(window.localStorage.getItem(TERMINAL_HEADER_STYLE_STORAGE_KEY));
+  return normalizeTerminalHeaderStyle(
+    window.localStorage.getItem(TERMINAL_HEADER_STYLE_STORAGE_KEY)
+  );
 }
 
 export function setStoredTerminalHeaderStyle(style) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(TERMINAL_HEADER_STYLE_STORAGE_KEY, normalizeTerminalHeaderStyle(style));
+  window.localStorage.setItem(
+    TERMINAL_HEADER_STYLE_STORAGE_KEY,
+    normalizeTerminalHeaderStyle(style)
+  );
 }
 
 export function setTerminalHeaderStyle(style) {
