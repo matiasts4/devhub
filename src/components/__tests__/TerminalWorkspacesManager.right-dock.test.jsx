@@ -422,7 +422,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
     ).toBe('transient-overlay');
-    expect(document.body.textContent).toContain('Launch wizard');
+    expect(document.body.textContent).toContain('Asistente de lanzamiento');
   });
 
   test('shows terminate swarm action for active workspace launch and posts launch-scoped terminate request', async () => {
@@ -479,6 +479,81 @@ describe('TerminalWorkspacesManager right dock', () => {
       }),
     });
     expect(JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}')).toEqual({});
+  });
+
+  test('shows terminate swarm action based on cached control snapshot when devhub_agent_runs is empty', async () => {
+    window.localStorage.removeItem('devhub_agent_runs');
+    window.localStorage.setItem(
+      'devhub_swarm_control_snapshot:project-1',
+      JSON.stringify({
+        mission_control: {
+          mission: {
+            mission_id: 'launch-cached-123',
+            title: 'Cached Swarm Title',
+            status: 'active',
+          },
+        },
+      })
+    );
+
+    global.fetch = jest.fn((url, options) => {
+      if (url === '/api/swarm/runtime-diagnostics') {
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      if (url.startsWith('/api/agenthub/operations/health')) {
+        if (options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              terminate_result: { launchId: 'launch-cached-123', terminated: true },
+              control_room_snapshot_input: { mission_control: { mission: { status: 'terminated' } } },
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            control_room_snapshot_input: {
+              mission_control: {
+                mission: {
+                  mission_id: 'launch-cached-123',
+                  title: 'Cached Swarm Title',
+                  status: 'active',
+                },
+              },
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-terminate-summary"]')?.textContent
+    ).toContain('Cached Swarm Title');
+
+    await click(view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]'));
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'terminate_swarm_local',
+        project_id: 'project-1',
+        launch_id: 'launch-cached-123',
+      }),
+    });
+
+    const cached = JSON.parse(window.localStorage.getItem('devhub_swarm_control_snapshot:project-1') || '{}');
+    expect(cached?.mission_control?.mission?.status).toBe('terminated');
   });
 
   test('batches swarm runtime requests into a dedicated workspace instead of replacing the same split', async () => {

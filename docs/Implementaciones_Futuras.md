@@ -1,436 +1,140 @@
 # Implementaciones futuras
 
-**Estado:** Planeación inicial.
-**Objetivo de este documento:** concentrar iniciativas futuras que todavía no entraron a un SDD formal o a un roadmap numerado.
+**Estado:** Planeación revisada (29 may 2026).
+**Objetivo:** Construir un agente operativo que controle terminal, browser y swarm desde una vista integrada. La pizarra libre es una vista alternativa futura, no el punto de partida.
 
 ---
 
-## Agente operativo, director general y vista de control
+## Visión corregida
 
-### Resumen ejecutivo
+### Lo que realmente se necesita
 
-DevHub ya tiene piezas para terminales, browser, agentes, MCP y swarm. La implementación futura valiosa no es sumar otra herramienta aislada, sino construir una **vista de control** con un agente capaz de operar la aplicación de punta a punta.
+Un agente que pueda:
 
-La idea correcta NO es duplicar `swarm-director`. La idea correcta es crear una capa superior: un **director general operativo** que pueda usar o invocar capacidades equivalentes a `swarm-director`, pero que además tenga alcance sobre terminales, browser, vistas, procesos y estado general de la app.
+- Abrir y controlar terminales
+- Ver logs en tiempo real
+- Lanzar comandos y procesos
+- Abrir browser y navegar
+- Crear agentes y delegar tareas
+- Lanzar swarm cuando corresponda
 
-### Decisión de producto
+Y una **vista donde se vea al agente operar** — si no podés ver qué hace, no podés corregir cuando falla.
 
-- Esto debe vivir como una **vista nueva dentro de DevHub**.
-- No debe tratarse como un producto aparte.
-- `swarm-director` debe seguir existiendo como subsistema especializado en coordinación de swarm.
-- El nuevo agente debe ser una capa más amplia, con alcance de dirección general sobre la aplicación.
+### La pizarra (canvas libre) es vista alternativa, no el objetivo inicial
 
-## Qué problema resuelve
+La idea de tener terminals y browsers arrastrables en un canvas tipo Excalidraw es atractiva pero más compleja de implementar. Por ahora, la vista fixed del lado derecho (el dock actual) cumple esa función de superficie operativa.
 
-Hoy las capacidades importantes están repartidas:
+La pizarra viene después, cuando la base agent + vista固定 esté funcionando.
 
-- terminales y procesos;
-- browser y navegación;
-- agentes y swarm;
-- logs y observabilidad;
-- layout y foco operativo.
+---
 
-Eso obliga a saltar entre superficies distintas para completar tareas que, conceptualmente, forman una sola intención.
+## Orden de implementación
 
-La propuesta es unificar eso en una **Operator View** donde el usuario pueda pedir una acción natural y el sistema la convierta en una secuencia visible, controlada y trazable.
+### Paso 1 — Contrato de acciones y permisos
 
-## Aclaración clave: no mezclar tipos de modos
+Antes de escribir prompts o definir modos, hay que definir **qué acciones puede hacer el agente**. Sin esto, todo lo demás es frágil.
 
-Acá hay que separar dos ejes distintos. Si se mezclan, el diseño queda confuso.
+Acciones ejemplo:
 
-### 1. Canales de entrada
+- `terminal.open`, `terminal.run`, `terminal.focus`
+- `browser.open`, `browser.navigate`
+- `agent.create`, `agent.delegate`
+- `swarm.launch`
+- `logs.tail`, `logs.stream`
 
-Esto responde a **cómo** le habla el usuario al sistema.
+Cada acción tiene: nombre, parámetros, permisos requeridos, límite de riesgo.
 
-- **Texto**: chat, comando estructurado, input rápido.
-- **Voz**: push-to-talk, wake word futura, transcripción y confirmación.
+### Paso 2 — Timeline operativa
 
-### 2. Modos de autoridad
+Registro de todo lo que ocurre: acción pedida, confirmación, tool usado, estado, resultado, error.
 
-Esto responde a **hasta dónde** puede accionar el agente.
+Sin timeline no hay forma de debugear al agente ni de que el usuario confíe en lo que hace.
 
-| Modo                   | Alcance                 | Qué puede hacer                                                                                                 |
-| ---------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Observador             | Lectura                 | Ver logs, estado, terminales, agentes, páginas, timeline y métricas.                                            |
-| Operador de aplicación | Control local de la app | Abrir terminales, lanzar procesos, abrir browser, cambiar layout, enfocar vistas, seguir logs.                  |
-| Director general       | Dirección sistémica     | Todo lo anterior, más crear agentes, delegar tareas, coordinar runs y usar el subsistema swarm cuando convenga. |
+### Paso 3 — Agente base: Observador + Operador
 
-Punto importante: **voz y texto no son modos de autoridad**. Son sólo canales de entrada. El verdadero diseño difícil está en los modos de autoridad.
+El agente empieza en modo seguro (Observador) y evoluciona a Operador.
 
-## Relación con `swarm-director`
+**Observador:**
 
-Este punto hay que dejarlo cristalino.
+- Ver terminals activas
+- Ver procesos corriendo
+- Ver browser sessions
+- Ver agentes y estado
+- Consultar logs y timeline
 
-| Superficie                 | Rol real                                                                                                                      |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `swarm-director`           | Director especializado del swarm y de la coordinación multiagente visible.                                                    |
-| Director general propuesto | Director superior de toda la aplicación. Usa `swarm-director` cuando necesita coordinación de swarm, pero no se limita a eso. |
+**Operador:**
 
-### Diferencia funcional
+- Abrir terminal nueva
+- Correr comandos permitidos
+- Abrir browser y navegar
+- Enfocar paneles y layout
 
-`swarm-director` hoy piensa en términos de:
+### Paso 4 — Vista integrada (agente + superficie de operación)
 
-- misiones;
-- slices;
-- fases;
-- roles del swarm;
-- handoffs y verificación.
+Este paso **va de la mano con el paso 3**. El agente sin vista visible no sirve — necesitás ver qué hace, sifalló, si está pensando, si pidió confirmación.
 
-El **director general** propuesto debe pensar en términos más amplios:
+La vista puede ser:
 
-- intención del usuario;
-- control operativo de la app;
-- procesos locales;
-- browser y navegación;
-- layout y foco;
-- coordinación multiagente;
-- observabilidad transversal;
-- políticas de permisos y confirmación.
+- Un panel lateral derecho (integrado al dock existente)
+- Un tab nuevo en el side panel
+- Una ventana flotante
 
-### Regla arquitectónica recomendada
+Lo importante: la vista debe mostrar terminal vivo, browser vivo, timeline del agente y feedback del agente todo junto.
 
-El director general **no reemplaza** a `swarm-director`. Lo envuelve.
+### Paso 5 — Director General sobre swarm
 
-Cuando la intención sea de tipo swarm, el director general debe poder:
+Una vez que el agente controla terminal y browser de forma confiable, recién ahí se le agrega capacidad de crear agentes, delegar tareas y lanzar swarm.
 
-1. traducir la intención a una operación de coordinación;
-2. delegarla al subsistema correcto;
-3. mostrar progreso y resultados dentro de la misma vista;
-4. retomar control cuando termine o falle.
+No antes. Porque si no podés controlar una terminal, no vas a poder coordinar un swarm.
 
-Eso evita dos errores graves:
+### Paso 6 — Pizarra libre (vista alternativa futura)
 
-- volver a implementar lógica de swarm dentro del agente superior;
-- mezclar dirección de aplicación con dirección de swarm como si fueran la misma cosa.
+Cuando la vista fixed + agente funcionen bien, se puede explorar una vista canvas donde:
 
-## Hipótesis de interfaz
+- Terminals y browsers se arrastran libremente
+- Se pueden tener múltiples instancias en un mismo workspace
+- La organización es espacial, no-tabs
 
-La mejor dirección sigue siendo una vista tipo **Control Room** u **Operator View** con tres capas:
+Esto es más pesado y viene después. La vista fixed sigue existiendo como fallback.
 
-| Capa           | Función                                                              |
-| -------------- | -------------------------------------------------------------------- |
-| Intención      | Entrada por texto o voz y selector visible de modo de autoridad.     |
-| Ejecución      | Terminales, browser, agentes, tareas y procesos vivos.               |
-| Observabilidad | Timeline, logs, confirmaciones, errores, resultados y estado activo. |
+### Paso 7 — Voz (canal adicional)
 
-### Inspiración correcta
+Push-to-talk como última capa, después de que texto + vista funcionen.
 
-La referencia tipo Excalidraw sirve como inspiración espacial para acomodar elementos vivos, pero NO como modelo principal del producto.
+---
 
-La dirección correcta es:
+## Arquitectura reducida
 
-- conversación como entrada principal;
-- superficie operativa viva como salida principal;
-- organización espacial opcional, no requisito fundacional.
+```
+Intent Router → Action Policy → [Terminal Adapter | Browser Adapter | Agent Adapter | Swarm Adapter]
+                    ↓
+              Execution Timeline
+                    ↓
+              Agent View (integrated)
+```
 
-## Capacidades objetivo
+El agente usa adapters para hablar con terminal, browser, agentes y swarm. Todo queda registrado en la timeline. La vista muestra el resultado.
 
-### 1. Observación transversal
+---
 
-- Ver qué terminales están activas.
-- Ver qué procesos están corriendo.
-- Ver páginas/browser sessions activas.
-- Ver agentes, heartbeats, bloqueos y tareas.
-- Ver timeline de acciones del agente superior.
+## Decisiones abiertas
 
-### 2. Operación de aplicación
+1. **Nombre del agente** — cómo se llama la vista y el agente
+2. **Allowlist inicial** — qué comandos puede correr sin confirmar, cuáles requieren confirmación
+3. **Dónde vive la vista** — panel lateral, tab nuevo, o ventana flotante
+4. **Alcance del primer corte swarm** — qué porcentaje de swarm-director se invoca en el MVP
 
-- Abrir terminales nuevas.
-- Reusar terminales existentes.
-- Lanzar comandos permitidos como `npm run dev`, tests, watchers o builds.
-- Enviar input a una terminal viva.
-- Abrir páginas o sesiones del browser.
-- Navegar y traer el estado relevante a la vista.
-- Cambiar foco y layout dentro de DevHub.
+---
 
-### 3. Dirección general
+## Qué NO hacer primero
 
-- Crear agentes desde intención natural.
-- Delegar tareas concretas.
-- Lanzar flujos de swarm cuando corresponda.
-- Seguir progreso consolidado desde una única timeline.
-- Cancelar, reintentar, pausar o reasignar runs.
+- No empezar por wake word ni voz
+- No empezar por la pizarra arrastrable
+- No empezar por el "director general total" sin haber probado terminal + browser funcionando
+- No separar agente de vista — van siempre juntos
 
-### 4. Interacción por voz
+---
 
-- Push-to-talk como primer paso.
-- Wake word configurable en etapa posterior.
-- Confirmación explícita para acciones sensibles.
-- Feedback visual de lo entendido antes de ejecutar.
+## Siguiente paso concreto
 
-## Principios de diseño
-
-1. **Primero contratos de acción, después lenguaje natural.** Si no existe una acción bien tipada, el agente no debería improvisarla.
-2. **Primero texto, después voz.** La voz sin contratos ni permisos bien definidos sólo agrega ruido.
-3. **Un solo timeline operativo.** Todo debe quedar trazado en la misma superficie.
-4. **Swarm como subsistema, no como centro del universo.** El nuevo agente tiene que ser más grande que swarm, no rehacer swarm.
-5. **Confirmación según riesgo.** Leer no equivale a mutar; abrir no equivale a destruir; delegar no equivale a ejecutar sin límites.
-
-## Arquitectura propuesta
-
-| Componente          | Rol                                                                       |
-| ------------------- | ------------------------------------------------------------------------- |
-| Intent Router       | Traduce intención natural a acciones tipadas.                             |
-| Mode Resolver       | Determina si la intención cae en Observador, Operador o Director General. |
-| Action Policy Layer | Aplica permisos, confirmaciones, límites y allowlists.                    |
-| Terminal Adapter    | Crea, reusa y observa terminales/procesos.                                |
-| Browser Adapter     | Abre páginas, navega y conecta automatización browser-side.               |
-| View Adapter        | Abre, enfoca o reorganiza vistas y paneles dentro de la app.              |
-| Swarm Adapter       | Invoca capacidades equivalentes a `swarm-director` sin duplicarlas.       |
-| Execution Timeline  | Registra cada paso, tool, error, confirmación y resultado.                |
-| Voice Gateway       | Maneja STT, wake word y confirmaciones cuando se habilite voz.            |
-
-## Decisiones preliminares para no perdernos
-
-Estas no son decisiones finales de implementación. Son decisiones de enfoque para aterrizar la idea sin abrir todavía un SDD.
-
-1. El agente superior debe ser una **superficie operativa**, no sólo un chat bonito.
-2. `swarm-director` sigue siendo una pieza interna especializada; no conviene absorberlo ni diluirlo.
-3. El valor inicial está en controlar bien **terminal + browser + estado de la app**, no en prometer autonomía total desde el día uno.
-4. La voz debe tratarse como un canal adicional, no como el centro conceptual del sistema.
-5. La vista debe priorizar **claridad operativa** antes que espectacularidad visual.
-
-## Consolidación de IA y Compatibilidad con OpenCode (MiniMax 2.7)
-
-Para garantizar la paridad operativa con OpenCode y aprovechar su velocidad en ejecuciones y control interno de la aplicación, el **Director General Operativo** utilizará **MiniMax 2.7** como su proveedor de IA estándar.
-
-### Estrategia de Integración y Código Existente
-
-1. **Resolución Unificada de Alias (`ModelConsolidator.js`)**:
-   El sistema consolidará los alias de modelos entrantes (`minimax-2.7`, `minimax-m2.7`, `minimax`, `opencode-minimax`) hacia el identificador canónico `minimax-coding-plan/MiniMax-M2.7`. Esto asegura consistencia en todas las fases de orquestación de la app.
-
-2. **Integración Nativa en la Capa del Proveedor**:
-   En lugar de depender de llamadas externas crudas, el modelo se integra directamente a través del plan de suscripción oficial configurado (`minimax-coding-plan`). Esto permite que el motor de ejecución nativo orqueste las llamadas y mantenga el control sobre el timeline operativo sin exponer detalles del wrapper de ejecución.
-
-3. **Foco del Modelo Proveedor**:
-   - **Orquestación de Acciones Internas**: Traducir las intenciones del usuario en comandos permitidos, gestionar permisos, y monitorear la ejecución del terminal.
-   - **Observabilidad en Tiempo Real**: Analizar el estado de los procesos y reportar desviaciones al timeline operativo unificado.
-
-## Escenarios semilla
-
-Estos escenarios sirven para aterrizar la idea y evaluar si la visión tiene sentido. No son un backlog.
-
-### Escenario 1 - Operación local rápida
-
-El usuario escribe: "abrí una terminal para frontend y corré `npm run dev`".
-
-La vista debería poder:
-
-- crear o elegir la terminal adecuada;
-- ejecutar el comando;
-- mostrar que quedó corriendo;
-- dejar el log visible en la misma superficie.
-
-### Escenario 2 - Inspección antes de actuar
-
-El usuario dice: "mostrame qué agentes y procesos siguen activos".
-
-La vista debería poder:
-
-- listar agentes vivos;
-- mostrar procesos terminales asociados;
-- indicar bloqueos, heartbeats o errores;
-- no ejecutar cambios por defecto.
-
-### Escenario 3 - Dirección general con apoyo de swarm
-
-El usuario pide: "creá agentes para revisar MCP y tests, y avisame el progreso".
-
-La vista debería poder:
-
-- interpretar que esto ya no es sólo operación local;
-- delegar al subsistema correcto;
-- mostrar seguimiento consolidado;
-- dejar claro cuándo el control pasó a swarm y cuándo volvió.
-
-### Escenario 4 - Navegación y browser controlado
-
-El usuario pide: "abrí tal URL y dejala en la vista para revisar settings".
-
-La vista debería poder:
-
-- abrir la sesión de browser;
-- navegar a la URL;
-- mostrar estado o snapshot relevante;
-- dejar rastro en la timeline.
-
-## Qué debe quedar fuera al principio
-
-Para que esta idea no se vuelva una bolsa de features, conviene dejar fuera de la primera definición conceptual:
-
-- autonomía abierta para cualquier comando sin política de permisos;
-- wake word permanente escuchando todo el tiempo;
-- canvas libre como núcleo obligatorio de la UX;
-- reemplazo completo de vistas especializadas existentes;
-- reimplementación de la lógica de swarm dentro del agente superior.
-
-## Orden correcto de implementación
-
-Este es el punto más importante. El orden correcto NO es empezar por voz, ni por canvas, ni por el director total.
-
-### 1. Modelo de acciones y política de permisos
-
-Primero hay que definir el contrato de acciones del sistema.
-
-Ejemplos:
-
-- `open_terminal`
-- `run_terminal_command`
-- `focus_terminal`
-- `open_browser_page`
-- `navigate_browser`
-- `create_agent`
-- `delegate_task`
-- `show_logs`
-
-Esto va primero porque sin acciones tipadas el agente superior se transforma en una capa frágil de prompt parsing.
-
-**Por qué va primero:**
-sin este paso no existe base segura para distinguir entre observar, operar y dirigir.
-
-### 2. Timeline operativa y capa de observabilidad unificada
-
-Antes de automatizar mucho, hay que poder ver bien qué pasó.
-
-Esto implica:
-
-- acción pedida;
-- confirmación requerida o no;
-- tool/adapter usado;
-- estado de ejecución;
-- resultado;
-- error si falla.
-
-**Por qué va segundo:**
-si no hay observabilidad desde el principio, después es casi imposible depurar confianza, errores y control.
-
-### 3. Modo Observador
-
-El primer modo real debería ser el más seguro.
-
-Debe permitir:
-
-- inspeccionar terminales;
-- listar procesos relevantes;
-- ver páginas/browser sessions;
-- ver agentes y estado;
-- consultar logs y timeline.
-
-**Por qué va tercero:**
-porque te da utilidad inmediata y permite validar el modelo mental sin todavía mutar demasiado la app.
-
-### 4. Modo Operador de aplicación
-
-Recién después conviene habilitar acciones reales sobre la app.
-
-Debe incluir:
-
-- abrir terminal;
-- correr comando permitido;
-- abrir browser;
-- navegar a URL;
-- enfocar paneles o cambiar layout básico.
-
-**Por qué va cuarto:**
-porque una vez que ya podés observar y trazar, pasar a ejecutar acciones locales tiene riesgo controlado y valor inmediato.
-
-### 5. MVP de Operator View por texto
-
-Con observación + operación local ya se puede shippear una primera vista útil.
-
-Ese MVP debe tener:
-
-- input por texto;
-- selector visible de modo de autoridad;
-- timeline;
-- surfaces activas mínimas;
-- confirmaciones por riesgo.
-
-**Por qué va quinto:**
-porque recién acá existe una experiencia coherente. Antes de esto sólo hay piezas técnicas.
-
-### 6. Modo Director General
-
-Una vez que el agente ya controla la aplicación, recién ahí conviene subirlo al nivel de dirección sistémica.
-
-Debe agregar:
-
-- creación de agentes;
-- delegación de tareas;
-- disparo de capacidades de swarm;
-- seguimiento consolidado multiagente;
-- cancelación y reasignación.
-
-**Por qué va sexto:**
-porque si empezás por acá sin haber resuelto control local, permisos y observabilidad, terminás con un pseudo-orquestador demasiado abstracto y poco confiable.
-
-### 7. Layout operativo avanzado o superficie espacial
-
-Cuando las acciones ya funcionan, tiene sentido construir una vista más rica para acomodar terminales, browser y agentes como bloques vivos.
-
-**Por qué va séptimo:**
-porque la espacialidad mejora mucho la operación, pero no define el corazón del sistema.
-
-### 8. Voz, push-to-talk y wake word
-
-La voz debe ser la última gran capa.
-
-Primero push-to-talk. Después, si vale la pena, wake word tipo `Hey Zed` o el nombre que se defina.
-
-**Por qué va octavo:**
-porque la voz es una mejora de input, no el fundamento del control. Si se hace antes, tapa problemas de arquitectura con una capa de UX llamativa pero inestable.
-
-## Orden resumido
-
-1. Definir acciones tipadas y permisos.
-2. Construir timeline y observabilidad.
-3. Implementar Modo Observador.
-4. Implementar Modo Operador de aplicación.
-5. Shippear Operator View por texto.
-6. Agregar Modo Director General sobre swarm.
-7. Mejorar layout/superficie espacial.
-8. Agregar voz y wake word.
-
-## Qué NO conviene hacer primero
-
-- No empezar por wake word.
-- No empezar por una UI tipo canvas.
-- No empezar por “el super director total” sin contratos de acciones.
-- No mezclar desde el día uno texto, voz, swarm, browser y terminal sin política de permisos.
-
-Eso te daría una demo vistosa, pero una base mala.
-
-## MVP recomendado
-
-El MVP correcto para validar esta visión sería:
-
-- `Modo Observador` + `Modo Operador de aplicación`;
-- input por texto;
-- timeline visible;
-- terminal y browser como primeras superficies;
-- confirmaciones claras;
-- sin wake word;
-- sin canvas obligatorio;
-- sin dirección multiagente completa todavía.
-
-Ese MVP valida el corazón del sistema sin sobrediseñarlo.
-
-## Preguntas abiertas
-
-1. Cómo se va a llamar el agente superior por defecto.
-2. Qué acciones entran en allowlist para el primer release.
-3. Qué parte de la integración con swarm entra en el primer corte de `Director General`.
-4. Si el layout espacial vive como modo opcional o como vista por defecto.
-5. Si la voz debe correr localmente, híbrida o con proveedor externo.
-
-## Siguiente aterrizaje recomendado
-
-Antes de abrir un SDD, conviene bajar un poco más estas ideas en una nota conceptual corta que responda sólo estas preguntas:
-
-- cuál es la diferencia exacta entre `Operador de aplicación` y `Director General`;
-- qué acciones mínimas hacen que la vista ya sea útil;
-- qué señales obligan a pedir confirmación;
-- qué parte de swarm se invoca y cuál no;
-- qué se considera éxito de la vista en su primera versión.
-
-Recién cuando esas respuestas estén firmes tendría sentido pasar a un SDD o a un plan más formal.
+Armar el contrato de acciones (paso 1) y la especificación de la vista integrada (paso 4) en un SDD breve. Eso es lo que se puede empezar a ejecutar ahora.

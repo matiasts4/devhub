@@ -25,6 +25,7 @@ import {
   Globe,
   FileCode2,
   Wand2,
+  Settings,
 } from 'lucide-react';
 import TerminalTTY from './TerminalTTY';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
@@ -36,6 +37,7 @@ import {
 } from './terminal/workspaceStateHelpers';
 import NotificationCenter from './NotificationCenter';
 import TerminalSettingsModal from './TerminalSettingsModal';
+import TerminalRestoreSettingsModal from './TerminalRestoreSettingsModal';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -151,46 +153,85 @@ function getPanelIdsFromColumns(columns = []) {
   return columns.flatMap((column) => (column?.panels || []).map((panel) => panel.id));
 }
 
-function readWorkspaceSwarmLaunchSummary(storage, workspace) {
+function readWorkspaceSwarmLaunchSummary(storage, workspace, projectId = null, swarmControlSnapshot = null) {
   const workspacePanelIds = new Set(getPanelIdsFromColumns(workspace?.columns || []));
-  if (workspacePanelIds.size === 0) return null;
 
-  const runs = Object.values(readAgentRuns(storage)).filter(
-    (run) =>
-      run?.launchOrigin === 'swarm-control-launch' &&
-      workspacePanelIds.has(String(run?.panelId || ''))
-  );
-  if (runs.length === 0) return null;
+  // 1. If we have panel IDs, filter devhub_agent_runs within the workspace
+  let runs = [];
+  if (workspacePanelIds.size > 0) {
+    runs = Object.values(readAgentRuns(storage)).filter(
+      (run) =>
+        run?.launchOrigin === 'swarm-control-launch' &&
+        workspacePanelIds.has(String(run?.panelId || ''))
+    );
+  }
 
-  const groups = new Map();
-  runs.forEach((run) => {
-    const taskLaunchId = String(run?.taskId || '').split(':')[0];
-    const launchId = run?.launchId || taskLaunchId;
-    if (!launchId) return;
-    const current = groups.get(launchId) || [];
-    current.push(run);
-    groups.set(launchId, current);
-  });
+  // 2. If no matching runs in current workspace, search globally in all agent runs
+  if (runs.length === 0) {
+    runs = Object.values(readAgentRuns(storage)).filter(
+      (run) => run?.launchOrigin === 'swarm-control-launch'
+    );
+  }
 
-  const [launchId, launchRuns] = [...groups.entries()].sort(([, leftRuns], [, rightRuns]) => {
-    const leftAt = Math.max(...leftRuns.map((run) => Number(run?.launchedAt) || 0));
-    const rightAt = Math.max(...rightRuns.map((run) => Number(run?.launchedAt) || 0));
-    return rightAt - leftAt;
-  })[0] || [null, null];
+  if (runs.length > 0) {
+    const groups = new Map();
+    runs.forEach((run) => {
+      const taskLaunchId = String(run?.taskId || '').split(':')[0];
+      const launchId = run?.launchId || taskLaunchId;
+      if (!launchId) return;
+      const current = groups.get(launchId) || [];
+      current.push(run);
+      groups.set(launchId, current);
+    });
 
-  if (!launchId || !launchRuns?.length) return null;
+    const sortedGroups = [...groups.entries()].sort(([, leftRuns], [, rightRuns]) => {
+      const leftAt = Math.max(...leftRuns.map((run) => Number(run?.launchedAt) || 0));
+      const rightAt = Math.max(...rightRuns.map((run) => Number(run?.launchedAt) || 0));
+      return rightAt - leftAt;
+    });
 
-  const latestRun = launchRuns.reduce((latest, run) => {
-    const latestAt = Number(latest?.launchedAt) || 0;
-    const nextAt = Number(run?.launchedAt) || 0;
-    return nextAt >= latestAt ? run : latest;
-  }, launchRuns[0]);
+    const [launchId, launchRuns] = sortedGroups[0] || [null, null];
 
-  return {
-    launchId,
-    title: latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
-    count: launchRuns.length,
-  };
+    if (launchId && launchRuns?.length) {
+      const latestRun = launchRuns.reduce((latest, run) => {
+        const latestAt = Number(latest?.launchedAt) || 0;
+        const nextAt = Number(run?.launchedAt) || 0;
+        return nextAt >= latestAt ? run : latest;
+      }, launchRuns[0]);
+
+      return {
+        launchId,
+        title: latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
+        count: launchRuns.length,
+      };
+    }
+  }
+
+  // 3. Fallback to cached swarm control snapshot (state or local storage)
+  const snapshotToUse = swarmControlSnapshot || (() => {
+    if (projectId && storage) {
+      try {
+        return JSON.parse(storage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null');
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  })();
+
+  if (snapshotToUse) {
+    const mission = snapshotToUse.mission_control?.mission || snapshotToUse.mission;
+    if (mission && mission.status === 'active' && mission.mission_id) {
+      return {
+        launchId: mission.mission_id,
+        title: mission.title || 'Swarm activo',
+        count: 1,
+        isFallback: true,
+      };
+    }
+  }
+
+  return null;
 }
 
 function createDefaultWorkspaceState() {
@@ -947,6 +988,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     sessionType: 'opencode-durable',
     restorePolicy: 'manual',
   });
+  const [restoreSettingsModal, setRestoreSettingsModal] = useState({ open: false });
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
@@ -1012,6 +1054,62 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return false;
     }
   });
+
+  const [swarmControlSnapshot, setSwarmControlSnapshot] = useState(() => {
+    if (typeof window === 'undefined' || !projectId) return null;
+    try {
+      return JSON.parse(window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null');
+    } catch {
+      return null;
+    }
+  });
+
+  // Sync swarmControlSnapshot on projectId changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = projectId ? window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId)) : null;
+      setSwarmControlSnapshot(raw ? JSON.parse(raw) : null);
+    } catch {
+      setSwarmControlSnapshot(null);
+    }
+  }, [projectId]);
+
+  // Sync swarm health from backend periodically / on mount
+  useEffect(() => {
+    if (!projectId || !storage) return;
+
+    let isSubscribed = true;
+    const fetchHealth = async () => {
+      try {
+        const base = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost';
+        const response = await fetch(new URL(`/api/agenthub/operations/health?project_id=${projectId}`, base).toString(), {
+          cache: 'no-store',
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const nextInput =
+          payload.control_room_input ||
+          payload.control_room_snapshot_input ||
+          payload.control_room ||
+          null;
+
+        if (nextInput && isSubscribed) {
+          storage.setItem(getSwarmSnapshotStorageKey(projectId), JSON.stringify(nextInput));
+          setSwarmControlSnapshot(nextInput);
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV !== 'test') {
+          console.error('Failed to sync swarm health:', error);
+        }
+      }
+    };
+
+    fetchHealth();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [projectId, storage]);
 
   const wsCounterRef = useRef(1);
   const panelCounterRef = useRef(1);
@@ -1484,7 +1582,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, rightDockState.maximized, rightDockState.visible, workspaceWindows]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
-  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(storage, activeWorkspace);
+  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(storage, activeWorkspace, projectId, swarmControlSnapshot);
   const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
   const effectiveRightDockState = activeWorkspaceOwnsDockState
     ? rightDockState
@@ -1504,7 +1602,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
   const shouldSuspendNativeSurfaces =
-    isGridLauncherOpen || swarmLaunchWizardOpen || isDraggingDock || isDraggingInternalSplit;
+    isGridLauncherOpen || swarmLaunchWizardOpen || restoreSettingsModal.open || isDraggingDock || isDraggingInternalSplit;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
@@ -1690,6 +1788,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         } catch {
           // Ignore localStorage failures.
         }
+        setSwarmControlSnapshot(payload.control_room_snapshot_input);
       }
 
       runtimeRequests.forEach((request) => {
@@ -1747,6 +1846,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         } catch {
           // Ignore localStorage failures.
         }
+        setSwarmControlSnapshot(payload.control_room_snapshot_input);
+      } else {
+        try {
+          localStorage.removeItem(getSwarmSnapshotStorageKey(projectId));
+        } catch {
+          // ignore
+        }
+        setSwarmControlSnapshot(null);
       }
 
       (payload?.terminate_result?.terminals?.attempted || []).forEach((panelId) => {
@@ -1999,16 +2106,27 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
-    const activeWorkspaceForNativeSurface = workspaces.find(
-      (workspace) => workspace.id === activeWsId
-    );
-    const activePanelIdsForNativeSurface = activeWorkspaceForNativeSurface
-      ? getAllPanelIds(activeWorkspaceForNativeSurface.columns || [])
-      : [];
-    const hiddenPanelIdsForNativeSurface = workspaces.flatMap((workspace) => {
+    const activePanelIdsForNativeSurface = [];
+    const hiddenPanelIdsForNativeSurface = [];
+
+    workspaces.forEach((workspace) => {
       const panelIds = getAllPanelIds(workspace.columns || []);
-      if (workspace.id !== activeWsId) return panelIds;
-      return [];
+      const focusedPanelId = focusedPanelByWorkspace[workspace.id];
+
+      if (workspace.id === activeWsId) {
+        if (focusedPanelId) {
+          activePanelIdsForNativeSurface.push(focusedPanelId);
+          panelIds.forEach((id) => {
+            if (id !== focusedPanelId) {
+              hiddenPanelIdsForNativeSurface.push(id);
+            }
+          });
+        } else {
+          activePanelIdsForNativeSurface.push(...panelIds);
+        }
+      } else {
+        hiddenPanelIdsForNativeSurface.push(...panelIds);
+      }
     });
 
     const detail = {
@@ -2042,7 +2160,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
       settleTimers.forEach((timerId) => clearTimeout(timerId));
     };
-  }, [activeWsId, getAllPanelIds, isVisible, workspaces]);
+  }, [activeWsId, getAllPanelIds, isVisible, workspaces, focusedPanelByWorkspace]);
 
   const findPanelInWorkspace = (workspace, panelId) => {
     if (!workspace || !panelId) return null;
@@ -3430,6 +3548,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 </div>
                 {workspaces.length > 1 && (
                   <button
+                    type="button"
+                    data-testid={`workspace-close-${ws.id}`}
                     onClick={(e) => removeWorkspace(e, ws.id)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded ml-1.5 transition-opacity"
                   >
@@ -3596,6 +3716,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <div className="w-px h-5 bg-white/10 mx-1" />
 
           <NotificationCenter projectId={projectId} variant="topbar" />
+
+          <button
+            type="button"
+            onClick={() => setRestoreSettingsModal({ open: true })}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+            title="Configuración de restauración de terminales"
+            aria-label="Configuración de restauración de terminales"
+            data-testid="terminal-restore-settings-btn"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -4052,6 +4183,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         sessionType={terminalSettingsModal.sessionType}
         restorePolicy={terminalSettingsModal.restorePolicy}
         cwd={terminalSettingsModal.cwd}
+      />
+
+      <TerminalRestoreSettingsModal
+        open={restoreSettingsModal.open}
+        onClose={() => setRestoreSettingsModal({ open: false })}
       />
     </motion.div>
   );

@@ -49,6 +49,8 @@
   --chrome-press-offset: 1px;
 }
 
+
+
 [data-morphology='aura'] {
   --chrome-radius-panel: 1.25rem;
   --chrome-radius-control: 1rem;
@@ -130,6 +132,52 @@
     linear-gradient(90deg, rgba(255, 248, 228, 0.012) 1px, transparent 1px),
     linear-gradient(180deg, #14120d 0%, #0a0907 100%);
   background-size: auto, auto, 24px 24px, 24px 24px, auto;
+}
+
+/* ─── Terminal Zone — base fallbacks applied before header style overrides ─── */
+[data-terminal-container] {
+  --terminal-bg: var(--surface-app);
+  --terminal-fg: var(--text-primary);
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: var(--surface-elevated);
+  --terminal-accent-bar: transparent;
+}
+
+/* Dragon style — gradient header + accent bar */
+[data-terminal-container][data-terminal-header-style='dragon'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: linear-gradient(180deg, var(--surface-elevated), var(--chrome-panel-fill));
+  --terminal-accent-bar: var(--accent-primary);
+}
+
+/* Minimal style — flat solid, no accent bar */
+[data-terminal-container][data-terminal-header-style='minimal'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: var(--surface-card);
+  --terminal-accent-bar: transparent;
+}
+
+/* Gradient style — header gradient, no accent bar */
+[data-terminal-container][data-terminal-header-style='gradient'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: linear-gradient(180deg, var(--surface-elevated), var(--surface-card));
+  --terminal-accent-bar: transparent;
+}
+
+/* Plain style — flat solid, no decoration */
+[data-terminal-container][data-terminal-header-style='plain'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: var(--surface-card);
+  --terminal-accent-bar: transparent;
+}
+
+/* Accent bar toggle — overrides header style to force visibility on/off */
+[data-terminal-container][data-terminal-accent-bar='visible'] {
+  --terminal-accent-bar: var(--accent-primary);
+}
+
+[data-terminal-container][data-terminal-accent-bar='hidden'] {
+  --terminal-accent-bar: transparent;
 }
 
 html {

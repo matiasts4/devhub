@@ -565,6 +565,7 @@ export default function TerminalTTY({
   const xtermInstanceTokenRef = useRef(0);
   const consecutiveStaleFitFailuresRef = useRef(0);
   const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
+  const lastViewportYRef = useRef(null);
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
     isVisibleInLayout,
@@ -731,38 +732,44 @@ export default function TerminalTTY({
 
   const closeNativeLease = useCallback(
     async (reason = 'deactivate') => {
-      if (!nativeLeaseRef.current) return;
       nativeLeaseRef.current = false;
       setNativeVteOpened(false);
-      await Promise.resolve(closeNativeVtePanel({ panelId: id, reason })).catch(() => {});
+      try {
+        await closeNativeVtePanel({ panelId: id, reason });
+      } catch (error) {
+        cliLog(`CLIENT:${id}`, 'native VTE close FAILED', { reason, error: error?.message });
+        handleNativeLeaseCommandError(error);
+      }
     },
-    [id]
+    [id, handleNativeLeaseCommandError]
   );
 
   const hideNativeLease = useCallback(
     async (reason = 'inactive') => {
-      if (!nativeLeaseRef.current) return;
       cliLog(`CLIENT:${id}`, 'native VTE hide requested', { reason });
-      await Promise.resolve(
-        setNativeVtePanelVisibility({
+      try {
+        await setNativeVtePanelVisibility({
           panelId: id,
           visible: false,
           reason,
-        })
-      ).catch(() => {});
+        });
+      } catch (error) {
+        cliLog(`CLIENT:${id}`, 'native VTE hide FAILED', { reason, error: error?.message });
+        handleNativeLeaseCommandError(error);
+      }
     },
-    [id]
+    [id, handleNativeLeaseCommandError]
   );
 
   useEffect(() => {
     return () => {
-      if (nativeLeaseRef.current) {
-        closeNativeLease('unmount');
-      } else {
-        hideNativeLease('unmount');
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
       }
+      closeNativeLease('unmount');
     };
-  }, [hideNativeLease, closeNativeLease]);
+  }, [closeNativeLease]);
 
   const handleNativeLeaseCommandError = useCallback(
     (error) => {
@@ -907,6 +914,23 @@ export default function TerminalTTY({
       }
     }, 120);
   }, [fitAndResize, clearTimers, scrollTerminalToBottom]);
+
+  // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
+  useEffect(() => {
+    if (!termRef.current) return;
+    if (isVisibleInLayout) {
+      // Panel just became visible - restore scroll position
+      const saved = lastViewportYRef.current;
+      if (saved != null) {
+        restoreTerminalViewportScroll(termRef.current, saved);
+      } else {
+        scrollTerminalToBottom(true);
+      }
+    } else {
+      // Panel becoming invisible - save current scroll position
+      lastViewportYRef.current = getTerminalViewportScrollOffset(termRef.current);
+    }
+  }, [isVisibleInLayout]);
 
   const reactivateTerminalViewport = useCallback(() => {
     if (
@@ -1371,6 +1395,10 @@ export default function TerminalTTY({
 
     return () => {
       clearScheduledSync();
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
       window.removeEventListener(
         'devhub:native-vte-workspace-sync',
         handleWorkspaceNativeSurfaceSync

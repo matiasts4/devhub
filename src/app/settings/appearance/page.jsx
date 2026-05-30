@@ -19,6 +19,12 @@ import {
   THEMES,
   getStoredZoom,
   setZoom,
+  TERMINAL_HEADER_STYLES,
+  getStoredTerminalHeaderStyle,
+  setTerminalHeaderStyle,
+  getTerminalHeaderStyleOptions,
+  getStoredTerminalAccentBarVisible,
+  setStoredTerminalAccentBarVisible,
 } from '@/lib/theme/themes';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
@@ -131,6 +137,8 @@ export default function AppearancePage() {
   const [currentZoom, setCurrentZoom] = useState(1);
   const [terminalRendererMode, setTerminalRendererMode] = useState('vte-experimental');
   const [restorePrefs, setRestorePrefs] = useState({ opencode: RESTORE_POLICY.AUTO, generic: RESTORE_POLICY.AUTO, swarm: RESTORE_POLICY.AUTO });
+  const [activeTerminalHeaderStyle, setActiveTerminalHeaderStyle] = useState(TERMINAL_HEADER_STYLES.DRAGON);
+  const [terminalAccentBarVisible, setTerminalAccentBarVisible] = useState(true);
 
   useEffect(() => {
     setActiveTheme(getStoredTheme());
@@ -142,6 +150,8 @@ export default function AppearancePage() {
       setTerminalRendererMode(readTerminalRendererDefaultModeSetting(window.localStorage));
       const saved = readTerminalRestorePreferences(window.localStorage);
       setRestorePrefs(saved);
+      setActiveTerminalHeaderStyle(getStoredTerminalHeaderStyle());
+      setTerminalAccentBarVisible(getStoredTerminalAccentBarVisible());
     }
   }, []);
 
@@ -194,6 +204,33 @@ export default function AppearancePage() {
       writeTerminalRestorePreferences(window.localStorage, { [sessionType]: nextPolicy });
     }
     setRestorePrefs((prev) => ({ ...prev, [sessionType]: nextPolicy }));
+  };
+
+  const handleSelectTerminalHeaderStyle = (styleId) => {
+    const normalized = setTerminalHeaderStyle(styleId);
+    setActiveTerminalHeaderStyle(normalized);
+    // When user changes header style, persist accent bar visibility alongside
+    if (typeof window !== 'undefined') {
+      setStoredTerminalAccentBarVisible(terminalAccentBarVisible);
+      // Also apply to the terminal container element directly
+      const container = document.querySelector('[data-terminal-container]');
+      if (container) {
+        container.setAttribute('data-terminal-header-style', normalized);
+        container.setAttribute('data-terminal-accent-bar', String(terminalAccentBarVisible));
+      }
+    }
+  };
+
+  const handleToggleTerminalAccentBar = () => {
+    const nextVisible = !terminalAccentBarVisible;
+    setStoredTerminalAccentBarVisible(nextVisible);
+    setTerminalAccentBarVisible(nextVisible);
+    if (typeof window !== 'undefined') {
+      const container = document.querySelector('[data-terminal-container]');
+      if (container) {
+        container.setAttribute('data-terminal-accent-bar', String(nextVisible));
+      }
+    }
   };
 
   return (
@@ -306,7 +343,118 @@ export default function AppearancePage() {
 
       <ChromeSurface asChild surface="panel" emphasized>
         <section
-          data-testid="appearance-accent-shell"
+          className="rounded-2xl border p-6"
+          style={getAppearanceSectionStyle()}
+        >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
+              Terminal Zone
+            </h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Per-terminal visual customization independent of app-level theme.
+            </p>
+          </div>
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
+            style={getAppearanceBadgeStyle()}
+          >
+            <Monitor size={12} style={{ color: 'var(--accent-primary)' }} />
+            {getTerminalHeaderStyleOptions().find((o) => o.id === activeTerminalHeaderStyle)?.label ?? 'Dragon'}
+          </div>
+        </div>
+
+        <div className="mb-5">
+          <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+            Header style
+          </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {getTerminalHeaderStyleOptions().map((option) => {
+              const isActive = option.id === activeTerminalHeaderStyle;
+              return (
+                <button
+                  key={option.id}
+                  data-testid={`terminal-header-style-${option.id}`}
+                  type="button"
+                  onClick={() => handleSelectTerminalHeaderStyle(option.id)}
+                  className="group text-left rounded-xl border p-3 transition-all"
+                  style={getAppearanceOptionStyle(isActive)}
+                >
+                  <div className="mb-2">
+                    {/* Mini preview of the header style */}
+                    <div
+                      className="h-6 rounded-t-md border-b"
+                      style={{
+                        background: option.id === 'dragon'
+                          ? 'linear-gradient(180deg, var(--surface-elevated), var(--surface-card))'
+                          : option.id === 'gradient'
+                            ? 'linear-gradient(180deg, var(--surface-elevated), var(--surface-card))'
+                            : 'var(--surface-card)',
+                        borderColor: 'var(--border-subtle)',
+                      }}
+                    />
+                    {option.id === 'dragon' && (
+                      <div className="h-1 rounded-b-sm" style={{ background: 'var(--accent-primary)' }} />
+                    )}
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        {option.label}
+                      </p>
+                      <p className="text-[10px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                        {option.description}
+                      </p>
+                    </div>
+                    {isActive && (
+                      <span
+                        className="h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center"
+                        style={{ background: 'var(--accent-primary)', color: 'white' }}
+                      >
+                        <Check size={10} />
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Accent bar toggle */}
+        <div className="flex items-center justify-between max-w-sm">
+          <div>
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Accent bar
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Show colored bar below terminal header.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={terminalAccentBarVisible}
+            data-testid="terminal-accent-bar-toggle"
+            onClick={handleToggleTerminalAccentBar}
+            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+            style={{
+              background: terminalAccentBarVisible ? 'var(--accent-primary)' : 'var(--surface-muted)',
+            }}
+          >
+            <span
+              className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+              style={{
+                transform: terminalAccentBarVisible ? 'translateX(22px)' : 'translateX(2px)',
+              }}
+            />
+          </button>
+        </div>
+        </section>
+      </ChromeSurface>
+
+      <ChromeSurface asChild surface="panel" emphasized>
+        <section
           className="rounded-2xl border p-6"
           style={getAppearanceSectionStyle()}
         >
