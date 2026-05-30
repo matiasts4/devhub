@@ -42,6 +42,7 @@ const commonJsAndJestFiles = [
   'src/lib/sdd/**/*.js',
   ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
+  'src/lib/directorGeneral/**/*.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',
