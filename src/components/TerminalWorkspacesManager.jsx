@@ -2101,7 +2101,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         ...currentState,
         visible: currentState.visible && currentState.activeTab === tab ? false : true,
         activeTab: tab,
-        maximizedView: tab === 'editor' ? 'editor' : tab === 'swarm' ? 'swarm' : 'browser',
+        maximizedView:
+          tab === 'editor'
+            ? 'editor'
+            : tab === 'swarm'
+              ? 'swarm'
+              : tab === 'operator'
+                ? 'operator'
+                : 'browser',
       }));
     },
     [updateRightDockState]
@@ -3695,6 +3702,37 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             title="Show swarm topology"
           >
             <Bot className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            data-testid="right-dock-tab-operator"
+            onClick={() => handleRightDockTabSelect('operator')}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'operator' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Show operator observer"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M1512a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+              />
+            </svg>
           </button>
           <button
             type="button"
