@@ -588,6 +588,24 @@ function listPendingMessageDeliveriesForMission(dbOrMissionId, maybeMissionId, m
     .all(missionId, limit);
 }
 
+function listPendingDeliveriesForAgent(dbOrAgentId, maybeAgentId, maybeOptions = {}) {
+  const hasDb = dbOrAgentId && typeof dbOrAgentId.prepare === 'function';
+  const db = hasDb ? dbOrAgentId : getDb();
+  const agentId = hasDb ? maybeAgentId : dbOrAgentId;
+  const options = hasDb ? maybeOptions : maybeAgentId || {};
+  const limit = options.limit || 50;
+  return db
+    .prepare(
+      `SELECT d.*
+       FROM message_deliveries d
+       WHERE d.recipient_agent_id = ?
+         AND d.status IN ('pending', 'retry_pending')
+       ORDER BY d.updated_at DESC
+       LIMIT ?`
+    )
+    .all(agentId, limit);
+}
+
 function listMessageDeliveriesForMission(dbOrMissionId, maybeMissionId) {
   const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
   const db = hasDb ? dbOrMissionId : getDb();
@@ -1114,6 +1132,7 @@ module.exports = {
   listRecentMissionMessages,
   listMissionDirectorFeedItems,
   // Delivery
+  listPendingDeliveriesForAgent,
   listPendingMessageDeliveriesForMission,
   listMessageDeliveriesForMission,
   upsertMessageDelivery,

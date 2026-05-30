@@ -547,9 +547,14 @@ export function attachPtyLifecycle({ runtimeHint } = {}) {
   };
 }
 
-function buildSessionSpawnConfig(cwd, terminalId) {
+function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
   const tmuxEnabled = hasTmux();
-  const tmuxSession = normalizeTmuxSessionName(terminalId);
+  const isSwarm = Boolean(
+    swarmContext?.isSwarmRole && swarmContext?.launchId && swarmContext?.roleKey
+  );
+  const tmuxSession = isSwarm
+    ? `devhub-swarm-${swarmContext.launchId}-${swarmContext.roleKey}`
+    : normalizeTmuxSessionName(terminalId);
   const resolvedShell = resolveShell();
   const env = Object.assign(sanitizeTerminalSpawnEnv(process.env), {
     DEVHUB_PROJECT_DIR: cwd,
@@ -617,7 +622,7 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
     }
   }
 
-  const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(resolvedCwd, id);
+  const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(resolvedCwd, id, swarmContext);
 
   ttyLog('createSession', `spawning PTY`, {
     id,
@@ -662,6 +667,8 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
     title: null,
     restored,
     id,
+    swarmRole: swarmContext?.roleKey ? { roleKey: swarmContext.roleKey } : null,
+    swarmId: swarmContext?.launchId || null,
     _saveDebounceTimer: null,
     _lastDiagnosticSnapshot: null,
   };
@@ -1006,12 +1013,28 @@ export function restoreSessions() {
           process.kill(s.ptyPid, 0); // Signal 0 = check if process exists
         } catch {
           // Process is dead — skip restoration and log
-          ttyLog('ZOMBIE_CLEANUP', `skipping dead pty-durable session`, { id: s.id, pid: s.ptyPid });
+          ttyLog('ZOMBIE_CLEANUP', `skipping dead pty-durable session`, {
+            id: s.id,
+            pid: s.ptyPid,
+          });
           zombieCount++;
           continue;
         }
 
-        const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+        const restored = createSession({
+          id: s.id,
+          cwd: s.cwd,
+          shell: s.shell,
+          restored: true,
+          swarmContext:
+            s.swarmRole || s.swarmId
+              ? {
+                  isSwarmRole: true,
+                  roleKey: s.swarmRole?.roleKey || null,
+                  launchId: s.swarmId || null,
+                }
+              : null,
+        });
 
         // Verify the newly spawned PTY is actually alive
         if (restored.ptyPid && typeof process.kill === 'function') {
@@ -1019,10 +1042,14 @@ export function restoreSessions() {
             process.kill(restored.ptyPid, 0);
           } catch {
             // Spawned process died immediately — remove from disk
-            ttyLog('ZOMBIE_CLEANUP', `restored pty-durable session died on spawn, removing from disk`, {
-              id: s.id,
-              pid: restored.ptyPid,
-            });
+            ttyLog(
+              'ZOMBIE_CLEANUP',
+              `restored pty-durable session died on spawn, removing from disk`,
+              {
+                id: s.id,
+                pid: restored.ptyPid,
+              }
+            );
             sessions.delete(s.id);
             zombieCount++;
           }
@@ -1039,7 +1066,20 @@ export function restoreSessions() {
         }
 
         try {
-          const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+          const restored = createSession({
+            id: s.id,
+            cwd: s.cwd,
+            shell: s.shell,
+            restored: true,
+            swarmContext:
+              s.swarmRole || s.swarmId
+                ? {
+                    isSwarmRole: true,
+                    roleKey: s.swarmRole?.roleKey || null,
+                    launchId: s.swarmId || null,
+                  }
+                : null,
+          });
           ttyLog('RESTORE', `restored shell-ephemeral session`, {
             id: s.id,
             cwd: s.cwd,
@@ -1073,7 +1113,20 @@ export function restoreSessions() {
         continue;
       }
 
-      const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
+      const restored = createSession({
+        id: s.id,
+        cwd: s.cwd,
+        shell: s.shell,
+        restored: true,
+        swarmContext:
+          s.swarmRole || s.swarmId
+            ? {
+                isSwarmRole: true,
+                roleKey: s.swarmRole?.roleKey || null,
+                launchId: s.swarmId || null,
+              }
+            : null,
+      });
       if (restored.ptyPid && typeof process.kill === 'function') {
         try {
           process.kill(restored.ptyPid, 0);
@@ -1107,7 +1160,9 @@ export function restoreSessions() {
     console.log(`[ttyServer][RESTORE] Skipped ${skippedNoPid} session(s) without saved ptyPid`);
   }
   if (shellEphemeralRestored > 0) {
-    console.log(`[ttyServer][RESTORE] Restored ${shellEphemeralRestored} shell-ephemeral session(s)`);
+    console.log(
+      `[ttyServer][RESTORE] Restored ${shellEphemeralRestored} shell-ephemeral session(s)`
+    );
   }
 }
 
@@ -1222,7 +1277,11 @@ export async function ensureTTYServer() {
 
     if (!session) {
       const shell = resolveShell();
-      const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(cwd, terminalId);
+      const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(
+        cwd,
+        terminalId,
+        swarmContext
+      );
 
       ttyLog('WS_CONN', `creating new session`, {
         terminalId,
@@ -1267,6 +1326,8 @@ export async function ensureTTYServer() {
         shell,
         title: null,
         restored: false,
+        swarmRole: swarmContext?.roleKey ? { roleKey: swarmContext.roleKey } : null,
+        swarmId: swarmContext?.launchId || null,
         _saveDebounceTimer: null,
         _lastDiagnosticSnapshot: null,
       };

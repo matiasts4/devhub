@@ -8,6 +8,7 @@ const {
   buildInitialHeartbeatCommand,
   buildExitTrapCommand,
   buildAgentLaunchWrapper,
+  buildDirectorTmuxInjection,
 } = require('../agentLaunchWrapper');
 
 describe('agentLaunchWrapper', () => {
@@ -119,11 +120,24 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toMatch(/`plyrium/i);
     });
 
-    test('includes inner command at the end', () => {
+    test('includes inner command and logging', () => {
       const result = buildAgentLaunchWrapper(baseParams);
-      const lines = result.split('\n');
-      const lastNonEmptyLine = lines.filter((l) => l.trim()).pop();
-      expect(lastNonEmptyLine).toBe(baseParams.innerCommand);
+      expect(result).toContain(baseParams.innerCommand);
+      expect(result).toContain('Agent exited with code');
+    });
+  });
+
+  describe('buildDirectorTmuxInjection', () => {
+    test('returns empty script if no director session name provided', () => {
+      const result = buildDirectorTmuxInjection(null);
+      expect(result).toContain('# _devhub_tell_director skipped');
+    });
+
+    test('generates tell_director script and function when session name is provided', () => {
+      const result = buildDirectorTmuxInjection('devhub-swarm-123-director');
+      expect(result).toContain('_devhub_tell_director()');
+      expect(result).toContain('tmux send-keys -t "${DEVHUB_DIRECTOR_SESSION}"');
+      expect(result).toContain("cat << 'EOF' > /tmp/devhub-bin/_devhub_tell_director");
     });
   });
 });

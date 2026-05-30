@@ -28,6 +28,7 @@ export function buildAgentEnvExports({
   runId,
   supervisorUrl,
   tmuxSessionName,
+  directorSessionName,
 }) {
   const exports = [
     `export DEVHUB_AGENT_ID="${agentId}"`,
@@ -40,6 +41,10 @@ export function buildAgentEnvExports({
 
   if (tmuxSessionName) {
     exports.push(`export DEVHUB_TMUX_SESSION="${tmuxSessionName}"`);
+  }
+
+  if (directorSessionName) {
+    exports.push(`export DEVHUB_DIRECTOR_SESSION="${directorSessionName}"`);
   }
 
   if (supervisorUrl) {
@@ -203,6 +208,84 @@ curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
 }
 
 /**
+ * Build a background heartbeat loop command.
+ * Runs a subshell that sends a heartbeat every 30 seconds to keep the agent alive.
+ * Uses the same /api/agenthub/presence/heartbeat endpoint.
+ */
+export function buildHeartbeatLoopCommand({
+  supervisorUrl,
+  agentId,
+  missionId,
+  role,
+  workspacePath,
+}) {
+  if (!supervisorUrl) {
+    return '# Heartbeat loop skipped (no supervisor URL)';
+  }
+
+  const payload = JSON.stringify({
+    agent_id: agentId,
+    mission_id: missionId,
+    role,
+    cwd: workspacePath,
+    state: 'busy',
+    status_summary: 'Agent running - periodic heartbeat',
+  });
+
+  const escapedPayload = payload.replace(/'/g, "'\\''");
+
+  return `(_devhub_heartbeat_loop() {
+  while true; do
+    sleep 120
+    HEARTBEAT_PAYLOAD='${escapedPayload}'
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    BODY_HASH=$(printf '%s' "$HEARTBEAT_PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
+    SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
+    curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
+      -H "Content-Type: application/json" \\
+      -H "X-Agent-Id: ${agentId}" \\
+      -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
+      -H "X-Agent-Signature: \${SIGNATURE}" \\
+      -d "$HEARTBEAT_PAYLOAD" > /dev/null 2>&1 || true
+  done
+}
+_devhub_heartbeat_loop &)`;
+}
+
+export function buildDirectorTmuxInjection(directorTmuxSession) {
+  if (!directorTmuxSession) {
+    return '# _devhub_tell_director skipped (no director tmux session)';
+  }
+
+  return [
+    '# Create a local bin directory for agent helpers',
+    'mkdir -p /tmp/devhub-bin',
+    "cat << 'EOF' > /tmp/devhub-bin/_devhub_tell_director",
+    '#!/usr/bin/env bash',
+    '# Worker: send status updates to Director via tmux',
+    '_msg="${1:-}"',
+    'if [ -z "${DEVHUB_DIRECTOR_SESSION:-}" ]; then',
+    '  echo "[$(date \'+%Y-%m-%d %H:%M:%S\')] [DIRECTOR_TELL] SKIP: DEVHUB_DIRECTOR_SESSION not set" >> /tmp/devhub-tell-director-debug.log 2>&1',
+    '  exit 0',
+    'fi',
+    'if ! command -v tmux >/dev/null 2>&1; then',
+    '  echo "[$(date \'+%Y-%m-%d %H:%M:%S\')] [DIRECTOR_TELL] SKIP: tmux not available" >> /tmp/devhub-tell-director-debug.log 2>&1',
+    '  exit 0',
+    'fi',
+    'echo "[$(date \'+%Y-%m-%d %H:%M:%S\')] [DIRECTOR_TELL] Sending to ${DEVHUB_DIRECTOR_SESSION}: $_msg" >> /tmp/devhub-tell-director-debug.log 2>&1',
+    'tmux send-keys -t "${DEVHUB_DIRECTOR_SESSION}" "STATUS_UPDATE: $_msg" C-m >/dev/null 2>&1 || true',
+    'EOF',
+    'chmod +x /tmp/devhub-bin/_devhub_tell_director',
+    'export PATH="/tmp/devhub-bin:$PATH"',
+    '',
+    '# Define as bash function in current shell context for convenience/direct usage',
+    '_devhub_tell_director() {',
+    '  /tmp/devhub-bin/_devhub_tell_director "$1"',
+    '}',
+  ].join('\n');
+}
+
+/**
  * Build the exit event command.
  * Signs the request with HMAC-SHA256 using DEVHUB_AGENT_TOKEN.
  * @param {object} params
@@ -253,6 +336,7 @@ export function buildAgentLaunchWrapper({
   runId,
   supervisorUrl,
   tmuxSessionName,
+  directorTmuxSession,
   bootstrapPrompt,
   innerCommand,
 }) {
@@ -289,6 +373,7 @@ export function buildAgentLaunchWrapper({
       runId,
       supervisorUrl,
       tmuxSessionName,
+      directorSessionName: directorTmuxSession,
     }),
     '',
     buildIdentityVerificationBlock({
@@ -308,11 +393,21 @@ export function buildAgentLaunchWrapper({
       workspacePath,
     }),
     '',
+    buildHeartbeatLoopCommand({
+      supervisorUrl,
+      agentId,
+      missionId,
+      role,
+      workspacePath,
+    }),
+    '',
     buildExitTrapCommand({
       supervisorUrl,
       agentId,
       missionId,
     }),
+    '',
+    buildDirectorTmuxInjection(directorTmuxSession),
     '',
     '# Setup logging for agent output',
     'AGENT_LOG="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',

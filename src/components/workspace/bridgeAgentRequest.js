@@ -1,7 +1,7 @@
 'use client';
 
 import { ATTRS } from '@emergentbase/visual-edits';
-import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
+import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand.shared';
 
 export const BRIDGE_AGENT_OPTIONS = [
   {
@@ -35,8 +35,12 @@ function normalizeClassName(className = '') {
 }
 
 export function deriveSelectionLabel(elementInfo = {}) {
-  const tagName = String(elementInfo?.tagName || elementInfo?.element?.tagName || 'div').toLowerCase();
-  const className = normalizeClassName(elementInfo?.className || elementInfo?.element?.className || '');
+  const tagName = String(
+    elementInfo?.tagName || elementInfo?.element?.tagName || 'div'
+  ).toLowerCase();
+  const className = normalizeClassName(
+    elementInfo?.className || elementInfo?.element?.className || ''
+  );
   const attributes = elementInfo?.attributes || elementInfo?.element?.attributes || {};
   const id = String(elementInfo?.id || elementInfo?.element?.id || attributes.id || '').trim();
   const baseLabel = id ? `${tagName}#${id}` : tagName;

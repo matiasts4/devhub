@@ -1931,6 +1931,7 @@ export default function TerminalTTY({
           // Preserve scroll position across resize events (e.g., workspace switches)
           const savedViewportY = getTerminalViewportScrollOffset(termRef.current);
           const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
+          lastViewportYRef.current = savedViewportY;
           sendResize();
           if (!shouldStickToBottom && savedViewportY != null) {
             restoreTerminalViewportScroll(termRef.current, savedViewportY);

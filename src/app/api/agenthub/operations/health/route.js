@@ -18,6 +18,7 @@ import {
   upsertAgentPresence,
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
+import { listPendingDeliveriesForAgent } from '@/lib/db/swarmMissions.js';
 import {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
@@ -111,7 +112,55 @@ function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = 
     .trim()
     .toLowerCase();
   const isDirector = normalizedRoleKey === 'director';
+  const isWorker = normalizedRoleKey !== 'director';
   const workerRoles = hierarchy.filter((entry) => entry && entry.toLowerCase() !== 'director');
+
+  // Instructions específicas para que usen las APIs de DevHub, no Engram MCP
+  const devHubInstructions = [
+    '',
+    '=== Sistema de Comunicación ===',
+    '- Tu fuente de verdad es el sistema de presencia/mensajes de DevHub.',
+    '- Para descubrir agentes activos: hacer POST a /api/agenthub/presence/heartbeat cada 30s.',
+    '- Para recibir mensajes dirigidos a ti: el heartbeat response incluye pending_deliveries.',
+    '- Para enviar mensajes a otro agente: POST a /api/agenthub/operations/health (action: create_local_mission_message).',
+    '- NO uses Engram MCP para verificar estado del swarm — la memoria puede ser stale.',
+    '',
+  ];
+
+  const directorSpecific = isDirector
+    ? [
+        '',
+        '=== Sistema de Status ===',
+        '- Los workers envian status updates via tmux al panel del Director.',
+        '- Escucha estos mensajes en tu pane: STATUS_UPDATE arrive en tiempo real.',
+        '- NO hagas polling a los workers — los updates llegan automaticamente.',
+        '',
+        '=== Comportamiento del Director ===',
+        '1. Al iniciar, verifica el roster haciendo un heartbeat yourself.',
+        '2. Los workers activos publican con heartbeat — úsalos para saber quién está vivo.',
+        '3. Reparte tareas enviando mensajes a cada worker (create_local_mission_message).',
+        '4. Espera respuestas en tus heartbeat responses (pending_deliveries).',
+        '5. NO preguntes al humano por estado del swarm — usa las APIs de DevHub.',
+        '6. Si un worker no responde en 2min, marcar como inactivo y reasignar.',
+      ]
+    : [];
+
+  const workerSpecific = isWorker
+    ? [
+        '',
+        '=== Reporte de Status ===',
+        '- Usa _devhub_tell_director para enviar status al Director.',
+        '- Eventos: task_start, found_issue, task_complete, needs_help, blocked.',
+        '- Ejemplo: _devhub_tell_director "task_start: Implementando feature X"',
+        '',
+        '=== Comportamiento del Worker ===',
+        '1. Al iniciar, haz un heartbeat para registrarte.',
+        '2. Revisa los pending_deliveries en cada heartbeat response.',
+        '3. Si tienes instrucciones del Director, ejecútalas y reporta evidencia.',
+        '4. Cuando termines, envía resultado al Director via create_local_mission_message.',
+        '5. NO buscar estado en Engram MCP — tu inbox está en pending_deliveries.',
+      ]
+    : [];
 
   return [
     `Rol: ${role}`,
@@ -133,6 +182,9 @@ function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = 
     isDirector
       ? '- Como Director, primero confirma roster, reparte foco y pide reportes; no ejecutes como worker salvo desbloqueo puntual.'
       : '- Como worker, no cierres la misión: entrega resultado, pruebas/observaciones y próximos pasos al Director.',
+    ...devHubInstructions,
+    ...(isDirector ? directorSpecific : []),
+    ...(isWorker ? workerSpecific : []),
   ].join('\n');
 }
 
@@ -146,14 +198,16 @@ function buildLaunchCommand(
 ) {
   const agentProfile = roleKey ? buildRoleAgentProfile(roleKey) : 'sdd-orchestrator';
   const tmuxSessionName = launchId && roleKey ? `devhub-swarm-${launchId}-${roleKey}` : null;
-  
+  const directorTmuxSession = launchId ? `devhub-swarm-${launchId}-director` : null;
+  const isWorker = roleKey && roleKey.toLowerCase() !== 'director';
+
   console.log(`[SWARM_LAUNCH_CMD] Building command for role: ${roleKey}`);
   console.log(`[SWARM_LAUNCH_CMD] Agent profile: ${agentProfile}`);
   console.log(`[SWARM_LAUNCH_CMD] TMUX session: ${tmuxSessionName}`);
   console.log(`[SWARM_LAUNCH_CMD] Model: ${modelId}`);
   console.log(`[SWARM_LAUNCH_CMD] Program: ${programId}`);
   console.log(`[SWARM_LAUNCH_CMD] Prompt length: ${prompt?.length || 0} chars`);
-  
+
   const innerCommand = buildAgentLaunchCommand(programId, prompt, {
     opencodeAgent: agentProfile,
     modelId,
@@ -162,23 +216,31 @@ function buildLaunchCommand(
     // TUI first and inject the mission prompt into the already-running panel.
     interactiveBootstrapPrompt: programId === 'opencode',
   });
-  
+
   console.log(`[SWARM_LAUNCH_CMD] Inner command: ${innerCommand}`);
-  
+
+  const supervisorUrl = process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/agenthub`
+    : 'http://localhost:3100';
+
   const wrapper = buildAgentLaunchWrapper({
     agentId: `${launchId}-${roleKey}`,
     missionId: launchId,
     role: roleKey,
     workspacePath,
     tmuxSessionName,
+    directorTmuxSession: isWorker ? directorTmuxSession : null,
     bootstrapPrompt: programId === 'opencode' ? prompt : '',
     innerCommand,
+    supervisorUrl,
   });
-  
+
   console.log(`[SWARM_LAUNCH_CMD] Wrapper length: ${wrapper.length} chars`);
   console.log(`[SWARM_LAUNCH_CMD] Has bootstrap prompt: ${wrapper.includes('DEVHUB_BOOTSTRAP')}`);
-  console.log(`[SWARM_LAUNCH_CMD] Has DEVHUB_TMUX_SESSION export: ${wrapper.includes('DEVHUB_TMUX_SESSION')}`);
-  
+  console.log(
+    `[SWARM_LAUNCH_CMD] Has DEVHUB_TMUX_SESSION export: ${wrapper.includes('DEVHUB_TMUX_SESSION')}`
+  );
+
   return wrapper;
 }
 
@@ -550,7 +612,13 @@ function captureLaunchMemorySnapshot({ phase, launchId, missionId = null, now = 
   };
 }
 
-function buildLaunchPhaseEvent({ phase, launchId, missionId = null, status = 'ok', detail = null } = {}) {
+function buildLaunchPhaseEvent({
+  phase,
+  launchId,
+  missionId = null,
+  status = 'ok',
+  detail = null,
+} = {}) {
   return {
     phase,
     launchId: launchId || null,
@@ -718,7 +786,9 @@ function choosePreferredPresence(current, candidate) {
     return currentIsLaunchSeed ? candidate : current;
   }
 
-  return getPresenceRecencyValue(candidate) >= getPresenceRecencyValue(current) ? candidate : current;
+  return getPresenceRecencyValue(candidate) >= getPresenceRecencyValue(current)
+    ? candidate
+    : current;
 }
 
 function buildMissionSupervisorSlice({
@@ -1192,7 +1262,8 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           runtimeRequests.push(directorSetup.runtimeRequest);
         }
 
-        const bootstrapPhaseName = bootstrapMode === 'skip_bootstrap' ? 'bootstrap_skipped' : 'bootstrap_complete';
+        const bootstrapPhaseName =
+          bootstrapMode === 'skip_bootstrap' ? 'bootstrap_skipped' : 'bootstrap_complete';
         phaseEvents.push(
           buildLaunchPhaseEvent({
             phase: bootstrapPhaseName,
@@ -2158,6 +2229,55 @@ export const POST = withAuth(async function POST(request, _context, dependencies
         prune_result: pruneResult,
         summary: `Removed ${removeResults.filter((r) => r.success).length} of ${removeResults.length} worktrees.`,
       });
+    }
+
+    if (payload?.action === 'agent_heartbeat') {
+      const { agent_id, mission_id, workspace_id, status_summary } = payload;
+      const now = new Date().toISOString();
+
+      if (!agent_id || !mission_id) {
+        return NextResponse.json(
+          { error: 'agent_id y mission_id son requeridos.' },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const writeDb = dependencies.db || getDb();
+        upsertAgentPresence(writeDb, {
+          mission_id,
+          agent_id,
+          workspace_id: workspace_id || null,
+          presence_state: 'active',
+          status_summary: status_summary || 'heartbeat',
+          last_seen_at: now,
+          updated_at: now,
+        });
+
+        const pendingDeliveries = listPendingDeliveriesForAgent(writeDb, agent_id, {
+          status: 'pending',
+          limit: 50,
+        });
+        const pending_deliveries = pendingDeliveries.map((d) => ({
+          delivery_id: d.delivery_id,
+          message_id: d.message_id,
+          sender_agent_id: d.sender_agent_id,
+          payload: d.payload,
+          created_at: d.created_at,
+          status: d.status,
+        }));
+
+        return NextResponse.json({
+          ok: true,
+          agent_id,
+          mission_id,
+          last_seen_at: now,
+          pending_deliveries,
+        });
+      } catch (err) {
+        console.error('[operations/health][POST] Heartbeat error:', err.message);
+        return NextResponse.json({ error: err.message }, { status: 500 });
+      }
     }
 
     if (payload?.action !== 'create_local_mission_message') {

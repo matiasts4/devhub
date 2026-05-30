@@ -1,22 +1,43 @@
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
-import { persistSession } from './sdd/SessionPersistence';
-import {
-  AGENT_PROGRAM_EXECUTABLES,
-  resolveAgentProgramExecutable,
-  buildTmuxWrappedCommand as buildTmuxWrappedCommandShared,
-  buildAgentLaunchCommand as buildAgentLaunchCommandPure,
-} from './agentLaunchCommand.shared';
+
+export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
+  opencode: '/home/matias/.opencode/bin/opencode',
+  codex: '/home/matias/.nvm/versions/node/v24.14.0/bin/codex',
+  hermes: '/home/matias/.local/bin/hermes',
+});
+
+export function resolveAgentProgramExecutable(programId = 'hermes') {
+  return AGENT_PROGRAM_EXECUTABLES[programId] || AGENT_PROGRAM_EXECUTABLES.hermes;
+}
+
+function shellQuote(value = '') {
+  return `'${String(value).replace(/'/g, `'`)}'`;
+}
+
+/**
+ * Build a tmux-wrapped command for swarm agents.
+ * The tmux session survives PTY death (page refresh, network drop).
+ * Session name: devhub-swarm-{launchId}-{roleKey}
+ * Status bar disabled to save vertical space.
+ */
+export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
+  const sessionTarget = shellQuote(tmuxSessionName);
+  const startDirectory = cwd ? ` -c ${shellQuote(cwd)}` : '';
+  const command = shellQuote(innerCommand);
+  return [
+    `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
+    `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,
+    `tmux attach-session -t ${sessionTarget}`,
+  ].join('; ');
+}
 
 // ---------------------------------------------------------------------------
-// SDD Session + Prompt integration (server-only, with persistence)
+// SDD Session + Prompt integration (shared, no persistence)
 // ---------------------------------------------------------------------------
 
-function buildSddPrompt(prompt, options = {}) {
-  // SessionPersistence is server-only (uses SQLite). In the browser, persistSession is a no-op.
-  const safePersistSession = typeof window === 'undefined' ? persistSession : async () => {};
-
+function buildSddPromptShared(prompt, options = {}) {
   const {
     role = null,
     phase = 'sdd-apply',
@@ -44,18 +65,6 @@ function buildSddPrompt(prompt, options = {}) {
 
   const interpolatedPrompt = buildPrompt(role, phase, vars, { forcePhaseContract: true });
 
-  // Persist session async (fire-and-forget)
-  safePersistSession({
-    sessionId,
-    agentId: options.agentId || null,
-    missionId,
-    phase,
-    artifacts: {},
-    context: { prompt: interpolatedPrompt },
-  }).catch((e) => {
-    console.warn('[agentLaunchCommand] persistSession failed:', e.message);
-  });
-
   return {
     prompt: interpolatedPrompt,
     sessionId,
@@ -63,27 +72,10 @@ function buildSddPrompt(prompt, options = {}) {
   };
 }
 
-function shellQuote(value = '') {
-  return `'${String(value).replace(/'/g, `'`)}'`;
-}
-
 /**
- * Build a tmux-wrapped command for swarm agents.
- * The tmux session survives PTY death (page refresh, network drop).
- * Session name: devhub-swarm-{launchId}-{roleKey}
- * Status bar disabled to save vertical space.
+ * Build an agent launch command string (pure, no DB, safe for browser).
+ * For server-side persistence, use the wrapper in agentLaunchCommand.js.
  */
-export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
-  const sessionTarget = shellQuote(tmuxSessionName);
-  const startDirectory = cwd ? ` -c ${shellQuote(cwd)}` : '';
-  const command = shellQuote(innerCommand);
-  return [
-    `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
-    `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,
-    `tmux attach-session -t ${sessionTarget}`,
-  ].join('; ');
-}
-
 export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const executable = resolveAgentProgramExecutable(programId);
   const opencodeAgent = options.opencodeAgent || 'sdd-orchestrator';
@@ -92,21 +84,18 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const disableTmuxWrap = options.disableTmuxWrap === true;
   const interactiveBootstrapPrompt = options.interactiveBootstrapPrompt === true;
 
-  // SDD session integration must be opt-in at the call site. Letting a global
-  // env flag inject --session into every OpenCode launch breaks normal swarm
-  // launches because the internal DevHub session ID is not an OpenCode ses_* ID.
+  // SDD session integration must be opt-in at the call site.
   const sddEnabled = options.sddEnabled === true;
   const {
     prompt: resolvedPrompt,
     sessionId,
     tmuxSessionName: sddTmuxSessionName,
-  } = buildSddPrompt(prompt, {
+  } = buildSddPromptShared(prompt, {
     role: options.role || null,
     phase: options.phase || 'sdd-apply',
     changeName: options.changeName || null,
     missionId: options.missionId || null,
     sessionId: options.sessionId || null,
-    agentId: options.agentId || null,
     sddEnabled,
   });
 

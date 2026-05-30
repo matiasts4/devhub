@@ -237,6 +237,46 @@ describe('ttyServer — session create', () => {
     expect(spawnCall[0]).toBe('/bin/zsh');
     expect(spawnCall[1]).toEqual(['-lic', 'exec zsh -i', 'devhub-shell', '--no-use']);
   });
+
+  it('uses role-based tmux session naming for swarm agents', async () => {
+    const fs = require('fs');
+    const validSwarmCwd = path.join(process.cwd(), '.devhub', 'worktrees', 'launch-123', 'coder');
+
+    const existsSpy = jest.spyOn(fs, 'existsSync').mockImplementation((p) => {
+      if (p.includes('.devhub/worktrees')) return true;
+      return false;
+    });
+    const statSpy = jest.spyOn(fs, 'statSync').mockImplementation((p) => {
+      if (p.includes('.devhub/worktrees')) {
+        return { isDirectory: () => true };
+      }
+      throw new Error('Directory not found');
+    });
+
+    try {
+      const { createSession } = await import('./ttyServer.js');
+
+      const session = createSession({
+        id: 'term-swarm-agent',
+        cwd: validSwarmCwd,
+        shell: '/bin/zsh',
+        swarmContext: {
+          isSwarmRole: true,
+          roleKey: 'coder',
+          launchId: 'launch-123',
+        },
+      });
+
+      expect(session.swarmRole).toEqual({ roleKey: 'coder' });
+      expect(session.swarmId).toBe('launch-123');
+
+      const spawnCall = mockPtySpawn.mock.calls[0];
+      expect(spawnCall[2]?.env?.DEVHUB_TMUX_SESSION).toBe('devhub-swarm-launch-123-coder');
+    } finally {
+      existsSpy.mockRestore();
+      statSpy.mockRestore();
+    }
+  });
 });
 
 describe('ttyServer — session close', () => {

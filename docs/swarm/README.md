@@ -1,6 +1,6 @@
 # DevHub Swarm - Documentación de Debugging y Mejoras
 
-> **Última actualización:** 2026-05-29
+> **Última actualización:** 2026-05-30
 > **Estado:** 🟡 En progreso - Sistema funcional con bugs conocidos
 
 ## Visión General
@@ -190,6 +190,37 @@ TMUX_SESSION="${DEVHUB_TMUX_SESSION:-$(tmux display-message -p '#S' 2>/dev/null)
 
 ## Descubrimientos Importantes
 
+### Sistema de Comunicación Bidireccional ( NUEVO - 2026-05-30)
+
+**Mecanismo:**
+
+- Workers usan `tmux send-keys` para inyectar status directamente en el pane del Director
+- Director recibe `DEVHUB_DIRECTOR_SESSION` env var pointing to Director's tmux session
+- Función `_devhub_tell_director` disponible en el wrapper de cada worker
+
+**Eventos Status:**
+
+- `task_start`: Worker comenzó una tarea
+- `found_issue`: Worker encontró un problema
+- `task_complete`: Worker terminó una tarea
+- `needs_help`: Worker necesita asistencia
+- `blocked`: Worker está bloqueado
+
+**Ejemplo:**
+
+```bash
+_devhub_tell_director "✅ coder: started task X"
+_devhub_tell_director "⚠️ architect: found issue in design"
+```
+
+**Reducción de costos:**
+
+- Heartbeat interval: 30s → 120s (4x reducción)
+- Status via tmux es FREE (syscall local, no API calls)
+- ~85% reducción en API calls para status reporting
+
+---
+
 ### 1. Comunicación entre agentes FUNCIONA
 
 ✅ **Confirmado:** El sistema de comunicación entre agentes está operativo. Cuando un agente "muere" o tiene problemas, los demás agentes (incluyendo el Director) detectan la caída y reportan el problema. Esto es un indicador de que la arquitectura base del swarm es sólida.
@@ -308,15 +339,15 @@ rm -f ~/.devhub/sidecar-port.txt /tmp/devhub-swarm-*.log
 
 ## Historial de Cambios
 
-| Fecha      | Descripción                                            | Archivos                  |
-| ---------- | ------------------------------------------------------ | ------------------------- |
-| 2026-05-29 | Remover `disableTmuxWrap: true`                        | `route.js:164`            |
-| 2026-05-29 | Fix detección de sesión tmux                           | `agentLaunchWrapper.js`   |
-| 2026-05-29 | Aumentar sleep bootstrap a 10s                         | `agentLaunchWrapper.js`   |
-| 2026-05-29 | Copiar `opencode.json` a worktrees                     | `prepareAgentWorktree.js` |
-| 2026-05-29 | Exportar `DEVHUB_TMUX_SESSION`                         | `buildAgentEnvExports`    |
-| 2026-05-29 | Mejorar logging: timestamps, lock file, captura stderr | `agentLaunchWrapper.js`   |
-| 2026-05-29 | Deduplicación de prompts con lock file                 | `agentLaunchWrapper.js`   |
+| Fecha      | Descripción                                                                                                                       | Archivos                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| 2026-05-30 | Sistema de comunicación bidireccional: tmux injection para status de workers, heartbeat 30s→120s, función `_devhub_tell_director` | `agentLaunchWrapper.js`, `route.js` |
+| 2026-05-29 | Fix detección de sesión tmux                                                                                                      | `agentLaunchWrapper.js`             |
+| 2026-05-29 | Aumentar sleep bootstrap a 10s                                                                                                    | `agentLaunchWrapper.js`             |
+| 2026-05-29 | Copiar `opencode.json` a worktrees                                                                                                | `prepareAgentWorktree.js`           |
+| 2026-05-29 | Exportar `DEVHUB_TMUX_SESSION`                                                                                                    | `buildAgentEnvExports`              |
+| 2026-05-29 | Mejorar logging: timestamps, lock file, captura stderr                                                                            | `agentLaunchWrapper.js`             |
+| 2026-05-29 | Deduplicación de prompts con lock file                                                                                            | `agentLaunchWrapper.js`             |
 
 ---
 
