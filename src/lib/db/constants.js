@@ -69,7 +69,7 @@ const MISSION_MESSAGE_KINDS = [
   'approval_request',
   'approval_result',
 ];
-const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
+const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired', 'consumed'];
 const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline', 'booting', 'crashed'];
 const AGENT_PRESENCE_TTL_MS = 120_000;
 const MISSION_IDENTITY_METADATA_FIELDS = [

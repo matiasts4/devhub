@@ -161,6 +161,17 @@ jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   }),
 }));
 
+// Mock OperatorActionsDispatchContext — provider is normally in App.js
+jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
+  OperatorActionsDispatchProvider: ({ children }) => children,
+  useOperatorActionsDispatch: () => ({
+    dispatchAction: jest.fn(),
+    cards: [],
+    confirmCard: jest.fn(),
+    cancelCard: jest.fn(),
+  }),
+}));
+
 const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').default;
 
 const mountedRoots = [];

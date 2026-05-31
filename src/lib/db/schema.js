@@ -729,7 +729,7 @@ function ensureRuntimeSchema(db) {
       message_id TEXT NOT NULL,
       recipient_agent_id TEXT NOT NULL,
       channel TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('pending', 'sent', 'failed', 'retry_pending', 'expired')),
+      status TEXT NOT NULL CHECK(status IN ('pending', 'sent', 'failed', 'retry_pending', 'expired', 'consumed')),
       delivery_ref TEXT,
       evidence_ref TEXT,
       last_error TEXT,

@@ -31,7 +31,15 @@ const MISSION_MESSAGE_KINDS = [
 const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
 const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline', 'booting', 'crashed'];
 const AGENT_PRESENCE_TTL_MS = 120_000;
-const DIRECTOR_FEED_EVENT_TYPES = ['task_completed', 'handoff_ready'];
+const DIRECTOR_FEED_EVENT_TYPES = [
+  'task_completed',
+  'handoff_ready',
+  'agent_booted',
+  'agent_shutdown',
+  'mission_joined',
+  'mission_left',
+  'supervisor_action',
+];
 const EMPTY_DIRECTOR_FEED_HANDOFF = {
   status: 'idle',
   recipient_agent_id: null,
@@ -612,7 +620,7 @@ function markDeliveryConsumed(dbOrDeliveryId, maybeDeliveryId) {
   const deliveryId = hasDb ? maybeDeliveryId : dbOrDeliveryId;
   return db
     .prepare(
-      `UPDATE message_deliveries SET status = 'delivered', updated_at = ? WHERE delivery_id = ? AND status IN ('pending','retry_pending')`
+      `UPDATE message_deliveries SET status = 'consumed', updated_at = ? WHERE delivery_id = ? AND status IN ('pending','retry_pending')`
     )
     .run(new Date().toISOString(), deliveryId);
 }
@@ -1259,6 +1267,7 @@ module.exports = {
   listPendingMessageDeliveriesForMission,
   listMessageDeliveriesForMission,
   upsertMessageDelivery,
+  markDeliveryConsumed,
   // Presence
   listAgentPresenceForMission,
   upsertAgentPresence,

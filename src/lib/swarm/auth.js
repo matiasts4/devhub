@@ -41,6 +41,18 @@ export function signRequest(secret, timestamp, body) {
 }
 
 /**
+ * Check if a token has expired based on its expires_at timestamp.
+ * @param {string|null} expiresAt - ISO timestamp of token expiry
+ * @returns {boolean} true if token has expired or expiresAt is null/missing
+ */
+export function isTokenExpired(expiresAt) {
+  if (!expiresAt) return true;
+  const expiryMs = Date.parse(expiresAt);
+  if (Number.isNaN(expiryMs)) return true;
+  return Date.now() > expiryMs;
+}
+
+/**
  * Verify an HMAC-SHA256 request signature.
  * Rejects signatures with timestamps older than 30 seconds.
  *

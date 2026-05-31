@@ -1,5 +1,6 @@
 const {
   canvasToViewport,
+  projectCanvasRect,
   viewportToCanvas,
 } = require('../../../lib/pizarra/canvasViewport');
 
@@ -99,6 +100,35 @@ describe('canvasViewport — viewportToCanvas (canvasRect API)', () => {
     // viewport (150, 260) should map to canvas (100, 200)
     const opts = makeOpts({ canvasRect: { left: 50, top: 60 } });
     expect(viewportToCanvas(150, 260, opts)).toEqual({ x: 100, y: 200 });
+  });
+});
+
+describe('canvasViewport — projectCanvasRect', () => {
+  test('projects logical bounds into overlay-local coordinates and screen-space origin', () => {
+    const result = projectCanvasRect(
+      { x: 50, y: 100, width: 200, height: 120 },
+      makeOpts({ zoom: 1.5, pan: { x: 20, y: 30 }, canvasRect: { left: 12, top: 18 } })
+    );
+
+    expect(result).toEqual({
+      x: 95,
+      y: 180,
+      width: 300,
+      height: 180,
+      screenX: 107,
+      screenY: 198,
+    });
+  });
+
+  test('clamps width and height to non-negative values', () => {
+    expect(projectCanvasRect({ x: 0, y: 0, width: -10, height: -20 }, makeOpts())).toEqual({
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      screenX: 0,
+      screenY: 0,
+    });
   });
 });
 

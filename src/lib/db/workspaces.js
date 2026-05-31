@@ -335,7 +335,7 @@ function provisionAuthToken(db, { agentId, workspaceId, tokenHash, rawSecret, al
     status: 'active',
     created_at: timestamp,
     revoked_at: null,
-    expires_at: null,
+    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   };
 
   const keys = Object.keys(row);

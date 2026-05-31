@@ -11,6 +11,7 @@ import React, { useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import PizarraToolPalette from './PizarraToolPalette';
 import PizarraPropertyInspector from './PizarraPropertyInspector';
+import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
 import { usePizarraState } from '@/lib/pizarra/pizarraReducer';
 import { CanvasViewportProvider } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
@@ -49,6 +50,7 @@ export default function PizarraPane() {
     selectedElements,
   } = usePizarraState();
 
+  const [activeTerminalId, setActiveTerminalId] = useState(null);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const containerRef = useRef(null);
   // canvasContainerRef is passed to CanvasViewportProvider so ResizeObserver
@@ -84,13 +86,16 @@ export default function PizarraPane() {
 
   const handleSelect = useCallback(
     (id, multi = false) => {
+      const selectedShape = state.elements.find((element) => element.id === id);
       selectElement(id, multi);
+      setActiveTerminalId(selectedShape?.type === SHAPE_TYPES.TERMINAL ? id : null);
     },
-    [selectElement]
+    [selectElement, state.elements]
   );
 
   const handleDeselect = useCallback(() => {
     deselectAll();
+    setActiveTerminalId(null);
   }, [deselectAll]);
 
   // ── Transform end ───────────────────────────────────────────────────────
@@ -101,6 +106,17 @@ export default function PizarraPane() {
     },
     [updateElement]
   );
+
+  const handleMoveElement = useCallback(
+    (id, position) => {
+      updateElement(id, position);
+    },
+    [updateElement]
+  );
+
+  const handleActivateTerminal = useCallback((terminalId) => {
+    setActiveTerminalId(terminalId);
+  }, []);
 
   // ── Property update from inspector ──────────────────────────────────────
 
@@ -127,6 +143,7 @@ export default function PizarraPane() {
         });
         addElement(shape);
         selectElement(shape.id);
+        setActiveTerminalId(shape.id);
       } else if (type === 'browser') {
         const shape = createShape(SHAPE_TYPES.BROWSER, {
           x: canvasCenter.x,
@@ -134,10 +151,23 @@ export default function PizarraPane() {
         });
         addElement(shape);
         selectElement(shape.id);
+        setActiveTerminalId(null);
       }
     },
     [addElement, selectElement, canvasSize]
   );
+
+  React.useEffect(() => {
+    if (!activeTerminalId) return;
+
+    const activeTerminalStillExists = state.elements.some(
+      (element) => element.id === activeTerminalId && element.type === SHAPE_TYPES.TERMINAL
+    );
+
+    if (!activeTerminalStillExists) {
+      setActiveTerminalId(null);
+    }
+  }, [activeTerminalId, state.elements]);
 
   // ── Canvas click handler for tool palette interaction ───────────────────
 
@@ -219,6 +249,15 @@ export default function PizarraPane() {
             onUpdateElement={handleUpdateElement}
             width={canvasSize.width}
             height={canvasSize.height}
+          />
+
+          <PizarraLiveSurfaceLayer
+            elements={state.elements}
+            selectedElementIds={state.selectedElementIds}
+            activeTerminalId={activeTerminalId}
+            onSelect={handleSelect}
+            onMoveElement={handleMoveElement}
+            onActivateTerminal={handleActivateTerminal}
           />
         </div>
 

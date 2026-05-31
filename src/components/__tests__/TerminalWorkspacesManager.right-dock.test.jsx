@@ -76,10 +76,15 @@ jest.mock('@tauri-apps/api/event', () => ({
 
 jest.mock('../TerminalTTY', () => ({
   __esModule: true,
-  default: ({ id, suspendNativeSurface, nativeSurfacePolicy = 'live' }) => {
+  default: ({ id, isVisibleInLayout = true, suspendNativeSurface, nativeSurfacePolicy = 'live' }) => {
     const React = require('react');
     return React.createElement('div', { 'data-testid': `terminal-${id}` }, [
       React.createElement('span', { key: 'id' }, id),
+      React.createElement(
+        'span',
+        { key: 'visible', 'data-testid': `terminal-visible-${id}` },
+        isVisibleInLayout ? 'visible' : 'hidden'
+      ),
       React.createElement(
         'span',
         { key: 'suspend', 'data-testid': `terminal-suspend-${id}` },
@@ -99,6 +104,14 @@ jest.mock('../NotificationCenter', () => ({
   default: () => {
     const React = require('react');
     return React.createElement('div', null, 'notifications');
+  },
+}));
+
+jest.mock('@/components/pizarra/PizarraPane', () => ({
+  __esModule: true,
+  default: () => {
+    const React = require('react');
+    return React.createElement('div', { 'data-testid': 'pizarra-pane' }, 'pizarra');
   },
 }));
 
@@ -214,6 +227,17 @@ jest.mock(
   }),
   { virtual: true }
 );
+
+// Mock OperatorActionsDispatchContext — provider is normally in App.js
+jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
+  OperatorActionsDispatchProvider: ({ children }) => children,
+  useOperatorActionsDispatch: () => ({
+    dispatchAction: jest.fn(),
+    cards: [],
+    confirmCard: jest.fn(),
+    cancelCard: jest.fn(),
+  }),
+}));
 
 const TerminalWorkspacesManagerModule = require('../TerminalWorkspacesManager');
 const TerminalWorkspacesManager = TerminalWorkspacesManagerModule.default;
@@ -398,6 +422,41 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
     ).toBe('live');
+  });
+
+  test('pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+      'visible'
+    );
+    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+      'live'
+    );
+
+    await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+
+    expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+      'hidden'
+    );
+    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+      'live'
+    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+    ).toBe('live');
+
+    await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+
+    expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+      'visible'
+    );
   });
 
   test('opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer', async () => {

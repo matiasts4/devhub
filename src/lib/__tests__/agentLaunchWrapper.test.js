@@ -9,6 +9,7 @@ const {
   buildExitTrapCommand,
   buildAgentLaunchWrapper,
   buildDirectorTmuxInjection,
+  buildAutoRestartLoopCommand,
 } = require('../agentLaunchWrapper');
 
 describe('agentLaunchWrapper', () => {
@@ -78,7 +79,7 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('curl');
       expect(result).toContain('/api/agenthub/presence/heartbeat');
       expect(result).toContain('launch-abc-coder');
-      expect(result).toContain('busy');
+      expect(result).toContain('idle');
     });
 
     test('returns comment when no supervisor URL', () => {
@@ -123,7 +124,36 @@ describe('agentLaunchWrapper', () => {
     test('includes inner command and logging', () => {
       const result = buildAgentLaunchWrapper(baseParams);
       expect(result).toContain(baseParams.innerCommand);
-      expect(result).toContain('Agent exited with code');
+      expect(result).toContain('Inner command exited with code');
+    });
+  });
+
+  describe('buildAutoRestartLoopCommand', () => {
+    test('includes max restarts limit of 3', () => {
+      const result = buildAutoRestartLoopCommand({ innerCommand: 'opencode' });
+      expect(result).toContain('MAX_RESTARTS=3');
+    });
+
+    test('includes 5 second restart delay', () => {
+      const result = buildAutoRestartLoopCommand({ innerCommand: 'opencode' });
+      expect(result).toContain('RESTART_DELAY=5');
+    });
+
+    test('restarts on non-zero exit code', () => {
+      const result = buildAutoRestartLoopCommand({ innerCommand: 'opencode' });
+      expect(result).toContain('if [ ${AGENT_EXIT_CODE} -ne 0 ]');
+      expect(result).toContain('_devhub_restart_if_needed');
+    });
+
+    test('exits after max restarts reached', () => {
+      const result = buildAutoRestartLoopCommand({ innerCommand: 'opencode' });
+      expect(result).toContain('if [ "$_devhub_RESTART_COUNT" -ge "$MAX_RESTARTS" ]');
+      expect(result).toContain('exit 1');
+    });
+
+    test('increments restart counter', () => {
+      const result = buildAutoRestartLoopCommand({ innerCommand: 'opencode' });
+      expect(result).toContain('_devhub_RESTART_COUNT=$((_devhub_RESTART_COUNT + 1))');
     });
   });
 
@@ -138,6 +168,19 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('_devhub_tell_director()');
       expect(result).toContain('tmux send-keys -t "${DEVHUB_DIRECTOR_SESSION}"');
       expect(result).toContain("cat << 'EOF' > /tmp/devhub-bin/_devhub_tell_director");
+    });
+
+    test('includes circuit breaker with 3 retries', () => {
+      const result = buildDirectorTmuxInjection('devhub-swarm-123-director');
+      expect(result).toContain('_max_retries=3');
+      expect(result).toContain('_circuit_file');
+      expect(result).toContain('failures:');
+    });
+
+    test('includes exponential backoff delays', () => {
+      const result = buildDirectorTmuxInjection('devhub-swarm-123-director');
+      expect(result).toContain('_base_delay=1');
+      expect(result).toContain('2 **');
     });
   });
 });

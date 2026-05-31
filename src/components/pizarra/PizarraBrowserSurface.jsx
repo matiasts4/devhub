@@ -25,7 +25,13 @@ function getMeasuredBounds(node) {
 
 const LEGACY_LOCALHOST_3200 = 'http://localhost:3200/';
 function resolveBrowserUrl(url) {
-  return url === LEGACY_LOCALHOST_3200 ? 'http://localhost:3000/' : url;
+  const DEFAULT = (typeof window !== 'undefined' && window.location?.origin)
+    ? window.location.origin + '/'
+    : 'http://localhost:3000/';
+  if (!url) return DEFAULT;
+  const normalized = url.endsWith('/') ? url : url + '/';
+  if (normalized === LEGACY_LOCALHOST_3200) return DEFAULT;
+  return url;
 }
 
 export default function PizarraBrowserSurface({
@@ -38,6 +44,8 @@ export default function PizarraBrowserSurface({
   const resolvedUrl = resolveBrowserUrl(shape.url);
   const dragCleanupRef = useRef(null);
   const dragRafRef = useRef(null);
+  const boundsRef = useRef(bounds);
+  useEffect(() => { boundsRef.current = bounds; }, [bounds]);
   const viewportRef = useRef(null);
   const panelId = useMemo(() => `pizarra-browser-${shape.id}`, [shape.id]);
   const requestedNativeRuntime = true;
@@ -100,27 +108,6 @@ export default function PizarraBrowserSurface({
         }
       };
 
-      const startDragSync = () => {
-        stopDragSync();
-        const sync = () => {
-          const node = viewportRef.current;
-          if (node) {
-            const rect = node.getBoundingClientRect();
-            resizeNativeBrowser({
-              panelId,
-              bounds: {
-                x: rect.x,
-                y: rect.y,
-                width: Math.max(rect.width, 1),
-                height: Math.max(rect.height, 1),
-              },
-            }).catch(() => {});
-          }
-          dragRafRef.current = requestAnimationFrame(sync);
-        };
-        dragRafRef.current = requestAnimationFrame(sync);
-      };
-
       const handleMouseMove = (moveEvent) => {
         const deltaX = moveEvent.clientX - lastPointer.x;
         const deltaY = moveEvent.clientY - lastPointer.y;
@@ -139,6 +126,18 @@ export default function PizarraBrowserSurface({
           totalDeltaX,
           totalDeltaY,
         });
+
+        // SYNC NATIVE SURFACE POSITION DIRECTLY
+        const b = boundsRef.current;
+        resizeNativeBrowser({
+          panelId,
+          bounds: {
+            x: b.x + totalDeltaX + FRAME_INSET,
+            y: b.y + totalDeltaY + FRAME_INSET + HEADER_HEIGHT,
+            width: Math.max(b.width - FRAME_INSET * 2, 1),
+            height: Math.max(b.height - FRAME_INSET * 2 - HEADER_HEIGHT, 1),
+          },
+        }).catch(() => {});
       };
 
       const handleMouseUp = () => {
@@ -157,7 +156,6 @@ export default function PizarraBrowserSurface({
 
       dragCleanupRef.current?.();
       dragCleanupRef.current = cleanupDrag;
-      startDragSync();
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },

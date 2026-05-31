@@ -1140,6 +1140,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const activePanelIdsRef = useRef(activePanelIds);
   const activeWindowIdsRef = useRef(activeWindowIds);
 
+  // TIC-2: Randomize panel/col/ws counters to HIGH range [1000,10000] on first mount
+  // when workspaces exist (hydrated from localStorage). This prevents stale devhub_agent_runs
+  // entries with low IDs (p1, p2) from colliding with fresh panel IDs.
+  useEffect(() => {
+    if (workspaces.length === 0) return;
+    // Only randomize once when counters are still in low range (initial state)
+    if (panelCounterRef.current <= 100) {
+      const RANDOMIZE_TO_HIGH = () => Math.floor(Math.random() * 9001) + 1000;
+      panelCounterRef.current = RANDOMIZE_TO_HIGH();
+      colCounterRef.current = RANDOMIZE_TO_HIGH();
+      wsCounterRef.current = RANDOMIZE_TO_HIGH();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount
+
   useEffect(() => {
     if (!isVisible || typeof document === 'undefined') return undefined;
 
@@ -2403,7 +2418,23 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const workspaceToRemove = workspaces.find((workspace) => workspace.id === idToRemove);
     if (!workspaceToRemove || workspaces.length <= 1) return;
 
-    await closeTerminalSessions(getAllPanelIds(workspaceToRemove.columns));
+    // TIC-1: Clean devhub_agent_runs BEFORE anything else
+    // This prevents stale identity bleed into new workspaces created before React state removal
+    const panelIdsToClean = getAllPanelIds(workspaceToRemove.columns);
+    try {
+      const runs = JSON.parse(storage?.getItem('devhub_agent_runs') || '{}');
+      const cleanedRuns = {};
+      Object.entries(runs).forEach(([taskId, run]) => {
+        if (!panelIdsToClean.includes(run.panelId)) {
+          cleanedRuns[taskId] = run;
+        }
+      });
+      storage?.setItem('devhub_agent_runs', JSON.stringify(cleanedRuns));
+    } catch {
+      // Ignore localStorage failures — cleanup is best-effort
+    }
+
+    await closeTerminalSessions(panelIdsToClean);
     await new Promise((resolve) => setTimeout(resolve, 200));
     await closeWorkspaceBrowserWindow(idToRemove);
 
@@ -3251,12 +3282,23 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const { panelId, sessionId } = e.detail || {};
       if (!panelId || !sessionId) return;
 
+      let runMetadata = null;
       try {
         const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
         const taskEntry = Object.entries(runs || {}).find(
           ([, value]) => value?.panelId === panelId
         );
-        const runMetadata = taskEntry?.[1] || null;
+        runMetadata = taskEntry?.[1] || null;
+
+        // Persist opencodeSessionId to devhub_agent_runs so the restore manifest can
+        // identify this panel as opencode-durable without relying on the async
+        // useEffect flush of initialCommand to devhub_terminal_state.
+        // This fixes a race condition where the app crashes before the flush,
+        // causing restore to treat the session as shell-ephemeral (no command).
+        if (taskEntry?.[0]) {
+          runs[taskEntry[0]] = { ...runs[taskEntry[0]], opencodeSessionId: sessionId };
+          localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+        }
 
         if (
           runMetadata?.launchOrigin === 'swarm-control-launch' &&
@@ -4013,6 +4055,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             const updateWsDockState = updateRightDockState;
             const focusedPanelId = focusedPanelByWorkspace[ws.id];
             const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
+            const isWorkspaceVisibleInLayout = !isFullscreenBrowser && activeWsId === ws.id && isVisible;
+            const shouldSuspendWorkspaceNativeSurfaces =
+              isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
             return (
               <div
                 key={workspaceGridKey}
@@ -4047,7 +4092,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                             activeWsId,
                             isActivePanel:
                               activePanelId === focusedPanel.id && activeWsId === ws.id,
-                            isVisibleInLayout: activeWsId === ws.id && isVisible,
+                            isVisibleInLayout: isWorkspaceVisibleInLayout,
                             panelLabel: getPanelDisplayLabel(ws, focusedPanel.id),
                             cwd,
                             wsId: ws.id,
@@ -4062,8 +4107,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                               focusedPanel,
                               agentRunsByPanel[focusedPanel.id]
                             ),
-                            suspendNativeSurface:
-                              activeWsId === ws.id && isVisible && shouldSuspendNativeSurfaces,
+                            suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
                             nativeSurfacePolicy,
                             requestedRendererMode: resolveRequestedRenderer({
                               workspaceId: ws.id,
@@ -4103,7 +4147,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                             activeWsId,
                                             isActivePanel:
                                               activePanelId === panel.id && activeWsId === ws.id,
-                                            isVisibleInLayout: activeWsId === ws.id && isVisible,
+                                            isVisibleInLayout: isWorkspaceVisibleInLayout,
                                             panelLabel: getPanelDisplayLabel(ws, panel.id),
                                             cwd,
                                             wsId: ws.id,
@@ -4120,9 +4164,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                               agentRunsByPanel[panel.id]
                                             ),
                                             suspendNativeSurface:
-                                              activeWsId === ws.id &&
-                                              isVisible &&
-                                              shouldSuspendNativeSurfaces,
+                                              shouldSuspendWorkspaceNativeSurfaces,
                                             nativeSurfacePolicy,
                                             requestedRendererMode: resolveRequestedRenderer({
                                               workspaceId: ws.id,
@@ -4160,7 +4202,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                       isActivePanel:
                                         activePanelId === column.panels[0].id &&
                                         activeWsId === ws.id,
-                                      isVisibleInLayout: activeWsId === ws.id && isVisible,
+                                      isVisibleInLayout: isWorkspaceVisibleInLayout,
                                       panelLabel: getPanelDisplayLabel(ws, column.panels[0].id),
                                       cwd,
                                       wsId: ws.id,
@@ -4180,9 +4222,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                         agentRunsByPanel[column.panels[0].id]
                                       ),
                                       suspendNativeSurface:
-                                        activeWsId === ws.id &&
-                                        isVisible &&
-                                        shouldSuspendNativeSurfaces,
+                                        shouldSuspendWorkspaceNativeSurfaces,
                                       nativeSurfacePolicy,
                                       requestedRendererMode: resolveRequestedRenderer({
                                         workspaceId: ws.id,

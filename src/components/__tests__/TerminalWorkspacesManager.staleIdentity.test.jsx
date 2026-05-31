@@ -177,6 +177,17 @@ jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   default: () => mockCatalogState,
 }));
 
+// Mock OperatorActionsDispatchContext — provider is normally in App.js
+jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
+  OperatorActionsDispatchProvider: ({ children }) => children,
+  useOperatorActionsDispatch: () => ({
+    dispatchAction: jest.fn(),
+    cards: [],
+    confirmCard: jest.fn(),
+    cancelCard: jest.fn(),
+  }),
+}));
+
 const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').default;
 
 // Mock localStorage for devhub_agent_runs
@@ -214,11 +225,12 @@ function findAddWorkspaceButton(container) {
 
 // Helper to find active workspace panel IDs from mock TerminalTTY elements.
 // Mock TerminalTTY renders: <div data-testid="terminal-{id}">{id}</div>
-// We query by data-testid prefix to avoid picking up non-terminal elements.
+// Filter to actual panel IDs (p<number>) — there are non-panel elements
+// like terminal-restore-settings-btn that also match the terminal- prefix.
 function getActiveWorkspacePanelIds(container) {
   return Array.from(container.querySelectorAll('[data-testid^="terminal-"]'))
     .map((el) => el.getAttribute('data-testid').replace('terminal-', ''))
-    .filter(Boolean);
+    .filter((id) => id && /^p\d+$/.test(id));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

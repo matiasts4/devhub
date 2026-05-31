@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -36,15 +36,13 @@ import {
   shouldWarnAboutFraming,
 } from './browserPreviewSupport';
 import {
-  closeNativeBrowser,
   focusNativeBrowser,
-  loadNativeBrowserUrl,
-  openNativeBrowser,
-  probeNativeBrowser,
-  reloadNativeBrowser,
-  resizeNativeBrowser,
-  setNativeBrowserVisibility,
 } from '@/lib/browser/nativeBrowserBridge';
+import {
+  useNativeBrowserCapability,
+  useNativeBrowserSurface,
+} from './useNativeBrowserSurface';
+import { reloadBrowserRuntime } from './browserRuntimeReload';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
@@ -75,15 +73,25 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowRemove = null,
 }) {
   const viewportShellRef = useRef(null);
-  const nativeLeaseRef = useRef({ opened: false, lastUrl: '' });
-  const [nativeCapability, setNativeCapability] = useState(null);
-  const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
+  const measureNativeBounds = useCallback(() => {
+    const rect = viewportShellRef.current?.getBoundingClientRect?.();
+    return {
+      x: Number(rect?.x) || 0,
+      y: Number(rect?.y) || 0,
+      width: Math.max(Number(rect?.width) || 0, 1),
+      height: Math.max(Number(rect?.height) || 0, 1),
+    };
+  }, []);
   const previewEditMode = Boolean(dockState.editMode || forceEditMode);
   const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK;
   const nativePanelId = useMemo(
     () => `browser-${projectId}-${workspaceId}`,
     [projectId, workspaceId]
   );
+  const nativeCapability = useNativeBrowserCapability({
+    panelId: nativePanelId,
+    requested: requestedBrowserRuntime === BROWSER_RUNTIME.NATIVE_GTK,
+  });
   const nativeSelectorReady = hasNativeSelectorInspectCapability(nativeCapability);
   const browserRuntimeSelection = useMemo(
     () =>
@@ -219,177 +227,21 @@ function WorkspaceBrowserPane({
   const dedicatedBrowserOpen = browserWindowState?.open === true;
   const visibleWorkspaceWindows = Array.isArray(workspaceWindows) ? workspaceWindows : [];
   const showFullscreenWorkspaceTabs = dockState.maximized && dockState.maximizedView === 'browser';
-
-  const measureNativeBounds = () => {
-    const rect = viewportShellRef.current?.getBoundingClientRect?.();
-    return {
-      x: Number(rect?.x) || 0,
-      y: Number(rect?.y) || 0,
-      width: Math.max(Number(rect?.width) || 0, 1),
-      height: Math.max(Number(rect?.height) || 0, 1),
-    };
-  };
-
-  const closeActiveNativeLease = async (reason) => {
-    if (!nativeLeaseRef.current.opened) return;
-    await closeNativeBrowser({ panelId: nativePanelId, reason }).catch(() => {});
-    nativeLeaseRef.current = { opened: false, lastUrl: '' };
-  };
-
-  const hideActiveNativeLease = async () => {
-    if (!nativeLeaseRef.current.opened) return;
-    const bounds = measureNativeBounds();
-    await setNativeBrowserVisibility({ panelId: nativePanelId, visible: false, bounds }).catch(
-      () => {}
-    );
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (requestedBrowserRuntime !== BROWSER_RUNTIME.NATIVE_GTK) {
-      setNativeCapability(null);
-      return undefined;
-    }
-
-    probeNativeBrowser({
-      panelId: nativePanelId,
-      requestedMode: BROWSER_RUNTIME.NATIVE_GTK,
-      tauriAvailable: true,
-    }).then((result) => {
-      if (cancelled) return;
-      setNativeCapability({
-        ready: result?.ready === true,
-        reason: result?.reason || null,
-        persistentProfile: result?.persistentProfile === true,
-        capabilities: result?.capabilities || null,
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [nativePanelId, requestedBrowserRuntime]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function syncNativeRuntime() {
-      if (!nativeRuntimeActive || !dockState.browserUrl || browserError) {
-        await closeActiveNativeLease('iframe-fallback');
-        if (!cancelled) setNativeRuntimeReady(false);
-        return;
-      }
-
-      if (!nativeRuntimeVisibleInLayout) {
-        await hideActiveNativeLease();
-        return;
-      }
-
-      const bounds = measureNativeBounds();
-
-      if (!nativeLeaseRef.current.opened) {
-        const result = await openNativeBrowser({
-          panelId: nativePanelId,
-          url: dockState.browserUrl,
-          bounds,
-        });
-
-        if (cancelled || !nativeRuntimeVisibleInLayout) {
-          if (result?.opened === true) {
-            await closeNativeBrowser({
-              panelId: nativePanelId,
-              reason: 'stale-open-cancelled',
-            }).catch(() => {});
-          }
-          return;
-        }
-
-        if (result?.opened !== true) {
-          setNativeCapability({ ready: false, reason: result?.reason || 'open-failed' });
-          setNativeRuntimeReady(false);
-          return;
-        }
-
-        nativeLeaseRef.current = { opened: true, lastUrl: dockState.browserUrl };
-      } else if (nativeLeaseRef.current.lastUrl !== dockState.browserUrl) {
-        const result = await loadNativeBrowserUrl({
-          panelId: nativePanelId,
-          url: dockState.browserUrl,
-        });
-
-        if (cancelled) return;
-
-        if (result?.loaded === false) {
-          setNativeCapability({ ready: false, reason: result?.reason || 'load-failed' });
-          setNativeRuntimeReady(false);
-          return;
-        }
-
-        nativeLeaseRef.current.lastUrl = dockState.browserUrl;
-      }
-
-      await resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
-      await setNativeBrowserVisibility({ panelId: nativePanelId, visible: true, bounds }).catch(
-        () => {}
-      );
-      await focusNativeBrowser({ panelId: nativePanelId }).catch(() => {});
-
-      if (!cancelled) setNativeRuntimeReady(true);
-    }
-
-    syncNativeRuntime();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    browserError,
-    dockState.browserUrl,
-    nativePanelId,
-    nativeRuntimeActive,
-    nativeRuntimeVisibleInLayout,
-  ]);
-
-  useEffect(
-    () => () => {
-      if (!nativeLeaseRef.current.opened) return;
-      closeNativeBrowser({ panelId: nativePanelId, reason: 'component-unmount' }).catch(() => {});
-      nativeLeaseRef.current = { opened: false, lastUrl: '' };
-    },
-    [nativePanelId]
-  );
-
-  useEffect(() => {
-    if (!nativeRuntimeActive || !nativeRuntimeReady) return undefined;
-    if (typeof window === 'undefined' || typeof window.ResizeObserver !== 'function')
-      return undefined;
-    const node = viewportShellRef.current;
-    if (!node) return undefined;
-
-    const observer = new window.ResizeObserver(() => {
-      const bounds = measureNativeBounds();
-      resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
-      setNativeBrowserVisibility({
-        panelId: nativePanelId,
-        visible: nativeRuntimeVisibleInLayout,
-        bounds,
-      }).catch(() => {});
-    });
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [nativePanelId, nativeRuntimeActive, nativeRuntimeReady, nativeRuntimeVisibleInLayout]);
+  const { nativeRuntimeReady } = useNativeBrowserSurface({
+    panelId: nativePanelId,
+    url: dockState.browserUrl,
+    active: nativeRuntimeActive && !browserError,
+    visibleInLayout: nativeRuntimeVisibleInLayout,
+    measureBounds: measureNativeBounds,
+    observeNode: viewportShellRef,
+  });
 
   const handleRuntimeReload = () => {
-    if (nativeRuntimeActive) {
-      reloadNativeBrowser({ panelId: nativePanelId }).catch(() => {
-        setNativeCapability({ ready: false, reason: 'reload-failed' });
-        setNativeRuntimeReady(false);
-      });
-      return;
-    }
-    handleReload();
+    void reloadBrowserRuntime({
+      nativeRuntimeActive,
+      nativePanelId,
+      handleReload,
+    });
   };
 
   const handleOpenDedicatedBrowser = async () => {

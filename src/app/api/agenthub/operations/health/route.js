@@ -18,7 +18,7 @@ import {
   upsertAgentPresence,
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
-import { listPendingDeliveriesForAgent, markDeliveryConsumed } from '@/lib/db/swarmMissions.js';
+import { listPendingDeliveriesForAgent, markDeliveryConsumed, getAgentPresenceStatus, listAgentPresenceForMission } from '@/lib/db/swarmMissions.js';
 import {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
@@ -1913,11 +1913,18 @@ export function createLocalMissionMessage({
     ...new Set((recipient_agent_ids || []).map((value) => String(value).trim()).filter(Boolean)),
   ];
 
-  if (normalizedRecipients.length === 0) {
+  // Fan-out: ['*'] or empty array resolves to all eligible active participants
+  const resolvedRecipients =
+    normalizedRecipients.length === 0 ||
+    (normalizedRecipients.length === 1 && normalizedRecipients[0] === '*')
+      ? [...eligibleAgentIds]
+      : normalizedRecipients;
+
+  if (resolvedRecipients.length === 0) {
     throw new Error('Elegí al menos un destinatario activo.');
   }
 
-  const invalidRecipients = normalizedRecipients.filter(
+  const invalidRecipients = resolvedRecipients.filter(
     (agentId) => !eligibleAgentIds.has(agentId)
   );
   if (invalidRecipients.length > 0) {
@@ -1939,7 +1946,7 @@ export function createLocalMissionMessage({
     updated_at: now,
   });
 
-  normalizedRecipients.forEach((recipientAgentId) => {
+  resolvedRecipients.forEach((recipientAgentId) => {
     upsertMessageDelivery(db, {
       message_id: message.message_id,
       recipient_agent_id: recipientAgentId,
@@ -2268,6 +2275,35 @@ export const POST = withAuth(async function POST(request, _context, dependencies
           updated_at: now,
         });
 
+        // Determine stale/offline tracking for response
+        const presenceRows = listAgentPresenceForMission(writeDb, mission_id).filter(
+          (p) => p.agent_id === agent_id
+        );
+        const latestPresence = presenceRows[0] || null;
+        const { effective_state, stale } = getAgentPresenceStatus(latestPresence, { now });
+
+        // Track missed heartbeats for stale/offline detection
+        const missedKey = `stale_missed_${agent_id}`;
+        let missedCount = parseInt(dependencies.missedHeartbeats?.get?.(missedKey) || '0', 10);
+        if (effective_state === 'stale' || effective_state === 'offline') {
+          missedCount += 1;
+        } else {
+          missedCount = 0;
+        }
+
+        // Determine presence_state: stale at 2 missed, offline at 3+
+        let presenceState = effective_state;
+        if (missedCount >= 3) {
+          presenceState = 'offline';
+        } else if (missedCount >= 2) {
+          presenceState = 'stale';
+        }
+
+        // Backoff hint: 120s base, doubles per consecutive miss (max 900s)
+        const baseInterval = 120_000;
+        const maxInterval = 900_000;
+        const retryAfterMs = Math.min(baseInterval * Math.pow(2, Math.max(0, missedCount - 1)), maxInterval);
+
         const pendingDeliveries = listPendingDeliveriesForAgent(writeDb, agent_id, {
           status: 'pending',
           limit: 50,
@@ -2281,13 +2317,21 @@ export const POST = withAuth(async function POST(request, _context, dependencies
           status: d.status,
         }));
 
-        return NextResponse.json({
-          ok: true,
-          agent_id,
-          mission_id,
-          last_seen_at: now,
-          pending_deliveries,
-        });
+        const headers = new Headers();
+        headers.set('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+
+        return NextResponse.json(
+          {
+            ok: true,
+            agent_id,
+            mission_id,
+            last_seen_at: now,
+            presence_state: presenceState,
+            retry_after_ms: retryAfterMs,
+            pending_deliveries,
+          },
+          { headers }
+        );
       } catch (err) {
         console.error('[operations/health][POST] Heartbeat error:', err.message);
         return NextResponse.json({ error: err.message }, { status: 500 });

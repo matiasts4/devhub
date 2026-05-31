@@ -1,4 +1,4 @@
-const { gatherOperationalHealth } = require('./route');
+const { gatherOperationalHealth, createLocalMissionMessage } = require('./route');
 const {
   composeControlRoomSnapshot,
   selectControlRoomDiagnostics,
@@ -205,5 +205,102 @@ describe('gatherOperationalHealth runtime diagnostics integration', () => {
         }),
       })
     );
+  });
+});
+
+describe('createLocalMissionMessage broadcast fan-out', () => {
+  const Database = require('better-sqlite3');
+  const { ensureRuntimeSchema } = require('@/lib/db/core');
+  const {
+    createSwarmMission,
+    registerMissionParticipant,
+  } = require('@/lib/db/swarmMissions');
+
+  let db;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    ensureRuntimeSchema(db);
+    db.prepare('INSERT INTO projects (id, name, description, status) VALUES (?, ?, ?, ?)').run(
+      'proj-1',
+      'Test Project',
+      'A test project',
+      'active'
+    );
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  test("recipient_agent_ids: ['*'] fans out to all active participants", () => {
+    const mission = createSwarmMission(db, {
+      project_id: 'proj-1',
+      owner_agent_id: 'director-1',
+      title: 'Broadcast Test',
+      kind: 'coordination',
+      status: 'active',
+    });
+
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-worker-1',
+      role_in_mission: 'executor',
+      status: 'active',
+    });
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-worker-2',
+      role_in_mission: 'executor',
+      status: 'active',
+    });
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'director-1',
+      role_in_mission: 'director',
+      status: 'active',
+    });
+
+    const snapshot = createLocalMissionMessage({
+      db,
+      recipient_agent_ids: ['*'],
+      body_summary: 'Broadcast to all',
+    });
+
+    expect(snapshot).not.toBeNull();
+    // Director snapshot returned; deliveries verified in DB directly
+    const deliveries = db.prepare('SELECT * FROM message_deliveries WHERE recipient_agent_id IN (?, ?)').all('agent-worker-1', 'agent-worker-2');
+    expect(deliveries).toHaveLength(2);
+    const recipientIds = deliveries.map((d) => d.recipient_agent_id).sort();
+    expect(recipientIds).toEqual(['agent-worker-1', 'agent-worker-2']);
+  });
+
+  test('empty recipient_agent_ids defaults to all active participants', () => {
+    const mission = createSwarmMission(db, {
+      project_id: 'proj-1',
+      owner_agent_id: 'director-1',
+      title: 'Broadcast Default Test',
+      kind: 'coordination',
+      status: 'active',
+    });
+
+    registerMissionParticipant(db, {
+      mission_id: mission.mission_id,
+      agent_id: 'agent-worker-1',
+      role_in_mission: 'executor',
+      status: 'active',
+    });
+
+    const snapshot = createLocalMissionMessage({
+      db,
+      recipient_agent_ids: [],
+      body_summary: 'Broadcast default',
+    });
+
+    expect(snapshot).not.toBeNull();
+    const deliveries = db.prepare('SELECT * FROM message_deliveries WHERE recipient_agent_id = ?').all('agent-worker-1');
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0].recipient_agent_id).toBe('agent-worker-1');
   });
 });

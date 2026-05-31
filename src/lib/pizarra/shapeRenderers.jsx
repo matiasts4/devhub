@@ -8,9 +8,16 @@
 import React from 'react';
 import { SHAPE_TYPES } from './shapeModel';
 
+function getKonvaPrimitive(konva, key) {
+  return konva?.[key] ?? null;
+}
+
 // ─── Individual Renderers ──────────────────────────────────────────────────
 
-export function RectRenderer({ shape, isSelected, onSelect, transformerRef }) {
+export function RectRenderer({ shape, konva, onSelect, onTransformEnd }) {
+  const Rect = getKonvaPrimitive(konva, 'Rect');
+  if (!Rect) return null;
+
   const handleClick = (e) => {
     e.cancelBubble = true;
     onSelect(e, shape.id);
@@ -18,6 +25,7 @@ export function RectRenderer({ shape, isSelected, onSelect, transformerRef }) {
 
   return (
     <Rect
+      id={shape.id}
       x={shape.x}
       y={shape.y}
       width={shape.width}
@@ -31,31 +39,15 @@ export function RectRenderer({ shape, isSelected, onSelect, transformerRef }) {
       draggable
       onClick={handleClick}
       onTap={handleClick}
-      onTransformEnd={(e) => {
-        const node = e.target;
-        const scaleX = node.scaleX();
-        const scaleY = node.scaleY();
-        node.scaleX(1);
-        node.scaleY(1);
-        return {
-          id: shape.id,
-          x: node.x(),
-          y: node.y(),
-          width: Math.max(5, node.width() * scaleX),
-          height: Math.max(5, node.height() * scaleY),
-          rotation: node.rotation(),
-        };
-      }}
-      ref={(node) => {
-        if (isSelected && transformerRef && node) {
-          transformerRef.nodes(node);
-        }
-      }}
+      onTransformEnd={onTransformEnd}
     />
   );
 }
 
-export function CircleRenderer({ shape, isSelected, onSelect, transformerRef }) {
+export function CircleRenderer({ shape, konva, onSelect, onTransformEnd }) {
+  const Circle = getKonvaPrimitive(konva, 'Circle');
+  if (!Circle) return null;
+
   const handleClick = (e) => {
     e.cancelBubble = true;
     onSelect(e, shape.id);
@@ -63,6 +55,7 @@ export function CircleRenderer({ shape, isSelected, onSelect, transformerRef }) 
 
   return (
     <Circle
+      id={shape.id}
       x={shape.x}
       y={shape.y}
       radius={shape.radius}
@@ -74,16 +67,15 @@ export function CircleRenderer({ shape, isSelected, onSelect, transformerRef }) 
       draggable
       onClick={handleClick}
       onTap={handleClick}
-      ref={(node) => {
-        if (isSelected && transformerRef && node) {
-          transformerRef.nodes(node);
-        }
-      }}
+      onTransformEnd={onTransformEnd}
     />
   );
 }
 
-export function LineRenderer({ shape, isSelected, onSelect, transformerRef }) {
+export function LineRenderer({ shape, konva, onSelect, onTransformEnd }) {
+  const Line = getKonvaPrimitive(konva, 'Line');
+  if (!Line) return null;
+
   const handleClick = (e) => {
     e.cancelBubble = true;
     onSelect(e, shape.id);
@@ -93,6 +85,7 @@ export function LineRenderer({ shape, isSelected, onSelect, transformerRef }) {
 
   return (
     <Line
+      id={shape.id}
       x={shape.x}
       y={shape.y}
       points={points}
@@ -104,16 +97,15 @@ export function LineRenderer({ shape, isSelected, onSelect, transformerRef }) {
       draggable
       onClick={handleClick}
       onTap={handleClick}
-      ref={(node) => {
-        if (isSelected && transformerRef && node) {
-          transformerRef.nodes(node);
-        }
-      }}
+      onTransformEnd={onTransformEnd}
     />
   );
 }
 
-export function ArrowRenderer({ shape, isSelected, onSelect, transformerRef }) {
+export function ArrowRenderer({ shape, konva, onSelect, onTransformEnd }) {
+  const Arrow = getKonvaPrimitive(konva, 'Arrow');
+  if (!Arrow) return null;
+
   const handleClick = (e) => {
     e.cancelBubble = true;
     onSelect(e, shape.id);
@@ -123,6 +115,7 @@ export function ArrowRenderer({ shape, isSelected, onSelect, transformerRef }) {
 
   return (
     <Arrow
+      id={shape.id}
       x={shape.x}
       y={shape.y}
       points={points}
@@ -137,16 +130,15 @@ export function ArrowRenderer({ shape, isSelected, onSelect, transformerRef }) {
       draggable
       onClick={handleClick}
       onTap={handleClick}
-      ref={(node) => {
-        if (isSelected && transformerRef && node) {
-          transformerRef.nodes(node);
-        }
-      }}
+      onTransformEnd={onTransformEnd}
     />
   );
 }
 
-export function TextboxRenderer({ shape, isSelected, onSelect, transformerRef }) {
+export function TextboxRenderer({ shape, konva, onSelect, onTransformEnd }) {
+  const Text = getKonvaPrimitive(konva, 'Text');
+  if (!Text) return null;
+
   const handleClick = (e) => {
     e.cancelBubble = true;
     onSelect(e, shape.id);
@@ -154,6 +146,7 @@ export function TextboxRenderer({ shape, isSelected, onSelect, transformerRef })
 
   return (
     <Text
+      id={shape.id}
       x={shape.x}
       y={shape.y}
       text={shape.text}
@@ -167,18 +160,17 @@ export function TextboxRenderer({ shape, isSelected, onSelect, transformerRef })
       draggable
       onClick={handleClick}
       onTap={handleClick}
-      ref={(node) => {
-        if (isSelected && transformerRef && node) {
-          transformerRef.nodes(node);
-        }
-      }}
+      onTransformEnd={onTransformEnd}
     />
   );
 }
 
 // ─── Renderer Map ─────────────────────────────────────────────────────────
 
-export function TerminalRenderer({ shape, isSelected, onSelect, transformerRef }) {
+export function TerminalRenderer({ shape, konva, isSelected, onSelect, onTransformEnd }) {
+  const Rect = getKonvaPrimitive(konva, 'Rect');
+  if (!Rect) return null;
+
   const handleClick = (e) => {
     e.cancelBubble = true;
     onSelect(e, shape.id);
@@ -186,6 +178,7 @@ export function TerminalRenderer({ shape, isSelected, onSelect, transformerRef }
 
   return (
     <Rect
+      id={shape.id}
       x={shape.x}
       y={shape.y}
       width={shape.width}
@@ -199,16 +192,15 @@ export function TerminalRenderer({ shape, isSelected, onSelect, transformerRef }
       draggable
       onClick={handleClick}
       onTap={handleClick}
-      ref={(node) => {
-        if (isSelected && transformerRef && node) {
-          transformerRef.nodes(node);
-        }
-      }}
+      onTransformEnd={onTransformEnd}
     />
   );
 }
 
-export function BrowserRenderer({ shape, isSelected, onSelect, transformerRef }) {
+export function BrowserRenderer({ shape, konva, isSelected, onSelect, onTransformEnd }) {
+  const Rect = getKonvaPrimitive(konva, 'Rect');
+  if (!Rect) return null;
+
   const handleClick = (e) => {
     e.cancelBubble = true;
     onSelect(e, shape.id);
@@ -216,6 +208,7 @@ export function BrowserRenderer({ shape, isSelected, onSelect, transformerRef })
 
   return (
     <Rect
+      id={shape.id}
       x={shape.x}
       y={shape.y}
       width={shape.width}
@@ -229,11 +222,7 @@ export function BrowserRenderer({ shape, isSelected, onSelect, transformerRef })
       draggable
       onClick={handleClick}
       onTap={handleClick}
-      ref={(node) => {
-        if (isSelected && transformerRef && node) {
-          transformerRef.nodes(node);
-        }
-      }}
+      onTransformEnd={onTransformEnd}
     />
   );
 }

@@ -222,6 +222,7 @@ curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
  * Build a background heartbeat loop command.
  * Runs a subshell that sends a heartbeat every 30 seconds to keep the agent alive.
  * Uses the same /api/agenthub/presence/heartbeat endpoint.
+ * Implements exponential backoff on failures: 120s -> 240s -> 480s -> max 900s.
  */
 export function buildHeartbeatLoopCommand({
   supervisorUrl,
@@ -246,21 +247,32 @@ export function buildHeartbeatLoopCommand({
   const escapedPayload = payload.replace(/'/g, "'\\''");
 
   return `(_devhub_heartbeat_loop() {
+  local _backoff=120
+  local _max_backoff=900
   while true; do
-    sleep 120
+    sleep $_backoff
     HEARTBEAT_PAYLOAD='${escapedPayload}'
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
     BODY_HASH=$(printf '%s' "$HEARTBEAT_PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
     SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
-    curl -s -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
+    _resp=$(curl -s -w "\\n%{http_code}" -X POST "${supervisorUrl}/api/agenthub/presence/heartbeat" \\
       -H "Content-Type: application/json" \\
       -H "X-Agent-Id: ${agentId}" \\
       -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
       -H "X-Agent-Signature: \${SIGNATURE}" \\
-      -d "$HEARTBEAT_PAYLOAD" > /dev/null 2>&1 || true
+      -d "$HEARTBEAT_PAYLOAD" 2>&1)
+    _http_code=$(echo "$_resp" | tail -1)
+    if [ "$_http_code" = "200" ] || [ "$_http_code" = "204" ]; then
+      _backoff=120
+    else
+      _backoff=$((_backoff * 2))
+      [ $_backoff -gt $_max_backoff ] && _backoff=$_max_backoff
+    fi
   done
 }
-_devhub_heartbeat_loop &)`;
+nohup bash -c '_devhub_heartbeat_loop' >/dev/null 2>&1 &
+disown
+) &`;
 }
 
 /**
@@ -274,7 +286,7 @@ export function buildPendingDeliveriesPollingCommand({ supervisorUrl, agentId, m
     return '# pending_deliveries polling skipped (no supervisor URL)';
   }
 
-  return `(_devhub_pending_deliveries_loop() {
+return `(_devhub_pending_deliveries_loop() {
   while true; do
     sleep 30
     PENDING_BODY="{\\"action\\":\\"agent_heartbeat\\",\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"status_summary\\":\\"checking pending deliveries\\"}"
@@ -312,28 +324,30 @@ except:
     pass
 " 2>/dev/null | while read -r _delivery_id; do
           [ -z "$_delivery_id" ] && continue
-          _ack_body=\"{\\\"action\\\":\\\"ack_delivery\\\",\\\"delivery_id\\\":\\\"$_delivery_id\\\"}\"
+          _ack_body=\"{\\\"action\\\":\\\"ack_delivery\\\",\\\"delivery_id\\\":\\"$_delivery_id\\"}\"
           _ack_ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           _ack_hash=$(printf '%s' "$_ack_body" | openssl dgst -sha256 | awk '{print $NF}')
-          _ack_sig=$(printf '%s' "${_ack_ts}.${_ack_hash}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
+          _ack_sig=$(printf '%s' "\${_ack_ts}.\${_ack_hash}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
           curl -s -X POST "\${DEVHUB_SUPERVISOR_URL}/api/agenthub/operations/health" \
             -H "Content-Type: application/json" \
             -H "X-Agent-Id: ${agentId}" \
-            -H "X-Agent-Timestamp: ${_ack_ts}" \
-            -H "X-Agent-Signature: ${_ack_sig}" \
+            -H "X-Agent-Timestamp: \${_ack_ts}" \
+            -H "X-Agent-Signature: \${_ack_sig}" \
             -d "$_ack_body" > /dev/null 2>&1 || true
         done
         # Also paste summary to agent's own tmux pane so the agent sees it in terminal
         if [ -n "\${DEVHUB_TMUX_SESSION:-}" ] && command -v tmux >/dev/null 2>&1; then
           tmux send-keys -t "\${DEVHUB_TMUX_SESSION}" "" C-m 2>/dev/null || true
-          tmux send-keys -t "\${DEVHUB_TMUX_SESSION}" '[DEVHUB INBOX] ${COUNT} message(s) waiting — check /tmp/devhub-agent-inbox.jsonl' C-m 2>/dev/null || true
+          tmux send-keys -t "\${DEVHUB_TMUX_SESSION}" '[DEVHUB INBOX] '"\$COUNT"' message(s) waiting — check /tmp/devhub-agent-inbox.jsonl' C-m 2>/dev/null || true
           tmux send-keys -t "\${DEVHUB_TMUX_SESSION}" 'To read inbox: cat /tmp/devhub-agent-inbox.jsonl' C-m 2>/dev/null || true
         fi
       fi
     fi
   done
 }
-_devhub_pending_deliveries_loop &)`;
+nohup bash -c '_devhub_pending_deliveries_loop' >/dev/null 2>&1 &
+disown
+) &`;
 }
 
 export function buildDirectorTmuxInjection(directorTmuxSession) {
@@ -351,23 +365,53 @@ export function buildDirectorTmuxInjection(directorTmuxSession) {
     '#!/usr/bin/env bash',
     '# Worker: send status updates to Director via signed HTTP event (preferred)',
     '# Falls back to tmux log + tmux paste if supervisorUrl unavailable',
+    '# Circuit breaker: 3 retries with exponential backoff, state persisted to /tmp/devhub-circuit-{agent_id}',
     '_devhub_tell_director() {',
     '  _msg="${1:-}"',
+    '  _circuit_file="/tmp/devhub-circuit-${DEVHUB_AGENT_ID}"',
+    '  _max_retries=3',
+    '  _base_delay=1',
+    '  # Check if circuit is open (3 consecutive failures)',
+    '  if [ -f "$_circuit_file" ]; then',
+    '    _failures=$(cat "$_circuit_file" 2>/dev/null | grep -o "failures:[0-9]*" | cut -d: -f2)',
+    '    if [ "${_failures:-0}" -ge "$_max_retries" ]; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] Circuit OPEN — skipping" >> /tmp/devhub-tell-director-debug.log 2>&1`,
+    '      return 1',
+    '    fi',
+    '  fi',
     '  _timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")',
     '  _payload="{\\"event_type\\":\\"status_update\\",\\"agent_id\\":\\"${DEVHUB_AGENT_ID}\\",\\"mission_id\\":\\"${DEVHUB_MISSION_ID}\\",\\"payload\\":{\\"summary\\":\\"$_msg\\"}}"',
     '  _body_hash=$(printf "%s" "$_payload" | openssl dgst -sha256 | awk "{print $NF}")',
     '  _signature=$(printf "%s" "${_timestamp}.${_body_hash}" | openssl dgst -sha256 -hmac "${DEVHUB_AGENT_TOKEN}" | awk "{print $NF}")',
-    '  _resp=$(curl -s -X POST "${DEVHUB_SUPERVISOR_URL}/api/agenthub/events" \\',
-    '    -H "Content-Type: application/json" \\',
-    '    -H "X-Agent-Id: ${DEVHUB_AGENT_ID}" \\',
-    '    -H "X-Agent-Timestamp: ${_timestamp}" \\',
-    '    -H "X-Agent-Signature: ${_signature}" \\',
-    '    -d "$_payload" 2>&1)',
-    '  _http_code=$(echo "$_resp" | grep -q "success" 2>/dev/null && echo "200" || echo "000")',
-    '  if [ "$_http_code" = "200" ]; then',
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] HTTP event sent: $_msg" >> /tmp/devhub-tell-director-debug.log 2>&1`,
-    '  else',
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] HTTP failed (code $_http_code), falling back to tmux" >> /tmp/devhub-tell-director-debug.log 2>&1`,
+    '  _attempt=0',
+    '  _success=false',
+    '  while [ $_attempt -lt $_max_retries ] && [ "$_success" = "false" ]; do',
+    '    _resp=$(curl -s -w "\\n%{http_code}" -X POST "${DEVHUB_SUPERVISOR_URL}/api/agenthub/events" \\',
+    '      -H "Content-Type: application/json" \\',
+    '      -H "X-Agent-Id: ${DEVHUB_AGENT_ID}" \\',
+    '      -H "X-Agent-Timestamp: ${_timestamp}" \\',
+    '      -H "X-Agent-Signature: ${_signature}" \\',
+    '      -d "$_payload" 2>&1)',
+    '    _http_code=$(echo "$_resp" | tail -1)',
+    '    if [ "$_http_code" = "200" ] || [ "$_http_code" = "201" ]; then',
+    '      _success=true',
+    '      # Reset circuit on success',
+    '      rm -f "$_circuit_file" 2>/dev/null',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] HTTP success (attempt $((_attempt+1))): $_msg" >> /tmp/devhub-tell-director-debug.log 2>&1`,
+    '    else',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] HTTP failed (code $_http_code, attempt $((_attempt+1)))" >> /tmp/devhub-tell-director-debug.log 2>&1`,
+    '      _attempt=$((_attempt+1))',
+    '      if [ $_attempt -lt $_max_retries ]; then',
+    '        _delay=$((_base_delay * (2 ** (_attempt - 1))))',
+    `        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] Retrying in \${_delay}s (attempt \$_attempt)..." >> /tmp/devhub-tell-director-debug.log 2>&1`,
+    '        sleep $_delay',
+    '      fi',
+    '    fi',
+    '  done',
+    '  if [ "$_success" = "false" ]; then',
+    '    # Open circuit: record consecutive failures',
+    `    echo "failures:$_max_retries" > "$_circuit_file"`,
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] Circuit OPENED after $_max_retries failures" >> /tmp/devhub-tell-director-debug.log 2>&1`,
     '    # Fallback: write to shared log AND paste to director tmux',
     `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [\${DEVHUB_ROLE:-worker}] $_msg" >> "/tmp/devhub-swarm-${launchId}.log" 2>/dev/null || true`,
     '    if [ -n "${DEVHUB_DIRECTOR_SESSION:-}" ] && command -v tmux >/dev/null 2>&1; then',
@@ -383,6 +427,37 @@ export function buildDirectorTmuxInjection(directorTmuxSession) {
     '# (the director tmux pane still gets STATUS_UPDATE via tmux send-keys as fallback)',
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [\${DEVHUB_ROLE:-agent}] _devhub_tell_director ready (HTTP primary, tmux fallback)" >> "/tmp/devhub-swarm-${launchId}.log"`,
   ].join('\n');
+}
+
+/**
+ * Build an auto-restart loop for the inner command.
+ * Re-executes innerCommand on non-zero exit, max 3 restarts, 5s delay.
+ * @param {object} params
+ * @returns {string} Shell auto-restart loop
+ */
+export function buildAutoRestartLoopCommand({ innerCommand }) {
+  return `MAX_RESTARTS=3
+RESTART_DELAY=5
+_devhub_RESTART_COUNT=\${_devhub_RESTART_COUNT:-0}
+_devhub_restart_if_needed() {
+  if [ "\$_devhub_RESTART_COUNT" -ge "\$MAX_RESTARTS" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Max restarts (\$MAX_RESTARTS) reached. Exiting." >> "$AGENT_LOG"
+    exit 1
+  fi
+  sleep \$RESTART_DELAY
+  _devhub_RESTART_COUNT=\$((_devhub_RESTART_COUNT + 1))
+  exec bash "\$0" "\$@"
+}
+_devhub_run_inner() {
+  ${innerCommand}
+}
+_devhub_run_inner 2>&1
+AGENT_EXIT_CODE=\$?
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Inner command exited with code: \${AGENT_EXIT_CODE}" >> "$AGENT_LOG"
+if [ \${AGENT_EXIT_CODE} -ne 0 ]; then
+  _devhub_restart_if_needed
+fi
+exit \${AGENT_EXIT_CODE}`;
 }
 
 /**
@@ -521,13 +596,9 @@ export function buildAgentLaunchWrapper({
     'AGENT_LOG="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Starting agent: \${DEVHUB_ROLE}" >> "$AGENT_LOG"`,
     '',
-    '# Execute the actual agent - capture both stdout and stderr to log',
-    '# This helps diagnose crashes like ArrayLimit errors',
-    '{',
-    '  ' + innerCommand + ' 2>&1',
-    '} >> "$AGENT_LOG" 2>&1',
-    'AGENT_EXIT_CODE=$?',
-    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Agent exited with code: \${AGENT_EXIT_CODE}" >> "$AGENT_LOG"`,
+    '# Execute the actual agent via auto-restart loop',
+    '# Captures both stdout and stderr to log; restarts on non-zero exit (max 3)',
+    buildAutoRestartLoopCommand({ innerCommand }),
   ];
 
   return parts.join('\n');

@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
-const { generateAgentSecret, hashToken, signRequest, verifySignature } = require('../auth');
+const { generateAgentSecret, hashToken, signRequest, verifySignature, isTokenExpired } = require('../auth');
 const {
   ensureRuntimeSchema,
   provisionAuthToken,
@@ -131,6 +131,74 @@ test('verifySignature rejects expired timestamps (>30s drift)', () => {
 
   const result = verifySignature(secret, timestamp, body, signature);
   assert.equal(result, false, 'verifySignature must reject timestamps older than 30s');
+});
+
+// ---------------------------------------------------------------------------
+// Token expiry (isTokenExpired)
+// ---------------------------------------------------------------------------
+
+test('isTokenExpired returns true for null expiry', () => {
+  assert.equal(isTokenExpired(null), true, 'null expiry must be expired');
+});
+
+test('isTokenExpired returns true for undefined expiry', () => {
+  assert.equal(isTokenExpired(undefined), true, 'undefined expiry must be expired');
+});
+
+test('isTokenExpired returns false for future expiry', () => {
+  const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // +24h
+  assert.equal(isTokenExpired(future), false, 'future expiry must not be expired');
+});
+
+test('isTokenExpired returns true for past expiry', () => {
+  const past = new Date(Date.now() - 1000).toISOString(); // -1s
+  assert.equal(isTokenExpired(past), true, 'past expiry must be expired');
+});
+
+test('isTokenExpired returns true for invalid date string', () => {
+  assert.equal(isTokenExpired('not-a-date'), true, 'invalid date must be expired');
+});
+
+// ---------------------------------------------------------------------------
+// Token reuse grace period (via DB provisioning)
+// ---------------------------------------------------------------------------
+
+test('provisionAuthToken sets expires_at to +24h by default', () => {
+  const db = createTestDb();
+  const tokenHash = hashToken(generateAgentSecret());
+
+  const token = provisionAuthToken(db, {
+    agentId: 'agent-expiry-1',
+    tokenHash,
+  });
+
+  assert.ok(token.expires_at, 'expires_at must be set');
+  const expiryMs = Date.parse(token.expires_at);
+  const nowMs = Date.now();
+  const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+  assert.ok(
+    expiryMs > nowMs && expiryMs <= nowMs + twentyFourHoursMs + 5000,
+    'expires_at must be within ~24h of now'
+  );
+  db.close();
+});
+
+test('isTokenExpired returns false for token within 24h grace', () => {
+  const db = createTestDb();
+  const tokenHash = hashToken(generateAgentSecret());
+
+  const token = provisionAuthToken(db, {
+    agentId: 'agent-grace-1',
+    tokenHash,
+  });
+
+  assert.equal(isTokenExpired(token.expires_at), false, 'fresh token must not be expired');
+  db.close();
+});
+
+test('isTokenExpired returns true for token after 24h grace', () => {
+  const expiredAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(); // -25h
+  assert.equal(isTokenExpired(expiredAt), true, 'token past 24h must be expired');
 });
 
 test('verifySignature accepts timestamps within 30s drift', () => {

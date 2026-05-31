@@ -50,10 +50,25 @@ function shellQuote(value = '') {
  * Session name: devhub-swarm-{launchId}-{roleKey}
  * Status bar disabled to save vertical space.
  */
+/**
+ * Build a tmux-wrapped command for swarm agents.
+ * The tmux session survives PTY death (page refresh, network drop).
+ * Session name: devhub-swarm-{launchId}-{roleKey}
+ * Status bar disabled to save vertical space.
+ *
+ * IMPORTANT: Do NOT use `exec` in the tmux session command. Using `exec` causes
+ * the tmux session to close when the inner process exits, killing any background
+ * loops (like _devhub_pending_deliveries_loop) that were started by the wrapper
+ * shell before the tmux command. Instead, run the inner command as a child
+ * process so the tmux session keeps a shell alive after the command exits.
+ */
 export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
   const sessionTarget = shellQuote(tmuxSessionName);
   const startDirectory = cwd ? ` -c ${shellQuote(cwd)}` : '';
-  const command = shellQuote(innerCommand);
+  // Wrap innerCommand so it runs as a child (NOT exec) inside tmux.
+  // This keeps the tmux session alive after innerCommand exits, allowing
+  // background loops started by the wrapper shell to continue running.
+  const command = shellQuote(`(${innerCommand}); exec zsh`);
   return [
     `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
     `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,

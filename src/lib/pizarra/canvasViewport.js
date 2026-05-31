@@ -57,6 +57,37 @@ export function viewportToCanvas(viewportX, viewportY, { zoom, pan, canvasRect }
   };
 }
 
+/**
+ * Project a logical canvas rect into overlay-local coordinates and absolute screen bounds.
+ *
+ * Overlay-local coordinates are relative to the positioned pizarra canvas container.
+ * Absolute bounds additionally include canvasRect left/top for native surface bridges.
+ *
+ * @param {{ x?: number, y?: number, width?: number, height?: number }} rect
+ * @param {{ zoom: number, pan: { x: number, y: number }, canvasRect: DOMRect }} opts
+ * @returns {{ x: number, y: number, width: number, height: number, screenX: number, screenY: number }}
+ */
+export function projectCanvasRect(rect = {}, { zoom, pan, canvasRect } = {}) {
+  const z = zoom != null && zoom > 0 ? zoom : 1;
+  const panX = pan?.x ?? 0;
+  const panY = pan?.y ?? 0;
+  const x = panX + (rect.x ?? 0) * z;
+  const y = panY + (rect.y ?? 0) * z;
+  const width = Math.max(0, (rect.width ?? 0) * z);
+  const height = Math.max(0, (rect.height ?? 0) * z);
+  const left = canvasRect?.left ?? 0;
+  const top = canvasRect?.top ?? 0;
+
+  return {
+    x,
+    y,
+    width,
+    height,
+    screenX: left + x,
+    screenY: top + y,
+  };
+}
+
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 const CanvasViewportContext = createContext(null);
@@ -73,6 +104,11 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
   const [zoom, setZoom] = useState(initialZoom);
   const [pan, setPan] = useState(DEFAULT_PAN);
   const [canvasRect, setCanvasRect] = useState(null);
+  const measureCanvasRect = useCallback(() => {
+    const container = canvasContainerRef?.current;
+    if (!container?.getBoundingClientRect) return;
+    setCanvasRect(container.getBoundingClientRect());
+  }, [canvasContainerRef]);
 
   // Track canvas element viewport position via ResizeObserver
   useEffect(() => {
@@ -90,10 +126,17 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
     observer.observe(container);
 
     // Set initial value
-    setCanvasRect(container.getBoundingClientRect());
+    measureCanvasRect();
 
-    return () => observer.disconnect();
-  }, [canvasContainerRef]);
+    window.addEventListener('resize', measureCanvasRect);
+    window.addEventListener('scroll', measureCanvasRect, true);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measureCanvasRect);
+      window.removeEventListener('scroll', measureCanvasRect, true);
+    };
+  }, [canvasContainerRef, measureCanvasRect]);
 
   const value = {
     zoom,
@@ -109,6 +152,11 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
       (vx, vy) => viewportToCanvas(vx, vy, { zoom, pan, canvasRect }),
       [zoom, pan, canvasRect]
     ),
+    projectRect: useCallback(
+      (rect) => projectCanvasRect(rect, { zoom, pan, canvasRect }),
+      [zoom, pan, canvasRect]
+    ),
+    measureCanvasRect,
   };
 
   return (

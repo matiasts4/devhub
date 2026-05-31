@@ -25,6 +25,8 @@ export default function CanvasTerminal({
   const dragCleanupRef = useRef(null);
   const dragRafRef = useRef(null);
   const placeholderRef = useRef(null);
+  const boundsRef = useRef(resolvedBounds);
+  useEffect(() => { boundsRef.current = resolvedBounds; }, [resolvedBounds]);
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = bounds || {
     x: position?.x ?? 0,
@@ -65,27 +67,6 @@ export default function CanvasTerminal({
         }
       };
 
-      const startDragSync = () => {
-        stopDragSync();
-        const sync = () => {
-          const node = placeholderRef.current;
-          if (node) {
-            const rect = node.getBoundingClientRect();
-            resizeNativeVtePanel({
-              panelId: terminalId,
-              bounds: {
-                x: rect.x,
-                y: rect.y,
-                width: Math.max(rect.width, 1),
-                height: Math.max(rect.height, 1),
-              },
-            }).catch(() => {});
-          }
-          dragRafRef.current = requestAnimationFrame(sync);
-        };
-        dragRafRef.current = requestAnimationFrame(sync);
-      };
-
       const handleMouseMove = (moveEvent) => {
         const deltaX = moveEvent.clientX - lastPointer.x;
         const deltaY = moveEvent.clientY - lastPointer.y;
@@ -104,6 +85,20 @@ export default function CanvasTerminal({
           totalDeltaX,
           totalDeltaY,
         });
+
+        // SYNC NATIVE SURFACE POSITION DIRECTLY
+        const b = boundsRef.current;
+        const inset = 10;
+        const headerH = 28;
+        resizeNativeVtePanel({
+          panelId: terminalId,
+          bounds: {
+            x: b.x + totalDeltaX + inset,
+            y: b.y + totalDeltaY + inset + headerH,
+            width: Math.max(b.width - inset * 2, 1),
+            height: Math.max(b.height - inset * 2 - headerH, 1),
+          },
+        }).catch(() => {});
       };
 
       const handleMouseUp = () => {
@@ -122,7 +117,6 @@ export default function CanvasTerminal({
 
       dragCleanupRef.current?.();
       dragCleanupRef.current = cleanupDrag;
-      startDragSync();
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },

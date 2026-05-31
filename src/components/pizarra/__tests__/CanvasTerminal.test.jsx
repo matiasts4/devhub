@@ -1,7 +1,7 @@
 /**
  * CanvasTerminal unit tests.
- * Tests zoom propagation, VTE renderer fallback, and resize callback.
- * Mirrors the JSDOM + createRoot pattern used in TerminalTTY.test.js.
+ * Covers the pizarra live terminal host contract: projected bounds,
+ * TerminalTTY passthrough, and overlay selection behavior.
  */
 
 const React = require('react');
@@ -95,58 +95,51 @@ describe('CanvasTerminal', () => {
     flushSync(() => root.render(el));
   }
 
-  // ── VTE renderer fallback warning ──────────────────────────────────────
-  describe('VTE renderer fallback warning', () => {
-    it('emits console.warn on every render (CanvasTerminal always overrides to xterm)', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      const { default: CanvasTerminal } = require('../CanvasTerminal');
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 800, height: 600 },
-        canvasZoom: 1,
-      }));
-      expect(warnSpy).toHaveBeenCalledWith(
-        'Canvas terminals do not support VTE renderer. Falling back to xterm.'
-      );
-      warnSpy.mockRestore();
-    });
-  });
-
   // ── Props passthrough ───────────────────────────────────────────────────
   describe('props passthrough to TerminalTTY', () => {
-    it('passes requestedRendererMode="xterm" to TerminalTTY regardless of any prop', () => {
+    it('defaults to the native-capable renderer path used by the workspace terminal', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
       render(React.createElement(CanvasTerminal, {
         terminalId: 'my-session-1',
-        position: { x: 100, y: 200 },
-        size: { width: 640, height: 480 },
-        canvasZoom: 1.5,
+        shape: { id: 'my-session-1', label: 'Terminal' },
+        bounds: { x: 100, y: 200, width: 640, height: 480 },
         cwd: '/home/user',
         initialCommand: 'ls -la',
         autoFocus: false,
       }));
 
       expect(mockTerminalTTY).toHaveBeenCalledTimes(1);
-      expect(capturedProps.requestedRendererMode).toBe('xterm');
+      expect(capturedProps.requestedRendererMode).toBe('vte-experimental');
       expect(capturedProps.hideTitleBar).toBe(true);
       expect(capturedProps.id).toBe('my-session-1');
       expect(capturedProps.cwd).toBe('/home/user');
       expect(capturedProps.initialCommand).toBe('ls -la');
       expect(capturedProps.autoFocus).toBe(false);
       expect(capturedProps.showQuickCopyButton).toBe(false);
+      expect(capturedProps.isVisibleInLayout).toBe(true);
+      expect(capturedProps.isActivePanel).toBe(false);
     });
 
-    it('passes externalDimensionSource function to TerminalTTY', () => {
+    it('forwards explicit active ownership to TerminalTTY', () => {
+      const { default: CanvasTerminal } = require('../CanvasTerminal');
+      render(React.createElement(CanvasTerminal, {
+        terminalId: 'my-session-1',
+        bounds: { x: 0, y: 0, width: 640, height: 480 },
+        isActivePanel: true,
+      }));
+
+      expect(capturedProps.isActivePanel).toBe(true);
+    });
+
+    it('forwards the resize callback to TerminalTTY for future canvas sync', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
       render(React.createElement(CanvasTerminal, {
         terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 800, height: 600 },
-        canvasZoom: 2,
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        onResize: jest.fn(),
       }));
 
-      expect(capturedProps.externalDimensionSource).toEqual(expect.any(Function));
+      expect(capturedProps.onResize).toEqual(expect.any(Function));
     });
 
     it('calls onClose callback on component unmount', () => {
@@ -154,9 +147,7 @@ describe('CanvasTerminal', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
       render(React.createElement(CanvasTerminal, {
         terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 800, height: 600 },
-        canvasZoom: 1,
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
         onClose,
       }));
       flushSync(() => root.unmount());
@@ -168,9 +159,7 @@ describe('CanvasTerminal', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
       render(React.createElement(CanvasTerminal, {
         terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 800, height: 600 },
-        canvasZoom: 1,
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
         onResize,
       }));
 
@@ -184,104 +173,110 @@ describe('CanvasTerminal', () => {
     });
   });
 
-  // ── Zoom propagation ────────────────────────────────────────────────────
-  describe('zoom propagation via container style.width/height', () => {
-    it('sets container style.width = size.width * zoom via requestAnimationFrame', () => {
-      jest.useFakeTimers();
+  describe('live surface bounds', () => {
+    it('positions the host container from projected bounds', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
 
       render(React.createElement(CanvasTerminal, {
         terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 400, height: 300 },
-        canvasZoom: 2,
+        shape: { id: 't1', label: 'Ops' },
+        bounds: { x: 40, y: 80, width: 400, height: 300 },
       }));
-
-      // RAF hasn't fired yet
-      const domContainer = document.querySelector('[data-testid="canvas-terminal-container"]');
-      expect(domContainer.style.width).toBe('');
-
-      // Advance timers to fire RAF
-      jest.runAllTimers();
-
-      // After RAF: style.width = logicalWidth * zoom = 400 * 2 = 800
-      expect(domContainer.style.width).toBe('800px');
-      expect(domContainer.style.height).toBe('600px');
-
-      jest.useRealTimers();
-    });
-
-    it('debounces rapid zoom changes — RAF fires once with the final value', () => {
-      jest.useFakeTimers();
-      const { default: CanvasTerminal } = require('../CanvasTerminal');
-
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 400, height: 300 },
-        canvasZoom: 1,
-      }));
-
-      // Rapid zoom changes before RAF fires
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 400, height: 300 },
-        canvasZoom: 2,
-      }));
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 400, height: 300 },
-        canvasZoom: 3,
-      }));
-
-      jest.runAllTimers();
 
       const domContainer = document.querySelector('[data-testid="canvas-terminal-container"]');
-      // RAF fires once with latest zoom (3), not per-change
-      expect(domContainer.style.width).toBe('1200px');  // 400 * 3
-      expect(domContainer.style.height).toBe('900px'); // 300 * 3
-
-      jest.useRealTimers();
+      expect(domContainer.style.left).toBe('40px');
+      expect(domContainer.style.top).toBe('80px');
+      expect(domContainer.style.width).toBe('400px');
+      expect(domContainer.style.height).toBe('300px');
     });
 
-    it('uses logicalSize from state (PTY-driven) not prop size after resize', () => {
-      jest.useFakeTimers();
+    it('supports legacy position/size props when bounds are not provided', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
-      const onResize = jest.fn();
 
       render(React.createElement(CanvasTerminal, {
         terminalId: 't1',
-        position: { x: 0, y: 0 },
+        position: { x: 12, y: 24 },
         size: { width: 400, height: 300 },
-        canvasZoom: 1,
-        onResize,
       }));
 
-      // Simulate PTY-driven resize
+      const domContainer = document.querySelector('[data-testid="canvas-terminal-container"]');
+      expect(domContainer.style.left).toBe('12px');
+      expect(domContainer.style.top).toBe('24px');
+      expect(domContainer.style.width).toBe('400px');
+      expect(domContainer.style.height).toBe('300px');
+    });
+
+    it('selects the terminal surface and activates the panel on mouse down', () => {
+      const onSelect = jest.fn();
+      const onActivatePanel = jest.fn();
+      const { default: CanvasTerminal } = require('../CanvasTerminal');
+
+      render(React.createElement(CanvasTerminal, {
+        terminalId: 't1',
+        shape: { id: 'shape-terminal-1', label: 'Terminal' },
+        bounds: { x: 0, y: 0, width: 400, height: 300 },
+        onSelect,
+        onActivatePanel,
+      }));
+
+      const frame = document.querySelector('[data-testid="canvas-terminal-container"] > div');
       flushSync(() => {
-        capturedProps.onResize({ width: 1024, height: 768 });
+        frame.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
       });
-      expect(onResize).toHaveBeenCalledWith({ width: 1024, height: 768 });
 
-      // Now zoom changes — container uses NEW logicalSize from state (1024×768)
+      expect(onSelect).toHaveBeenCalledWith('shape-terminal-1');
+      expect(onActivatePanel).toHaveBeenCalledWith('t1');
+    });
+
+    it('uses the header as a drag handle and emits move deltas', () => {
+      const onMove = jest.fn();
+      const onSelect = jest.fn();
+      const onActivatePanel = jest.fn();
+      const { default: CanvasTerminal } = require('../CanvasTerminal');
+
       render(React.createElement(CanvasTerminal, {
         terminalId: 't1',
-        position: { x: 0, y: 0 },
-        size: { width: 400, height: 300 }, // prop still old
-        canvasZoom: 2,
-        onResize,
+        shape: { id: 'shape-terminal-1', label: 'Terminal' },
+        bounds: { x: 0, y: 0, width: 400, height: 300 },
+        onMove,
+        onSelect,
+        onActivatePanel,
       }));
 
-      jest.runAllTimers();
+      const header = document.querySelector('[data-testid="canvas-terminal-header"]');
+      flushSync(() => {
+        header.dispatchEvent(
+          new window.MouseEvent('mousedown', {
+            bubbles: true,
+            button: 0,
+            clientX: 10,
+            clientY: 20,
+          })
+        );
+      });
+      flushSync(() => {
+        window.dispatchEvent(
+          new window.MouseEvent('mousemove', {
+            bubbles: true,
+            clientX: 28,
+            clientY: 33,
+          })
+        );
+      });
+      flushSync(() => {
+        window.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+      });
 
-      const domContainer = document.querySelector('[data-testid="canvas-terminal-container"]');
-      // Container uses logicalSize state (1024×768), NOT the prop size (400×300)
-      expect(domContainer.style.width).toBe('2048px');  // 1024 * 2
-      expect(domContainer.style.height).toBe('1536px'); // 768 * 2
-
-      jest.useRealTimers();
+      expect(onSelect).toHaveBeenCalledWith('shape-terminal-1');
+      expect(onActivatePanel).toHaveBeenCalledWith('t1');
+      expect(onMove).toHaveBeenCalledWith({
+        id: 'shape-terminal-1',
+        terminalId: 't1',
+        deltaX: 18,
+        deltaY: 13,
+        totalDeltaX: 18,
+        totalDeltaY: 13,
+      });
     });
   });
 });

@@ -50,6 +50,18 @@ describe('pizarra shapeModel', () => {
       expect(shape.cornerRadius).toBe(20);
     });
 
+    test('falls back to visible rect defaults when width or height are zero', () => {
+      const shape = createShape('rect', {
+        x: 10,
+        y: 20,
+        width: 0,
+        height: 0,
+      });
+
+      expect(shape.width).toBe(100);
+      expect(shape.height).toBe(80);
+    });
+
     test('creates a circle shape with defaults', () => {
       const shape = createShape('circle', { x: 50, y: 50 });
       expect(shape.type).toBe('circle');
@@ -62,6 +74,11 @@ describe('pizarra shapeModel', () => {
     test('creates a circle shape with override', () => {
       const shape = createShape('circle', { x: 0, y: 0, radius: 80 });
       expect(shape.radius).toBe(80);
+    });
+
+    test('falls back to a visible circle radius when radius is zero', () => {
+      const shape = createShape('circle', { x: 0, y: 0, radius: 0 });
+      expect(shape.radius).toBe(40);
     });
 
     test('creates a line shape with defaults', () => {
@@ -82,6 +99,16 @@ describe('pizarra shapeModel', () => {
       expect(shape.y).toBe(20);
     });
 
+    test('falls back to default line points when a zero-length line is requested', () => {
+      const shape = createShape('line', {
+        x: 10,
+        y: 20,
+        points: [0, 0, 0, 0],
+      });
+
+      expect(shape.points).toEqual([0, 0, 100, 100]);
+    });
+
     test('creates an arrow shape with defaults', () => {
       const shape = createShape('arrow', { x: 0, y: 0 });
       expect(shape.type).toBe('arrow');
@@ -90,6 +117,16 @@ describe('pizarra shapeModel', () => {
       expect(shape.pointerWidth).toBe(8);
       // Arrow fill should be the stroke color
       expect(shape.fill).toBe(shape.stroke);
+    });
+
+    test('falls back to default arrow points when a zero-length arrow is requested', () => {
+      const shape = createShape('arrow', {
+        x: 0,
+        y: 0,
+        points: [12, 18, 12, 18],
+      });
+
+      expect(shape.points).toEqual([0, 0, 100, 100]);
     });
 
     test('creates a textbox shape with defaults', () => {
