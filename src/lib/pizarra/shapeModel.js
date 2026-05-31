@@ -17,6 +17,8 @@ export const SHAPE_TYPES = {
   LINE: 'line',
   ARROW: 'arrow',
   TEXTBOX: 'textbox',
+  TERMINAL: 'terminal',
+  BROWSER: 'browser',
 };
 
 /**
@@ -77,6 +79,23 @@ export function createShape(type, props = {}) {
         fontSize: props.fontSize ?? SHAPE_DEFAULTS.fontSize,
         fontFamily: props.fontFamily ?? SHAPE_DEFAULTS.fontFamily,
         width: props.width ?? 200,
+      };
+
+    case SHAPE_TYPES.TERMINAL:
+      return {
+        ...base,
+        width: props.width ?? 640,
+        height: props.height ?? 400,
+        label: props.label ?? 'Terminal',
+      };
+
+    case SHAPE_TYPES.BROWSER:
+      return {
+        ...base,
+        width: props.width ?? 1024,
+        height: props.height ?? 700,
+        url: props.url ?? 'http://localhost:3200/',
+        label: props.label ?? 'Browser',
       };
 
     default:

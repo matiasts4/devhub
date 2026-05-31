@@ -178,12 +178,76 @@ export function TextboxRenderer({ shape, isSelected, onSelect, transformerRef })
 
 // ─── Renderer Map ─────────────────────────────────────────────────────────
 
+export function TerminalRenderer({ shape, isSelected, onSelect, transformerRef }) {
+  const handleClick = (e) => {
+    e.cancelBubble = true;
+    onSelect(e, shape.id);
+  };
+
+  return (
+    <Rect
+      x={shape.x}
+      y={shape.y}
+      width={shape.width}
+      height={shape.height}
+      fill="#0c1018"
+      stroke={isSelected ? 'rgba(88,166,255,0.7)' : 'rgba(88,166,255,0.3)'}
+      strokeWidth={isSelected ? 2 : 1}
+      cornerRadius={8}
+      opacity={shape.opacity}
+      rotation={shape.rotation || 0}
+      draggable
+      onClick={handleClick}
+      onTap={handleClick}
+      ref={(node) => {
+        if (isSelected && transformerRef && node) {
+          transformerRef.nodes(node);
+        }
+      }}
+    />
+  );
+}
+
+export function BrowserRenderer({ shape, isSelected, onSelect, transformerRef }) {
+  const handleClick = (e) => {
+    e.cancelBubble = true;
+    onSelect(e, shape.id);
+  };
+
+  return (
+    <Rect
+      x={shape.x}
+      y={shape.y}
+      width={shape.width}
+      height={shape.height}
+      fill="#1e2535"
+      stroke={isSelected ? 'rgba(88,166,255,0.7)' : 'rgba(88,166,255,0.3)'}
+      strokeWidth={isSelected ? 2 : 1}
+      cornerRadius={8}
+      opacity={shape.opacity}
+      rotation={shape.rotation || 0}
+      draggable
+      onClick={handleClick}
+      onTap={handleClick}
+      ref={(node) => {
+        if (isSelected && transformerRef && node) {
+          transformerRef.nodes(node);
+        }
+      }}
+    />
+  );
+}
+
+// ─── Renderer Map ─────────────────────────────────────────────────────────
+
 export const SHAPE_RENDERERS = {
   [SHAPE_TYPES.RECT]: RectRenderer,
   [SHAPE_TYPES.CIRCLE]: CircleRenderer,
   [SHAPE_TYPES.LINE]: LineRenderer,
   [SHAPE_TYPES.ARROW]: ArrowRenderer,
   [SHAPE_TYPES.TEXTBOX]: TextboxRenderer,
+  [SHAPE_TYPES.TERMINAL]: TerminalRenderer,
+  [SHAPE_TYPES.BROWSER]: BrowserRenderer,
 };
 
 /**

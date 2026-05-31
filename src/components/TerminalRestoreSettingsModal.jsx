@@ -149,18 +149,20 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
                     <SelectValue placeholder="Seleccionar política" />
                   </SelectTrigger>
                   <SelectContent
-                    className="z-[10001] rounded-xl border"
+                    className="z-[10001] rounded-xl border !bg-[var(--surface-elevated)]"
                     style={{
-                      background: 'var(--chrome-panel-bg)',
-                      borderColor: 'var(--border-subtle)',
+                      backgroundColor: 'var(--surface-elevated) !important',
                     }}
                   >
                     {POLICY_OPTIONS.map(({ value, label: optionLabel }) => (
                       <SelectItem
                         key={value}
                         value={value}
-                        className="text-sm focus:bg-[var(--chrome-hover)]"
-                        style={{ color: 'var(--text-primary)' }}
+                        className="text-sm"
+                        style={{
+                          color: 'var(--text-primary)',
+                          backgroundColor: 'var(--surface-elevated)',
+                        }}
                       >
                         {optionLabel}
                       </SelectItem>

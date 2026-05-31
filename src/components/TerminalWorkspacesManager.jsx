@@ -1927,11 +1927,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, []);
 
   // Operator action cards — consumed from OperatorActionsDispatchContext (provider lives in App.js)
-  const {
-    cards: operatorCards,
-    confirmCard,
-    cancelCard,
-  } = useOperatorActionsDispatch();
+  const { cards: operatorCards, confirmCard, cancelCard } = useOperatorActionsDispatch();
 
   const updateBrowserWindowState = useCallback((wsId, nextValue) => {
     if (!wsId) return;
@@ -2108,25 +2104,39 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     (tab) => {
       updateRightDockState((currentState) => {
         const isPizarra = tab === 'pizarra';
-        const newState = {
+        const isCurrentlyPizarra =
+          currentState.maximized && currentState.maximizedView === 'pizarra';
+
+        // Pizarra switch: toggle ON (activate) / OFF (deactivate)
+        if (isPizarra) {
+          if (isCurrentlyPizarra) {
+            // Toggle OFF — restore normal terminal view (not browser)
+            return {
+              ...currentState,
+              visible: false,
+              maximized: false,
+              maximizedView: 'browser',
+            };
+          } else {
+            // Toggle ON — activate pizarra fullscreen
+            return {
+              ...currentState,
+              visible: true,
+              activeTab: 'pizarra',
+              maximized: true,
+              maximizedView: 'pizarra',
+            };
+          }
+        }
+
+        // Other tabs: restore normal dock state (not maximized)
+        return {
           ...currentState,
           visible: currentState.visible && currentState.activeTab === tab ? false : true,
           activeTab: tab,
-          maximized: isPizarra ? true : currentState.maximized,
-          maximizedView:
-            tab === 'editor'
-              ? 'editor'
-              : tab === 'swarm'
-                ? 'swarm'
-                : tab === 'operator'
-                  ? 'operator'
-                  : tab === 'zed'
-                    ? 'zed'
-                    : tab === 'pizarra'
-                      ? 'pizarra'
-                      : 'browser',
+          maximized: false,
+          maximizedView: tab,
         };
-        return newState;
       });
     },
     [updateRightDockState]
@@ -3737,7 +3747,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           >
             <Bot className="w-4 h-4" />
           </button>
-                    <button
+          <button
             type="button"
             data-testid="right-dock-tab-zed"
             onClick={() => handleRightDockTabSelect('zed')}
@@ -3748,7 +3758,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             }`}
             title="Zed Assistant"
           >
-            <span className="text-xs font-bold" style={{ color: 'inherit' }}>Z</span>
+            <span className="text-xs font-bold" style={{ color: 'inherit' }}>
+              Z
+            </span>
           </button>
           <label
             className="relative inline-flex items-center cursor-pointer select-none"
@@ -4005,9 +4017,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               <div
                 key={workspaceGridKey}
                 data-testid={`workspace-shell-${ws.id}`}
-                className={`absolute inset-0 p-1.5 ${activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className={`absolute inset-0 p-1.5 ${isFullscreenBrowser ? 'hidden' : activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 style={{
                   zIndex: activeWsId === ws.id ? 10 : 0,
+                  visibility: isFullscreenBrowser ? 'hidden' : undefined,
                 }}
               >
                 <PanelGroup
@@ -4239,8 +4252,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
             <div
               data-testid="workspace-right-dock-layer"
-              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
-              style={rightDockLayerStyle}
+              className={`absolute overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
+              style={{ ...rightDockLayerStyle, zIndex: isFullscreenBrowser ? 200 : 50 }}
             >
               <WorkspaceRightDock
                 project={{ id: projectId, local_path: cwd }}

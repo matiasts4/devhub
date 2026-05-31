@@ -26,10 +26,11 @@ const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
         alignItems: 'center',
         justifyContent: 'center',
         height: '100%',
-        color: 'var(--text-muted)',
+        color: '#94a3b8',
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 12,
         letterSpacing: '0.1em',
+        background: '#1a1f2e',
       }}
     >
       LOADING CANVAS...
@@ -110,6 +111,34 @@ export default function PizarraPane() {
     [updateElement]
   );
 
+  // ── Add terminal or browser element ───────────────────────────────────
+
+  const handleAddElement = useCallback(
+    (type) => {
+      const canvasCenter = {
+        x: canvasSize.width / 2 - 320,
+        y: canvasSize.height / 2 - 200,
+      };
+
+      if (type === 'terminal') {
+        const shape = createShape(SHAPE_TYPES.TERMINAL, {
+          x: canvasCenter.x,
+          y: canvasCenter.y,
+        });
+        addElement(shape);
+        selectElement(shape.id);
+      } else if (type === 'browser') {
+        const shape = createShape(SHAPE_TYPES.BROWSER, {
+          x: canvasCenter.x,
+          y: canvasCenter.y,
+        });
+        addElement(shape);
+        selectElement(shape.id);
+      }
+    },
+    [addElement, selectElement, canvasSize]
+  );
+
   // ── Canvas click handler for tool palette interaction ───────────────────
 
   const selectedElement = selectedElements.length === 1 ? selectedElements[0] : null;
@@ -144,18 +173,23 @@ export default function PizarraPane() {
     <div
       ref={containerRef}
       style={{
-        position: 'relative',
+        position: 'absolute',
+        top: 0,
+        left: 0,
         width: '100%',
         height: '100%',
         overflow: 'hidden',
-        background: 'var(--surface-app)',
+        background: '#1a1f2e',
       }}
     >
       {/* Canvas viewport context — provides zoom/pan/coordinate translation */}
       <CanvasViewportProvider canvasContainerRef={canvasContainerRef}>
-
         {/* Tool palette — HTML overlay on top of Konva canvas */}
-        <PizarraToolPalette value={state.activeTool} onChange={setTool} />
+        <PizarraToolPalette
+          value={state.activeTool}
+          onChange={setTool}
+          onAddElement={handleAddElement}
+        />
 
         {/* Property inspector — HTML overlay */}
         <PizarraPropertyInspector

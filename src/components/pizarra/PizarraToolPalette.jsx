@@ -13,10 +13,13 @@ import {
   Circle,
   Minus,
   ArrowRight,
+  Terminal,
+  Globe,
+  Plus,
 } from 'lucide-react';
 import { btnSecondaryStyle } from '@/chrome/morphology';
 
-const TOOLS = [
+const SHAPE_TOOLS = [
   { value: 'select', label: 'Select', Icon: MousePointer },
   { value: 'text', label: 'Text', Icon: Type },
   { value: 'rect', label: 'Rectangle', Icon: Square },
@@ -25,7 +28,15 @@ const TOOLS = [
   { value: 'arrow', label: 'Arrow', Icon: ArrowRight },
 ];
 
-export default function PizarraToolPalette({ value, onChange }) {
+const ELEMENT_TOOLS = [
+  { value: 'terminal', label: 'Add Terminal', Icon: Terminal },
+  { value: 'browser', label: 'Add Browser', Icon: Globe },
+];
+
+export default function PizarraToolPalette({ value, onChange, onAddElement }) {
+  const handleShapeToolChange = (val) => val && onChange(val);
+  const handleAddElement = (type) => onAddElement?.(type);
+
   return (
     <div
       className="pizarra-tool-palette"
@@ -43,7 +54,7 @@ export default function PizarraToolPalette({ value, onChange }) {
       <ToggleGroup.Root
         type="single"
         value={value}
-        onValueChange={(val) => val && onChange(val)}
+        onValueChange={handleShapeToolChange}
         orientation="vertical"
         style={{
           display: 'flex',
@@ -56,7 +67,7 @@ export default function PizarraToolPalette({ value, onChange }) {
           boxShadow: 'var(--shadow-soft)',
         }}
       >
-        {TOOLS.map(({ value: toolVal, label, Icon }) => (
+        {SHAPE_TOOLS.map(({ value: toolVal, label, Icon }) => (
           <ToggleGroup.Item
             key={toolVal}
             value={toolVal}
@@ -67,12 +78,9 @@ export default function PizarraToolPalette({ value, onChange }) {
               width: 36,
               height: 36,
               padding: 0,
-              justifyContent: 'center',
               borderRadius: 'var(--chrome-radius-control)',
               background:
-                value === toolVal
-                  ? 'var(--accent-primary)'
-                  : 'var(--chrome-control-fill)',
+                value === toolVal ? 'var(--accent-primary)' : 'var(--chrome-control-fill)',
               color: value === toolVal ? '#0d1117' : 'var(--text-primary)',
               border:
                 value === toolVal
@@ -89,6 +97,56 @@ export default function PizarraToolPalette({ value, onChange }) {
           </ToggleGroup.Item>
         ))}
       </ToggleGroup.Root>
+
+      {/* Divider */}
+      <div
+        style={{
+          height: 1,
+          background: 'var(--border-subtle)',
+          margin: '2px 0',
+        }}
+      />
+
+      {/* Element tools — add terminal or browser */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--chrome-radius-panel)',
+          padding: 6,
+          boxShadow: 'var(--shadow-soft)',
+        }}
+      >
+        {ELEMENT_TOOLS.map(({ value: toolVal, label, Icon }) => (
+          <button
+            key={toolVal}
+            type="button"
+            aria-label={label}
+            title={label}
+            onClick={() => handleAddElement(toolVal)}
+            style={{
+              ...btnSecondaryStyle({ size: 'sm' }),
+              width: 36,
+              height: 36,
+              padding: 0,
+              borderRadius: 'var(--chrome-radius-control)',
+              background: 'var(--chrome-control-fill)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-subtle)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Icon size={16} strokeWidth={2.5} />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

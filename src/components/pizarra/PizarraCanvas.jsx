@@ -4,6 +4,9 @@
  * SSR-safe: this component is imported via next/dynamic({ ssr: false })
  * from PizarraPane. react-konva is loaded lazily inside useEffect to
  * avoid React initialization order issues with Turbopack.
+ *
+ * IMPORTANT: All hooks declared before the early return to maintain
+ * consistent hook order regardless of konva loading state.
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
@@ -23,27 +26,49 @@ export default function PizarraCanvas({
   width = 800,
   height = 600,
 }) {
+  // ── Refs ────────────────────────────────────────────────────────────────
   const stageRef = useRef(null);
   const transformerRef = useRef(null);
+
+  // ── State ───────────────────────────────────────────────────────────────
   const [konva, setKonva] = useState(null);
   const [drawing, setDrawing] = useState(null);
-
-  // Lazily load react-konva on the client only
-  useEffect(() => {
-    import('react-konva').then((mod) => {
-      setKonva({
-        Stage: mod.Stage,
-        Layer: mod.Layer,
-        Rect: mod.Rect,
-        Line: mod.Line,
-        Transformer: mod.Transformer,
-      });
-    });
-  }, []);
-
-  // ── Viewport state (pan/zoom via @use-gesture) ───────────────────────────
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
 
+  // ── Effects ─────────────────────────────────────────────────────────────
+  // Lazily load react-konva on the client only
+  useEffect(() => {
+    let cancelled = false;
+    import('react-konva')
+      .then((mod) => {
+        if (cancelled || !mod?.Stage) return;
+        setKonva({
+          Stage: mod.Stage,
+          Layer: mod.Layer,
+          Rect: mod.Rect,
+          Line: mod.Line,
+          Transformer: mod.Transformer,
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('[PizarraCanvas] Failed to load react-konva:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Attach transformer to selected nodes
+  useEffect(() => {
+    if (!konva || !transformerRef.current || !stageRef.current) return;
+    const stage = stageRef.current;
+    const selectedNodes = selectedElementIds.map((id) => stage.findOne(`#${id}`)).filter(Boolean);
+    transformerRef.current.nodes(selectedNodes);
+    transformerRef.current.getLayer().batchDraw();
+  }, [selectedElementIds, konva]);
+
+  // ── Gesture binding ─────────────────────────────────────────────────────
   const bind = useGesture(
     {
       onWheel: ({ deltaY, event }) => {
@@ -62,69 +87,7 @@ export default function PizarraCanvas({
     { wheel: { eventOptions: { passive: false } } }
   );
 
-  // Attach transformer to selected nodes
-  useEffect(() => {
-    if (!konva || !transformerRef.current || !stageRef.current) return;
-    const stage = stageRef.current;
-    const selectedNodes = selectedElementIds
-      .map((id) => stage.findOne(`#${id}`))
-      .filter(Boolean);
-    transformerRef.current.nodes(selectedNodes);
-    transformerRef.current.getLayer().batchDraw();
-  }, [selectedElementIds, konva]);
-
-  // ── Render loading state while konva loads ───────────────────────────────
-  if (!konva) {
-    return (
-      <div
-        style={{
-          width,
-          height,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 12,
-        }}
-      >
-        Loading canvas...
-      </div>
-    );
-  }
-
-  const { Stage, Layer, Rect, Line, Transformer } = konva;
-
-  // ── Background dot grid ───────────────────────────────────────────────
-
-  const gridLines = [];
-  const gridSize = 32;
-  const cols = Math.ceil(width / gridSize) + 1;
-  const rows = Math.ceil(height / gridSize) + 1;
-  for (let i = 0; i < cols; i++) {
-    gridLines.push(
-      <Line
-        key={`v${i}`}
-        points={[i * gridSize, 0, i * gridSize, rows * gridSize]}
-        stroke="rgba(255,255,255,0.04)"
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-  }
-  for (let j = 0; j < rows; j++) {
-    gridLines.push(
-      <Line
-        key={`h${j}`}
-        points={[0, j * gridSize, cols * gridSize, j * gridSize]}
-        stroke="rgba(255,255,255,0.04)"
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-  }
-
-  // ── Shape creation handlers ────────────────────────────────────────────
+  // ── Handlers (useCallback — declared before early return) ───────────────
 
   const handleMouseDown = useCallback(
     (e) => {
@@ -153,9 +116,12 @@ export default function PizarraCanvas({
     [activeTool, onDeselect]
   );
 
-  const handleMouseMove = useCallback((e) => {
-    if (!drawing) return;
-  }, [drawing]);
+  const handleMouseMove = useCallback(
+    (e) => {
+      if (!drawing) return;
+    },
+    [drawing]
+  );
 
   const handleMouseUp = useCallback(
     (e) => {
@@ -212,8 +178,6 @@ export default function PizarraCanvas({
     [drawing, toolSettings, onShapeCreate]
   );
 
-  // ── Shape select handler ─────────────────────────────────────────────────
-
   const handleShapeSelect = useCallback(
     (e, id) => {
       e.cancelBubble = true;
@@ -221,8 +185,6 @@ export default function PizarraCanvas({
     },
     [onSelect]
   );
-
-  // ── Transform end handler ───────────────────────────────────────────────
 
   const handleTransformEnd = useCallback(
     (node) => {
@@ -268,6 +230,60 @@ export default function PizarraCanvas({
     [elements, onUpdateElement]
   );
 
+  // ── Early return: loading state ─────────────────────────────────────────
+  // All hooks MUST be declared before this point to maintain consistent
+  // hook order between loading and loaded states.
+  if (!konva) {
+    return (
+      <div
+        style={{
+          width,
+          height,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#94a3b8',
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 12,
+          background: '#1a1f2e',
+        }}
+      >
+        LOADING CANVAS...
+      </div>
+    );
+  }
+
+  const { Stage, Layer, Rect, Line, Transformer } = konva;
+
+  // ── Background dot grid ───────────────────────────────────────────────
+
+  const gridLines = [];
+  const gridSize = 32;
+  const cols = Math.ceil(width / gridSize) + 1;
+  const rows = Math.ceil(height / gridSize) + 1;
+  for (let i = 0; i < cols; i++) {
+    gridLines.push(
+      <Line
+        key={`v${i}`}
+        points={[i * gridSize, 0, i * gridSize, rows * gridSize]}
+        stroke="rgba(255,255,255,0.04)"
+        strokeWidth={1}
+        listening={false}
+      />
+    );
+  }
+  for (let j = 0; j < rows; j++) {
+    gridLines.push(
+      <Line
+        key={`h${j}`}
+        points={[0, j * gridSize, cols * gridSize, j * gridSize]}
+        stroke="rgba(255,255,255,0.04)"
+        strokeWidth={1}
+        listening={false}
+      />
+    );
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
@@ -289,7 +305,10 @@ export default function PizarraCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        style={{ background: 'transparent', cursor: activeTool === 'select' ? 'default' : 'crosshair' }}
+        style={{
+          background: 'transparent',
+          cursor: activeTool === 'select' ? 'default' : 'crosshair',
+        }}
       >
         {/* Background grid layer */}
         <Layer listening={false}>
@@ -308,9 +327,7 @@ export default function PizarraCanvas({
                 shape={shape}
                 isSelected={selectedElementIds.includes(shape.id)}
                 onSelect={handleShapeSelect}
-                transformerRef={
-                  selectedElementIds.includes(shape.id) ? transformerRef : null
-                }
+                transformerRef={selectedElementIds.includes(shape.id) ? transformerRef : null}
                 onTransformEnd={(e) => handleTransformEnd(e.target)}
               />
             );
