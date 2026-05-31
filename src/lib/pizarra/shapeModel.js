@@ -4,6 +4,27 @@
 
 import { SHAPE_DEFAULTS } from './theme';
 
+function normalizePositiveNumber(value, fallback) {
+  return typeof value === 'number' && value > 0 ? value : fallback;
+}
+
+function normalizeRenderablePoints(points, fallback) {
+  if (!Array.isArray(points) || points.length < 4) {
+    return fallback;
+  }
+
+  const [startX, startY] = points;
+  const hasLength = points.some((value, index) => {
+    if (index < 2 || index % 2 !== 0 || index + 1 >= points.length) {
+      return false;
+    }
+
+    return value !== startX || points[index + 1] !== startY;
+  });
+
+  return hasLength ? points : fallback;
+}
+
 // Unique ID generator
 let _counter = 0;
 export function generateId() {
@@ -44,21 +65,21 @@ export function createShape(type, props = {}) {
     case SHAPE_TYPES.RECT:
       return {
         ...base,
-        width: props.width ?? 100,
-        height: props.height ?? 80,
+        width: normalizePositiveNumber(props.width, 100),
+        height: normalizePositiveNumber(props.height, 80),
         cornerRadius: props.cornerRadius ?? SHAPE_DEFAULTS.cornerRadius,
       };
 
     case SHAPE_TYPES.CIRCLE:
       return {
         ...base,
-        radius: props.radius ?? 40,
+        radius: normalizePositiveNumber(props.radius, 40),
       };
 
     case SHAPE_TYPES.LINE:
       return {
         ...base,
-        points: props.points ?? [0, 0, 100, 100],
+        points: normalizeRenderablePoints(props.points, [0, 0, 100, 100]),
         fill: 'transparent',
         stroke: props.stroke ?? SHAPE_DEFAULTS.stroke,
       };
@@ -66,7 +87,7 @@ export function createShape(type, props = {}) {
     case SHAPE_TYPES.ARROW:
       return {
         ...base,
-        points: props.points ?? [0, 0, 100, 100],
+        points: normalizeRenderablePoints(props.points, [0, 0, 100, 100]),
         fill: props.fill ?? base.stroke,
         pointerLength: 10,
         pointerWidth: 8,
@@ -78,23 +99,23 @@ export function createShape(type, props = {}) {
         text: props.text ?? 'Text',
         fontSize: props.fontSize ?? SHAPE_DEFAULTS.fontSize,
         fontFamily: props.fontFamily ?? SHAPE_DEFAULTS.fontFamily,
-        width: props.width ?? 200,
+        width: normalizePositiveNumber(props.width, 200),
       };
 
     case SHAPE_TYPES.TERMINAL:
       return {
         ...base,
-        width: props.width ?? 640,
-        height: props.height ?? 400,
+        width: normalizePositiveNumber(props.width, 640),
+        height: normalizePositiveNumber(props.height, 400),
         label: props.label ?? 'Terminal',
       };
 
     case SHAPE_TYPES.BROWSER:
       return {
         ...base,
-        width: props.width ?? 1024,
-        height: props.height ?? 700,
-        url: props.url ?? 'http://localhost:3200/',
+        width: normalizePositiveNumber(props.width, 1024),
+        height: normalizePositiveNumber(props.height, 700),
+        url: props.url ?? 'http://localhost:3000/',
         label: props.label ?? 'Browser',
       };
 
