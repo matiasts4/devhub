@@ -29,7 +29,7 @@ const MISSION_MESSAGE_KINDS = [
   'approval_result',
 ];
 const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
-const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline'];
+const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline', 'booting', 'crashed'];
 const AGENT_PRESENCE_TTL_MS = 120_000;
 const DIRECTOR_FEED_EVENT_TYPES = ['task_completed', 'handoff_ready'];
 const EMPTY_DIRECTOR_FEED_HANDOFF = {
@@ -606,6 +606,17 @@ function listPendingDeliveriesForAgent(dbOrAgentId, maybeAgentId, maybeOptions =
     .all(agentId, limit);
 }
 
+function markDeliveryConsumed(dbOrDeliveryId, maybeDeliveryId) {
+  const hasDb = dbOrDeliveryId && typeof dbOrDeliveryId.prepare === 'function';
+  const db = hasDb ? dbOrDeliveryId : getDb();
+  const deliveryId = hasDb ? maybeDeliveryId : dbOrDeliveryId;
+  return db
+    .prepare(
+      `UPDATE message_deliveries SET status = 'delivered', updated_at = ? WHERE delivery_id = ? AND status IN ('pending','retry_pending')`
+    )
+    .run(new Date().toISOString(), deliveryId);
+}
+
 function listMessageDeliveriesForMission(dbOrMissionId, maybeMissionId) {
   const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
   const db = hasDb ? dbOrMissionId : getDb();
@@ -1084,6 +1095,104 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
 }
 
 // ---------------------------------------------------------------------------
+// DG Timeline (append-only)
+// ---------------------------------------------------------------------------
+
+const DG_INITIATORS = Object.freeze(['operator', 'director-general', 'swarm-director']);
+const DG_TARGETS = Object.freeze(['director-general', 'swarm-director', 'operator']);
+const DG_ACTIONS = Object.freeze(['mission-request', 'status-poll', 'approval-required', 'mission-result']);
+const DG_STATUSES = Object.freeze([
+  'pending', 'waiting', 'in-progress', 'awaiting-approval', 'completed', 'rejected', 'failed',
+]);
+const DG_AUTHORITIES = Object.freeze(['operator', 'operator-initiated', 'director', 'director-escalated']);
+const DG_FRESHNESS_VALUES = Object.freeze(['just_now', 'stale', 'unknown']);
+
+// authority validation per DG MUST NOT rules
+// DG MUST NOT: DG SHALL NOT emit authority "director" for non-Director-initiated actions
+// DG SHALL NOT emit authority "director-escalated" for non-Director failures
+// swarm-director CAN emit "operator" authority for approval-required (operator is the approving actor)
+const VALID_AUTHORITY_FOR_INITIATOR = Object.freeze({
+  'operator':           new Set(['operator', 'operator-initiated']),
+  'director-general':  new Set(['operator', 'operator-initiated']),
+  'swarm-director':    new Set(['director', 'director-escalated', 'operator']),
+});
+
+function isValidDGInitiator(v) { return DG_INITIATORS.includes(v); }
+function isValidDGTarget(v) { return DG_TARGETS.includes(v); }
+function isValidDGAction(v) { return DG_ACTIONS.includes(v); }
+function isValidDGStatus(v) { return DG_STATUSES.includes(v); }
+function isValidDGAuthority(v) { return DG_AUTHORITIES.includes(v); }
+function isValidDGFreshness(v) { return DG_FRESHNESS_VALUES.includes(v); }
+
+function validateTimelineRowSchema(row, contextLabel) {
+  if (!row.id) throw new Error(`${contextLabel}: id es requerido.`);
+  if (!row.missionId) throw new Error(`${contextLabel}: missionId es requerido.`);
+  if (typeof row.timestamp !== 'number') throw new Error(`${contextLabel}: timestamp debe ser número.`);
+  if (!isValidDGInitiator(row.initiator)) throw new Error(`${contextLabel}: initiator inválido: ${row.initiator}`);
+  if (!isValidDGTarget(row.target)) throw new Error(`${contextLabel}: target inválido: ${row.target}`);
+  if (!isValidDGAction(row.action)) throw new Error(`${contextLabel}: action inválido: ${row.action}`);
+  if (!isValidDGStatus(row.status)) throw new Error(`${contextLabel}: status inválido: ${row.status}`);
+  if (!isValidDGAuthority(row.authority)) throw new Error(`${contextLabel}: authority inválido: ${row.authority}`);
+  if (!isValidDGFreshness(row.freshness)) throw new Error(`${contextLabel}: freshness inválido: ${row.freshness}`);
+
+  const validAuthorities = VALID_AUTHORITY_FOR_INITIATOR[row.initiator];
+  if (!validAuthorities || !validAuthorities.has(row.authority)) {
+    throw new Error(
+      `${contextLabel}: authority "${row.authority}" no es válido para initiator "${row.initiator}". ` +
+      `DG MUST NOT: authority debe coincidir con initiator.`
+    );
+  }
+}
+
+function appendTimelineRow(dbOrMissionId, maybeMissionIdOrRow, maybeRow) {
+  const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
+  const db = hasDb ? dbOrMissionId : getDb();
+  const missionId = hasDb ? maybeMissionIdOrRow : dbOrMissionId;
+  const row = hasDb ? maybeRow : maybeMissionIdOrRow;
+
+  if (!missionId) throw new Error('missionId es requerido para appendTimelineRow.');
+  if (!row || typeof row !== 'object') throw new Error('row es requerido para appendTimelineRow.');
+
+  validateTimelineRowSchema({ ...row, missionId }, 'appendTimelineRow');
+
+  const timestamp = typeof row.timestamp === 'number' ? row.timestamp : Date.now();
+  const now = new Date().toISOString();
+  const insertRow = {
+    id: row.id,
+    mission_id: missionId,
+    timestamp,
+    initiator: row.initiator,
+    target: row.target,
+    action: row.action,
+    status: row.status,
+    authority: row.authority,
+    freshness: row.freshness || 'unknown',
+    fallback: String(row.fallback ?? ''),
+    created_at: now,
+  };
+
+  const keys = Object.keys(insertRow);
+  db.prepare(
+    `INSERT OR IGNORE INTO dg_timeline (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+  ).run(...keys.map((key) => insertRow[key] ?? null));
+
+  return db
+    .prepare('SELECT * FROM dg_timeline WHERE id = ? AND mission_id = ? LIMIT 1')
+    .get(insertRow.id, insertRow.mission_id) || null;
+}
+
+function getTimelineRows(dbOrMissionId, maybeMissionId) {
+  const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
+  const db = hasDb ? dbOrMissionId : getDb();
+  const missionId = hasDb ? maybeMissionId : dbOrMissionId;
+  if (!missionId) throw new Error('missionId es requerido para getTimelineRows.');
+
+  return db
+    .prepare('SELECT * FROM dg_timeline WHERE mission_id = ? ORDER BY timestamp ASC, created_at ASC')
+    .all(missionId);
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -1104,6 +1213,14 @@ module.exports = {
   DIRECTOR_SNAPSHOT_MESSAGE_FIELDS,
   DIRECTOR_SNAPSHOT_DELIVERY_FIELDS,
   DIRECTOR_SNAPSHOT_PRESENCE_FIELDS,
+  // DG Timeline constants
+  DG_INITIATORS,
+  DG_TARGETS,
+  DG_ACTIONS,
+  DG_STATUSES,
+  DG_AUTHORITIES,
+  DG_FRESHNESS_VALUES,
+  VALID_AUTHORITY_FOR_INITIATOR,
   // Validators
   isSwarmMissionStatus,
   isSwarmMissionKind,
@@ -1112,6 +1229,12 @@ module.exports = {
   isMissionMessageKind,
   isMissionDeliveryStatus,
   isAgentPresenceState,
+  isValidDGInitiator,
+  isValidDGTarget,
+  isValidDGAction,
+  isValidDGStatus,
+  isValidDGAuthority,
+  isValidDGFreshness,
   // Key builders
   buildMissionDeliveryKey,
   buildAgentPresenceKey,
@@ -1143,6 +1266,9 @@ module.exports = {
   pickSnapshotFields,
   buildDirectorSnapshotWatermark,
   getSwarmMissionDirectorSnapshot,
+  // DG Timeline
+  appendTimelineRow,
+  getTimelineRows,
   // Re-exported from agentRuns (needed by tests and callers)
   resolveAgentRuntimeBinding,
   getPreferredBindingWorkspace,

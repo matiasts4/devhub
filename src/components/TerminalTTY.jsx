@@ -199,11 +199,12 @@ export function fitTerminalViewport({
   term,
   socket,
   websocketOpenState = WebSocket.OPEN,
+  getRect,
 }) {
   if (!container || !fitAddon || !term) return false;
   if (!isTerminalRendererReady(term)) return false;
 
-  const rect = container.getBoundingClientRect();
+  const rect = getRect ? getRect() : container.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return false;
 
   try {
@@ -495,6 +496,7 @@ export default function TerminalTTY({
   showQuickCopyButton = true,
   swarmContext = null,
   connectionState: externalConnectionState,
+  externalDimensionSource,
 }) {
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
@@ -854,12 +856,16 @@ export default function TerminalTTY({
     return Boolean(rect && rect.width > 0 && rect.height > 0);
   }, []);
 
+  const getRect = () =>
+      externalDimensionSource ? externalDimensionSource() : null;
+
   const fitAndResize = useCallback(() => {
     const fitWorked = fitTerminalViewport({
       container: containerRef.current,
       fitAddon: fitRef.current,
       term: termRef.current,
       socket: wsRef.current,
+      getRect,
     });
 
     logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
@@ -1906,7 +1912,9 @@ export default function TerminalTTY({
         terminal.loadAddon(searchAddon);
         terminal.open(containerRef.current);
 
-        const initialRect = containerRef.current.getBoundingClientRect();
+        const initialRect = externalDimensionSource
+          ? externalDimensionSource() ?? containerRef.current?.getBoundingClientRect()
+          : containerRef.current?.getBoundingClientRect();
         const initiallyVisible =
           initialRect.width > 0 &&
           initialRect.height > 0 &&
@@ -1925,7 +1933,9 @@ export default function TerminalTTY({
         });
 
         resizeObserverRef.current = new ResizeObserver(() => {
-          const rect = containerRef.current?.getBoundingClientRect();
+          const rect = externalDimensionSource
+            ? externalDimensionSource() ?? containerRef.current?.getBoundingClientRect()
+            : containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
           // Preserve scroll position across resize events (e.g., workspace switches)

@@ -16,6 +16,7 @@
     "minimax": {
       "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
       "MINIMAX_MODEL": "minimax-coding-plan/MiniMax-M2.7",
+      "MINIMAX_API_KEY": "sk-cp-h6_Tw_RcCRP_fHhFdcxZWjysfpl9LriVaR4z0X-pRK3sAL9GU0mU7TgSIjOQvrehLvQv1GxsyH8HDJktt9dT8hU6BW2AXyYLoL4rr6V5giXaV9HNiPVFwLE",
       "enabled": true
     }
   },

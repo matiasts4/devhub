@@ -11,12 +11,19 @@ import {
   renderEmptyCopy,
   truncateId,
 } from './utils';
+import DGApprovalGate from './DGApprovalGate';
 
 export default function ApprovalsErrorsPanel({
   approvals = [],
   errors = [],
   mutationState = { submittingKey: null, error: null, errorKey: null },
   onDecision = null,
+  // DG-authored pending approval (from useDirectorGeneralBridge)
+  dgPendingApproval = null,
+  dgMissionId = null,
+  onDGDApprove = null,
+  onDGDReject = null,
+  dgError = null,
 }) {
   return (
     <section
@@ -40,7 +47,18 @@ export default function ApprovalsErrorsPanel({
             <CountBadge count={approvals.length} />
           </div>
           <div className="max-h-[360px] space-y-3 overflow-y-auto pr-0.5" style={panelListStyle()}>
-            {approvals.length === 0
+            {/* DG-authored approval — rendered with DGApprovalGate */}
+            {dgPendingApproval && dgMissionId ? (
+              <DGApprovalGate
+                missionId={dgMissionId}
+                approvalItem={dgPendingApproval}
+                onApprove={onDGDApprove}
+                onReject={onDGDReject}
+                error={dgError}
+              />
+            ) : null}
+
+            {approvals.length === 0 && !dgPendingApproval
               ? renderEmptyCopy('Sin checkpoints de aprobación en este snapshot.')
               : approvals.map((approval, index) => (
                   <article

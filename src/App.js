@@ -38,6 +38,7 @@ import {
   getStoredTerminalAccentBarVisible,
 } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
+import { OperatorActionsDispatchProvider } from './lib/operator/OperatorActionsDispatchContext';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
@@ -236,11 +237,13 @@ function WorkspaceLayout() {
             style={{ ...getWorkspaceShellChromeStyle(), display: isTerminalRoute ? 'block' : 'none' }}
           >
             {project && (
-              <TerminalWorkspacesManager
-                cwd={project.local_path}
-                isVisible={isTerminalRoute}
-                projectId={project.id}
-              />
+              <OperatorActionsDispatchProvider>
+                <TerminalWorkspacesManager
+                  cwd={project.local_path}
+                  isVisible={isTerminalRoute}
+                  projectId={project.id}
+                />
+              </OperatorActionsDispatchProvider>
             )}
           </div>
         </div>

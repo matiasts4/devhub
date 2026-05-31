@@ -1,0 +1,215 @@
+/**
+ * PizarraPane — whiteboard canvas container.
+ *
+ * Combines PizarraCanvas (dynamic, SSR:false) + PizarraToolPalette overlay +
+ * PizarraPropertyInspector. Uses usePizarraState for state management.
+ */
+
+'use client';
+
+import React, { useRef, useState, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import PizarraToolPalette from './PizarraToolPalette';
+import PizarraPropertyInspector from './PizarraPropertyInspector';
+import { usePizarraState } from '@/lib/pizarra/pizarraReducer';
+import { CanvasViewportProvider } from '@/lib/pizarra/canvasViewport';
+import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
+import { createShape } from '@/lib/pizarra/shapeModel';
+
+// SSR-safe canvas import
+const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
+  ssr: false,
+  loading: () => (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        color: 'var(--text-muted)',
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 12,
+        letterSpacing: '0.1em',
+      }}
+    >
+      LOADING CANVAS...
+    </div>
+  ),
+});
+
+export default function PizarraPane() {
+  const {
+    state,
+    setTool,
+    addElement,
+    updateElement,
+    selectElement,
+    deselectAll,
+    selectedElements,
+  } = usePizarraState();
+
+  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
+  const containerRef = useRef(null);
+  // canvasContainerRef is passed to CanvasViewportProvider so ResizeObserver
+  // tracks the canvas container position for coordinate translation.
+  const canvasContainerRef = useRef(null);
+
+  // Resize observer to track container size
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setCanvasSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // ── Shape creation from canvas ──────────────────────────────────────────
+
+  const handleShapeCreate = useCallback(
+    (shape) => {
+      addElement(shape);
+      selectElement(shape.id);
+    },
+    [addElement, selectElement]
+  );
+
+  // ── Selection ───────────────────────────────────────────────────────────
+
+  const handleSelect = useCallback(
+    (id, multi = false) => {
+      selectElement(id, multi);
+    },
+    [selectElement]
+  );
+
+  const handleDeselect = useCallback(() => {
+    deselectAll();
+  }, [deselectAll]);
+
+  // ── Transform end ───────────────────────────────────────────────────────
+
+  const handleUpdateElement = useCallback(
+    (id, changes) => {
+      updateElement(id, changes);
+    },
+    [updateElement]
+  );
+
+  // ── Property update from inspector ──────────────────────────────────────
+
+  const handlePropertyUpdate = useCallback(
+    (id, changes) => {
+      updateElement(id, changes);
+    },
+    [updateElement]
+  );
+
+  // ── Canvas click handler for tool palette interaction ───────────────────
+
+  const selectedElement = selectedElements.length === 1 ? selectedElements[0] : null;
+
+  // Terminal session registry: terminalId → sessionId
+  // Used for coordinated cleanup on canvas unmount.
+  const terminalRegistryRef = React.useRef(new Map());
+
+  const registerTerminal = React.useCallback((terminalId) => {
+    terminalRegistryRef.current.set(terminalId, terminalId);
+  }, []);
+
+  const unregisterTerminal = React.useCallback((terminalId) => {
+    terminalRegistryRef.current.delete(terminalId);
+  }, []);
+
+  // Cleanup all terminal sessions on canvas unmount
+  React.useEffect(() => {
+    return () => {
+      for (const [, sessionId] of terminalRegistryRef.current) {
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-session-closing', {
+            detail: { panelId: sessionId },
+          })
+        );
+      }
+      terminalRegistryRef.current.clear();
+    };
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        background: 'var(--surface-app)',
+      }}
+    >
+      {/* Canvas viewport context — provides zoom/pan/coordinate translation */}
+      <CanvasViewportProvider canvasContainerRef={canvasContainerRef}>
+
+        {/* Tool palette — HTML overlay on top of Konva canvas */}
+        <PizarraToolPalette value={state.activeTool} onChange={setTool} />
+
+        {/* Property inspector — HTML overlay */}
+        <PizarraPropertyInspector
+          selectedElement={selectedElement}
+          onUpdate={handlePropertyUpdate}
+        />
+
+        {/* Konva canvas — dynamically imported, client-only */}
+        <div
+          ref={canvasContainerRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+          }}
+        >
+          <PizarraCanvas
+            elements={state.elements}
+            selectedElementIds={state.selectedElementIds}
+            activeTool={state.activeTool}
+            toolSettings={state.activeToolSettings}
+            onShapeCreate={handleShapeCreate}
+            onSelect={handleSelect}
+            onDeselect={handleDeselect}
+            onUpdateElement={handleUpdateElement}
+            width={canvasSize.width}
+            height={canvasSize.height}
+          />
+        </div>
+
+        {/* Element count badge */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 12,
+            right: 12,
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--chrome-radius-control)',
+            padding: '2px 10px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            boxShadow: 'var(--shadow-soft)',
+            pointerEvents: 'none',
+          }}
+        >
+          {state.elements.length} element{state.elements.length !== 1 ? 's' : ''}
+        </div>
+      </CanvasViewportProvider>
+    </div>
+  );
+}

@@ -1003,15 +1003,15 @@ export default function useBrowserPreviewController({
     };
   }, [dockState.browserUrl, reloadKey]);
 
-  useEffect(() => {
-    visualEditLog('debug', 'iframe-source-updated', {
-      browserUrl: parseUrlMeta(dockState.browserUrl),
-      iframeSrc: parseUrlMeta(iframeSrc),
-      editMode: effectiveEditMode,
-      useProxyPreview,
-      shouldProxy: classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy,
-    });
-  }, [dockState.browserUrl, effectiveEditMode, iframeSrc, useProxyPreview]);
+  // useEffect(() => {
+  //   visualEditLog('debug', 'iframe-source-updated', {
+  //     browserUrl: parseUrlMeta(dockState.browserUrl),
+  //     iframeSrc: parseUrlMeta(iframeSrc),
+  //     editMode: effectiveEditMode,
+  //     useProxyPreview,
+  //     shouldProxy: classifyPreviewSupport({ browserUrl: dockState.browserUrl }).viaProxy,
+  //   });
+  // }, [dockState.browserUrl, effectiveEditMode, iframeSrc, useProxyPreview]);
 
   useEffect(() => {
     if (urlInputRef.current && document.activeElement !== urlInputRef.current) {

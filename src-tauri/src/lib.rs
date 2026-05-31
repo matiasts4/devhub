@@ -649,6 +649,76 @@ mod tests {
     }
 }
 
+// ── Operator Action Contract — Tauri IPC Bridge ─────────────────────
+// Exposes dh_dispatch_action so native menu items and keyboard shortcuts
+// can trigger operator actions with policy enforcement.
+//
+// The Rust side proxies to the Next.js /api/operator/dispatch endpoint
+// via HTTP, keeping the policy logic in JavaScript.
+#[derive(serde::Serialize)]
+struct DispatchResult {
+    status: String,
+    error_detail: Option<String>,
+}
+
+#[tauri::command]
+async fn dh_dispatch_action(
+    action_id: String,
+    params_json: String,
+    target_json: String,
+) -> Result<DispatchResult, String> {
+    use std::time::Duration;
+    use std::io::{Write, BufRead, BufReader};
+
+    let port = nextjs_port();
+    let url = format!("http://127.0.0.1:{}/api/operator/dispatch", port);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("reqwest build failed: {}", e))?;
+
+    #[derive(serde::Serialize)]
+    struct DispatchPayload<'a> {
+        action_id: &'a str,
+        params: serde_json::Value,
+        target: serde_json::Value,
+        actor_role: &'a str,
+        actor_session_id: &'a str,
+        confirmation: serde_json::Value,
+        devhub_version: &'a str,
+    }
+
+    let params: serde_json::Value = serde_json::from_str(&params_json).unwrap_or(serde_json::Value::Object(Default::default()));
+    let target: serde_json::Value = serde_json::from_str(&target_json).unwrap_or(serde_json::Value::Null);
+    let confirmation = serde_json::Value::Null;
+
+    let body = serde_json::to_string(&DispatchPayload {
+        action_id: &action_id,
+        params,
+        target,
+        actor_role: "sys",   // native callers are always sys role
+        actor_session_id: "tauri-native",
+        confirmation,
+        devhub_version: "0.1.0",
+    }).map_err(|e| format!("serialization failed: {}", e))?;
+
+    let resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("dispatch request failed: {}", e))?;
+
+    let result: serde_json::Value = resp.json().await.map_err(|e| format!("parse response failed: {}", e))?;
+
+    Ok(DispatchResult {
+        status: result.get("status").and_then(|v| v.as_str()).unwrap_or("DEFERRED").to_string(),
+        error_detail: result.get("error_detail").and_then(|v| v.as_str()).map(String::from),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -676,6 +746,7 @@ pub fn run() {
             native_vte_resize,
             native_vte_set_visibility,
             native_vte_close,
+            dh_dispatch_action,
         ])
         .setup(|app| {
             // Log plugin solo en debug

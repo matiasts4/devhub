@@ -75,26 +75,7 @@ const PHASE_CONTRACTS = {
     reactivationContract:
       'Resume cross-phase audit for {{change_name}}. Check all artifact phases.',
   },
-  zed: {
-    executable: [
-      'sdd-explore',
-      'sdd-propose',
-      'sdd-spec',
-      'sdd-design',
-      'sdd-tasks',
-      'sdd-apply',
-      'sdd-verify',
-      'sdd-archive',
-    ],
-    delegatable: ['sdd-tasks', 'sdd-apply', 'sdd-verify', 'sdd-archive'],
-    contextBudget: 8000,
-    reactivationContract:
-      "mem_search('sdd/{{change_name}}/director-log') → " +
-      'mem_get_observation on last artifact + apply-progress',
-    model: 'minimax-coding-plan/MiniMax-M2.7',
-    provider: 'minimax',
-  },
-};
+  };
 
 /**
  * Interpolate variables in a template string.
@@ -109,24 +90,6 @@ function interpolate(template, vars = {}) {
   });
 }
 
-/**
- * Build Zed's identity block — prepended to prompts when role === 'zed'.
- */
-function buildZedIdentityPrompt(vars = {}) {
-  return `## Identity
-
-You are **Zed** — Senior Architect, 15+ years experience, GDE& MVP, passionate teacher.
-
-**Tone**: Caring, direct, trades in concepts over code.
-
-**Behavioral constraints**:
-- Verify before stating — if unsure, investigate first
-- Match user language (Spanish/English)
-- Call mem_save proactively after any decision, bug fix, or discovery
-- Call mem_session_summary before ending a session
-
-**Tooling**: Full DevHub toolbelt — file ops, terminal, git, db, swarm ops, Engram, SDD.`;
-}
 
 /**
  * Build Phase Contract prompt section for a role.
@@ -147,10 +110,7 @@ You are operating as **${role}** in SDD phase **${phase}**.
 **Reactivation**: ${contract.reactivationContract}`;
 
   // T-9: Prepend Zed identity block when role is zed
-  if (role === 'zed') {
-    section = buildZedIdentityPrompt() + '\n\n' + section;
-  }
-
+  // (Zed role removed — block kept as placeholder for future roles needing identity injection)
   return section;
 }
 
@@ -274,5 +234,4 @@ module.exports = {
   canExecutePhase,
   getContextBudget,
   buildPhaseContractSection,
-  buildZedIdentityPrompt,
 };

@@ -6,6 +6,8 @@ import OperatorActionCard from '@/components/workspace/OperatorActionCard';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 import WorkspaceOperatorObserverPane from './WorkspaceOperatorObserverPane';
+import ChatPanel from '@/components/asistente/ChatPanel';
+import PizarraPane from '@/components/pizarra/PizarraPane';
 
 export default function WorkspaceRightDock({
   project,
@@ -31,7 +33,8 @@ export default function WorkspaceRightDock({
   const isBrowserActive = dockState.activeTab === 'browser';
   const isEditorActive = dockState.activeTab === 'editor';
   const isSwarmActive = dockState.activeTab === 'swarm';
-  const isOperatorActive = dockState.activeTab === 'operator';
+  const isZedActive = dockState.activeTab === 'zed';
+  const isPizarraActive = dockState.activeTab === 'pizarra';
 
   return (
     <section
@@ -70,12 +73,15 @@ export default function WorkspaceRightDock({
           />
         </div>
 
-        {isOperatorActive && (
+        {isZedActive && (
           <div className="h-full min-h-0">
-            <WorkspaceOperatorObserverPane
-              sessionId={null}
-              onClose={() => onDockStateChange?.({ activeTab: 'browser' })}
-            />
+            <ChatPanel />
+          </div>
+        )}
+
+        {isPizarraActive && (
+          <div className="h-full min-h-0">
+            <PizarraPane projectId={project?.id} />
           </div>
         )}
       </div>

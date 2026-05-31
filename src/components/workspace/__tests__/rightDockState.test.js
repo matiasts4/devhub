@@ -1,4 +1,4 @@
-const { normalizeBrowserUrl } = require('../rightDockState');
+const { normalizeBrowserUrl, sanitizeRightDockState } = require('../rightDockState');
 
 describe('rightDockState normalizeBrowserUrl', () => {
   test('accepts single-label hostnames used in local/LAN development', () => {
@@ -17,5 +17,34 @@ describe('rightDockState normalizeBrowserUrl', () => {
 
   test('rejects malformed explicit hostnames that are not valid searchable free text', () => {
     expect(normalizeBrowserUrl('http://-bad-host:3000')).toBe('');
+  });
+});
+
+describe('rightDockState sanitizeRightDockState', () => {
+  test('sanitizeRightDockState accepts activeTab: "pizarra"', () => {
+    const result = sanitizeRightDockState({ activeTab: 'pizarra' });
+    expect(result.activeTab).toBe('pizarra');
+  });
+
+  test('sanitizeRightDockState accepts maximizedView: "pizarra"', () => {
+    const result = sanitizeRightDockState({ maximizedView: 'pizarra' });
+    expect(result.maximizedView).toBe('pizarra');
+  });
+
+  test('sanitizeRightDockState with pizarra activeTab and maximizedView preserves both', () => {
+    const result = sanitizeRightDockState({ activeTab: 'pizarra', maximizedView: 'pizarra' });
+    expect(result.activeTab).toBe('pizarra');
+    expect(result.maximizedView).toBe('pizarra');
+  });
+
+  test('sanitizeRightDockState with pizarra as activeTab sets default maximizedView to pizarra', () => {
+    const result = sanitizeRightDockState({ activeTab: 'pizarra', maximizedView: 'invalid' });
+    expect(result.activeTab).toBe('pizarra');
+    expect(result.maximizedView).toBe('pizarra');
+  });
+
+  test('sanitizeRightDockState falls back to browser for unknown activeTab', () => {
+    const result = sanitizeRightDockState({ activeTab: 'unknown-tab' });
+    expect(result.activeTab).toBe('browser');
   });
 });

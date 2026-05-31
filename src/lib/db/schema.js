@@ -751,7 +751,7 @@ function ensureRuntimeSchema(db) {
       workspace_id TEXT,
       run_id TEXT,
       runtime_surface TEXT NOT NULL,
-      presence_state TEXT NOT NULL CHECK(presence_state IN ('online', 'busy', 'idle', 'waiting', 'offline')),
+      presence_state TEXT NOT NULL CHECK(presence_state IN ('online', 'busy', 'idle', 'waiting', 'offline', 'booting', 'crashed')),
       status_summary TEXT,
       evidence_ref TEXT,
       last_seen_at TEXT NOT NULL,
@@ -844,6 +844,67 @@ function ensureRuntimeSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_history_created ON task_history(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_task_history_action ON task_history(action);
+
+    -- operator_timeline: append-only execution event log
+    CREATE TABLE IF NOT EXISTS operator_timeline (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id         TEXT NOT NULL,
+      execution_id    TEXT NOT NULL,
+      correlation_id  TEXT NOT NULL,
+      sequence        INTEGER NOT NULL,
+      actor_type      TEXT NOT NULL CHECK(actor_type IN ('human','operator','director','system')),
+      actor_id        TEXT NOT NULL,
+      actor_role      TEXT NOT NULL,
+      stage           TEXT NOT NULL CHECK(stage IN (
+        'action_request','policy_evaluation','tool_invocation','execution_progress',
+        'rollback','deferred','audit_recorded'
+      )),
+      status          TEXT NOT NULL CHECK(status IN (
+        'requested','policy_approved','policy_denied','invoked','running',
+        'completed','failed','rolled_back','deferred'
+      )),
+      tool_name        TEXT,
+      params          TEXT,
+      evidence_refs   TEXT NOT NULL DEFAULT '[]',
+      redaction_level TEXT NOT NULL DEFAULT 'none' CHECK(redaction_level IN ('none','params_only','full')),
+      occurred_at     TEXT NOT NULL,
+      authority       TEXT NOT NULL DEFAULT 'primary' CHECK(authority IN ('primary','secondary_hint')),
+      next_step_hint  TEXT,
+      error_code       TEXT,
+      error_message    TEXT,
+      error_recoverable INTEGER,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(execution_id, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ot_execution ON operator_timeline(execution_id, sequence ASC);
+    CREATE INDEX IF NOT EXISTS idx_ot_occurred  ON operator_timeline(occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ot_actor      ON operator_timeline(actor_id, occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ot_item_id    ON operator_timeline(item_id);
+
+    CREATE TRIGGER IF NOT EXISTS operator_timeline_append_only
+    BEFORE UPDATE ON operator_timeline
+    FOR EACH ROW
+    BEGIN
+      SELECT RAISE(ABORT, 'operator_timeline_append_only');
+    END;
+
+    -- dg_timeline: append-only DG bridge mission timeline rows
+    CREATE TABLE IF NOT EXISTS dg_timeline (
+      id TEXT NOT NULL,
+      mission_id      TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      initiator TEXT NOT NULL CHECK(initiator IN ('operator','director-general','swarm-director')),
+      target          TEXT NOT NULL CHECK(target IN ('director-general','swarm-director','operator')),
+      action          TEXT NOT NULL CHECK(action IN ('mission-request','status-poll','approval-required','mission-result')),
+      status          TEXT NOT NULL CHECK(status IN ('pending','waiting','in-progress','awaiting-approval','completed','rejected','failed')),
+      authority       TEXT NOT NULL CHECK(authority IN ('operator','operator-initiated','director','director-escalated')),
+      freshness TEXT NOT NULL CHECK(freshness IN ('just_now','stale','unknown')),
+      fallback TEXT NOT NULL DEFAULT '',
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(id, mission_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dg_timeline_mission ON dg_timeline(mission_id, timestamp ASC);
+    CREATE INDEX IF NOT EXISTS idx_dg_timeline_timestamp ON dg_timeline(timestamp DESC);
   `);
 
   const alterStatements = [
@@ -903,6 +964,34 @@ function ensureRuntimeSchema(db) {
       }
     }
   }
+
+  // audit_events table (idempotent)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id             TEXT PRIMARY KEY,
+      event_id       TEXT UNIQUE NOT NULL,
+      action_id      TEXT NOT NULL,
+      action_class   TEXT NOT NULL,
+      actor_role     TEXT NOT NULL,
+      actor_session_id TEXT NOT NULL,
+      target_type    TEXT,
+      target_id      TEXT,
+      target_label   TEXT,
+      params         TEXT,
+      risk_tier      INTEGER,
+      confirmed      INTEGER,
+      confirmed_at   TEXT,
+      rationale      TEXT,
+      outcome        TEXT NOT NULL CHECK(outcome IN ('success','denied','error','deferred')),
+      error_detail   TEXT,
+      devhub_version TEXT,
+      received_at    TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_outcome ON audit_events(outcome)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor_session_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_received ON audit_events(received_at)`);
 
   db.exec(
     "UPDATE projects SET documentation_policy = 'personal' WHERE documentation_policy IS NULL"

@@ -2,13 +2,25 @@ import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
 import { persistSession } from './sdd/SessionPersistence';
-import {
-  AGENT_PROGRAM_EXECUTABLES,
-  resolveAgentProgramExecutable,
-  buildTmuxWrappedCommand as buildTmuxWrappedCommandShared,
-  buildAgentLaunchCommand as buildAgentLaunchCommandPure,
-  _minimaxConfig,
-} from './agentLaunchCommand.shared';
+import { resolveAgentProgramExecutable, buildTmuxWrappedCommand } from './agentLaunchCommand.shared';
+
+// Server-only minimax config reader (fs is safe here — this module is never bundled for browser)
+let _serverMinimaxConfig = null;
+function getServerMinimaxConfig() {
+  if (_serverMinimaxConfig) return _serverMinimaxConfig;
+  try {
+    // eslint-disable-next-line n/shebang
+    const fs = require('fs');
+    const path = require('path');
+    const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    _serverMinimaxConfig = parsed?.providers?.minimax ?? null;
+  } catch {
+    _serverMinimaxConfig = null;
+  }
+  return _serverMinimaxConfig;
+}
 
 // ---------------------------------------------------------------------------
 // SDD Session + Prompt integration (server-only, with persistence)
@@ -68,23 +80,6 @@ function shellQuote(value = '') {
   return `'${String(value).replace(/'/g, `'`)}'`;
 }
 
-/**
- * Build a tmux-wrapped command for swarm agents.
- * The tmux session survives PTY death (page refresh, network drop).
- * Session name: devhub-swarm-{launchId}-{roleKey}
- * Status bar disabled to save vertical space.
- */
-export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
-  const sessionTarget = shellQuote(tmuxSessionName);
-  const startDirectory = cwd ? ` -c ${shellQuote(cwd)}` : '';
-  const command = shellQuote(innerCommand);
-  return [
-    `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
-    `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,
-    `tmux attach-session -t ${sessionTarget}`,
-  ].join('; ');
-}
-
 export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const executable = resolveAgentProgramExecutable(programId);
   const opencodeAgent = options.opencodeAgent || 'sdd-orchestrator';
@@ -124,15 +119,7 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
     case 'opencode': {
       // Add --session flag when SDD session is active
       const sessionFlag = sessionId ? ` --session ${sessionId}` : '';
-      if (options.role === 'zed') {
-        // MINIMAX-2: Zed routes to OpenCode with MiniMax subscription flags (D-5)
-        const model = _minimaxConfig?.MINIMAX_MODEL ?? 'minimax-coding-plan/MiniMax-M2.7';
-        const baseUrl = _minimaxConfig?.ANTHROPIC_BASE_URL ?? 'https://api.minimax.io/anthropic';
-        const agent = opencodeAgent || 'swarm-director';
-        innerCommand = modelId
-          ? `${executable} --agent ${agent} --model ${modelId} --base-url ${baseUrl}${sessionFlag}`
-          : `${executable} --agent ${agent} --model ${model} --base-url ${baseUrl}${sessionFlag}`;
-      } else if (interactiveBootstrapPrompt) {
+      if (interactiveBootstrapPrompt) {
         innerCommand = modelId
           ? `${executable} --agent ${opencodeAgent} --model ${modelId}${sessionFlag}`
           : `${executable} --agent ${opencodeAgent}${sessionFlag}`;

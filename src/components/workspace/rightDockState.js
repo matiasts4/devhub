@@ -121,13 +121,13 @@ function normalizeBrowserUrl(rawValue) {
 function sanitizeRightDockState(rawState = {}) {
   const visible = rawState.visible === true;
   const isLegacyBridgeTab = rawState.activeTab === 'bridge';
-  const activeTab = ['browser', 'editor', 'swarm', 'operator'].includes(rawState.activeTab)
+  const activeTab = ['browser', 'editor', 'swarm', 'operator', 'zed', 'pizarra'].includes(rawState.activeTab)
     ? rawState.activeTab
     : 'browser';
   const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
-  const maximizedView = ['browser', 'editor', 'swarm', 'operator', 'window'].includes(
+  const maximizedView = ['browser', 'editor', 'swarm', 'operator', 'zed', 'pizarra', 'window'].includes(
     rawState.maximizedView
   )
     ? rawState.maximizedView
@@ -137,7 +137,11 @@ function sanitizeRightDockState(rawState = {}) {
         ? 'swarm'
         : activeTab === 'operator'
           ? 'operator'
-          : 'browser';
+          : activeTab === 'zed'
+            ? 'zed'
+            : activeTab === 'pizarra'
+              ? 'pizarra'
+              : 'browser';
   const rawSize = Number(rawState.size);
   const size = Number.isFinite(rawSize)
     ? clamp(rawSize, MIN_RIGHT_DOCK_SIZE, MAX_RIGHT_DOCK_SIZE)

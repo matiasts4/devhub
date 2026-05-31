@@ -48,7 +48,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { formatDistanceToNow } from 'date-fns';
 import WorkspaceRightDock from './workspace/WorkspaceRightDock';
-import useOperatorActions from './workspace/hooks/useOperatorActions';
+import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
 import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
 import {
@@ -1622,7 +1622,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     effectiveRightDockState.visible &&
     effectiveRightDockState.maximized &&
     (effectiveRightDockState.maximizedView === 'browser' ||
-      effectiveRightDockState.maximizedView === 'swarm');
+      effectiveRightDockState.maximizedView === 'swarm' ||
+      effectiveRightDockState.maximizedView === 'pizarra');
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
   const shouldSuspendNativeSurfaces =
@@ -1925,18 +1926,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     });
   }, []);
 
-  // Operator action cards — execution cards + confirmation/cancel handlers wired into the dock
+  // Operator action cards — consumed from OperatorActionsDispatchContext (provider lives in App.js)
   const {
     cards: operatorCards,
-    dispatchAction,
     confirmCard,
     cancelCard,
-  } = useOperatorActions({ onDockStateChange: updateRightDockState });
-
-  const handleOperatorAction = useCallback(
-    (verb, params) => dispatchAction(verb, params),
-    [dispatchAction]
-  );
+  } = useOperatorActionsDispatch();
 
   const updateBrowserWindowState = useCallback((wsId, nextValue) => {
     if (!wsId) return;
@@ -2111,19 +2106,28 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const handleRightDockTabSelect = useCallback(
     (tab) => {
-      updateRightDockState((currentState) => ({
-        ...currentState,
-        visible: currentState.visible && currentState.activeTab === tab ? false : true,
-        activeTab: tab,
-        maximizedView:
-          tab === 'editor'
-            ? 'editor'
-            : tab === 'swarm'
-              ? 'swarm'
-              : tab === 'operator'
-                ? 'operator'
-                : 'browser',
-      }));
+      updateRightDockState((currentState) => {
+        const isPizarra = tab === 'pizarra';
+        const newState = {
+          ...currentState,
+          visible: currentState.visible && currentState.activeTab === tab ? false : true,
+          activeTab: tab,
+          maximized: isPizarra ? true : currentState.maximized,
+          maximizedView:
+            tab === 'editor'
+              ? 'editor'
+              : tab === 'swarm'
+                ? 'swarm'
+                : tab === 'operator'
+                  ? 'operator'
+                  : tab === 'zed'
+                    ? 'zed'
+                    : tab === 'pizarra'
+                      ? 'pizarra'
+                      : 'browser',
+        };
+        return newState;
+      });
     },
     [updateRightDockState]
   );
@@ -3415,12 +3419,27 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     };
 
+    // Handle Zed AI assistant terminal opening requests
+    const handleZedOpenTerminal = (e) => {
+      const { command, cwd } = e.detail || {};
+      if (!command) return;
+
+      const targetWsId = activeWsIdRef.current || activeWsId;
+      const targetPanelId = activePanelIdsRef.current[targetWsId] || activePanelId;
+
+      if (!targetWsId || !targetPanelId) return;
+
+      console.log(`[Zed] Opening terminal with command: ${command}, cwd: ${cwd}`);
+      handleSplit('horizontal', targetPanelId, command, cwd || null);
+    };
+
     window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);
     window.addEventListener(
       'devhub:terminal-settings-modal-requested',
       handleTerminalSettingsModalRequested
     );
     window.addEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
+    window.addEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
 
     return () => {
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
@@ -3431,6 +3450,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         handleTerminalSettingsModalRequested
       );
       window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
+      window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
     };
   }, [failPendingReopen, storage, terminalStateStorageKey]);
 
@@ -3717,36 +3737,31 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           >
             <Bot className="w-4 h-4" />
           </button>
-          <button
+                    <button
             type="button"
-            data-testid="right-dock-tab-operator"
-            onClick={() => handleRightDockTabSelect('operator')}
+            data-testid="right-dock-tab-zed"
+            onClick={() => handleRightDockTabSelect('zed')}
             className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'operator' && rightDockState.visible
+              rightDockState.activeTab === 'zed' && rightDockState.visible
                 ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
                 : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
             }`}
-            title="Show operator observer"
+            title="Zed Assistant"
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M1512a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-              />
-            </svg>
+            <span className="text-xs font-bold" style={{ color: 'inherit' }}>Z</span>
+          </button>
+          <button
+            type="button"
+            data-testid="right-dock-tab-pizarra"
+            onClick={() => handleRightDockTabSelect('pizarra')}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'pizarra' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Pizarra canvas"
+          >
+            <LayoutGrid className="w-4 h-4" />
           </button>
           <button
             type="button"

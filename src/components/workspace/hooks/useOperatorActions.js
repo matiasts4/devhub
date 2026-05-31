@@ -20,10 +20,22 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { validateAction } from '@/lib/operator/actionContract';
-import { writeTimelineEntry } from '@/lib/operator/actionTimeline';
 import { terminalAdapter } from '@/lib/operator/adapters/terminal';
 import { browserAdapter } from '@/lib/operator/adapters/browser';
 import { dockAdapter } from '@/lib/operator/adapters/dock';
+
+/** POST timeline entry server-side — avoids bundling better-sqlite3 into the client */
+async function postTimelineEntry(entry) {
+  try {
+    await fetch('/api/operator/timeline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+  } catch (e) {
+    console.warn('[operator] timeline write failed:', e.message);
+  }
+}
 
 /** Static adapter lookup — no dynamic require. */
 const ADAPTERS = {
@@ -58,9 +70,9 @@ export default function useOperatorActions({ onDockStateChange } = {}) {
   const onDockStateChangeRef = useRef(onDockStateChange);
   onDockStateChangeRef.current = onDockStateChange;
 
-  /** Write a timeline entry helper */
+  /** Write a timeline entry helper — POSTs to server-side API to avoid bundling better-sqlite3 in client */
   const log = useCallback((actionId, event, actor, detail = null) => {
-    writeTimelineEntry({
+    postTimelineEntry({
       id: crypto.randomUUID(),
       actionId,
       event,

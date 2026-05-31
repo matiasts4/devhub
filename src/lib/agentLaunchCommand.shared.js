@@ -1,19 +1,33 @@
-import fs from 'fs';
-import path from 'path';
+/* eslint-env node */
+/**
+ * @module agentLaunchCommand.shared
+ * Shared agent launch command builder.
+ * SAFE for browser — all Node.js-only operations are lazy and conditional.
+ */
+
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
 
-// Static MiniMax config — read once at module startup (D-2 single source of truth)
-let _minimaxConfig = null;
-export { _minimaxConfig };
-try {
-  const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
-  const raw = fs.readFileSync(configPath, 'utf8');
-  const parsed = JSON.parse(raw);
-  _minimaxConfig = parsed?.providers?.minimax ?? null;
-} catch {
-  _minimaxConfig = null;
+/**
+ * Read minimax config lazily — only runs in Node.js (server-side).
+ * Uses process.mainModule.require to access fs without triggering Turbopack static analysis.
+ */
+function getMinimaxConfig() {
+  if (typeof process === 'undefined' || !process.stdout) return null;
+  try {
+    // process.mainModule.require is available in Node.js and bypasses Turbopack static analysis
+    const require = process.mainModule?.require;
+    if (!require) return null;
+    const path = require('path');
+    const fs = require('fs');
+    const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed?.providers?.minimax ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
@@ -126,15 +140,7 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
     case 'opencode': {
       // Add --session flag when SDD session is active
       const sessionFlag = sessionId ? ` --session ${sessionId}` : '';
-      if (options.role === 'zed') {
-        // MINIMAX-2: Zed routes to OpenCode with MiniMax subscription flags (D-5)
-        const model = _minimaxConfig?.MINIMAX_MODEL ?? 'minimax-coding-plan/MiniMax-M2.7';
-        const baseUrl = _minimaxConfig?.ANTHROPIC_BASE_URL ?? 'https://api.minimax.io/anthropic';
-        const agent = opencodeAgent || 'swarm-director';
-        innerCommand = modelId
-          ? `${executable} --agent ${agent} --model ${modelId} --base-url ${baseUrl}${sessionFlag}`
-          : `${executable} --agent ${agent} --model ${model} --base-url ${baseUrl}${sessionFlag}`;
-      } else if (interactiveBootstrapPrompt) {
+      if (interactiveBootstrapPrompt) {
         innerCommand = modelId
           ? `${executable} --agent ${opencodeAgent} --model ${modelId}${sessionFlag}`
           : `${executable} --agent ${opencodeAgent}${sessionFlag}`;

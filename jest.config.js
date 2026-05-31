@@ -5,6 +5,7 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^node:test$': '<rootDir>/tests/shims/node-test.js',
+    '\\.module\\.css$': '<rootDir>/tests/jest.mocks/css-module.js',
   },
   modulePathIgnorePatterns: [
     '<rootDir>/.next/',

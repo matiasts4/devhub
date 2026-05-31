@@ -18,7 +18,7 @@ import {
   upsertAgentPresence,
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
-import { listPendingDeliveriesForAgent } from '@/lib/db/swarmMissions.js';
+import { listPendingDeliveriesForAgent, markDeliveryConsumed } from '@/lib/db/swarmMissions.js';
 import {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
@@ -138,6 +138,7 @@ function buildLaunchPrompt({
     ? [
         '',
         '=== Sistema de Status ===',
+        `- El launchId esta embebido en el nombre de la sesion tmux: devhub-swarm-<launchId>-director`,
         `- Los workers envian status updates via tmux y a un log compartido en /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log`,
         `- Puedes ver los mensajes leyendo ese archivo (ej: cat /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log o tail).`,
         '- NO hagas polling a los workers — los updates llegan automaticamente.',
@@ -156,7 +157,11 @@ function buildLaunchPrompt({
     ? [
         '',
         '=== Reporte de Status ===',
-        `- Usa _devhub_tell_director para enviar status al Director. Escribe tanto en el tmux del Director como en el log compartido: /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log`,
+        `- Usa _devhub_tell_director para enviar status al Director. Este comando ESCRIBE EN DOS LUGARES:`,
+        `  (1) al panel tmux del Director: /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log (sesion: devhub-swarm-${launchId || 'launch-unknown'}-director)`,
+        `  (2) al log durable: /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log`,
+        `- tmux es solo visualizacion para monitoreo en vivo — es fire-and-forget y NO es confiable para tracking.`,
+        `- El log durable es tu unica fuente de verdad para persistencia y recovery.`,
         '- Eventos: task_start, found_issue, task_complete, needs_help, blocked.',
         '- Ejemplo: _devhub_tell_director "task_start: Implementando feature X"',
         '',
@@ -2287,6 +2292,33 @@ export const POST = withAuth(async function POST(request, _context, dependencies
         console.error('[operations/health][POST] Heartbeat error:', err.message);
         return NextResponse.json({ error: err.message }, { status: 500 });
       }
+    }
+
+    if (payload?.action === 'ack_delivery') {
+      const { delivery_id } = payload;
+      if (!delivery_id) {
+        return NextResponse.json({ error: 'delivery_id required' }, { status: 400 });
+      }
+      const writeDb = dependencies.db || getDb();
+      const result = markDeliveryConsumed(writeDb, delivery_id);
+      return NextResponse.json({ ok: true, delivery_id, updated: result.changes });
+    }
+
+    if (payload?.action === 'signal_worker_handoff') {
+      const { agent_id, task_id, event_type, related_task_id } = payload;
+      if (!agent_id || !task_id || !event_type) {
+        return NextResponse.json({ error: 'agent_id, task_id, event_type required' }, { status: 400 });
+      }
+      if (!['task_completed', 'handoff_ready'].includes(event_type)) {
+        return NextResponse.json({ error: 'event_type must be task_completed or handoff_ready' }, { status: 400 });
+      }
+      const directive = { task_id, event_type, related_task_id, signaled_at: new Date().toISOString() };
+      const inboxDir = `/tmp/devhub-inbox`;
+      const { existsSync, mkdirSync, writeFileSync } = require('fs');
+      if (!existsSync(inboxDir)) mkdirSync(inboxDir, { recursive: true });
+      const directiveFile = `${inboxDir}/directive-${agent_id}-${task_id}.json`;
+      writeFileSync(directiveFile, JSON.stringify(directive));
+      return NextResponse.json({ ok: true, directive_file: directiveFile, directive });
     }
 
     if (payload?.action !== 'create_local_mission_message') {
