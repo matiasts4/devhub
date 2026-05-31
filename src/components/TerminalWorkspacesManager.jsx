@@ -3750,19 +3750,41 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           >
             <span className="text-xs font-bold" style={{ color: 'inherit' }}>Z</span>
           </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-pizarra"
-            onClick={() => handleRightDockTabSelect('pizarra')}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'pizarra' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
+          <label
+            className="relative inline-flex items-center cursor-pointer select-none"
             title="Pizarra canvas"
           >
-            <LayoutGrid className="w-4 h-4" />
-          </button>
+            <input
+              type="checkbox"
+              data-testid="pizarra-mode-switch"
+              checked={rightDockState.maximized && rightDockState.maximizedView === 'pizarra'}
+              onChange={() => handleRightDockTabSelect('pizarra')}
+              className="sr-only"
+            />
+            <div
+              className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
+                rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                  ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.5)]'
+                  : 'bg-[rgba(255,255,255,0.15)]'
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
+                  rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                    ? 'translate-x-4 bg-[var(--accent-primary)]'
+                    : 'translate-x-0.5 bg-gray-400'
+                }`}
+                style={{ transition: 'transform 200ms ease' }}
+              />
+            </div>
+            <LayoutGrid
+              className={`ml-2 w-4 h-4 ${
+                rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                  ? 'text-[var(--accent-primary)]'
+                  : 'text-gray-500'
+              }`}
+            />
+          </label>
           <button
             type="button"
             onClick={openTerminalSwarmLauncher}
