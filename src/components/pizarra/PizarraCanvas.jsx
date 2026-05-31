@@ -12,6 +12,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useGesture } from '@use-gesture/react';
 import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
+import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 
 export default function PizarraCanvas({
@@ -32,8 +33,9 @@ export default function PizarraCanvas({
 
   // ── State ───────────────────────────────────────────────────────────────
   const [konva, setKonva] = useState(null);
+  const [konvaLoadError, setKonvaLoadError] = useState(null);
   const [drawing, setDrawing] = useState(null);
-  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+  const { zoom, setZoom, pan, setPan } = useCanvasViewport();
 
   // ── Effects ─────────────────────────────────────────────────────────────
   // Lazily load react-konva on the client only
@@ -41,18 +43,40 @@ export default function PizarraCanvas({
     let cancelled = false;
     import('react-konva')
       .then((mod) => {
-        if (cancelled || !mod?.Stage) return;
-        setKonva({
+        if (cancelled) return;
+
+        const resolvedKonva = {
           Stage: mod.Stage,
           Layer: mod.Layer,
           Rect: mod.Rect,
+          Circle: mod.Circle,
           Line: mod.Line,
+          Arrow: mod.Arrow,
+          Text: mod.Text,
           Transformer: mod.Transformer,
-        });
+        };
+        const missingExports = Object.entries(resolvedKonva)
+          .filter(([, value]) => !value)
+          .map(([key]) => key);
+
+        if (missingExports.length > 0) {
+          const error = new Error(
+            `[PizarraCanvas] Invalid react-konva module, missing exports: ${missingExports.join(', ')}`
+          );
+          console.error(error.message);
+          setKonva(null);
+          setKonvaLoadError(error);
+          return;
+        }
+
+        setKonva(resolvedKonva);
+        setKonvaLoadError(null);
       })
       .catch((err) => {
         if (cancelled) return;
         console.error('[PizarraCanvas] Failed to load react-konva:', err);
+        setKonva(null);
+        setKonvaLoadError(err);
       });
     return () => {
       cancelled = true;
@@ -65,7 +89,7 @@ export default function PizarraCanvas({
     const stage = stageRef.current;
     const selectedNodes = selectedElementIds.map((id) => stage.findOne(`#${id}`)).filter(Boolean);
     transformerRef.current.nodes(selectedNodes);
-    transformerRef.current.getLayer().batchDraw();
+    transformerRef.current.getLayer()?.batchDraw();
   }, [selectedElementIds, konva]);
 
   // ── Gesture binding ─────────────────────────────────────────────────────
@@ -73,14 +97,11 @@ export default function PizarraCanvas({
     {
       onWheel: ({ deltaY, event }) => {
         event.preventDefault();
-        setViewport((v) => ({
-          ...v,
-          zoom: Math.min(Math.max(v.zoom - deltaY * 0.001, 0.1), 5),
-        }));
+        setZoom((currentZoom) => Math.min(Math.max(currentZoom - deltaY * 0.001, 0.1), 5));
       },
       onDrag: ({ delta: [dx, dy], buttons }) => {
         if (buttons === 1) {
-          setViewport((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+          setPan((currentPan) => ({ x: currentPan.x + dx, y: currentPan.y + dy }));
         }
       },
     },
@@ -246,9 +267,22 @@ export default function PizarraCanvas({
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 12,
           background: '#1a1f2e',
+          flexDirection: 'column',
+          gap: 8,
         }}
       >
-        LOADING CANVAS...
+        {konvaLoadError ? 'CANVAS UNAVAILABLE' : 'LOADING CANVAS...'}
+        {konvaLoadError ? (
+          <div
+            style={{
+              color: '#64748b',
+              fontSize: 10,
+              letterSpacing: '0.04em',
+            }}
+          >
+            react-konva failed to initialize.
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -293,7 +327,7 @@ export default function PizarraCanvas({
         width,
         height,
         overflow: 'hidden',
-        transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         transformOrigin: '0 0',
         touchAction: 'none',
       }}
@@ -325,9 +359,9 @@ export default function PizarraCanvas({
               <Renderer
                 key={shape.id}
                 shape={shape}
+                konva={konva}
                 isSelected={selectedElementIds.includes(shape.id)}
                 onSelect={handleShapeSelect}
-                transformerRef={selectedElementIds.includes(shape.id) ? transformerRef : null}
                 onTransformEnd={(e) => handleTransformEnd(e.target)}
               />
             );
@@ -336,6 +370,14 @@ export default function PizarraCanvas({
           {/* Transformer for selected shapes */}
           <Transformer
             ref={transformerRef}
+            anchorSize={8}
+            anchorCornerRadius={4}
+            anchorFill="#3b82f6"
+            anchorStroke="#1d4ed8"
+            borderStroke="#3b82f6"
+            borderDash={[4, 4]}
+            rotateAnchorOffset={20}
+            padding={4}
             boundBoxFunc={(oldBox, newBox) => {
               if (newBox.width < 5 || newBox.height < 5) return oldBox;
               return newBox;
