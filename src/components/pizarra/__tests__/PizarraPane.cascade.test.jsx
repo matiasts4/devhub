@@ -206,8 +206,8 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
     const [terminal, browser] = elements;
     expect(browser.x).toBeGreaterThan(terminal.x);
     expect(browser.y).toBeGreaterThan(terminal.y);
-    expect(browser.x - terminal.x).toBe(80);
-    expect(browser.y - terminal.y).toBe(80);
+    expect(browser.x - terminal.x).toBe(700);
+    expect(browser.y - terminal.y).toBe(700);
   });
 
   test('add buttons dispatch CASCADE_OFFSET then ADD_ELEMENT', () => {
@@ -233,12 +233,11 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
 
     const elements = readElementsFromMock(container);
     expect(elements).toHaveLength(2);
-    // The second add lands at (terminal.x + 80, terminal.y + 80).
-    // The step is 80 (was 24 in pizarra-ux-overhaul) so that the
-    // 1024x700 browser and 640x400 terminal do not overlap on
-    // creation.
-    expect(elements[1].x - elements[0].x).toBe(80);
-    expect(elements[1].y - elements[0].y).toBe(80);
+    // The second add lands at (terminal.x + 700, terminal.y + 700).
+    // 700 is wider than the 640x400 terminal and the 1024x700
+    // browser, so consecutive adds cannot overlap.
+    expect(elements[1].x - elements[0].x).toBe(700);
+    expect(elements[1].y - elements[0].y).toBe(700);
   });
 });
 

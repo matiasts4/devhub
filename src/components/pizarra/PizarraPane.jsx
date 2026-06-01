@@ -146,14 +146,14 @@ export default function PizarraPane() {
         y: canvasSize.height / 2 - 200,
       };
 
-      // pizarra-ux-overhaul: read the cascade counter from the reducer
-      // (the single source of truth) and apply the 80px step /
-      // modulo-8 wrap. 80px is wider than the default 640x400
-      // terminal and 1024x700 browser half-widths, so consecutive
-      // add calls produce non-overlapping bounds (previously 24px
-      // which was smaller than the shape half-width and caused the
-      // terminal and browser to land on top of each other).
-      const CASCADE_STEP = 80;
+      // pizarra-cascade-bump-2026-06-01: the cascade step is now
+      // 700px (the width of the default 1024x700 browser minus
+      // 324). 24px and 80px were both smaller than the smallest
+      // shape's half-width, so consecutive adds landed inside
+      // the previous shape's bounds. 700 guarantees the next
+      // shape always starts past the right edge of the previous
+      // one (within the modulo-8 wrap).
+      const CASCADE_STEP = 700;
       const CASCADE_MODULUS = 8;
       const previousIndex = state.cascadeIndex ?? 0;
       const offsetX = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
