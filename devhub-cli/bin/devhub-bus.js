@@ -317,6 +317,23 @@ function cmdPresenceHeartbeat(db, args) {
   validateMissionId(missionId);
   if (!role) failExit(EXIT_USAGE, '--role required');
   checkTableExists(db, 'agent_presence');
+  // T-013b follow-up: agent_presence.mission_id has FK to
+  // swarm_missions(mission_id). Skip cleanly (return ok) if the mission
+  // is not registered, instead of throwing FOREIGN KEY constraint failed.
+  // The presence row is only meaningful when bound to a real mission, so
+  // skipping is the right semantic — same pattern as the TCT mirror.
+  if (tableExists(db, 'swarm_missions')) {
+    const exists = db
+      .prepare('SELECT 1 AS x FROM swarm_missions WHERE mission_id = ?')
+      .get(missionId);
+    if (!exists) {
+      process.stderr.write(`devhub-helper: presence-heartbeat: skipped (mission_not_registered)\n`);
+      process.stdout.write(
+        JSON.stringify({ ok: true, skipped: 'mission_not_registered', presence_id: null }) + '\n'
+      );
+      process.exit(EXIT_OK);
+    }
+  }
   const now = new Date().toISOString();
   // TTL: 5 minutes. Heartbeats are sent every minute by the launcher; this
   // window is wide enough that a single missed beat does not zero presence.

@@ -73,6 +73,16 @@ function setupTempDb() {
       updated_at TEXT NOT NULL,
       UNIQUE(agent_id, mission_id, runtime_surface)
     );
+    -- T-013b follow-up: agent_presence.mission_id has FK to swarm_missions.
+    -- Seed the table so presence-heartbeat tests that expect the row to be
+    -- written can do so without a per-test fixture. Tests that exercise the
+    -- skip path drop the row(s) explicitly.
+    CREATE TABLE IF NOT EXISTS swarm_missions (
+      mission_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    INSERT OR IGNORE INTO swarm_missions (mission_id, status) VALUES ('m1', 'active');
+    INSERT OR IGNORE INTO swarm_missions (mission_id, status) VALUES ('missionA', 'active');
   `);
   return { dir, dbPath, db };
 }
@@ -577,6 +587,40 @@ describe('T-013b — presence-heartbeat + presence-list (Bash bus subcommands)',
       const r = runBus(dbPath, 'presence-list', '--mission', 'm-empty');
       expect(r.status).toBe(0);
       expect(JSON.parse(r.stdout.trim())).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('presence-heartbeat skips with mission_not_registered when swarm_missions lacks the mission (no FK error spam)', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      // Remove the seeded m1 mission from swarm_missions to force the skip path
+      const db = new Database(dbPath);
+      db.prepare('DELETE FROM swarm_missions WHERE mission_id = ?').run('m1');
+      db.close();
+      const r = runBus(
+        dbPath,
+        'presence-heartbeat',
+        '--mission',
+        'm1',
+        '--role',
+        'director',
+        '--status',
+        'monitoring'
+      );
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout.trim());
+      expect(out).toEqual({ ok: true, skipped: 'mission_not_registered', presence_id: null });
+      // No FK error in stderr
+      expect(r.stderr).not.toMatch(/FOREIGN KEY/);
+      // Skip reason logged
+      expect(r.stderr).toMatch(/skipped \(mission_not_registered\)/);
+      // No row was written
+      const check = new Database(dbPath, { readonly: true });
+      const rows = check.prepare('SELECT * FROM agent_presence WHERE mission_id = ?').all('m1');
+      expect(rows).toHaveLength(0);
+      check.close();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
