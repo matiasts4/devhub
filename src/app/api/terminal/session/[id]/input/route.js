@@ -4,7 +4,7 @@ import { pushSessionInput } from '@/lib/terminal/ttyServer';
 export const dynamic = 'force-dynamic';
 
 export async function PUT(request, { params }) {
-  const { id } = params || {};
+  const { id } = (await params) || {};
   if (!id) {
     return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   }
