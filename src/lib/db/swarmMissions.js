@@ -254,6 +254,130 @@ function getSwarmMissionById(dbOrMissionId, maybeMissionId) {
   );
 }
 
+// Mission-id validation: matches the regex used by the devhub-bus binary
+// (BUS-S10 path-traversal protection) and the spec for the snapshot helper.
+const BUS_SNAPSHOT_MISSION_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function validateBusSnapshotMissionId(missionId) {
+  if (typeof missionId !== 'string' || !BUS_SNAPSHOT_MISSION_ID_REGEX.test(missionId)) {
+    throw new TypeError(
+      `mission_id inválido para bus snapshot: ${JSON.stringify(missionId)} ` +
+        `(must match ${BUS_SNAPSHOT_MISSION_ID_REGEX})`
+    );
+  }
+}
+
+/**
+ * Return a JSON-shaped snapshot of all four bus tables for a given mission.
+ *
+ * Per design D4: a single SQL statement with 4 `json_group_array` subqueries,
+ * `COALESCE(..., '[]')` so empty missions return empty arrays (not null).
+ *
+ * Shape:
+ *   { mission_id, snapshot_at,
+ *     chat_recent, events_recent, inbox_pending, presence_active }
+ *
+ * Filters:
+ *   - chat:    all rows for mission, ordered by id DESC (LIMIT 50)
+ *   - events:  all rows for mission, ordered by id DESC (LIMIT 50)
+ *   - inbox:   only unconsumed (consumed_at IS NULL), ordered by id ASC
+ *   - presence: only not-expired (expires_at > now), ordered by last_seen_at DESC
+ *
+ * @param {import('better-sqlite3').Database|string} dbOrDbPath
+ * @param {string} [maybeMissionId]
+ * @returns {object} snapshot.
+ */
+function getMissionBusSnapshot(dbOrDbPath, maybeMissionId) {
+  const hasDb = dbOrDbPath && typeof dbOrDbPath.prepare === 'function';
+  const db = hasDb ? dbOrDbPath : getDb();
+  const missionId = hasDb ? maybeMissionId : dbOrDbPath;
+  // Validate (this also throws TypeError for null/undefined/'' — see validator)
+  validateBusSnapshotMissionId(missionId);
+
+  const snapshotAt = new Date().toISOString();
+  const sql = `
+    SELECT
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'id', id,
+          'ts', ts,
+          'from_role', from_role,
+          'to_role', to_role,
+          'kind', kind,
+          'body', body,
+          'body_hash', body_hash,
+          'client_event_id', client_event_id
+        ))
+        FROM (
+          SELECT * FROM team_chat
+          WHERE mission_id = @mid
+          ORDER BY id DESC
+          LIMIT 50
+        )
+      ), '[]') AS chat_recent,
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'id', id,
+          'ts', ts,
+          'source_role', source_role,
+          'kind', kind,
+          'dedupe_key', dedupe_key,
+          'payload_json', payload_json
+        ))
+        FROM (
+          SELECT * FROM team_events
+          WHERE mission_id = @mid
+          ORDER BY id DESC
+          LIMIT 50
+        )
+      ), '[]') AS events_recent,
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'id', id,
+          'ts', created_at,
+          'from_role', from_role,
+          'to_role', to_role,
+          'body', body,
+          'body_hash', body_hash,
+          'consumed_at', consumed_at,
+          'created_at', created_at
+        ))
+        FROM team_inbox
+        WHERE mission_id = @mid
+          AND consumed_at IS NULL
+        ORDER BY id ASC
+        LIMIT 50
+      ), '[]') AS inbox_pending,
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'agent_id', agent_id,
+          'runtime_surface', runtime_surface,
+          'presence_state', presence_state,
+          'presence_context', presence_context,
+          'status_summary', status_summary,
+          'last_seen_at', last_seen_at,
+          'expires_at', expires_at
+        ))
+        FROM (
+          SELECT * FROM agent_presence
+          WHERE mission_id = @mid
+            AND expires_at > @now
+          ORDER BY last_seen_at DESC
+          LIMIT 50
+        )
+      ), '[]') AS presence_active
+  `;
+  const row = db.prepare(sql).get({ mid: missionId, now: snapshotAt });
+  return {
+    mission_id: missionId,
+    snapshot_at: snapshotAt,
+    chat_recent: JSON.parse(row.chat_recent || '[]'),
+    events_recent: JSON.parse(row.events_recent || '[]'),
+    inbox_pending: JSON.parse(row.inbox_pending || '[]'),
+    presence_active: JSON.parse(row.presence_active || '[]'),
+  };
+}
+
 function createSwarmMission(dbOrInput, maybeInput) {
   const { db, input } = resolveDbArgs(dbOrInput, maybeInput);
   if (!input.project_id) throw new Error('project_id es requerido para swarm_missions.');
@@ -1275,6 +1399,9 @@ module.exports = {
   pickSnapshotFields,
   buildDirectorSnapshotWatermark,
   getSwarmMissionDirectorSnapshot,
+  // Bus snapshot (T-009 — agent comms bus read path)
+  BUS_SNAPSHOT_MISSION_ID_REGEX,
+  getMissionBusSnapshot,
   // DG Timeline
   appendTimelineRow,
   getTimelineRows,
