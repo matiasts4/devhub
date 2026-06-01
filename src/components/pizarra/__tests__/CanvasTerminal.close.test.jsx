@@ -1,0 +1,205 @@
+/**
+ * CanvasTerminal close button tests.
+ *
+ * Covers pizarra-close-buttons: the in-header X button must
+ *   1. render with data-testid="canvas-terminal-close",
+ *   2. call onClose exactly once with the resolved shape id when clicked,
+ *   3. NOT trigger the header's drag handler (mousedown stopPropagation
+ *      keeps the underlying usePizarraSurfaceDrag mock idle).
+ *
+ * Mirrors the rendering pattern in CanvasTerminal.test.jsx (JSDOM +
+ * react-dom/client + flushSync). The lucide-react and xterm stacks
+ * are mocked the same way; TerminalTTY is replaced with a captor.
+ */
+
+const React = require('react');
+const { createRoot } = require('react-dom/client');
+const { flushSync } = require('react-dom');
+const { JSDOM } = require('jsdom');
+
+jest.mock('framer-motion', () => ({
+  motion: {
+    div: (() => {
+      const R = require('react');
+      return R.forwardRef(({ children, ...props }, ref) =>
+        R.createElement('div', { ...props, ref }, children)
+      );
+    })(),
+  },
+}));
+
+jest.mock('lucide-react', () => {
+  const icon = (name) => (props) => {
+    const R = require('react');
+    return R.createElement('svg', { ...props, 'data-icon': name });
+  };
+  return new Proxy({}, { get: (_, key) => icon(String(key)) });
+});
+
+jest.mock(
+  'xterm',
+  () => ({
+    Terminal: jest.fn().mockImplementation(() => ({
+      rows: 24,
+      cols: 80,
+      loadAddon: jest.fn(),
+      open: jest.fn(),
+      onData: jest.fn(),
+      focus: jest.fn(),
+      write: jest.fn(),
+      writeln: jest.fn(),
+      paste: jest.fn(),
+      refresh: jest.fn(),
+      clearTextureAtlas: jest.fn(),
+      dispose: jest.fn(),
+      getSelection: jest.fn(() => ''),
+      clear: jest.fn(),
+      scrollToLine: jest.fn(),
+    })),
+  }),
+  { virtual: true }
+);
+
+jest.mock(
+  'xterm-addon-fit',
+  () => ({
+    FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
+  }),
+  { virtual: true }
+);
+
+jest.mock(
+  'xterm-addon-search',
+  () => ({
+    SearchAddon: jest.fn().mockImplementation(() => ({
+      findNext: jest.fn(),
+      findPrevious: jest.fn(),
+    })),
+  }),
+  { virtual: true }
+);
+
+const mockTerminalTTY = jest.fn(() =>
+  React.createElement('div', { 'data-testid': 'mock-terminal' }, null)
+);
+jest.mock('@/components/TerminalTTY', () => ({
+  __esModule: true,
+  default: mockTerminalTTY,
+}));
+
+// Spy on the drag hook so the "no drag triggered" assertion is
+// grounded in real code, not in an inferred side effect.
+const dragHookSpy = jest.fn();
+jest.mock('../usePizarraSurfaceDrag', () => ({
+  __esModule: true,
+  default: (config) => {
+    dragHookSpy(config);
+    return (event) => {
+      // Simulate the real hook calling onSelect + scheduling a move
+      // so the test can confirm stopPropagation in the close button
+      // actually prevents this from firing.
+      config?.onSelect?.(config.surfaceId);
+    };
+  },
+}));
+
+describe('CanvasTerminal close button', () => {
+  let container;
+  let root;
+  let dom;
+
+  beforeEach(() => {
+    dragHookSpy.mockClear();
+    mockTerminalTTY.mockClear();
+    jest.clearAllMocks();
+
+    dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    global.document = dom.window.document;
+    global.window = dom.window;
+    global.requestAnimationFrame = (cb) => setTimeout(cb, 16);
+    global.cancelAnimationFrame = (id) => clearTimeout(id);
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    flushSync(() => root.unmount());
+    root = null;
+    container = null;
+    delete global.requestAnimationFrame;
+    delete global.cancelAnimationFrame;
+    jest.restoreAllMocks();
+  });
+
+  function render(props) {
+    const { default: CanvasTerminal } = require('../CanvasTerminal');
+    flushSync(() => root.render(React.createElement(CanvasTerminal, props)));
+  }
+
+  it('renders the close button with the expected testid when mounted', () => {
+    render({
+      terminalId: 'shape-terminal-1',
+      shape: { id: 'shape-terminal-1', label: 'Terminal' },
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      onClose: jest.fn(),
+    });
+
+    const closeBtn = container.querySelector('[data-testid="canvas-terminal-close"]');
+    expect(closeBtn).toBeTruthy();
+    expect(closeBtn.getAttribute('data-pizarra-close-button')).toBe('true');
+    expect(closeBtn.getAttribute('aria-label')).toBe('Cerrar terminal');
+    expect(closeBtn.getAttribute('title')).toBe('Cerrar terminal');
+    expect(closeBtn.getAttribute('type')).toBe('button');
+  });
+
+  it('calls onClose once with the resolved shape id when the close button is clicked', () => {
+    const onClose = jest.fn();
+    render({
+      terminalId: 'shape-terminal-1',
+      shape: { id: 'shape-terminal-1', label: 'Terminal' },
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      onClose,
+    });
+
+    const closeBtn = container.querySelector('[data-testid="canvas-terminal-close"]');
+    flushSync(() => {
+      closeBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith('shape-terminal-1');
+  });
+
+  it('does not trigger the header drag handler when the close button is clicked', () => {
+    const onMove = jest.fn();
+    const onSelect = jest.fn();
+    render({
+      terminalId: 'shape-terminal-1',
+      shape: { id: 'shape-terminal-1', label: 'Terminal' },
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      onClose: jest.fn(),
+      onMove,
+      onSelect,
+    });
+
+    const closeBtn = container.querySelector('[data-testid="canvas-terminal-close"]');
+    // mousedown on the close button must stopPropagation so the
+    // header's drag handler (the one returned by usePizarraSurfaceDrag)
+    // never receives the event.
+    flushSync(() => {
+      closeBtn.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    });
+    flushSync(() => {
+      closeBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    // The drag handler mock is the spy passed to usePizarraSurfaceDrag.
+    // If the close button had failed to stopPropagation, the header
+    // would have routed the mousedown into the drag handler, which
+    // would have called onSelect via the spy. Assert it stayed idle.
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
