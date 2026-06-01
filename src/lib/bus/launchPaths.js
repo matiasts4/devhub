@@ -76,6 +76,8 @@ function resolveBusHelperPaths({ repoRoot, env } = {}) {
  * @param {string} [params.busBinaryPath] - if omitted, the caller forgot the
  *                                          wire-up and the placeholder is emitted
  * @param {string} [params.dbPath] - if omitted, the placeholder is emitted
+ * @param {boolean} [params.disableMinimaxMcp] - T-016.3: opt out of
+ *   minimax MCP env var injection (for swarm agents).
  * @returns {string} Complete shell wrapper script
  */
 function buildLaunchWrapperForRole({
@@ -95,6 +97,7 @@ function buildLaunchWrapperForRole({
   dbPath,
   repoRoot,
   env,
+  disableMinimaxMcp,
 }) {
   // T-011 — auto-resolve bus helper paths when the caller hasn't passed
   // them explicitly. This is the primary fix: the production caller in
@@ -123,6 +126,7 @@ function buildLaunchWrapperForRole({
     modelProvider,
     busBinaryPath: resolvedBusBinaryPath,
     dbPath: resolvedDbPath,
+    disableMinimaxMcp,
   });
 }
 

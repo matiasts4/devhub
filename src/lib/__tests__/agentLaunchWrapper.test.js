@@ -190,4 +190,88 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('DEVHUB_INBOX_SHIM_DISABLED');
     });
   });
+
+  // =========================================================================
+  // T-016.3: MCP opt-out for swarm agents.
+  //
+  // The minimax MCP env vars (ANTHROPIC_BASE_URL / ANTHROPIC_MODEL /
+  // ANTHROPIC_AUTH_TOKEN) are for the user's Zed session — a personal tool.
+  // They must NOT be injected into swarm agents, which should run on the
+  // default anthropic provider (or whatever the host already uses).
+  //
+  // Two opt-out mechanisms:
+  //   (a) explicit `disableMinimaxMcp: true` param on buildAgentEnvExports /
+  //       buildAgentLaunchWrapper
+  //   (b) env var `DEVHUB_AGENT_DISABLE_MINIMAX_MCP=1` (escape hatch for
+  //       batch launches / one-off CLI calls that don't go through route.js)
+  //
+  // Backward compat: existing callers that don't pass `disableMinimaxMcp`
+  // AND don't set the env var get the OLD behavior (MCP injection for
+  // modelProvider === 'minimax'). This keeps the Zed session working.
+  //
+  // Test approach: we mock the llmProviderConfig module so the test is
+  // deterministic (the real sync reader is broken under jest babel
+  // transform — `fs/promises` default-export issue — pre-existing bug,
+  // not something T-016 introduces). All three tests use the same mock
+  // base; they differ only in which opt-out knob is active. This is a
+  // parametric test of the "opt-out" code path.
+  // =========================================================================
+  describe('T-016.3: minimax MCP opt-out for swarm agents', () => {
+    let buildAgentEnvExportsMocked;
+    beforeEach(() => {
+      jest.resetModules();
+      jest.doMock('../llmProviderConfig', () => ({
+        getLlmProviderConfigSync: () => ({
+          ANTHROPIC_BASE_URL: 'https://api.minimax.example/anthropic',
+          MINIMAX_MODEL: 'minimax-test-mock',
+        }),
+      }));
+      // eslint-disable-next-line global-require
+      buildAgentEnvExportsMocked = require('../agentLaunchWrapper').buildAgentEnvExports;
+    });
+
+    afterEach(() => {
+      jest.dontMock('../llmProviderConfig');
+    });
+
+    test('BASELINE: when no opt-out is set, MCP env vars ARE exported (backward compat for Zed)', () => {
+      const prev = process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP;
+      delete process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP;
+      try {
+        const result = buildAgentEnvExportsMocked({ ...baseParams, modelProvider: 'minimax' });
+        // Backward compat: the minimax MCP env vars ARE exported. This is
+        // what the user's personal Zed session depends on.
+        expect(result).toMatch(/^export ANTHROPIC_BASE_URL=/m);
+        expect(result).toMatch(/^export ANTHROPIC_MODEL=/m);
+      } finally {
+        if (prev !== undefined) process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP = prev;
+      }
+    });
+
+    test('when disableMinimaxMcp=true the wrapper does NOT set ANTHROPIC_BASE_URL even for modelProvider=minimax', () => {
+      const result = buildAgentEnvExportsMocked({
+        ...baseParams,
+        modelProvider: 'minimax',
+        disableMinimaxMcp: true,
+      });
+      // The opt-out must remove the MCP injection — ANTHROPIC_BASE_URL must
+      // not be exported by us. (It may still be in the host env, but we are
+      // not exporting it from the wrapper.)
+      expect(result).not.toMatch(/^export ANTHROPIC_BASE_URL=/m);
+      expect(result).not.toMatch(/^export ANTHROPIC_MODEL=.*minimax/m);
+    });
+
+    test('when DEVHUB_AGENT_DISABLE_MINIMAX_MCP=1 is in env, the wrapper skips MCP injection even with modelProvider=minimax', () => {
+      const prev = process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP;
+      process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP = '1';
+      try {
+        const result = buildAgentEnvExportsMocked({ ...baseParams, modelProvider: 'minimax' });
+        expect(result).not.toMatch(/^export ANTHROPIC_BASE_URL=/m);
+        expect(result).not.toMatch(/^export ANTHROPIC_MODEL=.*minimax/m);
+      } finally {
+        if (prev === undefined) delete process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP;
+        else process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP = prev;
+      }
+    });
+  });
 });

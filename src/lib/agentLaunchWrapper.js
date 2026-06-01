@@ -22,6 +22,13 @@ import path from 'node:path';
  * If agentId and workspaceId are provided, provisions an HMAC auth token
  * and injects the secret as DEVHUB_AGENT_TOKEN (never logged or echoed).
  * @param {object} params
+ * @param {boolean} [params.disableMinimaxMcp] - T-016.3: opt out of
+ *   injecting the minimax MCP env vars (ANTHROPIC_BASE_URL / ANTHROPIC_MODEL)
+ *   into swarm agents. The MCP env vars are for the user's personal Zed
+ *   session, NOT for swarm agents. Defaults to false (Zed-friendly legacy
+ *   behavior). Also honored via env var
+ *   `DEVHUB_AGENT_DISABLE_MINIMAX_MCP=1` for callers that don't pass the
+ *   param (e.g. one-off CLI spawns).
  * @returns {string} Shell export statements
  */
 export function buildAgentEnvExports({
@@ -36,6 +43,7 @@ export function buildAgentEnvExports({
   directorSessionName,
   modelProvider,
   dbPath,
+  disableMinimaxMcp,
 }) {
   const exports = [
     `export DEVHUB_AGENT_ID="${agentId}"`,
@@ -92,8 +100,22 @@ export function buildAgentEnvExports({
     }
   }
 
+  // T-016.3: opt out of minimax MCP injection for swarm agents.
+  // The MCP env vars are a personal Zed session tool — they route the
+  // user's local Zed through the minimax subscription. Swarm agents
+  // launched in CI / worktrees should run on the default anthropic
+  // provider (or whatever the host already uses), NOT inherit the
+  // user's personal MCP routing.
+  // Two opt-out knobs:
+  //   (a) explicit `disableMinimaxMcp: true` param
+  //   (b) env var `DEVHUB_AGENT_DISABLE_MINIMAX_MCP=1`
+  // Both are checked; either one disables the injection.
+  const _minimaxMcpDisabled =
+    disableMinimaxMcp === true ||
+    (typeof process !== 'undefined' && process.env && process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP === '1');
+
   // MINIMAX-1: Inject MiniMax MCP subscription env vars for Zed agents
-  if (modelProvider === 'minimax') {
+  if (!_minimaxMcpDisabled && modelProvider === 'minimax') {
     const config = getLlmProviderConfigSync('minimax');
     if (config) {
       exports.push(`export ANTHROPIC_BASE_URL="${config.ANTHROPIC_BASE_URL}"`);
@@ -652,6 +674,8 @@ trap _devhub_exit_handler EXIT`;
  * @param {string} [params.runId]
  * @param {string} [params.supervisorUrl]
  * @param {string} params.innerCommand - The actual agent command (opencode/codex/hermes)
+ * @param {boolean} [params.disableMinimaxMcp] - T-016.3: opt out of
+ *   minimax MCP env var injection. Forwarded to buildAgentEnvExports.
  * @returns {string} Complete shell script
  */
 export function buildAgentLaunchWrapper({
@@ -669,6 +693,7 @@ export function buildAgentLaunchWrapper({
   modelProvider,
   dbPath,
   busBinaryPath,
+  disableMinimaxMcp,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',
@@ -706,6 +731,7 @@ export function buildAgentLaunchWrapper({
       directorSessionName: directorTmuxSession,
       modelProvider,
       dbPath,
+      disableMinimaxMcp,
     }),
     '',
     // T-003 — bus helpers (only emitted if dbPath + busBinaryPath are provided)

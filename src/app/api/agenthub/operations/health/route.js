@@ -274,6 +274,12 @@ function buildLaunchCommand(
     supervisorUrl,
     busBinaryPath: busPaths.busBinaryPath,
     dbPath: busPaths.dbPath,
+    // T-016.3: swarm agents are NOT the user's personal Zed session.
+    // Opt out of the minimax MCP env var injection. The minimax MCP
+    // routes the user's local Zed through their minimax subscription;
+    // swarm agents in worktrees should run on the default anthropic
+    // provider instead.
+    disableMinimaxMcp: true,
   });
 
   console.log(`[SWARM_LAUNCH_CMD] Wrapper length: ${wrapper.length} chars`);
