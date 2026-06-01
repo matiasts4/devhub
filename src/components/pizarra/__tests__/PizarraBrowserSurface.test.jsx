@@ -79,7 +79,9 @@ describe('PizarraBrowserSurface', () => {
     expect(capturedWorkspacePaneProps.layoutSyncKey).toBe('20:40:400:320:20:40');
     expect(capturedWorkspacePaneProps.dockState.browserUrl).toBe('http://localhost:3100/');
 
-    const header = document.querySelector('[data-testid="pizarra-browser-drag-handle-browser-1"]');
+    const header = document.querySelector(
+      '[data-pizarra-drag-handle-id="pizarra-browser-drag-handle-browser-1"]'
+    );
     flushSync(() => {
       header.dispatchEvent(
         new window.MouseEvent('mousedown', {

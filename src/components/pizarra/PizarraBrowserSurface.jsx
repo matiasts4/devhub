@@ -132,7 +132,7 @@ export default function PizarraBrowserSurface({
         <button
           type="button"
           data-testid="pizarra-drag-handle"
-          data-pizarra-specific-testid={`pizarra-browser-drag-handle-${shape.id}`}
+          data-pizarra-drag-handle-id={`pizarra-browser-drag-handle-${shape.id}`}
           data-pizarra-surface-drag-handle="true"
           onMouseDown={handleDragStart}
           style={{
