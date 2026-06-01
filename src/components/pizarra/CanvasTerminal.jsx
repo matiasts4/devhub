@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo } from 'react';
+import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
 import { resizeNativeVtePanel } from '@/lib/terminal/nativeVteBridge';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
@@ -199,8 +200,37 @@ export default function CanvasTerminal({
           }}
         >
           <span>{resolvedShape.label || 'Terminal'}</span>
-          <span>
-            {requestedRendererMode === 'vte-experimental' ? 'native auto' : requestedRendererMode}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span>
+              {requestedRendererMode === 'vte-experimental' ? 'native auto' : requestedRendererMode}
+            </span>
+            <button
+              type="button"
+              data-testid="canvas-terminal-close"
+              data-pizarra-close-button="true"
+              title="Cerrar terminal"
+              aria-label="Cerrar terminal"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose?.(resolvedShape.id);
+              }}
+              style={{
+                width: 18,
+                height: 18,
+                padding: 2,
+                background: 'transparent',
+                border: 'none',
+                color: '#9fb5d1',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 4,
+              }}
+            >
+              <X size={12} />
+            </button>
           </span>
         </div>
 
