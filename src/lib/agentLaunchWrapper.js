@@ -1,4 +1,5 @@
 /* eslint-env node */
+/* eslint-disable no-useless-escape -- pre-existing HMAC bash literals with embedded quotes; removed in T-006. */
 
 /**
  * Agent Launch Wrapper — DevHub's own wrapper for swarm agents.
@@ -31,6 +32,7 @@ export function buildAgentEnvExports({
   tmuxSessionName,
   directorSessionName,
   modelProvider,
+  dbPath,
 }) {
   const exports = [
     `export DEVHUB_AGENT_ID="${agentId}"`,
@@ -40,6 +42,12 @@ export function buildAgentEnvExports({
     `export DEVHUB_WORKSPACE_ID="${workspaceId || ''}"`,
     `export DEVHUB_RUN_ID="${runId || ''}"`,
   ];
+
+  // T-003 — DEVHUB_DB_PATH gives bus helpers an absolute path to the SQLite bus.
+  // Required for _devhub_chat / _devhub_event / _devhub_presence / _devhub_inbox_check.
+  if (dbPath) {
+    exports.push(`export DEVHUB_DB_PATH="${dbPath}"`);
+  }
 
   if (tmuxSessionName) {
     exports.push(`export DEVHUB_TMUX_SESSION="${tmuxSessionName}"`);
@@ -120,6 +128,101 @@ export function buildIdentityVerificationBlock({ agentId, missionId, role, works
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- CWD verified: $(pwd) === ${workspacePath} ---"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- Log file: /tmp/devhub-swarm-${role}.log ---"`,
     '} >> "$DEVHUB_LOG_FILE" 2>&1',
+  ].join('\n');
+}
+
+/**
+ * Build the bash block that defines the bus helpers:
+ *   _devhub_chat, _devhub_event, _devhub_presence, _devhub_inbox_check.
+ *
+ * Each helper is a thin shim around the `devhub-bus` binary. The bus is the
+ * SINGLE path from bash to better-sqlite3 — workers never write to SQLite
+ * directly. Exit codes from the binary (0/64/65/66/73) are passed through to
+ * the caller.
+ *
+ * @param {object} params
+ * @param {string} params.busBinaryPath - absolute path to devhub-bus.js
+ * @param {string} params.dbPath - absolute path to devhub.db
+ * @returns {string} Bash function definitions
+ */
+export function buildBusHelpersBlock({ busBinaryPath, dbPath }) {
+  if (!busBinaryPath || !dbPath) {
+    return '# Bus helpers skipped (missing busBinaryPath or dbPath)';
+  }
+  return [
+    '# ===== DevHub agent comms bus helpers (T-003) =====',
+    '# Single source of truth: devhub-bus binary + team_chat/team_events/team_inbox/agent_presence.',
+    '_DEVHUB_BUS_BIN="${DEVHUB_BUS_BIN:-' + busBinaryPath + '}"',
+    '_DEVHUB_BUS_DB="${DEVHUB_BUS_DB:-' + dbPath + '}"',
+    '_DEVHUB_BUS_NODE="${DEVHUB_BUS_NODE:-$(command -v node || echo node)}"',
+    '',
+    '_devhub_chat() {',
+    '  local _body=""',
+    '  local _to="all"',
+    '  local _kind="chat"',
+    '  local _client_event_id=""',
+    '  while [ $# -gt 0 ]; do',
+    '    case "$1" in',
+    '      --to) _to="$2"; shift 2 ;;',
+    '      --kind) _kind="$2"; shift 2 ;;',
+    '      --client-event-id) _client_event_id="$2"; shift 2 ;;',
+    '      --message-file) _body="$(cat "$2")"; shift 2 ;;',
+    '      --message-stdin) _body="$(timeout 5 cat)"; shift ;;',
+    '      --*) shift ;;',
+    '      *) if [ -z "$_body" ]; then _body="$1"; fi; shift ;;',
+    '    esac',
+    '  done',
+    '  if [ -z "$_body" ]; then echo "devhub-helper: _devhub_chat: usage: body required" >&2; return 64; fi',
+    '  if [ -z "${DEVHUB_MISSION_ID:-}" ]; then echo "devhub-helper: _devhub_chat: DEVHUB_MISSION_ID not set" >&2; return 64; fi',
+    '  if [ -z "${DEVHUB_ROLE:-}" ]; then echo "devhub-helper: _devhub_chat: DEVHUB_ROLE not set" >&2; return 64; fi',
+    '  local _args=("--db" "$_DEVHUB_BUS_DB" "chat-write" "--mission" "$DEVHUB_MISSION_ID" "--from" "$DEVHUB_ROLE" "--to" "$_to" "--kind" "$_kind" "--body" "$_body")',
+    '  if [ -n "$_client_event_id" ]; then _args+=("--client-event-id" "$_client_event_id"); fi',
+    '  "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" "${_args[@]}"',
+    '}',
+    '',
+    '_devhub_event() {',
+    '  local _kind=""',
+    '  local _payload=""',
+    '  local _dedupe_key=""',
+    '  while [ $# -gt 0 ]; do',
+    '    case "$1" in',
+    '      --kind) _kind="$2"; shift 2 ;;',
+    '      --payload) _payload="$2"; shift 2 ;;',
+    '      --dedupe-key) _dedupe_key="$2"; shift 2 ;;',
+    '      --*) shift ;;',
+    '    esac',
+    '  done',
+    '  if [ -z "$_kind" ]; then echo "devhub-helper: _devhub_event: --kind required" >&2; return 64; fi',
+    '  if [ -z "${DEVHUB_MISSION_ID:-}" ]; then echo "devhub-helper: _devhub_event: DEVHUB_MISSION_ID not set" >&2; return 64; fi',
+    '  local _args=("--db" "$_DEVHUB_BUS_DB" "event-write" "--mission" "$DEVHUB_MISSION_ID" "--source" "${DEVHUB_ROLE:-unknown}" "--kind" "$_kind")',
+    '  if [ -n "$_payload" ]; then _args+=("--payload" "$_payload"); fi',
+    '  if [ -n "$_dedupe_key" ]; then _args+=("--dedupe-key" "$_dedupe_key"); fi',
+    '  "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" "${_args[@]}"',
+    '}',
+    '',
+    '_devhub_presence() {',
+    '  local _state="online"',
+    '  local _summary=""',
+    '  local _ttl=120',
+    '  while [ $# -gt 0 ]; do',
+    '    case "$1" in',
+    '      --state) _state="$2"; shift 2 ;;',
+    '      --summary) _summary="$2"; shift 2 ;;',
+    '      --ttl) _ttl="$2"; shift 2 ;;',
+    '      --*) shift ;;',
+    '    esac',
+    '  done',
+    '  if [ -z "${DEVHUB_AGENT_ID:-}" ]; then echo "devhub-helper: _devhub_presence: DEVHUB_AGENT_ID not set" >&2; return 64; fi',
+    '  if [ -z "${DEVHUB_MISSION_ID:-}" ]; then echo "devhub-helper: _devhub_presence: DEVHUB_MISSION_ID not set" >&2; return 64; fi',
+    '  "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" "--db" "$_DEVHUB_BUS_DB" "presence-upsert" --mission "$DEVHUB_MISSION_ID" --agent "$DEVHUB_AGENT_ID" --runtime-surface shell --state "$_state" --summary "$_summary" --ttl-seconds "$_ttl"',
+    '}',
+    '',
+    '_devhub_inbox_check() {',
+    '  if [ -z "${DEVHUB_MISSION_ID:-}" ]; then echo "devhub-helper: _devhub_inbox_check: DEVHUB_MISSION_ID not set" >&2; return 64; fi',
+    '  if [ -z "${DEVHUB_ROLE:-}" ]; then echo "devhub-helper: _devhub_inbox_check: DEVHUB_ROLE not set" >&2; return 64; fi',
+    '  "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" "--db" "$_DEVHUB_BUS_DB" "inbox-check" --mission "$DEVHUB_MISSION_ID" --role "$DEVHUB_ROLE"',
+    '}',
+    '# ===== end bus helpers =====',
   ].join('\n');
 }
 
@@ -286,7 +389,7 @@ export function buildPendingDeliveriesPollingCommand({ supervisorUrl, agentId, m
     return '# pending_deliveries polling skipped (no supervisor URL)';
   }
 
-return `(_devhub_pending_deliveries_loop() {
+  return `(_devhub_pending_deliveries_loop() {
   while true; do
     sleep 30
     PENDING_BODY="{\\"action\\":\\"agent_heartbeat\\",\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"status_summary\\":\\"checking pending deliveries\\"}"
@@ -518,6 +621,8 @@ export function buildAgentLaunchWrapper({
   bootstrapPrompt,
   innerCommand,
   modelProvider,
+  dbPath,
+  busBinaryPath,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',
@@ -554,7 +659,11 @@ export function buildAgentLaunchWrapper({
       tmuxSessionName,
       directorSessionName: directorTmuxSession,
       modelProvider,
+      dbPath,
     }),
+    '',
+    // T-003 — bus helpers (only emitted if dbPath + busBinaryPath are provided)
+    buildBusHelpersBlock({ busBinaryPath, dbPath }),
     '',
     buildIdentityVerificationBlock({
       agentId,
