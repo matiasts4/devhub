@@ -125,28 +125,73 @@ export const reviewTerminalTool = {
   },
 };
 
-// Stubs — implemented in T-005b. They exist as exports so the route's import
-// doesn't break between T-005a and T-005b.
+// T-005b: real implementations of execute_in_terminal and close_terminal.
 export const executeInTerminalTool = {
   name: 'execute_in_terminal',
-  description: 'Send input to a running terminal session. Implemented in T-005b.',
+  description: 'Send input (keystrokes) to a running terminal session.',
   parameters: {
     session_id: { type: 'string', required: true },
     input: { type: 'string', required: true },
   },
-  async execute() {
-    return { error: 'execute_in_terminal not yet wired (T-005b)' };
+  async execute(params /* , context */) {
+    const guardSession = requireParam(params, 'session_id');
+    if (guardSession) return guardSession;
+    const guardInput = requireParam(params, 'input');
+    if (guardInput) return guardInput;
+
+    const { session_id, input } = params;
+    zedLog.info('TOOL', 'execute_in_terminal', {
+      session_id,
+      inputLen: String(input).length,
+    });
+    const baseUrl = getBaseUrl();
+    try {
+      const response = await fetch(
+        `${baseUrl}/api/terminal/session/${encodeURIComponent(session_id)}/input`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: input }),
+        }
+      );
+      if (!response.ok) {
+        return { error: `Failed to send input: ${response.status}` };
+      }
+      return await response.json().catch(() => ({ session_id, sent: true }));
+    } catch (err) {
+      return { error: `Failed to send input: ${err.message}` };
+    }
   },
 };
 
 export const closeTerminalTool = {
   name: 'close_terminal',
-  description: 'Close a terminal session (confirm-mode). Implemented in T-005b.',
+  description:
+    'Close a terminal session. Destructive — requires explicit confirm: true. Without confirm, returns a dry-run preview.',
   parameters: {
     session_id: { type: 'string', required: true },
     confirm: { type: 'boolean' },
   },
-  async execute() {
-    return { error: 'close_terminal not yet wired (T-005b)' };
+  async execute(params /* , context */) {
+    const guard = requireParam(params, 'session_id');
+    if (guard) return guard;
+
+    const { session_id, confirm } = params;
+    zedLog.info('TOOL', 'close_terminal', { session_id, confirm });
+
+    if (confirm !== true) {
+      return {
+        action: 'would close',
+        session_id,
+        hint: 'call again with confirm: true to actually close the session',
+      };
+    }
+
+    const { closeTerminalSessionById } = await import('@/lib/terminal/closeTerminalSession');
+    try {
+      return await closeTerminalSessionById(session_id);
+    } catch (err) {
+      return { error: err.message, status: err.status || 500 };
+    }
   },
 };
