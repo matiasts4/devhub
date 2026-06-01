@@ -2242,11 +2242,15 @@ export default function TerminalTTY({
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
+      // T-018 fix: the previous check also matched when `isActivePanel` was
+      // true, which intercepted paste events fired from OTHER panels (e.g.
+      // the right-dock ChatPanel textarea) whenever a terminal happened to
+      // be the active workspace panel. Now: the event must actually be
+      // for the terminal — focus or target inside the terminal root.
       const belongsToTerminal = Boolean(
         rootElement &&
         ((activeElement && rootElement.contains(activeElement)) ||
-          (eventTarget && rootElement.contains(eventTarget)) ||
-          isActivePanel)
+          (eventTarget && rootElement.contains(eventTarget)))
       );
       if (!belongsToTerminal) return;
 
@@ -2293,11 +2297,14 @@ export default function TerminalTTY({
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
+      // T-018 fix: tightened `belongsToTerminal` — removed `isActivePanel`
+      // so that key shortcuts (Ctrl+V/Ctrl+C/Ctrl+Shift+V) fired from
+      // other panels (e.g. the right-dock ChatPanel textarea) are not
+      // hijacked just because some terminal is the active workspace panel.
       const belongsToTerminal = Boolean(
         rootElement &&
         ((activeElement && rootElement.contains(activeElement)) ||
-          (eventTarget && rootElement.contains(eventTarget)) ||
-          isActivePanel)
+          (eventTarget && rootElement.contains(eventTarget)))
       );
 
       cliLog('[keydown]', `action=${action} belongs=${belongsToTerminal}`);

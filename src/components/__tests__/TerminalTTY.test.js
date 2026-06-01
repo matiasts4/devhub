@@ -535,7 +535,6 @@ describe('fitTerminalViewport()', () => {
     expect(term.refresh).not.toHaveBeenCalled();
     expect(socket.send).not.toHaveBeenCalled();
   });
-
 });
 
 describe('buildTerminalViewportDiagnosticPayload()', () => {
@@ -1817,7 +1816,10 @@ describe('TerminalTTY renderer fallback UI', () => {
   test('boots xterm immediately even when startup visibility and dimensions are not ready yet', async () => {
     let visibilityState = 'hidden';
     let rect = { width: 0, height: 0 };
-    const originalVisibilityDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    const originalVisibilityDescriptor = Object.getOwnPropertyDescriptor(
+      document,
+      'visibilityState'
+    );
 
     try {
       Object.defineProperty(document, 'visibilityState', {
@@ -3023,7 +3025,15 @@ describe('TerminalTTY renderer fallback UI', () => {
       bubbles: true,
       cancelable: true,
     });
-    document.dispatchEvent(pasteEvent);
+    // T-018: dispatch the paste on the shell (a child of the terminal root)
+    // rather than on `document` directly. The document-level capture
+    // listener still fires (capture phase runs first), and the event
+    // target is now inside the terminal root, so the tightened
+    // `belongsToTerminal` check matches. The previous test relied on
+    // `isActivePanel` being true, which was too aggressive — it hijacked
+    // paste events from other panels (e.g. the right-dock ChatPanel
+    // textarea) whenever some terminal was the active workspace panel.
+    shell.dispatchEvent(pasteEvent);
     await flushTerminalEffects();
 
     expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
@@ -3095,8 +3105,14 @@ describe('TerminalTTY renderer fallback UI', () => {
         }
       });
       mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(false);
-      mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: false, reason: 'tauri-unavailable' });
-      mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: false, reason: 'tauri-unavailable' });
+      mockNativeVteBridge.probeNativeVte.mockResolvedValue({
+        ready: false,
+        reason: 'tauri-unavailable',
+      });
+      mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({
+        opened: false,
+        reason: 'tauri-unavailable',
+      });
       jest.clearAllMocks();
     });
 
@@ -3135,7 +3151,9 @@ describe('TerminalTTY renderer fallback UI', () => {
       await flushTerminalEffects();
       const overlay = view.container.querySelector('[data-testid="terminal-suspended-overlay"]');
       expect(overlay).not.toBeNull();
-      const continuarBtn = view.container.querySelector('[data-testid="terminal-suspended-continue-btn"]');
+      const continuarBtn = view.container.querySelector(
+        '[data-testid="terminal-suspended-continue-btn"]'
+      );
       expect(continuarBtn).not.toBeNull();
       consoleSpy.mockRestore();
     });
@@ -3156,7 +3174,9 @@ describe('TerminalTTY renderer fallback UI', () => {
         })
       );
       await flushTerminalEffects();
-      const continuarBtn = view.container.querySelector('[data-testid="terminal-suspended-continue-btn"]');
+      const continuarBtn = view.container.querySelector(
+        '[data-testid="terminal-suspended-continue-btn"]'
+      );
       expect(continuarBtn).not.toBeNull();
       continuarBtn.click();
       await flushTerminalEffects();
@@ -3210,7 +3230,6 @@ describe('TerminalTTY renderer fallback UI', () => {
       window.removeEventListener('devhub:terminal-settings-modal-requested', handler);
     });
   });
-
 
   test('native VTE intercepts paste shortcuts and routes them through focus + Tauri bridge', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);

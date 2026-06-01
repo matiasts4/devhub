@@ -116,6 +116,25 @@ export default function ChatPanel({ className = '' }) {
     [handleSend]
   );
 
+  // T-018: paste handler. We read the clipboard text and append it to the
+  // input state ourselves, then call preventDefault to stop the default
+  // paste (which would otherwise insert at the cursor position only and
+  // bypass our controlled input). This also guards against any future
+  // global handler that might cancel the default — by owning the paste
+  // we are robust to capture-phase document listeners that the textarea
+  // itself cannot intercept.
+  const handlePaste = useCallback((e) => {
+    const text =
+      e.clipboardData && typeof e.clipboardData.getData === 'function'
+        ? e.clipboardData.getData('text/plain')
+        : '';
+    if (text) {
+      e.preventDefault();
+      setInput((prev) => (prev || '') + text);
+      setTimeout(updateTextareaHeight, 0);
+    }
+  }, []);
+
   const handleStop = useCallback(() => {
     abortController?.abort();
     setIsLoading(false);
@@ -220,6 +239,7 @@ export default function ChatPanel({ className = '' }) {
               setTimeout(updateTextareaHeight, 0);
             }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Escribile a Zed..."
             rows={1}
             className="flex-1 bg-[var(--surface-muted)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-[13px] outline-none focus:border-[var(--accent-primary)] resize-none"

@@ -88,3 +88,81 @@ describe('ChatPanel — hydration safety (T-010b)', () => {
     cleanup();
   });
 });
+
+describe('ChatPanel — paste behavior (T-018)', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = installDom();
+    ({ createRoot } = require('react-dom/client'));
+    ({ flushSync } = require('react-dom'));
+    ChatPanel = require('../ChatPanel').default;
+  });
+
+  afterEach(() => {
+    dom.window.close();
+    jest.clearAllMocks();
+  });
+
+  function getTextarea(container) {
+    // The textarea is the only <textarea> in the ChatPanel render.
+    const ta = container.querySelector('textarea');
+    if (!ta) throw new Error('textarea not found in ChatPanel');
+    return ta;
+  }
+
+  test('textarea onPaste handler exists and inserts clipboard text into input', async () => {
+    // T-018: paste from clipboard must work in the ChatPanel textarea.
+    // Simulate the browser's default paste behavior by dispatching a
+    // `paste` ClipboardEvent with clipboardData on the textarea. After
+    // the handler runs, the textarea's value reflects the pasted text.
+    const { container, cleanup } = await renderIntoDom(React.createElement(ChatPanel));
+    const ta = getTextarea(container);
+
+    // Build a DataTransfer-like object the handler can read.
+    const dataTransfer = {
+      getData: (type) => (type === 'text/plain' ? 'hello world' : ''),
+    };
+    const pasteEvent = new dom.window.Event('paste', { bubbles: true, cancelable: true });
+    pasteEvent.clipboardData = dataTransfer;
+    ta.dispatchEvent(pasteEvent);
+
+    // The handler must call preventDefault (we own the paste) and insert
+    // the text into the textarea. React updates the value asynchronously,
+    // so flush before asserting.
+    flushSync(() => {});
+    expect(ta.value).toBe('hello world');
+    cleanup();
+  });
+
+  test('Ctrl+V keydown does not call preventDefault on the textarea (paste is allowed)', async () => {
+    // T-018: a Ctrl+V keydown on the textarea must not be cancelled.
+    // The textarea's own onKeyDown only acts on Enter. A previous
+    // regression: a document-level capture keydown handler in
+    // TerminalTTY.jsx intercepted Ctrl+V whenever the terminal was
+    // marked `isActivePanel` — blocking paste in the right-dock chat.
+    // The ChatPanel fix + the TerminalTTY `belongsToTerminal` tightening
+    // restore normal browser behavior: Ctrl+V triggers the default
+    // paste flow (the textarea's onPaste handler above).
+    const { container, cleanup } = await renderIntoDom(React.createElement(ChatPanel));
+    const ta = getTextarea(container);
+
+    const preventDefault = jest.fn();
+    const ev = new dom.window.KeyboardEvent('keydown', {
+      key: 'v',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    // jsdom doesn't let us observe preventDefault via .defaultPrevented
+    // for synthetic events the way real browsers do, so we patch the
+    // instance to record calls.
+    ev.preventDefault = preventDefault;
+    ta.dispatchEvent(ev);
+
+    // The textarea's onKeyDown only acts on Enter, so preventDefault
+    // must NOT have been called for Ctrl+V.
+    expect(preventDefault).not.toHaveBeenCalled();
+    cleanup();
+  });
+});
