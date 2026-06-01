@@ -476,6 +476,33 @@ function getOrInitSessions() {
   return globalThis[GLOBAL_TTY_SESSIONS_KEY];
 }
 
+/**
+ * getSessionOutput — read the accumulated output buffer of a session.
+ * Returns the history string or null if the session is unknown.
+ */
+export function getSessionOutput(id) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(id);
+  if (!session) return null;
+  return session.history || '';
+}
+
+/**
+ * pushSessionInput — write keystrokes to a session's PTY.
+ * Returns true on success, false if the session is unknown.
+ */
+export function pushSessionInput(id, data) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(id);
+  if (!session || !session.pty) return false;
+  try {
+    session.pty.write(String(data ?? ''));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function normalizePtyRuntimeEvidence(session, terminalId) {
   if (!session) {
     return {
