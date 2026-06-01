@@ -141,6 +141,22 @@ program
     swarmLaunchCommand(project, opts);
   });
 
+// T-016.5 — `devhub swarm logs <launchId>` — prints per-agent transcripts
+// captured via tmux pipe-pane (T-016.4). Subcommand of `swarm` is rejected
+// by commander (the existing `swarm` command takes no args), so we wire
+// this as a top-level `swarm-logs` command for simplicity. The user can
+// also type `devhub swarm-logs`.
+const { swarmLogsCommand } = require('./commands/swarm-logs.js');
+program
+  .command('swarm-logs')
+  .description('Print per-agent transcripts captured by tmux pipe-pane (T-016.4)')
+  .argument('[launch-id]', 'Launch ID (use "latest" or omit for the most recent launch)')
+  .option('--role <role>', 'Show only the specified role')
+  .option('--list', 'List available transcripts with sizes')
+  .action((launchId, opts) => {
+    swarmLogsCommand({ launchId, role: opts.role, list: opts.list === true });
+  });
+
 // New commands
 const authCommand = require('./commands/auth.js');
 program
