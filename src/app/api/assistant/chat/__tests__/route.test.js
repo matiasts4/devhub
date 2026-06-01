@@ -95,6 +95,50 @@ describe('chat route — module contract', () => {
     expect(observedModel).toBe('minimax-coding-plan/MiniMax-M3');
   });
 
+  test('no-params canonical error: TOOL with no PARAM lines returns missing required parameters', async () => {
+    // T-010a: spec asistente-chat §5.1 / §5.2. When the model emits `TOOL: <name>`
+    // with no `PARAM:` lines, the route MUST skip dispatch and surface
+    // { error: "missing required parameters" } as the tool result. The model
+    // still sees the error in the conversation (injected like any tool result)
+    // and the loop continues to the next turn.
+    const realFetch = global.fetch;
+    let callIndex = 0;
+    global.fetch = jest.fn(async () => {
+      callIndex++;
+      const isFirstModelCall = callIndex === 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            {
+              type: 'text',
+              text: isFirstModelCall
+                ? 'TOOL: browse_files\n' // no PARAM lines
+                : 'Lo siento, faltan parámetros.',
+            },
+          ],
+        }),
+        text: async () => '',
+      };
+    });
+
+    try {
+      const request = { json: async () => ({ message: 'list files' }) };
+      const res = await POST(request);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.text).toBe('Lo siento, faltan parámetros.');
+      expect(body.tool_results).toHaveLength(1);
+      expect(body.tool_results[0].tool).toBe('browse_files');
+      expect(body.tool_results[0].result).toEqual({
+        error: 'missing required parameters',
+      });
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
+
   test('tool loop dispatch: model emits TOOL: → result injected → final text', async () => {
     // T-008: prove the full tool loop end-to-end:
     //   fetch call 1 → MiniMax API → returns TOOL: list_terminals
@@ -122,7 +166,9 @@ describe('chat route — module contract', () => {
           content: [
             {
               type: 'text',
-              text: isFirstModelCall ? 'TOOL: list_terminals\n' : 'No terminals running.',
+              text: isFirstModelCall
+                ? 'TOOL: list_terminals\nPARAM: dummy=x\n'
+                : 'No terminals running.',
             },
           ],
         }),

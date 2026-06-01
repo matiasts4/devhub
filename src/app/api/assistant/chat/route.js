@@ -200,6 +200,20 @@ export async function POST(request) {
         });
 
         for (const { name, input } of toolCalls) {
+          // T-010a (C1): if the model emitted a TOOL: with no PARAM: lines,
+          // skip dispatch and surface the canonical "missing required parameters"
+          // error as the tool result. The spec asistente-chat §5.1/§5.2
+          // requires the tool result to have shape
+          // `{ error: "missing required parameters" }` rather than silently
+          // calling the tool with `{}` (which would default action='list' on
+          // browse_files and return a successful list — a spec violation).
+          if (!input || Object.keys(input).length === 0) {
+            const result = { error: 'missing required parameters' };
+            zedLog.toolResult(name, result, 0);
+            allToolResults.push({ tool: name, input: input || {}, result });
+            continue;
+          }
+
           const toolStart = Date.now();
           zedLog.toolCall(name, input);
 
