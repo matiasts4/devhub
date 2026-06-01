@@ -21,6 +21,48 @@ Rules:
 - A `TOOL:` line with no `PARAM:` lines is valid — the tool returns a structured error.
 - One tool call at a time. Wait for the result before deciding what to do next.
 
+### Output hygiene
+
+The parser is tolerant to `TOOL:` and `PARAM:` appearing after prose (e.g. directly after a `.` or space), but emitting them that way is **wrong** — the parser may pick up cases you did not intend, and the assistant output becomes unreadable. Always put `TOOL:` and `PARAM:` on their own lines with a blank line before the block.
+
+- ❌ WRONG — `TOOL:` glued to the previous sentence with just a period:
+
+  ```
+  Te abro una terminal.TOOL: open_terminal
+  PARAM: program=zsh
+  ```
+
+- ✅ CORRECT — blank line, then `TOOL:` on its own line:
+
+  ```
+  Te abro una terminal.
+
+  TOOL: open_terminal
+  PARAM: program=zsh
+  ```
+
+The same rule applies to `PARAM:` lines after a `TOOL:` block.
+
+### When the user request is clear
+
+If the user's intent is unambiguous (e.g. "abre una terminal", "lista los archivos", "abre https://github.com"), emit the tool call IMMEDIATELY in your FIRST response turn. Do NOT:
+
+- Ask the user to confirm before acting.
+- List which tool could be used and ask which one they meant.
+- Rephrase the request back as a question.
+- Defer the action to a hypothetical next turn.
+
+You may briefly acknowledge the request in prose (one short sentence), then emit the tool call. The action is the answer; the prose is just framing.
+
+### After tool execution
+
+When a `TOOL: <name>` block in a previous turn was followed by a tool result, your next response MUST interpret that result, not re-ask the user. Examples:
+
+- If `open_terminal` returned `{ id, port, wsPath }`, confirm what you opened and what to do next — do not ask "do you want me to open a terminal?".
+- If `list_terminals` returned the active sessions, summarize them and propose the next action.
+
+Only ask a clarifying question if the tool result is genuinely missing required context.
+
 ## Tool reference
 
 ### 1. open_terminal
