@@ -85,8 +85,10 @@ describe('parseToolCalls', () => {
     ]);
   });
 
-  test('does not treat TOOL: text inside prose as a call (line must start with TOOL:)', () => {
-    const raw = 'Then I will TOOL: open_url with url foo';
+  test('does not treat TOOL: glued to a word (no boundary) as a call', () => {
+    // No start-of-string, no whitespace, no '.', no '\n' before the
+    // `TOOL:` — the parser must NOT swallow a mid-word occurrence.
+    const raw = 'ThenIwillTOOL: open_url with url foo';
     expect(parseToolCalls(raw)).toEqual([]);
   });
 
@@ -95,6 +97,53 @@ describe('parseToolCalls', () => {
     expect(parseToolCalls(raw)).toEqual([
       { name: 'open_terminal', input: { command: 'zsh' } },
       { name: 'list_terminals', input: {} },
+    ]);
+  });
+
+  // ---- T-019: tolerant to inline TOOL:/PARAM: after prose ----
+  // The model often glues `TOOL:` to the end of a sentence with just a
+  // period (no newline). The parser used to require `^TOOL:` per line, so
+  // those calls were silently dropped. These tests pin the new behavior.
+
+  test('T-019: extracts TOOL: glued to end of prose with a period', () => {
+    const raw = 'Voy con un ls para mostrarte.TOOL: open_terminal\n' + 'PARAM: command=ls -la';
+    expect(parseToolCalls(raw)).toEqual([{ name: 'open_terminal', input: { command: 'ls -la' } }]);
+  });
+
+  test('T-019: extracts TOOL: preceded by a single space after prose', () => {
+    const raw = 'Te explico. TOOL: open_url\n' + 'PARAM: url=https://github.com';
+    expect(parseToolCalls(raw)).toEqual([
+      { name: 'open_url', input: { url: 'https://github.com' } },
+    ]);
+  });
+
+  test('T-019: extracts two tool calls when TOOL: appears twice (one inline, one on its own line)', () => {
+    const raw =
+      '¡Hola! Perfecto.TOOL: open_terminal\n' + 'PARAM: program=zsh\n' + 'TOOL: list_terminals';
+    expect(parseToolCalls(raw)).toEqual([
+      { name: 'open_terminal', input: { program: 'zsh' } },
+      { name: 'list_terminals', input: {} },
+    ]);
+  });
+
+  test('T-019: PARAM: without a preceding TOOL is still ignored', () => {
+    const raw = 'Some prose. PARAM: command=ls';
+    expect(parseToolCalls(raw)).toEqual([]);
+  });
+
+  test('T-019: reuses the log bug — glued TOOL: at end of message (no trailing newline)', () => {
+    const raw =
+      'Abro una nueva terminal para ti.TOOL: open_terminal\n' +
+      'PARAM: program=zsh\n' +
+      'PARAM: cwd=/home/matias/ArxonLabs/devhub';
+    expect(parseToolCalls(raw)).toEqual([
+      {
+        name: 'open_terminal',
+        input: {
+          program: 'zsh',
+          cwd: '/home/matias/ArxonLabs/devhub',
+        },
+      },
     ]);
   });
 });
