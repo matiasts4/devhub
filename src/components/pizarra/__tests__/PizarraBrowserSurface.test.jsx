@@ -4,6 +4,7 @@ const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
 const mockFocusNativeBrowser = jest.fn(() => Promise.resolve());
+const mockResizeNativeBrowser = jest.fn(() => Promise.resolve());
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -15,6 +16,7 @@ jest.mock('lucide-react', () => {
 
 jest.mock('@/lib/browser/nativeBrowserBridge', () => ({
   focusNativeBrowser: mockFocusNativeBrowser,
+  resizeNativeBrowser: mockResizeNativeBrowser,
 }));
 
 jest.mock('@/components/workspace/useNativeBrowserSurface', () => ({
@@ -88,7 +90,9 @@ describe('PizarraBrowserSurface', () => {
       window.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
     });
 
-    const viewport = document.querySelector('[data-testid="pizarra-browser-native-runtime-shell-browser-1"]');
+    const viewport = document.querySelector(
+      '[data-testid="pizarra-browser-native-runtime-shell-browser-1"]'
+    );
     flushSync(() => {
       viewport.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
     });

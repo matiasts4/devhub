@@ -25,9 +25,7 @@ function getMeasuredBounds(node) {
 
 const LEGACY_LOCALHOST_3200 = 'http://localhost:3200/';
 function resolveBrowserUrl(url) {
-  const DEFAULT = (typeof window !== 'undefined' && window.location?.origin)
-    ? window.location.origin + '/'
-    : 'http://localhost:3000/';
+  const DEFAULT = 'http://localhost:3000/';
   if (!url) return DEFAULT;
   const normalized = url.endsWith('/') ? url : url + '/';
   if (normalized === LEGACY_LOCALHOST_3200) return DEFAULT;
@@ -45,7 +43,9 @@ export default function PizarraBrowserSurface({
   const dragCleanupRef = useRef(null);
   const dragRafRef = useRef(null);
   const boundsRef = useRef(bounds);
-  useEffect(() => { boundsRef.current = bounds; }, [bounds]);
+  useEffect(() => {
+    boundsRef.current = bounds;
+  }, [bounds]);
   const viewportRef = useRef(null);
   const panelId = useMemo(() => `pizarra-browser-${shape.id}`, [shape.id]);
   const requestedNativeRuntime = true;
@@ -100,6 +100,7 @@ export default function PizarraBrowserSurface({
         x: event.clientX,
         y: event.clientY,
       };
+      const startBounds = { ...boundsRef.current };
 
       const stopDragSync = () => {
         if (dragRafRef.current !== null) {
@@ -128,12 +129,12 @@ export default function PizarraBrowserSurface({
         });
 
         // SYNC NATIVE SURFACE POSITION DIRECTLY
-        const b = boundsRef.current;
+        const b = startBounds;
         resizeNativeBrowser({
           panelId,
           bounds: {
-            x: b.x + totalDeltaX + FRAME_INSET,
-            y: b.y + totalDeltaY + FRAME_INSET + HEADER_HEIGHT,
+            x: (b.screenX ?? b.x) + totalDeltaX + FRAME_INSET,
+            y: (b.screenY ?? b.y) + totalDeltaY + FRAME_INSET + HEADER_HEIGHT,
             width: Math.max(b.width - FRAME_INSET * 2, 1),
             height: Math.max(b.height - FRAME_INSET * 2 - HEADER_HEIGHT, 1),
           },

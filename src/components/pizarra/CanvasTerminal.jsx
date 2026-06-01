@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import TerminalTTY from '@/components/TerminalTTY';
 import { resizeNativeVtePanel } from '@/lib/terminal/nativeVteBridge';
 
@@ -22,18 +22,27 @@ export default function CanvasTerminal({
   isActivePanel = false,
   requestedRendererMode = 'vte-experimental',
 }) {
+  const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
+  const resolvedBounds = useMemo(
+    () =>
+      bounds || {
+        x: position?.x ?? 0,
+        y: position?.y ?? 0,
+        width: size?.width ?? 800,
+        height: size?.height ?? 600,
+        screenX: position?.x ?? 0,
+        screenY: position?.y ?? 0,
+      },
+    [bounds, position, size]
+  );
+
   const dragCleanupRef = useRef(null);
   const dragRafRef = useRef(null);
   const placeholderRef = useRef(null);
   const boundsRef = useRef(resolvedBounds);
-  useEffect(() => { boundsRef.current = resolvedBounds; }, [resolvedBounds]);
-  const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
-  const resolvedBounds = bounds || {
-    x: position?.x ?? 0,
-    y: position?.y ?? 0,
-    width: size?.width ?? 800,
-    height: size?.height ?? 600,
-  };
+  useEffect(() => {
+    boundsRef.current = resolvedBounds;
+  }, [resolvedBounds]);
 
   const handleFrameMouseDown = useCallback(
     (event) => {
@@ -59,6 +68,7 @@ export default function CanvasTerminal({
         x: event.clientX,
         y: event.clientY,
       };
+      const startBounds = { ...boundsRef.current };
 
       const stopDragSync = () => {
         if (dragRafRef.current !== null) {
@@ -87,14 +97,14 @@ export default function CanvasTerminal({
         });
 
         // SYNC NATIVE SURFACE POSITION DIRECTLY
-        const b = boundsRef.current;
+        const b = startBounds;
         const inset = 10;
         const headerH = 28;
         resizeNativeVtePanel({
           panelId: terminalId,
           bounds: {
-            x: b.x + totalDeltaX + inset,
-            y: b.y + totalDeltaY + inset + headerH,
+            x: (b.screenX ?? b.x) + totalDeltaX + inset,
+            y: (b.screenY ?? b.y) + totalDeltaY + inset + headerH,
             width: Math.max(b.width - inset * 2, 1),
             height: Math.max(b.height - inset * 2 - headerH, 1),
           },
