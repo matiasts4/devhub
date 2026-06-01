@@ -44,6 +44,7 @@ const commonJsAndJestFiles = [
   'lib/**/*.js',
   'scripts/**/*.cjs',
   'tests/**/*.js',
+  'src/lib/bus/**/*.js',
   'src/lib/db/**/*.js',
   'src/lib/sdd/**/*.js',
   ...swarmCommonJsFiles,

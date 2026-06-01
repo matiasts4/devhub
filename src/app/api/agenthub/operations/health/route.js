@@ -43,7 +43,7 @@ import {
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
-import { buildAgentLaunchWrapper } from '@/lib/agentLaunchWrapper';
+import { buildLaunchWrapperForRole, resolveBusHelperPaths } from '@/lib/bus/launchPaths.js';
 import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
 import { prepareAgentWorktree } from '@/lib/swarm/agentWorkspaceManager';
 import { terminateSwarmLaunch } from '@/lib/swarm/terminateLaunch';
@@ -235,7 +235,20 @@ function buildLaunchCommand(
     ? `${process.env.NEXT_PUBLIC_APP_URL}/api/agenthub`
     : 'http://localhost:3100';
 
-  const wrapper = buildAgentLaunchWrapper({
+  // T-011 — bus helpers MUST be wired in the production launch path.
+  // Without these, buildBusHelpersBlock emits the
+  // "# Bus helpers skipped (missing busBinaryPath or dbPath)" placeholder
+  // and the T-006 _devhub_tell_director shim (which calls _devhub_chat)
+  // fails at runtime in every launched agent. The repo root for path
+  // resolution is process.cwd() (Next.js server runs from the project
+  // root); the worktree path is the agent's isolated workspace, not the
+  // bus-binary host.
+  const busPaths = resolveBusHelperPaths({
+    repoRoot: process.cwd(),
+    env: process.env,
+  });
+
+  const wrapper = buildLaunchWrapperForRole({
     agentId: `${launchId}-${roleKey}`,
     missionId: launchId,
     role: roleKey,
@@ -245,6 +258,8 @@ function buildLaunchCommand(
     bootstrapPrompt: programId === 'opencode' ? prompt : '',
     innerCommand,
     supervisorUrl,
+    busBinaryPath: busPaths.busBinaryPath,
+    dbPath: busPaths.dbPath,
   });
 
   console.log(`[SWARM_LAUNCH_CMD] Wrapper length: ${wrapper.length} chars`);
