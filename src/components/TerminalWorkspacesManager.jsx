@@ -88,6 +88,7 @@ import {
   buildStartupRestorePlan,
 } from '@/lib/terminal/startupRestoreCoordinator';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
+import { isValidZedOpenTerminalEvent } from './zedOpenTerminalEvent';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
@@ -3476,9 +3477,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     };
 
     // Handle Zed AI assistant terminal opening requests
+    // T-025: producer (ChatPanel) already filters to `session_id`-only
+    // events, so the only defensive check we need is that the event
+    // carried a payload at all. `command` may be null (open empty shell)
+    // or a string (open + run). See `zedOpenTerminalEvent.js`.
     const handleZedOpenTerminal = (e) => {
-      const { command, cwd } = e.detail || {};
-      if (!command) return;
+      if (!isValidZedOpenTerminalEvent(e.detail)) return;
+      const { command, cwd } = e.detail;
 
       const targetWsId = activeWsIdRef.current || activeWsId;
       const targetPanelId = activePanelIdsRef.current[targetWsId] || activePanelId;
