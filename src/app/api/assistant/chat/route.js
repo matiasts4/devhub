@@ -19,7 +19,6 @@ import {
   closeTerminalTool,
 } from '@/lib/asistente/tools/terminal';
 import { browserTool } from '@/lib/asistente/tools/browser';
-import { delegationTool } from '@/lib/asistente/tools/delegation';
 import { fileTool, reviewLogFileTool } from '@/lib/asistente/tools/files';
 import { swarmTool } from '@/lib/asistente/tools/swarm';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
@@ -103,7 +102,6 @@ function buildRegistry() {
   registry.register(executeInTerminalTool);
   registry.register(closeTerminalTool);
   registry.register(browserTool);
-  registry.register(delegationTool);
   registry.register(fileTool);
   registry.register(reviewLogFileTool);
   registry.register(swarmTool);

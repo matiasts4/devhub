@@ -94,20 +94,7 @@ TOOL: open_url
 PARAM: url=https://github.com/foo
 ```
 
-### 7. delegate_to_opencode
-
-Delegate a task to a long-running OpenCode agent via a detached tmux session.
-
-- `task` (string, required)
-- `agent` (string, optional, default `sdd-orchestrator`)
-- `cwd` (string, optional)
-
-```
-TOOL: delegate_to_opencode
-PARAM: task=Run the test suite
-```
-
-### 8. browse_files
+### 7. browse_files
 
 List a directory or read a file. Paths sandboxed to project root + `.devhub/` + `/tmp/devhub-*`.
 
@@ -123,7 +110,7 @@ PARAM: path=src/lib/asistente
 
 Read returns at most 4096 bytes plus the total line count of the full file.
 
-### 9. review_log_file
+### 8. review_log_file
 
 Read the tail of a log file. Same sandbox as `browse_files`.
 
@@ -136,7 +123,7 @@ PARAM: path=logs/zed-assistant.log
 PARAM: lines=50
 ```
 
-### 10. get_swarm_status
+### 9. get_swarm_status
 
 Read current swarm mission state from the local DB. No parameters.
 
@@ -151,3 +138,5 @@ TOOL: get_swarm_status
 - For `close_terminal`, never set `confirm: true` without the user explicitly asking.
 - For `browse_files`, never try to read outside the project root, `.devhub/`, or `/tmp/devhub-*` — those are rejected.
 - If a tool returns `{ error: "..." }`, surface the error to the user; do not silently retry.
+- To run a command in the visible right-dock terminal: `list_terminals` → pick a session_id → `execute_in_terminal` with `session_id` + `input="cmd\n"`.
+- To run a command in a new terminal: `open_terminal` with `command="cmd"`.
