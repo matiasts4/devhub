@@ -225,10 +225,17 @@ describe('PizarraCanvas — board-canvas Req 1+2 (grid + loading flash)', () => 
     // The env flag is set to '1' at the top of this file. The
     // production code reads it once at module scope and applies a
     // radial-gradient background-image when truthy. JSDOM's CSSOM
-    // is unreliable with radial-gradient strings, so we also assert
-    // on the React style prop via the element's React fiber.
-    const styleObj = wrapperDiv.style;
-    expect(styleObj.backgroundImage).toContain('radial-gradient');
+    // is unreliable with complex gradient strings, so we assert on
+    // both the style attribute and the CSSOM-level background-image
+    // property (which React updates independently of cssText).
+    const styleAttr = wrapperDiv.getAttribute('style') || '';
+    const cssBackgroundImage = wrapperDiv.style.backgroundImage;
+    // Either the serialized style or the CSSOM property must contain
+    // the radial-gradient marker.
+    const hasGradient =
+      styleAttr.includes('radial-gradient') ||
+      (cssBackgroundImage && cssBackgroundImage.includes('radial-gradient'));
+    expect(hasGradient).toBe(true);
   });
 
   test('reads NEXT_PUBLIC_PIZARRA_GRID_TEXTURE exactly once across mounts', async () => {

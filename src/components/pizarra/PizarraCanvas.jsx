@@ -30,14 +30,6 @@ const PIZARRA_GRID_TEXTURE_ENABLED =
   process.env &&
   process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE === '1';
 
-// eslint-disable-next-line no-console
-console.log(
-  '[PizarraCanvas] PIZARRA_GRID_TEXTURE_ENABLED=',
-  PIZARRA_GRID_TEXTURE_ENABLED,
-  'env=',
-  process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE
-);
-
 export default function PizarraCanvas({
   elements,
   selectedElementIds,
@@ -283,8 +275,6 @@ export default function PizarraCanvas({
   const wrapperBackgroundImage = PIZARRA_GRID_TEXTURE_ENABLED
     ? 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)'
     : 'none';
-  // eslint-disable-next-line no-console
-  console.log('[PizarraCanvas render] wrapperBackgroundImage=', wrapperBackgroundImage);
 
   // ── Early return: loading state ─────────────────────────────────────────
   // All hooks MUST be declared before this point to maintain consistent
