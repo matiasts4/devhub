@@ -1,10 +1,11 @@
-'use client'
+'use client';
 
-import { useState, useRef, useCallback } from 'react'
-import { Send, Loader2, Square, TerminalSquare, Globe, FileText, Users } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Send, Loader2, Square } from 'lucide-react';
+import ToolResult from './ToolResult';
 
 function ChatMessage({ role, content, timestamp }) {
-  const isZed = role === 'zed' || role === 'assistant'
+  const isZed = role === 'zed' || role === 'assistant';
   return (
     <div className={`flex ${isZed ? 'justify-start' : 'justify-end'}`}>
       <div
@@ -17,121 +18,140 @@ function ChatMessage({ role, content, timestamp }) {
       >
         <p className="whitespace-pre-wrap leading-relaxed">{content}</p>
         <p className={`text-[10px] mt-1 ${isZed ? 'text-[var(--text-muted)]' : 'text-white/60'}`}>
-          {timestamp ? new Date(timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}
+          {timestamp
+            ? new Date(timestamp).toLocaleTimeString('en-GB', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : ''}
         </p>
       </div>
     </div>
-  )
-}
-
-function ToolBadge({ toolName, result }) {
-  const colors = {
-    open_terminal: 'text-blue-400 border-blue-400/30',
-    open_url: 'text-green-400 border-green-400/30',
-    delegate_to_opencode: 'text-purple-400 border-purple-400/30',
-    browse_files: 'text-yellow-400 border-yellow-400/30',
-    get_swarm_status: 'text-orange-400 border-orange-400/30',
-  }
-  const icons = {
-    open_terminal: TerminalSquare,
-    open_url: Globe,
-    delegate_to_opencode: Users,
-    browse_files: FileText,
-    get_swarm_status: Users,
-  }
-  const Icon = icons[toolName] || TerminalSquare
-  const colorClass = colors[toolName] || 'text-[var(--text-muted)] border-[var(--border-subtle)]'
-
-  // Dispatch event to open terminal in workspace when open_terminal tool succeeds
-  if (toolName === 'open_terminal' && result && !result.error) {
-    try {
-      const parsed = typeof result === 'string' ? JSON.parse(result) : result
-      if (parsed.command) {
-        window.dispatchEvent(new CustomEvent('devhub:zed-open-terminal', {
-          detail: { command: parsed.command, cwd: parsed.cwd || null }
-        }))
-      }
-    } catch {}
-  }
-
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-[var(--surface-hover)] border ${colorClass}`}>
-      <Icon className="w-3 h-3" />
-      {toolName}
-    </span>
-  )
+  );
 }
 
 export default function ChatPanel({ className = '' }) {
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hola, soy Zed. ¿En qué te puedo ayudar?', timestamp: new Date().toISOString() }
-  ])
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [abortController, setAbortController] = useState(null)
-  const messagesEndRef = useRef(null)
-  const textareaRef = useRef(null)
+  // D9: lazy initializer keeps the initial-message timestamp stable across
+  // re-renders. Previously `new Date().toISOString()` was evaluated inside
+  // the array literal on every render, which only happened to be cheap.
+  const [messages, setMessages] = useState(() => [
+    {
+      role: 'assistant',
+      content: 'Hola, soy Zed. ¿En qué te puedo ayudar?',
+      timestamp: new Date().toISOString(),
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [abortController, setAbortController] = useState(null);
+  const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading) return;
 
-    const userMessage = input.trim()
-    setInput('')
-    setIsLoading(true)
+    const userMessage = input.trim();
+    setInput('');
+    setIsLoading(true);
 
-    setMessages(prev => [...prev, { role: 'user', content: userMessage, timestamp: new Date().toISOString() }])
+    // D8: per-request AbortController. Stored in state so handleStop can
+    // reach it. Cleared in finally to avoid holding a stale ref.
+    const ctrl = new AbortController();
+    setAbortController(ctrl);
+
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
+    ]);
 
     try {
       const response = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage, context: {} }),
-      })
+        signal: ctrl.signal,
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: data.text || 'No pude procesar tu mensaje.',
-        timestamp: new Date().toISOString(),
-        tool_results: data.tool_results
-      }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: data.text || 'No pude procesar tu mensaje.',
+          timestamp: new Date().toISOString(),
+          tool_results: data.tool_results,
+        },
+      ]);
     } catch (error) {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `Error: ${error.message}`,
-        timestamp: new Date().toISOString()
-      }])
+      const aborted = error?.name === 'AbortError';
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: aborted ? '(Solicitud cancelada)' : `Error: ${error.message}`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
     } finally {
-      setIsLoading(false)
-      setTimeout(scrollToBottom, 100)
+      setIsLoading(false);
+      setAbortController(null);
+      setTimeout(scrollToBottom, 100);
     }
-  }, [input, isLoading, scrollToBottom])
+  }, [input, isLoading, scrollToBottom]);
 
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }, [handleSend])
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend]
+  );
 
   const handleStop = useCallback(() => {
-    abortController?.abort()
-    setIsLoading(false)
-  }, [abortController])
+    abortController?.abort();
+    setIsLoading(false);
+  }, [abortController]);
+
+  // D9: dispatch `devhub:zed-open-terminal` when an open_terminal tool result
+  // arrives. Replaces the side-effect that used to live inside the old
+  // inline ToolBadge component.
+  useEffect(() => {
+    let lastMessage = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].tool_results?.some((r) => r.tool === 'open_terminal')) {
+        lastMessage = messages[i];
+        break;
+      }
+    }
+    if (!lastMessage) return;
+    const openTerminalResult = lastMessage.tool_results.find((r) => r.tool === 'open_terminal');
+    const result = openTerminalResult?.result;
+    if (!result || result.error) return;
+    const parsed = typeof result === 'string' ? safeParse(result) : result;
+    if (parsed?.command) {
+      window.dispatchEvent(
+        new CustomEvent('devhub:zed-open-terminal', {
+          detail: { command: parsed.command, cwd: parsed.cwd || null },
+        })
+      );
+    }
+  }, [messages]);
 
   // Auto-resize textarea
   const updateTextareaHeight = useCallback(() => {
-    const el = textareaRef.current
+    const el = textareaRef.current;
     if (el) {
-      el.style.height = 'auto'
-      el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
     }
-  }, [])
+  }, []);
 
   return (
     <div className={`flex flex-col h-full min-h-0 ${className}`}>
@@ -142,8 +162,12 @@ export default function ChatPanel({ className = '' }) {
             <span className="text-white font-bold text-sm">Z</span>
           </div>
           <div>
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Zed</h2>
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Asistente</p>
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Zed
+            </h2>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Asistente
+            </p>
           </div>
         </div>
       </div>
@@ -154,9 +178,9 @@ export default function ChatPanel({ className = '' }) {
           <div key={i}>
             <ChatMessage role={msg.role} content={msg.content} timestamp={msg.timestamp} />
             {msg.tool_results?.length > 0 && (
-              <div className="flex gap-2 mt-2 flex-wrap">
+              <div className="flex flex-col gap-2 mt-2">
                 {msg.tool_results.map((r, j) => (
-                  <ToolBadge key={j} toolName={r.tool} result={r.result} />
+                  <ToolResult key={j} toolName={r.tool} result={r.result} />
                 ))}
               </div>
             )}
@@ -178,8 +202,8 @@ export default function ChatPanel({ className = '' }) {
             ref={textareaRef}
             value={input}
             onChange={(e) => {
-              setInput(e.target.value)
-              setTimeout(updateTextareaHeight, 0)
+              setInput(e.target.value);
+              setTimeout(updateTextareaHeight, 0);
             }}
             onKeyDown={handleKeyDown}
             placeholder="Escribile a Zed..."
@@ -206,5 +230,13 @@ export default function ChatPanel({ className = '' }) {
         </div>
       </div>
     </div>
-  )
+  );
+}
+
+function safeParse(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
 }
