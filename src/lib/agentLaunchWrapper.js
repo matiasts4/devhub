@@ -605,28 +605,37 @@ done`;
 
 /**
  * Build the exit event command.
- * Signs the request with HMAC-SHA256 using DEVHUB_AGENT_TOKEN.
+ *
+ * T-014: rewritten to use `devhub-bus event-write` instead of an HMAC-signed
+ * curl POST to /api/agenthub/events (retired in T-007). Every agent exit
+ * previously burned an openssl roundtrip on a 410 endpoint.
+ *
+ * The bus is the single path from bash to better-sqlite3 (see
+ * buildBusHelpersBlock). `_DEVHUB_BUS_BIN` and `_DEVHUB_BUS_DB` are set there.
+ *
+ * `supervisorUrl` is kept in the signature for caller compatibility with
+ * buildAgentLaunchWrapper — it is no longer used.
+ *
  * @param {object} params
+ * @param {string} [params.supervisorUrl] - unused, kept for caller compat
+ * @param {string} params.agentId
+ * @param {string} params.missionId
  * @returns {string} Shell trap command
  */
-export function buildExitTrapCommand({ supervisorUrl, agentId, missionId }) {
-  if (!supervisorUrl) {
-    return '# Exit trap skipped (no supervisor URL)';
-  }
-
+export function buildExitTrapCommand({ supervisorUrl: _supervisorUrl, agentId: _agentId, missionId: _missionId }) {
   return `_devhub_exit_handler() {
-  local EXIT_CODE=$?
-  local TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-  local PAYLOAD="{\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"event_type\\":\\"process_exit\\",\\"exit_code\\":$EXIT_CODE}"
-  local BODY_HASH=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
-  local SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
-  curl -s -X POST "${supervisorUrl}/api/agenthub/events" \\
-    -H "Content-Type: application/json" \\
-    -H "X-Agent-Id: ${agentId}" \\
-    -H "X-Agent-Timestamp: \${TIMESTAMP}" \\
-    -H "X-Agent-Signature: \${SIGNATURE}" \\
-    -d "$PAYLOAD" \\
-    > /dev/null 2>&1 || true
+  local _devhub_AGENT_EXIT_CODE=$?
+  if [ -n "$DEVHUB_MISSION_ID" ] && [ -n "$DEVHUB_AGENT_ID" ]; then
+    local _DEVHUB_EXIT_PAYLOAD
+    _DEVHUB_EXIT_PAYLOAD=$(printf '{"agent_id":"%s","role":"%s","exit_code":%d,"ts":"%s"}' \\
+      "$DEVHUB_AGENT_ID" "$DEVHUB_ROLE" "$_devhub_AGENT_EXIT_CODE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+    "$_DEVHUB_BUS_BIN" event-write \\
+      --mission "$DEVHUB_MISSION_ID" \\
+      --source "$DEVHUB_AGENT_ID" \\
+      --kind process_exit \\
+      --payload "$_DEVHUB_EXIT_PAYLOAD" \\
+      2>/dev/null || true
+  fi
 }
 trap _devhub_exit_handler EXIT`;
 }

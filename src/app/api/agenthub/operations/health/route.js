@@ -126,11 +126,11 @@ function buildLaunchPrompt({
   const devHubInstructions = [
     '',
     '=== Sistema de Comunicación ===',
-    '- Tu fuente de verdad es el sistema de presencia/mensajes de DevHub.',
-    '- Para descubrir agentes activos: hacer POST a /api/agenthub/presence/heartbeat cada 30s.',
-    '- Para recibir mensajes dirigidos a ti: el heartbeat response incluye pending_deliveries.',
-    '- Para enviar mensajes a otro agente: POST a /api/agenthub/operations/health (action: create_local_mission_message).',
+    '- Tu fuente de verdad es el bus de comunicación de DevHub (team_chat / team_inbox / agent_presence).',
+    '- Para enviar mensajes al Director o a otros agentes: usa `_devhub_chat` (helper bash, escribe durable en team_chat y se proyecta a JSONL).',
+    '- Para recibir mensajes dirigidos a ti: usa `_devhub_inbox_check` (helper bash, lee de team_inbox).',
     '- NO uses Engram MCP para verificar estado del swarm — la memoria puede ser stale.',
+    '- NO uses los endpoints HTTP /api/agenthub/events ni /pending_deliveries para coms — esos paths están retired.',
     '',
   ];
 
@@ -146,9 +146,9 @@ function buildLaunchPrompt({
         '=== Comportamiento del Director ===',
         '1. Al iniciar, verifica el roster haciendo un heartbeat yourself.',
         '2. Los workers activos publican con heartbeat — úsalos para saber quién está vivo.',
-        '3. Reparte tareas enviando mensajes a cada worker (create_local_mission_message).',
-        '4. Espera respuestas en tus heartbeat responses (pending_deliveries).',
-        '5. NO preguntes al humano por estado del swarm — usa las APIs de DevHub.',
+        '3. Reparte tareas enviando mensajes a cada worker con `_devhub_chat` (--to <role>).',
+        '4. Espera respuestas de los workers en tu inbox via `_devhub_inbox_check` (lee team_inbox).',
+        '5. NO preguntes al humano por estado del swarm — usa el bus de DevHub.',
         '6. Si un worker no responde en 2min, marcar como inactivo y reasignar.',
       ]
     : [];
@@ -157,20 +157,18 @@ function buildLaunchPrompt({
     ? [
         '',
         '=== Reporte de Status ===',
-        `- Usa _devhub_tell_director para enviar status al Director. Este comando ESCRIBE EN DOS LUGARES:`,
-        `  (1) al panel tmux del Director: /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log (sesion: devhub-swarm-${launchId || 'launch-unknown'}-director)`,
-        `  (2) al log durable: /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log`,
-        `- tmux es solo visualizacion para monitoreo en vivo — es fire-and-forget y NO es confiable para tracking.`,
-        `- El log durable es tu unica fuente de verdad para persistencia y recovery.`,
-        '- Eventos: task_start, found_issue, task_complete, needs_help, blocked.',
-        '- Ejemplo: _devhub_tell_director "task_start: Implementando feature X"',
+        `- Usa _devhub_chat para reportar al Director (helper bash, durable en team_chat, se proyecta a JSONL).`,
+        `- _devhub_chat --to director --message "task_start: Implementando feature X" es la forma canónica de reportar status.`,
+        `- _devhub_event --kind <kind> --payload '<json>' también está disponible para eventos estructurados (task_start, found_issue, task_complete, needs_help, blocked).`,
+        `- NO uses _devhub_tell_director — fue retired en T-006 y ya no existe en el wrapper.`,
+        `- NO escribas a /tmp/devhub-swarm-*.log para tracking — esos logs son solo diagnostico local, no son durables.`,
         '',
         '=== Comportamiento del Worker ===',
         '1. Al iniciar, haz un heartbeat para registrarte.',
-        '2. Revisa los pending_deliveries en cada heartbeat response.',
-        '3. Si tienes instrucciones del Director, ejecútalas y reporta evidencia.',
-        '4. Cuando termines, envía resultado al Director via create_local_mission_message.',
-        '5. NO buscar estado en Engram MCP — tu inbox está en pending_deliveries.',
+        '2. Revisa tu inbox con `_devhub_inbox_check` (lee de team_inbox).',
+        '3. Si tienes instrucciones del Director, ejecútalas y reporta evidencia via `_devhub_chat`.',
+        '4. Cuando termines, envía resultado al Director via `_devhub_chat --to director`.',
+        '5. NO buscar estado en Engram MCP — tu inbox está en team_inbox via `_devhub_inbox_check`.',
       ]
     : [];
 

@@ -96,9 +96,16 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('EXIT');
     });
 
-    test('returns comment when no supervisor URL', () => {
+    // T-014: supervisorUrl is no longer required — the bus is the new path.
+    // The trap is installed unconditionally; the runtime guard on
+    // DEVHUB_MISSION_ID/DEVHUB_AGENT_ID decides whether the bus event fires.
+    test('emits the trap even when no supervisor URL is provided (T-014)', () => {
       const result = buildExitTrapCommand({ ...baseParams, supervisorUrl: undefined });
-      expect(result).toContain('# Exit trap skipped');
+      expect(result).toContain('trap _devhub_exit_handler EXIT');
+      expect(result).toContain('event-write');
+      // runtime guard still in place
+      expect(result).toContain('DEVHUB_MISSION_ID');
+      expect(result).toContain('DEVHUB_AGENT_ID');
     });
   });
 

@@ -93,35 +93,95 @@ test('buildInitialHeartbeatCommand skips when no supervisor URL', () => {
   assert.ok(cmd.includes('Heartbeat skipped'), 'should skip when no supervisor URL');
 });
 
-test('buildExitTrapCommand includes HMAC signing shell commands', () => {
+// ---------------------------------------------------------------------------
+// T-014: buildExitTrapCommand rewritten to use devhub-bus event-write
+// (was: HMAC-signed curl POST to /api/agenthub/events, retired in T-007).
+// The exit event is now a single bus call — no openssl roundtrip, no HTTP.
+// ---------------------------------------------------------------------------
+
+test('buildExitTrapCommand emits a shell trap that calls devhub-bus event-write', () => {
+  const cmd = buildExitTrapCommand({
+    supervisorUrl: 'http://localhost:3000', // kept for caller compat; ignored
+    agentId: 'agent-1',
+    missionId: 'mission-1',
+  });
+
+  // shell trap wiring
+  assert.ok(cmd.includes('trap _devhub_exit_handler EXIT'), 'must install EXIT trap');
+  assert.ok(cmd.includes('$?'), 'must capture last exit code via $?');
+
+  // bus-based event emission
+  assert.ok(cmd.includes('event-write'), 'must call bus event-write subcommand');
+  assert.ok(cmd.includes('--kind process_exit'), 'must declare process_exit kind');
+  assert.ok(
+    cmd.includes('--mission "$DEVHUB_MISSION_ID"'),
+    'must pass DEVHUB_MISSION_ID to the bus'
+  );
+  assert.ok(
+    cmd.includes('--source "$DEVHUB_AGENT_ID"'),
+    'must pass DEVHUB_AGENT_ID as the bus source'
+  );
+  assert.ok(cmd.includes('--payload'), 'must pass a JSON payload');
+  assert.ok(cmd.includes('"exit_code"'), 'payload must include exit_code');
+  assert.ok(cmd.includes('_DEVHUB_BUS_BIN'), 'must use _DEVHUB_BUS_BIN env var');
+
+  // bash guard: only emit when the mission/agent identity is set
+  assert.ok(cmd.includes('DEVHUB_MISSION_ID'), 'must reference DEVHUB_MISSION_ID');
+  assert.ok(cmd.includes('DEVHUB_AGENT_ID'), 'must reference DEVHUB_AGENT_ID');
+  assert.ok(
+    cmd.includes('2>/dev/null || true'),
+    'must not block process exit on bus failure'
+  );
+});
+
+test('buildExitTrapCommand does NOT use curl / openssl / hmac (retired path)', () => {
   const cmd = buildExitTrapCommand({
     supervisorUrl: 'http://localhost:3000',
     agentId: 'agent-1',
     missionId: 'mission-1',
   });
 
-  assert.ok(cmd.includes('trap'), 'must use shell trap');
-  assert.ok(cmd.includes('EXIT_CODE=$?'), 'must capture exit code');
-  assert.ok(cmd.includes('TIMESTAMP='), 'must compute TIMESTAMP');
-  assert.ok(cmd.includes('BODY_HASH='), 'must compute BODY_HASH');
-  assert.ok(cmd.includes('SIGNATURE='), 'must compute SIGNATURE');
-  assert.ok(cmd.includes('openssl dgst -sha256'), 'must use openssl for body hash');
-  assert.ok(cmd.includes('openssl dgst -sha256 -hmac'), 'must use openssl HMAC for signature');
-  assert.ok(cmd.includes('X-Agent-Id: agent-1'), 'must include X-Agent-Id header');
-  assert.ok(cmd.includes('X-Agent-Timestamp:'), 'must include X-Agent-Timestamp header');
-  assert.ok(cmd.includes('X-Agent-Signature:'), 'must include X-Agent-Signature header');
-  assert.ok(cmd.includes('/api/agenthub/events'), 'must target events endpoint');
-  assert.ok(cmd.includes('process_exit'), 'must include process_exit event type');
+  assert.ok(!cmd.includes('curl'), 'must not call curl (was retired in T-007)');
+  assert.ok(!cmd.includes('openssl'), 'must not call openssl (no HMAC signing)');
+  assert.ok(!cmd.toLowerCase().includes('hmac'), 'must not reference hmac');
+  assert.ok(
+    !cmd.includes('/api/agenthub/events'),
+    'must not POST to the retired /api/agenthub/events endpoint'
+  );
+  assert.ok(
+    !cmd.includes('X-Agent-Signature'),
+    'must not emit HMAC signature headers (signature path retired)'
+  );
+  assert.ok(!cmd.includes('X-Agent-Timestamp'), 'must not emit HMAC timestamp header');
 });
 
-test('buildExitTrapCommand skips when no supervisor URL', () => {
+test('buildExitTrapCommand payload includes role and ISO timestamp', () => {
+  const cmd = buildExitTrapCommand({
+    supervisorUrl: 'http://localhost:3000',
+    agentId: 'agent-1',
+    missionId: 'mission-1',
+  });
+
+  // Role is sourced from the wrapper-exported DEVHUB_ROLE env var.
+  assert.ok(cmd.includes('DEVHUB_ROLE'), 'payload must include the agent role');
+  // ISO 8601 UTC timestamp via `date -u +%Y-%m-%dT%H:%M:%SZ`
+  assert.ok(
+    cmd.includes('date -u +%Y-%m-%dT%H:%M:%SZ'),
+    'payload timestamp must be ISO 8601 UTC'
+  );
+});
+
+test('buildExitTrapCommand works even when supervisorUrl is null (no longer required)', () => {
+  // supervisorUrl is kept in the signature for caller compatibility but is
+  // no longer used — the bus is the new path.
   const cmd = buildExitTrapCommand({
     supervisorUrl: null,
     agentId: 'agent-1',
     missionId: 'mission-1',
   });
 
-  assert.ok(cmd.includes('Exit trap skipped'), 'should skip when no supervisor URL');
+  assert.ok(cmd.includes('event-write'), 'must still emit the bus event');
+  assert.ok(cmd.includes('trap _devhub_exit_handler EXIT'), 'must still install the trap');
 });
 
 test('buildAgentEnvExports passes rawSecret to provisionAuthToken', () => {
