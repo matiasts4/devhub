@@ -267,7 +267,7 @@ fn extract_opencode_session_id(initial_command: Option<&str>) -> Option<String> 
 
         if token == "--session" {
             let session_id = tokens.next()?.trim();
-            if session_id.starts_with("ses_") {
+            if !session_id.is_empty() && !session_id.starts_with('-') {
                 return Some(session_id.to_string());
             }
             return None;
@@ -1691,6 +1691,10 @@ mod tests {
         assert_eq!(extract_opencode_session_id(Some("bash -lc pwd")), None);
         assert_eq!(
             extract_opencode_session_id(Some("opencode --session invalid")),
+            Some("invalid".to_string())
+        );
+        assert_eq!(
+            extract_opencode_session_id(Some("opencode --session -f")),
             None
         );
     }

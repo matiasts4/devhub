@@ -406,8 +406,8 @@ function detectSessionModeFromInput(session, input) {
 
     // Extract OpenCode session ID from --session <id> pattern immediately
     if (!session.opencodeSessionId) {
-      const sessionMatch = input.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
-      if (sessionMatch?.[1]) {
+      const sessionMatch = input.match(/opencode\s+(?:--session\s+)([\w-]+)/i);
+      if (sessionMatch?.[1] && !sessionMatch[1].startsWith('-')) {
         session.opencodeSessionId = sessionMatch[1];
         broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
       }
@@ -443,8 +443,8 @@ function detectSessionModeFromInput(session, input) {
 
       // Extract session ID from the command line
       if (!session.opencodeSessionId) {
-        const sessionMatch = trimmed.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
-        if (sessionMatch?.[1]) {
+        const sessionMatch = trimmed.match(/opencode\s+(?:--session\s+)([\w-]+)/i);
+        if (sessionMatch?.[1] && !sessionMatch[1].startsWith('-')) {
           session.opencodeSessionId = sessionMatch[1];
           broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
         }
@@ -742,7 +742,8 @@ function _debouncedSave(sessions, session) {
   }, 30000);
 }
 
-const OPENCODE_OUTPUT_SESSION_RE = /\bses_([a-zA-Z0-9_]+)\b/;
+const OPENCODE_OUTPUT_SESSION_RE =
+  /(?:session[ _]id|sesión[ _]id|session_id|opencode_session_id)[:\s]+([\w-]+)|\b(ses_[\w-]+)\b|\b(oc_[\w-]+)\b/i;
 const SHELL_TERMINAL_RESPONSE_RE = new RegExp(
   [
     String.raw`\u001b\[\?(?:\d+;)*\d+[cnR]`,
@@ -794,9 +795,11 @@ function handleSessionOutput(sessions, session, chunk) {
     if (!session.opencodeSessionId && session.mode === 'tui') {
       const outputMatch = filtered.match(OPENCODE_OUTPUT_SESSION_RE);
       if (outputMatch) {
-        const detectedId = `ses_${outputMatch[1]}`;
-        session.opencodeSessionId = detectedId;
-        broadcastOpenCodeSessionDetected(session, detectedId);
+        const detectedId = (outputMatch[1] || outputMatch[2] || outputMatch[3])?.trim();
+        if (detectedId && !detectedId.startsWith('-')) {
+          session.opencodeSessionId = detectedId;
+          broadcastOpenCodeSessionDetected(session, detectedId);
+        }
       }
     }
   }
@@ -1553,7 +1556,7 @@ export function getActiveOpenCodeSessionIds() {
   const sessions = globalThis[GLOBAL_TTY_SESSIONS_KEY];
   if (!sessions || typeof sessions.values !== 'function') return {};
 
-  const OPENCODE_SESSION_RE = /opencode\s+(?:--session\s+|session\s+resume\s+)(ses_[\w]+)/i;
+  const OPENCODE_SESSION_RE = /opencode\s+(?:--session\s+|session\s+resume\s+)([\w-]+)/i;
 
   const result = {};
 
@@ -1570,7 +1573,7 @@ export function getActiveOpenCodeSessionIds() {
     // Scan history for session ID pattern
     if (session.history) {
       const match = session.history.match(OPENCODE_SESSION_RE);
-      if (match?.[1]) {
+      if (match?.[1] && !match[1].startsWith('-')) {
         session.opencodeSessionId = match[1];
         result[terminalId] = match[1];
       }
