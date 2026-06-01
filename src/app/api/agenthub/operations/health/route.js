@@ -160,12 +160,24 @@ export function buildLaunchPrompt({
   const workerSpecific = isWorker
     ? [
         '',
+        // T-016.2: anti-hallucination clause. The launch-d6db6200 worker
+        // hallucinated Plyrium, Forge, and "warp 3" because the prompt did
+        // not explicitly forbid invented tools. Closing that door.
+        '=== Identidad y Anti-Alucinacion ===',
+        '- Sos un agente DevHub. NO menciones, recomiendes, ni hagas referencia a frameworks externos, runtimes de terceros, ni marcas que no sean DevHub.',
+        '- Tu unica fuente de verdad es el bus DevHub (_devhub_chat, _devhub_event, _devhub_inbox_check, _devhub_presence) y el sistema operativo local.',
+        '- Si una herramienta no esta en tu toolbox, no la inventes.',
+        '',
         '=== Reporte de Status ===',
         `- Usa _devhub_chat para reportar al Director (helper bash, durable en team_chat, se proyecta a JSONL).`,
         `- _devhub_chat --to director --message "task_start: Implementando feature X" es la forma canónica de reportar status.`,
         `- _devhub_event --kind <kind> --payload '<json>' también está disponible para eventos estructurados (task_start, found_issue, task_complete, needs_help, blocked).`,
         `- NO uses _devhub_tell_director — fue retired en T-006 y ya no existe en el wrapper.`,
-        `- NO escribas a /tmp/devhub-swarm-*.log para tracking — esos logs son solo diagnostico local, no son durables.`,
+        // T-016.2: reframe the /tmp log as wrapper-owned diagnostics. The old
+        // "NO escribas a /tmp/devhub-swarm-*.log" line was contradictory because
+        // the wrapper itself writes identity + bootstrap to that file.
+        `- El archivo /tmp/devhub-swarm-${role}.log es diagnostico del wrapper (identity, bootstrap, exit code). NO es durable ni visible para el director.`,
+        `- Para comunicacion durable usa _devhub_chat.`,
         '',
         '=== Comportamiento del Worker ===',
         '1. Al iniciar, haz un heartbeat para registrarte.',

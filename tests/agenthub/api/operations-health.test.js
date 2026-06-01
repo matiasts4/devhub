@@ -2226,4 +2226,56 @@ describe('GET /api/agenthub/operations/health', () => {
       expect(prompt).toContain('launch-abc-123');
     });
   });
+
+  // =========================================================================
+  // T-016.2: Worker launch prompt must contain an explicit anti-hallucination
+  // clause (no Plyrium / Forge / warp) and must NOT contain the contradictory
+  // 'NO escribas a /tmp/devhub-swarm-*.log' line (the wrapper itself writes
+  // identity + bootstrap to that file — it IS diagnostic, but it's owned by
+  // the wrapper, not the worker). The worker launched in launch-d6db6200
+  // hallucinated Plyrium, Forge, and "warp 3" — we are closing that door
+  // with an explicit "you are a DevHub agent, do not invent tools" clause.
+  // =========================================================================
+  describe('T-016.2: buildLaunchPrompt worker anti-hallucination + bus-only comms', () => {
+    test('worker prompt contains anti-hallucination clause and never names Plyrium/Forge', () => {
+      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'coder',
+        roleKey: 'coder',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder', 'auditor'],
+        launchId: 'launch-test-1',
+      });
+
+      // The agent must identify as a DevHub agent
+      expect(prompt).toContain('agente DevHub');
+      // The anti-hallucination clause header must be present
+      expect(prompt).toContain('NO menciones');
+      // The hallucinated frameworks must be explicitly excluded
+      expect(prompt).not.toContain('Plyrium');
+      expect(prompt).not.toContain('Forge');
+    });
+
+    test('worker prompt reframes the /tmp log as wrapper diagnostics (not contradictory "no escribas" rule)', () => {
+      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'coder',
+        roleKey: 'coder',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder'],
+        launchId: 'launch-test-1',
+      });
+
+      // The contradictory "NO escribas a /tmp/devhub-swarm-*.log" line is gone
+      expect(prompt).not.toContain('NO escribas a /tmp/devhub-swarm-*.log para tracking');
+      // The new framing says the log is wrapper diagnostics, not the agent's job
+      expect(prompt).toContain('diagnostico del wrapper');
+      // The worker is told the durable comms path is _devhub_chat
+      expect(prompt).toContain('_devhub_chat');
+    });
+  });
 });
