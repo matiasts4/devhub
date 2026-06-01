@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import TerminalTTY from '@/components/TerminalTTY';
 import { resizeNativeVtePanel } from '@/lib/terminal/nativeVteBridge';
+import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
 
 export default function CanvasTerminal({
   terminalId,
@@ -36,13 +37,13 @@ export default function CanvasTerminal({
     [bounds, position, size]
   );
 
-  const dragCleanupRef = useRef(null);
-  const dragRafRef = useRef(null);
-  const placeholderRef = useRef(null);
-  const boundsRef = useRef(resolvedBounds);
-  useEffect(() => {
-    boundsRef.current = resolvedBounds;
-  }, [resolvedBounds]);
+  const handleSurfaceSelect = useCallback(
+    (shapeId) => {
+      onSelect?.(shapeId);
+      onActivatePanel?.(terminalId);
+    },
+    [onActivatePanel, onSelect, terminalId]
+  );
 
   useEffect(() => {
     if (requestedRendererMode === 'vte-experimental' && resolvedBounds) {
@@ -63,95 +64,34 @@ export default function CanvasTerminal({
   const handleFrameMouseDown = useCallback(
     (event) => {
       event.stopPropagation();
-      onSelect?.(resolvedShape.id);
-      onActivatePanel?.(terminalId);
+      handleSurfaceSelect(resolvedShape.id);
     },
-    [onActivatePanel, onSelect, resolvedShape.id, terminalId]
+    [handleSurfaceSelect, resolvedShape.id]
   );
 
-  const handleHeaderMouseDown = useCallback(
-    (event) => {
-      if (event.button !== 0) return;
-
-      handleFrameMouseDown(event);
-      event.preventDefault();
-
-      const lastPointer = {
-        x: event.clientX,
-        y: event.clientY,
-      };
-      const startPointer = {
-        x: event.clientX,
-        y: event.clientY,
-      };
-      const startBounds = { ...boundsRef.current };
-
-      const stopDragSync = () => {
-        if (dragRafRef.current !== null) {
-          cancelAnimationFrame(dragRafRef.current);
-          dragRafRef.current = null;
-        }
-      };
-
-      const handleMouseMove = (moveEvent) => {
-        const deltaX = moveEvent.clientX - lastPointer.x;
-        const deltaY = moveEvent.clientY - lastPointer.y;
-        const totalDeltaX = moveEvent.clientX - startPointer.x;
-        const totalDeltaY = moveEvent.clientY - startPointer.y;
-
-        if (deltaX === 0 && deltaY === 0) return;
-
-        lastPointer.x = moveEvent.clientX;
-        lastPointer.y = moveEvent.clientY;
-        onMove?.({
-          id: resolvedShape.id,
-          terminalId,
-          deltaX,
-          deltaY,
-          totalDeltaX,
-          totalDeltaY,
-        });
-
-        // SYNC NATIVE SURFACE POSITION DIRECTLY
-        const b = startBounds;
-        const inset = 10;
-        const headerH = 28;
-        resizeNativeVtePanel({
-          panelId: terminalId,
-          bounds: {
-            x: (b.screenX ?? b.x) + totalDeltaX + inset,
-            y: (b.screenY ?? b.y) + totalDeltaY + inset + headerH,
-            width: Math.max(b.width - inset * 2, 1),
-            height: Math.max(b.height - inset * 2 - headerH, 1),
-          },
-        }).catch(() => {});
-      };
-
-      const handleMouseUp = () => {
-        stopDragSync();
-        cleanupDrag();
-      };
-
-      const cleanupDrag = () => {
-        stopDragSync();
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-        if (dragCleanupRef.current === cleanupDrag) {
-          dragCleanupRef.current = null;
-        }
-      };
-
-      dragCleanupRef.current?.();
-      dragCleanupRef.current = cleanupDrag;
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+  const handleHeaderMouseDown = usePizarraSurfaceDrag({
+    surfaceId: resolvedShape.id,
+    bounds: resolvedBounds,
+    onSelect: handleSurfaceSelect,
+    onMove,
+    moveMeta: { terminalId },
+    onNativeSync: ({ startBounds, totalDeltaX, totalDeltaY }) => {
+      const inset = 10;
+      const headerH = 28;
+      resizeNativeVtePanel({
+        panelId: terminalId,
+        bounds: {
+          x: (startBounds.screenX ?? startBounds.x) + totalDeltaX + inset,
+          y: (startBounds.screenY ?? startBounds.y) + totalDeltaY + inset + headerH,
+          width: Math.max(startBounds.width - inset * 2, 1),
+          height: Math.max(startBounds.height - inset * 2 - headerH, 1),
+        },
+      }).catch(() => {});
     },
-    [handleFrameMouseDown, onMove, resolvedShape.id, terminalId]
-  );
+  });
 
   useEffect(() => {
     return () => {
-      dragCleanupRef.current?.();
       onClose?.();
     };
   }, [onClose]);
@@ -159,7 +99,6 @@ export default function CanvasTerminal({
   return (
     <div
       data-testid="canvas-terminal-container"
-      ref={placeholderRef}
       style={{
         position: 'absolute',
         left: resolvedBounds.x,

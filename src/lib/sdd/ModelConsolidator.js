@@ -21,6 +21,10 @@ const MODEL_ALIAS_MAP = {
   minimax: 'minimax-coding-plan/MiniMax-M2.7',
   'mm2.7': 'minimax-coding-plan/MiniMax-M2.7',
   'opencode-minimax': 'minimax-coding-plan/MiniMax-M2.7',
+  'minimax-3': 'minimax-coding-plan/MiniMax-M3',
+  'minimax-m3': 'minimax-coding-plan/MiniMax-M3',
+  'mm3': 'minimax-coding-plan/MiniMax-M3',
+  'minimax-coding-plan/minimax-m3': 'minimax-coding-plan/MiniMax-M3',
   // Legacy aliases from existing profiles
   'claude-sonnet-4-20250514': 'minimax-coding-plan/MiniMax-M2.7',
   'claude-opus-4-20250514': 'minimax-coding-plan/MiniMax-M2.7',
@@ -56,7 +60,7 @@ function getModelAliases(modelId) {
  * Check if a model ID is the unified model.
  */
 function isUnifiedModel(modelId) {
-  return modelId === 'minimax-coding-plan/MiniMax-M2.7';
+  return modelId === 'minimax-coding-plan/MiniMax-M2.7' || modelId === 'minimax-coding-plan/MiniMax-M3';
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +138,7 @@ function getTDDCapability(modelId) {
   return {
     canImplement: unified,
     reason: unified
-      ? 'MiniMax 2.7 has sufficient context window (~8k tokens) for TDD cycles'
+      ? `${resolved} has sufficient context window for TDD cycles`
       : 'Model does not meet TDD requirements (context window or capability)',
     modelId: resolved,
     testRunnerAvailable: testRunner.available,

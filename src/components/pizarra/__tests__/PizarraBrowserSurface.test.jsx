@@ -3,8 +3,7 @@ const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
-const mockFocusNativeBrowser = jest.fn(() => Promise.resolve());
-const mockResizeNativeBrowser = jest.fn(() => Promise.resolve());
+let capturedWorkspacePaneProps = null;
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -14,14 +13,13 @@ jest.mock('lucide-react', () => {
   return new Proxy({}, { get: (_, key) => icon(String(key)) });
 });
 
-jest.mock('@/lib/browser/nativeBrowserBridge', () => ({
-  focusNativeBrowser: mockFocusNativeBrowser,
-  resizeNativeBrowser: mockResizeNativeBrowser,
-}));
-
-jest.mock('@/components/workspace/useNativeBrowserSurface', () => ({
-  useNativeBrowserCapability: () => ({ ready: true }),
-  useNativeBrowserSurface: () => ({ nativeRuntimeReady: true }),
+jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
+  __esModule: true,
+  default: (props) => {
+    const React = require('react');
+    capturedWorkspacePaneProps = props;
+    return React.createElement('div', { 'data-testid': 'mock-workspace-browser-pane' });
+  },
 }));
 
 describe('PizarraBrowserSurface', () => {
@@ -29,11 +27,16 @@ describe('PizarraBrowserSurface', () => {
   let root;
 
   beforeEach(() => {
+    capturedWorkspacePaneProps = null;
     jest.clearAllMocks();
 
-    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+      url: 'http://localhost:3100/',
+    });
     global.document = dom.window.document;
     global.window = dom.window;
+    global.requestAnimationFrame = (callback) => setTimeout(callback, 0);
+    global.cancelAnimationFrame = (timerId) => clearTimeout(timerId);
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -44,11 +47,14 @@ describe('PizarraBrowserSurface', () => {
     flushSync(() => root.unmount());
     root = null;
     container = null;
+    delete global.requestAnimationFrame;
+    delete global.cancelAnimationFrame;
   });
 
-  test('uses the browser header as a drag handle without breaking native focus selection', async () => {
+  test('reuses WorkspaceBrowserPane and keeps a dedicated drag handle for pizarra movement', async () => {
     const onMove = jest.fn();
     const onSelect = jest.fn();
+    const onUpdateElement = jest.fn();
     const { default: PizarraBrowserSurface } = require('../PizarraBrowserSurface');
 
     flushSync(() => {
@@ -62,11 +68,18 @@ describe('PizarraBrowserSurface', () => {
           bounds: { x: 20, y: 40, width: 400, height: 320 },
           onSelect,
           onMove,
+          onUpdateElement,
         })
       );
     });
 
-    const header = document.querySelector('[data-testid="pizarra-browser-header-browser-1"]');
+    expect(capturedWorkspacePaneProps).toBeTruthy();
+    expect(capturedWorkspacePaneProps.projectId).toBe('pizarra');
+    expect(capturedWorkspacePaneProps.workspaceId).toBe('browser-1');
+    expect(capturedWorkspacePaneProps.layoutSyncKey).toBe('20:40:400:320:20:40');
+    expect(capturedWorkspacePaneProps.dockState.browserUrl).toBe('http://localhost:3100/');
+
+    const header = document.querySelector('[data-testid="pizarra-browser-drag-handle-browser-1"]');
     flushSync(() => {
       header.dispatchEvent(
         new window.MouseEvent('mousedown', {
@@ -90,11 +103,11 @@ describe('PizarraBrowserSurface', () => {
       window.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
     });
 
-    const viewport = document.querySelector(
-      '[data-testid="pizarra-browser-native-runtime-shell-browser-1"]'
-    );
     flushSync(() => {
-      viewport.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+      capturedWorkspacePaneProps.onDockStateChange((currentState) => ({
+        ...currentState,
+        browserUrl: 'https://example.com',
+      }));
     });
 
     expect(onSelect).toHaveBeenCalledWith('browser-1');
@@ -106,6 +119,6 @@ describe('PizarraBrowserSurface', () => {
       totalDeltaX: 15,
       totalDeltaY: 20,
     });
-    expect(mockFocusNativeBrowser).toHaveBeenCalledWith({ panelId: 'pizarra-browser-browser-1' });
+    expect(onUpdateElement).toHaveBeenCalledWith('browser-1', { url: 'https://example.com' });
   });
 });

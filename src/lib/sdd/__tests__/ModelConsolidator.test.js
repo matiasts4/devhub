@@ -34,6 +34,13 @@ describe('ModelConsolidator', () => {
       expect(resolveModelAlias('mm2.7')).toBe('minimax-coding-plan/MiniMax-M2.7');
     });
 
+    test('resolves minimax-3 and minimax-m3 to minimax-coding-plan/MiniMax-M3', () => {
+      expect(resolveModelAlias('minimax-3')).toBe('minimax-coding-plan/MiniMax-M3');
+      expect(resolveModelAlias('minimax-m3')).toBe('minimax-coding-plan/MiniMax-M3');
+      expect(resolveModelAlias('mm3')).toBe('minimax-coding-plan/MiniMax-M3');
+      expect(resolveModelAlias('minimax-coding-plan/minimax-m3')).toBe('minimax-coding-plan/MiniMax-M3');
+    });
+
     test('resolves legacy Claude aliases to unified model', () => {
       expect(resolveModelAlias('claude-sonnet-4-20250514')).toBe(
         'minimax-coding-plan/MiniMax-M2.7'
@@ -88,8 +95,9 @@ describe('ModelConsolidator', () => {
   });
 
   describe('isUnifiedModel()', () => {
-    test('returns true for minimax-coding-plan/MiniMax-M2.7', () => {
+    test('returns true for minimax-coding-plan/MiniMax-M2.7 and MiniMax-M3', () => {
       expect(isUnifiedModel('minimax-coding-plan/MiniMax-M2.7')).toBe(true);
+      expect(isUnifiedModel('minimax-coding-plan/MiniMax-M3')).toBe(true);
     });
 
     test('returns false for other models', () => {

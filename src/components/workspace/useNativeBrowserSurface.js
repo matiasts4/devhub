@@ -56,6 +56,7 @@ export function useNativeBrowserSurface({
   measureBounds,
   observeNode,
   focusOnShow = true,
+  layoutSyncKey = null,
 }) {
   const nativeLeaseRef = useRef({ opened: false, lastUrl: '' });
   const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
@@ -144,6 +145,7 @@ export function useNativeBrowserSurface({
     closeActiveNativeLease,
     focusOnShow,
     hideActiveNativeLease,
+    layoutSyncKey,
     measureBounds,
     panelId,
     url,

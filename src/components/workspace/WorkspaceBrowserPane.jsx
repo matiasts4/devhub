@@ -71,6 +71,7 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowSelect = null,
   onWorkspaceWindowAdd = null,
   onWorkspaceWindowRemove = null,
+  layoutSyncKey = null,
 }) {
   const viewportShellRef = useRef(null);
   const measureNativeBounds = useCallback(() => {
@@ -234,6 +235,7 @@ function WorkspaceBrowserPane({
     visibleInLayout: nativeRuntimeVisibleInLayout,
     measureBounds: measureNativeBounds,
     observeNode: viewportShellRef,
+    layoutSyncKey,
   });
 
   const handleRuntimeReload = () => {

@@ -109,7 +109,7 @@ export async function POST(request) {
 
     if (reqConfig.isMinimax) {
       // Static manifest — no HTTP call needed (D-6)
-      return NextResponse.json({ models: ['minimax-coding-plan/MiniMax-M2.7'] });
+      return NextResponse.json({ models: ['minimax-coding-plan/MiniMax-M2.7', 'minimax-coding-plan/MiniMax-M3'] });
     }
 
     const baseUrl = normalizeBaseUrl(reqConfig.baseUrl);

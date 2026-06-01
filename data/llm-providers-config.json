@@ -518,7 +518,7 @@
       "text-embedding-3-small",
       "text-embedding-3-small-inference"
     ],
-    "minimax": ["minimax-coding-plan/MiniMax-M2.7"]
+    "minimax": ["minimax-coding-plan/MiniMax-M2.7", "minimax-coding-plan/MiniMax-M3"]
   },
   "favoriteModels": {
     "openrouter": ["qwen/qwen3.6-plus-preview:free", "qwen/qwen3.6-plus:free"],

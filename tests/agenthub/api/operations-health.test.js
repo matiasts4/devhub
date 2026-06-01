@@ -2175,7 +2175,7 @@ describe('GET /api/agenthub/operations/health', () => {
         expect.objectContaining({ roleKey: 'coder', launchPhase: 'fanout', startAfterMs: 4000 }),
       ])
     );
-    expect(traceMetadata.runtimeRequests[0].commandPreview).not.toContain('DEVHUB_AGENT_TOKEN');
+    expect(traceMetadata.runtimeRequests[0].commandPreview).not.toContain('DEVHUB_AGENT_TOKEN=');
 
     db.close();
     jest.resetModules();

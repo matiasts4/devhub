@@ -446,18 +446,21 @@ _devhub_restart_if_needed() {
   fi
   sleep \$RESTART_DELAY
   _devhub_RESTART_COUNT=\$((_devhub_RESTART_COUNT + 1))
-  exec bash "\$0" "\$@"
 }
 _devhub_run_inner() {
   ${innerCommand}
 }
-_devhub_run_inner 2>&1
-AGENT_EXIT_CODE=\$?
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Inner command exited with code: \${AGENT_EXIT_CODE}" >> "$AGENT_LOG"
-if [ \${AGENT_EXIT_CODE} -ne 0 ]; then
-  _devhub_restart_if_needed
-fi
-exit \${AGENT_EXIT_CODE}`;
+while true; do
+  _devhub_run_inner 2>&1
+  AGENT_EXIT_CODE=\$?
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Inner command exited with code: \${AGENT_EXIT_CODE}" >> "$AGENT_LOG"
+  if [ \${AGENT_EXIT_CODE} -eq 0 ]; then
+    exit 0
+  fi
+  if [ \${AGENT_EXIT_CODE} -ne 0 ]; then
+    _devhub_restart_if_needed
+  fi
+done`;
 }
 
 /**
