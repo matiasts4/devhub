@@ -16,7 +16,12 @@ export const fileTool = {
   name: 'browse_files',
   description: 'Browse and read files in the project. Shows directory structure or file content.',
   parameters: {
-    action: { type: 'string', enum: ['list', 'read'], description: 'Action to perform' },
+    action: {
+      type: 'string',
+      required: true,
+      enum: ['list', 'read'],
+      description: 'Action to perform',
+    },
     path: { type: 'string', description: 'File or directory path' },
     limit: { type: 'number', default: 50, description: 'Max items to return' },
   },

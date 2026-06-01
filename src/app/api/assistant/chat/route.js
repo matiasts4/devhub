@@ -110,6 +110,16 @@ function buildRegistry() {
   return registry;
 }
 
+// T-015: a tool's `parameters` schema may have zero required keys
+// (e.g. list_terminals, get_swarm_status). The no-params check below MUST
+// only short-circuit when at least one schema entry is `required: true`.
+// Otherwise it incorrectly surfaces a canonical error for tools that
+// legitimately accept zero parameters.
+function toolHasRequiredSchema(toolDef) {
+  if (!toolDef || !toolDef.parameters) return false;
+  return Object.values(toolDef.parameters).some((p) => p && p.required === true);
+}
+
 export async function POST(request) {
   const msgId = Date.now().toString(36);
 
@@ -200,33 +210,39 @@ export async function POST(request) {
         });
 
         for (const { name, input } of toolCalls) {
-          // T-010a (C1): if the model emitted a TOOL: with no PARAM: lines,
-          // skip dispatch and surface the canonical "missing required parameters"
-          // error as the tool result. The spec asistente-chat §5.1/§5.2
-          // requires the tool result to have shape
-          // `{ error: "missing required parameters" }` rather than silently
-          // calling the tool with `{}` (which would default action='list' on
-          // browse_files and return a successful list — a spec violation).
-          if (!input || Object.keys(input).length === 0) {
-            const result = { error: 'missing required parameters' };
-            zedLog.toolResult(name, result, 0);
-            allToolResults.push({ tool: name, input: input || {}, result });
-            continue;
+          // T-010a (C1) + T-015: if the model emitted a TOOL: with no PARAM:
+          // lines, skip dispatch and surface the canonical "missing required
+          // parameters" error as the tool result — BUT only when the tool
+          // actually requires at least one parameter. Tools like
+          // `list_terminals` and `get_swarm_status` legitimately accept zero
+          // params and must be called with `{}`. See toolHasRequiredSchema.
+          // Spec asistente-chat §5.1/§5.2.
+          let effectiveInput = input;
+          if (!effectiveInput || Object.keys(effectiveInput).length === 0) {
+            const toolDef = buildRegistry().get(name);
+            if (toolHasRequiredSchema(toolDef)) {
+              const result = { error: 'missing required parameters' };
+              zedLog.toolResult(name, result, 0);
+              allToolResults.push({ tool: name, input: effectiveInput || {}, result });
+              continue;
+            }
+            // No required params — dispatch with empty input.
+            effectiveInput = {};
           }
 
           const toolStart = Date.now();
-          zedLog.toolCall(name, input);
+          zedLog.toolCall(name, effectiveInput);
 
           let result;
           try {
-            result = await buildRegistry().execute(name, input, context);
+            result = await buildRegistry().execute(name, effectiveInput, context);
           } catch (err) {
             result = { error: err.message };
           }
 
           const duration = Date.now() - toolStart;
           zedLog.toolResult(name, result, duration);
-          allToolResults.push({ tool: name, input, result });
+          allToolResults.push({ tool: name, input: effectiveInput, result });
         }
 
         conversation.push({ role: 'assistant', content: rawText });
