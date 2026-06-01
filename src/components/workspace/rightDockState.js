@@ -15,6 +15,11 @@ const DEFAULT_RIGHT_DOCK_STATE = {
   browserUrl: DEFAULT_BROWSER_URL,
   browserHistory: [DEFAULT_BROWSER_URL],
   browserHistoryIndex: 0,
+  // pizarra-ux-overhaul: opt-in flag for the pizarra-mounted browser
+  // surface to keep using the iframe path even when the native GTK
+  // runtime reports ready. Defaults to false on the right-dock path;
+  // PizarraBrowserSurface always sets it to true explicitly.
+  browserLoadFallback: false,
 };
 
 function buildRightDockStorageKey(projectId, wsId) {
@@ -121,15 +126,23 @@ function normalizeBrowserUrl(rawValue) {
 function sanitizeRightDockState(rawState = {}) {
   const visible = rawState.visible === true;
   const isLegacyBridgeTab = rawState.activeTab === 'bridge';
-  const activeTab = ['browser', 'editor', 'swarm', 'operator', 'zed', 'pizarra'].includes(rawState.activeTab)
+  const activeTab = ['browser', 'editor', 'swarm', 'operator', 'zed', 'pizarra'].includes(
+    rawState.activeTab
+  )
     ? rawState.activeTab
     : 'browser';
   const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
-  const maximizedView = ['browser', 'editor', 'swarm', 'operator', 'zed', 'pizarra', 'window'].includes(
-    rawState.maximizedView
-  )
+  const maximizedView = [
+    'browser',
+    'editor',
+    'swarm',
+    'operator',
+    'zed',
+    'pizarra',
+    'window',
+  ].includes(rawState.maximizedView)
     ? rawState.maximizedView
     : activeTab === 'editor'
       ? 'editor'
@@ -169,6 +182,12 @@ function sanitizeRightDockState(rawState = {}) {
 
   const browserUrl = browserHistory[browserHistoryIndex] || normalizedUrl;
 
+  // pizarra-ux-overhaul: strict === true coercion so any non-boolean
+  // value (null, undefined, 0, "true" as a string, 1 as a number)
+  // falls back to false. Only the literal `true` opts in to the
+  // iframe-first browser path.
+  const browserLoadFallback = rawState.browserLoadFallback === true;
+
   return {
     visible,
     activeTab,
@@ -180,6 +199,7 @@ function sanitizeRightDockState(rawState = {}) {
     browserUrl,
     browserHistory,
     browserHistoryIndex,
+    browserLoadFallback,
   };
 }
 
