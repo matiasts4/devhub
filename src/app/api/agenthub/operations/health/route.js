@@ -2091,7 +2091,41 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
 export async function GET(request, _context, dependencies) {
   try {
     const snapshot = await gatherOperationalHealth(dependencies || {}, request);
-    return NextResponse.json(snapshot);
+    // T-012 — TCT-DELTA-S1/S2/S3/S6: when ?mission_id=X&role=Y is supplied,
+    // the health endpoint reads team_inbox first and falls back to
+    // pending_deliveries (legacy). The response carries inbox_source +
+    // shim_warning so consumers can detect the deprecation path.
+    let inboxSection = null;
+    try {
+      const url = new URL(
+        request?.url || (typeof request === 'string' ? request : ''),
+        'http://localhost'
+      );
+      const missionId = url.searchParams.get('mission_id');
+      const role = url.searchParams.get('role');
+      if (missionId && role) {
+        const { resolveInboxForRole } = require('@/lib/bus/shim/tct.js');
+        const db =
+          (dependencies && dependencies.db) ||
+          (typeof getDb === 'function' ? getDb() : null);
+        if (db) {
+          const out = resolveInboxForRole(db, missionId, role, process.env);
+          inboxSection = {
+            mission_id: missionId,
+            role,
+            inbox_source: out.inbox_source,
+            rows: out.rows,
+            ...(out.shim_warning ? { shim_warning: out.shim_warning } : {}),
+          };
+        }
+      }
+    } catch (e) {
+      // best-effort: do not break the existing health payload
+      inboxSection = { error: e.message };
+    }
+    return NextResponse.json(
+      inboxSection ? { ...snapshot, inbox: inboxSection } : snapshot
+    );
   } catch (error) {
     console.error('[operations/health] Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });

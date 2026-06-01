@@ -156,6 +156,14 @@ function cmdChatWrite(db, args) {
   checkTableExists(db, 'team_chat');
 
   const bodyHash = sha256Hex(body);
+  // T-012 — DEVHUB_INBOX_SHIM_DISABLED bypasses the legacy mirror write.
+  // When active, the binary writes only to the new bus (team_chat +
+  // team_inbox) and logs an INFO line. Emergency cutover switch.
+  const shimDisabled = process.env.DEVHUB_INBOX_SHIM_DISABLED === 'true';
+  if (shimDisabled) {
+    process.stderr.write('devhub-helper: chat-write: shim disabled via env flag\n');
+  }
+
   withBusyRetry(() => {
     db.prepare(
       `INSERT OR IGNORE INTO team_chat
@@ -163,6 +171,53 @@ function cmdChatWrite(db, args) {
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(missionId, fromRole, toRole, kind, body, bodyHash, clientEventId);
   });
+
+  // T-012 — also write to team_inbox so the worker can read it via
+  // _devhub_inbox_check. Only when --to is a specific role (not "all",
+  // which would be a broadcast). team_inbox is the durable bus; team_chat
+  // is the audit log.
+  let inboxRowId = null;
+  if (toRole && toRole !== 'all' && tableExists(db, 'team_inbox')) {
+    try {
+      withBusyRetry(() => {
+        const r = db
+          .prepare(
+            `INSERT INTO team_inbox
+              (mission_id, to_role, from_role, body, body_hash, client_event_id)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .run(missionId, toRole, fromRole, body, bodyHash, clientEventId);
+        inboxRowId = r.lastInsertRowid;
+      });
+    } catch (e) {
+      // best-effort; team_chat is the audit log and stays durable
+      process.stderr.write(`devhub-helper: chat-write: team_inbox insert: ${e.message}\n`);
+    }
+  }
+
+  // T-012 — shim mirror: when the shim is active (env flag NOT set),
+  // also write to the legacy mission_messages + message_deliveries tables
+  // so consumers of the old `pending_deliveries` projection continue to
+  // work for one release window. When the shim is disabled, the mirror
+  // is a no-op.
+  let mirrorInfo = null;
+  if (!shimDisabled) {
+    try {
+      mirrorInfo = writePendingDeliveriesMirror(db, {
+        missionId,
+        fromRole,
+        toRole,
+        body,
+        bodyHash,
+        kind,
+      });
+    } catch (e) {
+      // best-effort; team_chat is the source of truth
+      process.stderr.write(
+        `devhub-helper: chat-write: pending_deliveries mirror: ${e.message}\n`
+      );
+    }
+  }
 
   appendJsonl(missionId, 'chat', {
     seq: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -175,9 +230,61 @@ function cmdChatWrite(db, args) {
     client_event_id: clientEventId,
   });
   process.stdout.write(
-    JSON.stringify({ ok: true, client_event_id: clientEventId, body_hash: bodyHash }) + '\n'
+    JSON.stringify({
+      ok: true,
+      client_event_id: clientEventId,
+      body_hash: bodyHash,
+      inbox_row_id: inboxRowId,
+      mirror: mirrorInfo,
+    }) + '\n'
   );
   process.exit(EXIT_OK);
+}
+
+function tableExists(db, name) {
+  try {
+    const r = db
+      .prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name = ?")
+      .get(name);
+    return Boolean(r && r.n);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * T-012 — mirror the chat-write to the legacy mission_messages +
+ * message_deliveries tables. This is the one-release compatibility
+ * shim that lets consumers of `pending_deliveries` continue to work
+ * while `team_inbox` becomes the durable bus.
+ *
+ * The mirror is best-effort: tables may be missing in test fixtures
+ * or pre-002 environments, in which case the function returns null
+ * and the team_chat/team_inbox writes still stand.
+ */
+function writePendingDeliveriesMirror(db, { missionId, fromRole, toRole, body, bodyHash, kind }) {
+  if (!tableExists(db, 'mission_messages') || !tableExists(db, 'message_deliveries')) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  const messageId = `mm-${sha256Hex(`${missionId}|${fromRole}|${bodyHash}|${now}`).slice(0, 16)}`;
+  withBusyRetry(() => {
+    db.prepare(
+      `INSERT OR IGNORE INTO mission_messages
+        (message_id, mission_id, sender_agent_id, message_kind, body_summary, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(messageId, missionId, fromRole, kind || 'directive', body, now, now);
+  });
+  const recipientAgentId = toRole && toRole !== 'all' ? toRole : `${missionId}-broadcast`;
+  const deliveryId = `del-${sha256Hex(`${messageId}|${recipientAgentId}`).slice(0, 16)}`;
+  withBusyRetry(() => {
+    db.prepare(
+      `INSERT OR IGNORE INTO message_deliveries
+        (delivery_id, message_id, recipient_agent_id, channel, status, attempt_count, last_attempt_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(deliveryId, messageId, recipientAgentId, 'local_snapshot', 'pending', 1, now, now, now);
+  });
+  return { message_id: messageId, delivery_id: deliveryId, recipient_agent_id: recipientAgentId };
 }
 
 function cmdEventWrite(db, args) {
