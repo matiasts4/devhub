@@ -124,9 +124,22 @@ export default function PizarraToolPalette({ value, onChange, onAddElement }) {
           <button
             key={toolVal}
             type="button"
+            data-testid={`pizarra-add-${toolVal}`}
             aria-label={label}
             title={label}
             onClick={() => handleAddElement(toolVal)}
+            onMouseEnter={(event) => {
+              event.currentTarget.dataset.pizarraHovered = 'true';
+            }}
+            onMouseLeave={(event) => {
+              delete event.currentTarget.dataset.pizarraHovered;
+            }}
+            onMouseDown={(event) => {
+              event.currentTarget.dataset.pizarraActive = 'true';
+            }}
+            onMouseUp={(event) => {
+              delete event.currentTarget.dataset.pizarraActive;
+            }}
             style={{
               ...btnSecondaryStyle({ size: 'sm' }),
               width: 36,

@@ -202,6 +202,7 @@ export default function PizarraPane() {
   return (
     <div
       ref={containerRef}
+      data-testid="pizarra-canvas"
       style={{
         position: 'absolute',
         top: 0,
