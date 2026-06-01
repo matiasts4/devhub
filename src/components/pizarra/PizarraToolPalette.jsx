@@ -73,6 +73,20 @@ export default function PizarraToolPalette({ value, onChange, onAddElement }) {
             value={toolVal}
             aria-label={label}
             title={label}
+            data-pizarra-tool={toolVal}
+            data-pizarra-active={value === toolVal ? 'true' : 'false'}
+            onMouseEnter={(event) => {
+              event.currentTarget.dataset.pizarraHovered = 'true';
+            }}
+            onMouseLeave={(event) => {
+              delete event.currentTarget.dataset.pizarraHovered;
+            }}
+            onMouseDown={(event) => {
+              event.currentTarget.dataset.pizarraActive = 'true';
+            }}
+            onMouseUp={(event) => {
+              if (value !== toolVal) delete event.currentTarget.dataset.pizarraActive;
+            }}
             style={{
               ...btnSecondaryStyle({ size: 'sm' }),
               width: 36,
@@ -86,8 +100,10 @@ export default function PizarraToolPalette({ value, onChange, onAddElement }) {
                 value === toolVal
                   ? '1px solid var(--accent-primary)'
                   : '1px solid var(--border-subtle)',
+              outline: value === toolVal ? '1px inset var(--accent-primary)' : 'none',
+              outlineOffset: value === toolVal ? '-2px' : '0',
               cursor: 'pointer',
-              transition: 'all 0.15s ease',
+              transition: 'border-color 0.15s ease, outline-color 0.15s ease',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
