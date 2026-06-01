@@ -1247,12 +1247,12 @@ const MCP_ALTER_STATEMENTS = [
   'ALTER TABLE agent_workspaces ADD COLUMN run_id_or_session_id TEXT',
   'ALTER TABLE agent_workspaces ADD COLUMN reservation_token TEXT',
   'ALTER TABLE agent_workspaces ADD COLUMN correlation_id TEXT',
-    'ALTER TABLE agent_workspaces ADD COLUMN accepted_at TEXT',
-    'ALTER TABLE agent_workspaces ADD COLUMN claimed_at TEXT',
-    'ALTER TABLE agent_workspaces ADD COLUMN started_at TEXT',
-    'ALTER TABLE agent_workspaces ADD COLUMN completed_at TEXT',
-    'ALTER TABLE agent_workspaces ADD COLUMN current_task_id TEXT',
-    'ALTER TABLE agent_workspaces ADD COLUMN pane_id TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN accepted_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN claimed_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN started_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN completed_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN current_task_id TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN pane_id TEXT',
   'ALTER TABLE agent_workspaces ADD COLUMN terminal_id TEXT',
   'ALTER TABLE agent_workspaces ADD COLUMN opencode_pid INTEGER',
   'ALTER TABLE agent_workspaces ADD COLUMN last_heartbeat TEXT',
@@ -1284,6 +1284,11 @@ function ensureAllSchema(db) {
       }
     }
   }
+  // T-001 — agent comms bus migration (idempotent; safe to call on every boot).
+  // Lazy require to avoid circular dep with localDb.js.
+  const { ensureAgentCommsBusSchema, applyPragmasForBus } = require('./busMigrations.js');
+  ensureAgentCommsBusSchema(db);
+  applyPragmasForBus(db);
 }
 
 module.exports = {
