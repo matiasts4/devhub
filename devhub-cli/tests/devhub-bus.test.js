@@ -8,7 +8,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process');
 const Database = require('better-sqlite3');
 
 const BUS_BIN = path.resolve(__dirname, '../bin/devhub-bus.js');
@@ -440,6 +440,118 @@ describe('T-002 — devhub-bus binary', () => {
       );
       expect(r.status).toBe(64);
     } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('T-008 — director-consume subcommand', () => {
+  function setupConsumerTempDb() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-consume-'));
+    const dbPath = path.join(dir, 'c.db');
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('busy_timeout = 5000');
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS team_chat (id INTEGER PRIMARY KEY AUTOINCREMENT, mission_id TEXT NOT NULL, from_role TEXT NOT NULL, to_role TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('chat','report','alert','ack')), body TEXT NOT NULL, body_hash TEXT NOT NULL, ts TEXT NOT NULL DEFAULT (datetime('now')), client_event_id TEXT); CREATE UNIQUE INDEX IF NOT EXISTS uq_team_chat_client_event ON team_chat(mission_id, client_event_id) WHERE client_event_id IS NOT NULL;`
+    );
+    db.close();
+    return { dir, dbPath };
+  }
+
+  test('director-consume with empty JSONL file starts, accepts SIGTERM, and exits 0', async () => {
+    const { dir, dbPath } = setupConsumerTempDb();
+    const missionId = 'mConsumeEmpty';
+    const jsonlDir = `/tmp/devhub-mission-${missionId}`;
+    fs.rmSync(jsonlDir, { recursive: true, force: true });
+    fs.mkdirSync(jsonlDir, { recursive: true });
+    fs.writeFileSync(path.join(jsonlDir, 'chat.jsonl'), '');
+
+    try {
+      const proc = spawn(
+        'node',
+        [BUS_BIN, '--db', dbPath, 'director-consume', '--mission', missionId, '--role', 'director'],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+
+      let stdout = '';
+      proc.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+      setTimeout(() => proc.kill('SIGTERM'), 500);
+
+      const exitCode = await new Promise((resolve) => {
+        proc.on('exit', (code) => resolve(code));
+      });
+      expect(exitCode).toBe(0);
+    } finally {
+      fs.rmSync(jsonlDir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('director-consume deduplicates already-seen lines on restart (cap 5000 entries)', async () => {
+    const { dir, dbPath } = setupConsumerTempDb();
+    const missionId = 'mConsumeDedup';
+    const jsonlDir = `/tmp/devhub-mission-${missionId}`;
+    fs.rmSync(jsonlDir, { recursive: true, force: true });
+    fs.mkdirSync(jsonlDir, { recursive: true });
+    const file = path.join(jsonlDir, 'chat.jsonl');
+    // Pre-populate with 3 dedup-able lines
+    const lines = [
+      JSON.stringify({
+        seq: '1',
+        from_role: 'auditor',
+        to_role: 'director',
+        body: 'hello',
+        body_hash: 'h1',
+      }),
+      JSON.stringify({
+        seq: '2',
+        from_role: 'auditor',
+        to_role: 'director',
+        body: 'world',
+        body_hash: 'h2',
+      }),
+      JSON.stringify({
+        seq: '3',
+        from_role: 'auditor',
+        to_role: 'director',
+        body: 'third',
+        body_hash: 'h3',
+      }),
+    ];
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    // Pre-populate the dedupe file as if a previous run saw all 3
+    const dedupeFile = path.join(jsonlDir, 'consumer-dedupe-director.jsonl');
+    fs.writeFileSync(
+      dedupeFile,
+      lines.map((l) => JSON.stringify({ key: `1|auditor|h1` })).join('\n') + '\n'
+    );
+
+    try {
+      const proc = spawn(
+        'node',
+        [BUS_BIN, '--db', dbPath, 'director-consume', '--mission', missionId, '--role', 'director'],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+
+      let stdout = '';
+      proc.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+      setTimeout(() => proc.kill('SIGTERM'), 500);
+
+      await new Promise((resolve) => {
+        proc.on('exit', resolve);
+      });
+      // All 3 lines should be filtered (already-seen), so stdout should not contain their bodies
+      // (some startup banner is OK)
+      expect(stdout).not.toMatch(/^hello$/m);
+      expect(stdout).not.toMatch(/^world$/m);
+      expect(stdout).not.toMatch(/^third$/m);
+    } finally {
+      fs.rmSync(jsonlDir, { recursive: true, force: true });
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

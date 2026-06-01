@@ -22,6 +22,15 @@ const EXIT_DATA = 65;
 const EXIT_NO_TABLE = 66;
 const EXIT_CANNOT_CREATE = 73;
 const MISSION_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+const KNOWN_SUBCOMMANDS = new Set([
+  'chat-write',
+  'event-write',
+  'presence-upsert',
+  'inbox-check',
+  'snapshot',
+  'rotate',
+  'director-consume',
+]);
 
 function failExit(code, msg) {
   const tag =
@@ -39,11 +48,14 @@ function failExit(code, msg) {
 }
 
 function parseArgs(argv) {
-  // Find subcommand: first non-flag arg after argv[0..1] (node + script)
+  // Find subcommand: scan argv[2..] for the first arg whose value matches
+  // a known subcommand. This lets callers pass flags before or after the
+  // subcommand (e.g. `devhub-bus --db <path> chat-write ...` or
+  // `devhub-bus chat-write --db <path> ...`).
   let sub = null;
   let subIdx = -1;
   for (let i = 2; i < argv.length; i++) {
-    if (!argv[i].startsWith('--')) {
+    if (KNOWN_SUBCOMMANDS.has(argv[i])) {
       sub = argv[i];
       subIdx = i;
       break;
@@ -365,16 +377,127 @@ function cmdRotate(_db, args) {
 }
 
 function cmdDirectorConsume(_db, args) {
-  // T-008 — full implementation lands in that task. Stub for now.
+  // T-008 — tail the JSONL projection for a mission with persistent dedupe.
+  //   - Reads /tmp/devhub-mission-<id>/{chat,events,presence,inbox}.jsonl via tail -F
+  //   - Dedupe key: `${seq}|${from_role}|${body_hash}` rebuilt from
+  //     consumer-dedupe-<role>.jsonl on startup, capped at 5000 entries (LRU)
+  //   - Emits unique lines to stdout (NDJSON) for director tmux consumer
+  //   - On SIGTERM/SIGINT: flushes dedupe buffer, exits 0
   const { mission: missionId, role } = args;
   validateMissionId(missionId);
   if (!role) failExit(EXIT_USAGE, '--role required');
-  failExit(EXIT_DATA, 'director-consume is implemented in T-008');
+
+  const dir = jsonlProjectionDir(missionId);
+  fs.mkdirSync(dir, { recursive: true });
+  const dedupeFile = path.join(dir, `consumer-dedupe-${role}.jsonl`);
+  if (!fs.existsSync(dedupeFile)) fs.writeFileSync(dedupeFile, '');
+
+  // Load existing dedupe keys into a Set
+  const seen = new Set();
+  try {
+    const lines = fs.readFileSync(dedupeFile, 'utf8').split('\n').filter(Boolean);
+    for (const line of lines) {
+      try {
+        const { key } = JSON.parse(line);
+        if (key) seen.add(key);
+      } catch {
+        /* skip corrupt line */
+      }
+    }
+  } catch {
+    /* empty file is fine */
+  }
+
+  // Cap at 5000
+  if (seen.size > 5000) {
+    const arr = Array.from(seen).slice(-5000);
+    seen.clear();
+    for (const k of arr) seen.add(k);
+  }
+
+  // Spawn tail -F on chat.jsonl (primary chat feed for the director)
+  const file = path.join(dir, 'chat.jsonl');
+  if (!fs.existsSync(file)) fs.writeFileSync(file, '');
+
+  // Truncate dedupe file to current seen keys (LRU trim)
+  try {
+    const buf = [];
+    for (const k of seen) buf.push(JSON.stringify({ key: k }));
+    fs.writeFileSync(dedupeFile, buf.join('\n') + (buf.length ? '\n' : ''));
+  } catch {
+    /* best effort */
+  }
+
+  const tail = spawnSafe('tail', ['-F', '--retry', '-n', '+1', file]);
+  if (!tail) failExit(EXIT_CANNOT_CREATE, 'cannot spawn tail — is coreutils installed?');
+
+  let flushed = false;
+  function flushAndExit(sig) {
+    if (flushed) return;
+    flushed = true;
+    try {
+      // Truncate dedupe file to current seen keys (LRU trim on shutdown)
+      const arr = Array.from(seen);
+      const buf = arr.map((k) => JSON.stringify({ key: k }));
+      fs.writeFileSync(dedupeFile, buf.join('\n') + (buf.length ? '\n' : ''));
+    } catch {
+      /* best effort */
+    }
+    try {
+      tail.kill('SIGTERM');
+    } catch {
+      /* already dead */
+    }
+    process.exit(sig === 'SIGTERM' ? 0 : 0);
+  }
+
+  process.on('SIGTERM', () => flushAndExit('SIGTERM'));
+  process.on('SIGINT', () => flushAndExit('SIGINT'));
+
+  // Buffer for partial lines
+  let lineBuf = '';
+  tail.stdout.on('data', (chunk) => {
+    lineBuf += chunk.toString();
+    const lines = lineBuf.split('\n');
+    lineBuf = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let key = null;
+      let payload = null;
+      try {
+        payload = JSON.parse(line);
+        const seq = payload.seq || '';
+        const fromRole = payload.from_role || '';
+        const bodyHash = payload.body_hash || '';
+        key = `${seq}|${fromRole}|${bodyHash}`;
+      } catch {
+        /* non-JSON line: skip */
+      }
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      // Emit to stdout
+      process.stdout.write(line + '\n');
+    }
+  });
+  tail.stderr.on('data', (chunk) => process.stderr.write(chunk));
+  tail.on('exit', (code) => {
+    flushAndExit('SIGTERM');
+  });
+}
+
+function spawnSafe(cmd, args) {
+  try {
+    const { spawn } = require('child_process');
+    return spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    return null;
+  }
 }
 
 function main() {
   const argv = process.argv;
-  const sub = argv[2];
+  const args = parseArgs(argv);
+  const sub = args._;
   if (!sub || sub === '--help' || sub === '-h') {
     process.stderr.write(
       'Usage: devhub-bus <subcommand> [--db <path>] [--mission <id>] [...]\n' +
@@ -383,7 +506,6 @@ function main() {
     process.exit(EXIT_USAGE);
   }
 
-  const args = parseArgs(argv);
   const dbPath = args.db || process.env.DEVHUB_DB_PATH;
   if (!dbPath) failExit(EXIT_USAGE, '--db or DEVHUB_DB_PATH required');
 
