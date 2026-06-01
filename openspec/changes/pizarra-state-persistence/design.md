@@ -1,5 +1,20 @@
 # Design: pizarra-state-persistence
 
+> **pizarra-ux-overhaul marker (2026-06-01)**: this design currently
+> proposes `elements: Map<elementId, PizarraElement>` and a
+> `viewport: {x, y, zoom}` field. The actual
+> `src/lib/pizarra/pizarraReducer.js` uses
+> `elements: Array<PizarraElement>` with `cascadeIndex: number`, and
+> zoom/pan live in `CanvasViewportContext` (NOT in the reducer).
+>
+> When this change lands, it MUST adopt the array-shaped reducer
+> (the actual source of truth) and reconcile the spec via the
+> migration plan in `openspec/changes/pizarra-ux-overhaul/design.md`
+> §9. The TODO marker below tracks the reconciliation; remove it
+> once the in-flight persistence change adopts the array shape.
+>
+> <!-- TODO(pizarra-ux-overhaul): migrate elements: Map<id, PizarraElement> to elements: Array<PizarraElement>; remove the viewport field from the persisted state; the zoom/pan lives in CanvasViewportContext only. See openspec/changes/pizarra-ux-overhaul/specs/pizarra-state-persistence/spec.md -->
+
 ## Technical Approach
 
 Implement a `usePizarraState` React hook that provides whiteboard state management with localStorage persistence per project. Follow the established TWM persistence pattern: lazy initializer for read, useEffect for write, debounced sync, and robust error handling.
@@ -70,13 +85,13 @@ Lazy initializer ──► localStorage.getItem(`devhub_pizarra_state:{projectId
 
 ## File Changes
 
-| File | Action | Description |
-|------|--------|-------------|
-| `src/components/workspace/usePizarraState.js` | Create | Hook with state, mutations, localStorage sync |
-| `src/lib/pizarra/stateHelpers.js` | Create | `createEmptyState`, serialization, validation helpers |
-| `src/components/workspace/PizarraPane.jsx` | Create | Canvas wrapper component consuming the hook |
-| `src/components/workspace/hooks/useOperatorActions.js` | Modify | Add "pizarra" to dock tabs if needed for integration |
-| `openspec/changes/pizarra-state-persistence/design.md` | Create | This document |
+| File                                                   | Action | Description                                           |
+| ------------------------------------------------------ | ------ | ----------------------------------------------------- |
+| `src/components/workspace/usePizarraState.js`          | Create | Hook with state, mutations, localStorage sync         |
+| `src/lib/pizarra/stateHelpers.js`                      | Create | `createEmptyState`, serialization, validation helpers |
+| `src/components/workspace/PizarraPane.jsx`             | Create | Canvas wrapper component consuming the hook           |
+| `src/components/workspace/hooks/useOperatorActions.js` | Modify | Add "pizarra" to dock tabs if needed for integration  |
+| `openspec/changes/pizarra-state-persistence/design.md` | Create | This document                                         |
 
 ## Interfaces / Contracts
 
@@ -85,15 +100,15 @@ Lazy initializer ──► localStorage.getItem(`devhub_pizarra_state:{projectId
 ```javascript
 // Signature
 const {
-  state,        // { elements, viewport, activeTool, toolSettings, activeBoardId, boards }
-  setState,     // (updater) => void — functional update
-  addElement,   // (element) => elementId
+  state, // { elements, viewport, activeTool, toolSettings, activeBoardId, boards }
+  setState, // (updater) => void — functional update
+  addElement, // (element) => elementId
   updateElement, // (elementId, updates) => void
   removeElement, // (elementId) => void
-  clearCanvas,  // () => void
-  undo,         // () => void — stub, deferred
-  redo          // () => void — stub, deferred
-} = usePizarraState(projectId)
+  clearCanvas, // () => void
+  undo, // () => void — stub, deferred
+  redo, // () => void — stub, deferred
+} = usePizarraState(projectId);
 ```
 
 ### State Shape
@@ -115,14 +130,14 @@ Key: `devhub_pizarra_state:{projectId}`
 
 ```javascript
 JSON.stringify({
-  elements: Object.fromEntries(state.elements),  // Serialize Map → Object
+  elements: Object.fromEntries(state.elements), // Serialize Map → Object
   viewport: state.viewport,
   activeTool: state.activeTool,
   toolSettings: state.toolSettings,
   activeBoardId: state.activeBoardId,
   boards: Object.fromEntries(state.boards),
-  schemaVersion: 1
-})
+  schemaVersion: 1,
+});
 ```
 
 ### PizarraElement Base Shape
@@ -147,13 +162,13 @@ JSON.stringify({
 
 ## Testing Strategy
 
-| Layer | What to Test | Approach |
-|-------|-------------|----------|
-| Unit | `createEmptyState` returns correct defaults | Direct function call assertion |
-| Unit | `sanitizePizarraState` falls back on malformed input | Jest with mock localStorage |
-| Unit | Hook returns correct API shape | React Testing Library, renderHook |
-| Integration | State persists across refresh | Simulated storage + hook remount |
-| Integration | Project isolation (xyz vs abc) | Two hook instances, verify no cross-talk |
+| Layer       | What to Test                                         | Approach                                 |
+| ----------- | ---------------------------------------------------- | ---------------------------------------- |
+| Unit        | `createEmptyState` returns correct defaults          | Direct function call assertion           |
+| Unit        | `sanitizePizarraState` falls back on malformed input | Jest with mock localStorage              |
+| Unit        | Hook returns correct API shape                       | React Testing Library, renderHook        |
+| Integration | State persists across refresh                        | Simulated storage + hook remount         |
+| Integration | Project isolation (xyz vs abc)                       | Two hook instances, verify no cross-talk |
 
 ## Migration / Rollout
 
