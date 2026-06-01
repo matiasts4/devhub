@@ -40,7 +40,34 @@ function buildMissionMessageSummary(eventType, normalizedPayload, fallbackStatus
   return eventType;
 }
 
-export const POST = withAuth(async function POST(request) {
+// T-007 — POST /api/agenthub/events is RETIRED. Agents now write to team_events
+// via the devhub-bus binary (`_devhub_event ...`) which is durable, atomic, and
+// doesn't require HMAC plumbing. Real-time consumers should use `devhub events tail`
+// to read the JSONL projection. The GET handler below is preserved unchanged for
+// historical / one-shot queries.
+export const POST = withAuth(async function POST() {
+  return NextResponse.json(
+    {
+      error: 'gone',
+      message:
+        'POST /api/agenthub/events is retired (agent-comms-redesign). ' +
+        'Write to team_events via the devhub-bus binary: ' +
+        '`devhub-bus event-write --mission <id> --source <role> --kind <kind> --payload <json>`. ' +
+        'For real-time consumers, use `devhub events tail --mission <id>` to read the JSONL projection.',
+      replaced_by: 'devhub-bus event-write / devhub events tail',
+    },
+    { status: 410 }
+  );
+});
+
+// Keep the original POST body below for reference; it is now unreachable.
+// The original handler from before T-007 is preserved as legacy code for
+// the internal supervisor adapter (which calls emitAgentEvent directly, not via HTTP).
+// Keep the original POST body below for reference; it is now unreachable.
+// The original handler from before T-007 is preserved as legacy code for
+// the internal supervisor adapter (which calls emitAgentEvent directly, not via HTTP).
+// eslint-disable-next-line no-unused-vars
+async function _legacyPOST_REMOVED(request) {
   try {
     const body = await request.json();
     const {
@@ -167,7 +194,7 @@ export const POST = withAuth(async function POST(request) {
       { status: error.status && error.status < 500 ? error.status : 500 }
     );
   }
-});
+}
 
 export async function GET(request) {
   try {
@@ -197,7 +224,9 @@ export async function GET(request) {
             since: since || undefined,
             limit: Math.min(limit, 100),
           });
-          let filtered = missionId ? candidate.filter((e) => e.mission_id === missionId) : candidate;
+          let filtered = missionId
+            ? candidate.filter((e) => e.mission_id === missionId)
+            : candidate;
           if (filtered.length > 0) {
             events = filtered;
             source = 'agent_events';
