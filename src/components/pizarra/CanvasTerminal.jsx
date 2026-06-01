@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
 import { resizeNativeVtePanel } from '@/lib/terminal/nativeVteBridge';
@@ -145,11 +145,23 @@ export default function CanvasTerminal({
     },
   });
 
+  // pizarra-add-terminal-bugfix: the close-on-unmount effect used to
+  // depend on `onClose` and would fire the cleanup every time the
+  // parent rebuilt the onClose closure (e.g. when a sibling terminal
+  // was added or the canvas was panned), which dispatched
+  // DELETE_ELEMENT for the existing terminal and made the "Add
+  // Terminal" button appear to do nothing on the next render. The
+  // cleanup now runs ONLY on real unmount and reads the latest
+  // onClose via a ref so it always sees the current callback.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
   useEffect(() => {
     return () => {
-      onClose?.();
+      onCloseRef.current?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
