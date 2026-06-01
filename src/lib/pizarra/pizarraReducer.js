@@ -166,6 +166,7 @@ export function usePizarraState() {
 
   return {
     state,
+    dispatch,
     setTool,
     setToolSettings,
     addElement,

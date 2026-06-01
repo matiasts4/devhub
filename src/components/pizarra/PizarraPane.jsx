@@ -12,7 +12,7 @@ import dynamic from 'next/dynamic';
 import PizarraToolPalette from './PizarraToolPalette';
 import PizarraPropertyInspector from './PizarraPropertyInspector';
 import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
-import { usePizarraState } from '@/lib/pizarra/pizarraReducer';
+import { PIZARRA_ACTIONS, usePizarraState } from '@/lib/pizarra/pizarraReducer';
 import { CanvasViewportProvider } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { createShape } from '@/lib/pizarra/shapeModel';
@@ -42,6 +42,7 @@ const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
 export default function PizarraPane() {
   const {
     state,
+    dispatch,
     setTool,
     addElement,
     updateElement,
@@ -136,25 +137,40 @@ export default function PizarraPane() {
         y: canvasSize.height / 2 - 200,
       };
 
+      // pizarra-ux-overhaul: read the cascade counter from the reducer
+      // (the single source of truth) and apply the 24px step / modulo-8
+      // wrap. Both add calls in a single React batch go through the
+      // reducer sequentially so the second add reads the post-first
+      // cascadeIndex value.
+      const CASCADE_STEP = 24;
+      const CASCADE_MODULUS = 8;
+      const previousIndex = state.cascadeIndex ?? 0;
+      const offsetX = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
+      const offsetY = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
+
+      // 1. Advance the cascade counter. The reducer's CASCADE_OFFSET
+      //    case increments modulo 8.
+      dispatch({ type: PIZARRA_ACTIONS.CASCADE_OFFSET });
+
       if (type === 'terminal') {
         const shape = createShape(SHAPE_TYPES.TERMINAL, {
-          x: canvasCenter.x,
-          y: canvasCenter.y,
+          x: canvasCenter.x + offsetX,
+          y: canvasCenter.y + offsetY,
         });
         addElement(shape);
         selectElement(shape.id);
         setActiveTerminalId(shape.id);
       } else if (type === 'browser') {
         const shape = createShape(SHAPE_TYPES.BROWSER, {
-          x: canvasCenter.x,
-          y: canvasCenter.y,
+          x: canvasCenter.x + offsetX,
+          y: canvasCenter.y + offsetY,
         });
         addElement(shape);
         selectElement(shape.id);
         setActiveTerminalId(null);
       }
     },
-    [addElement, selectElement, canvasSize]
+    [addElement, dispatch, selectElement, canvasSize, state.cascadeIndex]
   );
 
   React.useEffect(() => {
