@@ -14,6 +14,9 @@ import { generateAgentSecret, hashToken } from './swarm/auth.js';
 import { provisionAuthToken, getDb } from '@/lib/db/localDb.js';
 import { getLlmProviderConfigSync } from './llmProviderConfig.js';
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 /**
  * Build the environment variables block for an agent.
  * If agentId and workspaceId are provided, provisions an HMAC auth token
@@ -224,6 +227,160 @@ export function buildBusHelpersBlock({ busBinaryPath, dbPath }) {
     '}',
     '# ===== end bus helpers =====',
   ].join('\n');
+}
+
+// Allowed state transitions for the injection lock state machine.
+// pending → injecting → injected (happy path)
+// injecting → failed (downstream error)
+// injected → failed (post-injection error)
+const ALLOWED_INJECTION_TRANSITIONS = {
+  pending: new Set(['injecting', 'failed']),
+  injecting: new Set(['injected', 'failed']),
+  injected: new Set(['failed']),
+  failed: new Set([]),
+};
+const STUCK_LOCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+
+function _pidIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function _writeLockAtomic(file, payload) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+/**
+ * T-004 — create the injection lock at the new path.
+ * Recovers any stale lock (dead pid OR >1h old in non-terminal state) with a WARN.
+ * @param {object} params
+ * @param {string} params.lockDir - directory to write the lock file in
+ * @param {string} params.launchId
+ * @param {string} params.role
+ * @param {string} params.missionId
+ * @returns {object} The lock payload written to disk
+ */
+export function createInjectionLock({ lockDir, launchId, role, missionId }) {
+  if (!lockDir || !launchId || !role) {
+    throw new Error('createInjectionLock: lockDir, launchId, role required');
+  }
+  const file = path.join(lockDir, `devhub-injection-${launchId}-${role}.lock`);
+  if (fs.existsSync(file)) {
+    let prior = null;
+    try {
+      prior = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      /* corrupt */
+    }
+    if (prior) {
+      const updatedAt = Date.parse(prior.updated_at || prior.created_at || '');
+      const isTerminal = prior.state === 'injected' || prior.state === 'failed';
+      const isStale =
+        !isTerminal &&
+        (!prior.pid ||
+          !_pidIsAlive(prior.pid) ||
+          (Number.isFinite(updatedAt) && Date.now() - updatedAt > STUCK_LOCK_THRESHOLD_MS));
+      if (!isStale) {
+        // Active lock — surface the existing state
+        return { ...prior, recovered: false, file };
+      }
+      // Stale — log and overwrite
+      process.stderr.write(
+        `devhub-wrapper: WARN stale injection lock recovered (state=${prior.state}, pid=${prior.pid}, age=${prior.updated_at})\n`
+      );
+    }
+  }
+  const now = new Date().toISOString();
+  const payload = {
+    launch_id: launchId,
+    role,
+    mission_id: missionId || null,
+    state: 'pending',
+    pid: process.pid,
+    created_at: now,
+    updated_at: now,
+  };
+  _writeLockAtomic(file, payload);
+  return { ...payload, recovered: true, file };
+}
+
+/**
+ * T-004 — advance the injection lock from one state to another.
+ * Rejects invalid transitions (e.g. pending → injected is forbidden).
+ * @param {object} params
+ * @param {string} params.lockDir
+ * @param {string} params.launchId
+ * @param {string} params.role
+ * @param {string} params.from - expected current state
+ * @param {string} params.to - target state
+ * @param {string} [params.reason] - recorded on failure
+ * @returns {{ ok: boolean, reason?: string, state?: string }}
+ */
+export function advanceInjectionLock({ lockDir, launchId, role, from, to, reason }) {
+  if (!from || !to) return { ok: false, reason: 'from and to required' };
+  const allowed = ALLOWED_INJECTION_TRANSITIONS[from];
+  if (!allowed) return { ok: false, reason: `unknown source state: ${from}` };
+  if (!allowed.has(to)) {
+    return { ok: false, reason: `invalid transition ${from} → ${to}` };
+  }
+  const file = path.join(lockDir, `devhub-injection-${launchId}-${role}.lock`);
+  if (!fs.existsSync(file)) return { ok: false, reason: 'lock file does not exist' };
+  let prior;
+  try {
+    prior = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return { ok: false, reason: 'lock file corrupt' };
+  }
+  if (prior.state !== from) {
+    return { ok: false, reason: `current state is ${prior.state}, expected ${from}` };
+  }
+  const next = {
+    ...prior,
+    state: to,
+    updated_at: new Date().toISOString(),
+  };
+  if (reason) next.failure_reason = reason;
+  _writeLockAtomic(file, next);
+  return { ok: true, state: to };
+}
+
+/**
+ * T-004 — detect an old-format bootstrap lock at the legacy path.
+ * Returns { found, path } so the caller can warn and migrate.
+ * @param {object} params
+ * @param {string} params.lockDir
+ * @param {string} params.missionId
+ * @param {string} params.role
+ * @returns {{ found: boolean, path?: string }}
+ */
+export function detectLegacyBootstrapLock({ lockDir, missionId, role }) {
+  const file = path.join(lockDir, `devhub-bootstrap-${missionId}-${role}.lock`);
+  return { found: fs.existsSync(file), path: fs.existsSync(file) ? file : null };
+}
+
+/**
+ * T-004 — read a legacy bootstrap lock. Emits a WARN to stderr.
+ * For 1 release we still read the old path so in-flight launches don't fail.
+ * @param {object} params
+ * @param {string} params.lockDir
+ * @param {string} params.missionId
+ * @param {string} params.role
+ * @returns {{ found: boolean, pid?: string, deprecated: boolean }}
+ */
+export function readLegacyBootstrapLock({ lockDir, missionId, role }) {
+  const file = path.join(lockDir, `devhub-bootstrap-${missionId}-${role}.lock`);
+  if (!fs.existsSync(file)) return { found: false, deprecated: true };
+  const pid = fs.readFileSync(file, 'utf8').trim();
+  process.stderr.write(
+    `devhub-wrapper: WARN legacy bootstrap lock path used (${file}); migrate to devhub-injection-*.lock\n`
+  );
+  return { found: true, pid, deprecated: true, path: file };
 }
 
 function buildBootstrapPromptBlock(prompt = '') {
