@@ -119,6 +119,16 @@ export default function PizarraPane() {
     setActiveTerminalId(terminalId);
   }, []);
 
+  // pizarra-close-buttons: dispatch DELETE_ELEMENT so the in-pizarra X
+  // buttons can close terminal/browser shapes (previously only the
+  // property inspector's "Delete Shape" button removed them).
+  const handleRemoveElement = useCallback(
+    (id) => {
+      dispatch({ type: PIZARRA_ACTIONS.DELETE_ELEMENT, payload: id });
+    },
+    [dispatch]
+  );
+
   // ── Property update from inspector ──────────────────────────────────────
 
   const handlePropertyUpdate = useCallback(
@@ -276,6 +286,7 @@ export default function PizarraPane() {
             onMoveElement={handleMoveElement}
             onActivateTerminal={handleActivateTerminal}
             onUpdateElement={handleUpdateElement}
+            onRemoveElement={handleRemoveElement}
           />
         </div>
 

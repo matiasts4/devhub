@@ -13,6 +13,7 @@ export default function PizarraLiveSurfaceLayer({
   onMoveElement,
   onActivateTerminal,
   onUpdateElement,
+  onRemoveElement,
 }) {
   const { projectRect, zoom } = useCanvasViewport();
 
@@ -65,6 +66,7 @@ export default function PizarraLiveSurfaceLayer({
               initialCommand={shape.initialCommand}
               isActivePanel={activeTerminalId === shape.id}
               requestedRendererMode={shape.requestedRendererMode || 'vte-experimental'}
+              onClose={() => onRemoveElement?.(shape.id)}
             />
           );
         }
@@ -78,6 +80,7 @@ export default function PizarraLiveSurfaceLayer({
             onSelect={onSelect}
             onMove={handleMove}
             onUpdateElement={onUpdateElement}
+            onClose={() => onRemoveElement?.(shape.id)}
           />
         );
       })}
