@@ -105,20 +105,25 @@ function LiveSurfaceItem({
     shapeRef.current = shape;
   }, [shape]);
 
-  // Stable handleMove: the same function reference across renders.
-  // The drag hook (usePizarraSurfaceDrag) wires onMove at mousedown
-  // and never refreshes that reference for the duration of a single
-  // drag. With a stable reference, the drag hook keeps calling the
-  // SAME function, which reads the freshest shape via ref.
+  // pizarra-drag-desync-v2: stable handleMove that uses the
+  // PER-TICK deltaX / deltaY from the drag hook. The drag hook
+  // (usePizarraSurfaceDrag) already divides both deltaX/Y and
+  // totalDeltaX/Y by the resolved zoom, so this layer must NOT
+  // divide again. Using the cumulative totalDeltaX/Y on top of the
+  // already-updated shape.x double-counts the displacement: the
+  // reducer has already moved the shape by the prior mousemoves,
+  // and the next mousemove should only contribute its per-tick
+  // delta. See PizarraLiveSurfaceLayer.doublecount.test.jsx for
+  // the regression repro.
   const handleMove = useCallback(
-    ({ totalDeltaX = 0, totalDeltaY = 0 }) => {
+    ({ deltaX = 0, deltaY = 0 }) => {
       const s = shapeRef.current;
       onMoveElementRef.current?.(s.id, {
-        x: s.x + totalDeltaX / resolvedZoom,
-        y: s.y + totalDeltaY / resolvedZoom,
+        x: s.x + deltaX,
+        y: s.y + deltaY,
       });
     },
-    [resolvedZoom, onMoveElementRef]
+    [onMoveElementRef]
   );
 
   if (shape.type === SHAPE_TYPES.TERMINAL) {
