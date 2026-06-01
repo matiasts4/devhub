@@ -445,6 +445,144 @@ describe('T-002 — devhub-bus binary', () => {
   });
 });
 
+describe('T-013b — presence-heartbeat + presence-list (Bash bus subcommands)', () => {
+  test('presence-heartbeat UPSERTs a row keyed by (agent_id=role, mission_id, runtime_surface=shell)', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      const r = runBus(
+        dbPath,
+        'presence-heartbeat',
+        '--mission',
+        'm1',
+        '--role',
+        'director',
+        '--status',
+        'monitoring'
+      );
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout.trim());
+      expect(out.ok).toBe(true);
+      expect(typeof out.presence_id).toBe('string');
+
+      const db = new Database(dbPath, { readonly: true });
+      const rows = db.prepare('SELECT * FROM agent_presence WHERE mission_id = ?').all('m1');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].agent_id).toBe('director');
+      expect(rows[0].mission_id).toBe('m1');
+      expect(rows[0].runtime_surface).toBe('shell');
+      expect(rows[0].presence_state).toBe('online');
+      expect(rows[0].status_summary).toBe('monitoring');
+      expect(typeof rows[0].last_seen_at).toBe('string');
+      expect(typeof rows[0].expires_at).toBe('string');
+      db.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('presence-heartbeat is idempotent (last-write-wins) on second call with new status', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      const r1 = runBus(
+        dbPath,
+        'presence-heartbeat',
+        '--mission',
+        'm1',
+        '--role',
+        'director',
+        '--status',
+        'first'
+      );
+      expect(r1.status).toBe(0);
+      const r2 = runBus(
+        dbPath,
+        'presence-heartbeat',
+        '--mission',
+        'm1',
+        '--role',
+        'director',
+        '--status',
+        'second'
+      );
+      expect(r2.status).toBe(0);
+      const db = new Database(dbPath, { readonly: true });
+      const rows = db
+        .prepare('SELECT * FROM agent_presence WHERE mission_id = ? AND agent_id = ?')
+        .all('m1', 'director');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status_summary).toBe('second');
+      db.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('presence-list returns rows for a mission ordered by last_seen_at DESC', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      // Seed 3 rows with different last_seen_at
+      const r1 = runBus(dbPath, 'presence-heartbeat', '--mission', 'm1', '--role', 'director');
+      expect(r1.status).toBe(0);
+      // Sleep to ensure distinct last_seen_at (ISO strings are second-precision,
+      // so a sync sleep is required for ordering)
+      const start = Date.now();
+      while (Date.now() - start < 1100) {
+        /* spin ~1.1s */
+      }
+      const r2 = runBus(dbPath, 'presence-heartbeat', '--mission', 'm1', '--role', 'auditor');
+      expect(r2.status).toBe(0);
+      const start2 = Date.now();
+      while (Date.now() - start2 < 1100) {
+        /* spin ~1.1s */
+      }
+      const r3 = runBus(dbPath, 'presence-heartbeat', '--mission', 'm1', '--role', 'worker');
+      expect(r3.status).toBe(0);
+
+      const r = runBus(dbPath, 'presence-list', '--mission', 'm1');
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout.trim());
+      expect(out).toHaveLength(3);
+      expect(out.map((row) => row.agent_id)).toEqual(['worker', 'auditor', 'director']);
+      // Every row has the expected shape
+      for (const row of out) {
+        expect(row.mission_id).toBe('m1');
+        expect(typeof row.last_seen_at).toBe('string');
+        expect(row.presence_state).toBe('online');
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('presence-list --role filter narrows to a single agent_id', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      // Seed 2 roles
+      runBus(dbPath, 'presence-heartbeat', '--mission', 'm1', '--role', 'director');
+      runBus(dbPath, 'presence-heartbeat', '--mission', 'm1', '--role', 'auditor');
+
+      const r = runBus(dbPath, 'presence-list', '--mission', 'm1', '--role', 'auditor');
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout.trim());
+      expect(out).toHaveLength(1);
+      expect(out[0].agent_id).toBe('auditor');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('presence-list returns [] for a mission with no presence rows', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      const r = runBus(dbPath, 'presence-list', '--mission', 'm-empty');
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout.trim())).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('T-008 — director-consume subcommand', () => {
   function setupConsumerTempDb() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-consume-'));

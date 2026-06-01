@@ -27,6 +27,9 @@ const KNOWN_SUBCOMMANDS = new Set([
   'chat-write',
   'event-write',
   'presence-upsert',
+  'presence-heartbeat',
+  'presence-list',
+  'event-list',
   'inbox-check',
   'snapshot',
   'rotate',
@@ -298,6 +301,125 @@ function safeJsonParse(s) {
   } catch {
     return false;
   }
+}
+
+/**
+ * T-013b — `presence-heartbeat`: simpler ergonomics for swarm agents to
+ * publish "I'm alive on mission X as role Y". UPSERT into agent_presence
+ * with (agent_id=role, runtime_surface='shell', presence_state='online',
+ * status_summary=<--status>). Replaces the devhub CLI's old HTTP path
+ * to /api/agenthub/presence/heartbeat (retired 404).
+ *
+ * Usage: presence-heartbeat --mission <id> --role <role> [--status <s>]
+ */
+function cmdPresenceHeartbeat(db, args) {
+  const { mission: missionId, role, status } = args;
+  validateMissionId(missionId);
+  if (!role) failExit(EXIT_USAGE, '--role required');
+  checkTableExists(db, 'agent_presence');
+  const now = new Date().toISOString();
+  // TTL: 5 minutes. Heartbeats are sent every minute by the launcher; this
+  // window is wide enough that a single missed beat does not zero presence.
+  const expires = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const presenceId = `${missionId}-${role}-shell`;
+  withBusyRetry(() => {
+    db.prepare(
+      `INSERT INTO agent_presence
+        (presence_id, mission_id, agent_id, runtime_surface, presence_state, status_summary,
+         last_seen_at, expires_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(agent_id, mission_id, runtime_surface) DO UPDATE SET
+         presence_state = excluded.presence_state,
+         status_summary = excluded.status_summary,
+         last_seen_at = excluded.last_seen_at,
+         expires_at = excluded.expires_at,
+         updated_at = excluded.updated_at`
+    ).run(presenceId, missionId, role, 'shell', 'online', status || 'active', now, expires, now);
+  });
+  if (missionId) {
+    appendJsonl(missionId, 'presence', {
+      seq: `hb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      mission_id: missionId,
+      agent_id: role,
+      runtime_surface: 'shell',
+      state: 'online',
+      summary: status || 'active',
+    });
+  }
+  process.stdout.write(JSON.stringify({ ok: true, presence_id: presenceId }) + '\n');
+  process.exit(EXIT_OK);
+}
+
+/**
+ * T-013b — `presence-list`: SELECT from agent_presence for a mission,
+ * optionally filtered by --role, ordered by last_seen_at DESC. Returns
+ * JSON array of rows (empty array if none). Used by `devhub presence` CLI.
+ *
+ * Usage: presence-list --mission <id> [--role <role>]
+ */
+function cmdPresenceList(db, args) {
+  const { mission: missionId, role } = args;
+  validateMissionId(missionId);
+  if (!missionId) failExit(EXIT_USAGE, '--mission required');
+  checkTableExists(db, 'agent_presence');
+  const where = ['mission_id = ?'];
+  const params = [missionId];
+  if (role) {
+    where.push('agent_id = ?');
+    params.push(role);
+  }
+  const sql = `SELECT presence_id, mission_id, agent_id, runtime_surface, presence_state,
+                      status_summary, last_seen_at, expires_at, updated_at
+               FROM agent_presence
+               WHERE ${where.join(' AND ')}
+               ORDER BY last_seen_at DESC`;
+  let rows;
+  try {
+    rows = withBusyRetry(() => db.prepare(sql).all(...params));
+  } catch (e) {
+    if (String(e.message).includes('no such table')) {
+      failExit(EXIT_NO_TABLE, e.message);
+    }
+    throw e;
+  }
+  process.stdout.write(JSON.stringify(rows) + '\n');
+  process.exit(EXIT_OK);
+}
+
+/**
+ * T-013c — `event-list`: SELECT from team_events for a mission, ordered
+ * by ts DESC, with optional --limit (default 50). Used by `devhub events list`.
+ * Replaces the devhub CLI's old HTTP path to /api/agenthub/events (retired 410).
+ *
+ * Usage: event-list --mission <id> [--limit <n>]
+ */
+function cmdEventList(db, args) {
+  const { mission: missionId, limit } = args;
+  validateMissionId(missionId);
+  if (!missionId) failExit(EXIT_USAGE, '--mission required');
+  checkTableExists(db, 'team_events');
+  const n = Math.max(1, Math.min(500, Number(limit) || 50));
+  let rows;
+  try {
+    rows = withBusyRetry(() =>
+      db
+        .prepare(
+          `SELECT id, mission_id, source_role, kind, dedupe_key, payload_json, ts
+           FROM team_events
+           WHERE mission_id = ?
+           ORDER BY ts DESC
+           LIMIT ?`
+        )
+        .all(missionId, n)
+    );
+  } catch (e) {
+    if (String(e.message).includes('no such table')) {
+      failExit(EXIT_NO_TABLE, e.message);
+    }
+    throw e;
+  }
+  process.stdout.write(JSON.stringify(rows) + '\n');
+  process.exit(EXIT_OK);
 }
 
 function cmdPresenceUpsert(db, args) {
@@ -609,6 +731,12 @@ function main() {
         return cmdEventWrite(db, args);
       case 'presence-upsert':
         return cmdPresenceUpsert(db, args);
+      case 'presence-heartbeat':
+        return cmdPresenceHeartbeat(db, args);
+      case 'presence-list':
+        return cmdPresenceList(db, args);
+      case 'event-list':
+        return cmdEventList(db, args);
       case 'inbox-check':
         return cmdInboxCheck(db, args);
       case 'snapshot':
