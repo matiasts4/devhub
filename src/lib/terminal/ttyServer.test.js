@@ -238,6 +238,21 @@ describe('ttyServer — session create', () => {
     expect(spawnCall[1]).toEqual(['-lic', 'exec zsh -i', 'devhub-shell', '--no-use']);
   });
 
+  it('auto-generates an id when createSession is called without one (POST /api/terminal/session contract)', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    // No `id` argument — this is exactly what src/app/api/terminal/session/route.js does.
+    const session = createSession({ cwd: process.cwd(), shell: '/bin/zsh' });
+
+    expect(session.id).toBeDefined();
+    expect(typeof session.id).toBe('string');
+    expect(session.id).toMatch(/^term-\d+-[a-z0-9]+$/);
+
+    // Session must be registered so list_terminals can find it.
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    expect(sessions.has(session.id)).toBe(true);
+  });
+
   it('uses role-based tmux session naming for swarm agents', async () => {
     const fs = require('fs');
     const validSwarmCwd = path.join(process.cwd(), '.devhub', 'worktrees', 'launch-123', 'coder');

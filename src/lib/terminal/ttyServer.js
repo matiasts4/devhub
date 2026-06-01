@@ -612,6 +612,12 @@ function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
  * @param {{ id: string, cwd?: string, shell?: string, restored?: boolean }} opts
  */
 export function createSession({ id, cwd, shell, restored = false, swarmContext = null } = {}) {
+  // Auto-generate id when caller does not provide one (e.g. POST /api/terminal/session).
+  // Without this, the route returns { id: undefined } → JSON.stringify drops the key → the
+  // open_terminal tool sees { port, wsPath } and reports "missing required fields".
+  if (!id) {
+    id = `term-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  }
   const sessions = getOrInitSessions();
   const requestedCwd = cwd || resolveHomeDirectory();
   const cwdResolution = resolveTerminalSpawnCwd(requestedCwd, {
