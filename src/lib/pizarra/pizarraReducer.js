@@ -19,11 +19,12 @@ export const PIZARRA_ACTIONS = {
   DELETE_ELEMENT: 'DELETE_ELEMENT',
   SELECT_ELEMENTS: 'SELECT_ELEMENTS',
   DESELECT_ALL: 'DESELECT_ALL',
+  CASCADE_OFFSET: 'CASCADE_OFFSET',
 };
 
 // ─── Reducer ────────────────────────────────────────────────────────────────
 
-function pizarraReducer(state, action) {
+export function pizarraReducer(state, action) {
   switch (action.type) {
     case PIZARRA_ACTIONS.SET_TOOL:
       return { ...state, activeTool: action.payload };
@@ -46,9 +47,7 @@ function pizarraReducer(state, action) {
       const { id, changes } = action.payload;
       return {
         ...state,
-        elements: state.elements.map((el) =>
-          el.id === id ? { ...el, ...changes } : el
-        ),
+        elements: state.elements.map((el) => (el.id === id ? { ...el, ...changes } : el)),
       };
     }
 
@@ -56,9 +55,7 @@ function pizarraReducer(state, action) {
       return {
         ...state,
         elements: state.elements.filter((el) => el.id !== action.payload),
-        selectedElementIds: state.selectedElementIds.filter(
-          (id) => id !== action.payload
-        ),
+        selectedElementIds: state.selectedElementIds.filter((id) => id !== action.payload),
       };
     }
 
@@ -76,6 +73,19 @@ function pizarraReducer(state, action) {
       };
     }
 
+    case PIZARRA_ACTIONS.CASCADE_OFFSET: {
+      // Cascade index wraps modulo 8 so the cascade stays near
+      // canvasCenter and never escapes the viewport. DELETE_ELEMENT
+      // does NOT rewind this counter — see board-element-placement
+      // Req 2 ("Deleting an element does not rewind the cascade").
+      const currentIndex = state.cascadeIndex ?? 0;
+      const nextIndex = (currentIndex + 1) % 8;
+      return {
+        ...state,
+        cascadeIndex: nextIndex,
+      };
+    }
+
     default:
       return state;
   }
@@ -88,6 +98,7 @@ export const PIZARRA_INITIAL_STATE = {
   selectedElementIds: [],
   activeTool: 'select',
   activeToolSettings: { ...TOOL_SETTINGS },
+  cascadeIndex: 0,
 };
 
 // ─── Hook ──────────────────────────────────────────────────────────────────
@@ -151,9 +162,7 @@ export function usePizarraState() {
 
   // ── Derived helpers ─────────────────────────────────────────────────
 
-  const selectedElements = state.elements.filter((el) =>
-    state.selectedElementIds.includes(el.id)
-  );
+  const selectedElements = state.elements.filter((el) => state.selectedElementIds.includes(el.id));
 
   return {
     state,
