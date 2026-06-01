@@ -120,8 +120,7 @@ export default function PizarraPane() {
   }, []);
 
   // pizarra-close-buttons: dispatch DELETE_ELEMENT so the in-pizarra X
-  // buttons can close terminal/browser shapes (previously only the
-  // property inspector's "Delete Shape" button removed them).
+  // button removes the shape from the canvas state.
   const handleRemoveElement = useCallback(
     (id) => {
       dispatch({ type: PIZARRA_ACTIONS.DELETE_ELEMENT, payload: id });

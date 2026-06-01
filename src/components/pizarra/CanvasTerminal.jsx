@@ -145,23 +145,24 @@ export default function CanvasTerminal({
     },
   });
 
-  // pizarra-add-terminal-bugfix: the close-on-unmount effect used to
-  // depend on `onClose` and would fire the cleanup every time the
-  // parent rebuilt the onClose closure (e.g. when a sibling terminal
-  // was added or the canvas was panned), which dispatched
-  // DELETE_ELEMENT for the existing terminal and made the "Add
-  // Terminal" button appear to do nothing on the next render. The
-  // cleanup now runs ONLY on real unmount and reads the latest
-  // onClose via a ref so it always sees the current callback.
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
-  useEffect(() => {
-    return () => {
-      onCloseRef.current?.();
-    };
-  }, []);
+  // pizarra-fix-strictmode-unmount-2026-06-01: REMOVED the
+  // close-on-unmount useEffect entirely. The previous version
+  // (pizarra-add-terminal-bugfix) used useEffect(..., []) with a
+  // cleanup that called onClose, intending to fire only on real
+  // unmount. But React.StrictMode in development (src/index.js)
+  // intentionally double-mounts components to surface side effects,
+  // which fires the cleanup on the FIRST mount/unmount cycle —
+  // dispatching DELETE_ELEMENT for the just-added terminal. The
+  // symptom: clicking "Add Terminal" creates the shape
+  // (state.elements.length goes 0 → 1), then immediately deletes
+  // it (1 → 0) because the cleanup runs.
+  //
+  // The onClose prop is now ONLY called from the explicit X-button
+  // click handler below. Unmount cleanup is a no-op. TTY session
+  // teardown is handled by the PizarraPane via a separate
+  // 'devhub:terminal-session-closing' custom event (see
+  // PizarraPane.jsx).
+  void onClose; // keep the prop in the signature for the X button below
 
   return (
     <div
