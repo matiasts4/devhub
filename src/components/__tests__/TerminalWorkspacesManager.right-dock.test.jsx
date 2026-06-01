@@ -76,7 +76,12 @@ jest.mock('@tauri-apps/api/event', () => ({
 
 jest.mock('../TerminalTTY', () => ({
   __esModule: true,
-  default: ({ id, isVisibleInLayout = true, suspendNativeSurface, nativeSurfacePolicy = 'live' }) => {
+  default: ({
+    id,
+    isVisibleInLayout = true,
+    suspendNativeSurface,
+    nativeSurfacePolicy = 'live',
+  }) => {
     const React = require('react');
     return React.createElement('div', { 'data-testid': `terminal-${id}` }, [
       React.createElement('span', { key: 'id' }, id),
@@ -1391,6 +1396,53 @@ describe('TerminalWorkspacesManager right dock', () => {
     window.dispatchEvent(new window.Event('resize'));
     await flushEffects();
     expect(view.container.querySelector('[data-testid="panel-subtabs-cwd-chip"]')).not.toBeNull();
+  });
+
+  test('active tab in right-dock tab strip has 1px accent inner border', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    // The browser tab starts as the active tab (default).
+    const browserTab = view.container.querySelector('[data-testid="right-dock-tab-browser"]');
+    expect(browserTab).not.toBeNull();
+    // The active tab carries data-pizarra-active-tab="true".
+    expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('true');
+    // The className includes the outline-inset accent border.
+    expect(browserTab.className).toContain('outline-inset');
+    expect(browserTab.className).toContain('outline-[var(--accent-primary)]');
+
+    // Inactive tabs (editor) carry data-pizarra-active-tab="false"
+    // and do NOT include the outline-inset accent border.
+    const editorTab = view.container.querySelector('[data-testid="right-dock-tab-editor"]');
+    expect(editorTab).not.toBeNull();
+    expect(editorTab.getAttribute('data-pizarra-active-tab')).toBe('false');
+    expect(editorTab.className).not.toContain('outline-inset');
+  });
+
+  test('inactive tabs in right-dock tab strip do not have accent border', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    // Switch to editor so browser becomes inactive.
+    await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
+
+    const browserTab = view.container.querySelector('[data-testid="right-dock-tab-browser"]');
+    const editorTab = view.container.querySelector('[data-testid="right-dock-tab-editor"]');
+
+    expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('false');
+    expect(browserTab.className).not.toContain('outline-inset');
+    expect(editorTab.getAttribute('data-pizarra-active-tab')).toBe('true');
+    expect(editorTab.className).toContain('outline-inset');
   });
 
   test('dock maximize toggles between persisted panel size and full width', async () => {
