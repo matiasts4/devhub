@@ -94,4 +94,53 @@ describe('chat route — module contract', () => {
     }
     expect(observedModel).toBe('minimax-coding-plan/MiniMax-M3');
   });
+
+  test('tool loop dispatch: model emits TOOL: → result injected → final text', async () => {
+    // T-008: prove the full tool loop end-to-end:
+    //   fetch call 1 → MiniMax API → returns TOOL: list_terminals
+    //   fetch call 2 → /api/terminal/processes (tool impl) → returns { processes: [] }
+    //   fetch call 3 → MiniMax API (next turn) → returns final text
+    const realFetch = global.fetch;
+    let callIndex = 0;
+    global.fetch = jest.fn(async (url) => {
+      callIndex++;
+      // Tool impl's HTTP call to the local Next API
+      if (typeof url === 'string' && url.includes('/api/terminal/processes')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ processes: [] }),
+          text: async () => '{"processes":[]}',
+        };
+      }
+      // MiniMax calls — alternate tool-call turn then final-text turn
+      const isFirstModelCall = callIndex === 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            {
+              type: 'text',
+              text: isFirstModelCall ? 'TOOL: list_terminals\n' : 'No terminals running.',
+            },
+          ],
+        }),
+        text: async () => '',
+      };
+    });
+
+    try {
+      const request = { json: async () => ({ message: 'check terminals' }) };
+      const res = await POST(request);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.text).toBe('No terminals running.');
+      expect(body.tool_results).toHaveLength(1);
+      expect(body.tool_results[0].tool).toBe('list_terminals');
+      expect(body.tool_results[0].result).toEqual({ processes: [] });
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
 });
