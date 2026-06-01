@@ -89,6 +89,124 @@ describe('ChatPanel — hydration safety (T-010b)', () => {
   });
 });
 
+describe('ChatPanel — open_terminal visual dispatch (T-024)', () => {
+  let dom;
+  let realFetch;
+  let dispatchSpy;
+
+  beforeEach(() => {
+    dom = installDom();
+    ({ createRoot } = require('react-dom/client'));
+    ({ flushSync } = require('react-dom'));
+    ChatPanel = require('../ChatPanel').default;
+    realFetch = global.fetch;
+    dispatchSpy = jest.spyOn(dom.window, 'dispatchEvent');
+  });
+
+  afterEach(() => {
+    dispatchSpy.mockRestore();
+    global.fetch = realFetch;
+    dom.window.close();
+    jest.clearAllMocks();
+  });
+
+  function findOpenTerminalEvents() {
+    return dispatchSpy.mock.calls.filter(
+      (call) => call[0] && call[0].type === 'devhub:zed-open-terminal'
+    );
+  }
+
+  function getTextarea(container) {
+    return container.querySelector('textarea');
+  }
+
+  function setTextareaValue(ta, value) {
+    // React tracks `value` on HTMLTextAreaElement via its own setter, so we go
+    // through the native prototype setter for the `input` event to be observed
+    // by React's onChange.
+    const setter = Object.getOwnPropertyDescriptor(
+      dom.window.HTMLTextAreaElement.prototype,
+      'value'
+    ).set;
+    setter.call(ta, value);
+    ta.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  }
+
+  function clickSend(container) {
+    // Only the send button is rendered when not loading. The stop button
+    // appears once isLoading flips true — i.e. AFTER this click. We therefore
+    // grab the first enabled button we find.
+    const btn = Array.from(container.querySelectorAll('button')).find((b) => !b.disabled);
+    if (!btn) throw new Error('enabled send button not found');
+    btn.click();
+  }
+
+  async function sendAndSettle(container, text) {
+    const ta = getTextarea(container);
+    flushSync(() => setTextareaValue(ta, text));
+    clickSend(container);
+    // handleSend is async; let the fetch promise resolve, the assistant
+    // message commit, and the open_terminal useEffect run.
+    await flushEffects();
+    await flushEffects();
+    await flushEffects();
+  }
+
+  test('dispatches devhub:zed-open-terminal when open_terminal returns { session_id, port, wsPath } (no command)', async () => {
+    // T-024 regression: the previous guard `if (parsed?.command)` rejected the
+    // common case where the model just says "abre una terminal" without naming
+    // a command. The tool's result shape is { session_id, port, wsPath } — no
+    // `command` field — so the event never fired. Fix: gate on session_id.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        text: 'He abierto una terminal nueva.',
+        tool_results: [
+          {
+            tool: 'open_terminal',
+            result: { session_id: 'term-abc-123', port: 4077, wsPath: '/terminal' },
+          },
+        ],
+      }),
+    });
+
+    const { container, cleanup } = await renderIntoDom(React.createElement(ChatPanel));
+    await sendAndSettle(container, 'abre una terminal');
+
+    const calls = findOpenTerminalEvents();
+    expect(calls).toHaveLength(1);
+    const ev = calls[0][0];
+    expect(ev).toBeInstanceOf(dom.window.CustomEvent);
+    // No command was supplied; handleSplit (TerminalWorkspacesManager) is
+    // safe with `null` and defaults to no initial command.
+    expect(ev.detail.command).toBeNull();
+    expect(ev.detail.cwd).toBeNull();
+
+    cleanup();
+  });
+
+  test('does NOT dispatch devhub:zed-open-terminal when the open_terminal result is an error', async () => {
+    // Negative case: the early-return `if (!result || result.error) return;`
+    // short-circuits the dispatch for error results. Lock it in.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        text: 'No pude abrir la terminal.',
+        tool_results: [{ tool: 'open_terminal', result: { error: 'port 4077 already in use' } }],
+      }),
+    });
+
+    const { container, cleanup } = await renderIntoDom(React.createElement(ChatPanel));
+    await sendAndSettle(container, 'abre una terminal');
+
+    expect(findOpenTerminalEvents()).toHaveLength(0);
+
+    cleanup();
+  });
+});
+
 describe('ChatPanel — paste behavior (T-018)', () => {
   let dom;
 

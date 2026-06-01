@@ -168,10 +168,10 @@ export default function ChatPanel({ className = '' }) {
     const result = openTerminalResult?.result;
     if (!result || result.error) return;
     const parsed = typeof result === 'string' ? safeParse(result) : result;
-    if (parsed?.command) {
+    if (parsed?.session_id) {
       window.dispatchEvent(
         new CustomEvent('devhub:zed-open-terminal', {
-          detail: { command: parsed.command, cwd: parsed.cwd || null },
+          detail: { command: parsed?.command || null, cwd: parsed?.cwd || null },
         })
       );
     }
