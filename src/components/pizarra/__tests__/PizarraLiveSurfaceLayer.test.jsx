@@ -132,8 +132,16 @@ describe('PizarraLiveSurfaceLayer', () => {
 
     flushSync(() => {
       terminalCalls[0].onActivatePanel();
-      terminalCalls[0].onMove({ totalDeltaX: 40, totalDeltaY: 20 });
-      browserCalls[0].onMove({ totalDeltaX: 10, totalDeltaY: -10 });
+      // pizarra-drag-desync-v2: handleMove now uses the per-tick
+      // deltaX/deltaY (post-zoom) from the drag hook. The drag hook
+      // already divides both delta and totalDelta by the resolved
+      // zoom, so the layer no longer re-divides. To preserve the
+      // expected post-zoom displacement of (20, 10) on the terminal
+      // (shape at (20, 30) → (40, 40) with zoom=2) and (5, -5) on
+      // the browser (shape at (50, 60) → (55, 55)), we pass those
+      // post-zoom values directly.
+      terminalCalls[0].onMove({ deltaX: 20, deltaY: 10 });
+      browserCalls[0].onMove({ deltaX: 5, deltaY: -5 });
     });
 
     expect(onActivateTerminal).toHaveBeenCalledWith('terminal-1');

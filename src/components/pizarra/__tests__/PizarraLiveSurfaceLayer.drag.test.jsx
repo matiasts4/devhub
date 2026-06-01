@@ -13,26 +13,26 @@
  * the latest shape, but the drag hook keeps calling the OLD closure
  * bound to the START shape.
  *
- * Concretely: with a TERMINAL shape at start (100, 200), the first
- * mousemove at (50, 80) is computed against shape.x=100 → x=50
- * (correct by accident, because totalDeltaX is the cumulative delta
- * from the start). After the parent re-renders with shape.x=50, a
- * second mousemove at (70, 100) should logically use the LATEST
- * shape.x=50, giving x=20 (50 + (-30)). The CURRENT code, however,
- * still uses the stale shape.x=100, giving x=70 (100 + (-30)). The
- * test below pins the "latest shape" contract so the fix has a
- * green target.
- *
  * The fix mirrors the onClose ref pattern used by
  * pizarra-add-terminal-bugfix: handleMove becomes a stable
  * useCallback that reads `shape` and `onMoveElement` from refs so
  * the drag hook can keep calling the same function across
  * mousemoves while always seeing the freshest data.
  *
- * TDD contract:
- *   - 1st mousemove → onMoveElement(id, {x: 50, y: 80})   (start + delta)
- *   - re-render with shape.x=50, shape.y=80
- *   - 2nd mousemove → onMoveElement(id, {x: 20, y: -20})  (latest + delta)
+ * TDD contract (per-tick deltaX/Y, post-zoom):
+ *   - shape initial: x=100, y=200
+ *   - mousedown at (100, 200) → startPointer = lastPointer = (100, 200)
+ *   - 1st mousemove at (50, 80):
+ *       rawDeltaX = 50 - 100 = -50, rawDeltaY = 80 - 200 = -120
+ *       per-tick deltaX/Y = (-50, -120) (zoom=1)
+ *       handleMove: shape.x = 100 + (-50) = 50, shape.y = 200 + (-120) = 80
+ *       onMoveElement(id, {x: 50, y: 80})
+ *   - re-render with shape.x=50, shape.y=80 (ref mirrors freshest)
+ *   - 2nd mousemove at (70, 100):
+ *       lastPointer was (50, 80) → rawDeltaX = 20, rawDeltaY = 20
+ *       per-tick deltaX/Y = (20, 20)
+ *       handleMove: shape.x = 50 + 20 = 70, shape.y = 80 + 20 = 100
+ *       onMoveElement(id, {x: 70, y: 100})
  */
 
 const React = require('react');
@@ -188,34 +188,32 @@ describe('PizarraLiveSurfaceLayer — drag stale closure (pizarra-drag-desync-v2
       });
     });
 
-    // 3. First mousemove at (50, 80). Delta from start: (-50, -120).
-    //    The drag hook's handleMouseMove calls onMove synchronously.
-    //    The current closure (shape.x=100) computes x=100+(-50)=50.
-    //    Reducer-side, this would update elements[0] to x=50, y=80.
+    // 3. First mousemove at (50, 80). Per-tick delta from start:
+    //    (-50, -120). The drag hook's handleMouseMove calls onMove
+    //    synchronously with deltaX/Y. The current shape (x=100)
+    //    computes x=100+(-50)=50. Reducer-side, this would update
+    //    elements[0] to x=50, y=80.
     flushSync(() => {
       fireMouseEvent(global.window, 'mousemove', { clientX: 50, clientY: 80 });
     });
     expect(onMoveElement).toHaveBeenLastCalledWith('term-1', { x: 50, y: 80 });
 
     // 4. Simulate the parent re-render after the reducer applied the
-    //    first move: elements[0].x=50, elements[0].y=80. The new
-    //    render builds a NEW handleMove closure bound to the latest
-    //    shape (x=50, y=80). The drag hook, however, still has its
-    //    handleMouseMove pointing at the OLD onMove from mousedown.
+    //    first move: elements[0].x=50, elements[0].y=80. The
+    //    handleMove ref tracks the freshest shape.
     render({
       elements: [{ ...initialShape, x: 50, y: 80 }],
       ...baseProps,
     });
 
-    // 5. Second mousemove at (70, 100). Cumulative delta from start:
-    //    (-30, -100). The CURRENT (buggy) code calls the OLD closure
-    //    with shape.x=100, producing {x: 70, y: 100}. The CORRECT
-    //    behavior (after the ref fix) is to read the LATEST shape
-    //    via ref (shape.x=50, shape.y=80) and produce
-    //    {x: 20, y: -20}.
+    // 5. Second mousemove at (70, 100). Per-tick delta from the LAST
+    //    mousemove (50, 80) is (20, 20). handleMove reads the
+    //    freshest shape via ref (x=50, y=80) and produces
+    //    {x: 70, y: 100}. The drag hook keeps calling the SAME
+    //    stable handleMove across the entire drag.
     flushSync(() => {
       fireMouseEvent(global.window, 'mousemove', { clientX: 70, clientY: 100 });
     });
-    expect(onMoveElement).toHaveBeenLastCalledWith('term-1', { x: 20, y: -20 });
+    expect(onMoveElement).toHaveBeenLastCalledWith('term-1', { x: 70, y: 100 });
   });
 });
