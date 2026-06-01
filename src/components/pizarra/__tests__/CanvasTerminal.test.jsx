@@ -33,25 +33,44 @@ jest.mock(
   'xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => ({
-      rows: 24, cols: 80, loadAddon: jest.fn(), open: jest.fn(),
-      onData: jest.fn(), focus: jest.fn(), write: jest.fn(), writeln: jest.fn(),
-      paste: jest.fn(), refresh: jest.fn(), clearTextureAtlas: jest.fn(),
-      dispose: jest.fn(), getSelection: jest.fn(() => ''), clear: jest.fn(),
+      rows: 24,
+      cols: 80,
+      loadAddon: jest.fn(),
+      open: jest.fn(),
+      onData: jest.fn(),
+      focus: jest.fn(),
+      write: jest.fn(),
+      writeln: jest.fn(),
+      paste: jest.fn(),
+      refresh: jest.fn(),
+      clearTextureAtlas: jest.fn(),
+      dispose: jest.fn(),
+      getSelection: jest.fn(() => ''),
+      clear: jest.fn(),
       scrollToLine: jest.fn(),
     })),
   }),
   { virtual: true }
 );
 
-jest.mock('xterm-addon-fit', () => ({
-  FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
-}), { virtual: true });
+jest.mock(
+  'xterm-addon-fit',
+  () => ({
+    FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
+  }),
+  { virtual: true }
+);
 
-jest.mock('xterm-addon-search', () => ({
-  SearchAddon: jest.fn().mockImplementation(() => ({
-    findNext: jest.fn(), findPrevious: jest.fn(),
-  })),
-}), { virtual: true });
+jest.mock(
+  'xterm-addon-search',
+  () => ({
+    SearchAddon: jest.fn().mockImplementation(() => ({
+      findNext: jest.fn(),
+      findPrevious: jest.fn(),
+    })),
+  }),
+  { virtual: true }
+);
 
 // Mock TerminalTTY to capture props (not the full xterm stack)
 let capturedProps = {};
@@ -99,14 +118,16 @@ describe('CanvasTerminal', () => {
   describe('props passthrough to TerminalTTY', () => {
     it('defaults to the native-capable renderer path used by the workspace terminal', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 'my-session-1',
-        shape: { id: 'my-session-1', label: 'Terminal' },
-        bounds: { x: 100, y: 200, width: 640, height: 480 },
-        cwd: '/home/user',
-        initialCommand: 'ls -la',
-        autoFocus: false,
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 'my-session-1',
+          shape: { id: 'my-session-1', label: 'Terminal' },
+          bounds: { x: 100, y: 200, width: 640, height: 480 },
+          cwd: '/home/user',
+          initialCommand: 'ls -la',
+          autoFocus: false,
+        })
+      );
 
       expect(mockTerminalTTY).toHaveBeenCalledTimes(1);
       expect(capturedProps.requestedRendererMode).toBe('vte-experimental');
@@ -122,46 +143,62 @@ describe('CanvasTerminal', () => {
 
     it('forwards explicit active ownership to TerminalTTY', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 'my-session-1',
-        bounds: { x: 0, y: 0, width: 640, height: 480 },
-        isActivePanel: true,
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 'my-session-1',
+          bounds: { x: 0, y: 0, width: 640, height: 480 },
+          isActivePanel: true,
+        })
+      );
 
       expect(capturedProps.isActivePanel).toBe(true);
     });
 
     it('forwards the resize callback to TerminalTTY for future canvas sync', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        bounds: { x: 0, y: 0, width: 800, height: 600 },
-        onResize: jest.fn(),
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 't1',
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          onResize: jest.fn(),
+        })
+      );
 
       expect(capturedProps.onResize).toEqual(expect.any(Function));
     });
 
-    it('calls onClose callback on component unmount', () => {
+    it('does NOT call onClose on unmount (pizarra-fix-strictmode-unmount)', () => {
+      // Contract change: onClose used to be called on unmount, but
+      // that interacted badly with React.StrictMode in dev (which
+      // double-mounts to surface side effects). The artificial
+      // unmount fired the cleanup and dispatched DELETE_ELEMENT for
+      // the just-added terminal, so the user saw the click "do
+      // nothing". The onClose is now reserved for the explicit
+      // X-button click only. See CanvasTerminal.unmount-guard.test.jsx
+      // for the click contract.
       const onClose = jest.fn();
       const { default: CanvasTerminal } = require('../CanvasTerminal');
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        bounds: { x: 0, y: 0, width: 800, height: 600 },
-        onClose,
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 't1',
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          onClose,
+        })
+      );
       flushSync(() => root.unmount());
-      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
     });
 
     it('propagates PTY-driven resize via onResize callback to parent', () => {
       const onResize = jest.fn();
       const { default: CanvasTerminal } = require('../CanvasTerminal');
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        bounds: { x: 0, y: 0, width: 800, height: 600 },
-        onResize,
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 't1',
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          onResize,
+        })
+      );
 
       expect(capturedProps.onResize).toEqual(expect.any(Function));
 
@@ -177,11 +214,13 @@ describe('CanvasTerminal', () => {
     it('positions the host container from projected bounds', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
 
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        shape: { id: 't1', label: 'Ops' },
-        bounds: { x: 40, y: 80, width: 400, height: 300 },
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 't1',
+          shape: { id: 't1', label: 'Ops' },
+          bounds: { x: 40, y: 80, width: 400, height: 300 },
+        })
+      );
 
       const domContainer = document.querySelector('[data-testid="canvas-terminal-container"]');
       expect(domContainer.style.left).toBe('40px');
@@ -193,11 +232,13 @@ describe('CanvasTerminal', () => {
     it('supports legacy position/size props when bounds are not provided', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
 
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        position: { x: 12, y: 24 },
-        size: { width: 400, height: 300 },
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 't1',
+          position: { x: 12, y: 24 },
+          size: { width: 400, height: 300 },
+        })
+      );
 
       const domContainer = document.querySelector('[data-testid="canvas-terminal-container"]');
       expect(domContainer.style.left).toBe('12px');
@@ -211,13 +252,15 @@ describe('CanvasTerminal', () => {
       const onActivatePanel = jest.fn();
       const { default: CanvasTerminal } = require('../CanvasTerminal');
 
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        shape: { id: 'shape-terminal-1', label: 'Terminal' },
-        bounds: { x: 0, y: 0, width: 400, height: 300 },
-        onSelect,
-        onActivatePanel,
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 't1',
+          shape: { id: 'shape-terminal-1', label: 'Terminal' },
+          bounds: { x: 0, y: 0, width: 400, height: 300 },
+          onSelect,
+          onActivatePanel,
+        })
+      );
 
       const frame = document.querySelector('[data-testid="canvas-terminal-container"] > div');
       flushSync(() => {
@@ -234,14 +277,16 @@ describe('CanvasTerminal', () => {
       const onActivatePanel = jest.fn();
       const { default: CanvasTerminal } = require('../CanvasTerminal');
 
-      render(React.createElement(CanvasTerminal, {
-        terminalId: 't1',
-        shape: { id: 'shape-terminal-1', label: 'Terminal' },
-        bounds: { x: 0, y: 0, width: 400, height: 300 },
-        onMove,
-        onSelect,
-        onActivatePanel,
-      }));
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 't1',
+          shape: { id: 'shape-terminal-1', label: 'Terminal' },
+          bounds: { x: 0, y: 0, width: 400, height: 300 },
+          onMove,
+          onSelect,
+          onActivatePanel,
+        })
+      );
 
       const header = document.querySelector('[data-testid="canvas-terminal-header"]');
       flushSync(() => {

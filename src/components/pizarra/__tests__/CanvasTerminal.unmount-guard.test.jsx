@@ -1,20 +1,24 @@
 /**
- * CanvasTerminal re-render stability — close-on-unmount guard.
+ * CanvasTerminal close-button contract.
  *
- * Regression repro for pizarra-add-terminal-bugfix. The previous
- * implementation used `useEffect(() => { return () => onClose?.(); }, [onClose])`
- * which fires the cleanup on EVERY re-render (because the parent rebuilds
- * the onClose closure on every state change). In the live surface layer
- * each re-render of PizarraPane rebuilds the onClose arrow, so
- * CanvasTerminal's cleanup dispatches DELETE_ELEMENT for the existing
- * terminal the next time the parent re-renders.
+ * The close callback is ONLY called in response to the user clicking
+ * the X button in the header. It is NEVER called on component
+ * unmount. The previous implementation (pizarra-add-terminal-bugfix)
+ * had a useEffect cleanup that called onClose on unmount; that
+ * caused a regression where React.StrictMode's intentional
+ * double-mount in dev dispatched DELETE_ELEMENT for the just-added
+ * terminal (length went 0 → 1 → 0 immediately).
  *
- * The user-visible symptom: clicking "Add Terminal" adds a terminal,
- * but the next parent re-render (e.g., another add, a pan, a zoom)
- * wipes it out — the user sees the click "do nothing".
- *
- * This test pins the contract: onClose MUST only fire on real unmount,
- * not on prop re-render.
+ * This file pins the new contract:
+ *   1. onClose is NOT called when re-rendered with a new onClose
+ *      closure (parent rebuilt the arrow but the terminal itself
+ *      did not unmount).
+ *   2. onClose is NOT called on real unmount (the parent has
+ *      already removed the shape from state by then; calling
+ *      onClose would dispatch DELETE_ELEMENT for a shape that
+ *      no longer exists, causing spurious noise).
+ *   3. onClose IS called exactly once when the user clicks the
+ *      X button (data-testid="canvas-terminal-close").
  */
 
 const React = require('react');
@@ -95,20 +99,18 @@ jest.mock('@/lib/terminal/nativeVteBridge', () => ({
   resizeNativeVtePanel: jest.fn(() => Promise.resolve()),
 }));
 
-describe('CanvasTerminal — pizarra-add-terminal-bugfix re-render stability', () => {
+describe('CanvasTerminal — close-button contract (no unmount cleanup)', () => {
   let container;
   let root;
   let dom;
 
   beforeEach(() => {
     jest.clearAllMocks();
-
     dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
     global.document = dom.window.document;
     global.window = dom.window;
     global.requestAnimationFrame = (cb) => setTimeout(cb, 16);
     global.cancelAnimationFrame = (id) => clearTimeout(id);
-
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -122,18 +124,11 @@ describe('CanvasTerminal — pizarra-add-terminal-bugfix re-render stability', (
     delete global.cancelAnimationFrame;
   });
 
-  function renderWith(props) {
-    const { default: CanvasTerminal } = require('../CanvasTerminal');
-    flushSync(() => root.render(React.createElement(CanvasTerminal, props)));
-  }
-
-  it('does NOT call onClose when re-rendered with a new onClose closure (only on real unmount)', () => {
+  it('does NOT call onClose when re-rendered with a new onClose closure', () => {
     const onCloseFirst = jest.fn();
     const onCloseSecond = jest.fn();
-
     const { default: CanvasTerminal } = require('../CanvasTerminal');
 
-    // First render: mount the terminal with onCloseFirst.
     flushSync(() =>
       root.render(
         React.createElement(CanvasTerminal, {
@@ -144,12 +139,6 @@ describe('CanvasTerminal — pizarra-add-terminal-bugfix re-render stability', (
         })
       )
     );
-
-    // Re-render: parent state changed (e.g., a sibling was added),
-    // so the parent rebuilt the onClose closure. The terminal itself
-    // did not unmount; the new closure is just a new arrow with the
-    // same semantic. CanvasTerminal must NOT call onClose on this
-    // re-render — the cleanup is reserved for real unmounts.
     flushSync(() =>
       root.render(
         React.createElement(CanvasTerminal, {
@@ -160,15 +149,13 @@ describe('CanvasTerminal — pizarra-add-terminal-bugfix re-render stability', (
         })
       )
     );
-
     expect(onCloseFirst).not.toHaveBeenCalled();
     expect(onCloseSecond).not.toHaveBeenCalled();
   });
 
-  it('calls onClose exactly once on real unmount even after re-renders', () => {
+  it('does NOT call onClose on real unmount', () => {
     const onClose = jest.fn();
     const { default: CanvasTerminal } = require('../CanvasTerminal');
-
     flushSync(() =>
       root.render(
         React.createElement(CanvasTerminal, {
@@ -179,20 +166,33 @@ describe('CanvasTerminal — pizarra-add-terminal-bugfix re-render stability', (
         })
       )
     );
-    // Re-render with the same id but a fresh closure (no semantic change).
-    flushSync(() =>
-      root.render(
-        React.createElement(CanvasTerminal, {
-          terminalId: 'shape-terminal-1',
-          shape: { id: 'shape-terminal-1', label: 'Terminal' },
-          bounds: { x: 0, y: 0, width: 400, height: 300 },
-          onClose,
-        })
-      )
-    );
-    // Real unmount.
     flushSync(() => root.unmount());
+    // The new contract: unmount does NOT call onClose. The parent
+    // has already removed the shape from state; calling onClose
+    // would dispatch DELETE_ELEMENT for a non-existent id and
+    // cause spurious noise (or, in StrictMode dev, would fire on
+    // the first artificial unmount and delete the just-added
+    // shape).
+    expect(onClose).not.toHaveBeenCalled();
+  });
 
+  it('calls onClose exactly once when the X button is clicked', () => {
+    const onClose = jest.fn();
+    const { default: CanvasTerminal } = require('../CanvasTerminal');
+    flushSync(() =>
+      root.render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 'shape-terminal-1',
+          shape: { id: 'shape-terminal-1', label: 'Terminal' },
+          bounds: { x: 0, y: 0, width: 400, height: 300 },
+          onClose,
+        })
+      )
+    );
+    const closeButton = container.querySelector('[data-testid="canvas-terminal-close"]');
+    expect(closeButton).toBeTruthy();
+    flushSync(() => closeButton.click());
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith('shape-terminal-1');
   });
 });
