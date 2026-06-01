@@ -31,14 +31,16 @@ function ChatMessage({ role, content, timestamp }) {
 }
 
 export default function ChatPanel({ className = '' }) {
-  // D9: lazy initializer keeps the initial-message timestamp stable across
-  // re-renders. Previously `new Date().toISOString()` was evaluated inside
-  // the array literal on every render, which only happened to be cheap.
+  // D9 + T-010b: hydration-safe sentinel. Server and client must produce the
+  // SAME first-render output, so we cannot call `new Date()` in the lazy
+  // initializer (server time ≠ client time → React 18 hydration mismatch).
+  // The initializer returns the literal sentinel `'initial'`, and a useEffect
+  // below replaces it with a real ISO string AFTER mount.
   const [messages, setMessages] = useState(() => [
     {
       role: 'assistant',
       content: 'Hola, soy Zed. ¿En qué te puedo ayudar?',
-      timestamp: new Date().toISOString(),
+      timestamp: 'initial',
     },
   ]);
   const [input, setInput] = useState('');
@@ -118,6 +120,18 @@ export default function ChatPanel({ className = '' }) {
     abortController?.abort();
     setIsLoading(false);
   }, [abortController]);
+
+  // T-010b: replace the hydration sentinel with a real timestamp post-mount.
+  // Server and first client render share the same `'initial'` string; only
+  // after the client commits does the real time appear in the UI.
+  useEffect(() => {
+    setMessages((prev) => {
+      if (prev.length === 0 || prev[0].timestamp !== 'initial') return prev;
+      const updated = [...prev];
+      updated[0] = { ...updated[0], timestamp: new Date().toISOString() };
+      return updated;
+    });
+  }, []);
 
   // D9: dispatch `devhub:zed-open-terminal` when an open_terminal tool result
   // arrives. Replaces the side-effect that used to live inside the old
