@@ -17,7 +17,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Move, RefreshCw } from 'lucide-react';
+import { Move, RefreshCw, X } from 'lucide-react';
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
@@ -78,6 +78,7 @@ export default function PizarraBrowserSurface({
   onSelect,
   onMove,
   onUpdateElement,
+  onClose,
 }) {
   const [dockState, setDockState] = useState(() => createDockState(shape.url));
   const [loadFailed, setLoadFailed] = useState(null);
@@ -356,6 +357,39 @@ export default function PizarraBrowserSurface({
           title="Mover navegador"
         >
           <Move size={14} />
+        </button>
+
+        <button
+          type="button"
+          data-testid="pizarra-browser-close"
+          data-pizarra-close-button="true"
+          title="Cerrar navegador"
+          aria-label="Cerrar navegador"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose?.(shape.id);
+          }}
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            zIndex: 30,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            padding: 0,
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'rgba(6, 16, 27, 0.9)',
+            color: '#9fb5d1',
+            cursor: 'pointer',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <X size={14} />
         </button>
 
         <div
