@@ -25,13 +25,13 @@ Plyrium muestra un patron mas sano: presencia y eventos viven en un store durabl
 
 ## Arquitectura actual
 
-| Canal | Uso actual | Productor | Consumidor real | Problema |
-|-------|------------|-----------|-----------------|----------|
-| `/api/agenthub/presence/heartbeat` | liveness y estado de presencia | wrapper | snapshot durable | el loop reporta `busy` fijo |
-| `POST /api/agenthub/operations/health` con `action=agent_heartbeat` | inbox de `pending_deliveries` | wrapper | wrapper mismo | las entregas se loguean, no se consumen |
-| `_devhub_tell_director` por tmux | status humano en tiempo real | worker | Director humano | no alimenta la UI ni el `director_feed` |
-| `/api/agenthub/events` | eventos durables estructurados | wrapper o runtime | `director_feed` | casi no se emiten eventos canonicos utiles |
-| SSE `director-feed` | refresh de UI | snapshot durable | SwarmControl | depende de hechos durables que hoy faltan |
+| Canal                                                               | Uso actual                     | Productor         | Consumidor real  | Problema                                   |
+| ------------------------------------------------------------------- | ------------------------------ | ----------------- | ---------------- | ------------------------------------------ |
+| `/api/agenthub/presence/heartbeat`                                  | liveness y estado de presencia | wrapper           | snapshot durable | el loop reporta `busy` fijo                |
+| `POST /api/agenthub/operations/health` con `action=agent_heartbeat` | inbox de `pending_deliveries`  | wrapper           | wrapper mismo    | las entregas se loguean, no se consumen    |
+| `_devhub_tell_director` por tmux                                    | status humano en tiempo real   | worker            | Director humano  | no alimenta la UI ni el `director_feed`    |
+| `/api/agenthub/events`                                              | eventos durables estructurados | wrapper o runtime | `director_feed`  | casi no se emiten eventos canonicos utiles |
+| SSE `director-feed`                                                 | refresh de UI                  | snapshot durable  | SwarmControl     | depende de hechos durables que hoy faltan  |
 
 ## Hallazgos prioritarios
 
