@@ -1,5 +1,5 @@
 /* eslint-env node */
-/* eslint-disable no-useless-escape -- pre-existing HMAC bash literals with embedded quotes; removed in T-006. */
+/* eslint-disable no-useless-escape -- buildAutoRestartLoopCommand uses \$ to escape $ in bash template literals. */
 
 /**
  * Agent Launch Wrapper — DevHub's own wrapper for swarm agents.
@@ -536,156 +536,36 @@ disown
 }
 
 /**
- * Build a background polling loop for pending deliveries.
- * Runs a subshell that polls operations/health every 60 seconds to get
- * tasks assigned to this agent via pending_deliveries.
- * Uses /api/agenthub/operations/health with action=agent_heartbeat.
+ * T-006 — pending_deliveries polling was REMOVED. Workers now read durable inbox
+ * rows via `_devhub_inbox_check` on demand, not via background HTTP polling.
+ * This stub returns an empty string so buildAgentLaunchWrapper still composes cleanly.
+ * @returns {string}
  */
-export function buildPendingDeliveriesPollingCommand({ supervisorUrl, agentId, missionId }) {
-  if (!supervisorUrl) {
-    return '# pending_deliveries polling skipped (no supervisor URL)';
-  }
-
-  return `(_devhub_pending_deliveries_loop() {
-  while true; do
-    sleep 30
-    PENDING_BODY="{\\"action\\":\\"agent_heartbeat\\",\\"agent_id\\":\\"${agentId}\\",\\"mission_id\\":\\"${missionId}\\",\\"status_summary\\":\\"checking pending deliveries\\"}"
-    PENDING_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-    PENDING_BODY_HASH=$(printf '%s' "$PENDING_BODY" | openssl dgst -sha256 | awk '{print $NF}')
-    PENDING_SIGNATURE=$(printf '%s' "\${PENDING_TIMESTAMP}.\${PENDING_BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
-    PENDING_RESP=$(curl -s -X POST "\${DEVHUB_SUPERVISOR_URL}/api/agenthub/operations/health" \\
-      -H "Content-Type: application/json" \\
-      -H "X-Agent-Id: ${agentId}" \\
-      -H "X-Agent-Timestamp: \${PENDING_TIMESTAMP}" \\
-      -H "X-Agent-Signature: \${PENDING_SIGNATURE}" \\
-      -d "$PENDING_BODY" 2>&1)
-    if echo "$PENDING_RESP" | grep -q "pending_deliveries"; then
-      COUNT=$(echo "$PENDING_RESP" | grep -o '"delivery_id":"[^"]*"' | wc -l | tr -d ' ')
-      if [ "$COUNT" -gt 0 ] 2>/dev/null; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PENDING_DELIVERIES] $COUNT delivery(ies) found" >> /tmp/devhub-agent-inbox.log
-        # Write structured inbox: deliveries as JSON lines for easy parsing
-        echo "$PENDING_RESP" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    for d in data.get('pending_deliveries', []):
-        print(json.dumps(d), flush=True)
-except:
-    pass
-" >> /tmp/devhub-agent-inbox.jsonl 2>/dev/null || true
-        # ACK each delivery so they don't reappear in future polls
-        echo "$PENDING_RESP" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    for d in data.get('pending_deliveries', []):
-        print(d.get('delivery_id',''))
-except:
-    pass
-" 2>/dev/null | while read -r _delivery_id; do
-          [ -z "$_delivery_id" ] && continue
-          _ack_body=\"{\\\"action\\\":\\\"ack_delivery\\\",\\\"delivery_id\\\":\\"$_delivery_id\\"}\"
-          _ack_ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-          _ack_hash=$(printf '%s' "$_ack_body" | openssl dgst -sha256 | awk '{print $NF}')
-          _ack_sig=$(printf '%s' "\${_ack_ts}.\${_ack_hash}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
-          curl -s -X POST "\${DEVHUB_SUPERVISOR_URL}/api/agenthub/operations/health" \
-            -H "Content-Type: application/json" \
-            -H "X-Agent-Id: ${agentId}" \
-            -H "X-Agent-Timestamp: \${_ack_ts}" \
-            -H "X-Agent-Signature: \${_ack_sig}" \
-            -d "$_ack_body" > /dev/null 2>&1 || true
-        done
-        # Also paste summary to agent's own tmux pane so the agent sees it in terminal
-        if [ -n "\${DEVHUB_TMUX_SESSION:-}" ] && command -v tmux >/dev/null 2>&1; then
-          tmux send-keys -t "\${DEVHUB_TMUX_SESSION}" "" C-m 2>/dev/null || true
-          tmux send-keys -t "\${DEVHUB_TMUX_SESSION}" '[DEVHUB INBOX] '"\$COUNT"' message(s) waiting — check /tmp/devhub-agent-inbox.jsonl' C-m 2>/dev/null || true
-          tmux send-keys -t "\${DEVHUB_TMUX_SESSION}" 'To read inbox: cat /tmp/devhub-agent-inbox.jsonl' C-m 2>/dev/null || true
-        fi
-      fi
-    fi
-  done
-}
-nohup bash -c '_devhub_pending_deliveries_loop' >/dev/null 2>&1 &
-disown
-) &`;
+export function buildPendingDeliveriesPollingCommand() {
+  return '# pending_deliveries polling removed in T-006 (agent-comms-redesign) — use _devhub_inbox_check';
 }
 
 export function buildDirectorTmuxInjection(directorTmuxSession) {
   if (!directorTmuxSession) {
     return '# _devhub_tell_director skipped (no director tmux session)';
   }
-
-  const match = directorTmuxSession.match(/devhub-swarm-([^-]+)-director/);
-  const launchId = match ? match[1] : 'unknown';
-
+  // T-006 — shim replaces the 78-line HMAC body. Old call sites that invoke
+  // _devhub_tell_director still work but now write to team_chat (the bus) instead
+  // of POSTing signed HTTP to /api/agenthub/events. Workers no longer need the
+  // circuit breaker, retries, or HMAC plumbing — the bus is durable and atomic.
+  // Set DEVHUB_INBOX_SHIM_DISABLED=true to make the shim a no-op (emergency cutover).
   return [
-    '# Create a local bin directory for agent helpers',
-    'mkdir -p /tmp/devhub-bin',
-    "cat << 'EOF' > /tmp/devhub-bin/_devhub_tell_director",
-    '#!/usr/bin/env bash',
-    '# Worker: send status updates to Director via signed HTTP event (preferred)',
-    '# Falls back to tmux log + tmux paste if supervisorUrl unavailable',
-    '# Circuit breaker: 3 retries with exponential backoff, state persisted to /tmp/devhub-circuit-{agent_id}',
+    '# T-006 — _devhub_tell_director is a thin shim around the agent comms bus.',
+    '# It writes to team_chat (durable SQLite) instead of HTTP+HMAC. Old call',
+    '# sites still work; new code should call _devhub_chat directly.',
     '_devhub_tell_director() {',
-    '  _msg="${1:-}"',
-    '  _circuit_file="/tmp/devhub-circuit-${DEVHUB_AGENT_ID}"',
-    '  _max_retries=3',
-    '  _base_delay=1',
-    '  # Check if circuit is open (3 consecutive failures)',
-    '  if [ -f "$_circuit_file" ]; then',
-    '    _failures=$(cat "$_circuit_file" 2>/dev/null | grep -o "failures:[0-9]*" | cut -d: -f2)',
-    '    if [ "${_failures:-0}" -ge "$_max_retries" ]; then',
-    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] Circuit OPEN — skipping" >> /tmp/devhub-tell-director-debug.log 2>&1`,
-    '      return 1',
-    '    fi',
+    '  if [ "${DEVHUB_INBOX_SHIM_DISABLED:-}" = "true" ]; then',
+    '    echo "WARN _devhub_tell_director disabled via DEVHUB_INBOX_SHIM_DISABLED" >&2',
+    '    return 0',
     '  fi',
-    '  _timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")',
-    '  _payload="{\\"event_type\\":\\"status_update\\",\\"agent_id\\":\\"${DEVHUB_AGENT_ID}\\",\\"mission_id\\":\\"${DEVHUB_MISSION_ID}\\",\\"payload\\":{\\"summary\\":\\"$_msg\\"}}"',
-    '  _body_hash=$(printf "%s" "$_payload" | openssl dgst -sha256 | awk "{print $NF}")',
-    '  _signature=$(printf "%s" "${_timestamp}.${_body_hash}" | openssl dgst -sha256 -hmac "${DEVHUB_AGENT_TOKEN}" | awk "{print $NF}")',
-    '  _attempt=0',
-    '  _success=false',
-    '  while [ $_attempt -lt $_max_retries ] && [ "$_success" = "false" ]; do',
-    '    _resp=$(curl -s -w "\\n%{http_code}" -X POST "${DEVHUB_SUPERVISOR_URL}/api/agenthub/events" \\',
-    '      -H "Content-Type: application/json" \\',
-    '      -H "X-Agent-Id: ${DEVHUB_AGENT_ID}" \\',
-    '      -H "X-Agent-Timestamp: ${_timestamp}" \\',
-    '      -H "X-Agent-Signature: ${_signature}" \\',
-    '      -d "$_payload" 2>&1)',
-    '    _http_code=$(echo "$_resp" | tail -1)',
-    '    if [ "$_http_code" = "200" ] || [ "$_http_code" = "201" ]; then',
-    '      _success=true',
-    '      # Reset circuit on success',
-    '      rm -f "$_circuit_file" 2>/dev/null',
-    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] HTTP success (attempt $((_attempt+1))): $_msg" >> /tmp/devhub-tell-director-debug.log 2>&1`,
-    '    else',
-    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] HTTP failed (code $_http_code, attempt $((_attempt+1)))" >> /tmp/devhub-tell-director-debug.log 2>&1`,
-    '      _attempt=$((_attempt+1))',
-    '      if [ $_attempt -lt $_max_retries ]; then',
-    '        _delay=$((_base_delay * (2 ** (_attempt - 1))))',
-    `        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] Retrying in \${_delay}s (attempt \$_attempt)..." >> /tmp/devhub-tell-director-debug.log 2>&1`,
-    '        sleep $_delay',
-    '      fi',
-    '    fi',
-    '  done',
-    '  if [ "$_success" = "false" ]; then',
-    '    # Open circuit: record consecutive failures',
-    `    echo "failures:$_max_retries" > "$_circuit_file"`,
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DIRECTOR_TELL] Circuit OPENED after $_max_retries failures" >> /tmp/devhub-tell-director-debug.log 2>&1`,
-    '    # Fallback: write to shared log AND paste to director tmux',
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [\${DEVHUB_ROLE:-worker}] $_msg" >> "/tmp/devhub-swarm-${launchId}.log" 2>/dev/null || true`,
-    '    if [ -n "${DEVHUB_DIRECTOR_SESSION:-}" ] && command -v tmux >/dev/null 2>&1; then',
-    '      tmux send-keys -t "${DEVHUB_DIRECTOR_SESSION}" "STATUS_UPDATE: $_msg" C-m >/dev/null 2>&1 || true',
-    '    fi',
-    '  fi',
+    '  echo "WARN _devhub_tell_director is deprecated; use _devhub_chat" >&2',
+    '  _devhub_chat "${1:-}" --to director --kind report || true',
     '}',
-    'EOF',
-    'chmod +x /tmp/devhub-bin/_devhub_tell_director',
-    'export PATH="/tmp/devhub-bin:$PATH"',
-    '',
-    '# Also keep tmux-based log for director to read manually as backup',
-    '# (the director tmux pane still gets STATUS_UPDATE via tmux send-keys as fallback)',
-    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [\${DEVHUB_ROLE:-agent}] _devhub_tell_director ready (HTTP primary, tmux fallback)" >> "/tmp/devhub-swarm-${launchId}.log"`,
   ].join('\n');
 }
 

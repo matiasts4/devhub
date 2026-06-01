@@ -157,30 +157,30 @@ describe('agentLaunchWrapper', () => {
     });
   });
 
-  describe('buildDirectorTmuxInjection', () => {
+  describe('buildDirectorTmuxInjection (T-006 shim — HMAC removed)', () => {
     test('returns empty script if no director session name provided', () => {
       const result = buildDirectorTmuxInjection(null);
       expect(result).toContain('# _devhub_tell_director skipped');
     });
 
-    test('generates tell_director script and function when session name is provided', () => {
+    test('shim defines _devhub_tell_director that delegates to _devhub_chat (T-006)', () => {
       const result = buildDirectorTmuxInjection('devhub-swarm-123-director');
       expect(result).toContain('_devhub_tell_director()');
-      expect(result).toContain('tmux send-keys -t "${DEVHUB_DIRECTOR_SESSION}"');
-      expect(result).toContain("cat << 'EOF' > /tmp/devhub-bin/_devhub_tell_director");
+      expect(result).toContain('_devhub_chat');
+      expect(result).toMatch(/WARN/i);
+      expect(result).toContain('deprecated');
     });
 
-    test('includes circuit breaker with 3 retries', () => {
+    test('shim does NOT contain HMAC or circuit breaker (HMAC removed in T-006)', () => {
       const result = buildDirectorTmuxInjection('devhub-swarm-123-director');
-      expect(result).toContain('_max_retries=3');
-      expect(result).toContain('_circuit_file');
-      expect(result).toContain('failures:');
+      expect(result).not.toMatch(/openssl dgst -sha256 -hmac/);
+      expect(result).not.toMatch(/_circuit_file/);
+      expect(result).not.toMatch(/_max_retries/);
     });
 
-    test('includes exponential backoff delays', () => {
+    test('shim honors DEVHUB_INBOX_SHIM_DISABLED=true (emergency cutover)', () => {
       const result = buildDirectorTmuxInjection('devhub-swarm-123-director');
-      expect(result).toContain('_base_delay=1');
-      expect(result).toContain('2 **');
+      expect(result).toContain('DEVHUB_INBOX_SHIM_DISABLED');
     });
   });
 });
