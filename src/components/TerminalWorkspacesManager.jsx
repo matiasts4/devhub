@@ -1144,6 +1144,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   // when workspaces exist (hydrated from localStorage). This prevents stale devhub_agent_runs
   // entries with low IDs (p1, p2) from colliding with fresh panel IDs.
   useEffect(() => {
+    const savedState =
+      storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
+    if (!savedState) return;
+
     if (workspaces.length === 0) return;
     // Only randomize once when counters are still in low range (initial state)
     if (panelCounterRef.current <= 100) {
@@ -4055,7 +4059,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             const updateWsDockState = updateRightDockState;
             const focusedPanelId = focusedPanelByWorkspace[ws.id];
             const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
-            const isWorkspaceVisibleInLayout = !isFullscreenBrowser && activeWsId === ws.id && isVisible;
+            const isWorkspaceVisibleInLayout =
+              !isFullscreenBrowser && activeWsId === ws.id && isVisible;
             const shouldSuspendWorkspaceNativeSurfaces =
               isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
             return (
@@ -4221,8 +4226,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                         column.panels[0],
                                         agentRunsByPanel[column.panels[0].id]
                                       ),
-                                      suspendNativeSurface:
-                                        shouldSuspendWorkspaceNativeSurfaces,
+                                      suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
                                       nativeSurfacePolicy,
                                       requestedRendererMode: resolveRequestedRenderer({
                                         workspaceId: ws.id,

@@ -635,6 +635,21 @@ export default function TerminalTTY({
     nativeVteProbeRetryDelayRef.current = null;
   }, []);
 
+  const handleNativeLeaseCommandError = useCallback(
+    (error) => {
+      const reason = String(error?.message || error || '');
+      if (!reason.includes('panel-not-active')) return;
+
+      nativeLeaseRef.current = false;
+      setNativeVteOpened(false);
+      setNativeVteOpenFailure(null);
+      nativeVteProbeRetryCountRef.current = 0;
+      clearNativeVteProbeRetryTimer();
+      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
+    },
+    [clearNativeVteProbeRetryTimer]
+  );
+
   const disposeXtermRuntime = useCallback(() => {
     resizeObserverRef.current?.disconnect();
     resizeObserverRef.current = null;
@@ -777,21 +792,6 @@ export default function TerminalTTY({
     };
   }, [closeNativeLease]);
 
-  const handleNativeLeaseCommandError = useCallback(
-    (error) => {
-      const reason = String(error?.message || error || '');
-      if (!reason.includes('panel-not-active')) return;
-
-      nativeLeaseRef.current = false;
-      setNativeVteOpened(false);
-      setNativeVteOpenFailure(null);
-      nativeVteProbeRetryCountRef.current = 0;
-      clearNativeVteProbeRetryTimer();
-      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
-    },
-    [clearNativeVteProbeRetryTimer]
-  );
-
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
     const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
@@ -856,8 +856,7 @@ export default function TerminalTTY({
     return Boolean(rect && rect.width > 0 && rect.height > 0);
   }, []);
 
-  const getRect = () =>
-      externalDimensionSource ? externalDimensionSource() : null;
+  const getRect = externalDimensionSource ? () => externalDimensionSource() : undefined;
 
   const fitAndResize = useCallback(() => {
     const fitWorked = fitTerminalViewport({
@@ -1913,7 +1912,7 @@ export default function TerminalTTY({
         terminal.open(containerRef.current);
 
         const initialRect = externalDimensionSource
-          ? externalDimensionSource() ?? containerRef.current?.getBoundingClientRect()
+          ? (externalDimensionSource() ?? containerRef.current?.getBoundingClientRect())
           : containerRef.current?.getBoundingClientRect();
         const initiallyVisible =
           initialRect.width > 0 &&
@@ -1934,7 +1933,7 @@ export default function TerminalTTY({
 
         resizeObserverRef.current = new ResizeObserver(() => {
           const rect = externalDimensionSource
-            ? externalDimensionSource() ?? containerRef.current?.getBoundingClientRect()
+            ? (externalDimensionSource() ?? containerRef.current?.getBoundingClientRect())
             : containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');

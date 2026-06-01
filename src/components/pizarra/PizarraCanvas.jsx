@@ -7,6 +7,14 @@
  *
  * IMPORTANT: All hooks declared before the early return to maintain
  * consistent hook order regardless of konva loading state.
+ *
+ * pizarra-ux-overhaul (task 3.1):
+ * - The Konva line/dot grid (formerly lines 294-319) is REMOVED. The
+ *   canvas wrapper renders a solid #1a1f2e background instead.
+ * - An opt-in radial-gradient texture is gated by
+ *   NEXT_PUBLIC_PIZARRA_GRID_TEXTURE, read once at module scope.
+ * - The wrapper carries data-testid="pizarra-canvas-wrapper" so
+ *   integration tests can observe the bg and the (optional) texture.
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
@@ -14,6 +22,21 @@ import { useGesture } from '@use-gesture/react';
 import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
+
+// pizarra-ux-overhaul: module-scope env read for the opt-in texture.
+// Read once at import time; subsequent mounts reuse the cached value.
+const PIZARRA_GRID_TEXTURE_ENABLED =
+  typeof process !== 'undefined' &&
+  process.env &&
+  process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE === '1';
+
+// eslint-disable-next-line no-console
+console.log(
+  '[PizarraCanvas] PIZARRA_GRID_TEXTURE_ENABLED=',
+  PIZARRA_GRID_TEXTURE_ENABLED,
+  'env=',
+  process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE
+);
 
 export default function PizarraCanvas({
   elements,
@@ -251,12 +274,31 @@ export default function PizarraCanvas({
     [elements, onUpdateElement]
   );
 
+  // ── Render ─────────────────────────────────────────────────────────────
+
+  // pizarra-ux-overhaul: solid background + opt-in texture. The grid
+  // is gone. When the env flag is enabled, a CSS radial-gradient is
+  // applied at low opacity so the canvas still has a hint of texture
+  // for users who miss the visual rhythm.
+  const wrapperBackgroundImage = PIZARRA_GRID_TEXTURE_ENABLED
+    ? 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)'
+    : 'none';
+  // eslint-disable-next-line no-console
+  console.log('[PizarraCanvas render] wrapperBackgroundImage=', wrapperBackgroundImage);
+
   // ── Early return: loading state ─────────────────────────────────────────
   // All hooks MUST be declared before this point to maintain consistent
   // hook order between loading and loaded states.
-  if (!konva) {
+  //
+  // pizarra-ux-overhaul: per board-canvas Req 2, the LOADING CANVAS
+  // placeholder must ONLY render when konvaLoadError is true. On a
+  // healthy mount (konva is null but konvaLoadError is false), the
+  // user sees the wrapper with the solid background and NO placeholder
+  // text, so the surrounding container geometry is stable.
+  if (konvaLoadError) {
     return (
       <div
+        data-testid="pizarra-canvas-wrapper"
         style={{
           width,
           height,
@@ -266,67 +308,62 @@ export default function PizarraCanvas({
           color: '#94a3b8',
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 12,
-          background: '#1a1f2e',
+          backgroundColor: '#1a1f2e',
+          backgroundImage: wrapperBackgroundImage,
+          backgroundSize: PIZARRA_GRID_TEXTURE_ENABLED ? '32px 32px' : undefined,
           flexDirection: 'column',
           gap: 8,
         }}
       >
-        {konvaLoadError ? 'CANVAS UNAVAILABLE' : 'LOADING CANVAS...'}
-        {konvaLoadError ? (
-          <div
-            style={{
-              color: '#64748b',
-              fontSize: 10,
-              letterSpacing: '0.04em',
-            }}
-          >
-            react-konva failed to initialize.
-          </div>
-        ) : null}
+        CANVAS UNAVAILABLE
+        <div
+          style={{
+            color: '#64748b',
+            fontSize: 10,
+            letterSpacing: '0.04em',
+          }}
+        >
+          react-konva failed to initialize.
+        </div>
       </div>
+    );
+  }
+
+  // pizarra-ux-overhaul: pre-load empty wrapper. No placeholder text,
+  // just the background + (optional) texture so the canvas container
+  // has a stable geometry while react-konva is still resolving.
+  if (!konva) {
+    return (
+      <div
+        data-testid="pizarra-canvas-wrapper"
+        style={{
+          width,
+          height,
+          overflow: 'hidden',
+          backgroundColor: '#1a1f2e',
+          backgroundImage: wrapperBackgroundImage,
+          backgroundSize: PIZARRA_GRID_TEXTURE_ENABLED ? '32px 32px' : undefined,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          transformOrigin: '0 0',
+          touchAction: 'none',
+        }}
+      />
     );
   }
 
   const { Stage, Layer, Rect, Line, Transformer } = konva;
 
-  // ── Background dot grid ───────────────────────────────────────────────
-
-  const gridLines = [];
-  const gridSize = 32;
-  const cols = Math.ceil(width / gridSize) + 1;
-  const rows = Math.ceil(height / gridSize) + 1;
-  for (let i = 0; i < cols; i++) {
-    gridLines.push(
-      <Line
-        key={`v${i}`}
-        points={[i * gridSize, 0, i * gridSize, rows * gridSize]}
-        stroke="rgba(255,255,255,0.04)"
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-  }
-  for (let j = 0; j < rows; j++) {
-    gridLines.push(
-      <Line
-        key={`h${j}`}
-        points={[0, j * gridSize, cols * gridSize, j * gridSize]}
-        stroke="rgba(255,255,255,0.04)"
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────
-
   return (
     <div
       {...bind()}
+      data-testid="pizarra-canvas-wrapper"
       style={{
         width,
         height,
         overflow: 'hidden',
+        backgroundColor: '#1a1f2e',
+        backgroundImage: wrapperBackgroundImage,
+        backgroundSize: PIZARRA_GRID_TEXTURE_ENABLED ? '32px 32px' : undefined,
         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         transformOrigin: '0 0',
         touchAction: 'none',
@@ -344,12 +381,6 @@ export default function PizarraCanvas({
           cursor: activeTool === 'select' ? 'default' : 'crosshair',
         }}
       >
-        {/* Background grid layer */}
-        <Layer listening={false}>
-          <Rect width={width} height={height} fill="transparent" />
-          {gridLines}
-        </Layer>
-
         {/* Shapes layer */}
         <Layer>
           {elements.map((shape) => {
