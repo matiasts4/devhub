@@ -204,7 +204,12 @@ describe('usePizarraSurfaceDrag — board-terminal-drag contract', () => {
     }
   });
 
-  test('RAF batches multiple move events into a single onMove call', () => {
+  test('pizarra-drag-resize-polish: 3 sequential mousemoves fire onMove synchronously (RAF is reserved for native sync only)', () => {
+    // pizarra-drag-resize-polish: the contract change moves the onMove
+    // call OUT of requestAnimationFrame and INTO the mousemove handler
+    // so the React state lands in the same frame as the cursor. The
+    // native VTE sync (onNativeSync) is still RAF-batched, but the
+    // React-rendering onMove callback fires synchronously per move.
     const props = makeTestHost({});
     const harness = renderHost(props);
 
@@ -212,23 +217,30 @@ describe('usePizarraSurfaceDrag — board-terminal-drag contract', () => {
       harness.button.dispatchEvent(makeMouseEvent('mousedown', 0, 0));
     });
 
-    // Three rapid mousemoves in the same frame.
+    // Three rapid mousemoves in the same act() block.
     act(() => {
       global.window.dispatchEvent(makeMouseEvent('mousemove', 5, 5));
       global.window.dispatchEvent(makeMouseEvent('mousemove', 10, 10));
       global.window.dispatchEvent(makeMouseEvent('mousemove', 15, 15));
     });
 
-    // The RAF is scheduled; flush it.
+    // onMove is called synchronously inside each mousemove — three
+    // calls total, no RAF flush needed.
+    expect(onMoveSink.length).toBe(3);
+    expect(onMoveSink[0].totalDeltaX).toBe(5);
+    expect(onMoveSink[0].totalDeltaY).toBe(5);
+    expect(onMoveSink[1].totalDeltaX).toBe(10);
+    expect(onMoveSink[1].totalDeltaY).toBe(10);
+    expect(onMoveSink[2].totalDeltaX).toBe(15);
+    expect(onMoveSink[2].totalDeltaY).toBe(15);
+
+    // Drain any RAFs scheduled for the native sync. The native sync
+    // is deduped by the resolved position, so the three identical
+    // payload candidates collapse to a single onNativeSync call.
     act(() => {
       flushRaf();
     });
-
-    expect(onMoveSink.length).toBe(1);
-    // The hook's lastPointer advances per move, so totalDeltaX/Y
-    // reflects the FINAL position (15, 15) from start (0, 0).
-    expect(onMoveSink[0].totalDeltaX).toBe(15);
-    expect(onMoveSink[0].totalDeltaY).toBe(15);
+    expect(onNativeSyncSink.length).toBe(1);
 
     act(() => {
       global.window.dispatchEvent(makeMouseEvent('mouseup'));
@@ -499,5 +511,120 @@ describe('usePizarraSurfaceDrag — board-terminal-drag contract', () => {
     const handle = global.requestAnimationFrame(() => {});
     expect(typeof handle).toBe('number');
     global.cancelAnimationFrame(handle);
+  });
+
+  // ── pizarra-drag-resize-polish: immediate onMove scenarios ───────────────
+  // The drag-resize-polish contract moves the onMove call OUT of
+  // requestAnimationFrame and INTO the mousemove handler so the React
+  // state lands in the same frame as the cursor. The native VTE sync
+  // (onNativeSync) still goes through RAF, but the React-rendering
+  // callback fires synchronously.
+
+  test('Scenario A: 3 sequential mousemoves fire onMove synchronously (no RAF wait)', () => {
+    const props = makeTestHost({});
+    const harness = renderHost(props);
+
+    act(() => {
+      harness.button.dispatchEvent(makeMouseEvent('mousedown', 0, 0));
+    });
+
+    // Three sequential mousemoves dispatched WITHOUT any RAF flush in
+    // between. The contract is that onMove fires synchronously inside
+    // the mousemove handler, so after the act() block, all 3 calls
+    // must already be in the sink.
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 5, 5));
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 10, 10));
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 15, 15));
+    });
+
+    // Assertion: exactly 3 onMove calls, all synchronous (no flushRaf
+    // was called between the dispatches and the assertion).
+    expect(onMoveSink.length).toBe(3);
+    expect(onMoveSink[0].totalDeltaX).toBe(5);
+    expect(onMoveSink[1].totalDeltaX).toBe(10);
+    expect(onMoveSink[2].totalDeltaX).toBe(15);
+
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup'));
+    });
+    unmountHost(harness);
+  });
+
+  test('Scenario B: mousedown + mousemove + mouseup fires onMove once with cumulative totalDelta', () => {
+    const props = makeTestHost({});
+    const harness = renderHost(props);
+
+    act(() => {
+      harness.button.dispatchEvent(makeMouseEvent('mousedown', 0, 0));
+    });
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 25, 35));
+    });
+
+    // mouseup triggers flushPendingMove; onMove was already called
+    // synchronously inside mousemove, so mouseup should NOT call
+    // onMove again. onNativeSync may or may not fire depending on the
+    // post-zoom delta, but onMove count is exactly 1.
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup'));
+    });
+
+    expect(onMoveSink.length).toBe(1);
+    expect(onMoveSink[0].totalDeltaX).toBe(25);
+    expect(onMoveSink[0].totalDeltaY).toBe(35);
+
+    unmountHost(harness);
+  });
+
+  test('Scenario C: flushPendingMove (mouseup) short-circuits onNativeSync when post-zoom deltas are zero', () => {
+    const props = makeTestHost({});
+    const harness = renderHost(props);
+
+    act(() => {
+      harness.button.dispatchEvent(makeMouseEvent('mousedown', 50, 50));
+    });
+
+    // Zero-delta mousemove: handleMouseMove short-circuits on (0, 0)
+    // delta so neither onMove nor onNativeSync is queued. mouseup
+    // flushes the (empty) pending move — onNativeSync is NOT called.
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 50, 50));
+    });
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup'));
+    });
+
+    expect(onMoveSink.length).toBe(0);
+    expect(onNativeSyncSink.length).toBe(0);
+
+    unmountHost(harness);
+  });
+
+  test('Scenario C+: flushPendingMove (mouseup) fires onNativeSync once when post-zoom delta is non-zero', () => {
+    // Companion to Scenario C: a non-zero mousemove leaves a pending
+    // move; mouseup flushes it and calls onNativeSync exactly once.
+    const props = makeTestHost({});
+    const harness = renderHost(props);
+
+    act(() => {
+      harness.button.dispatchEvent(makeMouseEvent('mousedown', 0, 0));
+    });
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 12, 18));
+    });
+    // No flushRaf before mouseup; onMove was already called
+    // synchronously in mousemove. mouseup flushes the pending move
+    // and calls onNativeSync once.
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup'));
+    });
+
+    expect(onMoveSink.length).toBe(1);
+    expect(onNativeSyncSink.length).toBe(1);
+    expect(onNativeSyncSink[0].totalDeltaX).toBe(12);
+    expect(onNativeSyncSink[0].totalDeltaY).toBe(18);
+
+    unmountHost(harness);
   });
 });
