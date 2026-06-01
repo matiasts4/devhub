@@ -3,13 +3,21 @@
 /**
  * `devhub events` — agent events stream and query.
  * Subcommands: list, stream, tail
+ *
+ * T-013c: `list` previously routed to a retired HTTP endpoint
+ * (`/api/agenthub/events` → 410). Now calls the devhub-bus binary
+ * directly: `event-list --mission <id> [--limit <n>]`.
  */
 
-const { request } = require('../lib/httpClient');
-const { readAuthFile } = require('../lib/auth');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+
+const BUS_BIN = path.resolve(__dirname, '../bin/devhub-bus.js');
+
+function resolveDbPath() {
+  return process.env.DEVHUB_DB_PATH || null;
+}
 
 /**
  * Parse args for events subcommands.
@@ -84,105 +92,125 @@ function eventsTail(opts = {}) {
 }
 
 /**
- * `devhub events list` — fetch events from API.
+ * `devhub events list` — fetch events for a mission from the local bus.
+ *
+ * T-013c: replaced the retired `/api/agenthub/events` HTTP path with a
+ * direct spawn of the devhub-bus binary. The CLI accepts the same
+ * option shape (`--mission`, `--limit`) but the call is now purely
+ * local: no auth, no network.
+ *
  * @param {object} opts
  */
-async function eventsList(opts = {}) {
-  const baseUrl = process.env.DEVHUB_API_URL || 'http://localhost:3000';
-  const params = new URLSearchParams();
+function eventsList(opts = {}) {
+  if (!opts.mission) {
+    process.stderr.write('error: events list requires --mission.\n');
+    process.exit(64);
+  }
+  const dbPath = resolveDbPath();
+  if (!dbPath) {
+    process.stderr.write('error: events list requires DEVHUB_DB_PATH or --db flag.\n');
+    process.exit(64);
+  }
+  if (!fs.existsSync(BUS_BIN)) {
+    process.stderr.write(`error: devhub-bus binary not found at ${BUS_BIN}\n`);
+    process.exit(73);
+  }
 
-  if (opts.agentId) params.append('agent_id', opts.agentId);
-  if (opts.eventType) params.append('event_type', opts.eventType);
-  if (opts.since) params.append('since', opts.since);
-  if (opts.limit) params.append('limit', opts.limit.toString());
+  const args = [BUS_BIN, '--db', dbPath, 'event-list', '--mission', opts.mission];
+  const limit = Number(opts.limit) || 50;
+  if (limit) args.push('--limit', String(limit));
 
-  const url = `${baseUrl}/api/agenthub/events?${params.toString()}`;
-  const auth = readAuthFile();
-  const signed = !!auth; // Sign if authenticated
+  const r = spawnSync('node', args, { encoding: 'utf-8' });
+  if (r.status !== 0) {
+    process.stderr.write(r.stderr || `event-list exited ${r.status}\n`);
+    process.exit(r.status || 1);
+  }
 
+  let events;
   try {
-    const result = await request({ url, signed });
-
-    if (result.status === 200) {
-      if (opts.json) {
-        process.stdout.write(JSON.stringify(result.data) + '\n');
-      } else {
-        const events = result.data.events || [];
-        if (events.length === 0) {
-          process.stdout.write('No events found.\n');
-        } else {
-          process.stdout.write(`\n=== Events (${events.length}) ===\n\n`);
-          for (const evt of events) {
-            process.stdout.write(
-              `[${evt.created_at}] ${evt.event_type || 'unknown'} — ${evt.agent_id || '(no agent)'}\n`
-            );
-            if (evt.payload) {
-              process.stdout.write(`  ${JSON.stringify(evt.payload)}\n`);
-            }
-          }
-        }
-      }
-      process.exit(0);
-    } else {
-      process.stderr.write(`Error: ${result.error}\n`);
-      process.exit(1);
-    }
-  } catch (err) {
-    process.stderr.write(`Connection failed: ${err.message}\n`);
+    events = JSON.parse(r.stdout.trim() || '[]');
+  } catch (e) {
+    process.stderr.write(`error: failed to parse event-list output: ${e.message}\n`);
     process.exit(1);
   }
+
+  if (opts.json) {
+    process.stdout.write(JSON.stringify({ count: events.length, events }) + '\n');
+  } else if (events.length === 0) {
+    process.stdout.write('No events found.\n');
+  } else {
+    process.stdout.write(`\n=== Events (${events.length}) ===\n\n`);
+    for (const evt of events) {
+      const payload = evt.payload_json ? `\n  ${evt.payload_json}` : '';
+      process.stdout.write(
+        `[${evt.ts}] ${evt.kind} — ${evt.source_role} (${evt.dedupe_key})${payload}\n`
+      );
+    }
+  }
+  process.exit(0);
 }
 
 /**
- * `devhub events stream` — poll events with cursor.
+ * `devhub events stream` — poll events with cursor (local bus).
+ * T-013c: replaced the retired `/api/agenthub/events` HTTP path with a
+ * direct spawn of devhub-bus event-list. Filtering is best-effort
+ * post-fetch (the binary does mission+limit+order, not since).
+ *
  * @param {object} opts
  */
-async function eventsStream(opts = {}) {
-  const baseUrl = process.env.DEVHUB_API_URL || 'http://localhost:3000';
-  const interval = opts.interval || 1500; // ms
-  let cursor = opts.since || new Date().toISOString();
+function eventsStream(opts = {}) {
+  if (!opts.mission) {
+    process.stderr.write('error: events stream requires --mission.\n');
+    process.exit(64);
+  }
+  const dbPath = resolveDbPath();
+  if (!dbPath) {
+    process.stderr.write('error: events stream requires DEVHUB_DB_PATH or --db flag.\n');
+    process.exit(64);
+  }
+  const interval = Number(opts.interval) || 1500;
+  const seen = new Set();
 
-  process.stdout.write(`Streaming events (polling every ${interval}ms)...\n`);
+  process.stdout.write(
+    `Streaming events for mission=${opts.mission} (polling every ${interval}ms)...\n`
+  );
   process.stdout.write('Press Ctrl+C to stop.\n\n');
 
-  const poll = async () => {
-    const params = new URLSearchParams();
-    if (opts.agentId) params.append('agent_id', opts.agentId);
-    if (opts.eventType) params.append('event_type', opts.eventType);
-    params.append('since', cursor);
-    params.append('limit', '50');
-
-    const url = `${baseUrl}/api/agenthub/events?${params.toString()}`;
-    const auth = readAuthFile();
-    const signed = !!auth;
-
+  const poll = () => {
+    const args = [
+      BUS_BIN,
+      '--db',
+      dbPath,
+      'event-list',
+      '--mission',
+      opts.mission,
+      '--limit',
+      '50',
+    ];
+    const r = spawnSync('node', args, { encoding: 'utf-8' });
+    if (r.status !== 0) {
+      process.stderr.write(`Poll error: ${r.stderr || r.status}\n`);
+      return;
+    }
+    let events;
     try {
-      const result = await request({ url, signed });
-      if (result.status === 200) {
-        const events = result.data.events || [];
-        for (const evt of events) {
-          if (opts.json) {
-            process.stdout.write(JSON.stringify(evt) + '\n');
-          } else {
-            process.stdout.write(
-              `[${evt.created_at}] ${evt.event_type || 'unknown'} — ${evt.agent_id || '(no agent)'}\n`
-            );
-          }
-          // Update cursor to latest event timestamp
-          if (evt.created_at && evt.created_at > cursor) {
-            cursor = evt.created_at;
-          }
-        }
+      events = JSON.parse(r.stdout.trim() || '[]');
+    } catch (e) {
+      process.stderr.write(`Poll parse error: ${e.message}\n`);
+      return;
+    }
+    for (const evt of events) {
+      if (seen.has(evt.id)) continue;
+      seen.add(evt.id);
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(evt) + '\n');
+      } else {
+        process.stdout.write(`[${evt.ts}] ${evt.kind} — ${evt.source_role} (${evt.dedupe_key})\n`);
       }
-    } catch (err) {
-      process.stderr.write(`Poll error: ${err.message}\n`);
     }
   };
 
-  // Initial poll
-  await poll();
-
-  // Interval polling
+  poll();
   setInterval(poll, interval);
 }
 
@@ -190,22 +218,19 @@ async function eventsStream(opts = {}) {
  * Main events command handler.
  * @param {object} opts
  */
-async function eventsCommand(opts = {}) {
+function eventsCommand(opts = {}) {
   const { subcommand, options } = parseEventsArgs();
 
   if (!subcommand || subcommand === 'help') {
     process.stdout.write('Usage: devhub events <list|stream|tail> [options]\n');
     process.stdout.write('\nSubcommands:\n');
-    process.stdout.write('  list    Fetch events from API\n');
-    process.stdout.write('  stream  Poll events continuously\n');
+    process.stdout.write('  list    Fetch events from local bus (T-013c: no HTTP)\n');
+    process.stdout.write('  stream  Poll events continuously (local bus)\n');
     process.stdout.write('  tail    Tail JSONL projection for a mission (T-005)\n');
     process.stdout.write('\nOptions:\n');
-    process.stdout.write('  --agent <id>      Filter by agent ID\n');
-    process.stdout.write('  --type <type>     Filter by event type\n');
-    process.stdout.write('  --since <iso>     Fetch events after timestamp\n');
     process.stdout.write('  --limit <n>       Max events to fetch (default: 50)\n');
     process.stdout.write('  --interval <ms>   Polling interval for stream (default: 1500)\n');
-    process.stdout.write('  --mission <id>    Mission id (required for tail)\n');
+    process.stdout.write('  --mission <id>    Mission id (required for list/stream/tail)\n');
     process.stdout.write('  --json            Output JSON\n');
     process.exit(0);
   }

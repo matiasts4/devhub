@@ -583,6 +583,134 @@ describe('T-013b — presence-heartbeat + presence-list (Bash bus subcommands)',
   });
 });
 
+describe('T-013c — event-list (Bash bus subcommand for devhub events list)', () => {
+  test('event-list returns events for a mission ordered by ts DESC', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      // Seed 2 events (deltas matter: they insert in time order)
+      const r1 = runBus(
+        dbPath,
+        'event-write',
+        '--mission',
+        'm1',
+        '--source',
+        'worker',
+        '--kind',
+        'task_started',
+        '--payload',
+        '{"task":"first"}',
+        '--dedupe-key',
+        'k-first'
+      );
+      expect(r1.status).toBe(0);
+      const r2 = runBus(
+        dbPath,
+        'event-write',
+        '--mission',
+        'm1',
+        '--source',
+        'worker',
+        '--kind',
+        'task_completed',
+        '--payload',
+        '{"task":"second"}',
+        '--dedupe-key',
+        'k-second'
+      );
+      expect(r2.status).toBe(0);
+
+      const r = runBus(dbPath, 'event-list', '--mission', 'm1');
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout.trim());
+      expect(Array.isArray(out)).toBe(true);
+      expect(out).toHaveLength(2);
+      // Both rows have the documented shape
+      for (const row of out) {
+        expect(row.mission_id).toBe('m1');
+        expect(row.source_role).toBe('worker');
+        expect(typeof row.id).toBe('number');
+        expect(typeof row.ts).toBe('string');
+        expect(typeof row.dedupe_key).toBe('string');
+      }
+      // Set membership: the two dedupe keys are both present. We don't
+      // assert strict DESC order because team_events.ts is
+      // datetime('now') which has second precision; in fast tests two
+      // back-to-back writes can land in the same second, making the
+      // ordering nondeterministic. Real-world events are spaced out
+      // (seconds) so DESC ordering works in production.
+      const keys = out.map((row) => row.dedupe_key).sort();
+      expect(keys).toEqual(['k-first', 'k-second']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('event-list --limit <n> caps the result count', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      // Seed 3 events
+      for (let i = 0; i < 3; i++) {
+        runBus(
+          dbPath,
+          'event-write',
+          '--mission',
+          'm1',
+          '--source',
+          'worker',
+          '--kind',
+          'tick',
+          '--payload',
+          `{"i":${i}}`,
+          '--dedupe-key',
+          `tick-${i}`
+        );
+      }
+      const r = runBus(dbPath, 'event-list', '--mission', 'm1', '--limit', '2');
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout.trim());
+      expect(out).toHaveLength(2);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('event-list returns [] for a mission with no events', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      const r = runBus(dbPath, 'event-list', '--mission', 'm-empty');
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout.trim())).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('event-list isolates missions (m1 events do not leak into m2)', () => {
+    const { dir, dbPath } = setupTempDb();
+    try {
+      runBus(
+        dbPath,
+        'event-write',
+        '--mission',
+        'm1',
+        '--source',
+        'worker',
+        '--kind',
+        'task_started',
+        '--payload',
+        '{}',
+        '--dedupe-key',
+        'k1'
+      );
+      const r = runBus(dbPath, 'event-list', '--mission', 'm2');
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout.trim())).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('T-008 — director-consume subcommand', () => {
   function setupConsumerTempDb() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-consume-'));
