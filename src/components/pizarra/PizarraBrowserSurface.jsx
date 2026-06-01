@@ -199,6 +199,22 @@ export default function PizarraBrowserSurface({
     setSrcReloadKey((k) => k + 1);
   }, []);
 
+  // pizarra-ux-overhaul: hover/active micro-states for the inner
+  // wrapper (the "header" row containing the drag handle, address
+  // bar, refresh button, load indicator). Hover is a border-bottom
+  // color tint; active (mousedown on a button in the wrapper) is a
+  // 1px inset accent border. NO transform — the drag handle must
+  // stay grabbable.
+  const [isHovered, setIsHovered] = useState(false);
+  const [isButtonActive, setIsButtonActive] = useState(false);
+  const handleWrapperMouseEnter = useCallback(() => setIsHovered(true), []);
+  const handleWrapperMouseLeave = useCallback(() => {
+    setIsHovered(false);
+    setIsButtonActive(false);
+  }, []);
+  const handleWrapperButtonMouseDown = useCallback(() => setIsButtonActive(true), []);
+  const handleWrapperButtonMouseUp = useCallback(() => setIsButtonActive(false), []);
+
   const handleFrameMouseDown = useCallback(
     (event) => {
       if (event.target?.closest?.('[data-pizarra-surface-drag-handle="true"]')) {
@@ -236,12 +252,24 @@ export default function PizarraBrowserSurface({
     >
       <div
         onMouseDownCapture={handleFrameMouseDown}
+        onMouseEnter={handleWrapperMouseEnter}
+        onMouseLeave={handleWrapperMouseLeave}
+        onMouseDown={handleWrapperButtonMouseDown}
+        onMouseUp={handleWrapperButtonMouseUp}
+        data-pizarra-header-hovered={isHovered ? 'true' : 'false'}
+        data-pizarra-header-active={isButtonActive ? 'true' : 'false'}
         style={{
           position: 'absolute',
           inset: FRAME_INSET,
           overflow: 'hidden',
           borderRadius: 16,
           border: selected ? '2px solid rgba(88,166,255,0.72)' : '1px solid rgba(88,166,255,0.28)',
+          borderBottomColor: isHovered
+            ? 'rgba(88, 166, 255, 0.5)'
+            : selected
+              ? 'rgba(88,166,255,0.72)'
+              : 'rgba(88, 166, 255, 0.28)',
+          outline: isButtonActive ? '1px inset var(--accent-primary)' : 'none',
           background: 'rgba(8, 14, 24, 0.94)',
           boxShadow: '0 18px 48px rgba(3, 7, 18, 0.28)',
           pointerEvents: 'auto',
