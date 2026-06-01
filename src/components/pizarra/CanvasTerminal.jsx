@@ -44,6 +44,22 @@ export default function CanvasTerminal({
     boundsRef.current = resolvedBounds;
   }, [resolvedBounds]);
 
+  useEffect(() => {
+    if (requestedRendererMode === 'vte-experimental' && resolvedBounds) {
+      const inset = 10;
+      const headerH = 28;
+      resizeNativeVtePanel({
+        panelId: terminalId,
+        bounds: {
+          x: (resolvedBounds.screenX ?? resolvedBounds.x) + inset,
+          y: (resolvedBounds.screenY ?? resolvedBounds.y) + inset + headerH,
+          width: Math.max(resolvedBounds.width - inset * 2, 1),
+          height: Math.max(resolvedBounds.height - inset * 2 - headerH, 1),
+        },
+      }).catch(() => {});
+    }
+  }, [resolvedBounds, terminalId, requestedRendererMode]);
+
   const handleFrameMouseDown = useCallback(
     (event) => {
       event.stopPropagation();

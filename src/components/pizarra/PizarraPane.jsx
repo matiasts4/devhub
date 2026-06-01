@@ -258,6 +258,7 @@ export default function PizarraPane() {
             onSelect={handleSelect}
             onMoveElement={handleMoveElement}
             onActivateTerminal={handleActivateTerminal}
+            onUpdateElement={handleUpdateElement}
           />
         </div>
 

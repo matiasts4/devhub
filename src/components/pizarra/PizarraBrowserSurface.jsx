@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Globe } from 'lucide-react';
-import { focusNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Globe, RefreshCw } from 'lucide-react';
+import { focusNativeBrowser, reloadNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
 import {
   useNativeBrowserCapability,
   useNativeBrowserSurface,
@@ -10,7 +10,7 @@ import {
 import { resizeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
 
 const FRAME_INSET = 10;
-const HEADER_HEIGHT = 30;
+const HEADER_HEIGHT = 38;
 
 function getMeasuredBounds(node) {
   const rect = node?.getBoundingClientRect?.();
@@ -24,11 +24,14 @@ function getMeasuredBounds(node) {
 }
 
 const LEGACY_LOCALHOST_3200 = 'http://localhost:3200/';
+const LEGACY_LOCALHOST_3000 = 'http://localhost:3000/';
+
 function resolveBrowserUrl(url) {
-  const DEFAULT = 'http://localhost:3000/';
+  const DEFAULT =
+    typeof window !== 'undefined' ? window.location.origin + '/' : 'http://localhost:3100/';
   if (!url) return DEFAULT;
   const normalized = url.endsWith('/') ? url : url + '/';
-  if (normalized === LEGACY_LOCALHOST_3200) return DEFAULT;
+  if (normalized === LEGACY_LOCALHOST_3200 || normalized === LEGACY_LOCALHOST_3000) return DEFAULT;
   return url;
 }
 
@@ -38,8 +41,14 @@ export default function PizarraBrowserSurface({
   selected = false,
   onSelect,
   onMove,
+  onUpdateElement,
 }) {
   const resolvedUrl = resolveBrowserUrl(shape.url);
+  const [typedUrl, setTypedUrl] = useState(shape.url || '');
+  useEffect(() => {
+    setTypedUrl(shape.url || '');
+  }, [shape.url]);
+
   const dragCleanupRef = useRef(null);
   const dragRafRef = useRef(null);
   const boundsRef = useRef(bounds);
@@ -54,6 +63,21 @@ export default function PizarraBrowserSurface({
     requested: requestedNativeRuntime,
   });
   const nativeRuntimeActive = nativeCapability?.ready === true;
+
+  useEffect(() => {
+    if (nativeRuntimeActive) {
+      resizeNativeBrowser({
+        panelId,
+        bounds: {
+          x: (bounds.screenX ?? bounds.x) + FRAME_INSET,
+          y: (bounds.screenY ?? bounds.y) + FRAME_INSET + HEADER_HEIGHT,
+          width: Math.max(bounds.width - FRAME_INSET * 2, 1),
+          height: Math.max(bounds.height - FRAME_INSET * 2 - HEADER_HEIGHT, 1),
+        },
+      }).catch(() => {});
+    }
+  }, [bounds, panelId, nativeRuntimeActive]);
+
   const measureBounds = useCallback(() => getMeasuredBounds(viewportRef.current), []);
 
   const { nativeRuntimeReady } = useNativeBrowserSurface({
@@ -220,11 +244,84 @@ export default function PizarraBrowserSurface({
             userSelect: 'none',
           }}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <Globe size={12} />
             {shape.label || 'Browser'}
           </span>
-          <span data-testid={`pizarra-browser-runtime-status-${shape.id}`}>{statusCopy}</span>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flex: '1 1 auto',
+              maxWidth: 420,
+              margin: '0 12px',
+              gap: 6,
+            }}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                reloadNativeBrowser({ panelId }).catch(() => {});
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#9fb5d1',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 4,
+                borderRadius: 4,
+                transition: 'background 0.2s',
+              }}
+              title="Reload"
+            >
+              <RefreshCw size={11} />
+            </button>
+
+            <input
+              type="text"
+              value={typedUrl}
+              onChange={(e) => setTypedUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const targetUrl = typedUrl.trim();
+                  if (targetUrl) {
+                    let normalized = targetUrl;
+                    if (!/^https?:\/\//i.test(normalized)) {
+                      normalized = 'http://' + normalized;
+                    }
+                    onUpdateElement?.(shape.id, { url: normalized });
+                  }
+                }
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                flex: '1 1 auto',
+                padding: '2px 8px',
+                height: 22,
+                borderRadius: 5,
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: '#040812',
+                color: '#d6e2ff',
+                fontSize: 10,
+                fontFamily: 'monospace',
+                outline: 'none',
+                cursor: 'text',
+                textTransform: 'none',
+              }}
+            />
+          </div>
+
+          <span
+            data-testid={`pizarra-browser-runtime-status-${shape.id}`}
+            style={{ flexShrink: 0, fontSize: 9, opacity: 0.8 }}
+          >
+            {statusCopy}
+          </span>
         </div>
 
         <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>

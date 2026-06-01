@@ -12,6 +12,7 @@ export default function PizarraLiveSurfaceLayer({
   onSelect,
   onMoveElement,
   onActivateTerminal,
+  onUpdateElement,
 }) {
   const { projectRect, zoom } = useCanvasViewport();
 
@@ -76,6 +77,7 @@ export default function PizarraLiveSurfaceLayer({
             selected={selected}
             onSelect={onSelect}
             onMove={handleMove}
+            onUpdateElement={onUpdateElement}
           />
         );
       })}
