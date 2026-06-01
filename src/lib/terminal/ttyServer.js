@@ -1615,3 +1615,42 @@ export function getActiveOpenCodeSessionIds() {
 
   return result;
 }
+
+/**
+ * getAllActiveSessions — list every live PTY session in the global map.
+ *
+ * Unlike `getActiveOpenCodeSessionIds`, this includes plain shell/pty
+ * sessions created by the open_terminal tool (which do not set
+ * opencodeSessionId). Without it, list_terminals returns `{processes:[]}`
+ * and the assistant loops on open_terminal.
+ *
+ * `type` is 'opencode' when opencodeSessionId is set, otherwise the
+ * session's mode (e.g. 'pty', 'shell', 'tui'). Sorted ascending by
+ * createdAt; sessions missing createdAt are pushed to the end.
+ */
+export function getAllActiveSessions() {
+  const sessions = globalThis[GLOBAL_TTY_SESSIONS_KEY];
+  if (!sessions || typeof sessions.values !== 'function') return [];
+
+  const result = [];
+  for (const [, session] of sessions.entries()) {
+    if (!session || !session.id) continue;
+    result.push({
+      id: session.id,
+      cwd: session.cwd || null,
+      shell: session.shell || null,
+      createdAt: session.createdAt || null,
+      type: session.opencodeSessionId ? 'opencode' : session.mode || 'pty',
+      opencodeSessionId: session.opencodeSessionId || null,
+    });
+  }
+
+  result.sort((a, b) => {
+    if (!a.createdAt && !b.createdAt) return 0;
+    if (!a.createdAt) return 1;
+    if (!b.createdAt) return -1;
+    return String(a.createdAt).localeCompare(String(b.createdAt));
+  });
+
+  return result;
+}

@@ -11,13 +11,16 @@ export async function GET() {
   }
 
   try {
-    const { getActiveOpenCodeSessionIds } = await import('@/lib/terminal/ttyServer');
-    const activeSessions = getActiveOpenCodeSessionIds();
+    const { getAllActiveSessions } = await import('@/lib/terminal/ttyServer');
+    const sessions = getAllActiveSessions();
     return NextResponse.json({
-      processes: Object.entries(activeSessions).map(([terminalId, sessionId]) => ({
-        terminalId,
-        sessionId,
-        type: 'opencode',
+      processes: sessions.map((s) => ({
+        terminalId: s.id,
+        sessionId: s.opencodeSessionId,
+        type: s.type,
+        cwd: s.cwd,
+        shell: s.shell,
+        createdAt: s.createdAt,
       })),
     });
   } catch (error) {
