@@ -125,6 +125,7 @@ export default function CanvasTerminal({
       >
         <div
           data-testid="canvas-terminal-header"
+          data-pizarra-surface-drag-handle="true"
           onMouseDown={handleHeaderMouseDown}
           style={{
             height: 28,

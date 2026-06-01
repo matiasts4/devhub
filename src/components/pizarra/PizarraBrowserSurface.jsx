@@ -75,7 +75,9 @@ export default function PizarraBrowserSurface({
 
   const handleDockStateChange = useCallback((nextStateOrUpdater) => {
     setDockState((currentState) =>
-      typeof nextStateOrUpdater === 'function' ? nextStateOrUpdater(currentState) : nextStateOrUpdater
+      typeof nextStateOrUpdater === 'function'
+        ? nextStateOrUpdater(currentState)
+        : nextStateOrUpdater
     );
   }, []);
 
@@ -129,7 +131,8 @@ export default function PizarraBrowserSurface({
       >
         <button
           type="button"
-          data-testid={`pizarra-browser-drag-handle-${shape.id}`}
+          data-testid="pizarra-drag-handle"
+          data-pizarra-specific-testid={`pizarra-browser-drag-handle-${shape.id}`}
           data-pizarra-surface-drag-handle="true"
           onMouseDown={handleDragStart}
           style={{
