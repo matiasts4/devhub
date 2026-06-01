@@ -121,19 +121,30 @@ export default function PizarraCanvas({
   }, [selectedElementIds, konva, elements]);
 
   // ── Gesture binding ─────────────────────────────────────────────────────
+  // pizarra-zoom-fix-2026-06-01: @use-gesture's onWheel binding was
+  // not firing reliably (probably because the wrapper's
+  // `transform: scale(zoom)` shifts the event coordinates that the
+  // gesture library relies on, OR because the inner Konva Stage
+  // consumed the wheel event before it bubbled to the wrapper).
+  // Wire a direct onWheel handler on the wrapper that does the same
+  // zoom math. We keep useGesture for drag (it works fine).
+  const handleWheel = useCallback(
+    (event) => {
+      event.preventDefault();
+      setZoom((currentZoom) => Math.min(Math.max(currentZoom - event.deltaY * 0.001, 0.1), 5));
+    },
+    [setZoom]
+  );
+
   const bind = useGesture(
     {
-      onWheel: ({ deltaY, event }) => {
-        event.preventDefault();
-        setZoom((currentZoom) => Math.min(Math.max(currentZoom - deltaY * 0.001, 0.1), 5));
-      },
       onDrag: ({ delta: [dx, dy], buttons }) => {
         if (buttons === 1) {
           setPan((currentPan) => ({ x: currentPan.x + dx, y: currentPan.y + dy }));
         }
       },
     },
-    { wheel: { eventOptions: { passive: false } } }
+    { drag: { eventOptions: { passive: false } } }
   );
 
   // ── Handlers (useCallback — declared before early return) ───────────────
@@ -359,6 +370,7 @@ export default function PizarraCanvas({
   return (
     <div
       {...bind()}
+      onWheel={handleWheel}
       data-testid="pizarra-canvas-wrapper"
       style={{
         width,

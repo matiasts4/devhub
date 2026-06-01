@@ -147,11 +147,13 @@ export default function PizarraPane() {
       };
 
       // pizarra-ux-overhaul: read the cascade counter from the reducer
-      // (the single source of truth) and apply the 24px step / modulo-8
-      // wrap. Both add calls in a single React batch go through the
-      // reducer sequentially so the second add reads the post-first
-      // cascadeIndex value.
-      const CASCADE_STEP = 24;
+      // (the single source of truth) and apply the 80px step /
+      // modulo-8 wrap. 80px is wider than the default 640x400
+      // terminal and 1024x700 browser half-widths, so consecutive
+      // add calls produce non-overlapping bounds (previously 24px
+      // which was smaller than the shape half-width and caused the
+      // terminal and browser to land on top of each other).
+      const CASCADE_STEP = 80;
       const CASCADE_MODULUS = 8;
       const previousIndex = state.cascadeIndex ?? 0;
       const offsetX = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
