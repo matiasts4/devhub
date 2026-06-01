@@ -274,4 +274,59 @@ describe('agentLaunchWrapper', () => {
       }
     });
   });
+
+  // =========================================================================
+  // T-016.4: Per-agent transcript capture via tmux pipe-pane.
+  //
+  // Capture the LLM's full terminal output to a transcript file so the
+  // user can review what each agent actually said/thought. This is the
+  // durable evidence trail for swarm launches — needed because the
+  // /tmp/devhub-swarm-<role>.log only captures wrapper diagnostics, not
+  // the LLM's own output.
+  //
+  // Requirements:
+  //   (a) Generated wrapper contains `tmux pipe-pane` and the transcript
+  //       file path.
+  //   (b) The exit trap removes the pipe-pane (or at least refers to it
+  //       so the session is cleaned up).
+  //   (c) Transcript file path matches /tmp/devhub-swarm-${role}.transcript
+  //
+  // The bootstrap prompt must also be written to the transcript before
+  // the agent starts, so the user can see WHAT the agent was given.
+  // =========================================================================
+  describe('T-016.4: per-agent transcript capture via tmux pipe-pane', () => {
+    const tmuxWrapperParams = {
+      ...baseParams,
+      tmuxSessionName: 'devhub-swarm-test-1-coder',
+      bootstrapPrompt: 'Implement feature X with tests',
+    };
+
+    test('generated wrapper contains tmux pipe-pane and the transcript file path', () => {
+      const result = buildAgentLaunchWrapper(tmuxWrapperParams);
+      // The pipe-pane command must be emitted
+      expect(result).toMatch(/tmux pipe-pane/);
+      // The transcript file path must match the canonical template
+      expect(result).toMatch(/\/tmp\/devhub-swarm-coder\.transcript/);
+      // The pipe-pane must point at the transcript (not the .log file)
+      expect(result).toMatch(/cat\s*>>\s*"?\$\{?DEVHUB_TRANSCRIPT[^"]*\}?\.transcript"?/);
+    });
+
+    test('exit trap removes the pipe-pane on agent exit (so the session is cleaned up)', () => {
+      const result = buildAgentLaunchWrapper(tmuxWrapperParams);
+      // The exit trap block (which already exists from T-014) must also
+      // contain a pipe-pane removal. We look for the canonical
+      // 'tmux pipe-pane -t <session> -o ""' or similar empty-target form.
+      expect(result).toMatch(/tmux pipe-pane -t\s+"?\$\{?DEVHUB_TMUX_SESSION/);
+      // Also: the wrapper does NOT use the old /tmp/devhub-swarm-<role>.log
+      // as the pipe-pane target (that would conflate the transcript with
+      // wrapper diagnostics).
+      expect(result).not.toMatch(/cat\s*>>\s*"?\$\{?DEVHUB_LOG_FILE[^"]*\}?\.log"?[^.]*$/m);
+    });
+
+    test('transcript file path matches the canonical /tmp/devhub-swarm-${role}.transcript template', () => {
+      const result = buildAgentLaunchWrapper(tmuxWrapperParams);
+      // Must define DEVHUB_TRANSCRIPT_FILE or similar env var
+      expect(result).toMatch(/DEVHUB_TRANSCRIPT[A-Z_]*=.*\.transcript/);
+    });
+  });
 });

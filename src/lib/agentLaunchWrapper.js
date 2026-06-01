@@ -413,6 +413,10 @@ function buildBootstrapPromptBlock(prompt = '') {
   return [
     '# Queue the bootstrap prompt into the panel tmux session after OpenCode starts.',
     'DEVHUB_LOG_FILE="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
+    // T-016.4 — also write the bootstrap prompt into the transcript file
+    // (set up earlier by buildTranscriptCaptureBlock) so the user can see
+    // what the agent was given, not just what it produced.
+    'DEVHUB_TRANSCRIPT_FILE="${DEVHUB_TRANSCRIPT_FILE:-/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.transcript}"',
     '# Prevent duplicate prompt injections using a lock file',
     'BOOTSTRAP_LOCK="/tmp/devhub-bootstrap-${DEVHUB_MISSION_ID:-unknown}-${DEVHUB_ROLE:-agent}.lock"',
     '',
@@ -448,6 +452,15 @@ function buildBootstrapPromptBlock(prompt = '') {
     "    tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'",
     prompt,
     'DEVHUB_BOOTSTRAP_PROMPT',
+    // T-016.4 — also write the bootstrap prompt into the transcript file
+    // (with a header marker) so the user can see what the agent was given.
+    `    {`,
+    `      echo "[bootstrap prompt at $(date '+%Y-%m-%d %H:%M:%S')]"`,
+    `      cat <<'DEVHUB_BOOTSTRAP_TRANSCRIPT'`,
+    prompt,
+    `DEVHUB_BOOTSTRAP_TRANSCRIPT`,
+    `      echo "----"`,
+    `    } >> "$DEVHUB_TRANSCRIPT_FILE" 2>/dev/null || true`,
     `    tmux paste-buffer -t "\${_tmux_session}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed"`,
     `    tmux send-keys -t "\${_tmux_session}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys failed"`,
     `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete."`,
@@ -567,6 +580,77 @@ export function buildPendingDeliveriesPollingCommand() {
   return '# pending_deliveries polling removed in T-006 (agent-comms-redesign) — use _devhub_inbox_check';
 }
 
+/**
+ * T-016.4 — Per-agent transcript capture via tmux pipe-pane.
+ *
+ * Captures the LLM's full terminal output to a transcript file so the
+ * user can review what each agent actually said/thought. The wrapper
+ * already writes identity + bootstrap + exit code to
+ * /tmp/devhub-swarm-<role>.log, but that file is wrapper diagnostics —
+ * it does NOT contain the LLM's own output. The transcript is the
+ * durable evidence trail.
+ *
+ * Pipeline:
+ *   1. The transcript file is created with a header (launch_id, role,
+ *      started_at, divider).
+ *   2. tmux pipe-pane is attached to the session, tee-ing every byte
+ *      the LLM prints into the transcript.
+ *   3. The bootstrap prompt is also written to the transcript BEFORE
+ *      the agent starts, so the user can see what the agent was given.
+ *   4. On agent exit, the pipe-pane is removed (empty target = stop).
+ *
+ * @param {object} params
+ * @param {string} params.role
+ * @returns {string} Shell block that creates the transcript header,
+ *                   writes the bootstrap prompt, attaches pipe-pane,
+ *                   and returns the pipe-pane removal line for the
+ *                   exit trap.
+ */
+export function buildTranscriptCaptureBlock({ role }) {
+  const transcriptPath = `/tmp/devhub-swarm-${role || 'agent'}.transcript`;
+  return [
+    '# T-016.4 — per-agent transcript capture via tmux pipe-pane.',
+    '# The transcript is the durable evidence trail of what the LLM',
+    '# actually said/thought. The /tmp/*.log is wrapper diagnostics only.',
+    `DEVHUB_TRANSCRIPT_FILE="${transcriptPath}"`,
+    '{',
+    `  echo "# DevHub agent transcript"`,
+    `  echo "# launch_id: \${DEVHUB_MISSION_ID:-unknown}"`,
+    `  echo "# role: \${DEVHUB_ROLE:-${role || 'agent'}}"`,
+    `  echo "# started: $(date -Iseconds)"`,
+    `  echo "# ----"`,
+    `} > "$DEVHUB_TRANSCRIPT_FILE" 2>/dev/null`,
+    '# Bootstrap prompt is also written to the transcript so the user',
+    '# can see what the agent was given, not just what it produced.',
+    `echo "[bootstrap prompt at $(date -Iseconds)]" >> "$DEVHUB_TRANSCRIPT_FILE"`,
+    `# The actual bootstrap prompt is written by buildBootstrapPromptBlock`,
+    '# (it concatenates after this header).',
+  ].join('\n');
+}
+
+/**
+ * T-016.4 — Returns the pipe-pane attach + removal commands for the
+ * launch + exit-trap. Kept separate from buildTranscriptCaptureBlock so
+ * the exit-trap site in buildAgentLaunchWrapper can call it cleanly.
+ *
+ * @param {object} params
+ * @param {string} params.role
+ * @returns {{ attach: string, detach: string }}
+ */
+export function buildPipePaneCommands({ role }) {
+  const transcriptPath = `/tmp/devhub-swarm-${role || 'agent'}.transcript`;
+  // Attach: tee every byte the LLM prints into the transcript.
+  //   -o means "stdout only" (do not capture pane stderr separately)
+  //   Use the literal transcript path (set by buildTranscriptCaptureBlock
+  //   in DEVHUB_TRANSCRIPT_FILE) so the test that asserts the path also
+  //   asserts the path appears in the pipe-pane target.
+  const attach = `tmux pipe-pane -t "\${DEVHUB_TMUX_SESSION}" -o "cat >> \${DEVHUB_TRANSCRIPT_FILE:-${transcriptPath}} 2>/dev/null"`;
+  // Detach: empty target command stops the pipe-pane cleanly.
+  // tmux pipe-pane -t <session> with no command prints/clears the pipe.
+  const detach = `tmux pipe-pane -t "\${DEVHUB_TMUX_SESSION}"`;
+  return { attach, detach };
+}
+
 export function buildDirectorTmuxInjection(directorTmuxSession) {
   if (!directorTmuxSession) {
     return '# _devhub_tell_director skipped (no director tmux session)';
@@ -638,15 +722,32 @@ done`;
  * `supervisorUrl` is kept in the signature for caller compatibility with
  * buildAgentLaunchWrapper — it is no longer used.
  *
+ * T-016.4: optionally accepts `transcriptDetach` — a tmux pipe-pane
+ * removal command that detaches the transcript capture on agent exit
+ * so the tmux session is cleaned up.
+ *
  * @param {object} params
  * @param {string} [params.supervisorUrl] - unused, kept for caller compat
  * @param {string} params.agentId
  * @param {string} params.missionId
+ * @param {string} [params.transcriptDetach] - T-016.4 pipe-pane removal command
  * @returns {string} Shell trap command
  */
-export function buildExitTrapCommand({ supervisorUrl: _supervisorUrl, agentId: _agentId, missionId: _missionId }) {
+export function buildExitTrapCommand({
+  supervisorUrl: _supervisorUrl,
+  agentId: _agentId,
+  missionId: _missionId,
+  transcriptDetach = null,
+}) {
+  const detachBlock = transcriptDetach
+    ? [
+        '  # T-016.4 — detach transcript pipe-pane so the session is cleaned up.',
+        `  ${transcriptDetach} 2>/dev/null || true`,
+      ].join('\n')
+    : '';
   return `_devhub_exit_handler() {
   local _devhub_AGENT_EXIT_CODE=$?
+${detachBlock}
   if [ -n "$DEVHUB_MISSION_ID" ] && [ -n "$DEVHUB_AGENT_ID" ]; then
     local _DEVHUB_EXIT_PAYLOAD
     _DEVHUB_EXIT_PAYLOAD=$(printf '{"agent_id":"%s","role":"%s","exit_code":%d,"ts":"%s"}' \\
@@ -711,6 +812,10 @@ export function buildAgentLaunchWrapper({
     `}`,
   ].join('\n');
 
+  // T-016.4 — transcript pipe-pane commands (attach at startup, detach
+  // on exit). The detach command is injected into the exit trap below.
+  const pipePane = tmuxSessionName ? buildPipePaneCommands({ role }) : null;
+
   const parts = [
     '#!/usr/bin/env bash',
     '# DevHub Agent Launch Wrapper',
@@ -737,6 +842,10 @@ export function buildAgentLaunchWrapper({
     // T-003 — bus helpers (only emitted if dbPath + busBinaryPath are provided)
     buildBusHelpersBlock({ busBinaryPath, dbPath }),
     '',
+    // T-016.4 — transcript header (created before identity so the file
+    // exists even if the wrapper aborts at the cwd check).
+    buildTranscriptCaptureBlock({ role }),
+    '',
     buildIdentityVerificationBlock({
       agentId,
       missionId,
@@ -745,6 +854,10 @@ export function buildAgentLaunchWrapper({
     }),
     '',
     buildBootstrapPromptBlock(bootstrapPrompt),
+    '',
+    // T-016.4 — attach the transcript pipe-pane after the bootstrap
+    // prompt is queued. Detach happens in the exit trap below.
+    ...(pipePane ? ['# T-016.4 — attach transcript capture', pipePane.attach] : []),
     '',
     buildInitialHeartbeatCommand({
       supervisorUrl,
@@ -772,6 +885,9 @@ export function buildAgentLaunchWrapper({
       supervisorUrl,
       agentId,
       missionId,
+      // T-016.4 — also detach the pipe-pane on exit so the session is
+      // cleaned up. The bus event-write is the primary exit signal.
+      transcriptDetach: pipePane ? pipePane.detach : null,
     }),
     '',
     buildDirectorTmuxInjection(directorTmuxSession),
