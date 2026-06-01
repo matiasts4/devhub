@@ -5,11 +5,14 @@
  *   1. render with data-testid="canvas-terminal-close",
  *   2. call onClose exactly once with the resolved shape id when clicked,
  *   3. NOT trigger the header's drag handler (mousedown stopPropagation
- *      keeps the underlying usePizarraSurfaceDrag mock idle).
+ *      keeps the underlying usePizarraSurfaceDrag idle).
  *
  * Mirrors the rendering pattern in CanvasTerminal.test.jsx (JSDOM +
  * react-dom/client + flushSync). The lucide-react and xterm stacks
- * are mocked the same way; TerminalTTY is replaced with a captor.
+ * are mocked the same way; TerminalTTY is replaced with a self-
+ * contained captor factory. The drag hook is NOT mocked — the close
+ * button's stopPropagation is verified by asserting onSelect (called
+ * by usePizarraSurfaceDrag) stays quiet.
  */
 
 const React = require('react');
@@ -79,28 +82,17 @@ jest.mock(
   { virtual: true }
 );
 
-const mockTerminalTTY = jest.fn(() =>
-  React.createElement('div', { 'data-testid': 'mock-terminal' }, null)
-);
+// Self-contained TerminalTTY mock: factory must not reference
+// out-of-scope variables, so the spy is built inside the factory.
 jest.mock('@/components/TerminalTTY', () => ({
   __esModule: true,
-  default: mockTerminalTTY,
+  default: function MockTerminalTTY() {
+    return require('react').createElement('div', { 'data-testid': 'mock-terminal' }, null);
+  },
 }));
 
-// Spy on the drag hook so the "no drag triggered" assertion is
-// grounded in real code, not in an inferred side effect.
-const dragHookSpy = jest.fn();
-jest.mock('../usePizarraSurfaceDrag', () => ({
-  __esModule: true,
-  default: (config) => {
-    dragHookSpy(config);
-    return (event) => {
-      // Simulate the real hook calling onSelect + scheduling a move
-      // so the test can confirm stopPropagation in the close button
-      // actually prevents this from firing.
-      config?.onSelect?.(config.surfaceId);
-    };
-  },
+jest.mock('@/lib/terminal/nativeVteBridge', () => ({
+  resizeNativeVtePanel: jest.fn(() => Promise.resolve()),
 }));
 
 describe('CanvasTerminal close button', () => {
@@ -109,8 +101,6 @@ describe('CanvasTerminal close button', () => {
   let dom;
 
   beforeEach(() => {
-    dragHookSpy.mockClear();
-    mockTerminalTTY.mockClear();
     jest.clearAllMocks();
 
     dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
@@ -195,10 +185,10 @@ describe('CanvasTerminal close button', () => {
       closeBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    // The drag handler mock is the spy passed to usePizarraSurfaceDrag.
-    // If the close button had failed to stopPropagation, the header
-    // would have routed the mousedown into the drag handler, which
-    // would have called onSelect via the spy. Assert it stayed idle.
+    // usePizarraSurfaceDrag calls onSelect synchronously when its
+    // mousedown handler fires. If the close button's stopPropagation
+    // failed, that handler would have run, calling onSelect. We assert
+    // it stayed idle.
     expect(onSelect).not.toHaveBeenCalled();
     expect(onMove).not.toHaveBeenCalled();
   });

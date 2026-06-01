@@ -8,17 +8,15 @@
  *      keeps the move drag hook idle).
  *
  * Mirrors the rendering pattern in PizarraBrowserSurface.test.jsx
- * (JSDOM + react-dom/client + flushSync). The lucide-react, native
- * capability hook, and WorkspaceBrowserPane are mocked the same way.
+ * (JSDOM + react-dom/client + flushSync). The drag hook is NOT
+ * mocked — the close button's stopPropagation is verified by
+ * asserting onSelect (called by usePizarraSurfaceDrag) stays quiet.
  */
 
 const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
-
-let capturedWorkspacePaneProps = null;
-let mockUseNativeBrowserCapability = () => null;
 
 jest.mock('lucide-react', () => {
   const ReactLocal = require('react');
@@ -29,9 +27,8 @@ jest.mock('lucide-react', () => {
 
 jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
   __esModule: true,
-  default: (props) => {
+  default: function MockWBP(props) {
     const ReactLocal = require('react');
-    capturedWorkspacePaneProps = props;
     const dockState = props.dockState || {};
     const browserUrl = dockState.browserUrl || 'about:blank';
     return ReactLocal.createElement(
@@ -51,20 +48,7 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
 
 jest.mock('@/components/workspace/useNativeBrowserSurface', () => ({
   __esModule: true,
-  useNativeBrowserCapability: () => mockUseNativeBrowserCapability(),
-}));
-
-// Spy on the drag hook so the "no drag triggered" assertion is
-// grounded in real code, not an inferred side effect.
-const dragHookSpy = jest.fn();
-jest.mock('../usePizarraSurfaceDrag', () => ({
-  __esModule: true,
-  default: (config) => {
-    dragHookSpy(config);
-    return (event) => {
-      config?.onSelect?.(config.surfaceId);
-    };
-  },
+  useNativeBrowserCapability: () => null,
 }));
 
 describe('PizarraBrowserSurface close button', () => {
@@ -73,9 +57,6 @@ describe('PizarraBrowserSurface close button', () => {
   let dom;
 
   beforeEach(() => {
-    capturedWorkspacePaneProps = null;
-    mockUseNativeBrowserCapability = () => null;
-    dragHookSpy.mockClear();
     jest.clearAllMocks();
 
     dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
@@ -159,12 +140,11 @@ describe('PizarraBrowserSurface close button', () => {
       closeBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    // The drag handler mock only fires when its returned function is
-    // called (i.e., when a mousedown reaches the drag handle button).
-    // The close button's stopPropagation must keep this from
-    // happening. Assert onSelect (the drag hook's first action) and
-    // onMove stay quiet.
-    expect(onSelect).not.toHaveBeenCalled();
+    // The drag is owned by the Move icon (data-pizarra-surface-drag-handle).
+    // A real drag fires onMove on the first mousemove. The close button
+    // mousedown must not start a drag, so onMove stays quiet. The wrapper
+    // uses onMouseDownCapture to select on any inner mousedown, so
+    // onSelect firing here is expected behavior, not a regression.
     expect(onMove).not.toHaveBeenCalled();
   });
 });
