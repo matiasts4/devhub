@@ -19,11 +19,28 @@
 
 'use strict';
 
+const crypto = require('crypto');
+
 const SHIM_WARNING_TEMPLATE =
   'shim: pending_deliveries fallback active for mission=<id> role=<role>; remove after release X';
 
 function isShimDisabled(env) {
   return env && env.DEVHUB_INBOX_SHIM_DISABLED === 'true';
+}
+
+function _tableExists(db, name) {
+  try {
+    const r = db
+      .prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name = ?")
+      .get(name);
+    return Boolean(r && r.n);
+  } catch (e) {
+    return false;
+  }
+}
+
+function _sha256Hex(s) {
+  return crypto.createHash('sha256').update(String(s), 'utf8').digest('hex');
 }
 
 /**
@@ -139,9 +156,108 @@ function getTeamTellContract() {
   };
 }
 
+/**
+ * T-013a — Mirror a chat-write to the legacy mission_messages +
+ * message_deliveries tables so consumers of `pending_deliveries`
+ * continue to work for one release window. This helper OWNS the
+ * mirror write; the devhub-bus binary delegates here instead of
+ * inlining the SQL.
+ *
+ * Behavior:
+ *   1. env.DEVHUB_INBOX_SHIM_DISABLED === 'true' → { skipped: 'shim_disabled' }
+ *      (the new bus team_inbox is the source of truth; the legacy projection is retired)
+ *   2. Legacy tables missing → { skipped: 'no_legacy_tables' } (graceful no-op)
+ *   3. swarm_missions exists AND does not contain missionId → { skipped: 'mission_not_registered' }
+ *      (avoids FOREIGN KEY constraint failed; mission row is not auto-created
+ *      because the spec is one-release compat, not a write-replicator)
+ *   4. Otherwise: INSERT OR IGNORE into mission_messages + message_deliveries
+ *      and return { message_id, delivery_id, recipient_agent_id }
+ *
+ * The helper NEVER throws. On unexpected SQL error it returns
+ * { skipped: '<reason>', error: '<message>' } so the caller can log
+ * a single WARN line instead of the prior FK error spam.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {NodeJS.ProcessEnv} env
+ * @param {{
+ *   missionId: string,
+ *   fromRole: string,
+ *   toRole: string,
+ *   body: string,
+ *   bodyHash: string,
+ *   kind?: string
+ * }} msg
+ * @returns {{ skipped?: string, error?: string, message_id?: string, delivery_id?: string, recipient_agent_id?: string }}
+ */
+function mirrorChatToLegacy(db, env, msg) {
+  if (!db || !msg) {
+    return { skipped: 'invalid_args' };
+  }
+  if (isShimDisabled(env)) {
+    return { skipped: 'shim_disabled' };
+  }
+  if (!_tableExists(db, 'mission_messages') || !_tableExists(db, 'message_deliveries')) {
+    return { skipped: 'no_legacy_tables' };
+  }
+  // Mission must be registered in swarm_missions to satisfy the FK
+  // (mission_messages.mission_id REFERENCES swarm_missions.mission_id).
+  if (!_tableExists(db, 'swarm_missions')) {
+    return { skipped: 'no_legacy_tables' };
+  }
+  try {
+    const exists = db
+      .prepare('SELECT 1 AS x FROM swarm_missions WHERE mission_id = ?')
+      .get(msg.missionId);
+    if (!exists) {
+      return { skipped: 'mission_not_registered' };
+    }
+  } catch (e) {
+    return { skipped: 'mission_lookup_failed', error: e.message };
+  }
+
+  const now = new Date().toISOString();
+  const messageId = `mm-${_sha256Hex(`${msg.missionId}|${msg.fromRole}|${msg.bodyHash}|${now}`).slice(0, 16)}`;
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO mission_messages
+        (message_id, mission_id, sender_agent_id, message_kind, body_summary, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      messageId,
+      msg.missionId,
+      msg.fromRole,
+      msg.kind || 'directive',
+      msg.body || '',
+      now,
+      now
+    );
+  } catch (e) {
+    return { skipped: 'mission_messages_insert_failed', error: e.message };
+  }
+
+  const recipientAgentId =
+    msg.toRole && msg.toRole !== 'all' ? msg.toRole : `${msg.missionId}-broadcast`;
+  const deliveryId = `del-${_sha256Hex(`${messageId}|${recipientAgentId}`).slice(0, 16)}`;
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO message_deliveries
+        (delivery_id, message_id, recipient_agent_id, channel, status, attempt_count, last_attempt_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(deliveryId, messageId, recipientAgentId, 'local_snapshot', 'pending', 1, now, now, now);
+  } catch (e) {
+    return { skipped: 'message_deliveries_insert_failed', error: e.message };
+  }
+  return {
+    message_id: messageId,
+    delivery_id: deliveryId,
+    recipient_agent_id: recipientAgentId,
+  };
+}
+
 module.exports = {
   isShimDisabled,
   resolveInboxForRole,
   getTeamTellContract,
+  mirrorChatToLegacy,
   SHIM_WARNING_TEMPLATE,
 };

@@ -71,6 +71,14 @@ function makeTempDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    -- T-013a: the mirror now requires the mission to be registered
+    -- in swarm_missions to satisfy the FK (production schema has it
+    -- with ON DELETE CASCADE). Seed it for tests that expect the
+    -- mirror write to succeed.
+    CREATE TABLE IF NOT EXISTS swarm_missions (
+      mission_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
   `);
   return { dir, dbPath, db };
 }
@@ -109,7 +117,15 @@ describe('T-012 — TCT-DELTA shim', () => {
         db.prepare(
           `INSERT INTO message_deliveries (delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run('d-1', 'msg-1', 'launch-x-worker', 'local_snapshot', 'pending', new Date().toISOString(), new Date().toISOString());
+        ).run(
+          'd-1',
+          'msg-1',
+          'launch-x-worker',
+          'local_snapshot',
+          'pending',
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
 
         const out = tct.resolveInboxForRole(db, 'm1', 'worker', {});
         expect(out.inbox_source).toBe('team_inbox');
@@ -143,11 +159,27 @@ describe('T-012 — TCT-DELTA shim', () => {
         db.prepare(
           `INSERT INTO message_deliveries (delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run('d-1', 'msg-1', 'worker-A', 'local_snapshot', 'pending', new Date().toISOString(), new Date().toISOString());
+        ).run(
+          'd-1',
+          'msg-1',
+          'worker-A',
+          'local_snapshot',
+          'pending',
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
         db.prepare(
           `INSERT INTO message_deliveries (delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run('d-2', 'msg-2', 'worker-A', 'local_snapshot', 'pending', new Date().toISOString(), new Date().toISOString());
+        ).run(
+          'd-2',
+          'msg-2',
+          'worker-A',
+          'local_snapshot',
+          'pending',
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
 
         const out = tct.resolveInboxForRole(db, 'm1', 'worker-A', {});
         expect(out.inbox_source).toBe('pending_deliveries_legacy');
@@ -179,7 +211,15 @@ describe('T-012 — TCT-DELTA shim', () => {
         db.prepare(
           `INSERT INTO message_deliveries (delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run('d-1', 'msg-1', 'worker', 'local_snapshot', 'pending', new Date().toISOString(), new Date().toISOString());
+        ).run(
+          'd-1',
+          'msg-1',
+          'worker',
+          'local_snapshot',
+          'pending',
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
         db.prepare(
           `INSERT INTO mission_messages (message_id, mission_id, sender_agent_id, message_kind, body_summary)
            VALUES (?, ?, ?, ?, ?)`
@@ -187,7 +227,15 @@ describe('T-012 — TCT-DELTA shim', () => {
         db.prepare(
           `INSERT INTO message_deliveries (delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run('d-2', 'msg-2', 'worker', 'local_snapshot', 'pending', new Date().toISOString(), new Date().toISOString());
+        ).run(
+          'd-2',
+          'msg-2',
+          'worker',
+          'local_snapshot',
+          'pending',
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
 
         const out = tct.resolveInboxForRole(db, 'm1', 'worker', {});
         expect(out.inbox_source).toBe('team_inbox');
@@ -205,10 +253,27 @@ describe('T-012 — TCT-DELTA shim', () => {
     test('devhub-bus chat-write writes to team_inbox AND message_deliveries (legacy mirror) when shim is active', () => {
       const { dir, db, dbPath } = makeTempDb();
       try {
+        // T-013a: register the mission in swarm_missions so the mirror
+        // helper can write to mission_messages (which has FK to swarm_missions).
+        db.prepare('INSERT INTO swarm_missions (mission_id, status) VALUES (?, ?)').run(
+          'm1',
+          'active'
+        );
         const r = runBus(
           dbPath,
           'chat-write',
-          ['--mission', 'm1', '--from', 'director', '--to', 'worker', '--kind', 'chat', '--body', 'mirror-1'],
+          [
+            '--mission',
+            'm1',
+            '--from',
+            'director',
+            '--to',
+            'worker',
+            '--kind',
+            'chat',
+            '--body',
+            'mirror-1',
+          ],
           {} // shim active
         );
         if (r.status !== 0) {
@@ -278,7 +343,15 @@ describe('T-012 — TCT-DELTA shim', () => {
         db.prepare(
           `INSERT INTO message_deliveries (delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run('d-1', 'msg-1', 'worker', 'local_snapshot', 'pending', new Date().toISOString(), new Date().toISOString());
+        ).run(
+          'd-1',
+          'msg-1',
+          'worker',
+          'local_snapshot',
+          'pending',
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
 
         const out = tct.resolveInboxForRole(db, 'm1', 'worker', {});
         expect(out.shim_warning).toMatch(/shim/);
@@ -299,11 +372,24 @@ describe('T-012 — TCT-DELTA shim', () => {
         const r = runBus(
           dbPath,
           'chat-write',
-          ['--mission', 'm1', '--from', 'director', '--to', 'worker', '--kind', 'chat', '--body', 'no-mirror'],
+          [
+            '--mission',
+            'm1',
+            '--from',
+            'director',
+            '--to',
+            'worker',
+            '--kind',
+            'chat',
+            '--body',
+            'no-mirror',
+          ],
           { DEVHUB_INBOX_SHIM_DISABLED: 'true' }
         );
         if (r.status !== 0) {
-          process.stderr.write(`chat-write (shim disabled) STDOUT=${r.stdout}\nSTDERR=${r.stderr}\n`);
+          process.stderr.write(
+            `chat-write (shim disabled) STDOUT=${r.stdout}\nSTDERR=${r.stderr}\n`
+          );
         }
         expect(r.status).toBe(0);
 
@@ -335,9 +421,19 @@ describe('T-012 — TCT-DELTA shim', () => {
         db.prepare(
           `INSERT INTO message_deliveries (delivery_id, message_id, recipient_agent_id, channel, status, last_attempt_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run('d-1', 'msg-1', 'worker', 'local_snapshot', 'pending', new Date().toISOString(), new Date().toISOString());
+        ).run(
+          'd-1',
+          'msg-1',
+          'worker',
+          'local_snapshot',
+          'pending',
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
 
-        const out = tct.resolveInboxForRole(db, 'm1', 'worker', { DEVHUB_INBOX_SHIM_DISABLED: 'true' });
+        const out = tct.resolveInboxForRole(db, 'm1', 'worker', {
+          DEVHUB_INBOX_SHIM_DISABLED: 'true',
+        });
         expect(out.inbox_source).toBe('team_inbox'); // even when empty, do not fall back
         expect(out.rows).toHaveLength(0);
         expect(out.shim_warning).toBeUndefined();
@@ -375,32 +471,28 @@ describe('T-012 — TCT-DELTA shim', () => {
   });
 
   describe('TCT-DELTA-S9: regression test for shim removal (grep guard)', () => {
-    test('the TCT shim module does not introduce stray pending_deliveries queries in unrelated files', () => {
-      // Per spec: pending_deliveries references are allowed only in:
-      //   - src/lib/bus/shim/  (the TCT shim itself)
-      //   - the new TCT shim test files
-      //   - data/migrations/002_* (legacy table definition)
-      // Outside these, no production reads/writes of pending_deliveries should exist.
-      //
-      // This test scans the new TCT shim production file to confirm
-      // pending_deliveries references are limited to the documented mirror
-      // path (read from message_deliveries when team_inbox is empty).
-      const shimSrc = fs.readFileSync(
-        path.join(__dirname, '../../bus/shim/tct.js'),
+    test('mirror logic is centralized in tct.js and not inlined in devhub-bus.js', () => {
+      // Per T-013a: the mirror write to mission_messages + message_deliveries
+      // is owned by src/lib/bus/shim/tct.js (function: mirrorChatToLegacy).
+      // The devhub-bus binary delegates to it; it MUST NOT inline the
+      // mirror SQL. This guards against future drift back to inline
+      // mirrors (which is what caused the smoke-test FK error spam).
+      const shimSrc = fs.readFileSync(path.join(__dirname, '../../bus/shim/tct.js'), 'utf8');
+      // The shim now owns the mirror write.
+      expect(shimSrc).toMatch(/function\s+mirrorChatToLegacy/);
+      expect(shimSrc).toMatch(/INSERT\s+(OR\s+IGNORE\s+)?INTO\s+message_deliveries/i);
+      expect(shimSrc).toMatch(/INSERT\s+(OR\s+IGNORE\s+)?INTO\s+mission_messages/i);
+
+      // And devhub-bus must delegate (no inline mirror SQL).
+      const busSrc = fs.readFileSync(
+        path.resolve(__dirname, '../../../../devhub-cli/bin/devhub-bus.js'),
         'utf8'
       );
-      // The shim file may reference the legacy table name for the SQL
-      // SELECT — that is the documented mirror read. Verify that the
-      // reference appears ONLY in the resolveInboxForRole function body.
-      // The cleanest test is: the shim file should NOT contain any INSERT
-      // statement that mirrors to message_deliveries (the mirror write is
-      // delegated to devhub-bus binary, not the JS shim).
-      expect(shimSrc).not.toMatch(/INSERT\s+INTO\s+message_deliveries/i);
-      // And the shim file's only "pending_deliveries" reference must be in
-      // the resolveInboxForRole fallback (we don't enforce "only" because
-      // the file may grow; we just assert at least one reference for the
-      // legacy path, confirming the fallback is wired).
-      expect(shimSrc).toMatch(/pending_deliveries_legacy|message_deliveries/);
+      expect(busSrc).toMatch(/require\(['"]\.\.\/\.\.\/src\/lib\/bus\/shim\/tct/);
+      // The inline mirror must be gone — no INSERT into message_deliveries
+      // in devhub-bus anymore.
+      expect(busSrc).not.toMatch(/INSERT\s+(OR\s+IGNORE\s+)?INTO\s+message_deliveries/i);
+      expect(busSrc).not.toMatch(/function\s+writePendingDeliveriesMirror/);
     });
   });
 });
