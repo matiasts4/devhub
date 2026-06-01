@@ -19,14 +19,12 @@ function statusCommand() {
     process.exit(0);
   }
 
-  const topProjects = db.prepare(
-    'SELECT name, progress FROM projects ORDER BY progress DESC LIMIT 5'
-  ).all();
+  const topProjects = db
+    .prepare('SELECT name, progress FROM projects ORDER BY progress DESC LIMIT 5')
+    .all();
 
   // Tasks
-  const taskCounts = db.prepare(
-    "SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status"
-  ).all();
+  const taskCounts = db.prepare('SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status').all();
 
   // Normalize to 4 buckets
   const bucketMap = {};
@@ -40,17 +38,19 @@ function statusCommand() {
   }
 
   // Milestones
-  const upcomingMilestones = db.prepare(
-    "SELECT title, due_date, status FROM milestones WHERE status != 'completed' ORDER BY due_date ASC LIMIT 5"
-  ).all();
+  const upcomingMilestones = db
+    .prepare(
+      "SELECT title, due_date, status FROM milestones WHERE status != 'completed' ORDER BY due_date ASC LIMIT 5"
+    )
+    .all();
 
   // Swarm
-  const activeAgents = db.prepare(
-    "SELECT COUNT(*) as cnt FROM agent_workspaces WHERE status IN ('active', 'running')"
-  ).get().cnt;
-  const claimedTasks = db.prepare(
-    'SELECT COUNT(*) as cnt FROM agent_workspaces WHERE current_task_id IS NOT NULL'
-  ).get().cnt;
+  const activeAgents = db
+    .prepare("SELECT COUNT(*) as cnt FROM agent_workspaces WHERE status IN ('active', 'running')")
+    .get().cnt;
+  const claimedTasks = db
+    .prepare('SELECT COUNT(*) as cnt FROM agent_workspaces WHERE current_task_id IS NOT NULL')
+    .get().cnt;
 
   // Assemble output
   const lines = [];
@@ -86,6 +86,38 @@ function statusCommand() {
   lines.push(section('Swarm'));
   lines.push(row('Active agents', activeAgents));
   lines.push(row('Claimed tasks', claimedTasks));
+
+  // T-005 — Bus section (uses getMissionBusSnapshot via devhub-bus binary)
+  const missionId = process.env.DEVHUB_MISSION_ID;
+  if (missionId) {
+    lines.push(divider());
+    lines.push(section('Bus'));
+    lines.push(row('Mission', missionId));
+    try {
+      const { spawnSync } = require('child_process');
+      const busBin = require('path').resolve(__dirname, '../bin/devhub-bus.js');
+      const r = spawnSync('node', [busBin, 'snapshot', '--mission', missionId], {
+        encoding: 'utf-8',
+        env: { ...process.env, DEVHUB_DB_PATH: process.env.DEVHUB_DB_PATH || '' },
+      });
+      if (r.status === 0) {
+        const snap = JSON.parse(r.stdout);
+        lines.push(row('Presence active', (snap.presence_active || []).length));
+        lines.push(row('Inbox pending', (snap.inbox_pending || []).length));
+        lines.push(row('Chat recent', (snap.chat_recent || []).length));
+        lines.push(row('Events recent', (snap.events_recent || []).length));
+        const recent = (snap.chat_recent || []).slice(0, 4);
+        for (const c of recent) {
+          const body = String(c.body || '').slice(0, 60);
+          lines.push(row('  ' + (c.from_role || '?') + ' → ' + (c.to_role || '?'), body));
+        }
+      } else {
+        lines.push(row('Snapshot', 'unavailable (' + (r.stderr || '').trim().slice(0, 40) + ')'));
+      }
+    } catch (e) {
+      lines.push(row('Snapshot', 'error: ' + e.message.slice(0, 40)));
+    }
+  }
 
   lines.push('');
 

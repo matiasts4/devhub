@@ -12,7 +12,17 @@ const program = new Command();
 program
   .name('devhub')
   .description('CLI for DevHub — agent swarm orchestration and operations')
-  .version(pkg.version);
+  .version(pkg.version)
+  .option(
+    '--db <path>',
+    'Override DEVHUB_DB_PATH (T-005: used by chat/events/status Bus commands)'
+  );
+
+// Apply --db to env before any subcommand runs.
+const _programOpts = program.opts();
+if (_programOpts && _programOpts.db) {
+  process.env.DEVHUB_DB_PATH = _programOpts.db;
+}
 
 // Implemented commands
 const statusCommand = require('./commands/status.js');
@@ -159,6 +169,41 @@ program
   .description('Agent presence listing')
   .allowUnknownOption(true)
   .action(presenceCommand);
+
+// T-005 — chat bus command (send, list, watch). Parses --db and other flags from
+// process.argv directly (the events/mission commands follow the same pattern).
+const chatCommand = require('./commands/chat.js');
+program
+  .command('chat')
+  .description('Agent chat bus (send, list, watch)')
+  .allowUnknownOption(true)
+  .action(() => {
+    // Resolve --db from commander options (T-005) — must run AFTER program.parse().
+    const programOpts = program.opts();
+    if (programOpts && programOpts.db) {
+      process.env.DEVHUB_DB_PATH = programOpts.db;
+    }
+    const argv = process.argv;
+    let chatIdx = -1;
+    for (let i = 0; i < argv.length; i++) {
+      if (argv[i] === 'chat') {
+        chatIdx = i;
+        break;
+      }
+    }
+    const sub = argv[chatIdx + 1] || 'list';
+    const opts = {};
+    for (let i = chatIdx + 2; i < argv.length; i++) {
+      const a = argv[i];
+      if (a && a.startsWith('--')) {
+        const k = a.slice(2);
+        const v = argv[i + 1];
+        opts[k] = v;
+        i++;
+      }
+    }
+    chatCommand(sub, opts);
+  });
 
 const missionCommand = require('./commands/mission.js');
 program

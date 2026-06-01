@@ -2,22 +2,34 @@
 
 /**
  * `devhub events` — agent events stream and query.
- * Subcommands: list, stream
+ * Subcommands: list, stream, tail
  */
 
 const { request } = require('../lib/httpClient');
 const { readAuthFile } = require('../lib/auth');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * Parse args for events subcommands.
  * @returns {object} { subcommand, options }
  */
 function parseEventsArgs() {
-  const args = process.argv.slice(3); // ['node', 'bin/devhub', 'events', ...]
-  const subcommand = args[0];
+  // T-005 — handle program-level --db option (commander consumes it). Find 'events' in argv.
+  const args = process.argv;
+  let eventsIdx = -1;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'events') {
+      eventsIdx = i;
+      break;
+    }
+  }
+  const subcommand = eventsIdx >= 0 ? args[eventsIdx + 1] : args[3];
+  const sliceFrom = eventsIdx >= 0 ? eventsIdx + 1 : 3;
   const options = {};
 
-  for (let i = 1; i < args.length; i++) {
+  for (let i = sliceFrom + 1; i < args.length; i++) {
     if (args[i] === '--agent' && args[i + 1]) {
       options.agentId = args[i + 1];
       i++;
@@ -33,12 +45,42 @@ function parseEventsArgs() {
     } else if (args[i] === '--interval' && args[i + 1]) {
       options.interval = parseInt(args[i + 1], 10);
       i++;
+    } else if (args[i] === '--mission' && args[i + 1]) {
+      options.mission = args[i + 1];
+      i++;
     } else if (args[i] === '--json') {
       options.json = true;
     }
   }
 
   return { subcommand, options };
+}
+
+/**
+ * T-005 — `devhub events tail` — tail the JSONL projection for a mission.
+ * @param {object} opts
+ */
+function eventsTail(opts = {}) {
+  if (!opts.mission) {
+    process.stderr.write('error: events tail requires --mission.\n');
+    process.exit(64);
+  }
+  const dir = `/tmp/devhub-mission-${opts.mission}`;
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'events.jsonl');
+  if (!fs.existsSync(file)) fs.writeFileSync(file, '');
+  const tail = spawn('tail', ['-F', '--retry', '-n', '+1', file], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  tail.stdout.on('data', (chunk) => process.stdout.write(chunk));
+  process.on('SIGINT', () => {
+    tail.kill('SIGTERM');
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    tail.kill('SIGTERM');
+    process.exit(0);
+  });
 }
 
 /**
@@ -152,16 +194,18 @@ async function eventsCommand(opts = {}) {
   const { subcommand, options } = parseEventsArgs();
 
   if (!subcommand || subcommand === 'help') {
-    process.stdout.write('Usage: devhub events <list|stream> [options]\n');
+    process.stdout.write('Usage: devhub events <list|stream|tail> [options]\n');
     process.stdout.write('\nSubcommands:\n');
     process.stdout.write('  list    Fetch events from API\n');
     process.stdout.write('  stream  Poll events continuously\n');
+    process.stdout.write('  tail    Tail JSONL projection for a mission (T-005)\n');
     process.stdout.write('\nOptions:\n');
     process.stdout.write('  --agent <id>      Filter by agent ID\n');
     process.stdout.write('  --type <type>     Filter by event type\n');
     process.stdout.write('  --since <iso>     Fetch events after timestamp\n');
     process.stdout.write('  --limit <n>       Max events to fetch (default: 50)\n');
     process.stdout.write('  --interval <ms>   Polling interval for stream (default: 1500)\n');
+    process.stdout.write('  --mission <id>    Mission id (required for tail)\n');
     process.stdout.write('  --json            Output JSON\n');
     process.exit(0);
   }
@@ -171,6 +215,8 @@ async function eventsCommand(opts = {}) {
       return eventsList({ ...opts, ...options });
     case 'stream':
       return eventsStream({ ...opts, ...options });
+    case 'tail':
+      return eventsTail({ ...opts, ...options });
     default:
       process.stderr.write(`Unknown subcommand: ${subcommand}\n`);
       process.stderr.write(`Run 'devhub events help' for usage.\n`);
