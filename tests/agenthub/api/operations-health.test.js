@@ -2180,4 +2180,50 @@ describe('GET /api/agenthub/operations/health', () => {
     db.close();
     jest.resetModules();
   });
+
+  // =========================================================================
+  // T-016.1: Director launch prompt must point at the DevHub comms bus,
+  // NOT a /tmp/devhub-swarm-*.log diagnostic file. The director launched
+  // with the OLD prompt hallucinated Plyrium, "warp 3", and "better-sqlite3
+  // v3 required" — pure LLM training-data leak. The fix: the prompt now
+  // names the durable bus (team_chat / _devhub_chat) and explicitly tells
+  // the director that /tmp logs are diagnostic-only.
+  // =========================================================================
+  describe('T-016.1: buildLaunchPrompt director bus-first contract', () => {
+    test('director prompt names the team_chat bus and is free of "log compartido" framing', () => {
+      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'director',
+        roleKey: 'director',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder', 'auditor'],
+        launchId: 'launch-test-1',
+      });
+
+      // Must mention the durable bus (team_chat) by name
+      expect(prompt).toContain('team_chat');
+      // Must NOT use the old "log compartido" framing that led to file-hallucination
+      expect(prompt).not.toContain('log compartido');
+    });
+
+    test('director prompt names the _devhub_inbox_check helper and the launchId in the chat command (triangulation)', () => {
+      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'director',
+        roleKey: 'director',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder'],
+        launchId: 'launch-abc-123',
+      });
+
+      // The bus helper for inbound mail must be referenced
+      expect(prompt).toContain('_devhub_inbox_check');
+      // The launchId must be embedded in the suggested chat-list command
+      expect(prompt).toContain('launch-abc-123');
+    });
+  });
 });

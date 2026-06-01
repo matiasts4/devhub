@@ -107,7 +107,7 @@ function describeLaunchRole(roleKey = '') {
   );
 }
 
-function buildLaunchPrompt({
+export function buildLaunchPrompt({
   role,
   roleKey,
   mission,
@@ -139,9 +139,13 @@ function buildLaunchPrompt({
         '',
         '=== Sistema de Status ===',
         `- El launchId esta embebido en el nombre de la sesion tmux: devhub-swarm-<launchId>-director`,
-        `- Los workers envian status updates via tmux y a un log compartido en /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log`,
-        `- Puedes ver los mensajes leyendo ese archivo (ej: cat /tmp/devhub-swarm-${launchId || 'launch-unknown'}.log o tail).`,
-        '- NO hagas polling a los workers — los updates llegan automaticamente.',
+        // T-016.1: bus-first framing — director reads team_chat / _devhub_inbox_check,
+        // NOT a /tmp/*.log file. The /tmp file is wrapper diagnostics, not source of truth.
+        '- Los workers envian status updates al bus de comunicacion de DevHub (team_chat table via `_devhub_chat`). Para leer mensajes del bus, usa `devhub chat list --mission ' +
+          (launchId || 'launch-unknown') +
+          '` o `_devhub_inbox_check` para mensajes dirigidos a vos.',
+        '- El archivo /tmp/devhub-swarm-*.log es solo diagnostico local del wrapper, NO es la fuente de verdad.',
+        '- NO hagas polling a los workers — los updates llegan automaticamente al bus.',
         '',
         '=== Comportamiento del Director ===',
         '1. Al iniciar, verifica el roster haciendo un heartbeat yourself.',
