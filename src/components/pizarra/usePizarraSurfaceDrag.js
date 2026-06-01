@@ -38,29 +38,20 @@ export default function usePizarraSurfaceDrag({
       pendingMoveRef.current = null;
       if (!pendingMove) return;
 
-      // pizarra-ux-overhaul: divide by the latest resolvedZoom so the
-      // downstream consumer receives logical-coord deltas. Defensive
-      // clamp to 1 to avoid Infinity/NaN if a caller passes 0.
+      // pizarra-drag-resize-polish: onMove is called IMMEDIATELY in
+      // handleMouseMove (so the React state lands in the same frame
+      // as the cursor). flushPendingMove now only carries the native
+      // VTE sync payload. The post-zoom deltas are recomputed here
+      // for the dedupe key only.
       const zoom = resolvedZoomRef.current || 1;
-      const deltaX = pendingMove.deltaX / zoom;
-      const deltaY = pendingMove.deltaY / zoom;
       const totalDeltaX = pendingMove.totalDeltaX / zoom;
       const totalDeltaY = pendingMove.totalDeltaY / zoom;
-
-      onMove?.({
-        id: surfaceId,
-        ...moveMeta,
-        deltaX,
-        deltaY,
-        totalDeltaX,
-        totalDeltaY,
-      });
 
       // pizarra-ux-overhaul: zero-delta short-circuit. The VTE bridge
       // does not need a re-sync when the resolved position has not
       // changed. (deltaX/deltaY are post-zoom; if the post-zoom deltas
       // are zero we skip the IPC round-trip.)
-      if (deltaX === 0 && deltaY === 0) return;
+      if (totalDeltaX === 0 && totalDeltaY === 0) return;
 
       // pizarra-ux-overhaul: dedupe onNativeSync by structural
       // equality of the resolved {x, y, width, height} payload.
@@ -142,21 +133,49 @@ export default function usePizarraSurfaceDrag({
           resolvedZoomRef.current = moveEvent.resolvedZoom;
         }
 
-        const deltaX = moveEvent.clientX - lastPointer.x;
-        const deltaY = moveEvent.clientY - lastPointer.y;
-        const totalDeltaX = moveEvent.clientX - startPointer.x;
-        const totalDeltaY = moveEvent.clientY - startPointer.y;
+        // pizarra-drag-resize-polish: divide per-tick deltas by the
+        // LATEST resolvedZoom so the downstream consumer (React state
+        // in CanvasTerminal/PizarraBrowserSurface) receives
+        // logical-coord deltas in the same frame as the cursor. The
+        // ref is read fresh on every mousemove so mid-drag zoom
+        // changes land on the next tick.
+        const zoom = resolvedZoomRef.current || 1;
+        const rawDeltaX = moveEvent.clientX - lastPointer.x;
+        const rawDeltaY = moveEvent.clientY - lastPointer.y;
+        const rawTotalDeltaX = moveEvent.clientX - startPointer.x;
+        const rawTotalDeltaY = moveEvent.clientY - startPointer.y;
+        const deltaX = rawDeltaX / zoom;
+        const deltaY = rawDeltaY / zoom;
+        const totalDeltaX = rawTotalDeltaX / zoom;
+        const totalDeltaY = rawTotalDeltaY / zoom;
 
-        if (deltaX === 0 && deltaY === 0) return;
+        if (rawDeltaX === 0 && rawDeltaY === 0) return;
 
         lastPointer.x = moveEvent.clientX;
         lastPointer.y = moveEvent.clientY;
         pendingMoveRef.current = {
+          deltaX: rawDeltaX,
+          deltaY: rawDeltaY,
+          totalDeltaX: rawTotalDeltaX,
+          totalDeltaY: rawTotalDeltaY,
+        };
+
+        // pizarra-drag-resize-polish: fire onMove SYNCHRONOUSLY inside
+        // the mousemove handler so the React state lands in the same
+        // frame as the cursor. The native VTE sync still goes through
+        // RAF via scheduleFlush() (see flushPendingMove). The onMove
+        // contract is unchanged: { id, ...moveMeta, deltaX, deltaY,
+        // totalDeltaX, totalDeltaY } with the per-tick delta and the
+        // cumulative totalDelta, both divided by zoom.
+        onMove?.({
+          id: surfaceId,
+          ...moveMeta,
           deltaX,
           deltaY,
           totalDeltaX,
           totalDeltaY,
-        };
+        });
+
         scheduleFlush();
       };
 

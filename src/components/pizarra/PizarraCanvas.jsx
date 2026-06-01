@@ -99,13 +99,26 @@ export default function PizarraCanvas({
   }, []);
 
   // Attach transformer to selected nodes
+  // pizarra-drag-resize-polish: composite elements (TERMINAL, BROWSER)
+  // render their content via React (PizarraLiveSurfaceLayer), not as
+  // Konva primitives. The Konva Transformer cannot draw its dashed
+  // border + anchor handles around a React subtree, so we exclude those
+  // types and let the composite element expose its own border-based
+  // resize handles (see CanvasTerminal.jsx + PizarraBrowserSurface.jsx).
   useEffect(() => {
     if (!konva || !transformerRef.current || !stageRef.current) return;
     const stage = stageRef.current;
-    const selectedNodes = selectedElementIds.map((id) => stage.findOne(`#${id}`)).filter(Boolean);
+    const COMPOSITE_TYPES = new Set([SHAPE_TYPES.TERMINAL, SHAPE_TYPES.BROWSER]);
+    const selectedNodes = selectedElementIds
+      .map((id) => {
+        const el = elements.find((e) => e.id === id);
+        if (el && COMPOSITE_TYPES.has(el.type)) return null;
+        return stage.findOne(`#${id}`);
+      })
+      .filter(Boolean);
     transformerRef.current.nodes(selectedNodes);
     transformerRef.current.getLayer()?.batchDraw();
-  }, [selectedElementIds, konva]);
+  }, [selectedElementIds, konva, elements]);
 
   // ── Gesture binding ─────────────────────────────────────────────────────
   const bind = useGesture(

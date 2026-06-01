@@ -69,6 +69,60 @@ export default function CanvasTerminal({
     [handleSurfaceSelect, resolvedShape.id]
   );
 
+  // pizarra-drag-resize-polish: border-based resize. The Konva
+  // Transformer is excluded for TERMINAL shapes (composite type), so
+  // the user grabs any of the 8 edge/corner handles and drags to
+  // resize. The resize is live (calls onResize every mousemove) so
+  // the visual feedback stays in sync with the cursor.
+  const handleResizeStart = useCallback(
+    (event, dir) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      event.preventDefault();
+      handleSurfaceSelect(resolvedShape.id);
+
+      const startBounds = { ...resolvedBounds };
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let lastBounds = startBounds;
+      const minW = 160;
+      const minH = 120;
+
+      const handleMouseMove = (moveEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        const next = { ...startBounds };
+        if (dir.includes('e')) {
+          next.width = Math.max(minW, startBounds.width + dx);
+        }
+        if (dir.includes('s')) {
+          next.height = Math.max(minH, startBounds.height + dy);
+        }
+        if (dir.includes('w')) {
+          const w = Math.max(minW, startBounds.width - dx);
+          next.width = w;
+          next.x = startBounds.x + (startBounds.width - w);
+        }
+        if (dir.includes('n')) {
+          const h = Math.max(minH, startBounds.height - dy);
+          next.height = h;
+          next.y = startBounds.y + (startBounds.height - h);
+        }
+        lastBounds = next;
+        onResize?.(next);
+      };
+
+      const handleMouseUp = () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    },
+    [handleSurfaceSelect, onResize, resolvedBounds, resolvedShape.id]
+  );
+
   const handleHeaderMouseDown = usePizarraSurfaceDrag({
     surfaceId: resolvedShape.id,
     bounds: resolvedBounds,
@@ -167,6 +221,128 @@ export default function CanvasTerminal({
           />
         </div>
       </div>
+
+      {/* pizarra-drag-resize-polish: 8 border resize handles.
+          Visible only when selected. Edge handles (n/s/e/w) are 8px
+          thick strips; corner handles (nw/ne/sw/se) are 14×14 squares.
+          All have pointer-events enabled and route the mousedown
+          through handleResizeStart. */}
+      {selected && (
+        <>
+          <div
+            data-testid="canvas-terminal-resize-n"
+            onMouseDown={(e) => handleResizeStart(e, 'n')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 14,
+              right: 14,
+              height: 8,
+              cursor: 'ns-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="canvas-terminal-resize-s"
+            onMouseDown={(e) => handleResizeStart(e, 's')}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 14,
+              right: 14,
+              height: 8,
+              cursor: 'ns-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="canvas-terminal-resize-w"
+            onMouseDown={(e) => handleResizeStart(e, 'w')}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 14,
+              bottom: 14,
+              width: 8,
+              cursor: 'ew-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="canvas-terminal-resize-e"
+            onMouseDown={(e) => handleResizeStart(e, 'e')}
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: 14,
+              bottom: 14,
+              width: 8,
+              cursor: 'ew-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="canvas-terminal-resize-nw"
+            onMouseDown={(e) => handleResizeStart(e, 'nw')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nwse-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+          <div
+            data-testid="canvas-terminal-resize-ne"
+            onMouseDown={(e) => handleResizeStart(e, 'ne')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nesw-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+          <div
+            data-testid="canvas-terminal-resize-sw"
+            onMouseDown={(e) => handleResizeStart(e, 'sw')}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nesw-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+          <div
+            data-testid="canvas-terminal-resize-se"
+            onMouseDown={(e) => handleResizeStart(e, 'se')}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              right: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nwse-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

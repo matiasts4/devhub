@@ -225,6 +225,61 @@ export default function PizarraBrowserSurface({
     [onSelect, shape.id]
   );
 
+  // pizarra-drag-resize-polish: border-based resize for the browser
+  // surface. Same contract as CanvasTerminal.handleResizeStart. The
+  // browser is a composite element so it does not go through the Konva
+  // Transformer — it exposes its own 8 edge/corner handles and the
+  // resize is committed via onUpdateElement({x,y,width,height}).
+  const handleResizeStart = useCallback(
+    (event, dir) => {
+      if (event.button !== 0) return;
+      if (event.target?.closest?.('[data-pizarra-surface-drag-handle="true"]')) {
+        return;
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      onSelect?.(shape.id);
+
+      const startBounds = { ...bounds };
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const minW = 220;
+      const minH = 160;
+
+      const handleMouseMove = (moveEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        const next = { ...startBounds };
+        if (dir.includes('e')) {
+          next.width = Math.max(minW, startBounds.width + dx);
+        }
+        if (dir.includes('s')) {
+          next.height = Math.max(minH, startBounds.height + dy);
+        }
+        if (dir.includes('w')) {
+          const w = Math.max(minW, startBounds.width - dx);
+          next.width = w;
+          next.x = startBounds.x + (startBounds.width - w);
+        }
+        if (dir.includes('n')) {
+          const h = Math.max(minH, startBounds.height - dy);
+          next.height = h;
+          next.y = startBounds.y + (startBounds.height - h);
+        }
+        onUpdateElement?.(shape.id, next);
+      };
+
+      const handleMouseUp = () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    },
+    [bounds, onSelect, onUpdateElement, shape.id]
+  );
+
   const handleDragStart = usePizarraSurfaceDrag({
     surfaceId: shape.id,
     bounds,
@@ -372,6 +427,128 @@ export default function PizarraBrowserSurface({
           </div>
         ) : null}
       </div>
+
+      {/* pizarra-drag-resize-polish: 8 border resize handles. Same
+          geometry as CanvasTerminal. The drag-handle button (top-left
+          Move icon) must be excluded from the resize hit-area, so
+          handleResizeStart bails when the mousedown originates from
+          the drag handle (see the closest() guard above). */}
+      {selected && (
+        <>
+          <div
+            data-testid="pizarra-browser-resize-n"
+            onMouseDown={(e) => handleResizeStart(e, 'n')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 14,
+              right: 14,
+              height: 8,
+              cursor: 'ns-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="pizarra-browser-resize-s"
+            onMouseDown={(e) => handleResizeStart(e, 's')}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 14,
+              right: 14,
+              height: 8,
+              cursor: 'ns-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="pizarra-browser-resize-w"
+            onMouseDown={(e) => handleResizeStart(e, 'w')}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 14,
+              bottom: 14,
+              width: 8,
+              cursor: 'ew-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="pizarra-browser-resize-e"
+            onMouseDown={(e) => handleResizeStart(e, 'e')}
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: 14,
+              bottom: 14,
+              width: 8,
+              cursor: 'ew-resize',
+              pointerEvents: 'auto',
+              zIndex: 5,
+            }}
+          />
+          <div
+            data-testid="pizarra-browser-resize-nw"
+            onMouseDown={(e) => handleResizeStart(e, 'nw')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nwse-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+          <div
+            data-testid="pizarra-browser-resize-ne"
+            onMouseDown={(e) => handleResizeStart(e, 'ne')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nesw-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+          <div
+            data-testid="pizarra-browser-resize-sw"
+            onMouseDown={(e) => handleResizeStart(e, 'sw')}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nesw-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+          <div
+            data-testid="pizarra-browser-resize-se"
+            onMouseDown={(e) => handleResizeStart(e, 'se')}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              right: 0,
+              width: 14,
+              height: 14,
+              cursor: 'nwse-resize',
+              pointerEvents: 'auto',
+              zIndex: 6,
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }
