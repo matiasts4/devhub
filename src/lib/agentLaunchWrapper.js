@@ -975,6 +975,12 @@ export function buildAgentLaunchWrapper({
   dbPath,
   busBinaryPath,
   disableMinimaxMcp,
+  // T-019.2: configurable TUI wait timings (milliseconds).
+  //   - tuiWaitTimeoutMs: max wait-for duration (default 10000)
+  //   - tuiReadyGraceMs:  grace period before sentinel (default 2000)
+  // Both are converted to seconds in the emitted bash (1s granularity).
+  tuiWaitTimeoutMs = 10000,
+  tuiReadyGraceMs = 2000,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',
@@ -1057,7 +1063,17 @@ export function buildAgentLaunchWrapper({
     // bare `sleep 10` inside the bootstrap block. Runs BEFORE the
     // bootstrap prompt is queued so the TUI is ready when the prompt
     // arrives. Only emitted when a tmux session is configured.
-    ...(tmuxSessionName ? [buildTuiWaitForBlock({ sessionName: tmuxSessionName })] : []),
+    // T-019.2: timeouts are configurable from buildAgentLaunchWrapper
+    // params (default 2s grace, 10s wait-for timeout).
+    ...(tmuxSessionName
+      ? [
+          buildTuiWaitForBlock({
+            sessionName: tmuxSessionName,
+            graceSeconds: Math.max(0, Math.floor(tuiReadyGraceMs / 1000)),
+            timeoutSeconds: Math.max(1, Math.floor(tuiWaitTimeoutMs / 1000)),
+          }),
+        ]
+      : []),
     '',
     buildBootstrapPromptBlock(bootstrapPrompt, { preSleepSeconds: preBootstrapSleepSeconds }),
     '',

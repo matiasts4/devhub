@@ -570,4 +570,66 @@ describe('agentLaunchWrapper', () => {
       expect(result).toMatch(/SENTINEL:DEVHUB_TUI_READY/);
     });
   });
+
+  // =========================================================================
+  // T-019.2: Configurable wait timeout.
+  //
+  // T-019.1 hardcoded graceSeconds=2 and timeoutSeconds=10. T-019.2 makes
+  // these configurable from buildAgentLaunchWrapper so the caller (e.g. the
+  // route.js launch path) can tune them per environment.
+  //
+  // Why configurable: in CI the TUI boots in <500ms (no need to wait 10s),
+  // and on a slow laptop with cold cache the TUI can take >8s (10s is too
+  // tight). Letting the caller pick the right value per environment means
+  // faster CI launches and fewer false-positive timeouts on slow hosts.
+  //
+  // Convention: the params on buildAgentLaunchWrapper are
+  //   - tuiWaitTimeoutMs:  max wait-for duration in milliseconds
+  //   - tuiReadyGraceMs:   grace period before sentinel injection
+  //
+  // Both default to the T-019.1 values (10000ms / 2000ms). The wrapper
+  // converts ms to seconds in the emitted bash (1s granularity is fine
+  // for both signals).
+  // =========================================================================
+  describe('T-019.2: configurable TUI wait timeout', () => {
+    const tmuxParams = {
+      ...baseParams,
+      role: 'coder',
+      tmuxSessionName: 'devhub-swarm-test-1-coder',
+      bootstrapPrompt: 'Implement feature X with tests',
+      busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+      dbPath: '/repo/devhub.db',
+    };
+
+    test('default timeout is 10s and default grace is 2s (backward compat)', () => {
+      const result = buildAgentLaunchWrapper(tmuxParams);
+      // Default timeout: 10 (seconds)
+      expect(result).toMatch(/timeout 10[\s\n]+tmux\s+wait-for/);
+      // Default grace: 2 (seconds) — there are two `sleep 2` calls
+      // now (T-017.1 pre-bootstrap + T-019.1 grace). Just assert at
+      // least one `sleep 2` exists.
+      expect(result).toMatch(/sleep 2/);
+    });
+
+    test('tuiWaitTimeoutMs=2000 produces `timeout 2` in the emitted bash', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        tuiWaitTimeoutMs: 2000,
+      });
+      // 2000ms = 2s
+      expect(result).toMatch(/timeout 2[\s\n]+tmux\s+wait-for/);
+    });
+
+    test('tuiReadyGraceMs=500 produces `sleep 0` (500ms rounds down to 0s in 1s granularity)', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        tuiReadyGraceMs: 500,
+      });
+      // 500ms < 1000ms = 0s when emitted in 1s granularity. The
+      // sentinel is then sent immediately (no grace). This is
+      // the documented behavior — sub-second grace is rare in
+      // practice and the LLM doesn't notice a 500ms difference.
+      expect(result).toMatch(/sleep 0\s*\n/);
+    });
+  });
 });
