@@ -5,6 +5,13 @@ import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
 import { resizeNativeVtePanel } from '@/lib/terminal/nativeVteBridge';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
+import {
+  ensureSurfaceMotionKeyframes,
+  resolveFrameVisual,
+  resolveHandleSizing,
+  FRAME_TRANSITION,
+  SURFACE_ENTER_ANIMATION,
+} from '@/lib/pizarra/surfaceMotion';
 
 export default function CanvasTerminal({
   terminalId,
@@ -13,6 +20,7 @@ export default function CanvasTerminal({
   position,
   size,
   selected = false,
+  zoom = 1,
   onSelect,
   onClose,
   onResize,
@@ -46,6 +54,16 @@ export default function CanvasTerminal({
     },
     [onActivatePanel, onSelect, terminalId]
   );
+
+  // pizarra-motion: inject shared enter keyframes once.
+  useEffect(() => {
+    ensureSurfaceMotionKeyframes();
+  }, []);
+
+  // pizarra-motion: hover state drives the idle border/shadow highlight.
+  const [isHovered, setIsHovered] = useState(false);
+  const handleFrameMouseEnter = useCallback(() => setIsHovered(true), []);
+  const handleFrameMouseLeave = useCallback(() => setIsHovered(false), []);
 
   useEffect(() => {
     if (requestedRendererMode === 'vte-experimental' && resolvedBounds) {
@@ -85,7 +103,19 @@ export default function CanvasTerminal({
       event.preventDefault();
       handleSurfaceSelect(resolvedShape.id);
 
-      const startBounds = { ...resolvedBounds };
+      // pizarra-resize-canvas-coords: resize in CANVAS space using the
+      // real shape geometry (shape.x/y/width/height), NOT the zeroed
+      // localBounds the parent passes for positioning. Screen deltas are
+      // divided by zoom so the surface tracks the cursor 1:1 and the
+      // OPPOSITE edge stays anchored — this fixes the teleport-to-origin
+      // bug where grabbing the n/w edge jumped the panel to canvas (0,0).
+      const z = zoom > 0 ? zoom : 1;
+      const startBounds = {
+        x: resolvedShape.x ?? resolvedBounds.x,
+        y: resolvedShape.y ?? resolvedBounds.y,
+        width: resolvedShape.width ?? resolvedBounds.width,
+        height: resolvedShape.height ?? resolvedBounds.height,
+      };
       const startX = event.clientX;
       const startY = event.clientY;
       let lastBounds = startBounds;
@@ -93,8 +123,8 @@ export default function CanvasTerminal({
       const minH = 120;
 
       const handleMouseMove = (moveEvent) => {
-        const dx = moveEvent.clientX - startX;
-        const dy = moveEvent.clientY - startY;
+        const dx = (moveEvent.clientX - startX) / z;
+        const dy = (moveEvent.clientY - startY) / z;
         const next = { ...startBounds };
         if (dir.includes('e')) {
           next.width = Math.max(minW, startBounds.width + dx);
@@ -126,7 +156,7 @@ export default function CanvasTerminal({
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
-    [handleSurfaceSelect, onResize, resolvedBounds, resolvedShape.id]
+    [handleSurfaceSelect, onResize, resolvedBounds, resolvedShape, zoom]
   );
 
   const handleHeaderMouseDown = usePizarraSurfaceDrag({
@@ -140,19 +170,12 @@ export default function CanvasTerminal({
     },
     onDragStart: () => setIsDragging(true),
     moveMeta: { terminalId },
-    onNativeSync: ({ startBounds, totalDeltaX, totalDeltaY }) => {
-      const inset = 10;
-      const headerH = 28;
-      resizeNativeVtePanel({
-        panelId: terminalId,
-        bounds: {
-          x: (startBounds.screenX ?? startBounds.x) + totalDeltaX + inset,
-          y: (startBounds.screenY ?? startBounds.y) + totalDeltaY + inset + headerH,
-          width: Math.max(startBounds.width - inset * 2, 1),
-          height: Math.max(startBounds.height - inset * 2 - headerH, 1),
-        },
-      }).catch(() => {});
-    },
+    // pizarra-motion: NO per-tick native IPC during drag. The native VTE
+    // surface is suspended while dragging (suspendNativeSurface={isDragging}),
+    // so repositioning it every RAF was wasted IPC that also caused the
+    // "native window follows at the wrong offset" flicker. The surface is
+    // repositioned exactly ONCE on drop, by the resolvedBounds effect above,
+    // after the new x/y are committed to the reducer.
   });
 
   // pizarra-fix-strictmode-unmount-2026-06-01: REMOVED the
@@ -174,6 +197,9 @@ export default function CanvasTerminal({
   // PizarraPane.jsx).
   void onClose; // keep the prop in the signature for the X button below
 
+  const frameVisual = resolveFrameVisual({ selected, hovered: isHovered, dragging: isDragging });
+  const handleSizing = resolveHandleSizing(zoom);
+
   return (
     <div
       data-testid="canvas-terminal-container"
@@ -184,19 +210,28 @@ export default function CanvasTerminal({
         width: resolvedBounds.width,
         height: resolvedBounds.height,
         pointerEvents: 'none',
+        animation: SURFACE_ENTER_ANIMATION,
+        transformOrigin: 'center center',
+        willChange: 'transform',
       }}
     >
       <div
         onMouseDown={handleFrameMouseDown}
+        onMouseEnter={handleFrameMouseEnter}
+        onMouseLeave={handleFrameMouseLeave}
+        data-pizarra-surface-dragging={isDragging ? 'true' : 'false'}
+        data-pizarra-surface-selected={selected ? 'true' : 'false'}
         style={{
           position: 'absolute',
           inset: 10,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          borderRadius: 20,
-          border: selected ? '2px solid rgba(88,166,255,0.72)' : '1px solid rgba(88,166,255,0.28)',
-          boxShadow: '0 18px 48px rgba(3, 7, 18, 0.3)',
+          borderRadius: 18,
+          border: frameVisual.border,
+          boxShadow: frameVisual.boxShadow,
+          transform: frameVisual.transform,
+          transition: FRAME_TRANSITION,
           pointerEvents: 'auto',
         }}
       >
@@ -275,127 +310,108 @@ export default function CanvasTerminal({
         </div>
       </div>
 
-      {/* pizarra-drag-resize-polish: 8 border resize handles.
-          Visible only when selected. Edge handles (n/s/e/w) are 8px
-          thick strips; corner handles (nw/ne/sw/se) are 14×14 squares.
-          All have pointer-events enabled and route the mousedown
-          through handleResizeStart. */}
-      {selected && (
-        <>
-          <div
-            data-testid="canvas-terminal-resize-n"
-            onMouseDown={(e) => handleResizeStart(e, 'n')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 14,
-              right: 14,
-              height: 8,
-              cursor: 'ns-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="canvas-terminal-resize-s"
-            onMouseDown={(e) => handleResizeStart(e, 's')}
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 14,
-              right: 14,
-              height: 8,
-              cursor: 'ns-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="canvas-terminal-resize-w"
-            onMouseDown={(e) => handleResizeStart(e, 'w')}
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 14,
-              bottom: 14,
-              width: 8,
-              cursor: 'ew-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="canvas-terminal-resize-e"
-            onMouseDown={(e) => handleResizeStart(e, 'e')}
-            style={{
-              position: 'absolute',
-              right: 0,
-              top: 14,
-              bottom: 14,
-              width: 8,
-              cursor: 'ew-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="canvas-terminal-resize-nw"
-            onMouseDown={(e) => handleResizeStart(e, 'nw')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nwse-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-          <div
-            data-testid="canvas-terminal-resize-ne"
-            onMouseDown={(e) => handleResizeStart(e, 'ne')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nesw-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-          <div
-            data-testid="canvas-terminal-resize-sw"
-            onMouseDown={(e) => handleResizeStart(e, 'sw')}
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nesw-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-          <div
-            data-testid="canvas-terminal-resize-se"
-            onMouseDown={(e) => handleResizeStart(e, 'se')}
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              right: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nwse-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-        </>
-      )}
+      {/* pizarra-motion: zoom-aware resize handles. Hit areas scale inversely
+          with zoom so they stay grabbable when zoomed out. They are fully
+          invisible — discoverability comes from the cursor change on hover and
+          the bright accent frame on selection. No corner squares/nubs (they
+          looked bad and cluttered the surface). data-testids preserved. */}
+      {selected &&
+        (() => {
+          const e = handleSizing.edge;
+          const c = handleSizing.corner;
+          const ins = handleSizing.inset;
+          // FI = visible frame inset (the inner chrome sits 10px inside the
+          // positioned container). Center the hit-areas ON the visible border
+          // instead of on the container edge, so the grab zone lands exactly
+          // where the user sees the frame — not in the empty gap above it.
+          const FI = 10;
+          const edgeStyle = (extra) => ({
+            position: 'absolute',
+            pointerEvents: 'auto',
+            zIndex: 5,
+            ...extra,
+          });
+          const cornerStyle = (extra) => ({
+            position: 'absolute',
+            width: c,
+            height: c,
+            pointerEvents: 'auto',
+            zIndex: 6,
+            ...extra,
+          });
+          return (
+            <>
+              <div
+                data-testid="canvas-terminal-resize-n"
+                onMouseDown={(ev) => handleResizeStart(ev, 'n')}
+                style={edgeStyle({
+                  top: FI - e / 2,
+                  left: ins,
+                  right: ins,
+                  height: e,
+                  cursor: 'ns-resize',
+                })}
+              />
+              <div
+                data-testid="canvas-terminal-resize-s"
+                onMouseDown={(ev) => handleResizeStart(ev, 's')}
+                style={edgeStyle({
+                  bottom: FI - e / 2,
+                  left: ins,
+                  right: ins,
+                  height: e,
+                  cursor: 'ns-resize',
+                })}
+              />
+              <div
+                data-testid="canvas-terminal-resize-w"
+                onMouseDown={(ev) => handleResizeStart(ev, 'w')}
+                style={edgeStyle({
+                  left: FI - e / 2,
+                  top: ins,
+                  bottom: ins,
+                  width: e,
+                  cursor: 'ew-resize',
+                })}
+              />
+              <div
+                data-testid="canvas-terminal-resize-e"
+                onMouseDown={(ev) => handleResizeStart(ev, 'e')}
+                style={edgeStyle({
+                  right: FI - e / 2,
+                  top: ins,
+                  bottom: ins,
+                  width: e,
+                  cursor: 'ew-resize',
+                })}
+              />
+              <div
+                data-testid="canvas-terminal-resize-nw"
+                onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
+                style={cornerStyle({ top: FI - c / 2, left: FI - c / 2, cursor: 'nwse-resize' })}
+              />
+              <div
+                data-testid="canvas-terminal-resize-ne"
+                onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
+                style={cornerStyle({ top: FI - c / 2, right: FI - c / 2, cursor: 'nesw-resize' })}
+              />
+              <div
+                data-testid="canvas-terminal-resize-sw"
+                onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
+                style={cornerStyle({ bottom: FI - c / 2, left: FI - c / 2, cursor: 'nesw-resize' })}
+              />
+              <div
+                data-testid="canvas-terminal-resize-se"
+                onMouseDown={(ev) => handleResizeStart(ev, 'se')}
+                style={cornerStyle({
+                  bottom: FI - c / 2,
+                  right: FI - c / 2,
+                  cursor: 'nwse-resize',
+                })}
+              />
+            </>
+          );
+        })()}
     </div>
   );
 }
