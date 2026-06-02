@@ -68,6 +68,7 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowRemove = null,
   layoutSyncKey = null,
   suspendNativeSurface = false,
+  isPizarraContext = false,
 }) {
   const viewportShellRef = useRef(null);
   const measureNativeBounds = useCallback(() => {
@@ -466,7 +467,7 @@ function WorkspaceBrowserPane({
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
-            {dockState.browserUrl ? (
+            {dockState.browserUrl && !isPizarraContext ? (
               <button
                 type="button"
                 data-testid="browser-toggle-workspace-maximize"
@@ -529,6 +530,7 @@ function WorkspaceBrowserPane({
                 native gtk
               </button>
             </div>
+            {!isPizarraContext && (
             <div
               className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
                 nativeRuntimeActive
@@ -557,6 +559,7 @@ function WorkspaceBrowserPane({
               />
               <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
             </div>
+            )}
 
             {dedicatedBrowserOpen ? (
               <button

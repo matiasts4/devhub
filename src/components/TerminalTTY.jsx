@@ -2349,7 +2349,10 @@ export default function TerminalTTY({
     <div
       ref={terminalRootRef}
       className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative"
-      style={getTerminalAppShellStyle()}
+      style={{
+        ...getTerminalAppShellStyle(),
+        pointerEvents: suspendNativeSurface ? 'none' : 'auto',
+      }}
     >
       {!hideTitleBar && (
         <div

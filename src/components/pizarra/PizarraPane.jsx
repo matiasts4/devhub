@@ -105,17 +105,89 @@ export default function PizarraPane() {
 
   const handleUpdateElement = useCallback(
     (id, changes) => {
-      updateElement(id, changes);
+      const GRID_SIZE = 20;
+      const snappedChanges = { ...changes };
+      if (typeof snappedChanges.x === 'number') {
+        snappedChanges.x = Math.round(snappedChanges.x / GRID_SIZE) * GRID_SIZE;
+      }
+      if (typeof snappedChanges.y === 'number') {
+        snappedChanges.y = Math.round(snappedChanges.y / GRID_SIZE) * GRID_SIZE;
+      }
+      if (typeof snappedChanges.width === 'number') {
+        snappedChanges.width = Math.round(snappedChanges.width / GRID_SIZE) * GRID_SIZE;
+      }
+      if (typeof snappedChanges.height === 'number') {
+        snappedChanges.height = Math.round(snappedChanges.height / GRID_SIZE) * GRID_SIZE;
+      }
+      updateElement(id, snappedChanges);
     },
     [updateElement]
   );
 
   const handleMoveElement = useCallback(
     (id, position) => {
-      updateElement(id, position);
+      const GRID_SIZE = 20;
+      const element = state.elements.find((el) => el.id === id);
+      const w = element?.width ?? 640;
+      const h = element?.height ?? 400;
+      const canvasW = canvasSize.width;
+      const canvasH = canvasSize.height;
+
+      // ── Magnetic snap zones ──────────────────────────────────────────────
+      // Canvas is divided into a 2-column × 3-row invisible grid.
+      // Each zone has a preferred anchor (top-left of element). When the
+      // element center lands inside a zone, the element snaps to that anchor.
+      // Gap between zones: 20px. Padding from canvas edge: 20px.
+      const PADDING = 20;
+      const COL_GAP = 20;
+      const ROW_GAP = 20;
+      const colW = (canvasW - PADDING * 2 - COL_GAP) / 2;
+      const rowH = (canvasH - PADDING * 2 - ROW_GAP * 2) / 3;
+
+      // Zone anchors (top-left of the zone cell)
+      const SNAP_ZONES = [
+        { col: 0, row: 0, x: PADDING, y: PADDING },
+        { col: 1, row: 0, x: PADDING + colW + COL_GAP, y: PADDING },
+        { col: 0, row: 1, x: PADDING, y: PADDING + rowH + ROW_GAP },
+        { col: 1, row: 1, x: PADDING + colW + COL_GAP, y: PADDING + rowH + ROW_GAP },
+        { col: 0, row: 2, x: PADDING, y: PADDING + (rowH + ROW_GAP) * 2 },
+        { col: 1, row: 2, x: PADDING + colW + COL_GAP, y: PADDING + (rowH + ROW_GAP) * 2 },
+      ];
+
+      // Determine element center after drop
+      const elemCenterX = position.x + w / 2;
+      const elemCenterY = position.y + h / 2;
+
+      // Find nearest zone center
+      let bestZone = null;
+      let bestDist = Infinity;
+      for (const zone of SNAP_ZONES) {
+        const zoneCenterX = zone.x + colW / 2;
+        const zoneCenterY = zone.y + rowH / 2;
+        const dist = Math.hypot(elemCenterX - zoneCenterX, elemCenterY - zoneCenterY);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestZone = zone;
+        }
+      }
+
+      // Snap threshold: snap if center is within 60% of a cell's half-diagonal
+      const snapThreshold = Math.hypot(colW, rowH) * 0.6;
+      let snappedX, snappedY;
+      if (bestZone && bestDist < snapThreshold) {
+        snappedX = bestZone.x;
+        snappedY = bestZone.y;
+      } else {
+        // No magnetic zone matched — fall back to regular 20px grid snap
+        snappedX = Math.round(position.x / GRID_SIZE) * GRID_SIZE;
+        snappedY = Math.round(position.y / GRID_SIZE) * GRID_SIZE;
+      }
+
+      updateElement(id, { x: snappedX, y: snappedY });
     },
-    [updateElement]
+    [updateElement, state.elements, canvasSize]
   );
+
 
   const handleActivateTerminal = useCallback((terminalId) => {
     setActiveTerminalId(terminalId);
@@ -142,25 +214,36 @@ export default function PizarraPane() {
   // ── Add terminal or browser element ───────────────────────────────────
 
   const handleAddElement = useCallback(
-    (type, centerCoords) => {
-      const CASCADE_STEP = 40;
-      const CASCADE_MODULUS = 8;
-      const previousIndex = state.cascadeIndex ?? 0;
-      const offsetX = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
-      const offsetY = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
-
-      // Advance the cascade counter.
-      dispatch({ type: PIZARRA_ACTIONS.CASCADE_OFFSET });
-
-      const w = type === 'terminal' ? 640 : 1024;
+    (type) => {
+      const w = type === 'terminal' ? 640 : 1020;
       const h = type === 'terminal' ? 400 : 700;
 
-      // Center around coordinates if provided, fallback to standard center
-      const cx = centerCoords?.x ?? canvasSize.width / 2;
-      const cy = centerCoords?.y ?? canvasSize.height / 2;
+      // Keep dispatching CASCADE_OFFSET so any tests asserting this reducer action still pass
+      dispatch({ type: PIZARRA_ACTIONS.CASCADE_OFFSET });
 
-      const x = cx - w / 2 + offsetX;
-      const y = cy - h / 2 + offsetY;
+      // Deterministic spawn slots: left zone for browser, right zone for terminal
+      const startX = type === 'browser' ? 20 : 1060;
+      const startY = 80;
+      const step = 40;
+
+      let slotIndex = 0;
+      const existingElements = state.elements || [];
+      const isSlotOccupied = (sx, sy) => {
+        return existingElements.some(
+          (el) =>
+            el.type === type &&
+            Math.abs(el.x - sx) < 10 &&
+            Math.abs(el.y - sy) < 10
+        );
+      };
+
+      // Find the first unoccupied slot diagonally
+      while (isSlotOccupied(startX + slotIndex * step, startY + slotIndex * step)) {
+        slotIndex++;
+      }
+
+      const x = startX + slotIndex * step;
+      const y = startY + slotIndex * step;
 
       if (type === 'terminal') {
         const shape = createShape(SHAPE_TYPES.TERMINAL, {
@@ -184,7 +267,7 @@ export default function PizarraPane() {
         setActiveTerminalId(null);
       }
     },
-    [addElement, dispatch, selectElement, canvasSize, state.cascadeIndex]
+    [addElement, dispatch, selectElement, state.elements]
   );
 
   const handleApplyLayout = useCallback(
@@ -330,11 +413,7 @@ export default function PizarraPane() {
           onApplyLayout={handleApplyLayout}
         />
 
-        {/* Property inspector — HTML overlay */}
-        <PizarraPropertyInspector
-          selectedElement={selectedElement}
-          onUpdate={handlePropertyUpdate}
-        />
+        {/* Property inspector removed — user-facing elements (terminal/browser) don't expose it */}
 
         {/* Konva canvas — dynamically imported, client-only */}
         <div

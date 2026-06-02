@@ -7,6 +7,8 @@ export default function usePizarraSurfaceDrag({
   bounds,
   onSelect,
   onMove,
+  onDragEnd,
+  onDragStart,
   moveMeta,
   onNativeSync,
 }) {
@@ -95,6 +97,7 @@ export default function usePizarraSurfaceDrag({
       event.stopPropagation();
       event.preventDefault();
       onSelect?.(surfaceId);
+      onDragStart?.();
 
       // pizarra-ux-overhaul: read the latest resolvedZoom at the start
       // of the drag. The ref is updated by external zoom changes
@@ -194,6 +197,13 @@ export default function usePizarraSurfaceDrag({
 
       const handleMouseUp = () => {
         flushPendingMove(startBounds);
+        // pizarra-drag-fluidity: fire onDragEnd with the final
+        // cumulative logical-coord delta so the consumer can commit
+        // the position to the reducer once (instead of per-tick).
+        const zoom = resolvedZoomRef.current || 1;
+        const finalTotalDeltaX = (lastPointer.x - startPointer.x) / zoom;
+        const finalTotalDeltaY = (lastPointer.y - startPointer.y) / zoom;
+        onDragEnd?.({ id: surfaceId, ...moveMeta, totalDeltaX: finalTotalDeltaX, totalDeltaY: finalTotalDeltaY });
         cleanupDrag();
       };
 
@@ -202,7 +212,7 @@ export default function usePizarraSurfaceDrag({
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
-    [flushPendingMove, onSelect, surfaceId]
+    [flushPendingMove, onDragEnd, onDragStart, onSelect, surfaceId]
   );
 
   // pizarra-ux-overhaul: tests and consumers can update the latest

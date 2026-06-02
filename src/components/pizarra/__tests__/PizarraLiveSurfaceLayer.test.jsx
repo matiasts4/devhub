@@ -111,8 +111,10 @@ describe('PizarraLiveSurfaceLayer', () => {
     expect(document.querySelector('[data-testid="pizarra-live-surface-layer"]')).not.toBeNull();
     expect(terminalCalls).toHaveLength(2);
     expect(terminalCalls[0].bounds).toEqual({
-      x: 50,
-      y: 80,
+      x: 0,
+      y: 0,
+      screenX: undefined,
+      screenY: undefined,
       width: 600,
       height: 400,
     });
@@ -123,8 +125,10 @@ describe('PizarraLiveSurfaceLayer', () => {
 
     expect(browserCalls).toHaveLength(1);
     expect(browserCalls[0].bounds).toEqual({
-      x: 110,
-      y: 140,
+      x: 0,
+      y: 0,
+      screenX: undefined,
+      screenY: undefined,
       width: 800,
       height: 560,
     });
@@ -140,8 +144,8 @@ describe('PizarraLiveSurfaceLayer', () => {
       // (shape at (20, 30) → (40, 40) with zoom=2) and (5, -5) on
       // the browser (shape at (50, 60) → (55, 55)), we pass those
       // post-zoom values directly.
-      terminalCalls[0].onMove({ deltaX: 20, deltaY: 10 });
-      browserCalls[0].onMove({ deltaX: 5, deltaY: -5 });
+      terminalCalls[0].onDragEnd({ totalDeltaX: 20, totalDeltaY: 10 });
+      browserCalls[0].onDragEnd({ totalDeltaX: 5, totalDeltaY: -5 });
     });
 
     expect(onActivateTerminal).toHaveBeenCalledWith('terminal-1');

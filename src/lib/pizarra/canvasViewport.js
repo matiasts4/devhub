@@ -138,6 +138,29 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
     };
   }, [canvasContainerRef, measureCanvasRect]);
 
+  // Intercept all wheel events at the canvasContainer boundary to handle custom zoom/pinch gestures
+  // while preventing default browser-wide native zoom and letting interactive panels scroll.
+  useEffect(() => {
+    const container = canvasContainerRef?.current;
+    if (!container) return;
+
+    const handleWheel = (event) => {
+      // Check if the wheel event occurred inside scrollable interactive widgets (e.g., TerminalTTY viewport or browser frame)
+      const isInsideInteractive = event.target.closest('[data-testid="pizarra-browser-surface"], [data-testid="canvas-terminal"]');
+
+      // Intercept and handle zoom if it is a trackpad pinch zoom (ctrlKey is true) OR if it is outside interactive cards.
+      if (event.ctrlKey || !isInsideInteractive) {
+        event.preventDefault();
+        setZoom((currentZoom) => Math.min(Math.max(currentZoom - event.deltaY * 0.001, 0.1), 5));
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [canvasContainerRef, setZoom]);
+
   const value = {
     zoom,
     setZoom,

@@ -46,16 +46,10 @@ function createDockState(url) {
     activeTab: 'browser',
     browserHistory: [resolvedUrl],
     browserHistoryIndex: 0,
-    // pizarra-ux-overhaul: iframe-first default. The pizarra does not
-    // need the native GTK runtime for the browser — the board's value
-    // is layout, not raw WebKit. The native-gtk path is opt-in via
-    // browserLoadFallback === false (which the right-dock path uses).
-    browserRuntime: 'iframe',
-    // pizarra-ux-overhaul: opt-in flag. The sanitizer whitelists this
-    // field (board-browser-load Req 5). Pizarra always sets it to true
-    // so the iframe path is preferred even when the native runtime
-    // reports ready.
-    browserLoadFallback: true,
+    // pizarra-ux-overhaul: native-gtk default as requested.
+    browserRuntime: 'native-gtk',
+    // Always use native GTK in pizarra, do not fall back to iframe.
+    browserLoadFallback: false,
     browserUrl: resolvedUrl,
     editMode: false,
     maximized: false,
@@ -77,6 +71,7 @@ export default function PizarraBrowserSurface({
   selected = false,
   onSelect,
   onMove,
+  onDragEnd,
   onUpdateElement,
   onClose,
 }) {
@@ -88,6 +83,7 @@ export default function PizarraBrowserSurface({
   // pizarra-ux-overhaul: reload key forces iframe re-mount when
   // incremented. Bump on Reload click.
   const [srcReloadKey, setSrcReloadKey] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const persistedUrlRef = useRef(resolveBrowserUrl(shape.url));
   const panelId = useMemo(() => `pizarra-browser-${shape.id}`, [shape.id]);
   // pizarra-ux-overhaul: subscribe to the native browser capability so
@@ -128,6 +124,7 @@ export default function PizarraBrowserSurface({
   // signal). On fire, sets loadFailed with the iframe-stuck category
   // unless the native runtime timed out (then native-timeout).
   useEffect(() => {
+    if (dockState.browserRuntime === 'native-gtk') return; // Enforce native-gtk: disable iframe timer
     if (loadFailed) return; // already failed; don't restart
     if (iframeLoaded) return; // iframe already loaded; success path
     const handle = setTimeout(() => {
@@ -148,6 +145,7 @@ export default function PizarraBrowserSurface({
     iframeLoaded,
     srcReloadKey,
     nativeCapability && nativeCapability.supported,
+    dockState.browserRuntime,
   ]);
 
   // Mirror loadFailed into a ref so the timer callback sees the
@@ -271,10 +269,12 @@ export default function PizarraBrowserSurface({
       };
 
       const handleMouseUp = () => {
+        setIsDragging(false);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
       };
 
+      setIsDragging(true);
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
@@ -286,6 +286,11 @@ export default function PizarraBrowserSurface({
     bounds,
     onSelect,
     onMove,
+    onDragEnd: (args) => {
+      setIsDragging(false);
+      onDragEnd?.(args);
+    },
+    onDragStart: () => setIsDragging(true),
     moveMeta: { panelId },
   });
   const layoutSyncKey = useMemo(
@@ -405,6 +410,8 @@ export default function PizarraBrowserSurface({
             projectId="pizarra"
             workspaceId={shape.id}
             layoutSyncKey={layoutSyncKey}
+            suspendNativeSurface={isDragging}
+            isPizarraContext={true}
           />
         </div>
 

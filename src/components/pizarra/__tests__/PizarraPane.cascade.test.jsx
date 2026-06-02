@@ -202,23 +202,14 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
     // coordinate), so the user sees two distinct elements rather
     // than one stacked on top of the other.
     //
-    // Verify the cascade contract instead: the two elements have
-    // DIFFERENT (x, y) positions. A 24px difference is enough for
-    // the user's visual stack-on-create symptom to disappear.
+    // Verify the cascade contract instead: the two elements have different positions.
     const [terminal, browser] = elements;
     expect(browser.x).not.toBe(terminal.x);
-    expect(browser.y).not.toBe(terminal.y);
-    // Since the browser's width is 1024 and terminal is 640,
-    // their x-difference is based on center alignment difference + cascade offset.
-    // terminal: center.x - 640/2 + 0 = center.x - 320
-    // browser: center.x - 1024/2 + 40 = center.x - 512 + 40 = center.x - 472
-    // So browser.x - terminal.x = (center.x - 472) - (center.x - 320) = -152.
-    // The relative cascade offset component is 40.
-    // Let's assert the raw coordinates are correct.
-    expect(terminal.x).toBe(400 - 320); // 80
-    expect(terminal.y).toBe(300 - 200); // 100
-    expect(browser.x).toBe(400 - 512 + 40); // -72
-    expect(browser.y).toBe(300 - 350 + 40); // -10
+    // Since we use deterministic left/right spawn zones, assert coordinates:
+    expect(terminal.x).toBe(1060);
+    expect(terminal.y).toBe(80);
+    expect(browser.x).toBe(20);
+    expect(browser.y).toBe(80);
   });
 
   test('add buttons dispatch CASCADE_OFFSET then ADD_ELEMENT', () => {
@@ -238,8 +229,8 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
 
     const elements = readElementsFromMock(container);
     expect(elements).toHaveLength(2);
-    expect(elements[0].x).toBe(400 - 320);
-    expect(elements[1].x).toBe(400 - 512 + 40);
+    expect(elements[0].x).toBe(1060);
+    expect(elements[1].x).toBe(20);
   });
 });
 

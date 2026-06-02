@@ -189,31 +189,37 @@ describe('PizarraLiveSurfaceLayer — drag stale closure (pizarra-drag-desync-v2
     });
 
     // 3. First mousemove at (50, 80). Per-tick delta from start:
-    //    (-50, -120). The drag hook's handleMouseMove calls onMove
-    //    synchronously with deltaX/Y. The current shape (x=100)
-    //    computes x=100+(-50)=50. Reducer-side, this would update
-    //    elements[0] to x=50, y=80.
+    //    (-50, -120). The drag hook's handleMouseMove calls handleMove
+    //    synchronously with deltaX/Y, which mutates the style.left/top
+    //    of the wrapper DOM element directly.
     flushSync(() => {
       fireMouseEvent(global.window, 'mousemove', { clientX: 50, clientY: 80 });
     });
-    expect(onMoveElement).toHaveBeenLastCalledWith('term-1', { x: 50, y: 80 });
+    const wrapper = container.querySelector('[data-testid="canvas-terminal-container"]').parentElement;
+    expect(wrapper.style.left).toBe('50px');
+    expect(wrapper.style.top).toBe('80px');
+    expect(onMoveElement).not.toHaveBeenCalled();
 
-    // 4. Simulate the parent re-render after the reducer applied the
-    //    first move: elements[0].x=50, elements[0].y=80. The
-    //    handleMove ref tracks the freshest shape.
+    // 4. Simulate parent re-render (e.g. selection or other updates).
     render({
-      elements: [{ ...initialShape, x: 50, y: 80 }],
+      elements: [initialShape],
       ...baseProps,
     });
 
-    // 5. Second mousemove at (70, 100). Per-tick delta from the LAST
-    //    mousemove (50, 80) is (20, 20). handleMove reads the
-    //    freshest shape via ref (x=50, y=80) and produces
-    //    {x: 70, y: 100}. The drag hook keeps calling the SAME
-    //    stable handleMove across the entire drag.
+    // 5. Second mousemove at (70, 100). Per-tick delta is (20, 20).
+    //    Total delta becomes (-30, -100).
+    //    The style left/top should update to 70px and 100px.
     flushSync(() => {
       fireMouseEvent(global.window, 'mousemove', { clientX: 70, clientY: 100 });
     });
-    expect(onMoveElement).toHaveBeenLastCalledWith('term-1', { x: 70, y: 100 });
+    expect(wrapper.style.left).toBe('70px');
+    expect(wrapper.style.top).toBe('100px');
+    expect(onMoveElement).not.toHaveBeenCalled();
+
+    // 6. Mouseup ends the drag. It triggers handleDragEnd which calls onMoveElement.
+    flushSync(() => {
+      fireMouseEvent(global.window, 'mouseup', { clientX: 70, clientY: 100 });
+    });
+    expect(onMoveElement).toHaveBeenCalledWith('term-1', { x: 70, y: 100 });
   });
 });

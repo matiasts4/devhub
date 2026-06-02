@@ -2,10 +2,37 @@
 
 **Change**: zed-hardening
 **Branch**: feature/session-workspace-restore
-**Head SHA**: cd7df083f39412a5bf9c8fd3fb37f5fb96299bf4
+**Head SHA**: 57d428a (Round 2)
 **Baseline SHA**: 53ffff7 (pre-zed-hardening)
 **Mode**: Strict TDD
-**Test result**: 76 pass, 0 fail across 12 zed suites (excluding 4 pre-existing unrelated failures in `tests/unit/*`)
+**Test result**: 79 pass, 0 fail across 13 zed suites
+
+---
+
+## Round 2 — T-010a/b/c fixes
+
+| Finding | Status | Evidence |
+|---------|--------|----------|
+| C1 no-params | RESOLVED | `route.js` line 210: `if (!input \|\| Object.keys(input).length === 0) { result = { error: 'missing required parameters' }; ...; continue; }`; test `no-params canonical error: TOOL with no PARAM lines returns missing required parameters` passes |
+| C2 hydration | RESOLVED | `ChatPanel.jsx` line 43: `timestamp: 'initial'`; lines 127-134: `useEffect` replaces sentinel with `new Date().toISOString()` post-mount; tests `before effects run: initial message timestamp is the literal "initial" sentinel` and `after effects run: timestamp becomes a real ISO string` pass |
+| C3 spec amend | RESOLVED | `spec.md` lines 15, 27: model identifier is `minimax-coding-plan/MiniMax-M3` (M2.7 → M3); `route.js` line 27: `MODEL = 'minimax-coding-plan/MiniMax-M3'` — spec and code aligned |
+| C4 UI tests | STILL DEFERRED (manual smoke test required) | n/a |
+| C5 registry | STILL DEFERRED (code-verified) | n/a |
+
+**Final verdict**: PASS (with 2 deferred scopes requiring manual smoke test)
+
+**Test count**: 79/79 passing (76 baseline + 1 from T-010a + 2 from T-010b)
+
+---
+
+## Round 1 (below) — original verification report
+
+**Change**: zed-hardening
+**Branch**: feature/session-workspace-restore
+**Head SHA (Round 1)**: cd7df083f39412a5bf9c8fd3fb37f5fb96299bf4
+**Baseline SHA**: 53ffff7 (pre-zed-hardening)
+**Mode**: Strict TDD
+**Test result (Round 1)**: 76 pass, 0 fail across 12 zed suites (excluding 4 pre-existing unrelated failures in `tests/unit/*`)
 
 ---
 

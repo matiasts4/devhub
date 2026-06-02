@@ -183,13 +183,12 @@ export function TerminalRenderer({ shape, konva, isSelected, onSelect, onTransfo
       y={shape.y}
       width={shape.width}
       height={shape.height}
-      fill="#0c1018"
-      stroke={isSelected ? 'rgba(88,166,255,0.7)' : 'rgba(88,166,255,0.3)'}
-      strokeWidth={isSelected ? 2 : 1}
-      cornerRadius={8}
-      opacity={shape.opacity}
+      fill="rgba(0,0,0,0)"
+      stroke="transparent"
+      strokeWidth={0}
+      opacity={1}
       rotation={shape.rotation || 0}
-      draggable
+      draggable={false}
       onClick={handleClick}
       onTap={handleClick}
       onTransformEnd={onTransformEnd}
@@ -213,13 +212,12 @@ export function BrowserRenderer({ shape, konva, isSelected, onSelect, onTransfor
       y={shape.y}
       width={shape.width}
       height={shape.height}
-      fill="#1e2535"
-      stroke={isSelected ? 'rgba(88,166,255,0.7)' : 'rgba(88,166,255,0.3)'}
-      strokeWidth={isSelected ? 2 : 1}
-      cornerRadius={8}
-      opacity={shape.opacity}
+      fill="rgba(0,0,0,0)"
+      stroke="transparent"
+      strokeWidth={0}
+      opacity={1}
       rotation={shape.rotation || 0}
-      draggable
+      draggable={false}
       onClick={handleClick}
       onTap={handleClick}
       onTransformEnd={onTransformEnd}

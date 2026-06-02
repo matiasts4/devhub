@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
 import { resizeNativeVtePanel } from '@/lib/terminal/nativeVteBridge';
@@ -18,6 +18,7 @@ export default function CanvasTerminal({
   onResize,
   onActivatePanel,
   onMove,
+  onDragEnd,
   cwd,
   initialCommand,
   autoFocus = false,
@@ -71,6 +72,8 @@ export default function CanvasTerminal({
   );
 
   // pizarra-drag-resize-polish: border-based resize. The Konva
+  const [isDragging, setIsDragging] = useState(false);
+
   // Transformer is excluded for TERMINAL shapes (composite type), so
   // the user grabs any of the 8 edge/corner handles and drags to
   // resize. The resize is live (calls onResize every mousemove) so
@@ -114,10 +117,12 @@ export default function CanvasTerminal({
       };
 
       const handleMouseUp = () => {
+        setIsDragging(false);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
       };
 
+      setIsDragging(true);
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
@@ -129,6 +134,11 @@ export default function CanvasTerminal({
     bounds: resolvedBounds,
     onSelect: handleSurfaceSelect,
     onMove,
+    onDragEnd: (args) => {
+      setIsDragging(false);
+      onDragEnd?.(args);
+    },
+    onDragStart: () => setIsDragging(true),
     moveMeta: { terminalId },
     onNativeSync: ({ startBounds, totalDeltaX, totalDeltaY }) => {
       const inset = 10;
@@ -184,9 +194,8 @@ export default function CanvasTerminal({
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          borderRadius: 14,
+          borderRadius: 20,
           border: selected ? '2px solid rgba(88,166,255,0.72)' : '1px solid rgba(88,166,255,0.28)',
-          background: '#0a1019',
           boxShadow: '0 18px 48px rgba(3, 7, 18, 0.3)',
           pointerEvents: 'auto',
         }}
@@ -261,6 +270,7 @@ export default function CanvasTerminal({
             isVisibleInLayout
             isActivePanel={isActivePanel}
             showQuickCopyButton={false}
+            suspendNativeSurface={isDragging}
           />
         </div>
       </div>

@@ -191,39 +191,30 @@ describe('PizarraLiveSurfaceLayer — double-count on second mousemove (pizarra-
 
     // 3. First mousemove at (250, 250). Cumulative delta from start
     //    is (50, 50). With zoom=1, both deltaX/Y and totalDeltaX/Y
-    //    are (50, 50). Either contract (per-tick or cumulative) gives
-    //    the same answer: shape.x = 100 + 50 = 150. The reducer
-    //    would then update elements[0] to (150, 150).
+    //    are (50, 50).
     flushSync(() => {
       fireMouseEvent(global.window, 'mousemove', { clientX: 250, clientY: 250 });
     });
-    expect(onMoveElement).toHaveBeenLastCalledWith('t1', { x: 150, y: 150 });
+    // With direct-DOM dragging, onMoveElement is NOT called on mousemove.
+    // Instead, the DOM style is modified. Let's assert the DOM position was updated.
+    const wrapper = container.querySelector('[data-testid="canvas-terminal-container"]').parentElement;
+    expect(wrapper.style.left).toBe('150px');
+    expect(wrapper.style.top).toBe('150px');
 
-    // 4. Simulate the parent re-render after the reducer applied the
-    //    first move: elements[0] is now at (150, 150). The v2 fix
-    //    reads the freshest shape via a ref.
-    render({
-      elements: [{ ...initialShape, x: 150, y: 150 }],
-      ...baseProps,
-    });
-
-    // 5. Second mousemove at (270, 270). The cursor is at start+70.
-    //    Per-tick delta from (250, 250) is (20, 20); cumulative delta
-    //    from (200, 200) is (70, 70). The CORRECT result is that
-    //    shape lands at start+70 = (170, 170) — i.e. handleMove must
-    //    use the per-tick (20, 20) on top of the freshest shape
-    //    (150, 150). The BUGGY code uses the cumulative (70, 70) on
-    //    top of the freshest shape (150, 150) and lands at (220,
-    //    220), desyncing the visible bbox from the cursor.
+    // 4. Second mousemove at (270, 270). The cursor is at start+70.
     flushSync(() => {
       fireMouseEvent(global.window, 'mousemove', { clientX: 270, clientY: 270 });
     });
-    expect(onMoveElement).toHaveBeenLastCalledWith('t1', { x: 170, y: 170 });
+    // DOM style should be updated to 170px.
+    expect(wrapper.style.left).toBe('170px');
+    expect(wrapper.style.top).toBe('170px');
 
-    // 6. Mouseup to clean up. The drag hook removes its window
-    //    listeners and clears the in-flight RAF.
+    // 5. Mouseup to commit.
     flushSync(() => {
       fireMouseEvent(global.window, 'mouseup', { clientX: 270, clientY: 270 });
     });
+    // Now onMoveElement should be called with final position.
+    expect(onMoveElement).toHaveBeenCalledTimes(1);
+    expect(onMoveElement).toHaveBeenLastCalledWith('t1', { x: 170, y: 170 });
   });
 });

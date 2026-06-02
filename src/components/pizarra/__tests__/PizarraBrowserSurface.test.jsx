@@ -145,31 +145,37 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     const iframe = container.querySelector('[data-testid="pizarra-mock-iframe"]');
     expect(iframe).toBeTruthy();
     expect(iframe.getAttribute('src')).toContain('localhost:3100');
-    // dockState.browserRuntime defaults to 'iframe'.
-    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('iframe');
+    // dockState.browserRuntime defaults to 'native-gtk'.
+    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('native-gtk');
   });
 
   test('browserRuntime flips to native-gtk only after readiness signal', () => {
     mockUseNativeBrowserCapability = () => ({ ready: true, supported: true });
     renderSurface();
-    // browserLoadFallback is true by default for the pizarra path,
-    // so the flip is suppressed.
-    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('iframe');
+    // browserLoadFallback is false by default for the pizarra path,
+    // so it is already 'native-gtk'.
+    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('native-gtk');
   });
 
-  test('browserLoadFallback=true prevents native-gtk opt-in', () => {
+  test('browserLoadFallback=false prevents native-gtk opt-out', () => {
     mockUseNativeBrowserCapability = () => ({ ready: true, supported: true });
     renderSurface();
-    // The default createDockState sets browserLoadFallback=true.
-    expect(capturedWorkspacePaneProps.dockState.browserLoadFallback).toBe(true);
-    // Even with native ready, the runtime stays on 'iframe'.
-    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('iframe');
+    // The default createDockState sets browserLoadFallback=false.
+    expect(capturedWorkspacePaneProps.dockState.browserLoadFallback).toBe(false);
+    // Even with native ready, the runtime stays on 'native-gtk'.
+    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('native-gtk');
   });
 
-  test('manual reload button appears after 5s if native never resolves', () => {
+  test('manual reload button appears after 5s if native never resolves and runtime is iframe', () => {
     jest.useFakeTimers();
     mockUseNativeBrowserCapability = () => null;
     renderSurface();
+    act(() => {
+      capturedWorkspacePaneProps.onDockStateChange((current) => ({
+        ...current,
+        browserRuntime: 'iframe',
+      }));
+    });
 
     // Fast-forward 5s.
     act(() => {
@@ -182,10 +188,16 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     expect(reloadButton).toBeTruthy();
   });
 
-  test('reload button re-arms the 5s timer and resets iframe src', () => {
+  test('reload button re-arms the 5s timer and resets iframe src when runtime is iframe', () => {
     jest.useFakeTimers();
     mockUseNativeBrowserCapability = () => null;
     renderSurface();
+    act(() => {
+      capturedWorkspacePaneProps.onDockStateChange((current) => ({
+        ...current,
+        browserRuntime: 'iframe',
+      }));
+    });
 
     // First failure cycle.
     act(() => {
@@ -209,10 +221,16 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     expect(container.querySelector('[data-testid="pizarra-browser-load-failed"]')).toBeTruthy();
   });
 
-  test('successful iframe load cancels the 5s failure timer', () => {
+  test('successful iframe load cancels the 5s failure timer when runtime is iframe', () => {
     jest.useFakeTimers();
     mockUseNativeBrowserCapability = () => null;
     renderSurface();
+    act(() => {
+      capturedWorkspacePaneProps.onDockStateChange((current) => ({
+        ...current,
+        browserRuntime: 'iframe',
+      }));
+    });
 
     // Simulate the iframe loading before the timer fires. The hook
     // uses a RAF-based optimistic check; advance by one RAF tick
@@ -231,10 +249,16 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     expect(container.querySelector('[data-testid="pizarra-browser-load-failed"]')).toBeNull();
   });
 
-  test('native-supported but never-ready triggers native-timeout failure', () => {
+  test('native-supported but never-ready triggers native-timeout failure when runtime is iframe', () => {
     jest.useFakeTimers();
     mockUseNativeBrowserCapability = () => ({ ready: false, supported: true });
     renderSurface();
+    act(() => {
+      capturedWorkspacePaneProps.onDockStateChange((current) => ({
+        ...current,
+        browserRuntime: 'iframe',
+      }));
+    });
 
     act(() => {
       jest.advanceTimersByTime(5100);
@@ -257,16 +281,16 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
   test('dockState.browserLoadFallback persists through createDockState', () => {
     mockUseNativeBrowserCapability = () => null;
     renderSurface();
-    expect(capturedWorkspacePaneProps.dockState.browserLoadFallback).toBe(true);
+    expect(capturedWorkspacePaneProps.dockState.browserLoadFallback).toBe(false);
   });
 
   test('browserLoadFallback round-trips through the sanitizer (Req 5)', () => {
     // The sanitizer is exercised by rightDockState.test.js. Here we
     // just assert the PizarraBrowserSurface hands off a dockState
-    // with browserLoadFallback=true to the workspace pane.
+    // with browserLoadFallback=false to the workspace pane.
     mockUseNativeBrowserCapability = () => null;
     renderSurface();
-    expect(capturedWorkspacePaneProps.dockState.browserLoadFallback).toBe(true);
+    expect(capturedWorkspacePaneProps.dockState.browserLoadFallback).toBe(false);
   });
 
   // ─── board-browser-pane Req 1-4 (pizarra-ux-overhaul 3.6) ───────
@@ -353,6 +377,12 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     jest.useFakeTimers();
     mockUseNativeBrowserCapability = () => null;
     renderSurface();
+    act(() => {
+      capturedWorkspacePaneProps.onDockStateChange((current) => ({
+        ...current,
+        browserRuntime: 'iframe',
+      }));
+    });
     act(() => {
       jest.advanceTimersByTime(5100);
     });

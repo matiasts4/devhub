@@ -420,3 +420,8 @@ code {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ─── Pizarra Autohide Sidebar ─── */
+.pizarra-autohide {
+  display: none !important;
+}

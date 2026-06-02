@@ -106,7 +106,7 @@ function ProgressRing({ value, color = 'oklch(0.74 0.16 57)' }) {
   );
 }
 
-export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, onToggleCollapse }) {
+export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, onToggleCollapse, className }) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -264,7 +264,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
       initial={false}
       animate={{ width: collapsed ? 48 : 256 }}
       transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-      className="relative flex-shrink-0 border-r h-full"
+      className={`relative flex-shrink-0 border-r h-full ${className || ''}`}
       style={{
         ...getSidebarChromeStyle(),
         minWidth: collapsed ? 48 : 256,

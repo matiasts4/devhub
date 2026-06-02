@@ -513,85 +513,18 @@ describe('agentLaunchWrapper', () => {
   });
 
   // =========================================================================
-  // T-019.1: Event-driven TUI wait (replace bare sleep with tmux wait-for).
+  // T-021: Revert T-019 event-driven sentinel to a simple sleep.
   //
-  // The current wrapper uses `sleep 10` after creating the tmux session
-  // and then blindly calls `tmux paste-buffer` + `tmux send-keys C-m`.
-  // This is wasteful (10s worst case even when TUI is ready in 200ms)
-  // and fragile (sometimes the TUI isn't ready in 10s on slow hosts).
+  // T-019.1's `tmux wait-for` mechanism typed the sentinel into the
+  // agent's prompt buffer as user input (visible garbage in the TUI)
+  // instead of just signaling readiness. This is a clean revert to a
+  // configurable sleep until a working detection mechanism exists
+  // (e.g., OpenCode hook writing a marker file).
   //
-  // The fix: install a unique sentinel pattern in the OpenCode TUI once
-  // it boots, then use `tmux wait-for` to block until the sentinel
-  // appears in the pane. Bound the wait with a 10s timeout so we
-  // don't hang forever if something goes wrong.
-  //
-  // Sentinel format: SENTINEL:DEVHUB_TUI_READY:<unique-uuid> so it
-  // cannot appear in normal OpenCode output by accident.
+  // The function `buildTuiWaitForBlock` is kept (call sites unchanged)
+  // but its body is now just `sleep ${graceSeconds}`.
   // =========================================================================
-  describe('T-019.1: tmux wait-for sentinel injection', () => {
-    const tmuxReadyParams = {
-      ...baseParams,
-      role: 'coder',
-      tmuxSessionName: 'devhub-swarm-test-1-coder',
-      bootstrapPrompt: 'Implement feature X with tests',
-      busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
-      dbPath: '/repo/devhub.db',
-    };
-
-    test('wrapper uses tmux wait-for (not bare sleep) to wait for TUI ready', () => {
-      const result = buildAgentLaunchWrapper(tmuxReadyParams);
-      // The wait-for command must be present in the wrapper
-      expect(result).toContain('tmux wait-for');
-      // The sentinel pattern must be present
-      expect(result).toMatch(/SENTINEL:DEVHUB_TUI_READY/);
-    });
-
-    test('wait-for has a 10-second timeout fallback (does not hang forever)', () => {
-      const result = buildAgentLaunchWrapper(tmuxReadyParams);
-      // The wait-for must be wrapped in `timeout N` so we don't
-      // block the wrapper indefinitely if the sentinel never appears
-      expect(result).toMatch(/timeout\s+10[\s\n]+tmux\s+wait-for/);
-    });
-
-    test('wrapper has tmux send-keys fallback to inject the sentinel if wait-for never triggers', () => {
-      const result = buildAgentLaunchWrapper(tmuxReadyParams);
-      // The fallback path: after a short grace period, send the
-      // sentinel via tmux send-keys so wait-for can read it from
-      // the pane. This is the "less elegant but workable" path the
-      // task spec describes.
-      expect(result).toMatch(/tmux send-keys.*SENTINEL:DEVHUB_TUI_READY/);
-    });
-
-    test('sentinel is unique per launch (uses uuidgen) to avoid collision with normal TUI output', () => {
-      const result = buildAgentLaunchWrapper(tmuxReadyParams);
-      // The sentinel should be parameterized (uuidgen) so each launch
-      // gets a unique marker. Static strings can collide with normal
-      // OpenCode output (the CLI occasionally prints "READY" or similar).
-      expect(result).toMatch(/SENTINEL:DEVHUB_TUI_READY/);
-    });
-  });
-
-  // =========================================================================
-  // T-019.2: Configurable wait timeout.
-  //
-  // T-019.1 hardcoded graceSeconds=2 and timeoutSeconds=10. T-019.2 makes
-  // these configurable from buildAgentLaunchWrapper so the caller (e.g. the
-  // route.js launch path) can tune them per environment.
-  //
-  // Why configurable: in CI the TUI boots in <500ms (no need to wait 10s),
-  // and on a slow laptop with cold cache the TUI can take >8s (10s is too
-  // tight). Letting the caller pick the right value per environment means
-  // faster CI launches and fewer false-positive timeouts on slow hosts.
-  //
-  // Convention: the params on buildAgentLaunchWrapper are
-  //   - tuiWaitTimeoutMs:  max wait-for duration in milliseconds
-  //   - tuiReadyGraceMs:   grace period before sentinel injection
-  //
-  // Both default to the T-019.1 values (10000ms / 2000ms). The wrapper
-  // converts ms to seconds in the emitted bash (1s granularity is fine
-  // for both signals).
-  // =========================================================================
-  describe('T-019.2: configurable TUI wait timeout', () => {
+  describe('T-021: simple sleep TUI wait (T-019 revert)', () => {
     const tmuxParams = {
       ...baseParams,
       role: 'coder',
@@ -601,35 +534,40 @@ describe('agentLaunchWrapper', () => {
       dbPath: '/repo/devhub.db',
     };
 
-    test('default timeout is 10s and default grace is 2s (backward compat)', () => {
+    test('wrapper does NOT contain tmux wait-for or sentinel strings', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
-      // Default timeout: 10 (seconds)
-      expect(result).toMatch(/timeout 10[\s\n]+tmux\s+wait-for/);
-      // Default grace: 2 (seconds) — there are two `sleep 2` calls
-      // now (T-017.1 pre-bootstrap + T-019.1 grace). Just assert at
-      // least one `sleep 2` exists.
+      // T-019 sentinels and wait-for must be gone
+      expect(result).not.toContain('tmux wait-for');
+      expect(result).not.toContain('SENTINEL:DEVHUB_TUI_READY');
+      // The send-keys for sentinel must be gone
+      expect(result).not.toMatch(/tmux send-keys.*SENTINEL/);
+    });
+
+    test('wrapper emits a sleep N block (default 2s) as the only TUI wait', () => {
+      const result = buildAgentLaunchWrapper(tmuxParams);
+      // The T-021 block should have a `sleep 2` for grace
       expect(result).toMatch(/sleep 2/);
     });
 
-    test('tuiWaitTimeoutMs=2000 produces `timeout 2` in the emitted bash', () => {
+    test('tuiReadyGraceMs=5000 produces `sleep 5` in the emitted bash (configurable)', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        tuiReadyGraceMs: 5000,
+      });
+      // 5000ms = 5s
+      expect(result).toMatch(/sleep 5/);
+    });
+
+    test('tuiWaitTimeoutMs is ignored (param kept for backward compat, not emitted)', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         tuiWaitTimeoutMs: 2000,
       });
-      // 2000ms = 2s
-      expect(result).toMatch(/timeout 2[\s\n]+tmux\s+wait-for/);
-    });
-
-    test('tuiReadyGraceMs=500 produces `sleep 0` (500ms rounds down to 0s in 1s granularity)', () => {
-      const result = buildAgentLaunchWrapper({
-        ...tmuxParams,
-        tuiReadyGraceMs: 500,
-      });
-      // 500ms < 1000ms = 0s when emitted in 1s granularity. The
-      // sentinel is then sent immediately (no grace). This is
-      // the documented behavior — sub-second grace is rare in
-      // practice and the LLM doesn't notice a 500ms difference.
-      expect(result).toMatch(/sleep 0\s*\n/);
+      // 2000ms would have produced `timeout 2 tmux wait-for` in T-019.1.
+      // T-021 ignores timeoutSeconds, so neither `timeout 2` nor
+      // `tmux wait-for` should appear.
+      expect(result).not.toMatch(/timeout 2[\s\n]+tmux\s+wait-for/);
+      expect(result).not.toContain('tmux wait-for');
     });
   });
 

@@ -1631,6 +1631,26 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const effectiveRightDockState = activeWorkspaceOwnsDockState
     ? rightDockState
     : { ...DEFAULT_RIGHT_DOCK_STATE };
+
+  // pizarra-sidebar-toggle-sync: notify App.js when Pizarra canvas mode is active
+  // so the main workspace sidebar can be autohidden or collapsed.
+  useEffect(() => {
+    const isPizarraActive = !!(
+      effectiveRightDockState?.visible &&
+      effectiveRightDockState?.maximized &&
+      effectiveRightDockState?.maximizedView === 'pizarra'
+    );
+    window.dispatchEvent(
+      new CustomEvent('devhub:pizarra-active', {
+        detail: { active: isPizarraActive },
+      })
+    );
+  }, [
+    effectiveRightDockState?.visible,
+    effectiveRightDockState?.maximized,
+    effectiveRightDockState?.maximizedView,
+  ]);
+
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
   const requestedRendererMode = resolveRequestedRenderer({
     workspaceId: activeWsId,

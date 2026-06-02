@@ -74,6 +74,7 @@ function WorkspaceLayout() {
     return Boolean(getUIPrefs(projectId).sidebarCollapsed);
   });
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
+  const [isPizarraActive, setIsPizarraActive] = useState(false);
   const [uiPrefsReady, setUiPrefsReady] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -106,6 +107,15 @@ function WorkspaceLayout() {
     };
     window.addEventListener('devhub:toggle-maximize', handleMaximizeToggle);
     return () => window.removeEventListener('devhub:toggle-maximize', handleMaximizeToggle);
+  }, []);
+
+  // Listen for Pizarra activation events
+  useEffect(() => {
+    const handlePizarraActive = (e) => {
+      setIsPizarraActive(e.detail?.active ?? false);
+    };
+    window.addEventListener('devhub:pizarra-active', handlePizarraActive);
+    return () => window.removeEventListener('devhub:pizarra-active', handlePizarraActive);
   }, []);
 
   // Sync terminal-view attribute on html for CSS targeting
@@ -209,6 +219,7 @@ function WorkspaceLayout() {
             project={project}
             collapsed={collapsed}
             onToggleCollapse={setCollapsed}
+            className={isPizarraActive ? 'pizarra-autohide' : ''}
           />
         )}
 
