@@ -39,6 +39,15 @@ jest.mock('lucide-react', () => {
   return new Proxy({}, { get: (_, key) => icon(String(key)) });
 });
 
+jest.mock('@/lib/pizarra/canvasViewport', () => ({
+  useCanvasViewport: () => ({
+    zoom: 1,
+    pan: { x: 0, y: 0 },
+    viewportToCanvas: (x, y) => ({ x, y }),
+    canvasRect: { width: 1920, height: 1080 },
+  }),
+}));
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function installDom() {
@@ -130,7 +139,7 @@ describe('PizarraToolPalette — pizarra-add-terminal-bugfix click contract', ()
     const terminalButton = container.querySelector('[data-testid="pizarra-add-terminal"]');
     fireClick(terminalButton);
     expect(onAddElement).toHaveBeenCalledTimes(1);
-    expect(onAddElement).toHaveBeenCalledWith('terminal');
+    expect(onAddElement).toHaveBeenCalledWith('terminal', { x: 960, y: 540 });
   });
 
   test('clicking the Browser button invokes onAddElement with "browser"', () => {
@@ -149,7 +158,7 @@ describe('PizarraToolPalette — pizarra-add-terminal-bugfix click contract', ()
     const browserButton = container.querySelector('[data-testid="pizarra-add-browser"]');
     fireClick(browserButton);
     expect(onAddElement).toHaveBeenCalledTimes(1);
-    expect(onAddElement).toHaveBeenCalledWith('browser');
+    expect(onAddElement).toHaveBeenCalledWith('browser', { x: 960, y: 540 });
   });
 
   test('onAddElement is optional (palette must not crash if callback is missing)', () => {

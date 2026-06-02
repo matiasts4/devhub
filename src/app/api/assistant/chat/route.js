@@ -160,13 +160,6 @@ export async function POST(request) {
         conversationLength: conversation.length,
       });
 
-      // T-031: collect THIS turn's tool results in a fresh array. The bug was
-      // re-pushing the cumulative `allToolResults` into `conversation` each
-      // turn, which made the prompt grow quadratically (1, 3, 6, 10, 15, …).
-      // We still aggregate into `allToolResults` for the final response
-      // payload, but the conversation only receives this turn's new entries.
-      const turnToolResults = [];
-
       let data;
       try {
         data = await callMinimax({
@@ -228,7 +221,7 @@ export async function POST(request) {
             if (toolHasRequiredSchema(toolDef)) {
               const result = { error: 'missing required parameters' };
               zedLog.toolResult(name, result, 0);
-              turnToolResults.push({ tool: name, input: effectiveInput || {}, result });
+              allToolResults.push({ tool: name, input: effectiveInput || {}, result });
               continue;
             }
             // No required params — dispatch with empty input.
@@ -247,24 +240,20 @@ export async function POST(request) {
 
           const duration = Date.now() - toolStart;
           zedLog.toolResult(name, result, duration);
-          turnToolResults.push({ tool: name, input: effectiveInput, result });
+          allToolResults.push({ tool: name, input: effectiveInput, result });
         }
 
         conversation.push({ role: 'assistant', content: rawText });
 
         // Push each tool result as a structured assistant-visible message
         // (parsed object, not stringified JSON) so the next model turn can
-        // see the data directly. T-031: iterate THIS turn's results only,
-        // not the cumulative `allToolResults` (quadratic growth bug).
-        for (const r of turnToolResults) {
+        // see the data directly.
+        for (const r of allToolResults) {
           conversation.push({
             role: 'user',
             content: `Tool ${r.tool} result: ${JSON.stringify(r.result)}`,
           });
         }
-
-        // Aggregate into the final response payload (kept across turns).
-        allToolResults.push(...turnToolResults);
       } else {
         finalText = rawText;
         if (!finalText.trim() && thinkingBlocks.length > 0) {

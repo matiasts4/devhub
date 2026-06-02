@@ -45,6 +45,11 @@ export default function PizarraCanvas({
   // ── Refs ────────────────────────────────────────────────────────────────
   const stageRef = useRef(null);
   const transformerRef = useRef(null);
+  // pizarra-wheel-passive-fix: wrapper ref for the non-passive native
+  // wheel listener. Both the loading-state wrapper and the loaded-state
+  // wrapper carry this ref; the useEffect below attaches the listener
+  // to whichever element the ref points to after each render.
+  const wrapperRef = useRef(null);
 
   // ── State ───────────────────────────────────────────────────────────────
   const [konva, setKonva] = useState(null);
@@ -120,21 +125,23 @@ export default function PizarraCanvas({
     transformerRef.current.getLayer()?.batchDraw();
   }, [selectedElementIds, konva, elements]);
 
-  // ── Gesture binding ─────────────────────────────────────────────────────
-  // pizarra-zoom-fix-2026-06-01: @use-gesture's onWheel binding was
-  // not firing reliably (probably because the wrapper's
-  // `transform: scale(zoom)` shifts the event coordinates that the
-  // gesture library relies on, OR because the inner Konva Stage
-  // consumed the wheel event before it bubbled to the wrapper).
-  // Wire a direct onWheel handler on the wrapper that does the same
-  // zoom math. We keep useGesture for drag (it works fine).
-  const handleWheel = useCallback(
-    (event) => {
+  // pizarra-wheel-passive-fix: attach a native non-passive wheel event
+  // listener on the wrapper ref. This prevents default browser-wide
+  // page zoom and executes the custom canvas zoom calculation instead.
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    const handleWheel = (event) => {
       event.preventDefault();
       setZoom((currentZoom) => Math.min(Math.max(currentZoom - event.deltaY * 0.001, 0.1), 5));
-    },
-    [setZoom]
-  );
+    };
+
+    wrapper.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      wrapper.removeEventListener('wheel', handleWheel);
+    };
+  }, [setZoom, konva]);
 
   const bind = useGesture(
     {
@@ -346,9 +353,12 @@ export default function PizarraCanvas({
   // pizarra-ux-overhaul: pre-load empty wrapper. No placeholder text,
   // just the background + (optional) texture so the canvas container
   // has a stable geometry while react-konva is still resolving.
+  // pizarra-wheel-passive-fix: ref={wrapperRef} wires the non-passive
+  // native wheel listener attached by the useEffect above.
   if (!konva) {
     return (
       <div
+        ref={wrapperRef}
         data-testid="pizarra-canvas-wrapper"
         style={{
           width,
@@ -370,7 +380,7 @@ export default function PizarraCanvas({
   return (
     <div
       {...bind()}
-      onWheel={handleWheel}
+      ref={wrapperRef}
       data-testid="pizarra-canvas-wrapper"
       style={{
         width,
