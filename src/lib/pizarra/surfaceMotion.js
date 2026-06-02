@@ -145,3 +145,14 @@ export function ensureSurfaceMotionKeyframes() {
 }
 
 export const SURFACE_ENTER_ANIMATION = `${ENTER_ANIMATION_NAME} ${DUR.enter}ms ${EASE_OUT} both`;
+
+/**
+ * MOTION_DRIVER — single source of truth for the animation
+ * library that drives the workspace↔pizarra mode transition
+ * (see useModeTransition.js). The spec (pizarra-mode-transition)
+ * requires that exactly one of GSAP or framer-motion is used.
+ * The codebase already uses framer-motion (^12.38.0) for
+ * `WorkspaceSidebar`, `TerminalTabsManager`, `CommandBar`, and
+ * `PizarraElement`, so this is set to `'framer-motion'`.
+ */
+export const MOTION_DRIVER = 'framer-motion';
