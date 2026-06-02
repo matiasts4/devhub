@@ -408,4 +408,107 @@ describe('agentLaunchWrapper', () => {
       expect(result).toMatch(/sleep 2[\s\S]{0,200}bootstrap|sleep 2[\s\S]{0,200}DEVHUB_BOOTSTRAP/);
     });
   });
+
+  // =========================================================================
+  // T-017.3: Bus-debug logs in the 4 bus helpers.
+  //
+  // When the auditor never wrote to the bus (launch-1751cfaa), debugging
+  // required re-running the launch and adding prints. The fix: each of the
+  // 4 bus helpers (_devhub_chat, _devhub_event, _devhub_presence,
+  // _devhub_inbox_check) writes a structured debug line to
+  // /tmp/devhub-swarm-<role>.bus-debug before and after the bus call.
+  //
+  // The log line must include:
+  //   - timestamp
+  //   - args summary
+  //   - exit code (post-call)
+  //
+  // This is a STRUCTURED log (one line per event) so we can grep it
+  // post-hoc to reconstruct what each agent tried to do.
+  // =========================================================================
+  describe('T-017.3: bus-debug logs in 4 bus helpers', () => {
+    const debugParams = {
+      ...baseParams,
+      role: 'coder',
+      tmuxSessionName: 'devhub-swarm-test-1-coder',
+      bootstrapPrompt: 'Implement feature X with tests',
+      busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+      dbPath: '/repo/devhub.db',
+    };
+
+    // Extract the body of a given helper function from the wrapper output.
+    // The helpers are defined in the buildBusHelpersBlock. Bodies contain
+    // bash `${var}` expansions (which include `}`), so we cannot use
+    // a simple `[^}]+` quantifier. Instead, find the helper's opening
+    // and take a fixed window of the next N chars (the longest helper
+    // is _devhub_chat at ~700 chars; 2000 chars gives a safety margin).
+    function extractHelperBody(result, helper) {
+      const startMatch = result.match(new RegExp(`${helper}\\(\\)\\s*\\{`));
+      if (!startMatch) return '';
+      const startIdx = result.indexOf(startMatch[0]);
+      // Take the next 2000 chars (long enough for the longest helper,
+      // short enough to not overlap into the next helper).
+      return result.slice(startIdx, startIdx + startMatch[0].length + 2000);
+    }
+
+    test('bus-debug log path is parameterized by DEVHUB_ROLE (canonical template)', () => {
+      const result = buildAgentLaunchWrapper(debugParams);
+      // The log path must follow the canonical template:
+      // /tmp/devhub-swarm-${DEVHUB_ROLE:-<fallback>}.bus-debug
+      // We accept either the explicit "coder" or the parameterized
+      // "${DEVHUB_ROLE:-unknown}" form (the helper resolves the
+      // variable at runtime).
+      expect(result).toMatch(/\/tmp\/devhub-swarm-(coder|\\\$\{DEVHUB_ROLE)/);
+      expect(result).toContain('.bus-debug');
+    });
+
+    test('_devhub_chat writes to the bus-debug log path', () => {
+      const result = buildAgentLaunchWrapper(debugParams);
+      const body = extractHelperBody(result, '_devhub_chat');
+      expect(body).not.toBe('');
+      // The helper must reference the debug log env var
+      expect(body).toContain('_DEVHUB_BUS_DEBUG_LOG');
+    });
+
+    test('_devhub_event writes to the bus-debug log path', () => {
+      const result = buildAgentLaunchWrapper(debugParams);
+      const body = extractHelperBody(result, '_devhub_event');
+      expect(body).not.toBe('');
+      expect(body).toContain('_DEVHUB_BUS_DEBUG_LOG');
+    });
+
+    test('_devhub_presence writes to the bus-debug log path', () => {
+      const result = buildAgentLaunchWrapper(debugParams);
+      const body = extractHelperBody(result, '_devhub_presence');
+      expect(body).not.toBe('');
+      expect(body).toContain('_DEVHUB_BUS_DEBUG_LOG');
+    });
+
+    test('_devhub_inbox_check writes to the bus-debug log path', () => {
+      const result = buildAgentLaunchWrapper(debugParams);
+      const body = extractHelperBody(result, '_devhub_inbox_check');
+      expect(body).not.toBe('');
+      expect(body).toContain('_DEVHUB_BUS_DEBUG_LOG');
+    });
+
+    test('each helper writes timestamp + args + exit code to the debug log', () => {
+      const result = buildAgentLaunchWrapper(debugParams);
+      // All four helpers should write structured lines. We verify the
+      // pattern: helper contains 'date' (for timestamp), writes
+      // 'args' (for arg summary), and writes 'exit' (for exit code).
+      // Using a single assertion for all four to keep the test focused
+      // on the contract: every helper has all three log lines.
+      const helpers = ['_devhub_chat', '_devhub_event', '_devhub_presence', '_devhub_inbox_check'];
+      for (const helper of helpers) {
+        const body = extractHelperBody(result, helper);
+        expect(body).not.toBe('');
+        // Timestamp: uses date command
+        expect(body).toMatch(/date/);
+        // Args: writes the args summary
+        expect(body).toMatch(/args/);
+        // Exit: writes the exit code
+        expect(body).toMatch(/exit/);
+      }
+    });
+  });
 });
