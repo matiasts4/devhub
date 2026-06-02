@@ -52,6 +52,8 @@ jest.mock('@/lib/pizarra/canvasViewport', () => ({
     setZoom: () => {},
     pan: { x: 0, y: 0 },
     setPan: () => {},
+    viewportToCanvas: (x, y) => ({ x, y }),
+    canvasRect: { width: 800, height: 600 },
   }),
   CanvasViewportProvider: ({ children }) => children,
 }));

@@ -20,6 +20,7 @@ export const PIZARRA_ACTIONS = {
   SELECT_ELEMENTS: 'SELECT_ELEMENTS',
   DESELECT_ALL: 'DESELECT_ALL',
   CASCADE_OFFSET: 'CASCADE_OFFSET',
+  RESET_ELEMENTS: 'RESET_ELEMENTS',
 };
 
 // ─── Reducer ────────────────────────────────────────────────────────────────
@@ -83,6 +84,15 @@ export function pizarraReducer(state, action) {
       return {
         ...state,
         cascadeIndex: nextIndex,
+      };
+    }
+
+    case PIZARRA_ACTIONS.RESET_ELEMENTS: {
+      return {
+        ...state,
+        elements: action.payload,
+        selectedElementIds: [],
+        cascadeIndex: 0,
       };
     }
 
@@ -160,6 +170,10 @@ export function usePizarraState() {
     dispatch({ type: PIZARRA_ACTIONS.DESELECT_ALL });
   }, []);
 
+  const resetElements = useCallback((elements) => {
+    dispatch({ type: PIZARRA_ACTIONS.RESET_ELEMENTS, payload: elements });
+  }, []);
+
   // ── Derived helpers ─────────────────────────────────────────────────
 
   const selectedElements = state.elements.filter((el) => state.selectedElementIds.includes(el.id));
@@ -172,6 +186,7 @@ export function usePizarraState() {
     addElement,
     updateElement,
     deleteElement,
+    resetElements,
     selectElement,
     selectElements,
     deselectAll,

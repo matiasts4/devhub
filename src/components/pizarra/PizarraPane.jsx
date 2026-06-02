@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic';
 import PizarraToolPalette from './PizarraToolPalette';
 import PizarraPropertyInspector from './PizarraPropertyInspector';
 import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
+import PizarraMinimap from './PizarraMinimap';
 import { PIZARRA_ACTIONS, usePizarraState } from '@/lib/pizarra/pizarraReducer';
 import { CanvasViewportProvider } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
@@ -46,6 +47,7 @@ export default function PizarraPane() {
     setTool,
     addElement,
     updateElement,
+    resetElements,
     selectElement,
     deselectAll,
     selectedElements,
@@ -140,41 +142,42 @@ export default function PizarraPane() {
   // ── Add terminal or browser element ───────────────────────────────────
 
   const handleAddElement = useCallback(
-    (type) => {
-      const canvasCenter = {
-        x: canvasSize.width / 2 - 320,
-        y: canvasSize.height / 2 - 200,
-      };
-
-      // pizarra-cascade-bump-2026-06-01: the cascade step is now
-      // 700px (the width of the default 1024x700 browser minus
-      // 324). 24px and 80px were both smaller than the smallest
-      // shape's half-width, so consecutive adds landed inside
-      // the previous shape's bounds. 700 guarantees the next
-      // shape always starts past the right edge of the previous
-      // one (within the modulo-8 wrap).
-      const CASCADE_STEP = 700;
+    (type, centerCoords) => {
+      const CASCADE_STEP = 40;
       const CASCADE_MODULUS = 8;
       const previousIndex = state.cascadeIndex ?? 0;
       const offsetX = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
       const offsetY = CASCADE_STEP * (previousIndex % CASCADE_MODULUS);
 
-      // 1. Advance the cascade counter. The reducer's CASCADE_OFFSET
-      //    case increments modulo 8.
+      // Advance the cascade counter.
       dispatch({ type: PIZARRA_ACTIONS.CASCADE_OFFSET });
+
+      const w = type === 'terminal' ? 640 : 1024;
+      const h = type === 'terminal' ? 400 : 700;
+
+      // Center around coordinates if provided, fallback to standard center
+      const cx = centerCoords?.x ?? canvasSize.width / 2;
+      const cy = centerCoords?.y ?? canvasSize.height / 2;
+
+      const x = cx - w / 2 + offsetX;
+      const y = cy - h / 2 + offsetY;
 
       if (type === 'terminal') {
         const shape = createShape(SHAPE_TYPES.TERMINAL, {
-          x: canvasCenter.x + offsetX,
-          y: canvasCenter.y + offsetY,
+          x,
+          y,
+          width: w,
+          height: h,
         });
         addElement(shape);
         selectElement(shape.id);
         setActiveTerminalId(shape.id);
       } else if (type === 'browser') {
         const shape = createShape(SHAPE_TYPES.BROWSER, {
-          x: canvasCenter.x + offsetX,
-          y: canvasCenter.y + offsetY,
+          x,
+          y,
+          width: w,
+          height: h,
         });
         addElement(shape);
         selectElement(shape.id);
@@ -182,6 +185,83 @@ export default function PizarraPane() {
       }
     },
     [addElement, dispatch, selectElement, canvasSize, state.cascadeIndex]
+  );
+
+  const handleApplyLayout = useCallback(
+    (presetType, centerCoords) => {
+      const cx = centerCoords?.x ?? canvasSize.width / 2;
+      const cy = centerCoords?.y ?? canvasSize.height / 2;
+      const newElements = [];
+
+      if (presetType === 'dev-split') {
+        newElements.push(
+          createShape(SHAPE_TYPES.BROWSER, {
+            x: cx - 810,
+            y: cy - 300,
+            width: 800,
+            height: 600,
+          })
+        );
+        newElements.push(
+          createShape(SHAPE_TYPES.TERMINAL, {
+            x: cx + 10,
+            y: cy - 300,
+            width: 800,
+            height: 600,
+          })
+        );
+      } else if (presetType === 'dev-trio') {
+        newElements.push(
+          createShape(SHAPE_TYPES.BROWSER, {
+            x: cx - 810,
+            y: cy - 300,
+            width: 800,
+            height: 600,
+          })
+        );
+        newElements.push(
+          createShape(SHAPE_TYPES.TERMINAL, {
+            x: cx + 10,
+            y: cy - 300,
+            width: 800,
+            height: 290,
+            label: 'Terminal Left',
+          })
+        );
+        newElements.push(
+          createShape(SHAPE_TYPES.TERMINAL, {
+            x: cx + 10,
+            y: cy + 10,
+            width: 800,
+            height: 290,
+            label: 'Terminal Right',
+          })
+        );
+      } else if (presetType === 'dual-browser') {
+        newElements.push(
+          createShape(SHAPE_TYPES.BROWSER, {
+            x: cx - 810,
+            y: cy - 300,
+            width: 800,
+            height: 600,
+            label: 'Browser 1',
+          })
+        );
+        newElements.push(
+          createShape(SHAPE_TYPES.BROWSER, {
+            x: cx + 10,
+            y: cy - 300,
+            width: 800,
+            height: 600,
+            label: 'Browser 2',
+          })
+        );
+      }
+
+      resetElements(newElements);
+      setActiveTerminalId(null);
+    },
+    [resetElements, canvasSize]
   );
 
   React.useEffect(() => {
@@ -247,6 +327,7 @@ export default function PizarraPane() {
           value={state.activeTool}
           onChange={setTool}
           onAddElement={handleAddElement}
+          onApplyLayout={handleApplyLayout}
         />
 
         {/* Property inspector — HTML overlay */}
@@ -312,6 +393,9 @@ export default function PizarraPane() {
         >
           {state.elements.length} element{state.elements.length !== 1 ? 's' : ''}
         </div>
+
+        {/* Minimap — bottom-right HUD, hidden until pan/zoom */}
+        <PizarraMinimap elements={state.elements} onSelectElement={selectElement} />
       </CanvasViewportProvider>
     </div>
   );
