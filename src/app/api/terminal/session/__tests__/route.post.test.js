@@ -11,6 +11,7 @@
 
 const mockCreateSession = jest.fn();
 const mockEnsureTTYServer = jest.fn();
+const mockPushSessionInput = jest.fn();
 
 jest.mock('next/server', () => ({
   NextResponse: {
@@ -21,6 +22,7 @@ jest.mock('next/server', () => ({
 jest.mock('@/lib/terminal/ttyServer', () => ({
   ensureTTYServer: (...args) => mockEnsureTTYServer(...args),
   createSession: (...args) => mockCreateSession(...args),
+  pushSessionInput: (...args) => mockPushSessionInput(...args),
 }));
 
 const { NextResponse } = require('next/server');
@@ -36,6 +38,7 @@ describe('POST /api/terminal/session (T-016)', () => {
     NextResponse.json.mockImplementation((body, init) => ({ body, status: init?.status || 200 }));
     mockEnsureTTYServer.mockResolvedValue({ port: 4001, wsPath: '/terminal' });
     mockCreateSession.mockReturnValue({ id: 'sess-new-1' });
+    mockPushSessionInput.mockReturnValue(true);
     // Re-require after mocks are set so the module picks up the fresh refs.
     jest.isolateModules(() => {
       POST = require('../route.js').POST;
