@@ -73,7 +73,17 @@ export const terminalTool = {
         raw: data,
       };
     }
-    return { session_id, port, wsPath };
+    // T-026: surface to the model whether a command was actually sent.
+    // Without this signal, the model only sees a port+wsPath and may
+    // hallucinate success when no command ever ran.
+    const result = { session_id, port, wsPath };
+    if (command) {
+      result.command_sent = command;
+    } else {
+      result.note =
+        "Terminal opened but no command was sent. To run a command, pass command='<your command>' or call execute_in_terminal after opening.";
+    }
+    return result;
   },
 };
 

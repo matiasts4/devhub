@@ -36,7 +36,44 @@ describe('open_terminal (terminalTool)', () => {
     expect(init.method).toBe('POST');
     const body = JSON.parse(init.body);
     expect(body).toEqual({ program: 'zsh', cwd: '/tmp/devhub-x', command: 'ls' });
-    expect(result).toEqual({ session_id: 'abc', port: 4001, wsPath: '/terminal' });
+    expect(result).toEqual({
+      session_id: 'abc',
+      port: 4001,
+      wsPath: '/terminal',
+      command_sent: 'ls',
+    });
+  });
+
+  test('open_terminal echoes command_sent when command is provided', async () => {
+    mockFetch(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'abc', port: 4001, wsPath: '/terminal' }),
+    }));
+
+    const result = await terminalTool.execute({ command: 'ls -la' }, {});
+
+    expect(result.command_sent).toBe('ls -la');
+    expect(result.session_id).toBe('abc');
+    expect(result.port).toBe(4001);
+    expect(result.wsPath).toBe('/terminal');
+    expect(result.note).toBeUndefined();
+  });
+
+  test('open_terminal adds a note when no command is provided', async () => {
+    mockFetch(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'abc', port: 4001, wsPath: '/terminal' }),
+    }));
+
+    const result = await terminalTool.execute({}, {});
+
+    expect(result.note).toMatch(/no command was sent/i);
+    expect(result.session_id).toBe('abc');
+    expect(result.port).toBe(4001);
+    expect(result.wsPath).toBe('/terminal');
+    expect(result.command_sent).toBeUndefined();
   });
 
   test('returns error when backend response is missing fields', async () => {
