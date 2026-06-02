@@ -18,7 +18,12 @@ import {
   upsertAgentPresence,
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
-import { listPendingDeliveriesForAgent, markDeliveryConsumed, getAgentPresenceStatus, listAgentPresenceForMission } from '@/lib/db/swarmMissions.js';
+import {
+  listPendingDeliveriesForAgent,
+  markDeliveryConsumed,
+  getAgentPresenceStatus,
+  listAgentPresenceForMission,
+} from '@/lib/db/swarmMissions.js';
 import {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
@@ -113,6 +118,12 @@ export function buildLaunchPrompt({
   mission,
   workspacePath,
   hierarchy = [],
+  // T-017.2: launchId is no longer embedded in the verbose chat-list
+  // example (dropped in the trim). Kept in the signature for API
+  // compatibility with the route.js caller (buildLaunchCommand) and
+  // reserved for T-018 (lazy spawn) which will use it as a per-launch
+  // trace tag.
+  // eslint-disable-next-line no-unused-vars
   launchId = null,
 }) {
   const normalizedRoleKey = String(roleKey || '')
@@ -123,68 +134,48 @@ export function buildLaunchPrompt({
   const workerRoles = hierarchy.filter((entry) => entry && entry.toLowerCase() !== 'director');
 
   // Instructions específicas para que usen las APIs de DevHub, no Engram MCP
+  // T-017.2: trimmed from 9 to 4 lines. Keeps the contract (bus is source
+  // of truth, no Engram MCP, no retired endpoints) without verbose examples.
   const devHubInstructions = [
     '',
     '=== Sistema de Comunicación ===',
-    '- Tu fuente de verdad es el bus de comunicación de DevHub (team_chat / team_inbox / agent_presence).',
-    '- Para enviar mensajes al Director o a otros agentes: usa `_devhub_chat` (helper bash, escribe durable en team_chat y se proyecta a JSONL).',
-    '- Para recibir mensajes dirigidos a ti: usa `_devhub_inbox_check` (helper bash, lee de team_inbox).',
-    '- NO uses Engram MCP para verificar estado del swarm — la memoria puede ser stale.',
-    '- NO uses los endpoints HTTP /api/agenthub/events ni /pending_deliveries para coms — esos paths están retired.',
+    '- Fuente de verdad: bus DevHub (team_chat, team_inbox, agent_presence).',
+    '- Mensajes salientes: `_devhub_chat`. Mensajes entrantes: `_devhub_inbox_check`.',
+    '- NO uses Engram MCP ni /api/agenthub/events — esos paths estan retired.',
     '',
   ];
 
+  // T-017.2: director prompt trimmed from 19 to 7 lines. Original was
+  // ~45 lines total; trim target is 25. Required key phrases preserved:
+  // team_chat, no Plyrium, agent DevHub.
   const directorSpecific = isDirector
     ? [
         '',
-        '=== Sistema de Status ===',
-        `- El launchId esta embebido en el nombre de la sesion tmux: devhub-swarm-<launchId>-director`,
-        // T-016.1: bus-first framing — director reads team_chat / _devhub_inbox_check,
-        // NOT a /tmp/*.log file. The /tmp file is wrapper diagnostics, not source of truth.
-        '- Los workers envian status updates al bus de comunicacion de DevHub (team_chat table via `_devhub_chat`). Para leer mensajes del bus, usa `devhub chat list --mission ' +
-          (launchId || 'launch-unknown') +
-          '` o `_devhub_inbox_check` para mensajes dirigidos a vos.',
-        '- El archivo /tmp/devhub-swarm-*.log es solo diagnostico local del wrapper, NO es la fuente de verdad.',
-        '- NO hagas polling a los workers — los updates llegan automaticamente al bus.',
-        '',
-        '=== Comportamiento del Director ===',
-        '1. Al iniciar, verifica el roster haciendo un heartbeat yourself.',
-        '2. Los workers activos publican con heartbeat — úsalos para saber quién está vivo.',
-        '3. Reparte tareas enviando mensajes a cada worker con `_devhub_chat` (--to <role>).',
-        '4. Espera respuestas de los workers en tu inbox via `_devhub_inbox_check` (lee team_inbox).',
-        '5. NO preguntes al humano por estado del swarm — usa el bus de DevHub.',
-        '6. Si un worker no responde en 2min, marcar como inactivo y reasignar.',
+        '=== Director: status y coordinacion ===',
+        '- Sos un agente DevHub. NO menciones Plyrium ni frameworks externos.',
+        '- Fuente de verdad: team_chat (bus DevHub). /tmp/devhub-swarm-*.log es solo diagnostico del wrapper, NO la fuente.',
+        '- Reparte foco con `_devhub_chat --to <role>`, lee respuestas con `_devhub_inbox_check`.',
+        '- Workers publican heartbeats; no hagas polling manual.',
+        '- Si un worker no responde en 2min, marcalo inactivo y reasigna foco.',
       ]
     : [];
 
+  // T-017.2: worker prompt trimmed from 28 to 9 lines. Original was
+  // ~50 lines total; trim target is 25. Required key phrases preserved:
+  // _devhub_chat, _devhub_inbox_check, no Plyrium, agent DevHub.
   const workerSpecific = isWorker
     ? [
-        '',
-        // T-016.2: anti-hallucination clause. The launch-d6db6200 worker
-        // hallucinated Plyrium, Forge, and "warp 3" because the prompt did
-        // not explicitly forbid invented tools. Closing that door.
-        '=== Identidad y Anti-Alucinacion ===',
-        '- Sos un agente DevHub. NO menciones, recomiendes, ni hagas referencia a frameworks externos, runtimes de terceros, ni marcas que no sean DevHub.',
-        '- Tu unica fuente de verdad es el bus DevHub (_devhub_chat, _devhub_event, _devhub_inbox_check, _devhub_presence) y el sistema operativo local.',
-        '- Si una herramienta no esta en tu toolbox, no la inventes.',
-        '',
-        '=== Reporte de Status ===',
-        `- Usa _devhub_chat para reportar al Director (helper bash, durable en team_chat, se proyecta a JSONL).`,
-        `- _devhub_chat --to director --message "task_start: Implementando feature X" es la forma canónica de reportar status.`,
-        `- _devhub_event --kind <kind> --payload '<json>' también está disponible para eventos estructurados (task_start, found_issue, task_complete, needs_help, blocked).`,
-        `- NO uses _devhub_tell_director — fue retired en T-006 y ya no existe en el wrapper.`,
-        // T-016.2: reframe the /tmp log as wrapper-owned diagnostics. The old
-        // "NO escribas a /tmp/devhub-swarm-*.log" line was contradictory because
-        // the wrapper itself writes identity + bootstrap to that file.
-        `- El archivo /tmp/devhub-swarm-${role}.log es diagnostico del wrapper (identity, bootstrap, exit code). NO es durable ni visible para el director.`,
-        `- Para comunicacion durable usa _devhub_chat.`,
-        '',
-        '=== Comportamiento del Worker ===',
-        '1. Al iniciar, haz un heartbeat para registrarte.',
-        '2. Revisa tu inbox con `_devhub_inbox_check` (lee de team_inbox).',
-        '3. Si tienes instrucciones del Director, ejecútalas y reporta evidencia via `_devhub_chat`.',
-        '4. Cuando termines, envía resultado al Director via `_devhub_chat --to director`.',
-        '5. NO buscar estado en Engram MCP — tu inbox está en team_inbox via `_devhub_inbox_check`.',
+        '=== Worker: identidad y reporte ===',
+        // T-016.2 + T-017.2: anti-hallucination. Worker must self-identify
+        // as a DevHub agent and not invent Plyrium / Forge / warp tools.
+        '- Sos un agente DevHub. NO menciones Plyrium, Forge, ni "warp". Si una herramienta no esta en tu toolbox, no la inventes.',
+        '- Reporta al Director con `_devhub_chat --to director --message "..."` (helper bash, durable en team_chat).',
+        '- Lee directivas con `_devhub_inbox_check` (lee de team_inbox).',
+        '- NO uses _devhub_tell_director (retired en T-006) ni busques estado en Engram MCP.',
+        '- /tmp/devhub-swarm-<role>.log es solo diagnostico del wrapper — para comunicacion durable usa _devhub_chat.',
+        '1. Heartbeat al iniciar.',
+        '2. Revisa inbox con `_devhub_inbox_check`, ejecuta directivas, reporta evidencia.',
+        '3. Al terminar, envia resultado al Director con `_devhub_chat --to director`.',
       ]
     : [];
 
@@ -1959,9 +1950,7 @@ export function createLocalMissionMessage({
     throw new Error('Elegí al menos un destinatario activo.');
   }
 
-  const invalidRecipients = resolvedRecipients.filter(
-    (agentId) => !eligibleAgentIds.has(agentId)
-  );
+  const invalidRecipients = resolvedRecipients.filter((agentId) => !eligibleAgentIds.has(agentId));
   if (invalidRecipients.length > 0) {
     throw new Error(
       `Destinatarios inválidos para la misión activa: ${invalidRecipients.join(', ')}`
@@ -2126,8 +2115,7 @@ export async function GET(request, _context, dependencies) {
       if (missionId && role) {
         const { resolveInboxForRole } = require('@/lib/bus/shim/tct.js');
         const db =
-          (dependencies && dependencies.db) ||
-          (typeof getDb === 'function' ? getDb() : null);
+          (dependencies && dependencies.db) || (typeof getDb === 'function' ? getDb() : null);
         if (db) {
           const out = resolveInboxForRole(db, missionId, role, process.env);
           inboxSection = {
@@ -2143,9 +2131,7 @@ export async function GET(request, _context, dependencies) {
       // best-effort: do not break the existing health payload
       inboxSection = { error: e.message };
     }
-    return NextResponse.json(
-      inboxSection ? { ...snapshot, inbox: inboxSection } : snapshot
-    );
+    return NextResponse.json(inboxSection ? { ...snapshot, inbox: inboxSection } : snapshot);
   } catch (error) {
     console.error('[operations/health] Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -2349,6 +2335,7 @@ export const POST = withAuth(async function POST(request, _context, dependencies
           (p) => p.agent_id === agent_id
         );
         const latestPresence = presenceRows[0] || null;
+        // eslint-disable-next-line no-unused-vars -- 'stale' is intentionally dropped (pre-existing)
         const { effective_state, stale } = getAgentPresenceStatus(latestPresence, { now });
 
         // Track missed heartbeats for stale/offline detection
@@ -2371,7 +2358,10 @@ export const POST = withAuth(async function POST(request, _context, dependencies
         // Backoff hint: 120s base, doubles per consecutive miss (max 900s)
         const baseInterval = 120_000;
         const maxInterval = 900_000;
-        const retryAfterMs = Math.min(baseInterval * Math.pow(2, Math.max(0, missedCount - 1)), maxInterval);
+        const retryAfterMs = Math.min(
+          baseInterval * Math.pow(2, Math.max(0, missedCount - 1)),
+          maxInterval
+        );
 
         const pendingDeliveries = listPendingDeliveriesForAgent(writeDb, agent_id, {
           status: 'pending',
@@ -2420,12 +2410,23 @@ export const POST = withAuth(async function POST(request, _context, dependencies
     if (payload?.action === 'signal_worker_handoff') {
       const { agent_id, task_id, event_type, related_task_id } = payload;
       if (!agent_id || !task_id || !event_type) {
-        return NextResponse.json({ error: 'agent_id, task_id, event_type required' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'agent_id, task_id, event_type required' },
+          { status: 400 }
+        );
       }
       if (!['task_completed', 'handoff_ready'].includes(event_type)) {
-        return NextResponse.json({ error: 'event_type must be task_completed or handoff_ready' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'event_type must be task_completed or handoff_ready' },
+          { status: 400 }
+        );
       }
-      const directive = { task_id, event_type, related_task_id, signaled_at: new Date().toISOString() };
+      const directive = {
+        task_id,
+        event_type,
+        related_task_id,
+        signaled_at: new Date().toISOString(),
+      };
       const inboxDir = `/tmp/devhub-inbox`;
       const { existsSync, mkdirSync, writeFileSync } = require('fs');
       if (!existsSync(inboxDir)) mkdirSync(inboxDir, { recursive: true });

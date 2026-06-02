@@ -2191,7 +2191,9 @@ describe('GET /api/agenthub/operations/health', () => {
   // =========================================================================
   describe('T-016.1: buildLaunchPrompt director bus-first contract', () => {
     test('director prompt names the team_chat bus and is free of "log compartido" framing', () => {
-      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
 
       const prompt = buildLaunchPrompt({
         role: 'director',
@@ -2208,8 +2210,10 @@ describe('GET /api/agenthub/operations/health', () => {
       expect(prompt).not.toContain('log compartido');
     });
 
-    test('director prompt names the _devhub_inbox_check helper and the launchId in the chat command (triangulation)', () => {
-      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+    test('director prompt names the _devhub_inbox_check helper (trimmed contract)', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
 
       const prompt = buildLaunchPrompt({
         role: 'director',
@@ -2220,10 +2224,10 @@ describe('GET /api/agenthub/operations/health', () => {
         launchId: 'launch-abc-123',
       });
 
-      // The bus helper for inbound mail must be referenced
+      // The bus helper for inbound mail must still be referenced
+      // (T-017.2 trimmed the verbose `devhub chat list --mission <id>`
+      // example but kept the helper name).
       expect(prompt).toContain('_devhub_inbox_check');
-      // The launchId must be embedded in the suggested chat-list command
-      expect(prompt).toContain('launch-abc-123');
     });
   });
 
@@ -2237,8 +2241,10 @@ describe('GET /api/agenthub/operations/health', () => {
   // with an explicit "you are a DevHub agent, do not invent tools" clause.
   // =========================================================================
   describe('T-016.2: buildLaunchPrompt worker anti-hallucination + bus-only comms', () => {
-    test('worker prompt contains anti-hallucination clause and never names Plyrium/Forge', () => {
-      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+    test('worker prompt contains anti-hallucination clause that explicitly names the hallucinated tools', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
 
       const prompt = buildLaunchPrompt({
         role: 'coder',
@@ -2253,13 +2259,18 @@ describe('GET /api/agenthub/operations/health', () => {
       expect(prompt).toContain('agente DevHub');
       // The anti-hallucination clause header must be present
       expect(prompt).toContain('NO menciones');
-      // The hallucinated frameworks must be explicitly excluded
-      expect(prompt).not.toContain('Plyrium');
-      expect(prompt).not.toContain('Forge');
+      // T-017.2: the trim changed the contract from "never names the
+      // hallucinated tools" to "explicitly names them as things to NOT
+      // mention". The launch-d6db6200 worker hallucinated Plyrium
+      // and Forge — telling the LLM "do not use Plyrium" is more
+      // robust than hoping it never thinks of the name.
+      expect(prompt.toLowerCase()).toMatch(/no\s+.*plyrium|no\s+plyrium|no\s+.*forge/i);
     });
 
     test('worker prompt reframes the /tmp log as wrapper diagnostics (not contradictory "no escribas" rule)', () => {
-      const { buildLaunchPrompt } = require('../../../src/app/api/agenthub/operations/health/route');
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
 
       const prompt = buildLaunchPrompt({
         role: 'coder',
@@ -2276,6 +2287,123 @@ describe('GET /api/agenthub/operations/health', () => {
       expect(prompt).toContain('diagnostico del wrapper');
       // The worker is told the durable comms path is _devhub_chat
       expect(prompt).toContain('_devhub_chat');
+    });
+  });
+
+  // =========================================================================
+  // T-017.2: Trim bootstrap prompt.
+  //
+  // The director prompt was ~45 lines and the worker prompt was ~50 lines.
+  // The verbose headers / status hierarchy / examples / contradictory log
+  // instructions eat context-window budget and cause the LLM to dilute the
+  // critical clauses (bus-only comms, no Plyrium, no polling).
+  //
+  // Trim target: ≤ 30 lines for both director and worker. Required key
+  // phrases must remain in the trimmed prompt — trim removes examples,
+  // NOT contracts.
+  //
+  // Why we count "lines" by splitting on \n: the prompt is delivered as a
+  // single string to the LLM. The model's effective context cost is the
+  // number of newlines (roughly proportional to the number of distinct
+  // claims/instructions). Tighter prompts → more attention budget for
+  // the actual mission.
+  // =========================================================================
+  describe('T-017.2: trimmed bootstrap prompt (director + worker)', () => {
+    function countLines(prompt) {
+      // A "line" is a non-empty substring between \n. Empty lines do count
+      // because they signal section breaks in the rendered prompt.
+      return prompt.split('\n').length;
+    }
+
+    test('director prompt is trimmed to ≤ 30 lines (was ~45)', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'director',
+        roleKey: 'director',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder', 'auditor'],
+        launchId: 'launch-test-1',
+      });
+
+      const lines = countLines(prompt);
+      // T-017.2 target: 25 lines, hard cap: 30. The original was ~45.
+      // Anything over 30 means the trim didn't take.
+      expect(lines).toBeLessThanOrEqual(30);
+      // Sanity: the trim should have actually reduced line count, not
+      // just kept the verbose prompt under 30 by accident. The director
+      // prompt without trim is ~45 lines, so 30 means we cut at least
+      // a third.
+      expect(lines).toBeLessThan(45);
+    });
+
+    test('director prompt retains key phrases: team_chat, no Plyrium, agent DevHub', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'director',
+        roleKey: 'director',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder'],
+        launchId: 'launch-test-1',
+      });
+
+      // The bus is still the source of truth (director reads team_chat).
+      expect(prompt.toLowerCase()).toContain('team_chat');
+      // The anti-hallucination clause: director must also self-identify
+      // as a DevHub agent and not reference Plyrium.
+      expect(prompt).toContain('agente DevHub');
+      expect(prompt.toLowerCase()).toMatch(/no\s+(mencion[aeo]s?|uses?)\s+plyrium|no\s+plyrium/i);
+    });
+
+    test('worker prompt is trimmed to ≤ 30 lines (was ~50)', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'coder',
+        roleKey: 'coder',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder', 'auditor'],
+        launchId: 'launch-test-1',
+      });
+
+      const lines = countLines(prompt);
+      // T-017.2 target: 25 lines, hard cap: 30.
+      expect(lines).toBeLessThanOrEqual(30);
+      expect(lines).toBeLessThan(50);
+    });
+
+    test('worker prompt retains key phrases: _devhub_chat, _devhub_inbox_check, no Plyrium', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'coder',
+        roleKey: 'coder',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder'],
+        launchId: 'launch-test-1',
+      });
+
+      // The bus helpers must still be named — they're how the worker
+      // actually communicates (worker can't read the prompt if it
+      // doesn't know the helper name).
+      expect(prompt).toContain('_devhub_chat');
+      expect(prompt).toContain('_devhub_inbox_check');
+      // The anti-hallucination clause is mandatory (T-016.2 + T-017.2).
+      // Trim the examples, NOT the contract.
+      expect(prompt.toLowerCase()).toMatch(/no\s+(mencion[aeo]s?|uses?)\s+plyrium|no\s+plyrium/i);
     });
   });
 });
