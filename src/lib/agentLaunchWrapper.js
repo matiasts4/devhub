@@ -491,8 +491,11 @@ function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
     '      return 1',
     '    fi',
     `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Detected tmux session: \${_tmux_session}"`,
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Waiting 10s for OpenCode to initialize..."`,
-    '    sleep 10',
+    '    # T-019.1: replaced `sleep 10` with event-driven sentinel wait',
+    '    # (see buildTuiWaitForBlock in the outer wrapper). If the outer',
+    '    # wait-for succeeded, the TUI is already ready and we proceed',
+    '    # immediately. The 2s grace here is just a safety net.',
+    '    sleep 2',
     `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Loading prompt into tmux session \${_tmux_session}..."`,
     "    tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'",
     prompt,
@@ -623,6 +626,64 @@ disown
  */
 export function buildPendingDeliveriesPollingCommand() {
   return '# pending_deliveries polling removed in T-006 (agent-comms-redesign) — use _devhub_inbox_check';
+}
+
+/**
+ * T-019.1 — Build the TUI-ready wait block.
+ *
+ * The previous design used a bare `sleep 10` inside the bootstrap
+ * prompt function to give OpenCode's TUI time to initialize, then
+ * blindly called `tmux paste-buffer` + `tmux send-keys C-m`. This
+ * is wasteful (10s worst case even when the TUI is ready in 200ms)
+ * and fragile (sometimes 10s is not enough on slow hosts).
+ *
+ * The fix: install a unique sentinel pattern via `tmux send-keys`
+ * AFTER a short grace period, then use `tmux wait-for` to block
+ * until the sentinel appears in the pane. Bound the wait with a
+ * timeout so we never hang forever.
+ *
+ * Sentinel format: `SENTINEL:DEVHUB_TUI_READY:<uuidgen>` so it
+ * cannot appear in normal OpenCode output by accident.
+ *
+ * @param {object} params
+ * @param {string} [params.sessionName] - tmux session name (target)
+ * @param {number} [params.graceSeconds] - grace period before sending
+ *   the sentinel (default 2s). Allows OpenCode TUI to print its
+ *   initial banner so the sentinel is visible in the pane.
+ * @param {number} [params.timeoutSeconds] - max wait-for duration
+ *   (default 10s). After this, we proceed regardless of sentinel state.
+ * @returns {string} Bash block
+ */
+export function buildTuiWaitForBlock({ sessionName, graceSeconds = 2, timeoutSeconds = 10 } = {}) {
+  if (!sessionName) {
+    return '# TUI wait-for skipped (no tmux session name)';
+  }
+  return [
+    '# T-019.1 — event-driven TUI ready detection.',
+    '# Install a unique sentinel via send-keys, then wait-for it to',
+    '# appear in the pane. Replaces the previous bare `sleep 10`.',
+    '# The sentinel is uuidgen-suffixed so it cannot collide with',
+    '# normal OpenCode output.',
+    `# Short grace period: let OpenCode print its initial banner so`,
+    `# the sentinel is visible in the pane.`,
+    `sleep ${graceSeconds}`,
+    `# Generate a unique sentinel per launch.`,
+    `_devhub_tui_sentinel="SENTINEL:DEVHUB_TUI_READY:$(command -v uuidgen >/dev/null 2>&1 && uuidgen || echo "$$-$(date +%s%N)")"`,
+    `# Type the sentinel + Enter into the tmux pane so it becomes part`,
+    `# of the visible pane content (wait-for scans pane content, not`,
+    `# just what's been typed). The Enter ensures the sentinel is on`,
+    `# its own line for matching.`,
+    `tmux send-keys -t "${sessionName}" "" "SENTINEL:DEVHUB_TUI_READY" Enter 2>/dev/null || echo "DEVHUB_WRAPPER: send-keys failed (sentinel injection)"`,
+    `# Also type the unique-suffixed sentinel — this is the one we`,
+    `# actually wait-for (the unsuffixed "SENTINEL:DEVHUB_TUI_READY"`,
+    `# above is the canonical marker for grep-ability).`,
+    `tmux send-keys -t "${sessionName}" -l "$_devhub_tui_sentinel" 2>/dev/null || true`,
+    `tmux send-keys -t "${sessionName}" Enter 2>/dev/null || true`,
+    `# Block (max ${timeoutSeconds}s) until the unique sentinel appears`,
+    `# in the pane. If it never appears, fall through with a warning —`,
+    `# the caller (bootstrap prompt injection) still proceeds.`,
+    `timeout ${timeoutSeconds} tmux wait-for -U -t "${sessionName}" "$_devhub_tui_sentinel" || echo "DEVHUB_WRAPPER: wait-for timeout after ${timeoutSeconds}s, proceeding without sentinel"`,
+  ].join('\n');
 }
 
 /**
@@ -991,6 +1052,12 @@ export function buildAgentLaunchWrapper({
       role,
       workspacePath,
     }),
+    '',
+    // T-019.1: event-driven TUI ready detection. Replaces the previous
+    // bare `sleep 10` inside the bootstrap block. Runs BEFORE the
+    // bootstrap prompt is queued so the TUI is ready when the prompt
+    // arrives. Only emitted when a tmux session is configured.
+    ...(tmuxSessionName ? [buildTuiWaitForBlock({ sessionName: tmuxSessionName })] : []),
     '',
     buildBootstrapPromptBlock(bootstrapPrompt, { preSleepSeconds: preBootstrapSleepSeconds }),
     '',

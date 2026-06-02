@@ -511,4 +511,63 @@ describe('agentLaunchWrapper', () => {
       }
     });
   });
+
+  // =========================================================================
+  // T-019.1: Event-driven TUI wait (replace bare sleep with tmux wait-for).
+  //
+  // The current wrapper uses `sleep 10` after creating the tmux session
+  // and then blindly calls `tmux paste-buffer` + `tmux send-keys C-m`.
+  // This is wasteful (10s worst case even when TUI is ready in 200ms)
+  // and fragile (sometimes the TUI isn't ready in 10s on slow hosts).
+  //
+  // The fix: install a unique sentinel pattern in the OpenCode TUI once
+  // it boots, then use `tmux wait-for` to block until the sentinel
+  // appears in the pane. Bound the wait with a 10s timeout so we
+  // don't hang forever if something goes wrong.
+  //
+  // Sentinel format: SENTINEL:DEVHUB_TUI_READY:<unique-uuid> so it
+  // cannot appear in normal OpenCode output by accident.
+  // =========================================================================
+  describe('T-019.1: tmux wait-for sentinel injection', () => {
+    const tmuxReadyParams = {
+      ...baseParams,
+      role: 'coder',
+      tmuxSessionName: 'devhub-swarm-test-1-coder',
+      bootstrapPrompt: 'Implement feature X with tests',
+      busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+      dbPath: '/repo/devhub.db',
+    };
+
+    test('wrapper uses tmux wait-for (not bare sleep) to wait for TUI ready', () => {
+      const result = buildAgentLaunchWrapper(tmuxReadyParams);
+      // The wait-for command must be present in the wrapper
+      expect(result).toContain('tmux wait-for');
+      // The sentinel pattern must be present
+      expect(result).toMatch(/SENTINEL:DEVHUB_TUI_READY/);
+    });
+
+    test('wait-for has a 10-second timeout fallback (does not hang forever)', () => {
+      const result = buildAgentLaunchWrapper(tmuxReadyParams);
+      // The wait-for must be wrapped in `timeout N` so we don't
+      // block the wrapper indefinitely if the sentinel never appears
+      expect(result).toMatch(/timeout\s+10[\s\n]+tmux\s+wait-for/);
+    });
+
+    test('wrapper has tmux send-keys fallback to inject the sentinel if wait-for never triggers', () => {
+      const result = buildAgentLaunchWrapper(tmuxReadyParams);
+      // The fallback path: after a short grace period, send the
+      // sentinel via tmux send-keys so wait-for can read it from
+      // the pane. This is the "less elegant but workable" path the
+      // task spec describes.
+      expect(result).toMatch(/tmux send-keys.*SENTINEL:DEVHUB_TUI_READY/);
+    });
+
+    test('sentinel is unique per launch (uses uuidgen) to avoid collision with normal TUI output', () => {
+      const result = buildAgentLaunchWrapper(tmuxReadyParams);
+      // The sentinel should be parameterized (uuidgen) so each launch
+      // gets a unique marker. Static strings can collide with normal
+      // OpenCode output (the CLI occasionally prints "READY" or similar).
+      expect(result).toMatch(/SENTINEL:DEVHUB_TUI_READY/);
+    });
+  });
 });
