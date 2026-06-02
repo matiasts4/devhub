@@ -3755,10 +3755,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           <button
             type="button"
             data-testid="right-dock-tab-browser"
-            data-pizarra-active-tab={rightDockState.activeTab === 'browser' ? 'true' : 'false'}
+            data-pizarra-active-tab={
+              rightDockState.activeTab === 'browser' && rightDockState.visible ? 'true' : 'false'
+            }
             onClick={() => handleRightDockTabSelect('browser')}
             className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'browser'
+              rightDockState.activeTab === 'browser' && rightDockState.visible
                 ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
                 : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
             }`}

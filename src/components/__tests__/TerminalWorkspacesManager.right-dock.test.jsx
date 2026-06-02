@@ -1407,10 +1407,14 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    // The browser tab starts as the active tab (default).
+    // The browser tab starts as the active tab (default), but is inactive at mount because right dock is hidden.
     const browserTab = view.container.querySelector('[data-testid="right-dock-tab-browser"]');
     expect(browserTab).not.toBeNull();
-    // The active tab carries data-pizarra-active-tab="true".
+    expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('false');
+    expect(browserTab.className).not.toContain('outline-inset');
+
+    // Clicking the tab makes it visible and thus active
+    await click(browserTab);
     expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('true');
     // The className includes the outline-inset accent border.
     expect(browserTab.className).toContain('outline-inset');
@@ -1535,7 +1539,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(dockPlaceholderAnchor).not.toBeNull();
     expect(dockPlaceholderAnchor?.className).toContain('pointer-events-none');
     expect(dockLayer).not.toBeNull();
-    expect(dockLayer?.className).toContain('z-20');
+    expect(dockLayer?.style.zIndex).toBe('50');
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
   });
 

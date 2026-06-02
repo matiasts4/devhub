@@ -35,13 +35,8 @@ import {
   resolveBrowserRuntimeSelection,
   shouldWarnAboutFraming,
 } from './browserPreviewSupport';
-import {
-  focusNativeBrowser,
-} from '@/lib/browser/nativeBrowserBridge';
-import {
-  useNativeBrowserCapability,
-  useNativeBrowserSurface,
-} from './useNativeBrowserSurface';
+import { focusNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
+import { useNativeBrowserCapability, useNativeBrowserSurface } from './useNativeBrowserSurface';
 import { reloadBrowserRuntime } from './browserRuntimeReload';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
@@ -72,6 +67,7 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowAdd = null,
   onWorkspaceWindowRemove = null,
   layoutSyncKey = null,
+  suspendNativeSurface = false,
 }) {
   const viewportShellRef = useRef(null);
   const measureNativeBounds = useCallback(() => {
@@ -112,7 +108,11 @@ function WorkspaceBrowserPane({
       !dockState.maximized || dockState.maximizedView === 'browser';
 
     return (
-      nativeRuntimeActive && dockVisible && activeTab === 'browser' && browserOwnsMaximizedLayout
+      nativeRuntimeActive &&
+      dockVisible &&
+      activeTab === 'browser' &&
+      browserOwnsMaximizedLayout &&
+      !suspendNativeSurface
     );
   }, [
     dockState.activeTab,
@@ -120,6 +120,7 @@ function WorkspaceBrowserPane({
     dockState.maximizedView,
     dockState.visible,
     nativeRuntimeActive,
+    suspendNativeSurface,
   ]);
   const canUseNativeEditMode = nativeRuntimeActive && nativeSelectorReady;
   const {
@@ -494,6 +495,7 @@ function WorkspaceBrowserPane({
             ) : null}
             <div
               className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5"
+              style={{ display: 'none' }}
               data-testid="browser-runtime-toggle"
             >
               <button
@@ -513,7 +515,9 @@ function WorkspaceBrowserPane({
               <button
                 type="button"
                 data-testid="browser-runtime-option-native-gtk"
-                aria-pressed={browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK}
+                aria-pressed={
+                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                }
                 onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.NATIVE_GTK)}
                 className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
                   browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
@@ -756,7 +760,10 @@ function WorkspaceBrowserPane({
                 loading="eager"
                 referrerPolicy="no-referrer"
                 className="block w-full h-full border-0 bg-white"
-                style={IFRAME_GPU_STYLE}
+                style={{
+                  ...IFRAME_GPU_STYLE,
+                  pointerEvents: suspendNativeSurface ? 'none' : 'auto',
+                }}
                 sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
               />
 
