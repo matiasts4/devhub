@@ -14,21 +14,24 @@
 // association). Each `TOOL:` produces exactly one call, even when the
 // block has no `PARAM:` lines.
 //
-// Boundary rules (T-019):
+// Boundary rules (T-019 + T-034):
 //   `TOOL:` and `PARAM:` are recognized when preceded by one of:
 //     - start of input
 //     - whitespace
-//     - `.` (sentence end — model frequently glues `TOOL:` after prose)
+//     - `.`, `:`, `,`, `;`, `?`, `!` (prose-ending punctuation — the model
+//       frequently glues `TOOL:` after Spanish punctuation such as
+//       `abierta:TOOL:` or `listo.TOOL:` or `vale,TOOL:`)
 //     - `\n`
 //   Mid-word occurrences (e.g. `xxxTOOL: foo`) are NOT treated as calls
 //   and the parser will silently skip them. Surfacing that as a real
 //   diagnostic is a future enhancement; for now the goal is to stop
-//   silently dropping the common dot-glued case.
+//   silently dropping the common glued cases.
 //
 // Returns: array of `{ name, input }` where `input` is an object of
 // key→value strings. Empty values are preserved as empty strings.
 
-const TOOL_OR_PARAM_RE = /(?<=^|[\s.])TOOL:\s*(\w+)\b|(?<=^|[\s.])PARAM:\s*(\w+)\s*=\s*([^\n]*)/g;
+const TOOL_OR_PARAM_RE =
+  /(?<=^|[\s.:,;?!])TOOL:\s*(\w+)\b|(?<=^|[\s.:,;?!])PARAM:\s*(\w+)\s*=\s*([^\n]*)/g;
 
 function stripQuotes(s) {
   if (typeof s !== 'string' || s.length < 2) return s;

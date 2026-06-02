@@ -146,4 +146,47 @@ describe('parseToolCalls', () => {
       },
     ]);
   });
+
+  // ---- T-034: tolerant to `:TOOL:` (Spanish prose, "abierta:TOOL: ...") ----
+  // The model frequently writes a sentence that ends in `:` and immediately
+  // follows it with `TOOL:` on the same line. The previous regex only
+  // accepted whitespace, `.`, or start-of-input as the boundary, so these
+  // calls were silently dropped and the user saw "Error: The string did
+  // not match the expected pattern" downstream.
+
+  test('T-034: extracts TOOL: glued to prose ending in a colon (Spanish ":TOOL:")', () => {
+    const raw = 'Voy a abrir la terminal:TOOL: open_terminal\n' + 'PARAM: command=ls';
+    expect(parseToolCalls(raw)).toEqual([{ name: 'open_terminal', input: { command: 'ls' } }]);
+  });
+
+  test('T-034: extracts PARAM: glued to prose ending in a colon', () => {
+    // PARAM only attaches to a previously-seen TOOL — without one, it is
+    // dropped (per the existing T-019 contract). With a prior TOOL, it
+    // should bind. Verify the wired case.
+    const raw =
+      'TOOL: execute_in_terminal\n' +
+      'Sesión ya abierta:PARAM: session_id=term-1780428735706-ilsr0\n' +
+      'Comando a enviar:PARAM: input=ls';
+    expect(parseToolCalls(raw)).toEqual([
+      {
+        name: 'execute_in_terminal',
+        input: { session_id: 'term-1780428735706-ilsr0', input: 'ls' },
+      },
+    ]);
+  });
+
+  test('T-034: extracts TOOL: glued to prose ending in `,`, `;`, `?`, `!`', () => {
+    expect(parseToolCalls('Vale,TOOL: open_url\nPARAM: url=https://github.com')).toEqual([
+      { name: 'open_url', input: { url: 'https://github.com' } },
+    ]);
+    expect(parseToolCalls('¿Sigo?TOOL: list_terminals')).toEqual([
+      { name: 'list_terminals', input: {} },
+    ]);
+    expect(parseToolCalls('Perfecto!TOOL: open_terminal\nPARAM: command=zsh')).toEqual([
+      { name: 'open_terminal', input: { command: 'zsh' } },
+    ]);
+    expect(parseToolCalls('Y entonces;TOOL: open_terminal\nPARAM: program=bash')).toEqual([
+      { name: 'open_terminal', input: { program: 'bash' } },
+    ]);
+  });
 });
