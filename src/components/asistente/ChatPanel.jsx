@@ -171,7 +171,11 @@ export default function ChatPanel({ className = '' }) {
     if (parsed?.session_id) {
       window.dispatchEvent(
         new CustomEvent('devhub:zed-open-terminal', {
-          detail: { command: parsed?.command || null, cwd: parsed?.cwd || null },
+          detail: {
+            command: parsed?.command || null,
+            cwd: parsed?.cwd || null,
+            session_id: parsed?.session_id || null,
+          },
         })
       );
     }

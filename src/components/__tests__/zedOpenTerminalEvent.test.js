@@ -1,5 +1,6 @@
 /**
- * zedOpenTerminalEvent unit tests — T-025 (fix consumer guard).
+ * zedOpenTerminalEvent unit tests — T-025 (fix consumer guard)
+ * and T-029a (propagate `session_id`).
  *
  * Spec requirement (T-025, session-workspace-restore):
  * - The producer (ChatPanel) only dispatches `devhub:zed-open-terminal`
@@ -8,6 +9,13 @@
  *   whether `command` is null (open empty shell) OR a string (open + run).
  * - The consumer must still reject events with no payload at all
  *   (defensive: no `detail`).
+ *
+ * Spec requirement (T-029a):
+ * - The detail now carries `session_id` (string|null) so the consumer
+ *   can reuse the model-created PTY instead of minting a fresh one.
+ * - The validator must still accept the event whether `session_id`
+ *   is null (e.g. a future explicit-shell-open producer) or a string
+ *   (Zed's open_terminal result).
  *
  * The decision logic is extracted into a small pure helper to keep the
  * test surface JSDOM-free. The helper lives in
@@ -31,5 +39,21 @@ describe('isValidZedOpenTerminalEvent (T-025)', () => {
 
   test('rejects null detail (no event payload at all)', () => {
     expect(isValidZedOpenTerminalEvent(null)).toBe(false);
+  });
+});
+
+describe('isValidZedOpenTerminalEvent — session_id (T-029a)', () => {
+  test('accepts detail with session_id=null (e.g. future explicit-shell-open producer)', () => {
+    expect(isValidZedOpenTerminalEvent({ command: null, cwd: null, session_id: null })).toBe(true);
+  });
+
+  test('accepts detail with session_id=string (Zed open_terminal result)', () => {
+    expect(
+      isValidZedOpenTerminalEvent({
+        command: 'ls',
+        cwd: '/tmp',
+        session_id: 'term-1780361321206-upe6n',
+      })
+    ).toBe(true);
   });
 });
