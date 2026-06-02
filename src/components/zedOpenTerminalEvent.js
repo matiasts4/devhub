@@ -42,3 +42,20 @@
 export function isValidZedOpenTerminalEvent(detail) {
   return detail !== undefined && detail !== null;
 }
+
+/**
+ * Resolves the panel id to use for a `devhub:zed-open-terminal` event.
+ * Prefers the model's `session_id` (so the visual panel connects to the
+ * same PTY the model opened). Falls back to the supplied id when no
+ * session_id is present (e.g. a legacy producer or an explicit-shell-open
+ * button).
+ *
+ * @param {unknown} detail   - The event detail.
+ * @param {string} fallback  - Panel id to use when detail.session_id is null/missing.
+ * @returns {string} The panel id to pass to `handleSplit`.
+ */
+export function resolveZedOpenTerminalPanelId(detail, fallback) {
+  const sid = detail && typeof detail === 'object' ? detail.session_id : null;
+  if (typeof sid === 'string' && sid.length > 0) return sid;
+  return fallback;
+}

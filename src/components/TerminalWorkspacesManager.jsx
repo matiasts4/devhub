@@ -88,7 +88,7 @@ import {
   buildStartupRestorePlan,
 } from '@/lib/terminal/startupRestoreCoordinator';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
-import { isValidZedOpenTerminalEvent } from './zedOpenTerminalEvent';
+import { isValidZedOpenTerminalEvent, resolveZedOpenTerminalPanelId } from './zedOpenTerminalEvent';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
@@ -2730,14 +2730,32 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, []);
 
   const handleSplit = useCallback(
-    (direction, sourcePanelId = null, initialCommand = null, panelCwd = null) => {
+    (
+      direction,
+      sourcePanelId = null,
+      initialCommand = null,
+      panelCwd = null,
+      explicitPanelId = null
+    ) => {
       const targetId =
         sourcePanelId || activePanelIdsRef.current[activeWsIdRef.current] || activePanelId;
       const targetWorkspaceId = activeWsIdRef.current || activeWsId;
       if (!targetWorkspaceId || !targetId) return null;
 
-      panelCounterRef.current += 1;
-      const newPanelId = `p${panelCounterRef.current}`;
+      // T-029b: if the caller supplies an explicitPanelId (e.g. Zed's
+      // open_terminal tool result, which returns the ttyServer session id),
+      // reuse it as the new panel id. This makes TerminalTTY's
+      // `?sessionId=${id}` query resolve to the same PTY session the model
+      // is talking to, so the visual panel shows the same output the model
+      // sees. Falls back to the counter when no explicit id is provided
+      // (e.g. user-driven splits).
+      const newPanelId =
+        typeof explicitPanelId === 'string' && explicitPanelId.length > 0
+          ? explicitPanelId
+          : `p${panelCounterRef.current + 1}`;
+      if (newPanelId === `p${panelCounterRef.current + 1}`) {
+        panelCounterRef.current += 1;
+      }
       setWorkspaces((prev) =>
         prev.map((ws) => {
           if (ws.id !== targetWorkspaceId) return ws;
@@ -3483,15 +3501,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     // or a string (open + run). See `zedOpenTerminalEvent.js`.
     const handleZedOpenTerminal = (e) => {
       if (!isValidZedOpenTerminalEvent(e.detail)) return;
-      const { command, cwd } = e.detail;
+      const { command, cwd, session_id } = e.detail;
+      const explicitPanelId = resolveZedOpenTerminalPanelId(e.detail, null);
 
       const targetWsId = activeWsIdRef.current || activeWsId;
       const targetPanelId = activePanelIdsRef.current[targetWsId] || activePanelId;
 
       if (!targetWsId || !targetPanelId) return;
 
-      console.log(`[Zed] Opening terminal with command: ${command}, cwd: ${cwd}`);
-      handleSplit('horizontal', targetPanelId, command, cwd || null);
+      // T-029b: pass session_id as the explicitPanelId so the new panel
+      // connects to the same PTY session the model opened. Falls back to
+      // auto-mint when session_id is null (e.g. legacy events).
+      console.log(`[Zed] Opening terminal command=${command} cwd=${cwd} session_id=${session_id}`);
+      handleSplit('horizontal', targetPanelId, command, cwd || null, explicitPanelId);
     };
 
     window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);

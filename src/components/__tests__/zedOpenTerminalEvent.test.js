@@ -57,3 +57,23 @@ describe('isValidZedOpenTerminalEvent — session_id (T-029a)', () => {
     ).toBe(true);
   });
 });
+
+describe('resolveZedOpenTerminalPanelId (T-029b)', () => {
+  const { resolveZedOpenTerminalPanelId } = require('../zedOpenTerminalEvent.js');
+
+  test('returns session_id when present (Zed open_terminal result)', () => {
+    expect(
+      resolveZedOpenTerminalPanelId({ command: 'ls', cwd: null, session_id: 'term-123-abc' })
+    ).toBe('term-123-abc');
+  });
+
+  test('returns fallback when session_id is null (legacy or non-Zed producers)', () => {
+    expect(
+      resolveZedOpenTerminalPanelId({ command: null, cwd: null, session_id: null }, 'p7')
+    ).toBe('p7');
+  });
+
+  test('returns fallback when session_id is missing (defensive)', () => {
+    expect(resolveZedOpenTerminalPanelId({ command: 'ls' }, 'p9')).toBe('p9');
+  });
+});
