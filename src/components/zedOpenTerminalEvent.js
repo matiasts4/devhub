@@ -59,3 +59,19 @@ export function resolveZedOpenTerminalPanelId(detail, fallback) {
   if (typeof sid === 'string' && sid.length > 0) return sid;
   return fallback;
 }
+
+/**
+ * Dispatches `devhub:zed-open-terminal` on `window`. SSR-safe (no-op
+ * when `window` is undefined). This is the ONLY allowed site for an
+ * inline `new CustomEvent('devhub:zed-…', …)` for this event name
+ * (ZEB-005). The producer (ChatPanel) calls this; the consumer
+ * (TerminalWorkspacesManager) registers a `window.addEventListener` for
+ * the same name.
+ *
+ * @param {object} detail - Event detail ({ command, cwd, session_id, focus }).
+ * @returns {void}
+ */
+export function dispatchZedOpenTerminal(detail) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('devhub:zed-open-terminal', { detail: detail ?? {} }));
+}

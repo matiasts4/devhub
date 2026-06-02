@@ -22,7 +22,10 @@
  * `src/components/zedOpenTerminalEvent.js`.
  */
 
-const { isValidZedOpenTerminalEvent } = require('../zedOpenTerminalEvent.js');
+const {
+  isValidZedOpenTerminalEvent,
+  dispatchZedOpenTerminal,
+} = require('../zedOpenTerminalEvent.js');
 
 describe('isValidZedOpenTerminalEvent (T-025)', () => {
   test('accepts detail with command=null (open empty shell — repro for the bug)', () => {
@@ -75,5 +78,57 @@ describe('resolveZedOpenTerminalPanelId (T-029b)', () => {
 
   test('returns fallback when session_id is missing (defensive)', () => {
     expect(resolveZedOpenTerminalPanelId({ command: 'ls' }, 'p9')).toBe('p9');
+  });
+});
+
+describe('dispatchZedOpenTerminal (T-WSR-zed-001, ZEB-005/ZEB-006)', () => {
+  let savedWindow;
+  let savedCustomEvent;
+
+  beforeEach(() => {
+    savedWindow = global.window;
+    savedCustomEvent = global.CustomEvent;
+  });
+
+  afterEach(() => {
+    if (savedWindow === undefined) {
+      delete global.window;
+    } else {
+      global.window = savedWindow;
+    }
+    if (savedCustomEvent === undefined) {
+      delete global.CustomEvent;
+    } else {
+      global.CustomEvent = savedCustomEvent;
+    }
+  });
+
+  test('SSR: window === undefined → no throw, no error', () => {
+    // The helper MUST be SSR-safe (ZEB-006). Removing `window` simulates
+    // a Node.js / Server Component runtime. The helper is a no-op.
+    delete global.window;
+    expect(() => dispatchZedOpenTerminal({ session_id: 'term-X' })).not.toThrow();
+  });
+
+  test('happy path: window defined → exactly one CustomEvent "devhub:zed-open-terminal" with the right detail', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html><body></body></html>');
+    global.window = dom.window;
+    global.CustomEvent = dom.window.CustomEvent;
+
+    const dispatchSpy = jest.spyOn(dom.window, 'dispatchEvent');
+
+    dispatchZedOpenTerminal({ session_id: 'term-X', command: 'ls', cwd: '/tmp' });
+
+    const calls = dispatchSpy.mock.calls.filter(
+      (call) => call[0] && call[0].type === 'devhub:zed-open-terminal'
+    );
+    expect(calls).toHaveLength(1);
+    const ev = calls[0][0];
+    expect(ev).toBeInstanceOf(dom.window.CustomEvent);
+    expect(ev.detail).toEqual({ session_id: 'term-X', command: 'ls', cwd: '/tmp' });
+
+    dispatchSpy.mockRestore();
+    dom.window.close();
   });
 });
