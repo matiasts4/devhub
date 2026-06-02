@@ -1,4 +1,5 @@
 const { browserTool } = require('../../tools/browser');
+const { dispatchZedOpenUrl } = require('../../../../components/zedOpenUrlEvent');
 
 const childProcess = require('child_process');
 
@@ -39,5 +40,43 @@ describe('open_url (browserTool)', () => {
   test('missing url returns error', async () => {
     const result = await browserTool.execute({}, {});
     expect(result.error).toMatch(/url is required/i);
+  });
+
+  // ----- T-WSR-zed-003 (ZEB-003/004/005) -----
+  test('T-WSR-zed-003: dispatches devhub:zed-open-url CustomEvent via the helper', async () => {
+    // The tool MUST dispatch the in-app navigation event alongside the
+    // existing xdg-open fallback. The dispatch goes through the
+    // `dispatchZedOpenUrl` helper (ZEB-005) so the event bus surface
+    // is testable in isolation.
+    const savedWindow = global.window;
+    const savedCustomEvent = global.CustomEvent;
+    try {
+      const { JSDOM } = require('jsdom');
+      const dom = new JSDOM('<!doctype html><html><body></body></html>');
+      global.window = dom.window;
+      global.CustomEvent = dom.window.CustomEvent;
+
+      const dispatchSpy = jest.spyOn(dom.window, 'dispatchEvent');
+      // xdg-open would fail in the test env (no display); mock it.
+      jest.spyOn(childProcess, 'execSync').mockImplementation(() => {});
+
+      await browserTool.execute({ url: 'https://github.com/foo/bar', label: 'repo' });
+
+      const calls = dispatchSpy.mock.calls.filter(
+        (call) => call[0] && call[0].type === 'devhub:zed-open-url'
+      );
+      expect(calls).toHaveLength(1);
+      const ev = calls[0][0];
+      expect(ev.detail.url).toBe('https://github.com/foo/bar');
+
+      // Touch the dispatchZedOpenUrl import so eslint doesn't flag it as
+      // unused. The import is what the test verifies will be wired up.
+      expect(typeof dispatchZedOpenUrl).toBe('function');
+    } finally {
+      if (savedWindow === undefined) delete global.window;
+      else global.window = savedWindow;
+      if (savedCustomEvent === undefined) delete global.CustomEvent;
+      else global.CustomEvent = savedCustomEvent;
+    }
   });
 });

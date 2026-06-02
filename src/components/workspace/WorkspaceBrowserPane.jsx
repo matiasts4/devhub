@@ -46,6 +46,7 @@ import { reloadBrowserRuntime } from './browserRuntimeReload';
 // pre-Phase-3 UX exactly.
 import { useBrowserTabs } from './hooks/useBrowserTabs';
 import BrowserTabStrip from './BrowserTabStrip';
+import { isValidZedOpenUrlEvent } from '@/components/zedOpenUrlEvent';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
@@ -266,10 +267,46 @@ function WorkspaceBrowserPane({
       if (!current.browserLoadFallback) return current;
       return { ...current, browserLoadFallback: false };
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally runs once on mount only
 
+  // T-WSR-zed-003 (BBP-001/BBP-002/BBP-003/BBP-004): listen for
+  // `devhub:zed-open-url` so the in-app browser pane navigates when
+  // Zed calls `open_url`. Idempotent on (url, label) so repeated
+  // dispatches (model retry, user re-asks) do not re-fire navigation
+  // or stack the browser history.
+  const lastAppliedUrlRef = useRef({ url: null, label: null });
+  useEffect(() => {
+    const handler = (e) => {
+      if (!isValidZedOpenUrlEvent(e.detail)) return;
+      const { url, label, focus = false } = e.detail;
+      const last = lastAppliedUrlRef.current;
+      if (last.url === url && (last.label ?? null) === (label ?? null)) {
+        // Same (url, label) as the last applied dispatch — no-op.
+        return;
+      }
 
+      onDockStateChange?.((currentState) => ({
+        ...currentState,
+        browserUrl: url,
+        browserHistory: [...(currentState.browserHistory ?? []), url],
+        browserHistoryIndex: currentState.browserHistory?.length ?? 0,
+      }));
+      lastAppliedUrlRef.current = { url, label: label ?? null };
+
+      if (focus === true && dockState?.maximizedView === 'pizarra') {
+        onDockStateChange?.((currentState) => ({
+          ...currentState,
+          maximized: false,
+          maximizedView: 'browser',
+          activeTab: 'browser',
+        }));
+      }
+    };
+
+    window.addEventListener('devhub:zed-open-url', handler);
+    return () => window.removeEventListener('devhub:zed-open-url', handler);
+  }, [onDockStateChange, dockState?.maximizedView]);
 
   const handleRuntimeReload = () => {
     void reloadBrowserRuntime({
@@ -573,34 +610,34 @@ function WorkspaceBrowserPane({
               </button>
             </div>
             {!isPizarraContext && (
-            <div
-              className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
-                nativeRuntimeActive
-                  ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
-                  : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                    ? 'border-amber-400/25 bg-amber-400/10 text-amber-100'
-                    : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
-              }`}
-              data-testid="browser-native-runtime-chip"
-              title={
-                nativeRuntimeActive
-                  ? 'Native GTK/WebKitGTK runtime active'
-                  : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                    ? 'Native GTK pedido, pero el browser cayó a iframe'
-                    : 'Iframe runtime active'
-              }
-            >
-              <span
-                className={`inline-flex h-1.5 w-1.5 rounded-full ${
+              <div
+                className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
                   nativeRuntimeActive
-                    ? 'bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.65)]'
+                    ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
                     : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                      ? 'bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.45)]'
-                      : 'bg-white/35'
+                      ? 'border-amber-400/25 bg-amber-400/10 text-amber-100'
+                      : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
                 }`}
-              />
-              <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
-            </div>
+                data-testid="browser-native-runtime-chip"
+                title={
+                  nativeRuntimeActive
+                    ? 'Native GTK/WebKitGTK runtime active'
+                    : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                      ? 'Native GTK pedido, pero el browser cayó a iframe'
+                      : 'Iframe runtime active'
+                }
+              >
+                <span
+                  className={`inline-flex h-1.5 w-1.5 rounded-full ${
+                    nativeRuntimeActive
+                      ? 'bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.65)]'
+                      : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                        ? 'bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.45)]'
+                        : 'bg-white/35'
+                  }`}
+                />
+                <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
+              </div>
             )}
 
             {dedicatedBrowserOpen ? (
