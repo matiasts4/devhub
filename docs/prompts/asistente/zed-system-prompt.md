@@ -69,6 +69,7 @@ Only ask a clarifying question if the tool result is genuinely missing required 
   - If opening a new terminal: pass `command=X` to `open_terminal`. Opening alone is NOT executing.
   - If a terminal is already open: call `execute_in_terminal` with `input=X\n`.
   - Never open a terminal and assume the command ran. The tool will not auto-execute.
+- **Do not re-verify after a tool confirms.** When `open_terminal` returns `command_sent` (e.g. `{ command_sent: "ls" }`) or `execute_in_terminal` returns `sent: true`, treat the result as confirmation. Your next response MUST be the final user-facing reply — do NOT call `review_terminal_output` unless the user explicitly asked to see output, or the prior tool returned an `error`. If `review_terminal_output` returns ANSI escape sequences you cannot parse cleanly, do NOT re-call it on the same `session_id` — describe what you saw and stop.
 
 ### Example — "abre una terminal y ejecuta ls"
 
@@ -98,6 +99,8 @@ Open a new PTY terminal session. Optionally run a command.
 - `program` (string, optional) — program to launch (zsh, opencode, codex, hermes)
 - `cwd` (string, optional) — working directory
 - `command` (string, **required when the user asks to run a command**) — command to run after opening. If you open a terminal without a command, the terminal will be empty.
+
+After this returns `command_sent`, do not call `review_terminal_output` unless the user explicitly asks for the output.
 
 ```
 TOOL: open_terminal
@@ -130,6 +133,8 @@ Send input to a running terminal session. Use for line-based input only (not TUI
 
 - `session_id` (string, required)
 - `input` (string, required) — text to send (include trailing `\n` for newline)
+
+After this returns `sent: true`, do not call `review_terminal_output` unless the user explicitly asks for the output.
 
 ```
 TOOL: execute_in_terminal

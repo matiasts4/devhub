@@ -12,6 +12,20 @@
  *         required for run-verbs, and (3) include a WRONG/RIGHT example
  *         showing the actual call shape.
  *
+ * T-032 — Latency fix: lock down the "do not re-verify after the tool
+ * confirmed" rule. The MiniMax M3 model was emitting redundant
+ * `review_terminal_output` calls after `open_terminal` (which already
+ * returns `command_sent`) and after `execute_in_terminal` (which already
+ * returns `sent: true`), adding 2-3 unnecessary turns to every
+ * "open a terminal and run X" interaction. See
+ * `openspec/changes/zed-hardening/latency-and-swarm-analysis.md`
+ * Recommendation C. The fix is a system-prompt rule in three places:
+ *   (a) the `## Action rules` section near the top,
+ *   (b) the `### 1. open_terminal` reference block,
+ *   (c) the `### 4. execute_in_terminal` reference block,
+ * plus a guard against re-calling `review_terminal_output` on the same
+ * `session_id` after a noisy ANSI capture.
+ *
  * The test reads the prompt synchronously from disk (no JSDOM, no module
  * import) so it fails fast at file load if the path is wrong.
  */
@@ -69,5 +83,63 @@ describe('zed-system-prompt.md (T-027 regression)', () => {
     expect(prompt).toMatch(/RIGHT/);
     expect(prompt).toMatch(/abre una terminal y ejecuta ls/);
     expect(prompt).toMatch(/PARAM:\s*command=ls/);
+  });
+
+  // ----- T-032: latency fix — do not re-verify after the tool confirmed -----
+
+  test('T-032: action rules section says "do not" near the "tool confirms" / command_sent context', () => {
+    const prompt = readPrompt();
+    // The new rule must live in the ## Action rules section AND mention
+    // "do not" in the same paragraph as the tool-confirmation context
+    // (either "tool confirms" or "command_sent"). We assert the
+    // "do not" phrase appears at all (case-insensitive) — the
+    // section-scoped regex below pins it to the right neighborhood.
+    const actionRules = prompt.match(/## Action rules[\s\S]*?(?=\n## )/);
+    expect(actionRules).not.toBeNull();
+    expect(actionRules[0].toLowerCase()).toMatch(/do not/);
+    // The phrasing must connect "do not" with the tool-confirmation
+    // vocabulary, not just appear in passing.
+    expect(actionRules[0]).toMatch(/(tool confirms|command\s*s[en]t)/i);
+  });
+
+  test('T-032: prompt names both command_sent and sent: true as confirmation signals', () => {
+    const prompt = readPrompt();
+    // open_terminal returns { command_sent: "ls" } and execute_in_terminal
+    // returns { sent: true }. Both must appear in the prompt so the model
+    // recognizes either signature as a confirmation.
+    expect(prompt).toMatch(/command_sent/);
+    expect(prompt).toMatch(/sent:\s*true/);
+  });
+
+  test('T-032: open_terminal section says "do not call review_terminal_output"', () => {
+    const prompt = readPrompt();
+    const section = prompt.match(/### 1\. open_terminal[\s\S]*?(?=\n### )/);
+    expect(section).not.toBeNull();
+    // The "do not" phrasing must target review_terminal_output, not
+    // be a generic warning about something else. Allow optional
+    // backticks around the tool name (markdown formatting) so the
+    // assertion is robust to `` `review_terminal_output` `` vs
+    // bare `review_terminal_output`.
+    expect(section[0].toLowerCase()).toMatch(/do not call\s+`?review_terminal_output`?/);
+  });
+
+  test('T-032: execute_in_terminal section says "do not call review_terminal_output"', () => {
+    const prompt = readPrompt();
+    const section = prompt.match(/### 4\. execute_in_terminal[\s\S]*?(?=\n### )/);
+    expect(section).not.toBeNull();
+    expect(section[0].toLowerCase()).toMatch(/do not call\s+`?review_terminal_output`?/);
+  });
+
+  test('T-032: prompt warns against re-calling review_terminal_output on the same session_id after ANSI capture', () => {
+    const prompt = readPrompt();
+    // The guard must mention (a) ANSI escape sequences (or ANSI), (b)
+    // session_id (so it scopes to a specific session, not a generic
+    // "don't retry" rule), and (c) the no-retry instruction.
+    expect(prompt).toMatch(/ANSI/);
+    expect(prompt).toMatch(/session_id/);
+    // Phrasing like "do NOT re-call" / "do not re-call" / "do not call … again".
+    // Accept any of those as long as the re-call is forbidden.
+    const lower = prompt.toLowerCase();
+    expect(lower).toMatch(/(do not re[- ]?call|do not .* on the same session_id)/);
   });
 });
