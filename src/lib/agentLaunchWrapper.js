@@ -112,7 +112,9 @@ export function buildAgentEnvExports({
   // Both are checked; either one disables the injection.
   const _minimaxMcpDisabled =
     disableMinimaxMcp === true ||
-    (typeof process !== 'undefined' && process.env && process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP === '1');
+    (typeof process !== 'undefined' &&
+      process.env &&
+      process.env.DEVHUB_AGENT_DISABLE_MINIMAX_MCP === '1');
 
   // MINIMAX-1: Inject MiniMax MCP subscription env vars for Zed agents
   if (!_minimaxMcpDisabled && modelProvider === 'minimax') {
@@ -405,12 +407,22 @@ export function readLegacyBootstrapLock({ lockDir, missionId, role }) {
   return { found: true, pid, deprecated: true, path: file };
 }
 
-function buildBootstrapPromptBlock(prompt = '') {
+function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
   if (!String(prompt || '').trim()) {
     return '';
   }
 
+  const preSleep =
+    Number.isFinite(preSleepSeconds) && preSleepSeconds > 0
+      ? [
+          `# T-017.1: pre-bootstrap sleep (${preSleepSeconds}s) — gives director-consume`,
+          '# time to attach to the tmux pane before the bootstrap prompt is injected.',
+          `sleep ${preSleepSeconds}`,
+        ].join('\n')
+      : '';
+
   return [
+    preSleep,
     '# Queue the bootstrap prompt into the panel tmux session after OpenCode starts.',
     'DEVHUB_LOG_FILE="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
     // T-016.4 — also write the bootstrap prompt into the transcript file
@@ -581,6 +593,71 @@ export function buildPendingDeliveriesPollingCommand() {
 }
 
 /**
+ * T-017.1 — Director consumer block.
+ *
+ * Director's tmux gets a background `director-consume` process that tails
+ * the JSONL chat projection for the mission and prints new messages into
+ * the tmux pane in real time, so the director doesn't have to poll.
+ *
+ * Emits a `nohup ... &` block that:
+ *   1. Spawns `devhub-bus director-consume` in the background
+ *   2. Passes `--target-session` so the consumer knows which tmux pane to write to
+ *   3. Passes `--format tmux-send-keys` so the consumer pushes messages via
+ *      `tmux send-keys` instead of just printing to stdout
+ *   4. Writes the consumer PID to `/tmp/devhub-director-consume-${LAUNCH_ID}.pid`
+ *      so the exit trap can kill it on agent exit
+ *
+ * The cleanup is emitted separately via `buildDirectorConsumerCleanupBlock`
+ * (folded into the exit trap).
+ *
+ * Returns an empty string when not invoked for the director role.
+ *
+ * @param {object} params
+ * @param {string} [params.busBinaryPath] - absolute path to devhub-bus.js
+ * @param {string} [params.missionId] - the mission id (used for the launch-id tag in the PID file)
+ * @param {string} [params.sessionName] - tmux session name (director pane target)
+ * @returns {string} Bash block
+ */
+export function buildDirectorConsumerBlock({ busBinaryPath, missionId, sessionName }) {
+  if (!busBinaryPath || !sessionName) {
+    return '# Director consumer skipped (missing busBinaryPath or sessionName)';
+  }
+  return [
+    '# T-017.1 — director consumer: tail chat.jsonl → tmux send-keys into the director pane',
+    '# so the director does not have to poll team_chat for incoming worker messages.',
+    `nohup "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" director-consume \\`,
+    `  --db "$_DEVHUB_BUS_DB" \\`,
+    `  --mission "${missionId || 'launch-unknown'}" \\`,
+    `  --role director \\`,
+    `  --target-session "${sessionName}" \\`,
+    `  --format "tmux-send-keys" \\`,
+    `  >> "$AGENT_LOG" 2>&1 &`,
+    `_director_consume_pid=$!`,
+    `echo "$_director_consume_pid" > "/tmp/devhub-director-consume-${missionId || 'launch-unknown'}.pid"`,
+  ].join('\n');
+}
+
+/**
+ * T-017.1 — Director consumer cleanup block (runs in the exit trap).
+ *
+ * Kills the background director-consume process and removes the PID file
+ * so we don't leak processes when the director exits.
+ *
+ * @param {object} params
+ * @param {string} [params.launchId] - the mission/launch id used to name the PID file
+ * @returns {string} Bash block
+ */
+export function buildDirectorConsumerCleanupBlock({ launchId } = {}) {
+  const tag = launchId || 'launch-unknown';
+  return [
+    `  if [ -f "/tmp/devhub-director-consume-${tag}.pid" ]; then`,
+    `    kill "$(cat /tmp/devhub-director-consume-${tag}.pid)" 2>/dev/null || true`,
+    `    rm -f "/tmp/devhub-director-consume-${tag}.pid"`,
+    `  fi`,
+  ].join('\n');
+}
+
+/**
  * T-016.4 — Per-agent transcript capture via tmux pipe-pane.
  *
  * Captures the LLM's full terminal output to a transcript file so the
@@ -738,6 +815,7 @@ export function buildExitTrapCommand({
   agentId: _agentId,
   missionId: _missionId,
   transcriptDetach = null,
+  directorConsumerCleanup = null,
 }) {
   const detachBlock = transcriptDetach
     ? [
@@ -745,9 +823,17 @@ export function buildExitTrapCommand({
         `  ${transcriptDetach} 2>/dev/null || true`,
       ].join('\n')
     : '';
+  const directorCleanupBlock = directorConsumerCleanup
+    ? [
+        '  # T-017.1 — kill the background director-consume process (if any)',
+        // so we do not leak a tail -F consumer on every director exit.',
+        directorConsumerCleanup,
+      ].join('\n')
+    : '';
   return `_devhub_exit_handler() {
   local _devhub_AGENT_EXIT_CODE=$?
 ${detachBlock}
+${directorCleanupBlock}
   if [ -n "$DEVHUB_MISSION_ID" ] && [ -n "$DEVHUB_AGENT_ID" ]; then
     local _DEVHUB_EXIT_PAYLOAD
     _DEVHUB_EXIT_PAYLOAD=$(printf '{"agent_id":"%s","role":"%s","exit_code":%d,"ts":"%s"}' \\
@@ -816,6 +902,26 @@ export function buildAgentLaunchWrapper({
   // on exit). The detach command is injected into the exit trap below.
   const pipePane = tmuxSessionName ? buildPipePaneCommands({ role }) : null;
 
+  // T-017.1 — director consumer block (only emitted for the director role).
+  // Workers don't tail chat.jsonl — they read durable inbox rows on demand
+  // via _devhub_inbox_check.
+  const isDirectorRole = role === 'director';
+  const directorConsumerBlock = isDirectorRole
+    ? buildDirectorConsumerBlock({
+        busBinaryPath,
+        missionId,
+        sessionName: tmuxSessionName,
+      })
+    : '';
+  const directorConsumerCleanup = isDirectorRole
+    ? buildDirectorConsumerCleanupBlock({ launchId: missionId })
+    : null;
+
+  // T-017.1 — pre-bootstrap sleep (2s for director, 0 for workers). The
+  // director needs the extra time so the consumer can attach to the tmux
+  // pane before the bootstrap prompt is injected.
+  const preBootstrapSleepSeconds = isDirectorRole ? 2 : 0;
+
   const parts = [
     '#!/usr/bin/env bash',
     '# DevHub Agent Launch Wrapper',
@@ -853,7 +959,7 @@ export function buildAgentLaunchWrapper({
       workspacePath,
     }),
     '',
-    buildBootstrapPromptBlock(bootstrapPrompt),
+    buildBootstrapPromptBlock(bootstrapPrompt, { preSleepSeconds: preBootstrapSleepSeconds }),
     '',
     // T-016.4 — attach the transcript pipe-pane after the bootstrap
     // prompt is queued. Detach happens in the exit trap below.
@@ -888,6 +994,9 @@ export function buildAgentLaunchWrapper({
       // T-016.4 — also detach the pipe-pane on exit so the session is
       // cleaned up. The bus event-write is the primary exit signal.
       transcriptDetach: pipePane ? pipePane.detach : null,
+      // T-017.1 — also kill the background director-consume process on
+      // exit so we don't leak a tail -F consumer per launch.
+      directorConsumerCleanup,
     }),
     '',
     buildDirectorTmuxInjection(directorTmuxSession),
@@ -895,6 +1004,10 @@ export function buildAgentLaunchWrapper({
     '# Setup logging for agent output',
     'AGENT_LOG="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AGENT] Starting agent: \${DEVHUB_ROLE}" >> "$AGENT_LOG"`,
+    '',
+    // T-017.1 — director consumer (background tail -F + tmux send-keys).
+    // The 2s sleep above already gave the consumer time to attach.
+    ...(directorConsumerBlock ? [directorConsumerBlock] : []),
     '',
     '# Execute the actual agent via auto-restart loop',
     '# Captures both stdout and stderr to log; restarts on non-zero exit (max 3)',

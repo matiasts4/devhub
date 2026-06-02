@@ -604,9 +604,15 @@ function cmdDirectorConsume(_db, args) {
   //     consumer-dedupe-<role>.jsonl on startup, capped at 5000 entries (LRU)
   //   - Emits unique lines to stdout (NDJSON) for director tmux consumer
   //   - On SIGTERM/SIGINT: flushes dedupe buffer, exits 0
-  const { mission: missionId, role } = args;
+  // T-017.1 — extended with optional --target-session + --format:
+  //   - --target-session <name>: tmux session to push messages into
+  //   - --format tmux-send-keys:   push each line via `tmux send-keys -t <session>`
+  //   - When --target-session is omitted, lines are written to stdout
+  //     (backward-compatible with the T-008 E2E test in tests/agenthub/e2e/comms-bus.test.js).
+  const { mission: missionId, role, 'target-session': targetSession, format } = args;
   validateMissionId(missionId);
   if (!role) failExit(EXIT_USAGE, '--role required');
+  const useTmuxSendKeys = format === 'tmux-send-keys' && targetSession;
 
   const dir = jsonlProjectionDir(missionId);
   fs.mkdirSync(dir, { recursive: true });
@@ -696,8 +702,24 @@ function cmdDirectorConsume(_db, args) {
       }
       if (!key || seen.has(key)) continue;
       seen.add(key);
-      // Emit to stdout
-      process.stdout.write(line + '\n');
+      // T-017.1 — if --target-session + --format tmux-send-keys were passed,
+      // push the line into the tmux pane via `tmux send-keys -t <session>`.
+      // Otherwise (legacy behavior) emit to stdout.
+      if (useTmuxSendKeys) {
+        try {
+          const { spawnSync } = require('child_process');
+          // Use send-keys -l (literal) so special chars in the JSONL line
+          // are typed exactly (no key-name interpretation). Two-step:
+          // type the line, then send Enter to commit it.
+          spawnSync('tmux', ['send-keys', '-t', targetSession, '-l', line], { stdio: 'ignore' });
+          spawnSync('tmux', ['send-keys', '-t', targetSession, 'Enter'], { stdio: 'ignore' });
+        } catch {
+          /* tmux may not be available in CI / test envs — fall back to stdout */
+          process.stdout.write(line + '\n');
+        }
+      } else {
+        process.stdout.write(line + '\n');
+      }
     }
   });
   tail.stderr.on('data', (chunk) => process.stderr.write(chunk));

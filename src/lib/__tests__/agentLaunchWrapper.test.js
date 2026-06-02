@@ -226,7 +226,7 @@ describe('agentLaunchWrapper', () => {
           MINIMAX_MODEL: 'minimax-test-mock',
         }),
       }));
-      // eslint-disable-next-line global-require
+
       buildAgentEnvExportsMocked = require('../agentLaunchWrapper').buildAgentEnvExports;
     });
 
@@ -327,6 +327,85 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper(tmuxWrapperParams);
       // Must define DEVHUB_TRANSCRIPT_FILE or similar env var
       expect(result).toMatch(/DEVHUB_TRANSCRIPT[A-Z_]*=.*\.transcript/);
+    });
+  });
+
+  // =========================================================================
+  // T-017.1: director-consume in the director wrapper.
+  //
+  // The director has no push consumer, so it currently has to poll team_chat
+  // for incoming worker messages. T-017.1 wires a background `director-consume`
+  // process into the director wrapper that tails chat.jsonl and prints new
+  // messages into the director's tmux pane in real time.
+  //
+  // Requirements:
+  //   (a) The wrapper for the director role contains `director-consume` (the
+  //       binary subcommand, NOT a comment-only mention).
+  //   (b) The wrapper for a worker role does NOT contain `director-consume`.
+  //   (c) The exit trap (which runs on agent exit) cleans up the consumer
+  //       PID file so we don't leak processes when the director exits.
+  //   (d) A 2-second sleep appears BEFORE the bootstrap prompt injection in
+  //       the director wrapper — gives the consumer time to attach to the
+  //       tmux pane before the director's TUI starts flooding with messages.
+  // =========================================================================
+  describe('T-017.1: director-consume in director wrapper', () => {
+    const directorParams = {
+      ...baseParams,
+      role: 'director',
+      tmuxSessionName: 'devhub-swarm-test-1-director',
+      bootstrapPrompt: 'Coordinate the swarm',
+      // busBinaryPath + dbPath are required for the bus helpers block
+      // and the director consumer block to be emitted (otherwise the
+      // wrapper emits "# Bus helpers skipped" / "# Director consumer
+      // skipped" placeholders). The T-011 caller (route.js) always
+      // passes these, so the production path is covered — the test
+      // mirrors the production wiring.
+      busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+      dbPath: '/repo/devhub.db',
+    };
+
+    test('director wrapper contains the director-consume subcommand invocation', () => {
+      const result = buildAgentLaunchWrapper(directorParams);
+      // Must invoke the subcommand (not just mention it in a comment)
+      expect(result).toMatch(/director-consume/);
+      // Must pass the target-session flag so the consumer knows which
+      // tmux pane to print to
+      expect(result).toContain('--target-session');
+      // Must use tmux-send-keys format (we want the consumer to push
+      // messages into the tmux pane, not just print to stdout)
+      expect(result).toContain('tmux-send-keys');
+    });
+
+    test('worker wrapper does NOT contain director-consume (director-only hook)', () => {
+      const workerParams = {
+        ...baseParams,
+        role: 'coder',
+        tmuxSessionName: 'devhub-swarm-test-1-coder',
+        busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+        dbPath: '/repo/devhub.db',
+      };
+      const result = buildAgentLaunchWrapper(workerParams);
+      // The consumer is director-only. Workers don't tail chat.jsonl
+      // for inbound messages — they use _devhub_inbox_check on demand.
+      expect(result).not.toMatch(/director-consume/);
+    });
+
+    test('director wrapper exit trap cleans up the consumer PID file', () => {
+      const result = buildAgentLaunchWrapper(directorParams);
+      // The exit trap must contain PID file cleanup — without it we
+      // leak a director-consume process every time the director exits.
+      expect(result).toMatch(/devhub-director-consume-.*\.pid/);
+      // Must call `kill` on the PID (or pkill, but kill is canonical)
+      expect(result).toMatch(/kill\s+["`]?\$\(cat .*director-consume.*\.pid/);
+    });
+
+    test('director wrapper has a sleep before bootstrap prompt injection (lets consumer attach)', () => {
+      const result = buildAgentLaunchWrapper(directorParams);
+      // The 2s sleep before bootstrap prompt is director-specific — the
+      // sleep gives director-consume time to attach to the tmux pane
+      // before the bootstrap prompt is injected (avoids race condition
+      // where consumer is still attaching when prompt arrives).
+      expect(result).toMatch(/sleep 2[\s\S]{0,200}bootstrap|sleep 2[\s\S]{0,200}DEVHUB_BOOTSTRAP/);
     });
   });
 });
