@@ -23,6 +23,8 @@ import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { createShape } from '@/lib/pizarra/shapeModel';
 import { createPizarraSurfaceController } from '@/lib/commandBar/surface/pizarraSurfaceController';
 import { LiveSurfaceRegistryContext } from '@/lib/pizarra/useLiveSurfaceRegistry';
+import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
+import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 
 // SSR-safe canvas import
 const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
@@ -61,43 +63,49 @@ export default function PizarraPane({
 }) {
   const contextValue = React.useContext(LiveSurfaceRegistryContext);
   const [localSurfaces, setLocalSurfaces] = useState([]);
-  const fallbackRegistry = useMemo(() => ({
-    surfaces: localSurfaces,
-    isLoaded: true,
-    addSurface: (surface) => {
-      const id = surface.id || `temp-${surface.type}-${Math.random().toString(36).substr(2, 9)}`;
-      const panelId = surface.panelId || (surface.type === 'terminal' ? `panel-${id}` : `browser-${id}`);
-      const finalSurface = { ...surface, id, panelId };
-      setLocalSurfaces((prev) => {
-        const exists = prev.find((s) => s.id === id);
-        if (exists) {
-          return prev.map((s) => s.id === id ? { ...s, ...surface } : s);
-        }
-        return [...prev, finalSurface];
-      });
-      return finalSurface;
-    },
-    removeSurface: (id) => {
-      setLocalSurfaces((prev) => prev.filter((s) => s.id !== id));
-    },
-    updatePizarraLayout: (id, layoutChanges) => {
-      setLocalSurfaces((prev) => prev.map((s) => {
-        if (s.id === id) {
-          return {
-            ...s,
-            pizarra: {
-              ...s.pizarra,
-              ...layoutChanges,
-            },
-          };
-        }
-        return s;
-      }));
-    },
-    resetSurfaces: (nextSurfaces) => {
-      setLocalSurfaces(nextSurfaces || []);
-    },
-  }), [localSurfaces]);
+  const fallbackRegistry = useMemo(
+    () => ({
+      surfaces: localSurfaces,
+      isLoaded: true,
+      addSurface: (surface) => {
+        const id = surface.id || `temp-${surface.type}-${Math.random().toString(36).substr(2, 9)}`;
+        const panelId =
+          surface.panelId || (surface.type === 'terminal' ? `panel-${id}` : `browser-${id}`);
+        const finalSurface = { ...surface, id, panelId };
+        setLocalSurfaces((prev) => {
+          const exists = prev.find((s) => s.id === id);
+          if (exists) {
+            return prev.map((s) => (s.id === id ? { ...s, ...surface } : s));
+          }
+          return [...prev, finalSurface];
+        });
+        return finalSurface;
+      },
+      removeSurface: (id) => {
+        setLocalSurfaces((prev) => prev.filter((s) => s.id !== id));
+      },
+      updatePizarraLayout: (id, layoutChanges) => {
+        setLocalSurfaces((prev) =>
+          prev.map((s) => {
+            if (s.id === id) {
+              return {
+                ...s,
+                pizarra: {
+                  ...s.pizarra,
+                  ...layoutChanges,
+                },
+              };
+            }
+            return s;
+          })
+        );
+      },
+      resetSurfaces: (nextSurfaces) => {
+        setLocalSurfaces(nextSurfaces || []);
+      },
+    }),
+    [localSurfaces]
+  );
 
   const registry = contextValue || fallbackRegistry;
   const {
@@ -202,9 +210,7 @@ export default function PizarraPane({
   // ── Marquee selection ─────────────────────────────────────────────────────
   const handleMarqueeSelect = useCallback(
     (ids, additive = false) => {
-      const nextIds = additive
-        ? Array.from(new Set([...state.selectedElementIds, ...ids]))
-        : ids;
+      const nextIds = additive ? Array.from(new Set([...state.selectedElementIds, ...ids])) : ids;
       selectElements(nextIds);
 
       if (nextIds.length === 1) {
@@ -274,7 +280,21 @@ export default function PizarraPane({
     }
   }, [activeTerminalId, mergedElements]);
 
-  return (
+  // ── ModeTransitionShell wiring (pizarra-shared-view-state §7) ──────────────
+  // When the pizarra-shared-view-state feature flag is ON, wrap the
+  // pizarra root in <ModeTransitionShell> so the workspace↔pizarra
+  // mode toggle plays a cross-fade + slide + scale animation
+  // (330 ms total: 110 ms leaving + 220 ms entering; <= 50 ms when
+  // prefers-reduced-motion: reduce). When the flag is OFF the shell
+  // is a no-op and the legacy hard-cut behavior is preserved.
+  const view = dockState?.maximizedView;
+  const shellMaximizedView = view === 'pizarra' ? 'pizarra' : 'workspace';
+  const reducedMotion = detectReducedMotionPref();
+  const transitionEnabled = isPizarraSharedViewEnabled();
+
+  // The pizarra chrome tree. Identical with or without the shell so
+  // the flag-off path is a true no-op.
+  const paneBody = (
     <div
       ref={containerRef}
       data-testid="pizarra-canvas"
@@ -327,6 +347,21 @@ export default function PizarraPane({
         />
       </CanvasViewportProvider>
     </div>
+  );
+
+  if (!transitionEnabled) {
+    return paneBody;
+  }
+
+  return (
+    <ModeTransitionShell
+      maximizedView={shellMaximizedView}
+      reducedMotion={reducedMotion}
+      testId="mode-transition-shell"
+      style={{ width: '100%', height: '100%' }}
+    >
+      {paneBody}
+    </ModeTransitionShell>
   );
 }
 
@@ -384,8 +419,8 @@ function PizarraInner({
     return {
       x: topLeft.x,
       y: topLeft.y,
-      width: (bottomRight.x - topLeft.x),
-      height: (bottomRight.y - topLeft.y),
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
       z,
     };
   }, [canvasSize, zoom, viewportToCanvas]);
@@ -413,8 +448,8 @@ function PizarraInner({
       // Right zone anchor (terminal): right side of visible area
       const isTerminal = type === 'terminal';
       const zoneLeft = isTerminal
-        ? vis.x + halfW + SPLIT_GAP   // right half
-        : vis.x + MARGIN;              // left half
+        ? vis.x + halfW + SPLIT_GAP // right half
+        : vis.x + MARGIN; // left half
 
       // Vertical: center the element in the visible area
       const baseX = zoneLeft;
@@ -471,7 +506,15 @@ function PizarraInner({
         return shape;
       }
     },
-    [addElement, dispatch, selectElement, mergedElements, getVisibleCanvasRegion, setActiveTerminalId, registry.addSurface]
+    [
+      addElement,
+      dispatch,
+      selectElement,
+      mergedElements,
+      getVisibleCanvasRegion,
+      setActiveTerminalId,
+      registry.addSurface,
+    ]
   );
 
   // ── handleMoveElement — free placement (WYSIWYG drop) ────────────────────
@@ -531,15 +574,15 @@ function PizarraInner({
         // Dev split left
         {
           name: 'dev-left',
-          x: vis.x + (vis.width / 2) - shapeWidth - 10,
+          x: vis.x + vis.width / 2 - shapeWidth - 10,
           y: vis.y + (vis.height - shapeHeight) / 2,
         },
         // Dev split right
         {
           name: 'dev-right',
-          x: vis.x + (vis.width / 2) + 10,
+          x: vis.x + vis.width / 2 + 10,
           y: vis.y + (vis.height - shapeHeight) / 2,
-        }
+        },
       ];
 
       // Find the closest target within threshold
@@ -578,7 +621,13 @@ function PizarraInner({
         });
       }
     },
-    [updateElement, mergedElements, getVisibleCanvasRegion, registry.surfaces, registry.updatePizarraLayout]
+    [
+      updateElement,
+      mergedElements,
+      getVisibleCanvasRegion,
+      registry.surfaces,
+      registry.updatePizarraLayout,
+    ]
   );
 
   // ── Surface Controller for CommandBar ─────────────────────────────────────
@@ -602,8 +651,8 @@ function PizarraInner({
     (presetType, centerCoords) => {
       // Use visible center if no explicit center provided
       const vis = getVisibleCanvasRegion();
-      const cx = centerCoords?.x ?? (vis.x + vis.width / 2);
-      const cy = centerCoords?.y ?? (vis.y + vis.height / 2);
+      const cx = centerCoords?.x ?? vis.x + vis.width / 2;
+      const cy = centerCoords?.y ?? vis.y + vis.height / 2;
       const newElements = [];
 
       if (presetType === 'dev-split') {
@@ -768,4 +817,23 @@ function PizarraInner({
       <CommandBar surfaceController={surfaceController} />
     </>
   );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * detectReducedMotionPref — SSR-safe read of the OS reduced-motion
+ * preference. Mirrors the detection used in useModeTransition so
+ * the wiring point can pass the same value down to the shell.
+ * Returns false in non-DOM environments.
+ */
+function detectReducedMotionPref() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }

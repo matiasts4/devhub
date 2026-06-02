@@ -70,6 +70,7 @@ function detectReducedMotion() {
 
 export function useModeTransition({
   maximizedView,
+  reducedMotion: reducedMotionProp,
   leaveMs = DEFAULT_LEAVE_MS,
   enterMs = DEFAULT_ENTER_MS,
   debounceMs = DEFAULT_DEBOUNCE_MS,
@@ -78,8 +79,12 @@ export function useModeTransition({
   // environments (no MotionConfig). It also caches the value in
   // module state, which makes it hard to flip on/off in tests.
   // We read `window.matchMedia` directly on every render so the
-  // hook is fully reactive to the OS preference.
-  const reducedMotion = detectReducedMotion();
+  // hook is fully reactive to the OS preference. When the caller
+  // passes an explicit `reducedMotion` prop (e.g. from a wiring
+  // point that already SSR-detected it), we use that value
+  // instead so the hook stays testable with explicit control.
+  const reducedMotion =
+    typeof reducedMotionProp === 'boolean' ? reducedMotionProp : detectReducedMotion();
 
   // Internal state.
   const [phase, setPhase] = useState('idle');

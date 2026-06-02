@@ -16,7 +16,7 @@
  * surfaces is untouched.
  *
  * Usage:
- *   <ModeTransitionShell maximizedView={maximizedView}>
+ *   <ModeTransitionShell maximizedView={maximizedView} reducedMotion={reducedMotion}>
  *     {maximizedView === 'pizarra' ? <PizarraCanvas /> : <WorkspaceChrome />}
  *   </ModeTransitionShell>
  *
@@ -32,8 +32,20 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModeTransition } from './useModeTransition';
 
-export function ModeTransitionShell({ maximizedView, children, className, style, testId }) {
-  const { phase, isAnimating, animProps } = useModeTransition({ maximizedView });
+export function ModeTransitionShell({
+  maximizedView,
+  reducedMotion,
+  children,
+  className,
+  style,
+  testId,
+}) {
+  // `reducedMotion` is optional. When provided, the wiring point
+  // owns the OS preference read (so it can SSR-fallback safely
+  // before window is available) and the hook consumes the value
+  // directly. When undefined, the hook re-reads window.matchMedia
+  // on every render — see useModeTransition for the rationale.
+  const { phase, isAnimating, animProps } = useModeTransition({ maximizedView, reducedMotion });
 
   return (
     <div
