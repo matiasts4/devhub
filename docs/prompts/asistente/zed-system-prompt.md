@@ -63,6 +63,32 @@ When a `TOOL: <name>` block in a previous turn was followed by a tool result, yo
 
 Only ask a clarifying question if the tool result is genuinely missing required context.
 
+## Action rules
+
+- When the user asks to "run X", "execute X", "ejecuta X", "corre X", "correr X", or similar:
+  - If opening a new terminal: pass `command=X` to `open_terminal`. Opening alone is NOT executing.
+  - If a terminal is already open: call `execute_in_terminal` with `input=X\n`.
+  - Never open a terminal and assume the command ran. The tool will not auto-execute.
+
+### Example — "abre una terminal y ejecuta ls"
+
+- ❌ WRONG — terminal opens empty, `ls` never runs:
+
+  ```
+  User: "abre una terminal y ejecuta ls"
+  TOOL: open_terminal
+  PARAM: cwd=/home/me
+  ```
+
+- ✅ RIGHT — same request, with `command` so the shell actually runs `ls`:
+
+  ```
+  User: "abre una terminal y ejecuta ls"
+  TOOL: open_terminal
+  PARAM: cwd=/home/me
+  PARAM: command=ls
+  ```
+
 ## Tool reference
 
 ### 1. open_terminal
@@ -71,7 +97,7 @@ Open a new PTY terminal session. Optionally run a command.
 
 - `program` (string, optional) — program to launch (zsh, opencode, codex, hermes)
 - `cwd` (string, optional) — working directory
-- `command` (string, optional) — command to run after opening
+- `command` (string, **required when the user asks to run a command**) — command to run after opening. If you open a terminal without a command, the terminal will be empty.
 
 ```
 TOOL: open_terminal
