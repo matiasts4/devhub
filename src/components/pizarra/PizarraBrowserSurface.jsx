@@ -21,6 +21,13 @@ import { Move, RefreshCw, X } from 'lucide-react';
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
+import {
+  ensureSurfaceMotionKeyframes,
+  resolveFrameVisual,
+  resolveHandleSizing,
+  FRAME_TRANSITION,
+  SURFACE_ENTER_ANIMATION,
+} from '@/lib/pizarra/surfaceMotion';
 
 const FRAME_INSET = 10;
 
@@ -46,9 +53,12 @@ function createDockState(url) {
     activeTab: 'browser',
     browserHistory: [resolvedUrl],
     browserHistoryIndex: 0,
-    // pizarra-ux-overhaul: native-gtk default as requested.
-    browserRuntime: 'native-gtk',
-    // Always use native GTK in pizarra, do not fall back to iframe.
+    // pizarra-browser-fix: start on iframe so the browser always renders content.
+    // The useEffect that watches nativeCapability will upgrade to native-gtk
+    // automatically when the Tauri WebKitGTK backend is ready.
+    // Forcing native-gtk from the start caused a perpetual "Preparando" spinner
+    // when the native backend was not yet initialized.
+    browserRuntime: 'iframe',
     browserLoadFallback: false,
     browserUrl: resolvedUrl,
     editMode: false,
@@ -57,6 +67,7 @@ function createDockState(url) {
     visible: true,
   };
 }
+
 
 // pizarra-ux-overhaul: failure categories from board-browser-load Req 3.
 const FAILURE_CATEGORIES = {
@@ -69,13 +80,39 @@ export default function PizarraBrowserSurface({
   shape,
   bounds,
   selected = false,
+  zoom = 1,
   onSelect,
   onMove,
   onDragEnd,
   onUpdateElement,
   onClose,
+  projectId,
+  workspaceId,
+  dockState: parentDockState,
+  onDockStateChange: parentOnDockStateChange,
+  browserWindowState,
+  onBrowserWindowStateChange,
+  workspaceWindows,
+  activeWorkspaceWindowId,
+  onWorkspaceWindowSelect,
+  onWorkspaceWindowAdd,
+  onWorkspaceWindowRemove,
 }) {
-  const [dockState, setDockState] = useState(() => createDockState(shape.url));
+  const [localDockState, setLocalDockState] = useState(() => createDockState(shape.url));
+
+  const resolvedDockState = parentDockState || localDockState;
+  const resolvedOnDockStateChange = useCallback((nextStateOrUpdater) => {
+    if (parentOnDockStateChange) {
+      parentOnDockStateChange(nextStateOrUpdater);
+    } else {
+      setLocalDockState((currentState) =>
+        typeof nextStateOrUpdater === 'function'
+          ? nextStateOrUpdater(currentState)
+          : nextStateOrUpdater
+      );
+    }
+  }, [parentOnDockStateChange]);
+
   const [loadFailed, setLoadFailed] = useState(null);
   // pizarra-ux-overhaul: tracks whether the iframe emitted a load
   // event during the 5s window. Cleared on reload.
@@ -96,7 +133,7 @@ export default function PizarraBrowserSurface({
   useEffect(() => {
     const nextUrl = resolveBrowserUrl(shape.url);
     persistedUrlRef.current = nextUrl;
-    setDockState((currentState) => {
+    resolvedOnDockStateChange((currentState) => {
       if (currentState.browserUrl === nextUrl) return currentState;
 
       const nextHistory = currentState.browserHistory?.includes(nextUrl)
@@ -110,21 +147,21 @@ export default function PizarraBrowserSurface({
         browserHistoryIndex: Math.max(nextHistory.length - 1, 0),
       };
     });
-  }, [shape.url]);
+  }, [shape.url, resolvedOnDockStateChange]);
 
   useEffect(() => {
-    const nextUrl = resolveBrowserUrl(dockState.browserUrl);
+    const nextUrl = resolveBrowserUrl(resolvedDockState.browserUrl);
     if (persistedUrlRef.current === nextUrl) return;
     persistedUrlRef.current = nextUrl;
     onUpdateElement?.(shape.id, { url: nextUrl });
-  }, [dockState.browserUrl, onUpdateElement, shape.id]);
+  }, [resolvedDockState.browserUrl, onUpdateElement, shape.id]);
 
   // pizarra-ux-overhaul: 5s explicit failure timer. Counts the time
   // the iframe is "stuck" (no load event AND no native readiness
   // signal). On fire, sets loadFailed with the iframe-stuck category
   // unless the native runtime timed out (then native-timeout).
   useEffect(() => {
-    if (dockState.browserRuntime === 'native-gtk') return; // Enforce native-gtk: disable iframe timer
+    if (resolvedDockState.browserRuntime === 'native-gtk') return; // Enforce native-gtk: disable iframe timer
     if (loadFailed) return; // already failed; don't restart
     if (iframeLoaded) return; // iframe already loaded; success path
     const handle = setTimeout(() => {
@@ -145,7 +182,7 @@ export default function PizarraBrowserSurface({
     iframeLoaded,
     srcReloadKey,
     nativeCapability && nativeCapability.supported,
-    dockState.browserRuntime,
+    resolvedDockState.browserRuntime,
   ]);
 
   // Mirror loadFailed into a ref so the timer callback sees the
@@ -161,20 +198,14 @@ export default function PizarraBrowserSurface({
   useEffect(() => {
     if (!nativeCapability) return;
     if (!nativeCapability.ready) return;
-    if (dockState.browserLoadFallback) return;
-    setDockState((currentState) => {
+    if (resolvedDockState.browserLoadFallback) return;
+    resolvedOnDockStateChange((currentState) => {
       if (currentState.browserRuntime === 'native-gtk') return currentState;
       return { ...currentState, browserRuntime: 'native-gtk' };
     });
-  }, [nativeCapability, dockState.browserLoadFallback]);
+  }, [nativeCapability, resolvedDockState.browserLoadFallback, resolvedOnDockStateChange]);
 
-  const handleDockStateChange = useCallback((nextStateOrUpdater) => {
-    setDockState((currentState) =>
-      typeof nextStateOrUpdater === 'function'
-        ? nextStateOrUpdater(currentState)
-        : nextStateOrUpdater
-    );
-  }, []);
+  const handleDockStateChange = resolvedOnDockStateChange;
 
   // pizarra-ux-overhaul: mark iframe as loaded on the workspace pane's
   // load event. The WorkspaceBrowserPane exposes onIframeLoad via the
@@ -214,6 +245,11 @@ export default function PizarraBrowserSurface({
   const handleWrapperButtonMouseDown = useCallback(() => setIsButtonActive(true), []);
   const handleWrapperButtonMouseUp = useCallback(() => setIsButtonActive(false), []);
 
+  // pizarra-motion: inject shared enter keyframes once.
+  useEffect(() => {
+    ensureSurfaceMotionKeyframes();
+  }, []);
+
   const handleFrameMouseDown = useCallback(
     (event) => {
       if (event.target?.closest?.('[data-pizarra-surface-drag-handle="true"]')) {
@@ -239,15 +275,24 @@ export default function PizarraBrowserSurface({
       event.preventDefault();
       onSelect?.(shape.id);
 
-      const startBounds = { ...bounds };
+      // pizarra-resize-canvas-coords: resize in CANVAS space using real
+      // shape geometry; divide screen deltas by zoom so the opposite edge
+      // stays anchored and the surface never teleports to canvas origin.
+      const z = zoom > 0 ? zoom : 1;
+      const startBounds = {
+        x: shape.x ?? bounds.x,
+        y: shape.y ?? bounds.y,
+        width: shape.width ?? bounds.width,
+        height: shape.height ?? bounds.height,
+      };
       const startX = event.clientX;
       const startY = event.clientY;
       const minW = 220;
       const minH = 160;
 
       const handleMouseMove = (moveEvent) => {
-        const dx = moveEvent.clientX - startX;
-        const dy = moveEvent.clientY - startY;
+        const dx = (moveEvent.clientX - startX) / z;
+        const dy = (moveEvent.clientY - startY) / z;
         const next = { ...startBounds };
         if (dir.includes('e')) {
           next.width = Math.max(minW, startBounds.width + dx);
@@ -278,7 +323,7 @@ export default function PizarraBrowserSurface({
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
-    [bounds, onSelect, onUpdateElement, shape.id]
+    [bounds, onSelect, onUpdateElement, shape, zoom]
   );
 
   const handleDragStart = usePizarraSurfaceDrag({
@@ -299,6 +344,9 @@ export default function PizarraBrowserSurface({
     [bounds.height, bounds.screenX, bounds.screenY, bounds.width, bounds.x, bounds.y, srcReloadKey]
   );
 
+  const frameVisual = resolveFrameVisual({ selected, hovered: isHovered, dragging: isDragging });
+  const handleSizing = resolveHandleSizing(zoom);
+
   return (
     <div
       data-testid={`pizarra-browser-surface-${shape.id}`}
@@ -309,6 +357,9 @@ export default function PizarraBrowserSurface({
         width: bounds.width,
         height: bounds.height,
         pointerEvents: 'none',
+        animation: SURFACE_ENTER_ANIMATION,
+        transformOrigin: 'center center',
+        willChange: 'transform',
       }}
     >
       <div
@@ -319,20 +370,18 @@ export default function PizarraBrowserSurface({
         onMouseUp={handleWrapperButtonMouseUp}
         data-pizarra-header-hovered={isHovered ? 'true' : 'false'}
         data-pizarra-header-active={isButtonActive ? 'true' : 'false'}
+        data-pizarra-surface-dragging={isDragging ? 'true' : 'false'}
+        data-pizarra-surface-selected={selected ? 'true' : 'false'}
         style={{
           position: 'absolute',
           inset: FRAME_INSET,
           overflow: 'hidden',
           borderRadius: 16,
-          border: selected ? '2px solid rgba(88,166,255,0.72)' : '1px solid rgba(88,166,255,0.28)',
-          borderBottomColor: isHovered
-            ? 'rgba(88, 166, 255, 0.5)'
-            : selected
-              ? 'rgba(88,166,255,0.72)'
-              : 'rgba(88, 166, 255, 0.28)',
+          border: frameVisual.border,
           outline: isButtonActive ? '1px inset var(--accent-primary)' : 'none',
           background: 'rgba(8, 14, 24, 0.94)',
-          boxShadow: '0 18px 48px rgba(3, 7, 18, 0.28)',
+          boxShadow: frameVisual.boxShadow,
+          transition: FRAME_TRANSITION,
           pointerEvents: 'auto',
         }}
       >
@@ -405,10 +454,17 @@ export default function PizarraBrowserSurface({
           }}
         >
           <WorkspaceBrowserPane
-            dockState={dockState}
+            projectId={projectId || 'pizarra'}
+            workspaceId={workspaceId || shape.id}
+            dockState={resolvedDockState}
             onDockStateChange={handleDockStateChange}
-            projectId="pizarra"
-            workspaceId={shape.id}
+            browserWindowState={browserWindowState}
+            onBrowserWindowStateChange={onBrowserWindowStateChange}
+            workspaceWindows={workspaceWindows}
+            activeWorkspaceWindowId={activeWorkspaceWindowId}
+            onWorkspaceWindowSelect={onWorkspaceWindowSelect}
+            onWorkspaceWindowAdd={onWorkspaceWindowAdd}
+            onWorkspaceWindowRemove={onWorkspaceWindowRemove}
             layoutSyncKey={layoutSyncKey}
             suspendNativeSurface={isDragging}
             isPizarraContext={true}
@@ -469,127 +525,76 @@ export default function PizarraBrowserSurface({
         ) : null}
       </div>
 
-      {/* pizarra-drag-resize-polish: 8 border resize handles. Same
-          geometry as CanvasTerminal. The drag-handle button (top-left
-          Move icon) must be excluded from the resize hit-area, so
-          handleResizeStart bails when the mousedown originates from
-          the drag handle (see the closest() guard above). */}
-      {selected && (
-        <>
-          <div
-            data-testid="pizarra-browser-resize-n"
-            onMouseDown={(e) => handleResizeStart(e, 'n')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 14,
-              right: 14,
-              height: 8,
-              cursor: 'ns-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="pizarra-browser-resize-s"
-            onMouseDown={(e) => handleResizeStart(e, 's')}
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 14,
-              right: 14,
-              height: 8,
-              cursor: 'ns-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="pizarra-browser-resize-w"
-            onMouseDown={(e) => handleResizeStart(e, 'w')}
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 14,
-              bottom: 14,
-              width: 8,
-              cursor: 'ew-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="pizarra-browser-resize-e"
-            onMouseDown={(e) => handleResizeStart(e, 'e')}
-            style={{
-              position: 'absolute',
-              right: 0,
-              top: 14,
-              bottom: 14,
-              width: 8,
-              cursor: 'ew-resize',
-              pointerEvents: 'auto',
-              zIndex: 5,
-            }}
-          />
-          <div
-            data-testid="pizarra-browser-resize-nw"
-            onMouseDown={(e) => handleResizeStart(e, 'nw')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nwse-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-          <div
-            data-testid="pizarra-browser-resize-ne"
-            onMouseDown={(e) => handleResizeStart(e, 'ne')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nesw-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-          <div
-            data-testid="pizarra-browser-resize-sw"
-            onMouseDown={(e) => handleResizeStart(e, 'sw')}
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nesw-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-          <div
-            data-testid="pizarra-browser-resize-se"
-            onMouseDown={(e) => handleResizeStart(e, 'se')}
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              right: 0,
-              width: 14,
-              height: 14,
-              cursor: 'nwse-resize',
-              pointerEvents: 'auto',
-              zIndex: 6,
-            }}
-          />
-        </>
-      )}
+      {/* pizarra-motion: zoom-aware resize handles. Hit areas scale inversely
+          with zoom; fully invisible — discoverability comes from the cursor
+          change on hover and the bright accent frame on selection. No corner
+          squares/nubs. The drag-handle button is excluded from the resize
+          hit-area via the closest() guard in handleResizeStart. data-testids
+          preserved for existing tests. */}
+      {selected &&
+        (() => {
+          const eg = handleSizing.edge;
+          const c = handleSizing.corner;
+          const ins = handleSizing.inset;
+          const edgeStyle = (extra) => ({
+            position: 'absolute',
+            pointerEvents: 'auto',
+            zIndex: 5,
+            ...extra,
+          });
+          const cornerStyle = (extra) => ({
+            position: 'absolute',
+            width: c,
+            height: c,
+            pointerEvents: 'auto',
+            zIndex: 6,
+            ...extra,
+          });
+          return (
+            <>
+              <div
+                data-testid="pizarra-browser-resize-n"
+                onMouseDown={(ev) => handleResizeStart(ev, 'n')}
+                style={edgeStyle({ top: FRAME_INSET - eg / 2, left: ins, right: ins, height: eg, cursor: 'ns-resize' })}
+              />
+              <div
+                data-testid="pizarra-browser-resize-s"
+                onMouseDown={(ev) => handleResizeStart(ev, 's')}
+                style={edgeStyle({ bottom: FRAME_INSET - eg / 2, left: ins, right: ins, height: eg, cursor: 'ns-resize' })}
+              />
+              <div
+                data-testid="pizarra-browser-resize-w"
+                onMouseDown={(ev) => handleResizeStart(ev, 'w')}
+                style={edgeStyle({ left: FRAME_INSET - eg / 2, top: ins, bottom: ins, width: eg, cursor: 'ew-resize' })}
+              />
+              <div
+                data-testid="pizarra-browser-resize-e"
+                onMouseDown={(ev) => handleResizeStart(ev, 'e')}
+                style={edgeStyle({ right: FRAME_INSET - eg / 2, top: ins, bottom: ins, width: eg, cursor: 'ew-resize' })}
+              />
+              <div
+                data-testid="pizarra-browser-resize-nw"
+                onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
+                style={cornerStyle({ top: FRAME_INSET - c / 2, left: FRAME_INSET - c / 2, cursor: 'nwse-resize' })}
+              />
+              <div
+                data-testid="pizarra-browser-resize-ne"
+                onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
+                style={cornerStyle({ top: FRAME_INSET - c / 2, right: FRAME_INSET - c / 2, cursor: 'nesw-resize' })}
+              />
+              <div
+                data-testid="pizarra-browser-resize-sw"
+                onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
+                style={cornerStyle({ bottom: FRAME_INSET - c / 2, left: FRAME_INSET - c / 2, cursor: 'nesw-resize' })}
+              />
+              <div
+                data-testid="pizarra-browser-resize-se"
+                onMouseDown={(ev) => handleResizeStart(ev, 'se')}
+                style={cornerStyle({ bottom: FRAME_INSET - c / 2, right: FRAME_INSET - c / 2, cursor: 'nwse-resize' })}
+              />
+            </>
+          );
+        })()}
     </div>
   );
 }

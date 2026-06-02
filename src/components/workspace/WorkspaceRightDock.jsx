@@ -81,7 +81,19 @@ export default function WorkspaceRightDock({
 
         {isPizarraActive && (
           <div className="h-full min-h-0">
-            <PizarraPane projectId={project?.id} />
+            <PizarraPane
+              projectId={project?.id}
+              workspaceId={workspaceId}
+              dockState={dockState}
+              onDockStateChange={onDockStateChange}
+              browserWindowState={browserWindowState}
+              onBrowserWindowStateChange={onBrowserWindowStateChange}
+              workspaceWindows={workspaceWindows}
+              activeWorkspaceWindowId={activeWorkspaceWindowId}
+              onWorkspaceWindowSelect={onWorkspaceWindowSelect}
+              onWorkspaceWindowAdd={onWorkspaceWindowAdd}
+              onWorkspaceWindowRemove={onWorkspaceWindowRemove}
+            />
           </div>
         )}
       </div>

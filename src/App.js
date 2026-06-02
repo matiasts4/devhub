@@ -214,12 +214,11 @@ function WorkspaceLayout() {
       {/* ── Inner layout: sidebar + content ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Hide sidebar when terminal is maximized and visible */}
-        {!(isTerminalMaximized && isTerminalRoute) && (
+        {!(isTerminalMaximized && isTerminalRoute) && !isPizarraActive && (
           <WorkspaceSidebar
             project={project}
             collapsed={collapsed}
             onToggleCollapse={setCollapsed}
-            className={isPizarraActive ? 'pizarra-autohide' : ''}
           />
         )}
 

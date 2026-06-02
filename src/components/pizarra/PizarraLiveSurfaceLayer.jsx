@@ -15,6 +15,17 @@ export default function PizarraLiveSurfaceLayer({
   onActivateTerminal,
   onUpdateElement,
   onRemoveElement,
+  projectId,
+  workspaceId,
+  dockState,
+  onDockStateChange,
+  browserWindowState,
+  onBrowserWindowStateChange,
+  workspaceWindows,
+  activeWorkspaceWindowId,
+  onWorkspaceWindowSelect,
+  onWorkspaceWindowAdd,
+  onWorkspaceWindowRemove,
 }) {
   const { projectRect, zoom } = useCanvasViewport();
 
@@ -28,6 +39,12 @@ export default function PizarraLiveSurfaceLayer({
   useEffect(() => {
     onMoveElementRef.current = onMoveElement;
   }, [onMoveElement]);
+
+  // pizarra-multi-select: shared registry of every live surface wrapper +
+  // its latest shape/bounds, keyed by shape.id. Group drag reads this map
+  // so the dragged item can move ALL selected siblings by the same screen
+  // offset without per-item React state or re-renders.
+  const surfaceRegistryRef = useRef(new Map());
 
   const surfaceShapes = elements.filter(
     (shape) => shape.type === SHAPE_TYPES.TERMINAL || shape.type === SHAPE_TYPES.BROWSER
@@ -68,6 +85,8 @@ export default function PizarraLiveSurfaceLayer({
             shape={shape}
             bounds={bounds}
             selected={selected}
+            selectedElementIds={selectedElementIds}
+            registryRef={surfaceRegistryRef}
             zIndex={zIndex}
             resolvedZoom={resolvedZoom}
             activeTerminalId={activeTerminalId}
@@ -76,6 +95,17 @@ export default function PizarraLiveSurfaceLayer({
             onActivateTerminal={onActivateTerminal}
             onUpdateElement={onUpdateElement}
             onRemoveElement={onRemoveElement}
+            projectId={projectId}
+            workspaceId={workspaceId}
+            dockState={dockState}
+            onDockStateChange={onDockStateChange}
+            browserWindowState={browserWindowState}
+            onBrowserWindowStateChange={onBrowserWindowStateChange}
+            workspaceWindows={workspaceWindows}
+            activeWorkspaceWindowId={activeWorkspaceWindowId}
+            onWorkspaceWindowSelect={onWorkspaceWindowSelect}
+            onWorkspaceWindowAdd={onWorkspaceWindowAdd}
+            onWorkspaceWindowRemove={onWorkspaceWindowRemove}
           />
         );
       })}
@@ -92,6 +122,8 @@ function LiveSurfaceItem({
   shape,
   bounds,
   selected,
+  selectedElementIds,
+  registryRef,
   zIndex,
   resolvedZoom,
   activeTerminalId,
@@ -100,11 +132,35 @@ function LiveSurfaceItem({
   onActivateTerminal,
   onUpdateElement,
   onRemoveElement,
+  projectId,
+  workspaceId,
+  dockState,
+  onDockStateChange,
+  browserWindowState,
+  onBrowserWindowStateChange,
+  workspaceWindows,
+  activeWorkspaceWindowId,
+  onWorkspaceWindowSelect,
+  onWorkspaceWindowAdd,
+  onWorkspaceWindowRemove,
 }) {
   const shapeRef = useRef(shape);
   useEffect(() => {
     shapeRef.current = shape;
   }, [shape]);
+
+  // pizarra-multi-select: keep the latest selection in a ref so the stable
+  // drag callbacks (handleMove/handleDragEnd) can decide group-vs-single
+  // without being recreated on every selection change.
+  const selectedIdsRef = useRef(selectedElementIds);
+  useEffect(() => {
+    selectedIdsRef.current = selectedElementIds;
+  }, [selectedElementIds]);
+
+  // pizarra-multi-select: shift state captured on mousedown (capture phase)
+  // so the single-arg onSelect(id) call from the surface can be upgraded to
+  // onSelect(id, multi) without changing the surface component contract.
+  const modifierRef = useRef(false);
 
   // resolvedZoom ref so the drag callbacks read the latest zoom
   // without being recreated on zoom change.
@@ -132,37 +188,118 @@ function LiveSurfaceItem({
   }, [bounds]);
   // Captured once at drag start (first move tick); cleared on drag end.
   const dragStartBoundsRef = useRef(null);
+  // pizarra-multi-select: when a group drag is active, holds a Map of
+  // siblingId -> { x, y } drag-start screen positions. null = single drag.
+  const groupDragStartRef = useRef(null);
+
+  // pizarra-multi-select: keep the shared registry entry fresh after every
+  // commit so group drag reads the latest wrapper element, shape, and
+  // projected bounds. Unregister on unmount only.
+  useLayoutEffect(() => {
+    registryRef.current.set(shape.id, {
+      el: wrapperRef.current,
+      shape,
+      bounds,
+    });
+  });
+  useEffect(() => {
+    const registry = registryRef.current;
+    const id = shape.id;
+    return () => {
+      registry.delete(id);
+    };
+  }, [registryRef, shape.id]);
 
   const handleMove = useCallback(({ deltaX = 0, deltaY = 0 }) => {
-    // Capture drag-start position on the first tick only.
+    const zoom = resolvedZoomRef.current || 1;
+    // Capture drag-start position + group membership on the first tick only.
     if (!dragStartBoundsRef.current) {
       dragStartBoundsRef.current = { x: boundsRef.current.x, y: boundsRef.current.y };
+      const selectedIds = selectedIdsRef.current || [];
+      const isGroupDrag =
+        selectedIds.length > 1 && selectedIds.includes(shapeRef.current.id);
+      if (isGroupDrag) {
+        const starts = new Map();
+        for (const sid of selectedIds) {
+          const entry = registryRef.current.get(sid);
+          if (entry && entry.el) {
+            starts.set(sid, { x: entry.bounds.x, y: entry.bounds.y });
+          }
+        }
+        groupDragStartRef.current = starts;
+      } else {
+        groupDragStartRef.current = null;
+      }
     }
-    const zoom = resolvedZoomRef.current || 1;
     dragScreenOffsetRef.current.x += deltaX * zoom;
     dragScreenOffsetRef.current.y += deltaY * zoom;
-    if (wrapperRef.current) {
+    const offsetX = dragScreenOffsetRef.current.x;
+    const offsetY = dragScreenOffsetRef.current.y;
+
+    const group = groupDragStartRef.current;
+    if (group) {
+      // Move EVERY selected sibling (including self) by the same screen offset.
+      for (const [sid, start] of group) {
+        const entry = registryRef.current.get(sid);
+        if (entry && entry.el) {
+          entry.el.style.left = (start.x + offsetX) + 'px';
+          entry.el.style.top = (start.y + offsetY) + 'px';
+        }
+      }
+    } else if (wrapperRef.current) {
       const start = dragStartBoundsRef.current;
-      wrapperRef.current.style.left = (start.x + dragScreenOffsetRef.current.x) + 'px';
-      wrapperRef.current.style.top  = (start.y + dragScreenOffsetRef.current.y) + 'px';
+      wrapperRef.current.style.left = (start.x + offsetX) + 'px';
+      wrapperRef.current.style.top = (start.y + offsetY) + 'px';
     }
-  }, []);
+  }, [registryRef]);
 
   const handleDragEnd = useCallback(({ totalDeltaX = 0, totalDeltaY = 0 }) => {
     dragStartBoundsRef.current = null;
+    const group = groupDragStartRef.current;
+    groupDragStartRef.current = null;
+    if (group) {
+      // Commit each selected sibling's new position once (canvas units).
+      for (const sid of group.keys()) {
+        const entry = registryRef.current.get(sid);
+        const siblingShape = entry?.shape;
+        if (siblingShape) {
+          onMoveElementRef.current?.(sid, {
+            x: siblingShape.x + totalDeltaX,
+            y: siblingShape.y + totalDeltaY,
+          });
+        }
+      }
+      return;
+    }
     const s = shapeRef.current;
     onMoveElementRef.current?.(s.id, {
       x: s.x + totalDeltaX,
       y: s.y + totalDeltaY,
     });
-  }, [onMoveElementRef]);
+  }, [onMoveElementRef, registryRef]);
+
+  // pizarra-multi-select: upgrade the surface's single-arg onSelect(id) into
+  // onSelect(id, multi). The shift flag is read from modifierRef (set in the
+  // wrapper's onMouseDownCapture). If the surface is already part of a
+  // multi-selection and no modifier is held, we PRESERVE the group so a
+  // plain drag moves all selected surfaces instead of collapsing to one.
+  const handleSelectWithModifier = useCallback((id) => {
+    const shift = modifierRef.current;
+    if (!shift) {
+      const ids = selectedIdsRef.current || [];
+      if (ids.length > 1 && ids.includes(id)) {
+        return;
+      }
+    }
+    onSelect?.(id, shift);
+  }, [onSelect]);
 
   // On drop, React re-renders the wrapper with new bounds (left/top from
   // the reducer). The direct DOM style is overridden by React's commit.
   // We only need to reset the offset tracking so the next drag starts clean.
   useLayoutEffect(() => {
     dragScreenOffsetRef.current = { x: 0, y: 0 };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [shape.x, shape.y]);
 
 
@@ -184,6 +321,7 @@ function LiveSurfaceItem({
     return (
       <div
         ref={wrapperRef}
+        onMouseDownCapture={(e) => { modifierRef.current = e.shiftKey; }}
         style={{
           position: 'absolute',
           left: bounds.x,
@@ -195,11 +333,12 @@ function LiveSurfaceItem({
         }}
       >
         <CanvasTerminal
-          terminalId={shape.id}
+          terminalId={shape.panelId || shape.id}
           shape={shape}
           bounds={localBounds}
           selected={selected}
-          onSelect={onSelect}
+          zoom={resolvedZoom}
+          onSelect={handleSelectWithModifier}
           onMove={handleMove}
           onDragEnd={handleDragEnd}
           onResize={(newBounds) => onUpdateElement?.(shape.id, newBounds)}
@@ -217,6 +356,7 @@ function LiveSurfaceItem({
   return (
     <div
       ref={wrapperRef}
+      onMouseDownCapture={(e) => { modifierRef.current = e.shiftKey; }}
       style={{
         position: 'absolute',
         left: bounds.x,
@@ -231,11 +371,23 @@ function LiveSurfaceItem({
         shape={shape}
         bounds={localBounds}
         selected={selected}
-        onSelect={onSelect}
+        zoom={resolvedZoom}
+        onSelect={handleSelectWithModifier}
         onMove={handleMove}
         onDragEnd={handleDragEnd}
         onUpdateElement={onUpdateElement}
         onClose={() => onRemoveElement?.(shape.id)}
+        projectId={projectId}
+        workspaceId={workspaceId}
+        dockState={dockState}
+        onDockStateChange={onDockStateChange}
+        browserWindowState={browserWindowState}
+        onBrowserWindowStateChange={onBrowserWindowStateChange}
+        workspaceWindows={workspaceWindows}
+        activeWorkspaceWindowId={activeWorkspaceWindowId}
+        onWorkspaceWindowSelect={onWorkspaceWindowSelect}
+        onWorkspaceWindowAdd={onWorkspaceWindowAdd}
+        onWorkspaceWindowRemove={onWorkspaceWindowRemove}
       />
     </div>
   );
