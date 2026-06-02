@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardPaste, Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
@@ -27,6 +27,15 @@ import {
   getTerminalRendererRuntimeCapabilities,
   resolveRendererSelection,
 } from '@/components/terminal/terminalRendererCapabilities';
+// Phase 4 of pizarra-shared-view-state: when mounted inside a
+// <SharedSurfacesProvider>, register this TerminalTTY as the
+// singleton for `surfaceId`. The WebSocket / VTE lease are
+// preserved across React re-mounts (e.g. when the user toggles
+// workspace ↔ pizarra mode). The provider's onSurfaceDestroy
+// is the only path that closes the WS and disposes XTerm.
+// The import is wrapped in a try so SSR / non-React environments
+// without the workspace chunk don't break the existing module.
+import { useSurfaceRegistry } from '@/components/workspace/SharedSurfacesProvider';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -479,6 +488,7 @@ const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
 
 export default function TerminalTTY({
   id,
+  surfaceId: explicitSurfaceId,
   onClose,
   onActivatePanel,
   cwd,
@@ -497,7 +507,29 @@ export default function TerminalTTY({
   swarmContext = null,
   connectionState: externalConnectionState,
   externalDimensionSource,
+  // Phase 4 (pizarra-shared-view-state): explicit escape
+  // valves. By default the surface is registered with the
+  // SharedSurfacesProvider (when present) and kept alive on
+  // unmount. Set `disposeOnUnmount` to true to opt out of
+  // keepAlive and dispose the WS / XTerm when this React
+  // instance unmounts. Useful for tests and the standalone
+  // TWM panel mode (which doesn't have a provider).
+  disposeOnUnmount = false,
+  // Parent can listen for the destroy callback (e.g. to
+  // remove the surface from the SharedSurfaceRegistry).
+  onSurfaceDestroy: onSurfaceDestroyCallback,
 }) {
+  // Phase 4: surfaceId defaults to `id` so existing callers
+  // that already pass a stable `id` get singleton semantics
+  // for free when mounted inside a provider.
+  const surfaceId = explicitSurfaceId || id;
+  // Access the surface registry leniently: when this component
+  // is mounted OUTSIDE a SharedSurfacesProvider (the legacy
+  // TWM path), registry is null and the component falls back
+  // to its original unmount-disposes behavior. Legacy behavior
+  // is critical for the existing test infrastructure.
+  const surfaceRegistry = useSurfaceRegistry();
+
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
   const nativePlaceholderRef = useRef(null);
@@ -519,6 +551,13 @@ export default function TerminalTTY({
   const nativeVteProbeRetryDelayRef = useRef(null);
   const shouldRetryNativeVteProbeRef = useRef(false);
   const hideTimerRef = useRef(null);
+  // Phase 4 (pizarra-shared-view-state): when this instance is
+  // mounted inside a <SharedSurfacesProvider>, we mark the
+  // surface as "kept alive" by default. `destroyedRef` becomes
+  // true only after an explicit destroy (X button, kill
+  // session) — at which point WS / XTerm are disposed.
+  const destroyedRef = useRef(false);
+  const surfaceRegisteredRef = useRef(false);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
@@ -669,6 +708,52 @@ export default function TerminalTTY({
     fitRef.current = null;
     searchRef.current = null;
   }, []);
+
+  // Phase 4: explicit hard-destroy of the surface. Called from
+  // the X button, kill-session command, or the provider's
+  // releaseSurface(id, { keepAlive: false }) path. Closes the
+  // WS, disposes XTerm, fires the consumer's onSurfaceDestroy
+  // callback (so the parent can also remove the surface from
+  // its registry), AND releases the surface from the provider
+  // with keepAlive: false so the provider can free the slot.
+  const destroySurface = useCallback(() => {
+    if (destroyedRef.current) return;
+    destroyedRef.current = true;
+    try {
+      closeNativeLease('destroy');
+    } catch {
+      // ignore — best-effort
+    }
+    try {
+      if (onSurfaceDestroyCallback) onSurfaceDestroyCallback(surfaceId);
+    } catch (err) {
+      cliLog(`CLIENT:${surfaceId}`, 'onSurfaceDestroy threw', { error: err?.message });
+    }
+    disposeXtermRuntime();
+    if (surfaceRegistry && surfaceId) {
+      try {
+        surfaceRegistry.releaseSurface(surfaceId, { keepAlive: false });
+      } catch (err) {
+        cliLog(`CLIENT:${surfaceId}`, 'releaseSurface threw', { error: err?.message });
+      }
+    }
+  }, [surfaceRegistry, surfaceId, onSurfaceDestroyCallback]);
+
+  // Phase 4: register this surface with the provider on mount
+  // (if a provider exists). Soft release on unmount by default
+  // (keepAlive: true); the WS / XTerm are NOT disposed. When
+  // `disposeOnUnmount` is true OR the surface was destroyed
+  // explicitly, the unmount path hard-disposes.
+  useEffect(() => {
+    if (!surfaceRegistry || !surfaceId) return undefined;
+    if (surfaceRegisteredRef.current) return undefined;
+    surfaceRegisteredRef.current = true;
+    const unregister = surfaceRegistry.registerSurface(surfaceId, { type: 'terminal' });
+    return () => {
+      unregister();
+      surfaceRegisteredRef.current = false;
+    };
+  }, [surfaceRegistry, surfaceId]);
 
   const shouldRetryNativeVteProbe =
     isActivePanel &&
@@ -1866,7 +1951,17 @@ export default function TerminalTTY({
           cancelAnimationFrame(nativeResizeRafRef.current);
           nativeResizeRafRef.current = null;
         }
-        disposeXtermRuntime();
+        // Phase 4: only hard-dispose when the surface was
+        // explicitly destroyed (X click, kill command) or
+        // when the consumer opts in via disposeOnUnmount.
+        if (destroyedRef.current || disposeOnUnmount) {
+          disposeXtermRuntime();
+        } else {
+          // Soft cleanup: keep WS / XTerm alive across React
+          // re-mounts. The surface descriptor in the provider
+          // persists. The next mount re-attaches to the same
+          // scrollback.
+        }
       };
     }
 
@@ -2028,18 +2123,29 @@ export default function TerminalTTY({
         cancelAnimationFrame(nativeResizeRafRef.current);
         nativeResizeRafRef.current = null;
       }
-      // Silence the socket before closing so it doesn't set 'disconnected'
-      // on the (possibly re-mounting) component during React Strict Mode double-invoke.
+      // Phase 4: silence the socket so it does not flip the
+      // connectionState on a re-mounting component. The actual
+      // close happens only when the surface is being hard-
+      // destroyed (X click, kill, or `disposeOnUnmount` opt-in).
+      // In the singleton path the WS / XTerm / scrollback are
+      // preserved across mode toggles.
       if (wsRef.current) {
         const stale = wsRef.current;
         stale.onopen = null;
         stale.onmessage = null;
         stale.onerror = null;
         stale.onclose = null;
-        stale.close();
-        wsRef.current = null;
       }
-      disposeXtermRuntime();
+      if (destroyedRef.current || disposeOnUnmount) {
+        if (wsRef.current) {
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+        disposeXtermRuntime();
+      }
+      // Otherwise: leave wsRef and termRef intact. The hidden
+      // mount in the SharedSurfacesProvider holds the live
+      // instance; the next React re-mount re-attaches.
     };
   }, [
     clearTimers,
@@ -2051,6 +2157,7 @@ export default function TerminalTTY({
     shouldBootXterm,
     terminalRuntimeNonce,
     waitForVisibleDimensions,
+    disposeOnUnmount,
   ]);
 
   useEffect(() => {
@@ -2440,7 +2547,16 @@ export default function TerminalTTY({
             )}
             {onClose && (
               <button
-                onClick={onClose}
+                data-testid="terminal-close-btn"
+                onClick={(event) => {
+                  // Phase 4: in singleton mode, close also
+                  // hard-destroys the surface (closes WS, XTerm,
+                  // removes from provider registry). The
+                  // consumer's onClose is then called so it can
+                  // remove the shape from its local state.
+                  destroySurface();
+                  if (typeof onClose === 'function') onClose(event);
+                }}
                 className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
               >
                 <X
