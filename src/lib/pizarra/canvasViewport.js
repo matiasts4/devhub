@@ -100,15 +100,54 @@ const DEFAULT_ZOOM = 1;
  * Attaches a ResizeObserver to the canvas container element to keep
  * canvasRect up to date as the canvas moves within the viewport.
  */
-export function CanvasViewportProvider({ children, canvasContainerRef, initialZoom = DEFAULT_ZOOM }) {
+export function CanvasViewportProvider({
+  children,
+  canvasContainerRef,
+  initialZoom = DEFAULT_ZOOM,
+}) {
   const [zoom, setZoom] = useState(initialZoom);
   const [pan, setPan] = useState(DEFAULT_PAN);
   const [canvasRect, setCanvasRect] = useState(null);
+
+  // pizarra-motion: coalesce canvasRect updates. Previously every scroll
+  // pixel / ResizeObserver tick called setCanvasRect, which re-projected
+  // EVERY surface and made unrelated cards visibly jump/desync. We now:
+  //  (1) batch all triggers within a frame into a single measure (rAF), and
+  //  (2) skip the state commit when the rect is structurally unchanged.
+  const rafIdRef = useRef(null);
+  const lastRectRef = useRef(null);
+
+  const commitRectIfChanged = useCallback((rect) => {
+    if (!rect) return;
+    const prev = lastRectRef.current;
+    if (
+      prev &&
+      prev.left === rect.left &&
+      prev.top === rect.top &&
+      prev.width === rect.width &&
+      prev.height === rect.height
+    ) {
+      return; // structurally identical — no reproject storm.
+    }
+    lastRectRef.current = rect;
+    setCanvasRect(rect);
+  }, []);
+
+  const scheduleMeasure = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (rafIdRef.current != null) return; // already scheduled this frame
+    rafIdRef.current = window.requestAnimationFrame(() => {
+      rafIdRef.current = null;
+      const container = canvasContainerRef?.current;
+      if (!container?.getBoundingClientRect) return;
+      commitRectIfChanged(container.getBoundingClientRect());
+    });
+  }, [canvasContainerRef, commitRectIfChanged]);
+
+  // measureCanvasRect — public imperative API. Coalesced like the rest.
   const measureCanvasRect = useCallback(() => {
-    const container = canvasContainerRef?.current;
-    if (!container?.getBoundingClientRect) return;
-    setCanvasRect(container.getBoundingClientRect());
-  }, [canvasContainerRef]);
+    scheduleMeasure();
+  }, [scheduleMeasure]);
 
   // Track canvas element viewport position via ResizeObserver
   useEffect(() => {
@@ -117,26 +156,27 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
 
     // The canvas container is the scrollable/panable wrapper.
     // We observe it to detect layout changes (scroll, pan, window resize).
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const rect = entry.target.getBoundingClientRect();
-        setCanvasRect(rect);
-      }
+    const observer = new ResizeObserver(() => {
+      scheduleMeasure();
     });
     observer.observe(container);
 
     // Set initial value
-    measureCanvasRect();
+    scheduleMeasure();
 
-    window.addEventListener('resize', measureCanvasRect);
-    window.addEventListener('scroll', measureCanvasRect, true);
+    window.addEventListener('resize', scheduleMeasure);
+    window.addEventListener('scroll', scheduleMeasure, true);
 
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', measureCanvasRect);
-      window.removeEventListener('scroll', measureCanvasRect, true);
+      window.removeEventListener('resize', scheduleMeasure);
+      window.removeEventListener('scroll', scheduleMeasure, true);
+      if (rafIdRef.current != null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
-  }, [canvasContainerRef, measureCanvasRect]);
+  }, [canvasContainerRef, scheduleMeasure]);
 
   // Intercept all wheel events at the canvasContainer boundary to handle custom zoom/pinch gestures
   // while preventing default browser-wide native zoom and letting interactive panels scroll.
@@ -146,7 +186,9 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
 
     const handleWheel = (event) => {
       // Check if the wheel event occurred inside scrollable interactive widgets (e.g., TerminalTTY viewport or browser frame)
-      const isInsideInteractive = event.target.closest('[data-testid="pizarra-browser-surface"], [data-testid="canvas-terminal"]');
+      const isInsideInteractive = event.target.closest(
+        '[data-testid="pizarra-browser-surface"], [data-testid="canvas-terminal"]'
+      );
 
       // Intercept and handle zoom if it is a trackpad pinch zoom (ctrlKey is true) OR if it is outside interactive cards.
       if (event.ctrlKey || !isInsideInteractive) {
@@ -182,11 +224,7 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
     measureCanvasRect,
   };
 
-  return (
-    <CanvasViewportContext.Provider value={value}>
-      {children}
-    </CanvasViewportContext.Provider>
-  );
+  return <CanvasViewportContext.Provider value={value}>{children}</CanvasViewportContext.Provider>;
 }
 
 /**

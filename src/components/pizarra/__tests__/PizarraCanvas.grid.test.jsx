@@ -292,7 +292,7 @@ describe('PizarraCanvas — board-canvas Req 1+2 (grid + loading flash)', () => 
         })
       );
     });
-    // eslint-disable-next-line no-console
+
     console.log('HTML after first render:', container.innerHTML.slice(0, 500));
     // The dynamic import('react-konva') inside useEffect resolves as a
     // microtask. flushSync only flushes React updates, not the microtask
@@ -301,7 +301,7 @@ describe('PizarraCanvas — board-canvas Req 1+2 (grid + loading flash)', () => 
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
     flushSync(() => {});
-    // eslint-disable-next-line no-console
+
     console.log('HTML after microtask:', container.innerHTML.slice(0, 500));
 
     const html = container.innerHTML;

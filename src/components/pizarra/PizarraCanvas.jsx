@@ -30,6 +30,12 @@ const PIZARRA_GRID_TEXTURE_ENABLED =
   process.env &&
   process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE === '1';
 
+// pizarra-multi-select: AABB overlap test used by the marquee to decide
+// which shapes fall inside the selection rectangle.
+function rectsIntersect(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
 export default function PizarraCanvas({
   elements,
   selectedElementIds,
@@ -38,6 +44,7 @@ export default function PizarraCanvas({
   onShapeCreate,
   onSelect,
   onDeselect,
+  onMarqueeSelect,
   onUpdateElement,
   width = 800,
   height = 600,
@@ -55,6 +62,10 @@ export default function PizarraCanvas({
   const [konva, setKonva] = useState(null);
   const [konvaLoadError, setKonvaLoadError] = useState(null);
   const [drawing, setDrawing] = useState(null);
+  // pizarra-multi-select: marquee rectangle drawn while area-selecting on
+  // empty canvas. null when inactive. `moved` flips true once the drag
+  // exceeds a small threshold so a plain click still deselects.
+  const [marquee, setMarquee] = useState(null);
   const { zoom, setZoom, pan, setPan } = useCanvasViewport();
 
   // ── Effects ─────────────────────────────────────────────────────────────
@@ -162,7 +173,19 @@ export default function PizarraCanvas({
       if (!clickedOnEmpty) return;
 
       if (activeTool === 'select') {
-        onDeselect();
+        // pizarra-multi-select: begin a marquee instead of deselecting
+        // immediately. Deselect happens on mouseup only if no drag occurred.
+        const pos = e.target.getStage().getPointerPosition();
+        setMarquee({
+          startX: pos.x,
+          startY: pos.y,
+          x: pos.x,
+          y: pos.y,
+          width: 0,
+          height: 0,
+          shift: e.evt?.shiftKey || false,
+          moved: false,
+        });
         return;
       }
 
@@ -185,13 +208,51 @@ export default function PizarraCanvas({
 
   const handleMouseMove = useCallback(
     (e) => {
+      if (marquee) {
+        const pos = e.target.getStage().getPointerPosition();
+        const x = Math.min(marquee.startX, pos.x);
+        const y = Math.min(marquee.startY, pos.y);
+        const mWidth = Math.abs(pos.x - marquee.startX);
+        const mHeight = Math.abs(pos.y - marquee.startY);
+        const moved = marquee.moved || mWidth > 3 || mHeight > 3;
+        setMarquee({ ...marquee, x, y, width: mWidth, height: mHeight, moved });
+        return;
+      }
       if (!drawing) return;
     },
-    [drawing]
+    [marquee, drawing]
   );
 
   const handleMouseUp = useCallback(
     (e) => {
+      if (marquee) {
+        if (marquee.moved) {
+          const rect = {
+            x: marquee.x,
+            y: marquee.y,
+            width: marquee.width,
+            height: marquee.height,
+          };
+          const ids = elements
+            .filter((shape) => {
+              const sw = shape.width ?? (shape.radius ? shape.radius * 2 : 0);
+              const sh = shape.height ?? (shape.radius ? shape.radius * 2 : 0);
+              return rectsIntersect(rect, {
+                x: shape.x,
+                y: shape.y,
+                width: sw,
+                height: sh,
+              });
+            })
+            .map((shape) => shape.id);
+          onMarqueeSelect?.(ids, marquee.shift);
+        } else if (!marquee.shift) {
+          onDeselect();
+        }
+        setMarquee(null);
+        return;
+      }
+
       if (!drawing) return;
 
       const pos = e.target.getStage().getPointerPosition();
@@ -242,7 +303,7 @@ export default function PizarraCanvas({
       onShapeCreate(shape);
       setDrawing(null);
     },
-    [drawing, toolSettings, onShapeCreate]
+    [marquee, elements, onMarqueeSelect, onDeselect, drawing, toolSettings, onShapeCreate]
   );
 
   const handleShapeSelect = useCallback(
@@ -439,6 +500,21 @@ export default function PizarraCanvas({
               return newBox;
             }}
           />
+
+          {/* pizarra-multi-select: marquee selection rectangle */}
+          {marquee && marquee.moved && (
+            <Rect
+              x={marquee.x}
+              y={marquee.y}
+              width={marquee.width}
+              height={marquee.height}
+              fill="rgba(59,130,246,0.12)"
+              stroke="#3b82f6"
+              strokeWidth={1}
+              dash={[4, 4]}
+              listening={false}
+            />
+          )}
         </Layer>
       </Stage>
     </div>

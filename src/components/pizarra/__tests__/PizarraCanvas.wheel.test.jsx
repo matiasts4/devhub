@@ -171,11 +171,10 @@ describe('PizarraCanvas — wheel listener is non-passive (pizarra-wheel-passive
     // Defer React-DOM require until AFTER JSDOM is set up so the
     // passive-browser-events detection sees window.
     jest.isolateModules(() => {
-      // eslint-disable-next-line global-require
       createRoot = require('react-dom/client').createRoot;
-      // eslint-disable-next-line global-require
+
       flushSync = require('react-dom').flushSync;
-      // eslint-disable-next-line global-require
+
       PizarraCanvas = require('../PizarraCanvas').default;
     });
 

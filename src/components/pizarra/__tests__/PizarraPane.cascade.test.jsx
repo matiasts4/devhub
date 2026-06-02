@@ -205,11 +205,13 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
     // Verify the cascade contract instead: the two elements have different positions.
     const [terminal, browser] = elements;
     expect(browser.x).not.toBe(terminal.x);
-    // Since we use deterministic left/right spawn zones, assert coordinates:
-    expect(terminal.x).toBe(1060);
-    expect(terminal.y).toBe(80);
+    // pizarra-viewport-spawn: spawn zones are relative to the visible canvas region.
+    // With canvasSize default {width:800, height:600}, pan={0,0}, zoom=1:
+    //   vis.width=800, halfW=(800-20)/2=390
+    //   terminal (right): zoneLeft = 0 + 390 + 20 = 410
+    //   browser  (left):  zoneLeft = 0 + 20       = 20
+    expect(terminal.x).toBe(410);
     expect(browser.x).toBe(20);
-    expect(browser.y).toBe(80);
   });
 
   test('add buttons dispatch CASCADE_OFFSET then ADD_ELEMENT', () => {
@@ -229,7 +231,8 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
 
     const elements = readElementsFromMock(container);
     expect(elements).toHaveLength(2);
-    expect(elements[0].x).toBe(1060);
+    // pizarra-viewport-spawn: right-zone for terminal = 410, left-zone for browser = 20
+    expect(elements[0].x).toBe(410);
     expect(elements[1].x).toBe(20);
   });
 });
