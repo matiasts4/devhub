@@ -60,14 +60,46 @@ export default function PizarraPane({
   onWorkspaceWindowRemove,
 }) {
   const contextValue = React.useContext(LiveSurfaceRegistryContext);
-  const registry = contextValue || {
-    surfaces: [],
+  const [localSurfaces, setLocalSurfaces] = useState([]);
+  const fallbackRegistry = useMemo(() => ({
+    surfaces: localSurfaces,
     isLoaded: true,
-    addSurface: () => {},
-    removeSurface: () => {},
-    updatePizarraLayout: () => {},
-    resetSurfaces: () => {},
-  };
+    addSurface: (surface) => {
+      const id = surface.id || `temp-${surface.type}-${Math.random().toString(36).substr(2, 9)}`;
+      const panelId = surface.panelId || (surface.type === 'terminal' ? `panel-${id}` : `browser-${id}`);
+      const finalSurface = { ...surface, id, panelId };
+      setLocalSurfaces((prev) => {
+        const exists = prev.find((s) => s.id === id);
+        if (exists) {
+          return prev.map((s) => s.id === id ? { ...s, ...surface } : s);
+        }
+        return [...prev, finalSurface];
+      });
+      return finalSurface;
+    },
+    removeSurface: (id) => {
+      setLocalSurfaces((prev) => prev.filter((s) => s.id !== id));
+    },
+    updatePizarraLayout: (id, layoutChanges) => {
+      setLocalSurfaces((prev) => prev.map((s) => {
+        if (s.id === id) {
+          return {
+            ...s,
+            pizarra: {
+              ...s.pizarra,
+              ...layoutChanges,
+            },
+          };
+        }
+        return s;
+      }));
+    },
+    resetSurfaces: (nextSurfaces) => {
+      setLocalSurfaces(nextSurfaces || []);
+    },
+  }), [localSurfaces]);
+
+  const registry = contextValue || fallbackRegistry;
   const {
     state,
     dispatch,
@@ -280,6 +312,7 @@ export default function PizarraPane({
           onActivateTerminal={handleActivateTerminal}
           onRemoveElement={handleRemoveElement}
           mergedElements={mergedElements}
+          registry={registry}
           projectId={projectId}
           workspaceId={workspaceId}
           dockState={dockState}
@@ -322,6 +355,19 @@ function PizarraInner({
   onUpdateElement,
   onActivateTerminal,
   onRemoveElement,
+  mergedElements,
+  registry,
+  projectId,
+  workspaceId,
+  dockState,
+  onDockStateChange,
+  browserWindowState,
+  onBrowserWindowStateChange,
+  workspaceWindows,
+  activeWorkspaceWindowId,
+  onWorkspaceWindowSelect,
+  onWorkspaceWindowAdd,
+  onWorkspaceWindowRemove,
 }) {
   const { zoom, pan, viewportToCanvas } = useCanvasViewport();
 
@@ -377,13 +423,13 @@ function PizarraInner({
       // Step for additional elements of the same type (avoid exact overlap)
       const STEP = 40;
       let slotIndex = 0;
-      const existingElements = state.elements || [];
+      const existingElements = mergedElements || [];
       const isSlotOccupied = (sx, sy) =>
         existingElements.some(
           (el) =>
             el.type === type &&
-            Math.abs(el.x - sx) < 10 &&
-            Math.abs(el.y - sy) < 10
+            Math.abs((el.pizarra?.x ?? el.x) - sx) < 10 &&
+            Math.abs((el.pizarra?.y ?? el.y) - sy) < 10
         );
 
       while (isSlotOccupied(baseX + slotIndex * STEP, baseY + slotIndex * STEP)) {
@@ -396,19 +442,36 @@ function PizarraInner({
       // Create shape with position and extra props (label, initialCommand, url).
       // Ignore x/y from extraProps to preserve viewport-aware smart placement zones.
       const { x: ignoredX, y: ignoredY, ...cleanedExtraProps } = extraProps;
-      const shape = createShape(
-        isTerminal ? SHAPE_TYPES.TERMINAL : SHAPE_TYPES.BROWSER,
-        { x, y, width: w, height: h, ...cleanedExtraProps }
-      );
-      addElement(shape);
-      selectElement(shape.id);
-      if (isTerminal) setActiveTerminalId(shape.id);
-      else setActiveTerminalId(null);
-      
-      // Return the created shape so surface controller can access its id/label
-      return shape;
+
+      if (isTerminal || type === 'browser') {
+        const surfaceData = {
+          type,
+          pizarra: {
+            x,
+            y,
+            width: w,
+            height: h,
+            visible: true,
+          },
+          url: cleanedExtraProps.url || (type === 'browser' ? 'http://localhost:3000/' : undefined),
+          initialCommand: cleanedExtraProps.initialCommand,
+          label: cleanedExtraProps.label || (isTerminal ? `Terminal` : `Browser`),
+        };
+        const addedSurface = registry.addSurface(surfaceData);
+        if (addedSurface && addedSurface.id) {
+          selectElement(addedSurface.id);
+        }
+        return addedSurface || surfaceData;
+      } else {
+        const shape = createShape(type, { x, y, width: w, height: h, ...cleanedExtraProps });
+        addElement(shape);
+        selectElement(shape.id);
+        if (isTerminal) setActiveTerminalId(shape.id);
+        else setActiveTerminalId(null);
+        return shape;
+      }
     },
-    [addElement, dispatch, selectElement, state.elements, getVisibleCanvasRegion, setActiveTerminalId]
+    [addElement, dispatch, selectElement, mergedElements, getVisibleCanvasRegion, setActiveTerminalId, registry.addSurface]
   );
 
   // ── handleMoveElement — free placement (WYSIWYG drop) ────────────────────
@@ -421,12 +484,20 @@ function PizarraInner({
   // causes blurry text on those real OS windows).
   const handleMoveElement = useCallback(
     (id, position) => {
-      const shape = state.elements.find((el) => el.id === id);
+      const shape = mergedElements.find((el) => el.id === id);
       if (!shape) {
-        updateElement(id, {
-          x: Math.round(position.x),
-          y: Math.round(position.y),
-        });
+        const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
+        if (isRegistrySurface) {
+          registry.updatePizarraLayout(id, {
+            x: Math.round(position.x),
+            y: Math.round(position.y),
+          });
+        } else {
+          updateElement(id, {
+            x: Math.round(position.x),
+            y: Math.round(position.y),
+          });
+        }
         return;
       }
 
@@ -494,12 +565,20 @@ function PizarraInner({
         finalY = Math.round(closestTarget.y);
       }
 
-      updateElement(id, {
-        x: finalX,
-        y: finalY,
-      });
+      const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
+      if (isRegistrySurface) {
+        registry.updatePizarraLayout(id, {
+          x: finalX,
+          y: finalY,
+        });
+      } else {
+        updateElement(id, {
+          x: finalX,
+          y: finalY,
+        });
+      }
     },
-    [updateElement, state.elements, getVisibleCanvasRegion]
+    [updateElement, mergedElements, getVisibleCanvasRegion, registry.surfaces, registry.updatePizarraLayout]
   );
 
   // ── Surface Controller for CommandBar ─────────────────────────────────────
@@ -512,10 +591,10 @@ function PizarraInner({
         addElement: handleAddElement,
         updateElement,
         setActiveTerminalId,
-        shapes: state.elements,
+        shapes: mergedElements,
         activeTerminalId,
       }),
-    [handleAddElement, updateElement, setActiveTerminalId, state.elements, activeTerminalId]
+    [handleAddElement, updateElement, setActiveTerminalId, mergedElements, activeTerminalId]
   );
 
   // ── Apply layout preset ─────────────────────────────────────────────────
@@ -624,7 +703,7 @@ function PizarraInner({
         }}
       >
         <PizarraCanvas
-          elements={state.elements}
+          elements={mergedElements}
           selectedElementIds={state.selectedElementIds}
           activeTool={state.activeTool}
           toolSettings={state.activeToolSettings}
@@ -638,7 +717,7 @@ function PizarraInner({
         />
 
         <PizarraLiveSurfaceLayer
-          elements={state.elements}
+          elements={mergedElements}
           selectedElementIds={state.selectedElementIds}
           activeTerminalId={activeTerminalId}
           onSelect={onSelect}
@@ -646,6 +725,17 @@ function PizarraInner({
           onActivateTerminal={onActivateTerminal}
           onUpdateElement={onUpdateElement}
           onRemoveElement={onRemoveElement}
+          projectId={projectId}
+          workspaceId={workspaceId}
+          dockState={dockState}
+          onDockStateChange={onDockStateChange}
+          browserWindowState={browserWindowState}
+          onBrowserWindowStateChange={onBrowserWindowStateChange}
+          workspaceWindows={workspaceWindows}
+          activeWorkspaceWindowId={activeWorkspaceWindowId}
+          onWorkspaceWindowSelect={onWorkspaceWindowSelect}
+          onWorkspaceWindowAdd={onWorkspaceWindowAdd}
+          onWorkspaceWindowRemove={onWorkspaceWindowRemove}
         />
       </div>
 
@@ -668,11 +758,11 @@ function PizarraInner({
           pointerEvents: 'none',
         }}
       >
-        {state.elements.length} element{state.elements.length !== 1 ? 's' : ''}
+        {mergedElements.length} element{mergedElements.length !== 1 ? 's' : ''}
       </div>
 
       {/* Minimap — bottom-right HUD, hidden until pan/zoom */}
-      <PizarraMinimap elements={state.elements} onSelectElement={selectElement} />
+      <PizarraMinimap elements={mergedElements} onSelectElement={selectElement} />
 
       {/* CommandBar — natural language command palette (Cmd+Shift+K) */}
       <CommandBar surfaceController={surfaceController} />

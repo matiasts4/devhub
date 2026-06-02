@@ -88,7 +88,7 @@ import {
   buildStartupRestorePlan,
 } from '@/lib/terminal/startupRestoreCoordinator';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
-import { isValidZedOpenTerminalEvent, resolveZedOpenTerminalPanelId } from './zedOpenTerminalEvent';
+import { useLiveSurfaceRegistry, LiveSurfaceRegistryContext } from '@/lib/pizarra/useLiveSurfaceRegistry';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
@@ -3174,6 +3174,164 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [activeWorkspace, activeWsId, activePanelId, projectId, syncActiveWindowSnapshot]
   );
 
+  // ─── Shared Live Surface Registry Hook & Interceptors ───────────────────
+  const registry = useLiveSurfaceRegistry(projectId, activeWorkspace?.id);
+
+  const registryAddSurface = useCallback((surface) => {
+    if (!activeWorkspace) return null;
+    
+    // Check if we need to split or open a browser
+    if (surface.type === 'terminal' && !surface.panelId) {
+      // Create new terminal panel
+      const newPanelId = handleSplit('horizontal');
+      if (newPanelId) {
+        const finalSurface = {
+          ...surface,
+          id: `shape-term-${newPanelId}`,
+          panelId: newPanelId,
+          label: `Terminal ${newPanelId}`,
+          pizarra: {
+            ...surface.pizarra,
+            visible: true,
+          }
+        };
+        registry.addSurface(finalSurface);
+        return finalSurface;
+      }
+      return null;
+    } else if (surface.type === 'browser' && !surface.panelId) {
+      // Open browser window
+      updateBrowserWindowState(activeWorkspace.id, { open: true });
+      const finalSurface = {
+        ...surface,
+        id: `shape-browser-${activeWorkspace.id}`,
+        panelId: `browser-${activeWorkspace.id}`,
+        label: `Browser ${activeWorkspace.id}`,
+        url: surface.url || 'http://localhost:3000/',
+        pizarra: {
+          ...surface.pizarra,
+          visible: true,
+        }
+      };
+      registry.addSurface(finalSurface);
+      return finalSurface;
+    } else {
+      registry.addSurface(surface);
+      return surface;
+    }
+  }, [activeWorkspace, handleSplit, registry.addSurface, updateBrowserWindowState]);
+
+  const registryRemoveSurface = useCallback((id) => {
+    if (!activeWorkspace) return;
+    const surface = registry.surfaces.find((s) => s.id === id);
+    if (!surface) return;
+
+    if (surface.type === 'terminal') {
+      handleClosePanel(surface.panelId);
+    } else if (surface.type === 'browser') {
+      closeWorkspaceBrowserWindow(activeWorkspace.id);
+    }
+    registry.removeSurface(id);
+  }, [activeWorkspace, registry.surfaces, registry.removeSurface, handleClosePanel, closeWorkspaceBrowserWindow]);
+
+  const registryValue = useMemo(() => ({
+    surfaces: registry.surfaces,
+    isLoaded: registry.isLoaded,
+    addSurface: registryAddSurface,
+    removeSurface: registryRemoveSurface,
+    updatePizarraLayout: registry.updatePizarraLayout,
+    resetSurfaces: registry.resetSurfaces,
+  }), [registry.surfaces, registry.isLoaded, registryAddSurface, registryRemoveSurface, registry.updatePizarraLayout, registry.resetSurfaces]);
+
+  // Auto-register terminal panels and browser window into the shared registry.
+  useEffect(() => {
+    if (!registry.isLoaded || !activeWorkspace) return;
+
+    // 1. Gather all current terminal panel IDs and details
+    const terminals = [];
+    activeWorkspace.columns.forEach((col) => {
+      if (col.panels) {
+        col.panels.forEach((p) => {
+          terminals.push({
+            id: `shape-term-${p.id}`,
+            type: 'terminal',
+            panelId: p.id,
+            label: p.initialCommand || `Terminal ${p.id}`,
+            pizarra: {
+              x: null, // Let PizarraPane place it if not already placed
+              y: null,
+              width: 640,
+              height: 400,
+              visible: true,
+            },
+          });
+        });
+      }
+    });
+
+    // 2. Gather browser panel if active workspace has an open browser window
+    const browserOpen = browserWindowStates?.[activeWorkspace.id]?.open === true;
+    const browsers = [];
+    if (browserOpen) {
+      const browserState = browserWindowStates[activeWorkspace.id];
+      browsers.push({
+        id: `shape-browser-${activeWorkspace.id}`,
+        type: 'browser',
+        panelId: `browser-${activeWorkspace.id}`,
+        label: browserState?.label || `Browser ${activeWorkspace.id}`,
+        url: browserState?.url || 'http://localhost:3000/',
+        pizarra: {
+          x: null,
+          y: null,
+          width: 1024,
+          height: 700,
+          visible: true,
+        },
+      });
+    }
+
+    const activeSurfaces = [...terminals, ...browsers];
+
+    // Reconcile
+    let changed = false;
+    const nextSurfaces = [...registry.surfaces];
+
+    activeSurfaces.forEach((as) => {
+      const existing = nextSurfaces.find((s) => s.id === as.id || (as.panelId && s.panelId === as.panelId));
+      if (!existing) {
+        nextSurfaces.push(as);
+        changed = true;
+      } else {
+        if (existing.label !== as.label || (as.type === 'browser' && existing.url !== as.url)) {
+          existing.label = as.label;
+          if (as.type === 'browser') {
+            existing.url = as.url;
+          }
+          changed = true;
+        }
+      }
+    });
+
+    const finalSurfaces = nextSurfaces.filter((s) => {
+      const stillExists = activeSurfaces.some((as) => as.id === s.id || (s.panelId && as.panelId === s.panelId));
+      if (!stillExists) {
+        changed = true;
+        return false;
+      }
+      return true;
+    });
+
+    if (changed) {
+      registry.resetSurfaces(finalSurfaces);
+    }
+  }, [
+    activeWorkspace,
+    browserWindowStates,
+    registry.isLoaded,
+    registry.surfaces,
+    registry.resetSurfaces,
+  ]);
+
   const failPendingReopen = useCallback(
     (panelId, fallbackMessage = 'Session is no longer available to resume.') => {
       const pending = pendingReopenPanelsRef.current.get(panelId);
@@ -3613,7 +3771,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? getAllPanelIds(activeWorkspace.columns).length
     : 0;
   return (
-    <motion.div
+    <LiveSurfaceRegistryContext.Provider value={registryValue}>
+      <motion.div
       ref={managerRootRef}
       className="flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
       style={getWorkspaceShellChromeStyle()}
@@ -4425,5 +4584,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         onClose={() => setRestoreSettingsModal({ open: false })}
       />
     </motion.div>
+    </LiveSurfaceRegistryContext.Provider>
   );
 }
