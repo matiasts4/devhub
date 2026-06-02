@@ -109,4 +109,44 @@ describe('buildZedHistory (T-033)', () => {
       { role: 'user', content: 'Tool real result: {"y":2}' },
     ]);
   });
+
+  // ----- T-WSR-zed-002 (ASST-CHAT-001) -----
+  test('T-WSR-zed-002: 2-turn integration — assistant turn + tool_result line preserved when input is the closure `messages`', () => {
+    // The closure fix drops `.slice(0, -1)` in ChatPanel.handleSend. The
+    // helper itself already flattens correctly; this test pins the input
+    // shape (closure messages) so the call-site change is provably
+    // correct. A regression would either drop the assistant turn
+    // (current bug) or duplicate the previous user message.
+    const messages = [
+      { role: 'assistant', content: 'Hola, soy Zed.', timestamp: '...' },
+      { role: 'user', content: 'abre una terminal', timestamp: '...' },
+      {
+        role: 'assistant',
+        content: 'listo',
+        timestamp: '...',
+        tool_results: [
+          {
+            tool: 'open_terminal',
+            result: { session_id: 'term-X' },
+          },
+        ],
+      },
+    ];
+    const out = buildZedHistory(messages);
+
+    // The assistant turn is in the output.
+    expect(out).toContainEqual({ role: 'assistant', content: 'listo' });
+    // The tool_results-derived line is in the output (substring match,
+    // allow formatting variance).
+    const toolLine = out.find(
+      (entry) =>
+        entry.role === 'user' &&
+        typeof entry.content === 'string' &&
+        entry.content.startsWith('Tool open_terminal result:')
+    );
+    expect(toolLine).toBeDefined();
+    expect(toolLine.content).toContain('term-X');
+    // The previous user turn is in the output.
+    expect(out).toContainEqual({ role: 'user', content: 'abre una terminal' });
+  });
 });

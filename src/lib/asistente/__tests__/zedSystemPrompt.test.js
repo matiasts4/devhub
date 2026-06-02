@@ -142,4 +142,24 @@ describe('zed-system-prompt.md (T-027 regression)', () => {
     const lower = prompt.toLowerCase();
     expect(lower).toMatch(/(do not re[- ]?call|do not .* on the same session_id)/);
   });
+
+  // ----- T-WSR-zed-002 (ASST-CHAT-003) -----
+  test('T-WSR-zed-002: prompt has a "Prior-turn context" section that tells the model to use history for anaphoric resolution', () => {
+    // ASST-CHAT-003: the closure fix (drop .slice(0, -1)) sends the full
+    // history to the model. The model must be told to USE that history
+    // for anaphoric references (e.g. "esa terminal", "that command")
+    // rather than re-running tools. The 2-line prompt addition must
+    // contain the substrings asserted below so the model can find the
+    // section by name and apply the rule.
+    const prompt = readPrompt();
+    expect(prompt).toMatch(/treat them as user-visible context/);
+    expect(prompt).toMatch(/use the history to resolve the reference/);
+    // Both substrings MUST be in the SAME "Prior-turn context" section
+    // (a "## Prior-turn context" heading or a "### Prior-turn context"
+    // sub-heading — either is fine).
+    const section = prompt.match(/#{2,3}\s*Prior-turn context[\s\S]*?(?=\n#{2,3}\s)/);
+    expect(section).not.toBeNull();
+    expect(section[0]).toMatch(/treat them as user-visible context/);
+    expect(section[0]).toMatch(/use the history to resolve the reference/);
+  });
 });

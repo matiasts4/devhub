@@ -242,6 +242,68 @@ describe('ChatPanel — open_terminal visual dispatch (T-024)', () => {
 
     cleanup();
   });
+
+  // ----- T-WSR-zed-002 (ASST-CHAT-001) -----
+  test('T-WSR-zed-002: 2nd request body includes the previous assistant turn + tool_result line, and the new user message is the `message` field (not duplicated inside `history`)', async () => {
+    // ASST-CHAT-001: the closure fix (drop .slice(0, -1)) makes the
+    // previous assistant turn + its `Tool <name> result: ...` line
+    // visible to the model on the next request. Without the fix, the
+    // previous assistant turn is sliced off, the model has no memory
+    // of its own `open_terminal` call, and it re-issues the tool.
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy;
+
+    // 1st call: returns the open_terminal tool result.
+    // 2nd call: anything (we just need the body).
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        text: 'He abierto una terminal nueva.',
+        tool_results: [
+          {
+            tool: 'open_terminal',
+            result: { session_id: 'term-X', port: 4077, wsPath: '/terminal' },
+          },
+        ],
+      }),
+    });
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'ok', tool_results: [] }),
+    });
+
+    const { container, cleanup } = await renderIntoDom(React.createElement(ChatPanel));
+
+    // 1st message: open a terminal.
+    await sendAndSettle(container, 'abre una terminal');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // 2nd message: now run ls.
+    await sendAndSettle(container, 'ahora corré ls');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    // Inspect the 2nd request body.
+    const secondCall = fetchSpy.mock.calls[1];
+    const init = secondCall[1];
+    const body = JSON.parse(init.body);
+    expect(body.message).toBe('ahora corré ls');
+
+    // The history must contain the previous assistant turn + the
+    // tool_result line.
+    const historyStr = JSON.stringify(body.history);
+    expect(historyStr).toMatch(/Tool open_terminal result:.*term-X/);
+
+    // The new user message MUST NOT appear inside `history` (only as
+    // `message`).
+    const historyHasNewMsg = body.history.some(
+      (entry) => entry && entry.role === 'user' && entry.content === 'ahora corré ls'
+    );
+    expect(historyHasNewMsg).toBe(false);
+
+    cleanup();
+  });
 });
 
 describe('ChatPanel — paste behavior (T-018)', () => {

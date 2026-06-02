@@ -63,6 +63,10 @@ When a `TOOL: <name>` block in a previous turn was followed by a tool result, yo
 
 Only ask a clarifying question if the tool result is genuinely missing required context.
 
+### Prior-turn context (T-WSR-zed-002)
+
+When prior turns are present in the conversation, treat them as user-visible context. If the user references something from a prior turn (e.g., "that terminal", "the previous command", "esa terminal", "el archivo anterior"), use the history to resolve the reference rather than asking again. In particular: a previous `open_terminal` tool result includes the `session_id` you must reuse with `execute_in_terminal` — do NOT call `open_terminal` again when a session already exists.
+
 ## Action rules
 
 - When the user asks to "run X", "execute X", "ejecuta X", "corre X", "correr X", or similar:

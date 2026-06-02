@@ -72,15 +72,17 @@ export default function ChatPanel({ className = '' }) {
     ]);
 
     try {
-      // T-033: send the conversation history (last 20 messages, flattened
-      // into the server protocol by `buildZedHistory`). The server prepends
-      // it to the per-turn tool loop so the model retains recent context
-      // across requests.
-      const history = buildZedHistory(
-        // Exclude the message we just optimistically appended in
-        // setMessages above (line 68-71) — that one is sent as `message`.
-        messages.slice(0, -1)
-      );
+      // T-WSR-zed-002 (ASST-CHAT-001): pass the full closure `messages`
+      // to `buildZedHistory`. The closure value is the previous render's
+      // state — i.e. it does NOT contain the new user message we just
+      // queued via setMessages above. The new user message is sent as
+      // the `message` field of the request body, not inside `history`.
+      // The server's safeHistory filter (route.js) caps to 20 entries
+      // and the previous assistant turn + its `Tool <name> result: …`
+      // lines are preserved verbatim. No duplication: the previous
+      // user message appears once in history; the new user message
+      // appears once as `message`.
+      const history = buildZedHistory(messages);
       const response = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
