@@ -647,7 +647,8 @@ export function buildPendingDeliveriesPollingCommand() {
  * @param {string} [params.sessionName] - tmux session name (UNUSED,
  *   kept for backward compat with buildAgentLaunchWrapper call sites)
  * @param {number} [params.graceSeconds] - sleep duration in seconds
- *   (default 2s). Configurable via tuiReadyGraceMs on the wrapper.
+ *   (default 10s; falls back to 2s only if tuiReadyGraceMs is unset).
+ *   Configurable via tuiReadyGraceMs on the wrapper.
  * @param {number} [params.timeoutSeconds] - UNUSED, kept for backward
  *   compat. Configurable via tuiWaitTimeoutMs on the wrapper.
  * @returns {string} Bash block
@@ -976,12 +977,17 @@ export function buildAgentLaunchWrapper({
   dbPath,
   busBinaryPath,
   disableMinimaxMcp,
-  // T-019.2: configurable TUI wait timings (milliseconds).
-  //   - tuiWaitTimeoutMs: max wait-for duration (default 10000)
-  //   - tuiReadyGraceMs:  grace period before sentinel (default 2000)
+  // T-022: TUI wait timings (milliseconds).
+  //   - tuiWaitTimeoutMs: UNUSED (default 10000), kept for backward compat
+  //   - tuiReadyGraceMs:  grace period before prompt injection (default 10000)
+  // T-021 reverted the event-driven sentinel (T-019.1 leaked text into
+  // agent TUIs). T-022 bumps the default grace from 2s to 10s because
+  // OpenCode TUI with 1M ctx needs 8-12s to fully initialize. 2s was
+  // too short: injection landed before the TUI was ready, TUI crashed,
+  // wrapper restarted the agent, lock prevented re-injection → silent agents.
   // Both are converted to seconds in the emitted bash (1s granularity).
   tuiWaitTimeoutMs = 10000,
-  tuiReadyGraceMs = 2000,
+  tuiReadyGraceMs = 10000,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',
