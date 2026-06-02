@@ -1566,9 +1566,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     ).toEqual({
       top: 0,
-      right: 0,
+      right: 'auto',
       bottom: 0,
-      left: 'auto',
+      left: '56%',
       width: '44%',
     });
   });

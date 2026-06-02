@@ -9,6 +9,7 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { Toaster } from 'sonner';
+import { AnimatePresence, motion } from 'framer-motion';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
 import ProjectHub from './views/ProjectHub';
@@ -213,14 +214,24 @@ function WorkspaceLayout() {
     >
       {/* ── Inner layout: sidebar + content ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Hide sidebar when terminal is maximized and visible, or pizarra is active and visible */}
-        {!((isTerminalMaximized || isPizarraActive) && isTerminalRoute) && (
-          <WorkspaceSidebar
-            project={project}
-            collapsed={collapsed}
-            onToggleCollapse={setCollapsed}
-          />
-        )}
+        <AnimatePresence initial={false}>
+          {!((isTerminalMaximized || isPizarraActive) && isTerminalRoute) && (
+            <motion.div
+              key="workspace-sidebar-wrapper"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: collapsed ? 48 : 256, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
+              style={{ overflow: 'hidden', display: 'flex', flexShrink: 0 }}
+            >
+              <WorkspaceSidebar
+                project={project}
+                collapsed={collapsed}
+                onToggleCollapse={setCollapsed}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
           {shouldShowGlobalHeader && (
