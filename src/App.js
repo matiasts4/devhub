@@ -213,8 +213,8 @@ function WorkspaceLayout() {
     >
       {/* ── Inner layout: sidebar + content ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Hide sidebar when terminal is maximized and visible */}
-        {!(isTerminalMaximized && isTerminalRoute) && !isPizarraActive && (
+        {/* Hide sidebar when terminal is maximized and visible, or pizarra is active and visible */}
+        {!((isTerminalMaximized || isPizarraActive) && isTerminalRoute) && (
           <WorkspaceSidebar
             project={project}
             collapsed={collapsed}
@@ -244,7 +244,10 @@ function WorkspaceLayout() {
             className="absolute inset-0 z-10 bg-[#0d0d0d]"
             data-terminal-container
             data-terminal-view={isTerminalRoute ? 'true' : undefined}
-            style={{ ...getWorkspaceShellChromeStyle(), display: isTerminalRoute ? 'block' : 'none' }}
+            style={{
+              ...getWorkspaceShellChromeStyle(),
+              display: isTerminalRoute ? 'block' : 'none',
+            }}
           >
             {project && (
               <OperatorActionsDispatchProvider>

@@ -1,4 +1,5 @@
 'use client';
+/* global require */
 
 let nativeBrowserUnlisten = null;
 
@@ -92,21 +93,15 @@ export async function reloadNativeBrowser(payload = {}) {
 }
 
 export async function resizeNativeBrowser(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_resize', { request: payload });
+  return invokeNativeBrowser('native_browser_resize', payload, {});
 }
 
 export async function focusNativeBrowser(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_focus', { request: payload });
+  return invokeNativeBrowser('native_browser_focus', payload, {});
 }
 
 export async function setNativeBrowserVisibility(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_set_visibility', { request: payload });
+  return invokeNativeBrowser('native_browser_set_visibility', payload, {});
 }
 
 export async function nativeBrowserSelectorCommand(payload = {}) {
@@ -131,9 +126,7 @@ export async function copyNativeBrowser(payload = {}) {
 }
 
 export async function closeNativeBrowser(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_close', { request: payload });
+  return invokeNativeBrowser('native_browser_close', payload, {});
 }
 
 export async function subscribeNativeBrowserEvents() {

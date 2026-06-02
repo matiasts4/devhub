@@ -80,59 +80,70 @@ export function useNativeBrowserSurface({
     let cancelled = false;
 
     async function syncNativeSurface() {
-      if (!active || !url) {
-        await closeActiveNativeLease('surface-inactive');
-        if (!cancelled) setNativeRuntimeReady(false);
-        return;
-      }
-
-      if (!visibleInLayout) {
-        await hideActiveNativeLease();
-        return;
-      }
-
-      const bounds = measureBounds?.();
-      if (!bounds) {
-        if (!cancelled) setNativeRuntimeReady(false);
-        return;
-      }
-
-      if (!nativeLeaseRef.current.opened) {
-        const result = await openNativeBrowser({ panelId, url, bounds });
-
-        if (cancelled || !visibleInLayout) {
-          if (result?.opened === true) {
-            await closeNativeBrowser({ panelId, reason: 'stale-open-cancelled' }).catch(() => {});
+      try {
+        if (!active || !url) {
+          await closeActiveNativeLease('surface-inactive');
+          if (!cancelled) {
+            setNativeRuntimeReady(false);
           }
           return;
         }
 
-        if (result?.opened !== true) {
+        if (!visibleInLayout) {
+          await hideActiveNativeLease();
+          return;
+        }
+
+        const bounds = measureBounds?.();
+        if (!bounds) {
           if (!cancelled) setNativeRuntimeReady(false);
           return;
         }
 
-        nativeLeaseRef.current = { opened: true, lastUrl: url };
-      } else if (nativeLeaseRef.current.lastUrl !== url) {
-        const result = await loadNativeBrowserUrl({ panelId, url });
-        if (cancelled) return;
+        if (!nativeLeaseRef.current.opened) {
+          const result = await openNativeBrowser({ panelId, url, bounds });
 
-        if (result?.loaded === false) {
-          setNativeRuntimeReady(false);
-          return;
+          if (cancelled || !visibleInLayout) {
+            if (result?.opened === true) {
+              await closeNativeBrowser({ panelId, reason: 'stale-open-cancelled' }).catch(() => {});
+            }
+            return;
+          }
+
+          if (result?.opened !== true) {
+            if (!cancelled) setNativeRuntimeReady(false);
+            return;
+          }
+
+          nativeLeaseRef.current = { opened: true, lastUrl: url };
+        } else if (nativeLeaseRef.current.lastUrl !== url) {
+          const result = await loadNativeBrowserUrl({ panelId, url });
+          if (cancelled) return;
+
+          if (result?.loaded === false) {
+            setNativeRuntimeReady(false);
+            return;
+          }
+
+          nativeLeaseRef.current.lastUrl = url;
         }
 
-        nativeLeaseRef.current.lastUrl = url;
+        await resizeNativeBrowser({ panelId, bounds }).catch(() => {});
+        await setNativeBrowserVisibility({ panelId, visible: true, bounds }).catch(() => {});
+
+        if (focusOnShow) {
+          await focusNativeBrowser({ panelId }).catch(() => {});
+        }
+
+        if (!cancelled) setNativeRuntimeReady(true);
+      } catch (err) {
+        // pizarra-browser-fix: any unhandled bridge rejection previously left
+        // nativeRuntimeReady in an indeterminate state causing a perpetual
+        // loading spinner. Reset to false so WorkspaceBrowserPane can fall back.
+
+        console.error('[useNativeBrowserSurface] syncNativeSurface failed:', err);
+        if (!cancelled) setNativeRuntimeReady(false);
       }
-
-      await resizeNativeBrowser({ panelId, bounds }).catch(() => {});
-      await setNativeBrowserVisibility({ panelId, visible: true, bounds }).catch(() => {});
-
-      if (focusOnShow) {
-        await focusNativeBrowser({ panelId }).catch(() => {});
-      }
-
-      if (!cancelled) setNativeRuntimeReady(true);
     }
 
     syncNativeSurface();
