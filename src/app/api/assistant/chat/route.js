@@ -126,7 +126,24 @@ export async function POST(request) {
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'malformed body' }, { status: 400 });
     }
-    const { message, context = {} } = body;
+    const { message, context = {}, history } = body;
+
+    // T-033: optional history array from the client. Allows the assistant to
+    // remember recent turns. The server still owns the per-turn tool loop
+    // (callMinimax + tool dispatch), but the cross-turn context now flows
+    // through the wire. Capped at 20 messages client-side; reject malformed
+    // entries server-side to keep the prompt well-formed.
+    const safeHistory = Array.isArray(history)
+      ? history
+          .filter(
+            (m) =>
+              m &&
+              typeof m === 'object' &&
+              (m.role === 'user' || m.role === 'assistant') &&
+              typeof m.content === 'string'
+          )
+          .slice(-20)
+      : [];
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
@@ -148,7 +165,11 @@ export async function POST(request) {
       return NextResponse.json({ error: err.message }, { status: 500 });
     }
 
-    const conversation = [{ role: 'user', content: message }];
+    // T-033: prepend the client's history (if any), then append the current
+    // user message as the last entry. Each per-turn tool loop iteration
+    // still appends assistant + tool-result messages after this point —
+    // those stay server-side and never round-trip.
+    const conversation = [...safeHistory, { role: 'user', content: message }];
     let turn = 0;
     let finalText = '';
     let allToolResults = [];

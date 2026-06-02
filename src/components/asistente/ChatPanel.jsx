@@ -71,10 +71,19 @@ export default function ChatPanel({ className = '' }) {
     ]);
 
     try {
+      // T-033: send the conversation history (last 20 messages, flattened
+      // into the server protocol by `buildZedHistory`). The server prepends
+      // it to the per-turn tool loop so the model retains recent context
+      // across requests.
+      const history = buildZedHistory(
+        // Exclude the message we just optimistically appended in
+        // setMessages above (line 68-71) — that one is sent as `message`.
+        messages.slice(0, -1)
+      );
       const response = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, context: {} }),
+        body: JSON.stringify({ message: userMessage, history, context: {} }),
         signal: ctrl.signal,
       });
 
@@ -277,4 +286,41 @@ function safeParse(s) {
   } catch {
     return null;
   }
+}
+
+/**
+ * T-033: flatten the client's `messages` state (an array of
+ * { role, content, timestamp, tool_results? } entries used for rendering)
+ * into the conversation protocol the assistant route expects:
+ *   - user messages become { role: 'user', content }
+ *   - assistant messages become { role: 'assistant', content }
+ *   - each tool_result inside an assistant message becomes its own
+ *     { role: 'user', content: `Tool <name> result: <json>` } entry,
+ *     matching how the server injects results into the loop (route.js:260-263).
+ *
+ * @param {Array} messages - the ChatPanel messages state
+ * @param {number} maxLen - cap on entries returned (default 20)
+ * @returns {Array} history array suitable for `POST /api/assistant/chat` body
+ */
+export function buildZedHistory(messages, maxLen = 20) {
+  if (!Array.isArray(messages)) return [];
+  const flat = [];
+  for (const m of messages.slice(-maxLen)) {
+    if (!m || typeof m !== 'object') continue;
+    if (m.role === 'user' && typeof m.content === 'string') {
+      flat.push({ role: 'user', content: m.content });
+    } else if (m.role === 'assistant' && typeof m.content === 'string') {
+      flat.push({ role: 'assistant', content: m.content });
+      if (Array.isArray(m.tool_results)) {
+        for (const r of m.tool_results) {
+          if (!r || !r.tool) continue;
+          flat.push({
+            role: 'user',
+            content: `Tool ${r.tool} result: ${JSON.stringify(r.result ?? null)}`,
+          });
+        }
+      }
+    }
+  }
+  return flat;
 }
