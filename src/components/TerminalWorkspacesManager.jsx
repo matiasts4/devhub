@@ -89,6 +89,11 @@ import {
 } from '@/lib/terminal/startupRestoreCoordinator';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import { useLiveSurfaceRegistry, LiveSurfaceRegistryContext } from '@/lib/pizarra/useLiveSurfaceRegistry';
+// pizarra-shared-view-state Phase 2: TWM is the canonical owner
+// of sharedDockState. Mounting SharedDockStoreProvider at the
+// TWM root gives every workspace + pizarra consumer in the same
+// tab the same store instance.
+import { SharedDockStoreProvider } from './workspace/hooks/useSharedDockState';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
@@ -3772,7 +3777,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     : 0;
   return (
     <LiveSurfaceRegistryContext.Provider value={registryValue}>
-      <motion.div
+      <SharedDockStoreProvider
+        storage={storage}
+        projectId={projectId || 'global'}
+        workspaceId={activeWsId || 'workspace'}
+      >
+        <motion.div
       ref={managerRootRef}
       className="flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
       style={getWorkspaceShellChromeStyle()}
@@ -4512,10 +4522,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             );
           })}
           {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
-            <div
+            <motion.div
+              layout
               data-testid="workspace-right-dock-layer"
               className={`absolute overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
               style={{ ...rightDockLayerStyle, zIndex: isFullscreenBrowser ? 200 : 50 }}
+              transition={{ layout: { duration: 0.25, ease: 'easeInOut' } }}
             >
               <WorkspaceRightDock
                 project={{ id: projectId, local_path: cwd }}
@@ -4550,7 +4562,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   className="pointer-events-none absolute inset-0 z-50 cursor-col-resize"
                 />
               ) : null}
-            </div>
+            </motion.div>
           ) : null}
         </div>
       </div>
@@ -4584,6 +4596,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         onClose={() => setRestoreSettingsModal({ open: false })}
       />
     </motion.div>
+    </SharedDockStoreProvider>
     </LiveSurfaceRegistryContext.Provider>
   );
 }

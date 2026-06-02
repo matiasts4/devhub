@@ -23,6 +23,11 @@ import { Move, RefreshCw, X } from 'lucide-react';
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
+// pizarra-shared-view-state Phase 3: same tab strip as the
+// workspace right-dock (single source of truth). Pizarra is
+// always opt-in: tabsMode defaults to 'multi' on this surface.
+import { useBrowserTabs } from '@/components/workspace/hooks/useBrowserTabs';
+import BrowserTabStrip from '@/components/workspace/BrowserTabStrip';
 import {
   ensureSurfaceMotionKeyframes,
   resolveFrameVisual,
@@ -98,6 +103,7 @@ export default function PizarraBrowserSurface({
   onWorkspaceWindowSelect,
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
+  tabsMode = 'multi',
 }) {
   const [localDockState, setLocalDockState] = useState(() => createDockState(shape.url));
 
@@ -133,6 +139,18 @@ export default function PizarraBrowserSurface({
   // The hook is optional in the codebase; we import it dynamically so
   // the module graph stays valid even if it is not yet present.
   const nativeCapability = useNativeBrowserCapabilitySafe();
+
+  // pizarra-shared-view-state Phase 3: same tab strip as the
+  // workspace right-dock (single source of truth). Tabs and the
+  // +/close/select ops are driven by the TWM-owned useSharedDockState
+  // via useBrowserTabs. The shape.id is used as the workspace
+  // dimension so multiple pizarra browser surfaces in the same
+  // project do not collide.
+  const tabStripApi = useBrowserTabs({
+    projectId: projectId || 'pizarra',
+    workspaceId: workspaceId || shape.id,
+  });
+  const showTabStrip = tabsMode === 'multi';
 
   useEffect(() => {
     const nextUrl = resolveBrowserUrl(shape.url);
@@ -455,7 +473,18 @@ export default function PizarraBrowserSurface({
             inset: 0,
             minHeight: 0,
           }}
+          data-tabs-mode={tabsMode}
         >
+          {showTabStrip ? (
+            <BrowserTabStrip
+              tabs={tabStripApi.tabs}
+              activeTabId={tabStripApi.activeTabId}
+              onSelectTab={tabStripApi.selectTab}
+              onCloseTab={tabStripApi.closeTab}
+              onAddTab={tabStripApi.addTab}
+              currentUrl={resolvedDockState.browserUrl}
+            />
+          ) : null}
           <WorkspaceBrowserPane
             projectId={projectId || 'pizarra'}
             workspaceId={workspaceId || shape.id}
@@ -471,6 +500,10 @@ export default function PizarraBrowserSurface({
             layoutSyncKey={layoutSyncKey}
             suspendNativeSurface={isDragging}
             isPizarraContext={true}
+            // pizarra-shared-view-state Phase 3: pass tabsMode through
+            // so the inner WorkspaceBrowserPane does not render a
+            // duplicate strip. Pizarra owns the strip at this layer.
+            tabsMode={showTabStrip ? 'single' : 'single'}
           />
         </div>
 

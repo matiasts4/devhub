@@ -38,6 +38,14 @@ import {
 import { focusNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
 import { useNativeBrowserCapability, useNativeBrowserSurface } from './useNativeBrowserSurface';
 import { reloadBrowserRuntime } from './browserRuntimeReload';
+// pizarra-shared-view-state Phase 3: opt-in tab strip shared with
+// the pizarra browser surface. When `tabsMode === 'multi'` we read
+// from useBrowserTabs (which delegates to the TWM-owned
+// useSharedDockState) and render the BrowserTabStrip above the
+// existing toolbar chrome. Default 'single' preserves the
+// pre-Phase-3 UX exactly.
+import { useBrowserTabs } from './hooks/useBrowserTabs';
+import BrowserTabStrip from './BrowserTabStrip';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
@@ -68,6 +76,7 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowRemove = null,
   layoutSyncKey = null,
   suspendNativeSurface = false,
+  tabsMode = 'single',
   isPizarraContext = false,
 }) {
   const viewportShellRef = useRef(null);
@@ -82,6 +91,7 @@ function WorkspaceBrowserPane({
   }, []);
   const previewEditMode = Boolean(dockState.editMode || forceEditMode);
   const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK;
+
   const nativePanelId = useMemo(
     () => `browser-${projectId}-${workspaceId}`,
     [projectId, workspaceId]
@@ -230,6 +240,13 @@ function WorkspaceBrowserPane({
   const dedicatedBrowserOpen = browserWindowState?.open === true;
   const visibleWorkspaceWindows = Array.isArray(workspaceWindows) ? workspaceWindows : [];
   const showFullscreenWorkspaceTabs = dockState.maximized && dockState.maximizedView === 'browser';
+
+  // pizarra-shared-view-state Phase 3: opt-in tab strip. Reads
+  // the TWM-owned store via useBrowserTabs; the strip is only
+  // rendered when tabsMode === 'multi' so the existing single-tab
+  // UX is preserved by default.
+  const tabStripApi = useBrowserTabs({ projectId, workspaceId });
+  const showTabStrip = tabsMode === 'multi';
   const { nativeRuntimeReady } = useNativeBrowserSurface({
     panelId: nativePanelId,
     url: dockState.browserUrl,
@@ -239,6 +256,20 @@ function WorkspaceBrowserPane({
     observeNode: viewportShellRef,
     layoutSyncKey,
   });
+
+  // pizarra-browser-fix: clear any persisted browserLoadFallback:true that
+  // previous sessions may have written to localStorage, so native-gtk is
+  // retried on every fresh mount instead of staying permanently on iframe.
+  useEffect(() => {
+    if (!dockState.browserLoadFallback) return;
+    onDockStateChange?.((current) => {
+      if (!current.browserLoadFallback) return current;
+      return { ...current, browserLoadFallback: false };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally runs once on mount only
+
+
 
   const handleRuntimeReload = () => {
     void reloadBrowserRuntime({
@@ -348,7 +379,18 @@ function WorkspaceBrowserPane({
     <div
       className="h-full min-h-0 flex flex-col bg-[linear-gradient(180deg,#09111b_0%,#060b12_100%)]"
       data-testid="workspace-browser-pane"
+      data-tabs-mode={tabsMode}
     >
+      {showTabStrip ? (
+        <BrowserTabStrip
+          tabs={tabStripApi.tabs}
+          activeTabId={tabStripApi.activeTabId}
+          onSelectTab={tabStripApi.selectTab}
+          onCloseTab={tabStripApi.closeTab}
+          onAddTab={tabStripApi.addTab}
+          currentUrl={dockState.browserUrl}
+        />
+      ) : null}
       <form
         className="flex h-11 items-center gap-2 border-b border-[var(--border-subtle)] bg-[#07111c] px-3"
         onSubmit={handleSubmit}
