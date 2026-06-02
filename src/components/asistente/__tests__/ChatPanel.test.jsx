@@ -205,6 +205,43 @@ describe('ChatPanel — open_terminal visual dispatch (T-024)', () => {
 
     cleanup();
   });
+
+  test('T-WSR-zed-001: re-fire guard — second message does NOT re-dispatch the same session_id', async () => {
+    // ASST-UI-001: the dispatch useEffect MUST NOT re-fire the event for
+    // the same session_id. Without the guard, every subsequent
+    // `messages` change re-runs the effect and the same assistant turn
+    // (the one that contains the open_terminal result) is re-found, so
+    // the event fires multiple times. The fix uses a useRef<Set> of
+    // dispatched session_ids.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        text: 'He abierto una terminal nueva.',
+        tool_results: [
+          {
+            tool: 'open_terminal',
+            result: { session_id: 'term-1', port: 4077, wsPath: '/terminal' },
+          },
+        ],
+      }),
+    });
+
+    const { container, cleanup } = await renderIntoDom(React.createElement(ChatPanel));
+
+    // 1st message — opens the terminal.
+    await sendAndSettle(container, 'abre una terminal');
+    expect(findOpenTerminalEvents()).toHaveLength(1);
+
+    // 2nd message — any content. With the guard in place, the
+    // open_terminal useEffect re-runs but the session_id 'term-1' is
+    // already in the dispatched set, so we must NOT see a second
+    // dispatch.
+    await sendAndSettle(container, 'ahora corré ls');
+    expect(findOpenTerminalEvents()).toHaveLength(1);
+
+    cleanup();
+  });
 });
 
 describe('ChatPanel — paste behavior (T-018)', () => {

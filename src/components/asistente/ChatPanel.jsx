@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Loader2, Square } from 'lucide-react';
 import ToolResult from './ToolResult';
+import { dispatchZedOpenTerminal } from '@/components/zedOpenTerminalEvent';
 
 function ChatMessage({ role, content, timestamp }) {
   const isZed = role === 'zed' || role === 'assistant';
@@ -164,6 +165,15 @@ export default function ChatPanel({ className = '' }) {
   // D9: dispatch `devhub:zed-open-terminal` when an open_terminal tool result
   // arrives. Replaces the side-effect that used to live inside the old
   // inline ToolBadge component.
+  // T-WSR-zed-001 (ASST-UI-001): the dispatch site MUST NOT fire the
+  // event for the same session_id twice. Every subsequent `messages`
+  // change re-runs this effect, and the same assistant turn (the one
+  // that contains the open_terminal result) would otherwise be
+  // re-found. The ref Set is the simplest single-source-of-truth guard;
+  // it survives React strict-mode double-invocation (both invocations
+  // hit the same ref; the second sees the session_id and bails).
+  const dispatchedSessionIdsRef = useRef(new Set());
+
   useEffect(() => {
     let lastMessage = null;
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -177,17 +187,20 @@ export default function ChatPanel({ className = '' }) {
     const result = openTerminalResult?.result;
     if (!result || result.error) return;
     const parsed = typeof result === 'string' ? safeParse(result) : result;
-    if (parsed?.session_id) {
-      window.dispatchEvent(
-        new CustomEvent('devhub:zed-open-terminal', {
-          detail: {
-            command: parsed?.command || null,
-            cwd: parsed?.cwd || null,
-            session_id: parsed?.session_id || null,
-          },
-        })
-      );
-    }
+    if (!parsed?.session_id) return;
+
+    // Re-fire guard: bail if this session_id was already dispatched.
+    if (dispatchedSessionIdsRef.current.has(parsed.session_id)) return;
+    dispatchedSessionIdsRef.current.add(parsed.session_id);
+
+    // Dispatch via the helper (ZEB-005: this is the ONLY allowed site
+    // for a `devhub:zed-open-terminal` dispatch).
+    dispatchZedOpenTerminal({
+      command: parsed?.command || null,
+      cwd: parsed?.cwd || null,
+      session_id: parsed.session_id,
+      focus: parsed.focus === true,
+    });
   }, [messages]);
 
   // Auto-resize textarea

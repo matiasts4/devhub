@@ -39,6 +39,7 @@ import NotificationCenter from './NotificationCenter';
 import TerminalSettingsModal from './TerminalSettingsModal';
 import TerminalRestoreSettingsModal from './TerminalRestoreSettingsModal';
 import { isValidZedOpenTerminalEvent, resolveZedOpenTerminalPanelId } from './zedOpenTerminalEvent';
+import { applyZedOpenTerminalFocus } from './asistente/zedOpenTerminalFocus';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -3720,7 +3721,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     // or a string (open + run). See `zedOpenTerminalEvent.js`.
     const handleZedOpenTerminal = (e) => {
       if (!isValidZedOpenTerminalEvent(e.detail)) return;
-      const { command, cwd, session_id } = e.detail;
+      const { command, cwd, session_id, focus = false } = e.detail;
       const explicitPanelId = resolveZedOpenTerminalPanelId(e.detail, null);
 
       const targetWsId = activeWsIdRef.current || activeWsId;
@@ -3731,8 +3732,32 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       // T-029b: pass session_id as the explicitPanelId so the new panel
       // connects to the same PTY session the model opened. Falls back to
       // auto-mint when session_id is null (e.g. legacy events).
-      console.log(`[Zed] Opening terminal command=${command} cwd=${cwd} session_id=${session_id}`);
-      handleSplit('horizontal', targetPanelId, command, cwd || null, explicitPanelId);
+      // T-WSR-zed-001 (ASST-UI-002/003/004): capture the new panel id
+      // returned by handleSplit and pipe it through the post-handleSplit
+      // focus chain (activate + opt-in focused + opt-in pizarra de-max).
+      console.log(
+        `[Zed] Opening terminal command=${command} cwd=${cwd} session_id=${session_id} focus=${focus}`
+      );
+      const newPanelId = handleSplit(
+        'horizontal',
+        targetPanelId,
+        command,
+        cwd || null,
+        explicitPanelId
+      );
+      if (!newPanelId) return;
+
+      applyZedOpenTerminalFocus(
+        targetWsId,
+        newPanelId,
+        { focus },
+        {
+          activateWorkspacePanel,
+          setFocusedPanelByWorkspace,
+          updateRightDockState,
+          maximizedView: rightDockState?.maximizedView ?? null,
+        }
+      );
     };
 
     window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);
