@@ -9,6 +9,7 @@ export default function usePizarraSurfaceDrag({
   onMove,
   onDragEnd,
   onDragStart,
+  onDragMove,
   moveMeta,
   onNativeSync,
 }) {
@@ -152,6 +153,20 @@ export default function usePizarraSurfaceDrag({
         const totalDeltaX = rawTotalDeltaX / zoom;
         const totalDeltaY = rawTotalDeltaY / zoom;
 
+        // pizarra-shared-view-state (Phase 1 — flicker fix): the
+        // consumer is responsible for the 3px threshold gate that
+        // separates "I am about to drag" from "I am clicking to
+        // select". The hook hands the raw moveEvent + raw deltas to
+        // onDragMove so the consumer can run the gate. We pass raw
+        // (pre-zoom) deltas because movementX/movementY are not
+        // populated by jsdom and the threshold is about real screen
+        // pixels (per design §6.1). See the consumer in
+        // CanvasTerminal.jsx.
+        onDragMove?.(moveEvent, {
+          rawTotalDeltaX,
+          rawTotalDeltaY,
+        });
+
         if (rawDeltaX === 0 && rawDeltaY === 0) return;
 
         lastPointer.x = moveEvent.clientX;
@@ -203,7 +218,12 @@ export default function usePizarraSurfaceDrag({
         const zoom = resolvedZoomRef.current || 1;
         const finalTotalDeltaX = (lastPointer.x - startPointer.x) / zoom;
         const finalTotalDeltaY = (lastPointer.y - startPointer.y) / zoom;
-        onDragEnd?.({ id: surfaceId, ...moveMeta, totalDeltaX: finalTotalDeltaX, totalDeltaY: finalTotalDeltaY });
+        onDragEnd?.({
+          id: surfaceId,
+          ...moveMeta,
+          totalDeltaX: finalTotalDeltaX,
+          totalDeltaY: finalTotalDeltaY,
+        });
         cleanupDrag();
       };
 
@@ -212,7 +232,7 @@ export default function usePizarraSurfaceDrag({
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
-    [flushPendingMove, onDragEnd, onDragStart, onSelect, surfaceId]
+    [flushPendingMove, onDragEnd, onDragStart, onDragMove, onSelect, surfaceId]
   );
 
   // pizarra-ux-overhaul: tests and consumers can update the latest

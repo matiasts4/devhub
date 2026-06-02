@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
-import { resizeNativeVtePanel } from '@/lib/terminal/nativeVteBridge';
+import { resizeNativeVtePanel, setNativeVtePanelVisibility } from '@/lib/terminal/nativeVteBridge';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
 import {
   ensureSurfaceMotionKeyframes,
@@ -12,6 +12,19 @@ import {
   FRAME_TRANSITION,
   SURFACE_ENTER_ANIMATION,
 } from '@/lib/pizarra/surfaceMotion';
+
+// pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
+// pointer travel that separates a click from a drag. Below this
+// threshold, the native VTE panel is NOT suspended on mousedown, so
+// a pure selection click no longer triggers the IPC hide/show
+// round-trip that causes the visible flicker.
+//
+// Hypotenuse of (rawDeltaX, rawDeltaY) — the browser-reported
+// pre-zoom screen pixels of the pointer since drag start — is
+// compared against DRAG_THRESHOLD_PX. The first move that crosses
+// it promotes "pointerDown" to "isLiveDragging" and only then is
+// the native VTE panel suspended. See design §6.1.
+const DRAG_THRESHOLD_PX = 3;
 
 export default function CanvasTerminal({
   terminalId,
@@ -89,13 +102,63 @@ export default function CanvasTerminal({
     [handleSurfaceSelect, resolvedShape.id]
   );
 
-  // pizarra-drag-resize-polish: border-based resize. The Konva
-  const [isDragging, setIsDragging] = useState(false);
+  // pizarra-shared-view-state (Phase 1 — flicker fix): decouple
+  // suspendNativeSurface from mousedown. Two booleans instead of one:
+  //
+  //   - pointerDown  — set on mousedown of the header or any resize
+  //                    handle. Cleared on mouseup. Visual state only
+  //                    (cursor / border / drag-frame visual).
+  //   - isLiveDragging — set on the FIRST mousemove after pointerDown
+  //                    where Math.hypot(movementX, movementY) > 3.
+  //                    Cleared on mouseup. Drives suspendNativeSurface
+  //                    so the native VTE panel is hidden only when
+  //                    actual movement starts.
+  //
+  // The 3px threshold is the smallest movement that reliably
+  // distinguishes a click from a drag at typical pointer precision.
+  // See design §6.1.
+  const [pointerDown, setPointerDown] = useState(false);
+  const [isLiveDragging, setIsLiveDragging] = useState(false);
+  const hasMovedRef = useRef(false);
 
+  // Derived value for VISUAL state only (frame border, cursor, drag
+  // transform). NEVER drives suspendNativeSurface — that is the whole
+  // point of the flicker fix.
+  const isDragging = pointerDown || isLiveDragging;
+
+  // pizarra-shared-view-state (Phase 1 — flicker fix): synchronous
+  // reattach. When isLiveDragging flips back to false, the next
+  // resolvedBounds effect run calls setNativeVtePanelVisibility with
+  // visible:true in the SAME effect tick (no setTimeout, no RAF). This
+  // closes the one-frame gap between wrapper repaint and native panel
+  // repaint that caused the post-drag flicker. See design §6.2.
+  const wasLiveDraggingRef = useRef(false);
+  useEffect(() => {
+    if (wasLiveDraggingRef.current && !isLiveDragging) {
+      // Just exited a real drag. Reattach the native panel right now,
+      // synchronously. The effect runs in the same React commit tick
+      // that processed the state flip.
+      setNativeVtePanelVisibility({
+        panelId: terminalId,
+        visible: true,
+        reason: 'reattach-after-drag',
+      }).catch(() => {});
+    }
+    wasLiveDraggingRef.current = isLiveDragging;
+  }, [isLiveDragging, terminalId]);
+
+  // pizarra-drag-resize-polish: border-based resize. The Konva
   // Transformer is excluded for TERMINAL shapes (composite type), so
   // the user grabs any of the 8 edge/corner handles and drags to
   // resize. The resize is live (calls onResize every mousemove) so
   // the visual feedback stays in sync with the cursor.
+  //
+  // pizarra-shared-view-state (Phase 1): the same 3px threshold gate
+  // applies to the resize path. pointerDown is set on mousedown; the
+  // mousemove handler flips isLiveDragging once the threshold is
+  // crossed. Mouseup clears both. setIsDragging (legacy alias) is no
+  // longer used here — the resize handler is wired through the new
+  // pointerDown/isLiveDragging state machine.
   const handleResizeStart = useCallback(
     (event, dir) => {
       if (event.button !== 0) return;
@@ -122,7 +185,31 @@ export default function CanvasTerminal({
       const minW = 160;
       const minH = 120;
 
+      // pizarra-shared-view-state (Phase 1): reset the threshold gate
+      // for the resize path. hasMovedRef is shared with the header
+      // path, but is cleared on every new pointerDown so the gate
+      // always starts fresh.
+      hasMovedRef.current = false;
+      setPointerDown(true);
+
       const handleMouseMove = (moveEvent) => {
+        // Threshold gate: first move that crosses DRAG_THRESHOLD_PX
+        // promotes pointerDown → isLiveDragging, which suspends the
+        // native VTE panel. Before that, the panel stays visible (no
+        // flicker on selection click). We use raw screen deltas
+        // (clientX/Y differences, NOT post-zoom) because the 3px
+        // threshold is about real pointer movement.
+        if (!hasMovedRef.current) {
+          const rawTravel = Math.hypot(
+            moveEvent.clientX - startX || 0,
+            moveEvent.clientY - startY || 0
+          );
+          if (rawTravel > DRAG_THRESHOLD_PX) {
+            hasMovedRef.current = true;
+            setIsLiveDragging(true);
+          }
+        }
+
         const dx = (moveEvent.clientX - startX) / z;
         const dy = (moveEvent.clientY - startY) / z;
         const next = { ...startBounds };
@@ -147,12 +234,17 @@ export default function CanvasTerminal({
       };
 
       const handleMouseUp = () => {
-        setIsDragging(false);
+        // Clear both refs and the isLiveDragging state. The
+        // synchronous reattach effect above will pick up the
+        // isLiveDragging flip and call setNativeVtePanelVisibility
+        // with visible:true in the same tick.
+        hasMovedRef.current = false;
+        setPointerDown(false);
+        setIsLiveDragging(false);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
       };
 
-      setIsDragging(true);
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
@@ -164,18 +256,50 @@ export default function CanvasTerminal({
     bounds: resolvedBounds,
     onSelect: handleSurfaceSelect,
     onMove,
+    // pizarra-shared-view-state (Phase 1 — flicker fix): the hook
+    // exposes onDragStart / onDragMove / onDragEnd so the consumer
+    // (CanvasTerminal) can run the 3px threshold gate before flipping
+    // suspendNativeSurface. The legacy isDragging boolean is kept as a
+    // derived value (`pointerDown || isLiveDragging`) for visual
+    // state only and does NOT drive suspendNativeSurface.
+    onDragStart: () => {
+      hasMovedRef.current = false;
+      setPointerDown(true);
+    },
+    onDragMove: (moveEvent, rawDeltas) => {
+      if (!hasMovedRef.current) {
+        // Threshold check on raw pre-zoom screen deltas (the
+        // 3px gate is about real pointer movement, not post-zoom
+        // logical deltas). The hook computes rawTotalDeltaX/Y from
+        // clientX/clientY differences and passes them here. JSDOM
+        // does not populate moveEvent.movementX/Y, so the raw deltas
+        // from the hook are the test-friendly source of truth.
+        const dx = (rawDeltas && rawDeltas.rawTotalDeltaX) || 0;
+        const dy = (rawDeltas && rawDeltas.rawTotalDeltaY) || 0;
+        const travel = Math.hypot(dx, dy);
+        if (travel > DRAG_THRESHOLD_PX) {
+          hasMovedRef.current = true;
+          setIsLiveDragging(true);
+        }
+      }
+    },
     onDragEnd: (args) => {
-      setIsDragging(false);
+      // Clear both. The synchronous reattach effect above will pick
+      // up the isLiveDragging flip and call setNativeVtePanelVisibility
+      // with visible:true in the same React commit tick.
+      setPointerDown(false);
+      setIsLiveDragging(false);
       onDragEnd?.(args);
     },
-    onDragStart: () => setIsDragging(true),
     moveMeta: { terminalId },
     // pizarra-motion: NO per-tick native IPC during drag. The native VTE
-    // surface is suspended while dragging (suspendNativeSurface={isDragging}),
-    // so repositioning it every RAF was wasted IPC that also caused the
-    // "native window follows at the wrong offset" flicker. The surface is
-    // repositioned exactly ONCE on drop, by the resolvedBounds effect above,
-    // after the new x/y are committed to the reducer.
+    // surface is suspended while a real drag is in progress
+    // (suspendNativeSurface={isLiveDragging}, NOT pointerDown), so a
+    // selection click never triggers the IPC hide/show round-trip. The
+    // surface is repositioned exactly ONCE on drop, by the
+    // resolvedBounds effect above, after the new x/y are committed to
+    // the reducer. The synchronous reattach effect restores
+    // visibility on the same tick the drag ends.
   });
 
   // pizarra-fix-strictmode-unmount-2026-06-01: REMOVED the
@@ -305,7 +429,13 @@ export default function CanvasTerminal({
             isVisibleInLayout
             isActivePanel={isActivePanel}
             showQuickCopyButton={false}
-            suspendNativeSurface={isDragging}
+            // pizarra-shared-view-state (Phase 1 — flicker fix):
+            // suspendNativeSurface is driven by isLiveDragging, not
+            // isDragging. A pure selection click leaves isLiveDragging
+            // false (pointerDown is true but the threshold was never
+            // crossed), so the native VTE panel stays visible — no
+            // IPC round-trip, no flicker. See design §6.1.
+            suspendNativeSurface={isLiveDragging}
           />
         </div>
       </div>
