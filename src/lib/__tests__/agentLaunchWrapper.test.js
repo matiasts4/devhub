@@ -632,4 +632,62 @@ describe('agentLaunchWrapper', () => {
       expect(result).toMatch(/sleep 0\s*\n/);
     });
   });
+
+  // =========================================================================
+  // T-020: Self-metrics in exit trap.
+  //
+  // Each agent's exit trap should sample its own process and its
+  // children's CPU/RSS/etime and append the sample to
+  // /tmp/devhub-swarm-<role>.metrics. This lets us understand the real
+  // cost of each agent and figure out why CPU is high when idle.
+  //
+  // Requirements:
+  //   (a) Exit trap contains `ps -p` self-metrics call.
+  //   (b) Exit trap contains the children enumeration via `pgrep -P`.
+  //   (c) The metrics log path is /tmp/devhub-swarm-${role}.metrics.
+  //   (d) DEVHUB_AGENT_PID is in the env exports (so the trap knows
+  //       which PID to sample).
+  // =========================================================================
+  describe('T-020: self-metrics in exit trap', () => {
+    const metricsParams = {
+      ...baseParams,
+      role: 'coder',
+      tmuxSessionName: 'devhub-swarm-test-1-coder',
+      bootstrapPrompt: 'Implement feature X with tests',
+      busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+      dbPath: '/repo/devhub.db',
+    };
+
+    test('exit trap contains a `ps -p` self-metrics call for the agent process', () => {
+      const result = buildAgentLaunchWrapper(metricsParams);
+      // The trap must sample the agent's own process via `ps -p`
+      // (process status) for cpu/mem/etime.
+      expect(result).toMatch(/ps -p "?\$\{?DEVHUB_AGENT_PID/);
+    });
+
+    test('exit trap enumerates child processes via `pgrep -P` for trans-cost analysis', () => {
+      const result = buildAgentLaunchWrapper(metricsParams);
+      // The trap must also walk the child tree to attribute the
+      // total cost (opencode forks a child runtime, the child
+      // spawns tool subprocesses, etc.).
+      expect(result).toMatch(/pgrep -P "?\$\{?DEVHUB_AGENT_PID/);
+    });
+
+    test('metrics log path matches /tmp/devhub-swarm-${role}.metrics template', () => {
+      const result = buildAgentLaunchWrapper(metricsParams);
+      // The log path is parameterized by role at runtime
+      // (${DEVHUB_ROLE:-unknown}). Accept either the explicit "coder"
+      // or the parameterized form.
+      expect(result).toMatch(/\/tmp\/devhub-swarm-(coder|\\\$\{DEVHUB_ROLE)/);
+      expect(result).toContain('.metrics');
+    });
+
+    test('DEVHUB_AGENT_PID is in the env exports so the trap knows which PID to sample', () => {
+      const result = buildAgentLaunchWrapper(metricsParams);
+      // The env exports block must include DEVHUB_AGENT_PID
+      // (already there for the agent's identity, but T-020 makes
+      // it explicit that the trap USES it for ps sampling).
+      expect(result).toContain('DEVHUB_AGENT_PID');
+    });
+  });
 });

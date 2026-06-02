@@ -52,6 +52,12 @@ export function buildAgentEnvExports({
     `export DEVHUB_WORKSPACE_PATH="${workspacePath}"`,
     `export DEVHUB_WORKSPACE_ID="${workspaceId || ''}"`,
     `export DEVHUB_RUN_ID="${runId || ''}"`,
+    // T-020: the agent's own OS process ID, exported at spawn time
+    // so the exit trap can sample this process and its children via
+    // `ps -p $DEVHUB_AGENT_PID` and `pgrep -P $DEVHUB_AGENT_PID`.
+    // Use single-quoted `$$` so bash expands it at script start
+    // (the actual PID of the wrapper process), not at module load.
+    `export DEVHUB_AGENT_PID='$$'`,
   ];
 
   // T-003 — DEVHUB_DB_PATH gives bus helpers an absolute path to the SQLite bus.
@@ -924,10 +930,29 @@ export function buildExitTrapCommand({
         directorConsumerCleanup,
       ].join('\n')
     : '';
+  // T-020: self-metrics block. Runs in the exit trap BEFORE the bus
+  // event-write so we always capture a sample (even on bus failures).
+  // The block samples this process and its children for cpu/rss/etime,
+  // appending to /tmp/devhub-swarm-${role}.metrics. Best-effort — if
+  // `ps` or `pgrep` are missing, the file just doesn't get a sample.
+  const selfMetricsBlock = [
+    '  # T-020 — self-metrics: sample this process + children',
+    '  if [ -n "${DEVHUB_AGENT_PID:-}" ]; then',
+    '    {',
+    '      echo "[metrics-$(date -Iseconds)] agent_pid=$DEVHUB_AGENT_PID"',
+    '      ps -p "$DEVHUB_AGENT_PID" -o pid,vsz,rss,pcpu,pmem,etime,comm 2>/dev/null || echo "ps: process $DEVHUB_AGENT_PID not found"',
+    '      # Children: walk one level of pgrep -P and ps each',
+    '      pgrep -P "$DEVHUB_AGENT_PID" 2>/dev/null | while read -r _devhub_child_pid; do',
+    '        ps -p "$_devhub_child_pid" -o pid,vsz,rss,pcpu,pmem,comm 2>/dev/null',
+    '      done',
+    '    } >> "/tmp/devhub-swarm-${DEVHUB_ROLE:-unknown}.metrics" 2>&1',
+    '  fi',
+  ].join('\n');
   return `_devhub_exit_handler() {
   local _devhub_AGENT_EXIT_CODE=$?
 ${detachBlock}
 ${directorCleanupBlock}
+${selfMetricsBlock}
   if [ -n "$DEVHUB_MISSION_ID" ] && [ -n "$DEVHUB_AGENT_ID" ]; then
     local _DEVHUB_EXIT_PAYLOAD
     _DEVHUB_EXIT_PAYLOAD=$(printf '{"agent_id":"%s","role":"%s","exit_code":%d,"ts":"%s"}' \\
