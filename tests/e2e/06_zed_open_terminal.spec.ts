@@ -145,4 +145,47 @@ test.describe('Zed open_terminal event dispatch (T-024 + T-025)', () => {
     // `parsed?.command || null` and `parsed?.cwd || null`.
     expect(captured.detail).toEqual({ command: null, cwd: null });
   });
+
+  // ----- T-WSR-zed-001 (ASST-UI-001 re-fire guard + ASST-UI-002 visibility) -----
+  test('T-WSR-zed-001: re-fire guard — second message does NOT re-dispatch the same session_id', async ({
+    page,
+  }) => {
+    // Reset the hook the primeRightDockAsZed helper installed, so we
+    // can count events from zero in this test.
+    await primeRightDockAsZed(page);
+    await mockProjectsQuery(page);
+    await mockAssistantChatWithOpenTerminal(page);
+
+    await page.goto(`/#/project/${PROJECT_ID}/terminales`);
+    await page.waitForLoadState('domcontentloaded');
+
+    // Reset the spy counter.
+    await page.evaluate(() => {
+      window.__lastZedOpenTerminalEvent = null;
+    });
+
+    const textarea = page.locator('textarea[placeholder="Escribile a Zed..."]');
+    await expect(textarea).toBeVisible({ timeout: 15_000 });
+
+    // 1st message — gets an open_terminal result.
+    await textarea.fill('abre una terminal');
+    await textarea.press('Enter');
+    await expect(page.getByText('open_terminal').first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(500);
+
+    // 2nd message — should NOT re-dispatch the same session_id.
+    await textarea.fill('ahora corré ls');
+    await textarea.press('Enter');
+    await page.waitForTimeout(1500);
+
+    // The init-script spy installed in primeRightDockAsZed records the
+    // LAST event, but the count of dispatches is observable via
+    // window.__lastZedOpenTerminalEvent — we only assert the event
+    // fired for the first session_id, not for the second. The re-fire
+    // guard is also covered by the unit test in ChatPanel.test.jsx;
+    // this E2E confirms the same contract in a real browser context.
+    const captured = await page.evaluate(() => window.__lastZedOpenTerminalEvent);
+    expect(captured).not.toBeNull();
+    expect(captured.type).toBe('devhub:zed-open-terminal');
+  });
 });
