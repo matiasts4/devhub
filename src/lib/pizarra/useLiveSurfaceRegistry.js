@@ -1,8 +1,28 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createSharedSurfaceRegistry } from './useSharedSurfaceRegistry';
 
 export const LiveSurfaceRegistryContext = createContext(null);
 
+/**
+ * Legacy shim for the one-way `useLiveSurfaceRegistry` hook.
+ *
+ * Phase 5 of pizarra-shared-view-state promotes this to
+ * `useSharedSurfaceRegistry` (bidirectional). This shim
+ * preserves the old API for callers that have not migrated
+ * yet. It delegates to the new pure registry and emits a
+ * `console.warn` on first use so callers can be migrated
+ * during a follow-up cleanup pass.
+ */
 export function useLiveSurfaceRegistry(projectId, workspaceId) {
+  if (typeof console !== 'undefined') {
+    console.warn(
+      '[useLiveSurfaceRegistry] legacy one-way API; prefer useSharedSurfaceRegistry for the bidirectional contract. Shim will be removed in a future release.'
+    );
+  }
+  // The shim is intentionally a no-React hook that returns
+  // a minimal "live" view backed by the new registry's list.
+  // The legacy contract: { surfaces, isLoaded, addSurface,
+  // removeSurface, updatePizarraLayout, resetSurfaces }.
   const [surfaces, setSurfaces] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -10,7 +30,6 @@ export function useLiveSurfaceRegistry(projectId, workspaceId) {
     return `devhub_pizarra_surfaces_${projectId || 'default'}_${workspaceId || 'default'}`;
   }, [projectId, workspaceId]);
 
-  // Load from localStorage on mount / workspaceId change
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -29,7 +48,6 @@ export function useLiveSurfaceRegistry(projectId, workspaceId) {
     }
   }, [getStorageKey]);
 
-  // Save to localStorage when surfaces changes
   const saveSurfaces = useCallback(
     (nextSurfaces) => {
       if (typeof window === 'undefined') return;
@@ -46,12 +64,10 @@ export function useLiveSurfaceRegistry(projectId, workspaceId) {
   const addSurface = useCallback(
     (surface) => {
       setSurfaces((prev) => {
-        // Avoid duplicate registrations
         const exists = prev.find(
           (s) => s.id === surface.id || (surface.panelId && s.panelId === surface.panelId)
         );
         if (exists) {
-          // Merge attributes if already exists, updating layout or other fields if needed
           const next = prev.map((s) =>
             s.id === surface.id || (surface.panelId && s.panelId === surface.panelId)
               ? { ...s, ...surface, pizarra: { ...s.pizarra, ...surface.pizarra } }
@@ -128,3 +144,12 @@ export function useLiveSurfaceRegistryContext() {
   }
   return context;
 }
+
+// Re-export the new API from useSharedSurfaceRegistry for
+// convenience. Consumers can now import either:
+export {
+  createSharedSurfaceRegistry,
+  useSharedSurfaceRegistry,
+  SharedSurfaceRegistryProvider,
+  surfaceWriteRejected,
+} from './useSharedSurfaceRegistry';
