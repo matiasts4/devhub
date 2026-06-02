@@ -213,6 +213,15 @@ function buildLaunchCommand(
   launchId = null,
   workspacePath = ''
 ) {
+  // T-023: default programId to 'opencode' when missing. Otherwise workers
+  // fall through to the bash (hermes) default in buildAgentLaunchCommand,
+  // which launches a zsh session, not OpenCode. The bootstrap prompt is
+  // then pasted into zsh, which tries to execute prompt text as commands
+  // (`1.`, `2.`, `3.` lines fail with "command not found"), zsh exits,
+  // and the terminal stays empty. Symptom: 4 workers with bash prompts,
+  // 1 director with the OpenCode TUI.
+  const effectiveProgramId = programId || 'opencode';
+
   const agentProfile = roleKey ? buildRoleAgentProfile(roleKey) : 'sdd-orchestrator';
   const tmuxSessionName = launchId && roleKey ? `devhub-swarm-${launchId}-${roleKey}` : null;
   const directorTmuxSession = launchId ? `devhub-swarm-${launchId}-director` : null;
@@ -222,16 +231,16 @@ function buildLaunchCommand(
   console.log(`[SWARM_LAUNCH_CMD] Agent profile: ${agentProfile}`);
   console.log(`[SWARM_LAUNCH_CMD] TMUX session: ${tmuxSessionName}`);
   console.log(`[SWARM_LAUNCH_CMD] Model: ${modelId}`);
-  console.log(`[SWARM_LAUNCH_CMD] Program: ${programId}`);
+  console.log(`[SWARM_LAUNCH_CMD] Program: ${effectiveProgramId}`);
   console.log(`[SWARM_LAUNCH_CMD] Prompt length: ${prompt?.length || 0} chars`);
 
-  const innerCommand = buildAgentLaunchCommand(programId, prompt, {
+  const innerCommand = buildAgentLaunchCommand(effectiveProgramId, prompt, {
     opencodeAgent: agentProfile,
     modelId,
     tmuxSessionName,
     // `opencode --prompt` is non-interactive in current CLI builds. Start the
     // TUI first and inject the mission prompt into the already-running panel.
-    interactiveBootstrapPrompt: programId === 'opencode',
+    interactiveBootstrapPrompt: effectiveProgramId === 'opencode',
   });
 
   console.log(`[SWARM_LAUNCH_CMD] Inner command: ${innerCommand}`);
@@ -260,7 +269,7 @@ function buildLaunchCommand(
     workspacePath,
     tmuxSessionName,
     directorTmuxSession: isWorker ? directorTmuxSession : null,
-    bootstrapPrompt: programId === 'opencode' ? prompt : '',
+    bootstrapPrompt: effectiveProgramId === 'opencode' ? prompt : '',
     innerCommand,
     supervisorUrl,
     busBinaryPath: busPaths.busBinaryPath,
