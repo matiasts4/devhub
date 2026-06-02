@@ -17,7 +17,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// eslint-disable-next-line no-unused-vars -- false positive: these icon names are JSX-tag references (lucide-react proxies)
 import { Move, RefreshCw, X } from 'lucide-react';
+// eslint-disable-next-line no-unused-vars -- false positive: WorkspaceBrowserPane is rendered inside the JSX below; eslint-plugin-react v7.37.5 + ESLint 9.23.0 fails to track the JSX usage
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
@@ -68,7 +70,6 @@ function createDockState(url) {
   };
 }
 
-
 // pizarra-ux-overhaul: failure categories from board-browser-load Req 3.
 const FAILURE_CATEGORIES = {
   IFRAME_STUCK: 'iframe-stuck',
@@ -101,17 +102,20 @@ export default function PizarraBrowserSurface({
   const [localDockState, setLocalDockState] = useState(() => createDockState(shape.url));
 
   const resolvedDockState = parentDockState || localDockState;
-  const resolvedOnDockStateChange = useCallback((nextStateOrUpdater) => {
-    if (parentOnDockStateChange) {
-      parentOnDockStateChange(nextStateOrUpdater);
-    } else {
-      setLocalDockState((currentState) =>
-        typeof nextStateOrUpdater === 'function'
-          ? nextStateOrUpdater(currentState)
-          : nextStateOrUpdater
-      );
-    }
-  }, [parentOnDockStateChange]);
+  const resolvedOnDockStateChange = useCallback(
+    (nextStateOrUpdater) => {
+      if (parentOnDockStateChange) {
+        parentOnDockStateChange(nextStateOrUpdater);
+      } else {
+        setLocalDockState((currentState) =>
+          typeof nextStateOrUpdater === 'function'
+            ? nextStateOrUpdater(currentState)
+            : nextStateOrUpdater
+        );
+      }
+    },
+    [parentOnDockStateChange]
+  );
 
   const [loadFailed, setLoadFailed] = useState(null);
   // pizarra-ux-overhaul: tracks whether the iframe emitted a load
@@ -160,6 +164,7 @@ export default function PizarraBrowserSurface({
   // the iframe is "stuck" (no load event AND no native readiness
   // signal). On fire, sets loadFailed with the iframe-stuck category
   // unless the native runtime timed out (then native-timeout).
+  const nativeSupported = nativeCapability && nativeCapability.supported;
   useEffect(() => {
     if (resolvedDockState.browserRuntime === 'native-gtk') return; // Enforce native-gtk: disable iframe timer
     if (loadFailed) return; // already failed; don't restart
@@ -168,20 +173,18 @@ export default function PizarraBrowserSurface({
       if (loadFailedRef.current) return;
       // The native runtime may have reported supported but never
       // resolved ready. That is the native-timeout category.
-      const category =
-        nativeCapability && nativeCapability.supported
-          ? FAILURE_CATEGORIES.NATIVE_TIMEOUT
-          : FAILURE_CATEGORIES.IFRAME_STUCK;
+      const category = nativeSupported
+        ? FAILURE_CATEGORIES.NATIVE_TIMEOUT
+        : FAILURE_CATEGORIES.IFRAME_STUCK;
       setLoadFailed({ category, since: Date.now() });
     }, PIZARRA_BROWSER_LOAD_TIMEOUT_MS);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     shape.id,
     loadFailed,
     iframeLoaded,
     srcReloadKey,
-    nativeCapability && nativeCapability.supported,
+    nativeSupported,
     resolvedDockState.browserRuntime,
   ]);
 
@@ -555,42 +558,82 @@ export default function PizarraBrowserSurface({
               <div
                 data-testid="pizarra-browser-resize-n"
                 onMouseDown={(ev) => handleResizeStart(ev, 'n')}
-                style={edgeStyle({ top: FRAME_INSET - eg / 2, left: ins, right: ins, height: eg, cursor: 'ns-resize' })}
+                style={edgeStyle({
+                  top: FRAME_INSET - eg / 2,
+                  left: ins,
+                  right: ins,
+                  height: eg,
+                  cursor: 'ns-resize',
+                })}
               />
               <div
                 data-testid="pizarra-browser-resize-s"
                 onMouseDown={(ev) => handleResizeStart(ev, 's')}
-                style={edgeStyle({ bottom: FRAME_INSET - eg / 2, left: ins, right: ins, height: eg, cursor: 'ns-resize' })}
+                style={edgeStyle({
+                  bottom: FRAME_INSET - eg / 2,
+                  left: ins,
+                  right: ins,
+                  height: eg,
+                  cursor: 'ns-resize',
+                })}
               />
               <div
                 data-testid="pizarra-browser-resize-w"
                 onMouseDown={(ev) => handleResizeStart(ev, 'w')}
-                style={edgeStyle({ left: FRAME_INSET - eg / 2, top: ins, bottom: ins, width: eg, cursor: 'ew-resize' })}
+                style={edgeStyle({
+                  left: FRAME_INSET - eg / 2,
+                  top: ins,
+                  bottom: ins,
+                  width: eg,
+                  cursor: 'ew-resize',
+                })}
               />
               <div
                 data-testid="pizarra-browser-resize-e"
                 onMouseDown={(ev) => handleResizeStart(ev, 'e')}
-                style={edgeStyle({ right: FRAME_INSET - eg / 2, top: ins, bottom: ins, width: eg, cursor: 'ew-resize' })}
+                style={edgeStyle({
+                  right: FRAME_INSET - eg / 2,
+                  top: ins,
+                  bottom: ins,
+                  width: eg,
+                  cursor: 'ew-resize',
+                })}
               />
               <div
                 data-testid="pizarra-browser-resize-nw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
-                style={cornerStyle({ top: FRAME_INSET - c / 2, left: FRAME_INSET - c / 2, cursor: 'nwse-resize' })}
+                style={cornerStyle({
+                  top: FRAME_INSET - c / 2,
+                  left: FRAME_INSET - c / 2,
+                  cursor: 'nwse-resize',
+                })}
               />
               <div
                 data-testid="pizarra-browser-resize-ne"
                 onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
-                style={cornerStyle({ top: FRAME_INSET - c / 2, right: FRAME_INSET - c / 2, cursor: 'nesw-resize' })}
+                style={cornerStyle({
+                  top: FRAME_INSET - c / 2,
+                  right: FRAME_INSET - c / 2,
+                  cursor: 'nesw-resize',
+                })}
               />
               <div
                 data-testid="pizarra-browser-resize-sw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
-                style={cornerStyle({ bottom: FRAME_INSET - c / 2, left: FRAME_INSET - c / 2, cursor: 'nesw-resize' })}
+                style={cornerStyle({
+                  bottom: FRAME_INSET - c / 2,
+                  left: FRAME_INSET - c / 2,
+                  cursor: 'nesw-resize',
+                })}
               />
               <div
                 data-testid="pizarra-browser-resize-se"
                 onMouseDown={(ev) => handleResizeStart(ev, 'se')}
-                style={cornerStyle({ bottom: FRAME_INSET - c / 2, right: FRAME_INSET - c / 2, cursor: 'nwse-resize' })}
+                style={cornerStyle({
+                  bottom: FRAME_INSET - c / 2,
+                  right: FRAME_INSET - c / 2,
+                  cursor: 'nwse-resize',
+                })}
               />
             </>
           );
@@ -610,7 +653,7 @@ function useNativeBrowserCapabilitySafe() {
   ) {
     try {
       return useNativeBrowserSurfaceModule.useNativeBrowserCapability();
-    } catch (e) {
+    } catch {
       // Capability probe failed; stay on the iframe path.
       return null;
     }

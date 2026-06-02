@@ -125,7 +125,7 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
 
   function renderSurface(extra = {}) {
     const { default: PizarraBrowserSurface } = require('../PizarraBrowserSurface');
-    flushSync(() => {
+    act(() => {
       root.render(
         React.createElement(PizarraBrowserSurface, {
           shape: { id: 'browser-1', label: 'Browser', url: 'http://localhost:3100/' },
@@ -145,15 +145,17 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     const iframe = container.querySelector('[data-testid="pizarra-mock-iframe"]');
     expect(iframe).toBeTruthy();
     expect(iframe.getAttribute('src')).toContain('localhost:3100');
-    // dockState.browserRuntime defaults to 'native-gtk'.
-    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('native-gtk');
+    // pizarra-browser-fix: initial dockState.browserRuntime is 'iframe' to guarantee
+    // content renders immediately. The upgrade to 'native-gtk' happens only after
+    // the native capability hook signals readiness.
+    expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('iframe');
   });
 
   test('browserRuntime flips to native-gtk only after readiness signal', () => {
     mockUseNativeBrowserCapability = () => ({ ready: true, supported: true });
     renderSurface();
-    // browserLoadFallback is false by default for the pizarra path,
-    // so it is already 'native-gtk'.
+    // pizarra-browser-fix: starts on 'iframe', then the useEffect that watches
+    // nativeCapability.ready flips browserRuntime to 'native-gtk'.
     expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('native-gtk');
   });
 
@@ -162,7 +164,7 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     renderSurface();
     // The default createDockState sets browserLoadFallback=false.
     expect(capturedWorkspacePaneProps.dockState.browserLoadFallback).toBe(false);
-    // Even with native ready, the runtime stays on 'native-gtk'.
+    // With native ready and browserLoadFallback=false, the runtime is 'native-gtk'.
     expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('native-gtk');
   });
 
