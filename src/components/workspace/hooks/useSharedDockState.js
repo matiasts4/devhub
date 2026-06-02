@@ -16,6 +16,12 @@
  * The store facade takes a `storage` argument (provided through
  * `SharedDockStorageContext`) so tests can drive the `storage`
  * event without touching real `window.localStorage`.
+ *
+ * In production, the TWM root mounts a `SharedDockStoreProvider`
+ * (also exported from this file) which holds the per-project/
+ * per-workspace store as React state. All consumers in the same
+ * tab share the same store; cross-tab sync comes from the native
+ * `storage` event.
  */
 
 'use client';
@@ -24,8 +30,10 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from 'react';
 import {
@@ -40,6 +48,10 @@ import {
 // Context that lets tests inject a custom storage facade.
 export const SharedDockStorageContext = createContext(null);
 
+// Same-tab shared store. The TWM root mounts a provider that
+// gives every consumer in the same tab the same store instance.
+export const SharedDockStoreContext = createContext(null);
+
 function useStorageFacade() {
   const ctx = useContext(SharedDockStorageContext);
   if (ctx) return ctx;
@@ -47,11 +59,10 @@ function useStorageFacade() {
   return null;
 }
 
-// Pure reducer-style state transitions. We expose them as pure
-// functions so the hook can call them from `dispatchAction` and
-// the test suite can call them directly to verify the contract.
+// Pure reducer-style state transitions. Exposed so the test
+// suite (and the useBrowserTabs hook in Phase 3) can call them
+// directly.
 export function applyAddTab(state, url) {
-  // Cap at 20 tabs (spec pizarra-browser-tabs / "New-tab cap").
   if (state.tabs.length >= state.tabCap) {
     return { next: state, rejected: true };
   }
@@ -88,14 +99,9 @@ export function applyCloseTab(state, tabId) {
   const tabs = state.tabs.filter((t) => t.id !== tabId);
   let activeTabId = state.activeTabId;
   if (state.activeTabId === tabId) {
-    // Prefer the next tab to the right; fall back to the previous
-    // tab on the left if the closed tab was the last one.
     const fallback = tabs[idx] || tabs[idx - 1] || null;
     activeTabId = fallback ? fallback.id : null;
   }
-  // Surface MUST NOT go to zero tabs while visible (spec
-  // "Closing the last tab auto-creates a blank tab"). If we just
-  // removed the last tab, spawn a blank one.
   if (tabs.length === 0) {
     const id = generateTabId();
     const blank = {
@@ -151,11 +157,7 @@ export function applyUpdateTabUrl(state, tabId, url) {
   };
 }
 
-function createSharedDockStore(storage, projectId, workspaceId) {
-  // Subscribe model: every consumer registers a `cb`; we hold
-  // them in a Set. The store's `setState` walks the Set and
-  // notifies. The store's `subscribe` is what `useSyncExternalStore`
-  // wires up.
+export function createSharedDockStore(storage, projectId, workspaceId) {
   const listeners = new Set();
   let currentState = DEFAULT_SHARED_DOCK_STATE;
 
@@ -188,7 +190,6 @@ function createSharedDockStore(storage, projectId, workspaceId) {
   function onStorageEvent(event) {
     if (!event || event.key !== buildSharedDockStorageKey(projectId, workspaceId)) return;
     if (event.newValue == null) {
-      // External clear — fall back to defaults.
       currentState = DEFAULT_SHARED_DOCK_STATE;
       notify();
       return;
@@ -221,7 +222,6 @@ function createSharedDockStore(storage, projectId, workspaceId) {
     };
   }
 
-  // Initial seed.
   currentState = read();
 
   return {
@@ -231,19 +231,59 @@ function createSharedDockStore(storage, projectId, workspaceId) {
   };
 }
 
+/**
+ * Same-tab shared store provider. Mount this at the TWM root
+ * so every useSharedDockState() consumer in the same tab gets
+ * the same store instance. Cross-tab sync still happens through
+ * the `storage` event wired in createSharedDockStore.
+ */
+export function SharedDockStoreProvider({ children, storage, projectId, workspaceId }) {
+  // The store is per (projectId, workspaceId) pair. Memoize
+  // creation on the pair so a re-render with the same pair
+  // returns the same instance.
+  const store = useMemo(
+    () => createSharedDockStore(storage, projectId, workspaceId),
+    [storage, projectId, workspaceId]
+  );
+  // Tag the store with its key so useSharedDockState can detect
+  // a mismatch and fall back to a per-consumer store.
+  store.__projectId = projectId;
+  store.__workspaceId = workspaceId;
+  return (
+    <SharedDockStoreContext.Provider value={store}>{children}</SharedDockStoreContext.Provider>
+  );
+}
+
 export function useSharedDockState(opts = {}) {
   const storage = useStorageFacade();
   const projectId = opts.projectId || 'global';
   const workspaceId = opts.workspaceId || 'global';
-  // One store per (projectId, workspaceId) pair. The ref survives
-  // re-renders; we only recreate the store if the key changes.
+
+  // Prefer the shared store from context. Falls back to a
+  // per-component store when no provider is mounted (useful
+  // for tests that don't want to wire the provider).
+  const ctxStore = useContext(SharedDockStoreContext);
   const storeRef = useRef(null);
   const storeKey = `${projectId}::${workspaceId}::${storage === null ? 'null' : 'facade'}`;
-  if (!storeRef.current || storeRef.current.__key !== storeKey) {
+  if (ctxStore) {
+    // Trust the context's store; ensure the projectId/workspaceId
+    // pair matches what the consumer wants. If it doesn't, we
+    // create a per-consumer store as a safety valve (the TWM
+    // root should always mount a provider with the right pair).
+    if (ctxStore.__projectId !== projectId || ctxStore.__workspaceId !== workspaceId) {
+      if (!storeRef.current || storeRef.current.__key !== storeKey) {
+        storeRef.current = createSharedDockStore(storage, projectId, workspaceId);
+        storeRef.current.__key = storeKey;
+      }
+    }
+  } else if (!storeRef.current || storeRef.current.__key !== storeKey) {
     storeRef.current = createSharedDockStore(storage, projectId, workspaceId);
     storeRef.current.__key = storeKey;
   }
-  const store = storeRef.current;
+  const store =
+    ctxStore && ctxStore.__projectId === projectId && ctxStore.__workspaceId === workspaceId
+      ? ctxStore
+      : storeRef.current;
 
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
 
