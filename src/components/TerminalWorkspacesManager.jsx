@@ -98,12 +98,6 @@ import {
 // TWM root gives every workspace + pizarra consumer in the same
 // tab the same store instance.
 import { SharedDockStoreProvider } from './workspace/hooks/useSharedDockState';
-// Phase 4: SharedSurfacesProvider sits ABOVE the dock store.
-// It owns the singleton lifecycle of every terminal/browser
-// surface mounted in workspace + pizarra. Toggling the
-// maximizedView re-targets the active host, never the
-// surface.
-import SharedSurfacesProvider from './workspace/SharedSurfacesProvider';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
@@ -3813,886 +3807,850 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     : 0;
   return (
     <LiveSurfaceRegistryContext.Provider value={registryValue}>
-      <SharedSurfacesProvider
-        onSurfaceDestroy={(surfaceId) => {
-          // Phase 4: when a surface is hard-destroyed, also
-          // remove it from the live registry so the dock
-          // chrome / pizarra canvas both see the removal.
-          try {
-            registryValue.removeSurface(surfaceId);
-          } catch (err) {
-            // ignore — registry may already be in the right state
-          }
-        }}
+      <SharedDockStoreProvider
+        storage={storage}
+        projectId={projectId || 'global'}
+        workspaceId={activeWsId || 'workspace'}
       >
-        <SharedDockStoreProvider
-          storage={storage}
-          projectId={projectId || 'global'}
-          workspaceId={activeWsId || 'workspace'}
+        <motion.div
+          ref={managerRootRef}
+          className="flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
+          style={getWorkspaceShellChromeStyle()}
+          {...getWorkspaceAnimProps(isMaximized)}
         >
-          <motion.div
-            ref={managerRootRef}
-            className="flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
+          {/* Top Workspace Tab Bar */}
+          <div
+            key="workspace-top-tab-bar"
+            data-testid="workspace-top-tab-bar"
+            className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
             style={getWorkspaceShellChromeStyle()}
-            {...getWorkspaceAnimProps(isMaximized)}
           >
-            {/* Top Workspace Tab Bar */}
-            <div
-              key="workspace-top-tab-bar"
-              data-testid="workspace-top-tab-bar"
-              className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
-              style={getWorkspaceShellChromeStyle()}
-            >
-              <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
-                {workspaces.map((ws, wsIndex) => {
-                  const totalPanels = getAllPanelIds(ws.columns).length;
-                  const workspaceTabKey = buildUniqueRenderKey(
-                    'workspace-tab',
-                    ws.id,
-                    wsIndex,
-                    workspaceTabKeyCounts
-                  );
-                  const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
-                  const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
-                  return (
-                    <div
-                      key={workspaceTabKey}
-                      onClick={() => setActiveWsId(ws.id)}
-                      draggable
-                      onDragStart={(e) => {
-                        setDraggedWsId(ws.id);
-                        e.dataTransfer.effectAllowed = 'move';
-                      }}
-                      onDragEnd={() => {
-                        setDraggedWsId(null);
-                        setDragOverWsId(null);
-                      }}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        if (draggedWsId && draggedWsId !== ws.id) setDragOverWsId(ws.id);
-                      }}
-                      onDragLeave={() => setDragOverWsId(null)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        reorderWorkspaceTabs(draggedWsId, ws.id);
-                        setDraggedWsId(null);
-                        setDragOverWsId(null);
-                      }}
-                      className={`group flex items-center justify-between h-full px-4 rounded-xl transition-all cursor-grab active:cursor-grabbing select-none border ${
-                        draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
-                      } ${
-                        activeWsId === ws.id
-                          ? 'text-[var(--text-primary)] border-[var(--border-subtle)]'
-                          : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
-                      }`}
-                      title={workspaceTabLabel}
-                      style={{
-                        ...getWorkspaceTabStyle(workspaces.length),
-                        ...getWorkspaceTabChromeStyle({
-                          active: activeWsId === ws.id,
-                          dragOver: dragOverWsId === ws.id && draggedWsId !== ws.id,
-                        }),
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <LayoutGrid
-                          className="w-3.5 h-3.5 shrink-0"
-                          style={{
-                            color:
-                              activeWsId === ws.id
-                                ? `rgba(var(--accent-rgb,88,166,255),0.9)`
-                                : 'currentColor',
-                          }}
-                        />
-                        <span className="text-[12px] font-semibold truncate">
-                          {workspaceTabLabel}
-                        </span>
-                        {hasOpenBrowserWindow ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
-                            <span
-                              className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
-                              data-testid={`workspace-browser-indicator-${ws.id}`}
-                              title="Dedicated browser window open"
-                            />
-                            <button
-                              type="button"
-                              data-testid={`workspace-browser-close-${ws.id}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                closeWorkspaceBrowserWindow(ws.id);
-                              }}
-                              className="inline-flex items-center justify-center rounded text-emerald-100/80 transition-colors hover:text-white"
-                              title="Cerrar browser dedicado de este workspace"
-                              aria-label="Cerrar browser dedicado de este workspace"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ) : null}
-                        <span
-                          className="text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
-                          style={{
-                            background: 'rgba(255,255,255,0.07)',
-                            color: 'var(--text-muted)',
-                          }}
-                        >
-                          {totalPanels}
-                        </span>
-                      </div>
-                      {workspaces.length > 1 && (
-                        <button
-                          type="button"
-                          data-testid={`workspace-close-${ws.id}`}
-                          onClick={(e) => removeWorkspace(e, ws.id)}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded ml-1.5 transition-opacity"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={addWorkspace}
-                  className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
-                  title="Nuevo workspace"
-                  aria-label="Nuevo workspace"
-                  data-testid="workspace-add-button"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
-              <div className="flex items-center gap-0.5 shrink-0">
-                {/* Grid Launcher */}
-                <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      data-testid="workspace-grid-launcher-trigger"
-                      className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                      title="Lanzar Cuadrícula"
-                    >
-                      <Grip className="w-4 h-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
-                    data-testid="workspace-grid-launcher-content"
-                  >
-                    <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
-                      Grillas Predefinidas
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator className="bg-white/10" />
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      {[
-                        { label: '2 Paneles', cols: 2, rows: 1 },
-                        { label: '4 Paneles', cols: 2, rows: 2 },
-                        { label: '6 Paneles', cols: 3, rows: 2 },
-                      ].map((layout) => (
-                        <button
-                          key={layout.label}
-                          onClick={() => handleApplyGrid(layout.cols, layout.rows)}
-                          className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                        >
-                          <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
-                          <span className="text-[10px] font-semibold">{layout.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-3 px-1 mb-1">
-                      <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
-                        Comando Inicial
-                      </label>
-                      <input
-                        type="text"
-                        value={gridCommand}
-                        onChange={(e) => setGridCommand(e.target.value)}
-                        placeholder="ej. opencode"
-                        className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
-                      />
-                    </div>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <button
-                  type="button"
-                  data-testid="right-dock-tab-browser"
-                  data-pizarra-active-tab={
-                    rightDockState.activeTab === 'browser' && rightDockState.visible
-                      ? 'true'
-                      : 'false'
-                  }
-                  onClick={() => handleRightDockTabSelect('browser')}
-                  className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                    rightDockState.activeTab === 'browser' && rightDockState.visible
-                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-                  }`}
-                  title="Show browser dock"
-                >
-                  <Globe className="w-4 h-4" />
-                  {activeBrowserWindowState?.open ? (
-                    <span
-                      className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
-                      data-testid="right-dock-tab-browser-indicator"
-                      title="Ventana browser activa en segundo plano"
-                    />
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  data-testid="right-dock-tab-editor"
-                  data-pizarra-active-tab={
-                    rightDockState.activeTab === 'editor' && rightDockState.visible
-                      ? 'true'
-                      : 'false'
-                  }
-                  onClick={() => handleRightDockTabSelect('editor')}
-                  className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                    rightDockState.activeTab === 'editor' && rightDockState.visible
-                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-                  }`}
-                  title="Show editor dock"
-                >
-                  <FileCode2 className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  data-testid="right-dock-tab-swarm"
-                  data-pizarra-active-tab={
-                    rightDockState.activeTab === 'swarm' && rightDockState.visible
-                      ? 'true'
-                      : 'false'
-                  }
-                  onClick={() => handleRightDockTabSelect('swarm')}
-                  className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                    rightDockState.activeTab === 'swarm' && rightDockState.visible
-                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-                  }`}
-                  title="Show swarm topology"
-                >
-                  <Bot className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  data-testid="right-dock-tab-zed"
-                  data-pizarra-active-tab={
-                    rightDockState.activeTab === 'zed' && rightDockState.visible ? 'true' : 'false'
-                  }
-                  onClick={() => handleRightDockTabSelect('zed')}
-                  className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                    rightDockState.activeTab === 'zed' && rightDockState.visible
-                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-                  }`}
-                  title="Zed Assistant"
-                >
-                  <span className="text-xs font-bold" style={{ color: 'inherit' }}>
-                    Z
-                  </span>
-                </button>
-                <label
-                  className="relative inline-flex items-center cursor-pointer select-none"
-                  title="Pizarra canvas"
-                >
-                  <input
-                    type="checkbox"
-                    data-testid="pizarra-mode-switch"
-                    checked={rightDockState.maximized && rightDockState.maximizedView === 'pizarra'}
-                    onChange={() => handleRightDockTabSelect('pizarra')}
-                    className="sr-only"
-                  />
+            <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
+              {workspaces.map((ws, wsIndex) => {
+                const totalPanels = getAllPanelIds(ws.columns).length;
+                const workspaceTabKey = buildUniqueRenderKey(
+                  'workspace-tab',
+                  ws.id,
+                  wsIndex,
+                  workspaceTabKeyCounts
+                );
+                const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
+                const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
+                return (
                   <div
-                    className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
-                      rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                        ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.5)]'
-                        : 'bg-[rgba(255,255,255,0.15)]'
+                    key={workspaceTabKey}
+                    onClick={() => setActiveWsId(ws.id)}
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggedWsId(ws.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragEnd={() => {
+                      setDraggedWsId(null);
+                      setDragOverWsId(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (draggedWsId && draggedWsId !== ws.id) setDragOverWsId(ws.id);
+                    }}
+                    onDragLeave={() => setDragOverWsId(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      reorderWorkspaceTabs(draggedWsId, ws.id);
+                      setDraggedWsId(null);
+                      setDragOverWsId(null);
+                    }}
+                    className={`group flex items-center justify-between h-full px-4 rounded-xl transition-all cursor-grab active:cursor-grabbing select-none border ${
+                      draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
+                    } ${
+                      activeWsId === ws.id
+                        ? 'text-[var(--text-primary)] border-[var(--border-subtle)]'
+                        : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
                     }`}
+                    title={workspaceTabLabel}
+                    style={{
+                      ...getWorkspaceTabStyle(workspaces.length),
+                      ...getWorkspaceTabChromeStyle({
+                        active: activeWsId === ws.id,
+                        dragOver: dragOverWsId === ws.id && draggedWsId !== ws.id,
+                      }),
+                    }}
                   >
-                    <div
-                      className={`absolute top-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
-                        rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                          ? 'translate-x-4 bg-[var(--accent-primary)]'
-                          : 'translate-x-0.5 bg-gray-400'
-                      }`}
-                      style={{ transition: 'transform 200ms ease' }}
-                    />
-                  </div>
-                  <LayoutGrid
-                    className={`ml-2 w-4 h-4 ${
-                      rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                        ? 'text-[var(--accent-primary)]'
-                        : 'text-gray-500'
-                    }`}
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={openTerminalSwarmLauncher}
-                  className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
-                  title="Lanzar swarm desde terminales"
-                  aria-label="Lanzar swarm desde terminales"
-                  data-testid="workspace-swarm-launch-button"
-                >
-                  <Wand2 className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTerminateSwarmLaunch}
-                  disabled={!activeSwarmLaunchSummary?.launchId || swarmTerminateState.submitting}
-                  className="inline-flex items-center gap-1.5 h-7 rounded-sm px-2 text-rose-300/80 transition-all hover:text-rose-200 hover:bg-rose-400/10 disabled:opacity-40 disabled:hover:bg-transparent"
-                  title={
-                    activeSwarmLaunchSummary?.launchId
-                      ? `Terminar swarm ${activeSwarmLaunchSummary.title}`
-                      : 'No hay swarm activo para terminar'
-                  }
-                  aria-label="Terminar swarm activo"
-                  data-testid="workspace-swarm-terminate-button"
-                >
-                  <X className="h-4 w-4" />
-                  <span className="text-[11px] font-semibold">End swarm</span>
-                </button>
-                {swarmTerminateState.error ? (
-                  <span
-                    className="max-w-[220px] truncate text-[10px] text-rose-300"
-                    data-testid="workspace-swarm-terminate-error"
-                    title={swarmTerminateState.error}
-                  >
-                    {swarmTerminateState.error}
-                  </span>
-                ) : activeSwarmLaunchSummary?.launchId ? (
-                  <span
-                    className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
-                    data-testid="workspace-swarm-terminate-summary"
-                    title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles`}
-                  >
-                    {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
-                  </span>
-                ) : null}
-
-                <div className="w-px h-5 bg-white/10 mx-1" />
-
-                <NotificationCenter projectId={projectId} variant="topbar" />
-
-                <button
-                  type="button"
-                  onClick={() => setRestoreSettingsModal({ open: true })}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                  title="Configuración de restauración de terminales"
-                  aria-label="Configuración de restauración de terminales"
-                  data-testid="terminal-restore-settings-btn"
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                      title="Reopen sessions"
-                      aria-label="Reopen sessions"
-                    >
-                      <History className="w-4 h-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
-                    <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
-                      <span>Agent Sessions</span>
+                    <div className="flex items-center gap-2">
+                      <LayoutGrid
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{
+                          color:
+                            activeWsId === ws.id
+                              ? `rgba(var(--accent-rgb,88,166,255),0.9)`
+                              : 'currentColor',
+                        }}
+                      />
+                      <span className="text-[12px] font-semibold truncate">
+                        {workspaceTabLabel}
+                      </span>
+                      {hasOpenBrowserWindow ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
+                          <span
+                            className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
+                            data-testid={`workspace-browser-indicator-${ws.id}`}
+                            title="Dedicated browser window open"
+                          />
+                          <button
+                            type="button"
+                            data-testid={`workspace-browser-close-${ws.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              closeWorkspaceBrowserWindow(ws.id);
+                            }}
+                            className="inline-flex items-center justify-center rounded text-emerald-100/80 transition-colors hover:text-white"
+                            title="Cerrar browser dedicado de este workspace"
+                            aria-label="Cerrar browser dedicado de este workspace"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : null}
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
+                        style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)' }}
+                      >
+                        {totalPanels}
+                      </span>
+                    </div>
+                    {workspaces.length > 1 && (
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          refreshResumableSessions();
-                        }}
-                        className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                        data-testid={`workspace-close-${ws.id}`}
+                        onClick={(e) => removeWorkspace(e, ws.id)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded ml-1.5 transition-opacity"
                       >
-                        <RefreshCw
-                          className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
-                        />
-                        Refresh
+                        <X className="w-3 h-3" />
                       </button>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator className="bg-white/10" />
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addWorkspace}
+                className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
+                title="Nuevo workspace"
+                aria-label="Nuevo workspace"
+                data-testid="workspace-add-button"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
 
-                    {isLoadingResumableSessions && (
-                      <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
-                        <Clock3 className="w-3.5 h-3.5 animate-pulse" />
-                        Loading recent sessions...
+            {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
+            <div className="flex items-center gap-0.5 shrink-0">
+              {/* Grid Launcher */}
+              <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    data-testid="workspace-grid-launcher-trigger"
+                    className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                    title="Lanzar Cuadrícula"
+                  >
+                    <Grip className="w-4 h-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
+                  data-testid="workspace-grid-launcher-content"
+                >
+                  <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
+                    Grillas Predefinidas
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-white/10" />
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {[
+                      { label: '2 Paneles', cols: 2, rows: 1 },
+                      { label: '4 Paneles', cols: 2, rows: 2 },
+                      { label: '6 Paneles', cols: 3, rows: 2 },
+                    ].map((layout) => (
+                      <button
+                        key={layout.label}
+                        onClick={() => handleApplyGrid(layout.cols, layout.rows)}
+                        className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                      >
+                        <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
+                        <span className="text-[10px] font-semibold">{layout.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 px-1 mb-1">
+                    <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
+                      Comando Inicial
+                    </label>
+                    <input
+                      type="text"
+                      value={gridCommand}
+                      onChange={(e) => setGridCommand(e.target.value)}
+                      placeholder="ej. opencode"
+                      className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
+                    />
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <button
+                type="button"
+                data-testid="right-dock-tab-browser"
+                data-pizarra-active-tab={
+                  rightDockState.activeTab === 'browser' && rightDockState.visible
+                    ? 'true'
+                    : 'false'
+                }
+                onClick={() => handleRightDockTabSelect('browser')}
+                className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                  rightDockState.activeTab === 'browser' && rightDockState.visible
+                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                    : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+                }`}
+                title="Show browser dock"
+              >
+                <Globe className="w-4 h-4" />
+                {activeBrowserWindowState?.open ? (
+                  <span
+                    className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                    data-testid="right-dock-tab-browser-indicator"
+                    title="Ventana browser activa en segundo plano"
+                  />
+                ) : null}
+              </button>
+              <button
+                type="button"
+                data-testid="right-dock-tab-editor"
+                data-pizarra-active-tab={
+                  rightDockState.activeTab === 'editor' && rightDockState.visible ? 'true' : 'false'
+                }
+                onClick={() => handleRightDockTabSelect('editor')}
+                className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                  rightDockState.activeTab === 'editor' && rightDockState.visible
+                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                    : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+                }`}
+                title="Show editor dock"
+              >
+                <FileCode2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                data-testid="right-dock-tab-swarm"
+                data-pizarra-active-tab={
+                  rightDockState.activeTab === 'swarm' && rightDockState.visible ? 'true' : 'false'
+                }
+                onClick={() => handleRightDockTabSelect('swarm')}
+                className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                  rightDockState.activeTab === 'swarm' && rightDockState.visible
+                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                    : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+                }`}
+                title="Show swarm topology"
+              >
+                <Bot className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                data-testid="right-dock-tab-zed"
+                data-pizarra-active-tab={
+                  rightDockState.activeTab === 'zed' && rightDockState.visible ? 'true' : 'false'
+                }
+                onClick={() => handleRightDockTabSelect('zed')}
+                className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                  rightDockState.activeTab === 'zed' && rightDockState.visible
+                    ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                    : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+                }`}
+                title="Zed Assistant"
+              >
+                <span className="text-xs font-bold" style={{ color: 'inherit' }}>
+                  Z
+                </span>
+              </button>
+              <label
+                className="relative inline-flex items-center cursor-pointer select-none"
+                title="Pizarra canvas"
+              >
+                <input
+                  type="checkbox"
+                  data-testid="pizarra-mode-switch"
+                  checked={rightDockState.maximized && rightDockState.maximizedView === 'pizarra'}
+                  onChange={() => handleRightDockTabSelect('pizarra')}
+                  className="sr-only"
+                />
+                <div
+                  className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
+                    rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                      ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.5)]'
+                      : 'bg-[rgba(255,255,255,0.15)]'
+                  }`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
+                      rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                        ? 'translate-x-4 bg-[var(--accent-primary)]'
+                        : 'translate-x-0.5 bg-gray-400'
+                    }`}
+                    style={{ transition: 'transform 200ms ease' }}
+                  />
+                </div>
+                <LayoutGrid
+                  className={`ml-2 w-4 h-4 ${
+                    rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                      ? 'text-[var(--accent-primary)]'
+                      : 'text-gray-500'
+                  }`}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={openTerminalSwarmLauncher}
+                className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
+                title="Lanzar swarm desde terminales"
+                aria-label="Lanzar swarm desde terminales"
+                data-testid="workspace-swarm-launch-button"
+              >
+                <Wand2 className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleTerminateSwarmLaunch}
+                disabled={!activeSwarmLaunchSummary?.launchId || swarmTerminateState.submitting}
+                className="inline-flex items-center gap-1.5 h-7 rounded-sm px-2 text-rose-300/80 transition-all hover:text-rose-200 hover:bg-rose-400/10 disabled:opacity-40 disabled:hover:bg-transparent"
+                title={
+                  activeSwarmLaunchSummary?.launchId
+                    ? `Terminar swarm ${activeSwarmLaunchSummary.title}`
+                    : 'No hay swarm activo para terminar'
+                }
+                aria-label="Terminar swarm activo"
+                data-testid="workspace-swarm-terminate-button"
+              >
+                <X className="h-4 w-4" />
+                <span className="text-[11px] font-semibold">End swarm</span>
+              </button>
+              {swarmTerminateState.error ? (
+                <span
+                  className="max-w-[220px] truncate text-[10px] text-rose-300"
+                  data-testid="workspace-swarm-terminate-error"
+                  title={swarmTerminateState.error}
+                >
+                  {swarmTerminateState.error}
+                </span>
+              ) : activeSwarmLaunchSummary?.launchId ? (
+                <span
+                  className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
+                  data-testid="workspace-swarm-terminate-summary"
+                  title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles`}
+                >
+                  {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
+                </span>
+              ) : null}
+
+              <div className="w-px h-5 bg-white/10 mx-1" />
+
+              <NotificationCenter projectId={projectId} variant="topbar" />
+
+              <button
+                type="button"
+                onClick={() => setRestoreSettingsModal({ open: true })}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                title="Configuración de restauración de terminales"
+                aria-label="Configuración de restauración de terminales"
+                data-testid="terminal-restore-settings-btn"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                    title="Reopen sessions"
+                    aria-label="Reopen sessions"
+                  >
+                    <History className="w-4 h-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
+                  <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
+                    <span>Agent Sessions</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        refreshResumableSessions();
+                      }}
+                      className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                    >
+                      <RefreshCw
+                        className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
+                      />
+                      Refresh
+                    </button>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-white/10" />
+
+                  {isLoadingResumableSessions && (
+                    <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
+                      <Clock3 className="w-3.5 h-3.5 animate-pulse" />
+                      Loading recent sessions...
+                    </div>
+                  )}
+
+                  {!isLoadingResumableSessions && resumableStatus === 'error' && resumableError && (
+                    <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
+                      <span>{resumableError.message}</span>
+                      {resumableError.retryable !== false ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            refreshResumableSessions();
+                          }}
+                          className="inline-flex items-center gap-1 text-xs text-red-200 hover:text-white"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Retry
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {reopenActionError && (
+                    <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
+                  )}
+
+                  {!isLoadingResumableSessions &&
+                    resumableStatus !== 'error' &&
+                    resumableSessions.length === 0 && (
+                      <div className="px-2 py-3 text-xs text-gray-400">
+                        No recent sessions found.
                       </div>
                     )}
 
-                    {!isLoadingResumableSessions &&
-                      resumableStatus === 'error' &&
-                      resumableError && (
-                        <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
-                          <span>{resumableError.message}</span>
-                          {resumableError.retryable !== false ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                refreshResumableSessions();
-                              }}
-                              className="inline-flex items-center gap-1 text-xs text-red-200 hover:text-white"
-                            >
-                              <RefreshCw className="w-3 h-3" />
-                              Retry
-                            </button>
-                          ) : null}
+                  {!isLoadingResumableSessions &&
+                    resumableSessions.map((session) => (
+                      <DropdownMenuItem
+                        key={session.sessionId}
+                        className="flex flex-col items-start gap-1 px-2 py-2 cursor-pointer"
+                        onSelect={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            await reopenOpenCodeSession(session);
+                          } catch (err) {
+                            setReopenActionError(String(err?.message || err || 'Reopen failed'));
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          <span className="text-xs font-medium text-gray-200 truncate">
+                            {session.title || session.sessionId}
+                          </span>
+                          <span className="text-[10px] text-gray-500 ml-auto">
+                            {session.lastActiveAt
+                              ? new Date(session.lastActiveAt).toLocaleTimeString()
+                              : ''}
+                          </span>
                         </div>
-                      )}
-
-                    {reopenActionError && (
-                      <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
-                    )}
-
-                    {!isLoadingResumableSessions &&
-                      resumableStatus !== 'error' &&
-                      resumableSessions.length === 0 && (
-                        <div className="px-2 py-3 text-xs text-gray-400">
-                          No recent sessions found.
+                        <div className="flex items-center gap-2 w-full">
+                          <span className="text-[10px] text-gray-500 truncate">
+                            {session.workspaceId}
+                          </span>
+                          <span className="text-[10px] text-gray-600">·</span>
+                          <span className="text-[10px] text-gray-500 truncate">
+                            {session.agentId}
+                          </span>
                         </div>
-                      )}
-
-                    {!isLoadingResumableSessions &&
-                      resumableSessions.map((session) => (
-                        <DropdownMenuItem
-                          key={session.sessionId}
-                          className="flex flex-col items-start gap-1 px-2 py-2 cursor-pointer"
-                          onSelect={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            try {
-                              await reopenOpenCodeSession(session);
-                            } catch (err) {
-                              setReopenActionError(String(err?.message || err || 'Reopen failed'));
-                            }
-                          }}
-                        >
-                          <div className="flex items-center gap-2 w-full">
-                            <span className="text-xs font-medium text-gray-200 truncate">
-                              {session.title || session.sessionId}
-                            </span>
-                            <span className="text-[10px] text-gray-500 ml-auto">
-                              {session.lastActiveAt
-                                ? new Date(session.lastActiveAt).toLocaleTimeString()
-                                : ''}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 w-full">
-                            <span className="text-[10px] text-gray-500 truncate">
-                              {session.workspaceId}
-                            </span>
-                            <span className="text-[10px] text-gray-600">·</span>
-                            <span className="text-[10px] text-gray-500 truncate">
-                              {session.agentId}
-                            </span>
-                          </div>
-                        </DropdownMenuItem>
-                      ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              {/* Window Controls */}
-              <div
-                className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]"
-                style={{ WebkitAppRegion: 'no-drag' }}
-              >
-                <button
-                  onClick={handleWinMinimize}
-                  className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
-                  title="Minimize"
-                >
-                  <Minus
-                    className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                    strokeWidth={3}
-                  />
-                </button>
-                <button
-                  onClick={handleWinToggleMaximize}
-                  className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
-                  title={isWinMaximized ? 'Restore' : 'Maximize'}
-                >
-                  <Plus
-                    className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                    strokeWidth={3}
-                  />
-                </button>
-                <button
-                  onClick={handleWinClose}
-                  className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
-                  title="Close"
-                >
-                  <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
-                </button>
-              </div>
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
-            {/* Persistent Grid Area */}
+            {/* Window Controls */}
             <div
-              key="workspace-grid-shell"
-              className="flex-1 flex bg-[#080b12] relative overflow-hidden"
+              className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]"
+              style={{ WebkitAppRegion: 'no-drag' }}
             >
-              {/* Terminal Grid */}
-              <div ref={workspaceGridAreaRef} className="flex-1 relative min-w-0">
-                {workspaces.map((ws, wsIndex) => {
-                  const workspaceGridKey = buildUniqueRenderKey(
-                    'workspace-grid',
-                    ws.id,
-                    wsIndex,
-                    workspaceGridKeyCounts
-                  );
-                  const wsDockState =
-                    activeWsId === ws.id
-                      ? effectiveRightDockState
-                      : { ...DEFAULT_RIGHT_DOCK_STATE };
-                  const updateWsDockState = updateRightDockState;
-                  const focusedPanelId = focusedPanelByWorkspace[ws.id];
-                  const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
-                  const isWorkspaceVisibleInLayout =
-                    !isFullscreenBrowser && activeWsId === ws.id && isVisible;
-                  const shouldSuspendWorkspaceNativeSurfaces =
-                    isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
-                  return (
-                    <div
-                      key={workspaceGridKey}
-                      data-testid={`workspace-shell-${ws.id}`}
-                      className={`absolute inset-0 p-1.5 ${isFullscreenBrowser ? 'hidden' : activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-                      style={{
-                        zIndex: activeWsId === ws.id ? 10 : 0,
-                        visibility: isFullscreenBrowser ? 'hidden' : undefined,
-                      }}
-                    >
-                      <PanelGroup
-                        direction="horizontal"
-                        className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
-                        aria-hidden={isFullscreenBrowser}
-                      >
-                        <Panel
-                          key={`${ws.id}-terminal-grid`}
-                          minSize={18}
-                          className="flex flex-col bg-[#0c1018] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
-                        >
-                          {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
+              <button
+                onClick={handleWinMinimize}
+                className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+                title="Minimize"
+              >
+                <Minus
+                  className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                  strokeWidth={3}
+                />
+              </button>
+              <button
+                onClick={handleWinToggleMaximize}
+                className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+                title={isWinMaximized ? 'Restore' : 'Maximize'}
+              >
+                <Plus
+                  className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                  strokeWidth={3}
+                />
+              </button>
+              <button
+                onClick={handleWinClose}
+                className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+                title="Close"
+              >
+                <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
+              </button>
+            </div>
+          </div>
 
-                          {/* Terminal bodies — preserve real split geometry */}
-                          <div className="flex-1 relative overflow-hidden min-h-0">
-                            {focusedPanel ? (
-                              <div
-                                className="h-full w-full"
-                                data-testid={`workspace-focused-panel-${focusedPanel.id}`}
-                              >
-                                {renderWorkspacePanel(focusedPanel, {
-                                  activePanelId,
-                                  activeWsId,
-                                  isActivePanel:
-                                    activePanelId === focusedPanel.id && activeWsId === ws.id,
-                                  isVisibleInLayout: isWorkspaceVisibleInLayout,
-                                  panelLabel: getPanelDisplayLabel(ws, focusedPanel.id),
-                                  cwd,
-                                  wsId: ws.id,
-                                  setActivePanelIds,
-                                  onClosePanel: () => handleClosePanel(focusedPanel.id),
-                                  onSplitRight: () => handleSplit('horizontal', focusedPanel.id),
-                                  onSplitDown: () => handleSplit('vertical', focusedPanel.id),
-                                  onToggleFocus: () => togglePanelFocus(ws.id, focusedPanel.id),
-                                  isFocusedPanel: true,
-                                  onActivatePanel: (panelId) =>
-                                    activateWorkspacePanel(ws.id, panelId),
-                                  panelSemanticMetadata: derivePanelSemanticMetadata(
-                                    focusedPanel,
-                                    agentRunsByPanel[focusedPanel.id]
-                                  ),
-                                  suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
-                                  nativeSurfacePolicy,
-                                  requestedRendererMode: resolveRequestedRenderer({
-                                    workspaceId: ws.id,
-                                    panelId: focusedPanel.id,
-                                    prefs: terminalRendererPreferences,
-                                  }),
-                                  onResetRendererToXterm: () =>
-                                    handleResetPanelRendererToXterm(ws.id, focusedPanel.id),
-                                })}
-                              </div>
-                            ) : (
-                              <PanelGroup
-                                direction="horizontal"
-                                className="h-full w-full"
-                                data-testid={`workspace-columns-${ws.id}`}
-                                data-layout-direction="horizontal"
-                              >
-                                {ws.columns.map((column, columnIndex) => (
-                                  <React.Fragment key={column.id}>
-                                    <Panel minSize={18} className="min-w-0 min-h-0">
-                                      {column.panels.length > 1 ? (
-                                        <PanelGroup
-                                          direction="vertical"
-                                          className="h-full w-full"
-                                          data-testid={`workspace-column-panels-${column.id}`}
-                                          data-layout-direction="vertical"
-                                        >
-                                          {column.panels.map((panel, panelIndex) => (
-                                            <React.Fragment key={panel.id}>
-                                              <Panel
-                                                minSize={20}
-                                                className="min-h-0 min-w-0"
-                                                data-testid={`workspace-column-${column.id}`}
+          {/* Persistent Grid Area */}
+          <div
+            key="workspace-grid-shell"
+            className="flex-1 flex bg-[#080b12] relative overflow-hidden"
+          >
+            {/* Terminal Grid */}
+            <div ref={workspaceGridAreaRef} className="flex-1 relative min-w-0">
+              {workspaces.map((ws, wsIndex) => {
+                const workspaceGridKey = buildUniqueRenderKey(
+                  'workspace-grid',
+                  ws.id,
+                  wsIndex,
+                  workspaceGridKeyCounts
+                );
+                const wsDockState =
+                  activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
+                const updateWsDockState = updateRightDockState;
+                const focusedPanelId = focusedPanelByWorkspace[ws.id];
+                const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
+                const isWorkspaceVisibleInLayout =
+                  !isFullscreenBrowser && activeWsId === ws.id && isVisible;
+                const shouldSuspendWorkspaceNativeSurfaces =
+                  isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
+                return (
+                  <div
+                    key={workspaceGridKey}
+                    data-testid={`workspace-shell-${ws.id}`}
+                    className={`absolute inset-0 p-1.5 ${isFullscreenBrowser ? 'hidden' : activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                    style={{
+                      zIndex: activeWsId === ws.id ? 10 : 0,
+                      visibility: isFullscreenBrowser ? 'hidden' : undefined,
+                    }}
+                  >
+                    <PanelGroup
+                      direction="horizontal"
+                      className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
+                      aria-hidden={isFullscreenBrowser}
+                    >
+                      <Panel
+                        key={`${ws.id}-terminal-grid`}
+                        minSize={18}
+                        className="flex flex-col bg-[#0c1018] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
+                      >
+                        {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
+
+                        {/* Terminal bodies — preserve real split geometry */}
+                        <div className="flex-1 relative overflow-hidden min-h-0">
+                          {focusedPanel ? (
+                            <div
+                              className="h-full w-full"
+                              data-testid={`workspace-focused-panel-${focusedPanel.id}`}
+                            >
+                              {renderWorkspacePanel(focusedPanel, {
+                                activePanelId,
+                                activeWsId,
+                                isActivePanel:
+                                  activePanelId === focusedPanel.id && activeWsId === ws.id,
+                                isVisibleInLayout: isWorkspaceVisibleInLayout,
+                                panelLabel: getPanelDisplayLabel(ws, focusedPanel.id),
+                                cwd,
+                                wsId: ws.id,
+                                setActivePanelIds,
+                                onClosePanel: () => handleClosePanel(focusedPanel.id),
+                                onSplitRight: () => handleSplit('horizontal', focusedPanel.id),
+                                onSplitDown: () => handleSplit('vertical', focusedPanel.id),
+                                onToggleFocus: () => togglePanelFocus(ws.id, focusedPanel.id),
+                                isFocusedPanel: true,
+                                onActivatePanel: (panelId) =>
+                                  activateWorkspacePanel(ws.id, panelId),
+                                panelSemanticMetadata: derivePanelSemanticMetadata(
+                                  focusedPanel,
+                                  agentRunsByPanel[focusedPanel.id]
+                                ),
+                                suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
+                                nativeSurfacePolicy,
+                                requestedRendererMode: resolveRequestedRenderer({
+                                  workspaceId: ws.id,
+                                  panelId: focusedPanel.id,
+                                  prefs: terminalRendererPreferences,
+                                }),
+                                onResetRendererToXterm: () =>
+                                  handleResetPanelRendererToXterm(ws.id, focusedPanel.id),
+                              })}
+                            </div>
+                          ) : (
+                            <PanelGroup
+                              direction="horizontal"
+                              className="h-full w-full"
+                              data-testid={`workspace-columns-${ws.id}`}
+                              data-layout-direction="horizontal"
+                            >
+                              {ws.columns.map((column, columnIndex) => (
+                                <React.Fragment key={column.id}>
+                                  <Panel minSize={18} className="min-w-0 min-h-0">
+                                    {column.panels.length > 1 ? (
+                                      <PanelGroup
+                                        direction="vertical"
+                                        className="h-full w-full"
+                                        data-testid={`workspace-column-panels-${column.id}`}
+                                        data-layout-direction="vertical"
+                                      >
+                                        {column.panels.map((panel, panelIndex) => (
+                                          <React.Fragment key={panel.id}>
+                                            <Panel
+                                              minSize={20}
+                                              className="min-h-0 min-w-0"
+                                              data-testid={`workspace-column-${column.id}`}
+                                            >
+                                              {renderWorkspacePanel(panel, {
+                                                activePanelId,
+                                                activeWsId,
+                                                isActivePanel:
+                                                  activePanelId === panel.id &&
+                                                  activeWsId === ws.id,
+                                                isVisibleInLayout: isWorkspaceVisibleInLayout,
+                                                panelLabel: getPanelDisplayLabel(ws, panel.id),
+                                                cwd,
+                                                wsId: ws.id,
+                                                setActivePanelIds,
+                                                onClosePanel: () => handleClosePanel(panel.id),
+                                                onSplitRight: () =>
+                                                  handleSplit('horizontal', panel.id),
+                                                onSplitDown: () =>
+                                                  handleSplit('vertical', panel.id),
+                                                onToggleFocus: () =>
+                                                  togglePanelFocus(ws.id, panel.id),
+                                                isFocusedPanel: false,
+                                                onActivatePanel: (panelId) =>
+                                                  activateWorkspacePanel(ws.id, panelId),
+                                                panelSemanticMetadata: derivePanelSemanticMetadata(
+                                                  panel,
+                                                  agentRunsByPanel[panel.id]
+                                                ),
+                                                suspendNativeSurface:
+                                                  shouldSuspendWorkspaceNativeSurfaces,
+                                                nativeSurfacePolicy,
+                                                requestedRendererMode: resolveRequestedRenderer({
+                                                  workspaceId: ws.id,
+                                                  panelId: panel.id,
+                                                  prefs: terminalRendererPreferences,
+                                                }),
+                                                onResetRendererToXterm: () =>
+                                                  handleResetPanelRendererToXterm(ws.id, panel.id),
+                                              })}
+                                            </Panel>
+                                            {panelIndex < column.panels.length - 1 ? (
+                                              <PanelResizeHandle
+                                                className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
+                                                data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
+                                                onDragging={setIsDraggingInternalSplit}
+                                                onPointerDown={() =>
+                                                  setIsDraggingInternalSplit(true)
+                                                }
+                                                onPointerUp={() =>
+                                                  setIsDraggingInternalSplit(false)
+                                                }
+                                                onMouseDown={() => setIsDraggingInternalSplit(true)}
+                                                onMouseUp={() => setIsDraggingInternalSplit(false)}
                                               >
-                                                {renderWorkspacePanel(panel, {
-                                                  activePanelId,
-                                                  activeWsId,
-                                                  isActivePanel:
-                                                    activePanelId === panel.id &&
-                                                    activeWsId === ws.id,
-                                                  isVisibleInLayout: isWorkspaceVisibleInLayout,
-                                                  panelLabel: getPanelDisplayLabel(ws, panel.id),
-                                                  cwd,
-                                                  wsId: ws.id,
-                                                  setActivePanelIds,
-                                                  onClosePanel: () => handleClosePanel(panel.id),
-                                                  onSplitRight: () =>
-                                                    handleSplit('horizontal', panel.id),
-                                                  onSplitDown: () =>
-                                                    handleSplit('vertical', panel.id),
-                                                  onToggleFocus: () =>
-                                                    togglePanelFocus(ws.id, panel.id),
-                                                  isFocusedPanel: false,
-                                                  onActivatePanel: (panelId) =>
-                                                    activateWorkspacePanel(ws.id, panelId),
-                                                  panelSemanticMetadata:
-                                                    derivePanelSemanticMetadata(
-                                                      panel,
-                                                      agentRunsByPanel[panel.id]
-                                                    ),
-                                                  suspendNativeSurface:
-                                                    shouldSuspendWorkspaceNativeSurfaces,
-                                                  nativeSurfacePolicy,
-                                                  requestedRendererMode: resolveRequestedRenderer({
-                                                    workspaceId: ws.id,
-                                                    panelId: panel.id,
-                                                    prefs: terminalRendererPreferences,
-                                                  }),
-                                                  onResetRendererToXterm: () =>
-                                                    handleResetPanelRendererToXterm(
-                                                      ws.id,
-                                                      panel.id
-                                                    ),
-                                                })}
-                                              </Panel>
-                                              {panelIndex < column.panels.length - 1 ? (
-                                                <PanelResizeHandle
-                                                  className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
-                                                  data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
-                                                  onDragging={setIsDraggingInternalSplit}
-                                                  onPointerDown={() =>
-                                                    setIsDraggingInternalSplit(true)
-                                                  }
-                                                  onPointerUp={() =>
-                                                    setIsDraggingInternalSplit(false)
-                                                  }
-                                                  onMouseDown={() =>
-                                                    setIsDraggingInternalSplit(true)
-                                                  }
-                                                  onMouseUp={() =>
-                                                    setIsDraggingInternalSplit(false)
-                                                  }
-                                                >
-                                                  <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                                </PanelResizeHandle>
-                                              ) : null}
-                                            </React.Fragment>
-                                          ))}
-                                        </PanelGroup>
-                                      ) : (
-                                        <div
-                                          className="h-full w-full"
-                                          data-testid={`workspace-column-${column.id}`}
-                                        >
-                                          {renderWorkspacePanel(column.panels[0], {
-                                            activePanelId,
-                                            activeWsId,
-                                            isActivePanel:
-                                              activePanelId === column.panels[0].id &&
-                                              activeWsId === ws.id,
-                                            isVisibleInLayout: isWorkspaceVisibleInLayout,
-                                            panelLabel: getPanelDisplayLabel(
-                                              ws,
+                                                <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                              </PanelResizeHandle>
+                                            ) : null}
+                                          </React.Fragment>
+                                        ))}
+                                      </PanelGroup>
+                                    ) : (
+                                      <div
+                                        className="h-full w-full"
+                                        data-testid={`workspace-column-${column.id}`}
+                                      >
+                                        {renderWorkspacePanel(column.panels[0], {
+                                          activePanelId,
+                                          activeWsId,
+                                          isActivePanel:
+                                            activePanelId === column.panels[0].id &&
+                                            activeWsId === ws.id,
+                                          isVisibleInLayout: isWorkspaceVisibleInLayout,
+                                          panelLabel: getPanelDisplayLabel(ws, column.panels[0].id),
+                                          cwd,
+                                          wsId: ws.id,
+                                          setActivePanelIds,
+                                          onClosePanel: () => handleClosePanel(column.panels[0].id),
+                                          onSplitRight: () =>
+                                            handleSplit('horizontal', column.panels[0].id),
+                                          onSplitDown: () =>
+                                            handleSplit('vertical', column.panels[0].id),
+                                          onToggleFocus: () =>
+                                            togglePanelFocus(ws.id, column.panels[0].id),
+                                          isFocusedPanel: false,
+                                          onActivatePanel: (panelId) =>
+                                            activateWorkspacePanel(ws.id, panelId),
+                                          panelSemanticMetadata: derivePanelSemanticMetadata(
+                                            column.panels[0],
+                                            agentRunsByPanel[column.panels[0].id]
+                                          ),
+                                          suspendNativeSurface:
+                                            shouldSuspendWorkspaceNativeSurfaces,
+                                          nativeSurfacePolicy,
+                                          requestedRendererMode: resolveRequestedRenderer({
+                                            workspaceId: ws.id,
+                                            panelId: column.panels[0].id,
+                                            prefs: terminalRendererPreferences,
+                                          }),
+                                          onResetRendererToXterm: () =>
+                                            handleResetPanelRendererToXterm(
+                                              ws.id,
                                               column.panels[0].id
                                             ),
-                                            cwd,
-                                            wsId: ws.id,
-                                            setActivePanelIds,
-                                            onClosePanel: () =>
-                                              handleClosePanel(column.panels[0].id),
-                                            onSplitRight: () =>
-                                              handleSplit('horizontal', column.panels[0].id),
-                                            onSplitDown: () =>
-                                              handleSplit('vertical', column.panels[0].id),
-                                            onToggleFocus: () =>
-                                              togglePanelFocus(ws.id, column.panels[0].id),
-                                            isFocusedPanel: false,
-                                            onActivatePanel: (panelId) =>
-                                              activateWorkspacePanel(ws.id, panelId),
-                                            panelSemanticMetadata: derivePanelSemanticMetadata(
-                                              column.panels[0],
-                                              agentRunsByPanel[column.panels[0].id]
-                                            ),
-                                            suspendNativeSurface:
-                                              shouldSuspendWorkspaceNativeSurfaces,
-                                            nativeSurfacePolicy,
-                                            requestedRendererMode: resolveRequestedRenderer({
-                                              workspaceId: ws.id,
-                                              panelId: column.panels[0].id,
-                                              prefs: terminalRendererPreferences,
-                                            }),
-                                            onResetRendererToXterm: () =>
-                                              handleResetPanelRendererToXterm(
-                                                ws.id,
-                                                column.panels[0].id
-                                              ),
-                                          })}
-                                        </div>
-                                      )}
-                                    </Panel>
-                                    {columnIndex < ws.columns.length - 1 ? (
-                                      <PanelResizeHandle
-                                        className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
-                                        data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
-                                        onDragging={setIsDraggingInternalSplit}
-                                        onPointerDown={() => setIsDraggingInternalSplit(true)}
-                                        onPointerUp={() => setIsDraggingInternalSplit(false)}
-                                        onMouseDown={() => setIsDraggingInternalSplit(true)}
-                                        onMouseUp={() => setIsDraggingInternalSplit(false)}
-                                      >
-                                        <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                      </PanelResizeHandle>
-                                    ) : null}
-                                  </React.Fragment>
-                                ))}
-                              </PanelGroup>
-                            )}
-                          </div>
+                                        })}
+                                      </div>
+                                    )}
+                                  </Panel>
+                                  {columnIndex < ws.columns.length - 1 ? (
+                                    <PanelResizeHandle
+                                      className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
+                                      data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
+                                      onDragging={setIsDraggingInternalSplit}
+                                      onPointerDown={() => setIsDraggingInternalSplit(true)}
+                                      onPointerUp={() => setIsDraggingInternalSplit(false)}
+                                      onMouseDown={() => setIsDraggingInternalSplit(true)}
+                                      onMouseUp={() => setIsDraggingInternalSplit(false)}
+                                    >
+                                      <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                    </PanelResizeHandle>
+                                  ) : null}
+                                </React.Fragment>
+                              ))}
+                            </PanelGroup>
+                          )}
+                        </div>
+                      </Panel>
+
+                      {wsDockState.visible && !wsDockState.maximized ? (
+                        <PanelResizeHandle
+                          key={`${ws.id}-right-dock-resize`}
+                          className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
+                          data-testid="workspace-right-dock-resize-handle"
+                          onDragging={setIsDraggingDock}
+                        >
+                          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
+                          <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
+                        </PanelResizeHandle>
+                      ) : null}
+                      {wsDockState.visible && !wsDockState.maximized && !hideRightDockPanel ? (
+                        <Panel
+                          key={`${ws.id}-right-dock-panel`}
+                          minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
+                          maxSize={100}
+                          defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
+                          onResize={(size) => {
+                            if (!wsDockState.maximized) updateWsDockState({ size });
+                          }}
+                          className="pointer-events-none flex flex-col"
+                          data-testid="workspace-right-dock-panel"
+                        >
+                          <div
+                            ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
+                            data-testid="workspace-right-dock-placeholder"
+                            className="h-full w-full pointer-events-none"
+                          />
                         </Panel>
-
-                        {wsDockState.visible && !wsDockState.maximized ? (
-                          <PanelResizeHandle
-                            key={`${ws.id}-right-dock-resize`}
-                            className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
-                            data-testid="workspace-right-dock-resize-handle"
-                            onDragging={setIsDraggingDock}
-                          >
-                            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
-                            <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
-                          </PanelResizeHandle>
-                        ) : null}
-                        {wsDockState.visible && !wsDockState.maximized && !hideRightDockPanel ? (
-                          <Panel
-                            key={`${ws.id}-right-dock-panel`}
-                            minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
-                            maxSize={100}
-                            defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
-                            onResize={(size) => {
-                              if (!wsDockState.maximized) updateWsDockState({ size });
-                            }}
-                            className="pointer-events-none flex flex-col"
-                            data-testid="workspace-right-dock-panel"
-                          >
-                            <div
-                              ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
-                              data-testid="workspace-right-dock-placeholder"
-                              className="h-full w-full pointer-events-none"
-                            />
-                          </Panel>
-                        ) : null}
-                      </PanelGroup>
-                    </div>
-                  );
-                })}
-                {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
-                  <motion.div
-                    layout
-                    data-testid="workspace-right-dock-layer"
-                    className={`absolute overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
-                    style={{ ...rightDockLayerStyle, zIndex: isFullscreenBrowser ? 200 : 50 }}
-                    transition={{ layout: { duration: 0.38, ease: [0.25, 1, 0.5, 1] } }}
-                  >
-                    <WorkspaceRightDock
-                      project={{ id: projectId, local_path: cwd }}
-                      workspaceId={activeWorkspace.id}
-                      dockState={effectiveRightDockState}
-                      onDockStateChange={updateRightDockState}
-                      browserWindowState={browserWindowStates?.[activeWorkspace.id] || null}
-                      onBrowserWindowStateChange={updateBrowserWindowState}
-                      workspaceWindows={workspaceWindows?.[activeWorkspace.id] || []}
-                      activeWorkspaceWindowId={activeWindowIds?.[activeWorkspace.id] || null}
-                      onWorkspaceWindowSelect={(windowId) => {
-                        switchWindowInWorkspace(activeWorkspace.id, windowId);
-                        if (effectiveRightDockState.maximized) {
-                          updateRightDockState({
-                            visible: true,
-                            maximized: true,
-                            maximizedView: 'window',
-                          });
-                        }
-                      }}
-                      onWorkspaceWindowAdd={() => addWindowToWorkspace(activeWorkspace.id)}
-                      onWorkspaceWindowRemove={(windowId) =>
-                        removeWindowFromWorkspace(activeWorkspace.id, windowId)
+                      ) : null}
+                    </PanelGroup>
+                  </div>
+                );
+              })}
+              {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
+                <motion.div
+                  layout
+                  data-testid="workspace-right-dock-layer"
+                  className={`absolute overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
+                  style={{ ...rightDockLayerStyle, zIndex: isFullscreenBrowser ? 200 : 50 }}
+                  transition={{ layout: { duration: 0.38, ease: [0.25, 1, 0.5, 1] } }}
+                >
+                  <WorkspaceRightDock
+                    project={{ id: projectId, local_path: cwd }}
+                    workspaceId={activeWorkspace.id}
+                    dockState={effectiveRightDockState}
+                    onDockStateChange={updateRightDockState}
+                    browserWindowState={browserWindowStates?.[activeWorkspace.id] || null}
+                    onBrowserWindowStateChange={updateBrowserWindowState}
+                    workspaceWindows={workspaceWindows?.[activeWorkspace.id] || []}
+                    activeWorkspaceWindowId={activeWindowIds?.[activeWorkspace.id] || null}
+                    onWorkspaceWindowSelect={(windowId) => {
+                      switchWindowInWorkspace(activeWorkspace.id, windowId);
+                      if (effectiveRightDockState.maximized) {
+                        updateRightDockState({
+                          visible: true,
+                          maximized: true,
+                          maximizedView: 'window',
+                        });
                       }
-                      executionCards={operatorCards}
-                      onCardConfirm={confirmCard}
-                      onCardCancel={cancelCard}
+                    }}
+                    onWorkspaceWindowAdd={() => addWindowToWorkspace(activeWorkspace.id)}
+                    onWorkspaceWindowRemove={(windowId) =>
+                      removeWindowFromWorkspace(activeWorkspace.id, windowId)
+                    }
+                    executionCards={operatorCards}
+                    onCardConfirm={confirmCard}
+                    onCardCancel={cancelCard}
+                  />
+                  {isDraggingDock ? (
+                    <div
+                      data-testid="workspace-right-dock-drag-overlay"
+                      className="pointer-events-none absolute inset-0 z-50 cursor-col-resize"
                     />
-                    {isDraggingDock ? (
-                      <div
-                        data-testid="workspace-right-dock-drag-overlay"
-                        className="pointer-events-none absolute inset-0 z-50 cursor-col-resize"
-                      />
-                    ) : null}
-                  </motion.div>
-                ) : null}
-              </div>
+                  ) : null}
+                </motion.div>
+              ) : null}
             </div>
+          </div>
 
-            <SwarmLaunchWizardModal
-              key="terminal-swarm-launch-wizard"
-              open={swarmLaunchWizardOpen}
-              catalog={swarmLaunchCatalog}
-              preview={swarmLaunchPreview}
-              currentStep={swarmLaunchWizardStep}
-              onClose={() => setSwarmLaunchWizardOpen(false)}
-              onStepChange={setSwarmLaunchWizardStep}
-              onDraftChange={updateSwarmLaunchDraft}
-              onLaunch={handleTerminalSwarmLaunch}
-              submitState={swarmLaunchSubmitState}
-              onSubmitStateChange={setSwarmLaunchSubmitState}
-            />
+          <SwarmLaunchWizardModal
+            key="terminal-swarm-launch-wizard"
+            open={swarmLaunchWizardOpen}
+            catalog={swarmLaunchCatalog}
+            preview={swarmLaunchPreview}
+            currentStep={swarmLaunchWizardStep}
+            onClose={() => setSwarmLaunchWizardOpen(false)}
+            onStepChange={setSwarmLaunchWizardStep}
+            onDraftChange={updateSwarmLaunchDraft}
+            onLaunch={handleTerminalSwarmLaunch}
+            submitState={swarmLaunchSubmitState}
+            onSubmitStateChange={setSwarmLaunchSubmitState}
+          />
 
-            <TerminalSettingsModal
-              open={terminalSettingsModal.open}
-              onClose={() => setTerminalSettingsModal((prev) => ({ ...prev, open: false }))}
-              panelId={terminalSettingsModal.panelId}
-              sessionId={terminalSettingsModal.sessionId}
-              sessionType={terminalSettingsModal.sessionType}
-              restorePolicy={terminalSettingsModal.restorePolicy}
-              cwd={terminalSettingsModal.cwd}
-            />
+          <TerminalSettingsModal
+            open={terminalSettingsModal.open}
+            onClose={() => setTerminalSettingsModal((prev) => ({ ...prev, open: false }))}
+            panelId={terminalSettingsModal.panelId}
+            sessionId={terminalSettingsModal.sessionId}
+            sessionType={terminalSettingsModal.sessionType}
+            restorePolicy={terminalSettingsModal.restorePolicy}
+            cwd={terminalSettingsModal.cwd}
+          />
 
-            <TerminalRestoreSettingsModal
-              open={restoreSettingsModal.open}
-              onClose={() => setRestoreSettingsModal({ open: false })}
-            />
-          </motion.div>
-        </SharedDockStoreProvider>
-      </SharedSurfacesProvider>
+          <TerminalRestoreSettingsModal
+            open={restoreSettingsModal.open}
+            onClose={() => setRestoreSettingsModal({ open: false })}
+          />
+        </motion.div>
+      </SharedDockStoreProvider>
     </LiveSurfaceRegistryContext.Provider>
   );
 }
