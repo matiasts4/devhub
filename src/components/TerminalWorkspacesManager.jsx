@@ -106,6 +106,13 @@ import {
   shouldBumpRelaunchCommand,
 } from '@/lib/terminal/startupRestoreRunner';
 import {
+  enrichOpenCodeRestoreContext,
+  fetchOpenCodeSessionCatalog,
+  mergeDiscoveryIntoAgentRunsRecord,
+  patchTerminalStateWithDiscoveredCommands,
+  collectOpenCodePanelsNeedingDiscovery,
+} from '@/lib/terminal/opencodeSessionDiscovery';
+import {
   buildCleanTerminalStatePayload,
   flushTerminalSessionPersistence,
 } from '@/lib/terminal/terminalSessionFlush';
@@ -682,6 +689,7 @@ function renderWorkspacePanel(
     suspendNativeSurface,
     nativeSurfacePolicy,
     connectionState,
+    avoidOverlayRects = [],
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
@@ -862,6 +870,7 @@ function renderWorkspacePanel(
             onActivatePanel={onActivatePanel}
             suspendNativeSurface={Boolean(suspendNativeSurface)}
             nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+            avoidOverlayRects={avoidOverlayRects}
           />
         </div>
       </div>
@@ -1043,6 +1052,38 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [gridCommand, setGridCommand] = useState('opencode');
   const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
   const [swarmLaunchWizardOpen, setSwarmLaunchWizardOpen] = useState(false);
+
+  // overlayAvoidRects: list of {x,y,width,height, source} for transient popups/modals
+  // (starting with the "GRILLAS PREDEFINIDAS" launcher) that need to render above
+  // native terminal content. We use this to temporarily crop/adjust the VTE bounds
+  // instead of full suspend/hide. This keeps the terminal "live" (no black screen)
+  // in the uncovered area while the popup shows cleanly without the terminal
+  // painting on top of it.
+  const [overlayAvoidRects, setOverlayAvoidRects] = useState([]);
+
+  // When the grid launcher opens, capture its content rect. We will use this to
+  // temporarily adjust (crop) the active terminal VTE bounds so the native does
+  // not paint over the popup. This keeps most of the terminal live/visible
+  // instead of the old full suspend that made everything black.
+  useEffect(() => {
+    if (!isGridLauncherOpen) {
+      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'grid-launcher'));
+      return;
+    }
+    const t = setTimeout(() => {
+      const el = document.querySelector('[data-testid="workspace-grid-launcher-content"]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const avoid = { x: r.x, y: r.y, width: r.width, height: r.height, source: 'grid-launcher' };
+        setOverlayAvoidRects((prev) => {
+          const filtered = prev.filter((r) => r.source !== 'grid-launcher');
+          return [...filtered, avoid];
+        });
+      }
+    }, 20);
+    return () => clearTimeout(t);
+  }, [isGridLauncherOpen]);
+
   const [terminalSettingsModal, setTerminalSettingsModal] = useState({
     open: false,
     panelId: null,
@@ -1579,12 +1620,56 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           if (cancelled) return;
 
           const latestAgentRuns = readAgentRunsByPanel(storage);
+          let restoreWorkspaces = snapshotWorkspaces;
+          let restoreAgentRuns = latestAgentRuns;
+
+          const needsDiscovery = collectOpenCodePanelsNeedingDiscovery(
+            snapshotWorkspaces,
+            latestAgentRuns
+          );
+
+          if (needsDiscovery.length > 0) {
+            const catalog = await fetchOpenCodeSessionCatalog({ fetchImpl: fetch });
+            if (!cancelled && catalog.sessions.length > 0) {
+              const enriched = enrichOpenCodeRestoreContext({
+                workspaces: snapshotWorkspaces,
+                agentRunsByPanel: latestAgentRuns,
+                catalogSessions: catalog.sessions,
+              });
+
+              if (enriched.hasDiscoveries) {
+                restoreWorkspaces = enriched.workspaces;
+                restoreAgentRuns = enriched.agentRunsByPanel;
+
+                try {
+                  const fullRuns = readAgentRuns(storage);
+                  const mergedRuns = mergeDiscoveryIntoAgentRunsRecord(
+                    fullRuns,
+                    enriched.discoveries
+                  );
+                  storage?.setItem('devhub_agent_runs', JSON.stringify(mergedRuns));
+                  patchTerminalStateWithDiscoveredCommands(
+                    storage,
+                    terminalStateStorageKey,
+                    restoreWorkspaces
+                  );
+                  setWorkspaces((prev) => {
+                    if (!Array.isArray(prev) || prev.length === 0) return restoreWorkspaces;
+                    return restoreWorkspaces;
+                  });
+                } catch {
+                  // Discovery persistence must not block restore.
+                }
+              }
+            }
+          }
+
           const manifest = buildRestoreManifestFromWorkspaceState({
-            workspaces: snapshotWorkspaces,
+            workspaces: restoreWorkspaces,
             activeWorkspaceId: activeWsIdRef.current || activeWsId,
             projectId,
             appSessionId: `startup-${Date.now()}`,
-            agentRunsByPanel: latestAgentRuns,
+            agentRunsByPanel: restoreAgentRuns,
             restorePreferences: restorePrefs,
           });
 
@@ -1597,7 +1682,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           }
 
           const panelMap = new Map(
-            snapshotWorkspaces.flatMap((workspace) =>
+            restoreWorkspaces.flatMap((workspace) =>
               (workspace?.columns || []).flatMap((column) =>
                 (column?.panels || []).map((panel) => [panel.id, panel])
               )
@@ -4134,7 +4219,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (!isValidZedOpenUrlEvent(e.detail)) return;
       const { url, label, focus = false } = e.detail;
       const last = lastZedOpenUrlRef.current;
-      if (last.url === url && (last.label ?? null) === (label ?? null)) {
+      if (
+        focus !== true &&
+        last.url === url &&
+        (last.label ?? null) === (label ?? null)
+      ) {
         return;
       }
       lastZedOpenUrlRef.current = { url, label: label ?? null };
@@ -4825,6 +4914,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                     panelId: focusedPanel.id,
                                     prefs: terminalRendererPreferences,
                                   }),
+                                  avoidOverlayRects: overlayAvoidRects,
                                   onResetRendererToXterm: () =>
                                     handleResetPanelRendererToXterm(ws.id, focusedPanel.id),
                                   connectionState: getPanelConnectionState(focusedPanel),
@@ -4894,6 +4984,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                       panel.id
                                                     ),
                                                   connectionState: getPanelConnectionState(panel),
+                                                  avoidOverlayRects: overlayAvoidRects,
                                                 })}
                                               </Panel>
                                               {panelIndex < column.panels.length - 1 ? (
@@ -4968,6 +5059,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                 column.panels[0].id
                                               ),
                                             connectionState: getPanelConnectionState(column.panels[0]),
+                                            avoidOverlayRects: overlayAvoidRects,
                                           })}
                                         </div>
                                       )}
