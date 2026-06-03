@@ -34,6 +34,7 @@ import {
   resolveHandleSizing,
   FRAME_TRANSITION,
   SURFACE_ENTER_ANIMATION,
+  ACCENT,
 } from '@/lib/pizarra/surfaceMotion';
 
 const FRAME_INSET = 10;
@@ -131,8 +132,19 @@ export default function PizarraBrowserSurface({
   // incremented. Bump on Reload click.
   const [srcReloadKey, setSrcReloadKey] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  // Separate flag for resize vs move. We suspend the native surface ONLY during
+  // actual drag/move (to avoid flicker/desync while position changes). During
+  // pure resize we keep native visible so the "cuerpo" (browser content / terminal)
+  // follows the header live via RO + direct size mutation. This removes the
+  // perceived delay between header chrome and body.
+  const [isResizing, setIsResizing] = useState(false);
   const persistedUrlRef = useRef(resolveBrowserUrl(shape.url));
   const panelId = useMemo(() => `pizarra-browser-${shape.id}`, [shape.id]);
+  // pizarra-resize-fluidity: ref to the surface root (the positioned div) so resize
+  // handlers can mutate its style (and ancestor's Live wrapper) directly during the
+  // gesture. This + commit-only on mouseup gives the same fluidity as drag (no per-tick
+  // React updates that re-apply bounds and can race native sync).
+  const surfaceRootRef = useRef(null);
   // pizarra-ux-overhaul: subscribe to the native browser capability so
   // the surface can flip to native-gtk when the runtime reports ready
   // AND the consumer has not opted out via browserLoadFallback.
@@ -281,11 +293,12 @@ export default function PizarraBrowserSurface({
     [onSelect, shape.id]
   );
 
-  // pizarra-drag-resize-polish: border-based resize for the browser
-  // surface. Same contract as CanvasTerminal.handleResizeStart. The
-  // browser is a composite element so it does not go through the Konva
-  // Transformer — it exposes its own 8 edge/corner handles and the
-  // resize is committed via onUpdateElement({x,y,width,height}).
+  // pizarra-drag-resize-polish + fluidity fix: border-based resize.
+  // Direct style mutation on the surface root (and its Live wrapper ancestor)
+  // during the gesture for 60fps frame resize without React re-render per px.
+  // Model commit (onUpdateElement) happens ONLY on mouseup — exactly like drag.
+  // This + removal of enter anim from root eliminates the "navegador por encima de la rayita"
+  // after resets/reloads/resizes.
   const handleResizeStart = useCallback(
     (event, dir) => {
       if (event.button !== 0) return;
@@ -296,11 +309,8 @@ export default function PizarraBrowserSurface({
       event.preventDefault();
       onSelect?.(shape.id);
 
-      // pizarra-resize-canvas-coords: resize in CANVAS space using real
-      // shape geometry; divide screen deltas by zoom so the opposite edge
-      // stays anchored and the surface never teleports to canvas origin.
       const z = zoom > 0 ? zoom : 1;
-      const startBounds = {
+      const startLogical = {
         x: shape.x ?? bounds.x,
         y: shape.y ?? bounds.y,
         width: shape.width ?? bounds.width,
@@ -311,36 +321,99 @@ export default function PizarraBrowserSurface({
       const minW = 220;
       const minH = 160;
 
+      // Capture the elements to mutate directly (fluidity). The Live wrapper ancestor
+      // owns the final positioned box; mutating it keeps everything consistent.
+      const surfaceRoot = surfaceRootRef.current;
+      const liveWrapper = surfaceRoot ? surfaceRoot.parentElement : null;
+      const isLiveWrapper = !!(
+        liveWrapper && liveWrapper.hasAttribute('data-pizarra-live-surface-wrapper')
+      );
+
+      // Pre-compute start screen metrics from the *current rendered styles* (authoritative during gesture).
+      const startScreenW =
+        parseFloat((liveWrapper || surfaceRoot)?.style.width) || startLogical.width * z;
+      const startScreenH =
+        parseFloat((liveWrapper || surfaceRoot)?.style.height) || startLogical.height * z;
+      const startScreenLeft =
+        parseFloat((liveWrapper || surfaceRoot)?.style.left) || startLogical.x * z;
+      const startScreenTop =
+        parseFloat((liveWrapper || surfaceRoot)?.style.top) || startLogical.y * z;
+
+      let lastLogical = { ...startLogical };
+
       const handleMouseMove = (moveEvent) => {
-        const dx = (moveEvent.clientX - startX) / z;
-        const dy = (moveEvent.clientY - startY) / z;
-        const next = { ...startBounds };
+        const screenDx = moveEvent.clientX - startX;
+        const screenDy = moveEvent.clientY - startY;
+
+        let nextScreenW = startScreenW;
+        let nextScreenH = startScreenH;
+        let nextScreenLeft = startScreenLeft;
+        let nextScreenTop = startScreenTop;
+
         if (dir.includes('e')) {
-          next.width = Math.max(minW, startBounds.width + dx);
+          nextScreenW = Math.max(minW * z, startScreenW + screenDx);
         }
         if (dir.includes('s')) {
-          next.height = Math.max(minH, startBounds.height + dy);
+          nextScreenH = Math.max(minH * z, startScreenH + screenDy);
         }
         if (dir.includes('w')) {
-          const w = Math.max(minW, startBounds.width - dx);
-          next.width = w;
-          next.x = startBounds.x + (startBounds.width - w);
+          const candidateW = Math.max(minW * z, startScreenW - screenDx);
+          nextScreenLeft = startScreenLeft + (startScreenW - candidateW);
+          nextScreenW = candidateW;
         }
         if (dir.includes('n')) {
-          const h = Math.max(minH, startBounds.height - dy);
-          next.height = h;
-          next.y = startBounds.y + (startBounds.height - h);
+          const candidateH = Math.max(minH * z, startScreenH - screenDy);
+          nextScreenTop = startScreenTop + (startScreenH - candidateH);
+          nextScreenH = candidateH;
         }
-        onUpdateElement?.(shape.id, next);
+
+        // Direct DOM mutation — zero React updates during drag of the handle.
+        if (isLiveWrapper && liveWrapper) {
+          liveWrapper.style.width = `${nextScreenW}px`;
+          liveWrapper.style.height = `${nextScreenH}px`;
+          liveWrapper.style.left = `${nextScreenLeft}px`;
+          liveWrapper.style.top = `${nextScreenTop}px`;
+        }
+        if (surfaceRoot) {
+          surfaceRoot.style.width = `${nextScreenW}px`;
+          surfaceRoot.style.height = `${nextScreenH}px`;
+          if (isLiveWrapper) {
+            // In real Live usage, surface root is always local (0,0) inside the wrapper.
+            surfaceRoot.style.left = '0px';
+            surfaceRoot.style.top = '0px';
+          } else {
+            // Bare render (tests) or non-wrapped: the root itself carries screen position.
+            surfaceRoot.style.left = `${nextScreenLeft}px`;
+            surfaceRoot.style.top = `${nextScreenTop}px`;
+          }
+        }
+
+        // Track last logical for the single commit on up.
+        const logicalW = Math.max(minW, Math.round(nextScreenW / z));
+        const logicalH = Math.max(minH, Math.round(nextScreenH / z));
+        const logDx = Math.round((nextScreenLeft - startScreenLeft) / z);
+        const logDy = Math.round((nextScreenTop - startScreenTop) / z);
+        lastLogical = {
+          x: startLogical.x + logDx,
+          y: startLogical.y + logDy,
+          width: logicalW,
+          height: logicalH,
+        };
+
+        // Do NOT call onUpdateElement here. Live visual + (when not suspended) RO-driven
+        // native resize happen via the style changes. Commit only on release.
       };
 
       const handleMouseUp = () => {
-        setIsDragging(false);
+        setIsResizing(false);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
+
+        // Single commit on release.
+        onUpdateElement?.(shape.id, lastLogical);
       };
 
-      setIsDragging(true);
+      setIsResizing(true);
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
@@ -365,11 +438,17 @@ export default function PizarraBrowserSurface({
     [bounds.height, bounds.screenX, bounds.screenY, bounds.width, bounds.x, bounds.y, srcReloadKey]
   );
 
-  const frameVisual = resolveFrameVisual({ selected, hovered: isHovered, dragging: isDragging });
+  const isManipulating = isDragging || isResizing;
+  const frameVisual = resolveFrameVisual({
+    selected,
+    hovered: isHovered,
+    dragging: isManipulating,
+  });
   const handleSizing = resolveHandleSizing(zoom);
 
   return (
     <div
+      ref={surfaceRootRef}
       data-testid={`pizarra-browser-surface-${shape.id}`}
       style={{
         position: 'absolute',
@@ -378,9 +457,12 @@ export default function PizarraBrowserSurface({
         width: bounds.width,
         height: bounds.height,
         pointerEvents: 'none',
-        animation: SURFACE_ENTER_ANIMATION,
-        transformOrigin: 'center center',
-        willChange: 'transform',
+        // NOTE: NO animation / willChange:transform here. Live surfaces host native
+        // overlays (WebKitGTK / VTE) positioned via IPC to getBoundingClientRect.
+        // Any transform or re-triggered enter anim on this wrapper desyncs the chrome
+        // frame from the native content rect → "vista separada de la rayita límite" on
+        // resize, reload (srcReloadKey), resetElements (layout presets), or window resize.
+        // Safe (opacity-only) one-shot enter is applied at the LiveSurfaceItem wrapper level.
       }}
     >
       <div
@@ -391,7 +473,7 @@ export default function PizarraBrowserSurface({
         onMouseUp={handleWrapperButtonMouseUp}
         data-pizarra-header-hovered={isHovered ? 'true' : 'false'}
         data-pizarra-header-active={isButtonActive ? 'true' : 'false'}
-        data-pizarra-surface-dragging={isDragging ? 'true' : 'false'}
+        data-pizarra-surface-dragging={isManipulating ? 'true' : 'false'}
         data-pizarra-surface-selected={selected ? 'true' : 'false'}
         style={{
           position: 'absolute',
@@ -402,7 +484,12 @@ export default function PizarraBrowserSurface({
           outline: isButtonActive ? '1px inset var(--accent-primary)' : 'none',
           background: 'rgba(8, 14, 24, 0.94)',
           boxShadow: frameVisual.boxShadow,
-          transition: FRAME_TRANSITION,
+          // During resize or drag: kill ALL transitions on the chrome frame (header,
+          // buttons, content container). This eliminates the "delay entre header y cuerpo"
+          // the user sees — the header chrome (move/close buttons, tabstrip, browser
+          // toolbar) and the body now resize in lockstep because there's no lingering
+          // cubic-bezier delay fighting the direct style mutation from the handles.
+          transition: isManipulating ? 'none' : FRAME_TRANSITION,
           pointerEvents: 'auto',
         }}
       >
@@ -498,6 +585,11 @@ export default function PizarraBrowserSurface({
             onWorkspaceWindowAdd={onWorkspaceWindowAdd}
             onWorkspaceWindowRemove={onWorkspaceWindowRemove}
             layoutSyncKey={layoutSyncKey}
+            // Suspend native ONLY on move/drag (isDragging), NOT on resize (isResizing).
+            // During resize the native body must stay visible and the RO inside
+            // useNativeBrowserSurface will pick up the live size changes from our
+            // direct style mutations on the ancestors. This makes the "cuerpo"
+            // (web content / terminal lines) follow the header without pop-in on release.
             suspendNativeSurface={isDragging}
             isPizarraContext={true}
             // pizarra-shared-view-state Phase 3: pass tabsMode through
@@ -561,12 +653,12 @@ export default function PizarraBrowserSurface({
         ) : null}
       </div>
 
-      {/* pizarra-motion: zoom-aware resize handles. Hit areas scale inversely
-          with zoom; fully invisible — discoverability comes from the cursor
-          change on hover and the bright accent frame on selection. No corner
-          squares/nubs. The drag-handle button is excluded from the resize
-          hit-area via the closest() guard in handleResizeStart. data-testids
-          preserved for existing tests. */}
+      {/* pizarra-resize-affordance (pizarra-ux): zoom-aware resize handles.
+          Hit areas (edge/corner) stay large + inverse-scaled for grabability.
+          NOW render subtle visible rails (edges) + grip dots (corners) *inside*
+          the hit zones when selected. This makes the "thin line" obvious and
+          targetable while preserving the forgiving hit area and cursor.
+          The drag-handle exclusion (closest) is kept. data-testids unchanged. */}
       {selected &&
         (() => {
           const eg = handleSizing.edge;
@@ -586,6 +678,7 @@ export default function PizarraBrowserSurface({
             zIndex: 6,
             ...extra,
           });
+          const railColor = ACCENT.strong;
           return (
             <>
               <div
@@ -598,7 +691,23 @@ export default function PizarraBrowserSurface({
                   height: eg,
                   cursor: 'ns-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '50%',
+                    height: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateY(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="pizarra-browser-resize-s"
                 onMouseDown={(ev) => handleResizeStart(ev, 's')}
@@ -609,7 +718,23 @@ export default function PizarraBrowserSurface({
                   height: eg,
                   cursor: 'ns-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '50%',
+                    height: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateY(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="pizarra-browser-resize-w"
                 onMouseDown={(ev) => handleResizeStart(ev, 'w')}
@@ -620,7 +745,23 @@ export default function PizarraBrowserSurface({
                   width: eg,
                   cursor: 'ew-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: '50%',
+                    width: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateX(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="pizarra-browser-resize-e"
                 onMouseDown={(ev) => handleResizeStart(ev, 'e')}
@@ -631,7 +772,23 @@ export default function PizarraBrowserSurface({
                   width: eg,
                   cursor: 'ew-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: '50%',
+                    width: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateX(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="pizarra-browser-resize-nw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
@@ -640,7 +797,23 @@ export default function PizarraBrowserSurface({
                   left: FRAME_INSET - c / 2,
                   cursor: 'nwse-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="pizarra-browser-resize-ne"
                 onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
@@ -649,7 +822,23 @@ export default function PizarraBrowserSurface({
                   right: FRAME_INSET - c / 2,
                   cursor: 'nesw-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="pizarra-browser-resize-sw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
@@ -658,7 +847,23 @@ export default function PizarraBrowserSurface({
                   left: FRAME_INSET - c / 2,
                   cursor: 'nesw-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="pizarra-browser-resize-se"
                 onMouseDown={(ev) => handleResizeStart(ev, 'se')}
@@ -667,7 +872,23 @@ export default function PizarraBrowserSurface({
                   right: FRAME_INSET - c / 2,
                   cursor: 'nwse-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
             </>
           );
         })()}

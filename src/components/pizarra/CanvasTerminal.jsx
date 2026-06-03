@@ -11,6 +11,7 @@ import {
   resolveHandleSizing,
   FRAME_TRANSITION,
   SURFACE_ENTER_ANIMATION,
+  ACCENT,
 } from '@/lib/pizarra/surfaceMotion';
 
 // pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
@@ -120,6 +121,9 @@ export default function CanvasTerminal({
   const [pointerDown, setPointerDown] = useState(false);
   const [isLiveDragging, setIsLiveDragging] = useState(false);
   const hasMovedRef = useRef(false);
+  // pizarra-resize-fluidity: ref for direct style mutation on the container root
+  // during resize (unifies with browser + drag pattern).
+  const surfaceRootRef = useRef(null);
 
   // Derived value for VISUAL state only (frame border, cursor, drag
   // transform). NEVER drives suspendNativeSurface — that is the whole
@@ -230,6 +234,34 @@ export default function CanvasTerminal({
           next.y = startBounds.y + (startBounds.height - h);
         }
         lastBounds = next;
+
+        // pizarra-resize-fluidity: direct mutate the root (and Live wrapper ancestor)
+        // so the chrome frame resizes at pointer speed without waiting for React commit
+        // from the onResize state update. Complements the live onResize (kept for TTY
+        // internal reflow + existing test contract).
+        const surfaceRoot = surfaceRootRef.current;
+        const liveWrapper = surfaceRoot ? surfaceRoot.parentElement : null;
+        const screenW = Math.max(
+          minW * z,
+          (startBounds.width + (dir.includes('e') ? dx : dir.includes('w') ? -dx : 0)) * z
+        );
+        const screenH = Math.max(
+          minH * z,
+          (startBounds.height + (dir.includes('s') ? dy : dir.includes('n') ? -dy : 0)) * z
+        );
+        if (liveWrapper) {
+          liveWrapper.style.width = `${screenW}px`;
+          liveWrapper.style.height = `${screenH}px`;
+          if (dir.includes('w'))
+            liveWrapper.style.left = `${(startBounds.x + (startBounds.width - next.width)) * z}px`;
+          if (dir.includes('n'))
+            liveWrapper.style.top = `${(startBounds.y + (startBounds.height - next.height)) * z}px`;
+        }
+        if (surfaceRoot) {
+          surfaceRoot.style.width = `${screenW}px`;
+          surfaceRoot.style.height = `${screenH}px`;
+        }
+
         onResize?.(next);
       };
 
@@ -326,6 +358,7 @@ export default function CanvasTerminal({
 
   return (
     <div
+      ref={surfaceRootRef}
       data-testid="canvas-terminal-container"
       style={{
         position: 'absolute',
@@ -334,9 +367,8 @@ export default function CanvasTerminal({
         width: resolvedBounds.width,
         height: resolvedBounds.height,
         pointerEvents: 'none',
-        animation: SURFACE_ENTER_ANIMATION,
-        transformOrigin: 'center center',
-        willChange: 'transform',
+        // NOTE: NO animation / willChange:transform here (see PizarraBrowserSurface for rationale).
+        // Native VTE + browser overlays must never see wrapper transforms from enter or resize.
       }}
     >
       <div
@@ -355,7 +387,11 @@ export default function CanvasTerminal({
           border: frameVisual.border,
           boxShadow: frameVisual.boxShadow,
           transform: frameVisual.transform,
-          transition: FRAME_TRANSITION,
+          // Kill transitions on the chrome frame (header bar + body container) while
+          // actively manipulating (drag or resize). Removes the visual delay/lag
+          // between the header and the resizable content (VTE body follows the
+          // container size change instantly via our direct mutations + onResize).
+          transition: isDragging ? 'none' : FRAME_TRANSITION,
           pointerEvents: 'auto',
         }}
       >
@@ -440,11 +476,13 @@ export default function CanvasTerminal({
         </div>
       </div>
 
-      {/* pizarra-motion: zoom-aware resize handles. Hit areas scale inversely
-          with zoom so they stay grabbable when zoomed out. They are fully
-          invisible — discoverability comes from the cursor change on hover and
-          the bright accent frame on selection. No corner squares/nubs (they
-          looked bad and cluttered the surface). data-testids preserved. */}
+      {/* pizarra-resize-affordance (pizarra-ux): zoom-aware resize handles.
+          Hit areas (edge/corner) stay large + inverse-scaled for grabability.
+          NOW render subtle visible rails (edges) + grip dots (corners) *inside*
+          the hit zones when selected. This makes the "thin line" obvious and
+          targetable while preserving the forgiving hit area and cursor.
+          Discoverability no longer relies only on cursor + 1.5px frame border.
+          data-testids and all resize behavior unchanged. */}
       {selected &&
         (() => {
           const e = handleSizing.edge;
@@ -469,6 +507,9 @@ export default function CanvasTerminal({
             zIndex: 6,
             ...extra,
           });
+          // Visible affordance color (inside the transparent hit area).
+          // Uses existing ACCENT for cohesion with selected frame/shadow.
+          const railColor = ACCENT.strong;
           return (
             <>
               <div
@@ -481,7 +522,24 @@ export default function CanvasTerminal({
                   height: e,
                   cursor: 'ns-resize',
                 })}
-              />
+              >
+                {/* visible rail centered in the hit strip */}
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '50%',
+                    height: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateY(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="canvas-terminal-resize-s"
                 onMouseDown={(ev) => handleResizeStart(ev, 's')}
@@ -492,7 +550,23 @@ export default function CanvasTerminal({
                   height: e,
                   cursor: 'ns-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '50%',
+                    height: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateY(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="canvas-terminal-resize-w"
                 onMouseDown={(ev) => handleResizeStart(ev, 'w')}
@@ -503,7 +577,23 @@ export default function CanvasTerminal({
                   width: e,
                   cursor: 'ew-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: '50%',
+                    width: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateX(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="canvas-terminal-resize-e"
                 onMouseDown={(ev) => handleResizeStart(ev, 'e')}
@@ -514,22 +604,86 @@ export default function CanvasTerminal({
                   width: e,
                   cursor: 'ew-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: '50%',
+                    width: 3,
+                    background: railColor,
+                    opacity: 0.65,
+                    transform: 'translateX(-50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="canvas-terminal-resize-nw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
                 style={cornerStyle({ top: FI - c / 2, left: FI - c / 2, cursor: 'nwse-resize' })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="canvas-terminal-resize-ne"
                 onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
                 style={cornerStyle({ top: FI - c / 2, right: FI - c / 2, cursor: 'nesw-resize' })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="canvas-terminal-resize-sw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
                 style={cornerStyle({ bottom: FI - c / 2, left: FI - c / 2, cursor: 'nesw-resize' })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
               <div
                 data-testid="canvas-terminal-resize-se"
                 onMouseDown={(ev) => handleResizeStart(ev, 'se')}
@@ -538,7 +692,23 @@ export default function CanvasTerminal({
                   right: FI - c / 2,
                   cursor: 'nwse-resize',
                 })}
-              />
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    background: railColor,
+                    opacity: 0.8,
+                    transform: 'translate(-50%, -50%)',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
             </>
           );
         })()}

@@ -12,9 +12,10 @@
  * delta, then assert onResize was called with the expected bounds.
  *
  * The handle testids are:
- *   - canvas-terminal-resize-n, s, e, w (edges, 8px thick)
- *   - canvas-terminal-resize-nw, ne, sw, se (corners, 14x14)
+ *   - canvas-terminal-resize-n, s, e, w (edges — hit area scaled by resolveHandleSizing)
+ *   - canvas-terminal-resize-nw, ne, sw, se (corners — hit area scaled)
  *
+ * Visible rails/grip dots are rendered inside the hit areas (selected only).
  * Minimum sizes: minW=160, minH=120 (see CanvasTerminal.handleResizeStart).
  */
 

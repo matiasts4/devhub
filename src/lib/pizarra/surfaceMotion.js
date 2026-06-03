@@ -52,10 +52,14 @@ export const SURFACE_BORDER = {
  * Resize handle sizing. Hit areas are deliberately larger than the visible
  * indicators so the handles are easy to grab. They scale inversely with zoom
  * so they stay grabbable when the canvas is zoomed out.
+ *
+ * pizarra-resize-affordance: base sizes increased + callers now render
+ * visible rails/dots *inside* the hit areas (selected only) so the "thin line"
+ * problem is solved while keeping the large forgiving hit zone.
  */
 const HANDLE_BASE = {
-  edge: 24, // edge strip thickness (hit area) — thick enough to grab without aiming
-  corner: 34, // corner square side (hit area)
+  edge: 28, // edge strip thickness (hit area) — larger for forgiveness + rail inside
+  corner: 38, // corner square side (hit area)
   inset: 18, // gap from the corner where edge strips start
 };
 
@@ -135,8 +139,16 @@ export function ensureSurfaceMotionKeyframes() {
   60%  { opacity: 1; transform: translateY(-2px) scale(1.008); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+@keyframes pizarraSurfaceEnterOpacity {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
   @keyframes ${ENTER_ANIMATION_NAME} {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes pizarraSurfaceEnterOpacity {
     from { opacity: 0; }
     to   { opacity: 1; }
   }
@@ -145,6 +157,10 @@ export function ensureSurfaceMotionKeyframes() {
 }
 
 export const SURFACE_ENTER_ANIMATION = `${ENTER_ANIMATION_NAME} ${DUR.enter}ms ${EASE_OUT} both`;
+// Safe variant for live surfaces that host native overlays (browser, terminal).
+// Only opacity — never transform — so the positioned wrapper never moves relative
+// to the IPC-placed native content rect. Applied once at LiveSurfaceItem wrapper mount.
+export const SURFACE_ENTER_OPACITY_ONLY = `pizarraSurfaceEnterOpacity ${DUR.enter}ms ${EASE_OUT} both`;
 
 /**
  * MOTION_DRIVER — single source of truth for the animation

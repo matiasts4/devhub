@@ -14,6 +14,9 @@
  *   mousedown originates from the drag handle (closest() guard).
  * - The handles are only mounted when `selected={true}`.
  *
+ * Visible rails/grip dots inside hit areas (selected) — pizarra-resize-affordance.
+ * Testids + behavior contracts unchanged.
+ *
  * Test strategy: mirror the existing PizarraBrowserSurface.test.jsx
  * setup (WorkspaceBrowserPane mock, useNativeBrowserSurface mock,
  * JSDOM) and add the resize + handle-visibility scenarios.
@@ -137,7 +140,7 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
     delete global.cancelAnimationFrame;
   });
 
-  test('e: mousedown on east handle + mousemove +50px → onUpdateElement width = oldW + 50', () => {
+  test('e: mousedown on east handle + mousemove +50px → direct style mutation on root (fluidity, no React re-render storm) + onUpdate ONLY on mouseup (pizarra-drag-resize-polish unification)', () => {
     const onUpdateElement = jest.fn();
     const harness = renderBrowser({ onUpdateElement });
 
@@ -151,6 +154,25 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
       global.window.dispatchEvent(makeMouseEvent('mousemove', 150, 100, 0));
     });
 
+    // NEW behavior (fluidity): during active resize, the surface root's style is mutated
+    // directly (bypassing React state/updates like drag does via Live wrapper). This keeps
+    // the chrome frame fluid even with native overlays. onUpdate (model commit) must NOT
+    // have fired yet — only the final geometry on mouseup.
+    const surfaceRoot = document.querySelector(
+      `[data-testid="pizarra-browser-surface-${SHAPE.id}"]`
+    );
+    expect(surfaceRoot).toBeTruthy();
+    // At z=1 (default in test bounds), +50 client px → +50 logical → visual width 450
+    expect(surfaceRoot.style.width).toBe('450px');
+    // Still no commit during the gesture (prevents re-render jank + sync races)
+    expect(onUpdateElement).not.toHaveBeenCalled();
+
+    flushSync(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup', 150, 100, 0));
+    });
+
+    // Commit happens exactly once, on release, with final logical bounds.
+    expect(onUpdateElement).toHaveBeenCalledTimes(1);
     expect(onUpdateElement).toHaveBeenCalledWith(SHAPE.id, {
       x: 20,
       y: 40,
@@ -158,13 +180,10 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
       height: 320,
     });
 
-    flushSync(() => {
-      global.window.dispatchEvent(makeMouseEvent('mouseup', 150, 100, 0));
-    });
     unmountBrowser(harness);
   });
 
-  test('w: mousedown on west handle + mousemove +50px → onUpdateElement width = oldW - 50 AND x = oldX + 50', () => {
+  test('w: mousedown on west handle + mousemove +50px → direct style mutation (left+width) + commit ONLY on mouseup', () => {
     const onUpdateElement = jest.fn();
     const harness = renderBrowser({ onUpdateElement });
 
@@ -178,6 +197,20 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
       global.window.dispatchEvent(makeMouseEvent('mousemove', 250, 100, 0));
     });
 
+    const surfaceRoot = document.querySelector(
+      `[data-testid="pizarra-browser-surface-${SHAPE.id}"]`
+    );
+    expect(surfaceRoot).toBeTruthy();
+    // Visual: west resize moves the left anchor + shrinks width (screen px at z=1)
+    expect(surfaceRoot.style.width).toBe('350px');
+    expect(surfaceRoot.style.left).toBe('70px'); // 20 + 50
+    expect(onUpdateElement).not.toHaveBeenCalled();
+
+    flushSync(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup', 250, 100, 0));
+    });
+
+    expect(onUpdateElement).toHaveBeenCalledTimes(1);
     expect(onUpdateElement).toHaveBeenCalledWith(SHAPE.id, {
       x: 70, // 20 + (400 - 350)
       y: 40,
@@ -185,9 +218,6 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
       height: 320,
     });
 
-    flushSync(() => {
-      global.window.dispatchEvent(makeMouseEvent('mouseup', 250, 100, 0));
-    });
     unmountBrowser(harness);
   });
 
@@ -259,6 +289,40 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
     // Sanity: the drag handle is also still present (it's a separate
     // UI element on the wrapper, not gated by selected).
     expect(getHandle('pizarra-drag-handle')).toBeTruthy();
+
+    unmountBrowser(harness);
+  });
+
+  test('enter animation must NOT be present in the surface root inline style (prevents re-trigger on every bounds update/resize/reset; native desync with chrome frame)', () => {
+    const onUpdateElement = jest.fn();
+    const harness = renderBrowser({ onUpdateElement, selected: true });
+
+    const surfaceRoot = document.querySelector(
+      `[data-testid="pizarra-browser-surface-${SHAPE.id}"]`
+    );
+    expect(surfaceRoot).toBeTruthy();
+
+    // The animation (with translate/scale) used to live here on every render.
+    // That caused the chrome to jump on resize ticks or after browser reload (srcReloadKey)
+    // while the native webview (positioned by IPC to measured rect) stayed put → "separada del límite".
+    // Live surfaces now rely on Live wrapper for safe (opacity-only) one-shot enter; root must not carry it.
+    const anim = surfaceRoot.style.animation || '';
+    expect(anim).not.toContain('pizarraSurfaceEnter');
+
+    // Also exercise a resize update: after a commit the style should still be clean (no anim re-applied by re-render)
+    flushSync(() => {
+      const eHandle = getHandle('pizarra-browser-resize-e');
+      eHandle.dispatchEvent(makeMouseEvent('mousedown', 100, 100, 0));
+    });
+    flushSync(() => {
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 120, 100, 0));
+    });
+    flushSync(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup', 120, 100, 0));
+    });
+
+    const animAfterResize = surfaceRoot.style.animation || '';
+    expect(animAfterResize).not.toContain('pizarraSurfaceEnter');
 
     unmountBrowser(harness);
   });
