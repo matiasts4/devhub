@@ -384,52 +384,6 @@ export function getNativeTerminalBounds(element) {
   };
 }
 
-/**
- * Given a terminal's measured bounds and a list of overlay rects that must
- * stay on top of the native content (e.g. the "GRILLAS PREDEFINIDAS" popup),
- * return a (possibly smaller) bounds that does not overlap the overlays.
- * We prefer keeping the *bottom* portion of the terminal (crop from top)
- * because the grillas launcher and similar popups usually appear near the
- * top bar of the terminal view.
- *
- * This is the main technique that lets us avoid the old full "suspend/hide
- * the terminal" (which caused black screens) while still preventing the
- * native VTE from painting on top of the popup.
- */
-function computeBoundsAvoidingOverlays(terminalBounds, avoidRects = []) {
-  if (!terminalBounds || !avoidRects || avoidRects.length === 0) {
-    return terminalBounds;
-  }
-  let result = { ...terminalBounds };
-  for (const avoid of avoidRects) {
-    if (!avoid) continue;
-    const tTop = result.y;
-    const tBottom = result.y + result.height;
-    const aTop = avoid.y;
-    const aBottom = avoid.y + avoid.height;
-
-    // Vertical overlap?
-    if (aBottom > tTop && aTop < tBottom) {
-      if (aTop > tTop) {
-        // Overlay starts inside the terminal -> crop the top of the terminal
-        // so the overlay area is free of native pixels.
-        const newHeight = Math.max(0, aTop - tTop);
-        result = { ...result, height: newHeight };
-      } else if (aBottom < tBottom) {
-        // Overlay ends before the bottom of terminal -> keep the bottom part.
-        const newY = aBottom;
-        const newHeight = Math.max(0, tBottom - newY);
-        result = { ...result, y: newY, height: newHeight };
-      } else {
-        // Overlay completely covers the terminal vertically.
-        result = { ...result, height: 0 };
-      }
-    }
-    if (result.height <= 0 || result.width <= 0) break;
-  }
-  return result;
-}
-
 export function shouldOpenNativeVtePanel({
   isActivePanel,
   isVisibleInLayout = true,
@@ -559,7 +513,6 @@ export default function TerminalTTY({
   isVisibleInLayout = true,
   suspendNativeSurface = false,
   nativeSurfacePolicy = 'live',
-  avoidOverlayRects = [],
   runtimePlatform,
   showQuickCopyButton = true,
   swarmContext = null,
@@ -595,22 +548,6 @@ export default function TerminalTTY({
   const fitRef = useRef(null);
   const resizeObserverRef = useRef(null);
   const nativeResizeObserverRef = useRef(null);
-
-  // Helper that applies both the safety inset *and* any overlay avoidance
-  // (for popups like Grillas that must stay above the native content).
-  const getAdjustedNativeBounds = useCallback(() => {
-    const raw = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!raw) return null;
-    const avoided = computeBoundsAvoidingOverlays(raw, avoidOverlayRects || []);
-    if (!avoided || avoided.height <= 0 || avoided.width <= 0) return null;
-    // Safety inset (1px) so chrome/dividers are not overpainted.
-    return {
-      x: avoided.x + 1,
-      y: avoided.y + 1,
-      width: Math.max(0, avoided.width - 2),
-      height: Math.max(0, avoided.height - 2),
-    };
-  }, [avoidOverlayRects]);
   const nativeResizeRafRef = useRef(null);
   const nativeResizeSettleTimersRef = useRef([]);
   const wsRef = useRef(null);
@@ -958,11 +895,18 @@ export default function TerminalTTY({
 
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
-    const bounds = getAdjustedNativeBounds();
-    if (!bounds) {
+    const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!rawBounds) {
       cliLog(`CLIENT:${id}`, 'native VTE show skipped — invalid bounds');
       return;
     }
+    // Safety inset so split dividers and dock chrome are not overpainted by the native.
+    const bounds = {
+      x: rawBounds.x + 1,
+      y: rawBounds.y + 1,
+      width: Math.max(0, rawBounds.width - 2),
+      height: Math.max(0, rawBounds.height - 2),
+    };
     cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds });
     await Promise.resolve(
       setNativeVtePanelVisibility({
@@ -971,15 +915,22 @@ export default function TerminalTTY({
         bounds,
       })
     ).catch(handleNativeLeaseCommandError);
-  }, [handleNativeLeaseCommandError, id, getAdjustedNativeBounds]);
+  }, [handleNativeLeaseCommandError, id]);
 
   const resizeNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
-    const bounds = getAdjustedNativeBounds();
-    if (!bounds) {
+    const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!rawBounds) {
       cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
       return;
     }
+    // Safety inset so split dividers and dock chrome are not overpainted by the native.
+    const bounds = {
+      x: rawBounds.x + 1,
+      y: rawBounds.y + 1,
+      width: Math.max(0, rawBounds.width - 2),
+      height: Math.max(0, rawBounds.height - 2),
+    };
     cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
     await Promise.resolve(
       resizeNativeVtePanel({
@@ -987,7 +938,7 @@ export default function TerminalTTY({
         bounds,
       })
     ).catch(handleNativeLeaseCommandError);
-  }, [handleNativeLeaseCommandError, id, getAdjustedNativeBounds]);
+  }, [handleNativeLeaseCommandError, id]);
 
   const showAndResizeNativeLease = useCallback(async () => {
     await showNativeLease();
@@ -1642,8 +1593,15 @@ export default function TerminalTTY({
     if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
     const sendNativeResize = () => {
-      const bounds = getAdjustedNativeBounds();
-      if (!bounds) return;
+      const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+      if (!rawBounds) return;
+      // Safety inset (see getNativeTerminalBounds comment for rationale).
+      const bounds = {
+        x: rawBounds.x + 1,
+        y: rawBounds.y + 1,
+        width: Math.max(0, rawBounds.width - 2),
+        height: Math.max(0, rawBounds.height - 2),
+      };
       Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(
         handleNativeLeaseCommandError
       );
@@ -1712,20 +1670,6 @@ export default function TerminalTTY({
       window.removeEventListener('devhub:terminal-session-closing', handleSessionClosing);
     };
   }, [closeNativeLease, id]);
-
-  // React to changes in overlay avoid rects (launcher opens/closes) by pushing
-  // the current adjusted bounds to the native VTE. This makes the "carve out"
-  // for the popup take effect immediately without waiting for a layout RO.
-  useEffect(() => {
-    if (nativeVteOpened && !suspendNativeSurface) {
-      const b = getAdjustedNativeBounds();
-      if (b) {
-        Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds: b })).catch(
-          handleNativeLeaseCommandError
-        );
-      }
-    }
-  }, [avoidOverlayRects, nativeVteOpened, suspendNativeSurface, id, getAdjustedNativeBounds, handleNativeLeaseCommandError]);
 
   useEffect(() => {
     if (!shouldUseNativeRenderer) return undefined;

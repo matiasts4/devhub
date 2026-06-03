@@ -102,8 +102,10 @@ import {
 } from '@/lib/terminal/restorePolicyResolver';
 import {
   dispatchStartupRestoreQueue,
+  markStartupRestoreCompletedForSession,
   runOpenCodeStartupRestoreMutex,
   shouldBumpRelaunchCommand,
+  shouldRunStartupRestoreThisPageLoad,
 } from '@/lib/terminal/startupRestoreRunner';
 import {
   enrichOpenCodeRestoreContext,
@@ -498,16 +500,8 @@ function shortenSemanticLabel(value, maxLength = 40) {
   return `${raw.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function resolvePanelStartupConnectionState(
-  panel,
-  agentRun,
-  panelRestoreModes,
-  restoreBootstrapActive
-) {
+function resolvePanelStartupConnectionState(panel, panelRestoreModes) {
   if (panelRestoreModes?.[panel?.id] === 'suspended') {
-    return 'suspended';
-  }
-  if (restoreBootstrapActive && isOpenCodePanel(panel, agentRun)) {
     return 'suspended';
   }
   return undefined;
@@ -689,7 +683,6 @@ function renderWorkspacePanel(
     suspendNativeSurface,
     nativeSurfacePolicy,
     connectionState,
-    avoidOverlayRects = [],
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
@@ -870,7 +863,6 @@ function renderWorkspacePanel(
             onActivatePanel={onActivatePanel}
             suspendNativeSurface={Boolean(suspendNativeSurface)}
             nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
-            avoidOverlayRects={avoidOverlayRects}
           />
         </div>
       </div>
@@ -1059,31 +1051,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   // instead of full suspend/hide. This keeps the terminal "live" (no black screen)
   // in the uncovered area while the popup shows cleanly without the terminal
   // painting on top of it.
-  const [overlayAvoidRects, setOverlayAvoidRects] = useState([]);
-
-  // When the grid launcher opens, capture its content rect. We will use this to
-  // temporarily adjust (crop) the active terminal VTE bounds so the native does
-  // not paint over the popup. This keeps most of the terminal live/visible
-  // instead of the old full suspend that made everything black.
-  useEffect(() => {
-    if (!isGridLauncherOpen) {
-      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'grid-launcher'));
-      return;
-    }
-    const t = setTimeout(() => {
-      const el = document.querySelector('[data-testid="workspace-grid-launcher-content"]');
-      if (el) {
-        const r = el.getBoundingClientRect();
-        const avoid = { x: r.x, y: r.y, width: r.width, height: r.height, source: 'grid-launcher' };
-        setOverlayAvoidRects((prev) => {
-          const filtered = prev.filter((r) => r.source !== 'grid-launcher');
-          return [...filtered, avoid];
-        });
-      }
-    }, 20);
-    return () => clearTimeout(t);
-  }, [isGridLauncherOpen]);
-
   const [terminalSettingsModal, setTerminalSettingsModal] = useState({
     open: false,
     panelId: null,
@@ -1093,17 +1060,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     restorePolicy: 'manual',
   });
   const [restoreSettingsModal, setRestoreSettingsModal] = useState({ open: false });
-  const [restoreBootstrapActive, setRestoreBootstrapActive] = useState(false);
   const [panelRestoreModes, setPanelRestoreModes] = useState({});
   const getPanelConnectionState = useCallback(
-    (panel) =>
-      resolvePanelStartupConnectionState(
-        panel,
-        agentRunsByPanel[panel.id],
-        panelRestoreModes,
-        restoreBootstrapActive
-      ),
-    [agentRunsByPanel, panelRestoreModes, restoreBootstrapActive]
+    (panel) => resolvePanelStartupConnectionState(panel, panelRestoreModes),
+    [panelRestoreModes]
   );
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
@@ -1541,6 +1501,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   useEffect(() => {
     if (!isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
 
+    const sessionStorage =
+      typeof window !== 'undefined' ? window.sessionStorage : null;
+
+    if (!shouldRunStartupRestoreThisPageLoad(sessionStorage)) {
+      hasRunStartupRestoreRef.current = true;
+      return undefined;
+    }
+
     const snapshotWorkspaces =
       workspacesRef.current.length > 0 ? workspacesRef.current : workspaces;
 
@@ -1605,7 +1573,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       });
       if (Object.keys(suspendedSeed).length > 0) {
         setPanelRestoreModes(suspendedSeed);
-        setRestoreBootstrapActive(true);
       }
     }
 
@@ -1744,7 +1711,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       } finally {
         if (!cancelled) {
           startupRestoreCompletedRef.current = true;
-          setRestoreBootstrapActive(false);
+          markStartupRestoreCompletedForSession(sessionStorage);
         }
       }
     };
@@ -2003,18 +1970,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       effectiveRightDockState.maximizedView === 'pizarra');
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
-  // We deliberately do *not* suspend native terminals for transient overlays
-  // such as the grid launcher (Grillas Predefinidas dropdown), swarm wizard,
-  // or restore settings modal. Terminals must stay live and visible (no black)
-  // even when any modal/popup is placed on top of them. The web-rendered
-  // chrome (modal, dropdown, backdrop) sits in the webview layer; by keeping
-  // the native VTE 'live' the content remains there underneath (or around a
-  // small popup) and recovers instantly when the overlay closes.
-  // Previously these flags forced 'transient-overlay' / 'native-suspended'
-  // which made the entire terminal area go black.
-  // (Drag-based suspend was already removed earlier for the same live-resize
-  // reason.)
-  const shouldSuspendNativeSurfaces = false;
+  // Suspend native terminals when certain transient UI overlays are open
+  // (grid launcher "Grillas Predefinidas", swarm wizard, restore settings).
+  // This is necessary because the native VTE widgets are always composited
+  // *above* the webview content. If we don't hide them, the terminal content
+  // paints over the modal/popup (the "se ve por encima del todo" problem).
+  // Hiding the native lets the web-rendered modal render cleanly on top.
+  // (We already removed the drag-based suspends earlier to keep live resize.)
+  const shouldSuspendNativeSurfaces =
+    isGridLauncherOpen ||
+    swarmLaunchWizardOpen ||
+    restoreSettingsModal.open;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
@@ -4060,7 +4026,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           delete next[panelId];
           return next;
         });
-        setRestoreBootstrapActive(false);
       };
 
       if (sessionKind === 'opencode') {
@@ -4914,7 +4879,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                     panelId: focusedPanel.id,
                                     prefs: terminalRendererPreferences,
                                   }),
-                                  avoidOverlayRects: overlayAvoidRects,
                                   onResetRendererToXterm: () =>
                                     handleResetPanelRendererToXterm(ws.id, focusedPanel.id),
                                   connectionState: getPanelConnectionState(focusedPanel),
@@ -4984,7 +4948,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                       panel.id
                                                     ),
                                                   connectionState: getPanelConnectionState(panel),
-                                                  avoidOverlayRects: overlayAvoidRects,
                                                 })}
                                               </Panel>
                                               {panelIndex < column.panels.length - 1 ? (
@@ -5059,7 +5022,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                 column.panels[0].id
                                               ),
                                             connectionState: getPanelConnectionState(column.panels[0]),
-                                            avoidOverlayRects: overlayAvoidRects,
                                           })}
                                         </div>
                                       )}
