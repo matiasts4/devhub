@@ -148,7 +148,7 @@ export default function PizarraLiveSurfaceLayer({
             onMouseDown={(ev) => onDividerMouseDown?.(ev, div)}
             style={{
               position: 'absolute',
-              zIndex: 95,
+              zIndex: 110,
               pointerEvents: 'auto',
               background: 'rgba(88, 166, 255, 0.15)',
               border: '1px solid rgba(88, 166, 255, 0.4)',
