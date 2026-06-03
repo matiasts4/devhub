@@ -392,17 +392,17 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     expect(failureView).toBeTruthy();
   });
 
-  test('header hover changes border-bottom-color without transform', () => {
-    // The pizarra browser pane wrapper has an explicit onMouseEnter
-    // that changes the border-bottom color. We assert the source
-    // has the wiring and the wrapper's transform is 'none'.
+  test('header hover data attrs and no transform on wrapper', () => {
+    // The chrome wrapper uses data-pizarra-header-hovered / data-pizarra-header-active
+    // (driven by onMouseEnter/Leave and button mousedowns) for visual states on the
+    // top chrome (now including the draggable tab/header area). We assert the source
+    // has the hover wiring and that the wrapper style does not introduce a transform
+    // (critical for native browser overlay sync).
     const fs = require('node:fs');
     const path = require('node:path');
     const source = fs.readFileSync(path.join(__dirname, '..', 'PizarraBrowserSurface.jsx'), 'utf8');
-    // The wrapper div must have an onMouseEnter that changes
-    // border-bottom-color (or has a `borderBottomColor` state).
     expect(/onMouseEnter/.test(source)).toBe(true);
-    expect(/borderBottomColor|border-bottom/.test(source)).toBe(true);
+    expect(/data-pizarra-header-hovered|data-pizarra-header-active/.test(source)).toBe(true);
     // The PizarraBrowserSurface must not introduce a transform on
     // the wrapper div style.
     const wrapperMatch = source.match(

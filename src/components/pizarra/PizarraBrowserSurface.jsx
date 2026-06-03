@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // eslint-disable-next-line no-unused-vars -- false positive: these icon names are JSX-tag references (lucide-react proxies)
-import { Move, RefreshCw, X } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 // eslint-disable-next-line no-unused-vars -- false positive: WorkspaceBrowserPane is rendered inside the JSX below; eslint-plugin-react v7.37.5 + ESLint 9.23.0 fails to track the JSX usage
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
@@ -35,7 +35,6 @@ import {
   resolveHandleSizing,
   FRAME_TRANSITION,
   SURFACE_ENTER_ANIMATION,
-  ACCENT,
 } from '@/lib/pizarra/surfaceMotion';
 
 const FRAME_INSET = 10;
@@ -264,11 +263,10 @@ export default function PizarraBrowserSurface({
   }, []);
 
   // pizarra-ux-overhaul: hover/active micro-states for the inner
-  // wrapper (the "header" row containing the drag handle, address
-  // bar, refresh button, load indicator). Hover is a border-bottom
-  // color tint; active (mousedown on a button in the wrapper) is a
-  // 1px inset accent border. NO transform — the drag handle must
-  // stay grabbable.
+  // wrapper (the chrome frame containing tabstrip + browser pane).
+  // The top area (tabstrip container) now serves as the draggable header
+  // (no separate floating Move "crucecita" button). Hover/active for visual polish.
+  // NO transform on wrapper — native overlays.
   const [isHovered, setIsHovered] = useState(false);
   const [isButtonActive, setIsButtonActive] = useState(false);
   const handleWrapperMouseEnter = useCallback(() => setIsHovered(true), []);
@@ -525,34 +523,9 @@ export default function PizarraBrowserSurface({
           pointerEvents: 'auto',
         }}
       >
-        <button
-          type="button"
-          data-testid="pizarra-drag-handle"
-          data-pizarra-drag-handle-id={`pizarra-browser-drag-handle-${shape.id}`}
-          data-pizarra-surface-drag-handle="true"
-          onMouseDown={handleDragStart}
-          style={{
-            position: 'absolute',
-            top: 10,
-            left: 10,
-            zIndex: 30,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 28,
-            height: 28,
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.08)',
-            background: 'rgba(6, 16, 27, 0.9)',
-            color: '#9fb5d1',
-            cursor: 'move',
-            backdropFilter: 'blur(12px)',
-          }}
-          title="Mover navegador"
-        >
-          <Move size={14} />
-        </button>
-
+        {/* Close button kept minimal, top-right. Drag is now via the browser's own top chrome (tab strip area)
+            like the terminal's full header bar. No separate "crucecita" Move button that wastes space or
+            looks inconsistent. Clicking the tab/header background selects/moves the surface. */}
         <button
           type="button"
           data-testid="pizarra-browser-close"
@@ -586,6 +559,11 @@ export default function PizarraBrowserSurface({
           <X size={14} />
         </button>
 
+        {/* The tab strip / top browser chrome area now acts as the draggable header, exactly like
+            the terminal's <div data-pizarra-surface-drag-handle ... onMouseDown={handleHeader...} >.
+            This unifies the affordance, removes the floating Move icon, and doesn't waste extra
+            space above the browser content. Tabs/toolbar clicks are handled by their components
+            (they stopPropagation on interactive elements). */}
         <div
           style={{
             position: 'absolute',
@@ -593,6 +571,9 @@ export default function PizarraBrowserSurface({
             minHeight: 0,
           }}
           data-tabs-mode={tabsMode}
+          data-pizarra-surface-drag-handle="true"
+          data-testid="pizarra-drag-handle"
+          onMouseDown={handleDragStart}
         >
           {showTabStrip ? (
             <BrowserTabStrip

@@ -228,8 +228,8 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
     const dragHandle = getHandle('pizarra-drag-handle');
     expect(dragHandle).toBeTruthy();
 
-    // Dispatch mousedown on the drag handle (the Move icon button).
-    // The resize handler's closest() guard must bail out.
+    // Dispatch mousedown on the drag area (now the top tab/header container).
+    // Interacting with the drag affordance must not start a resize.
     flushSync(() => {
       dragHandle.dispatchEvent(makeMouseEvent('mousedown', 30, 60, 0));
     });
