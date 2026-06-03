@@ -382,7 +382,7 @@ function LiveSurfaceItem({
         }
       }
     },
-    [onMoveElementRef, registryRef]
+    [onMoveElementRef, registryRef, resizeNativeBrowser, setNativeBrowserVisibility]
   );
 
   // pizarra-multi-select: upgrade the surface's single-arg onSelect(id) into
