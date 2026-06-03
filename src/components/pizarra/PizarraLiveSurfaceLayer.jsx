@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import CanvasTerminal from './CanvasTerminal';
 import PizarraBrowserSurface from './PizarraBrowserSurface';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
@@ -26,6 +26,11 @@ export default function PizarraLiveSurfaceLayer({
   onWorkspaceWindowSelect,
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
+  // New (optional) — for draggable "zonas" / layout dividers between adjacent live surfaces.
+  // The parent (PizarraPane) computes them and provides the handler that performs
+  // the paired resize when a divider is dragged.
+  layoutDividers = [],
+  onDividerMouseDown,
 }) {
   const { projectRect, zoom } = useCanvasViewport();
 
@@ -63,7 +68,6 @@ export default function PizarraLiveSurfaceLayer({
         position: 'absolute',
         inset: 0,
         pointerEvents: 'none',
-        // No fixed zIndex here — each item manages its own via zIndex prop
       }}
     >
       {surfaceShapes.map((shape) => {
@@ -75,8 +79,6 @@ export default function PizarraLiveSurfaceLayer({
         });
         const selected = selectedElementIds.includes(shape.id);
         const isActiveTerminal = shape.id === activeTerminalId;
-        // Selected or active terminal always floats above everything else.
-        // Non-selected items get zIndex based on insertion order (index in array).
         const zIndex = selected || isActiveTerminal ? 100 : 5;
 
         return (
@@ -107,6 +109,66 @@ export default function PizarraLiveSurfaceLayer({
             onWorkspaceWindowAdd={onWorkspaceWindowAdd}
             onWorkspaceWindowRemove={onWorkspaceWindowRemove}
           />
+        );
+      })}
+
+      {/* Draggable layout dividers (the "zonas arrastrables" the user wanted).
+          Purely presentational here — click/drag is forwarded to the parent
+          via onDividerMouseDown. The parent owns the resize math so that the
+          two (or more) neighboring windows auto-adjust. */}
+      {(layoutDividers || []).map((div) => {
+        const isV = div.type === 'v';
+        const screenRect = projectRect({
+          x: isV ? div.x - 5 : div.x,
+          y: isV ? div.y : div.y - 5,
+          width: isV ? 10 : div.length,
+          height: isV ? div.length : 10,
+        });
+
+        const barStyle = isV
+          ? {
+              left: screenRect.x,
+              top: screenRect.y,
+              width: 10,
+              height: screenRect.height,
+              cursor: 'col-resize',
+            }
+          : {
+              left: screenRect.x,
+              top: screenRect.y,
+              width: screenRect.width,
+              height: 10,
+              cursor: 'row-resize',
+            };
+
+        return (
+          <div
+            key={div.id}
+            data-testid={`pizarra-layout-divider-${div.id}`}
+            onMouseDown={(ev) => onDividerMouseDown?.(ev, div)}
+            style={{
+              position: 'absolute',
+              zIndex: 95,
+              pointerEvents: 'auto',
+              background: 'rgba(88, 166, 255, 0.15)',
+              border: '1px solid rgba(88, 166, 255, 0.4)',
+              borderRadius: 4,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 80ms ease',
+              ...barStyle,
+            }}
+          >
+            <div
+              aria-hidden
+              style={{
+                background: 'rgba(88, 166, 255, 0.85)',
+                borderRadius: 999,
+                ...(isV ? { width: 3, height: 18 } : { width: 18, height: 3 }),
+              }}
+            />
+          </div>
         );
       })}
     </div>
@@ -210,118 +272,129 @@ function LiveSurfaceItem({
     };
   }, [registryRef, shape.id]);
 
-  const handleMove = useCallback(({ deltaX = 0, deltaY = 0 }) => {
-    const zoom = resolvedZoomRef.current || 1;
-    // Capture drag-start position + group membership on the first tick only.
-    if (!dragStartBoundsRef.current) {
-      dragStartBoundsRef.current = { x: boundsRef.current.x, y: boundsRef.current.y };
-      const selectedIds = selectedIdsRef.current || [];
-      const isGroupDrag =
-        selectedIds.length > 1 && selectedIds.includes(shapeRef.current.id);
-      if (isGroupDrag) {
-        const starts = new Map();
-        for (const sid of selectedIds) {
+  const handleMove = useCallback(
+    ({ deltaX = 0, deltaY = 0 }) => {
+      const zoom = resolvedZoomRef.current || 1;
+      // Capture drag-start position + group membership on the first tick only.
+      if (!dragStartBoundsRef.current) {
+        dragStartBoundsRef.current = { x: boundsRef.current.x, y: boundsRef.current.y };
+        const selectedIds = selectedIdsRef.current || [];
+        const isGroupDrag = selectedIds.length > 1 && selectedIds.includes(shapeRef.current.id);
+        if (isGroupDrag) {
+          const starts = new Map();
+          for (const sid of selectedIds) {
+            const entry = registryRef.current.get(sid);
+            if (entry && entry.el) {
+              starts.set(sid, { x: entry.bounds.x, y: entry.bounds.y });
+            }
+          }
+          groupDragStartRef.current = starts;
+        } else {
+          groupDragStartRef.current = null;
+        }
+      }
+      dragScreenOffsetRef.current.x += deltaX * zoom;
+      dragScreenOffsetRef.current.y += deltaY * zoom;
+      const offsetX = dragScreenOffsetRef.current.x;
+      const offsetY = dragScreenOffsetRef.current.y;
+
+      const group = groupDragStartRef.current;
+      if (group) {
+        // Move EVERY selected sibling (including self) by the same screen offset.
+        for (const [sid, start] of group) {
           const entry = registryRef.current.get(sid);
           if (entry && entry.el) {
-            starts.set(sid, { x: entry.bounds.x, y: entry.bounds.y });
+            entry.el.style.left = start.x + offsetX + 'px';
+            entry.el.style.top = start.y + offsetY + 'px';
           }
         }
-        groupDragStartRef.current = starts;
-      } else {
-        groupDragStartRef.current = null;
+      } else if (wrapperRef.current) {
+        const start = dragStartBoundsRef.current;
+        wrapperRef.current.style.left = start.x + offsetX + 'px';
+        wrapperRef.current.style.top = start.y + offsetY + 'px';
       }
-    }
-    dragScreenOffsetRef.current.x += deltaX * zoom;
-    dragScreenOffsetRef.current.y += deltaY * zoom;
-    const offsetX = dragScreenOffsetRef.current.x;
-    const offsetY = dragScreenOffsetRef.current.y;
+    },
+    [registryRef]
+  );
 
-    const group = groupDragStartRef.current;
-    if (group) {
-      // Move EVERY selected sibling (including self) by the same screen offset.
-      for (const [sid, start] of group) {
-        const entry = registryRef.current.get(sid);
-        if (entry && entry.el) {
-          entry.el.style.left = (start.x + offsetX) + 'px';
-          entry.el.style.top = (start.y + offsetY) + 'px';
+  const handleDragEnd = useCallback(
+    ({ totalDeltaX = 0, totalDeltaY = 0 }) => {
+      dragStartBoundsRef.current = null;
+      const group = groupDragStartRef.current;
+      groupDragStartRef.current = null;
+      if (group) {
+        // Commit each selected sibling's new position once (canvas units).
+        for (const sid of group.keys()) {
+          const entry = registryRef.current.get(sid);
+          const siblingShape = entry?.shape;
+          if (siblingShape) {
+            onMoveElementRef.current?.(sid, {
+              x: siblingShape.x + totalDeltaX,
+              y: siblingShape.y + totalDeltaY,
+            });
+          }
         }
+        return;
       }
-    } else if (wrapperRef.current) {
-      const start = dragStartBoundsRef.current;
-      wrapperRef.current.style.left = (start.x + offsetX) + 'px';
-      wrapperRef.current.style.top = (start.y + offsetY) + 'px';
-    }
-  }, [registryRef]);
-
-  const handleDragEnd = useCallback(({ totalDeltaX = 0, totalDeltaY = 0 }) => {
-    dragStartBoundsRef.current = null;
-    const group = groupDragStartRef.current;
-    groupDragStartRef.current = null;
-    if (group) {
-      // Commit each selected sibling's new position once (canvas units).
-      for (const sid of group.keys()) {
-        const entry = registryRef.current.get(sid);
-        const siblingShape = entry?.shape;
-        if (siblingShape) {
-          onMoveElementRef.current?.(sid, {
-            x: siblingShape.x + totalDeltaX,
-            y: siblingShape.y + totalDeltaY,
-          });
-        }
-      }
-      return;
-    }
-    const s = shapeRef.current;
-    onMoveElementRef.current?.(s.id, {
-      x: s.x + totalDeltaX,
-      y: s.y + totalDeltaY,
-    });
-  }, [onMoveElementRef, registryRef]);
+      const s = shapeRef.current;
+      onMoveElementRef.current?.(s.id, {
+        x: s.x + totalDeltaX,
+        y: s.y + totalDeltaY,
+      });
+    },
+    [onMoveElementRef, registryRef]
+  );
 
   // pizarra-multi-select: upgrade the surface's single-arg onSelect(id) into
   // onSelect(id, multi). The shift flag is read from modifierRef (set in the
   // wrapper's onMouseDownCapture). If the surface is already part of a
   // multi-selection and no modifier is held, we PRESERVE the group so a
   // plain drag moves all selected surfaces instead of collapsing to one.
-  const handleSelectWithModifier = useCallback((id) => {
-    const shift = modifierRef.current;
-    if (!shift) {
-      const ids = selectedIdsRef.current || [];
-      if (ids.length > 1 && ids.includes(id)) {
-        return;
+  const handleSelectWithModifier = useCallback(
+    (id) => {
+      const shift = modifierRef.current;
+      if (!shift) {
+        const ids = selectedIdsRef.current || [];
+        if (ids.length > 1 && ids.includes(id)) {
+          return;
+        }
       }
-    }
-    onSelect?.(id, shift);
-  }, [onSelect]);
+      onSelect?.(id, shift);
+    },
+    [onSelect]
+  );
 
   // On drop, React re-renders the wrapper with new bounds (left/top from
   // the reducer). The direct DOM style is overridden by React's commit.
   // We only need to reset the offset tracking so the next drag starts clean.
   useLayoutEffect(() => {
     dragScreenOffsetRef.current = { x: 0, y: 0 };
-   
   }, [shape.x, shape.y]);
-
 
   // pizarra-drag-fluidity: wrapper is sized/positioned to the element
   // (not inset:0). Two inset:0 divs stacked on the full canvas created
   // overlapping hit areas that made both elements interfere during drag.
   // Children receive localBounds with x=0,y=0 so the wrapper owns the
   // absolute positioning; screenX/Y are preserved for VTE sync.
-  const localBounds = useMemo(() => ({
-    x: 0,
-    y: 0,
-    width: bounds.width,
-    height: bounds.height,
-    screenX: bounds.screenX,
-    screenY: bounds.screenY,
-  }), [bounds.width, bounds.height, bounds.screenX, bounds.screenY]);
+  const localBounds = useMemo(
+    () => ({
+      x: 0,
+      y: 0,
+      width: bounds.width,
+      height: bounds.height,
+      screenX: bounds.screenX,
+      screenY: bounds.screenY,
+    }),
+    [bounds.width, bounds.height, bounds.screenX, bounds.screenY]
+  );
 
   if (shape.type === SHAPE_TYPES.TERMINAL) {
     return (
       <div
         ref={wrapperRef}
-        onMouseDownCapture={(e) => { modifierRef.current = e.shiftKey; }}
+        onMouseDownCapture={(e) => {
+          modifierRef.current = e.shiftKey;
+        }}
         style={{
           position: 'absolute',
           left: bounds.x,
@@ -356,7 +429,9 @@ function LiveSurfaceItem({
   return (
     <div
       ref={wrapperRef}
-      onMouseDownCapture={(e) => { modifierRef.current = e.shiftKey; }}
+      onMouseDownCapture={(e) => {
+        modifierRef.current = e.shiftKey;
+      }}
       style={{
         position: 'absolute',
         left: bounds.x,

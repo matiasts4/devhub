@@ -778,9 +778,11 @@ function PizarraInner({
       const newElements = [];
 
       if (presetType === 'dev-split') {
-        const bw = Math.max(320, Math.round(vis.width * 0.55));
-        const tw = Math.max(240, vis.width - bw - 24);
-        const h = Math.max(280, Math.min(Math.round(vis.height * 0.78), 620));
+        // Improved: browser gets primary real-estate (common for web/dev work),
+        // terminals get enough width for readable output. Heights adapt to viewport.
+        const bw = Math.max(360, Math.round(vis.width * 0.62));
+        const tw = Math.max(260, vis.width - bw - 24);
+        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
         newElements.push(
           createShape(SHAPE_TYPES.BROWSER, {
             x: cx - bw - 12,
@@ -798,10 +800,12 @@ function PizarraInner({
           })
         );
       } else if (presetType === 'dev-trio') {
-        const bw = Math.max(320, Math.round(vis.width * 0.52));
-        const tw = Math.max(220, vis.width - bw - 24);
-        const h = Math.max(240, Math.min(Math.round(vis.height * 0.72), 520));
-        const th = Math.max(120, Math.round((h - 12) / 2));
+        // Improved: browser still prominent on the left, right column gives
+        // two terminals decent vertical space (logs/cmd output love height).
+        const bw = Math.max(340, Math.round(vis.width * 0.5));
+        const tw = Math.max(240, vis.width - bw - 24);
+        const h = Math.max(280, Math.min(Math.round(vis.height * 0.8), 620));
+        const th = Math.max(140, Math.round((h - 14) / 2));
         newElements.push(
           createShape(SHAPE_TYPES.BROWSER, {
             x: cx - bw - 12,
@@ -822,15 +826,15 @@ function PizarraInner({
         newElements.push(
           createShape(SHAPE_TYPES.TERMINAL, {
             x: cx + 12,
-            y: cy - h / 2 + th + 12,
+            y: cy - h / 2 + th + 14,
             width: tw,
             height: th,
             label: 'Terminal Bottom',
           })
         );
       } else if (presetType === 'dual-browser') {
-        const bw = Math.max(280, Math.round((vis.width - 24) / 2));
-        const h = Math.max(280, Math.min(Math.round(vis.height * 0.78), 620));
+        const bw = Math.max(300, Math.round((vis.width - 24) / 2));
+        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
         newElements.push(
           createShape(SHAPE_TYPES.BROWSER, {
             x: cx - bw - 12,
@@ -872,6 +876,174 @@ function PizarraInner({
   );
 
   const selectedElement = selectedElements.length === 1 ? selectedElements[0] : null;
+
+  // --- Draggable layout dividers (zonas arrastrables) ---
+  // Pure computation: find pairs of live surfaces whose edges are close and
+  // overlapping; these become the thin draggable bars the user can pull to
+  // auto-resize the two sides of the "zone".
+  const liveSurfacesForDividers = useMemo(() => {
+    return (mergedElements || []).filter(
+      (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
+    );
+  }, [mergedElements]);
+
+  const layoutDividers = useMemo(() => {
+    const live = liveSurfacesForDividers;
+    const result = [];
+    const tol = 28;
+
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i];
+        const b = live[j];
+
+        // vertical
+        const aRight = (a.x || 0) + (a.width || 400);
+        const bLeft = b.x || 0;
+        if (Math.abs(aRight - bLeft) < tol) {
+          const y1 = Math.max(a.y || 0, b.y || 0);
+          const y2 = Math.min((a.y || 0) + (a.height || 300), (b.y || 0) + (b.height || 300));
+          if (y2 - y1 > 60) {
+            result.push({
+              id: `v-${a.id}-${b.id}`,
+              type: 'v',
+              x: (aRight + bLeft) / 2,
+              y: y1,
+              length: y2 - y1,
+              leftId: a.id,
+              rightId: b.id,
+            });
+          }
+        }
+        const bRight = (b.x || 0) + (b.width || 400);
+        const aLeft = a.x || 0;
+        if (Math.abs(bRight - aLeft) < tol) {
+          const y1 = Math.max(a.y || 0, b.y || 0);
+          const y2 = Math.min((a.y || 0) + (a.height || 300), (b.y || 0) + (b.height || 300));
+          if (y2 - y1 > 60) {
+            result.push({
+              id: `v-${b.id}-${a.id}`,
+              type: 'v',
+              x: (bRight + aLeft) / 2,
+              y: y1,
+              length: y2 - y1,
+              leftId: b.id,
+              rightId: a.id,
+            });
+          }
+        }
+
+        // horizontal
+        const aBottom = (a.y || 0) + (a.height || 300);
+        const bTop = b.y || 0;
+        if (Math.abs(aBottom - bTop) < tol) {
+          const x1 = Math.max(a.x || 0, b.x || 0);
+          const x2 = Math.min((a.x || 0) + (a.width || 400), (b.x || 0) + (b.width || 400));
+          if (x2 - x1 > 80) {
+            result.push({
+              id: `h-${a.id}-${b.id}`,
+              type: 'h',
+              y: (aBottom + bTop) / 2,
+              x: x1,
+              length: x2 - x1,
+              topId: a.id,
+              bottomId: b.id,
+            });
+          }
+        }
+        const bBottom = (b.y || 0) + (b.height || 300);
+        const aTop = a.y || 0;
+        if (Math.abs(bBottom - aTop) < tol) {
+          const x1 = Math.max(a.x || 0, b.x || 0);
+          const x2 = Math.min((a.x || 0) + (a.width || 400), (b.x || 0) + (b.width || 400));
+          if (x2 - x1 > 80) {
+            result.push({
+              id: `h-${b.id}-${a.id}`,
+              type: 'h',
+              y: (bBottom + aTop) / 2,
+              x: x1,
+              length: x2 - x1,
+              topId: b.id,
+              bottomId: a.id,
+            });
+          }
+        }
+      }
+    }
+    return result;
+  }, [liveSurfacesForDividers]);
+
+  // Handler that the layer will call on mousedown of a divider.
+  // We capture the pair and start a window-level drag that resizes the two
+  // sides (auto-adjust) while the user moves the mouse. This is the "zonas
+  // arrastrables" + "las ventanitas se autoajusten" behavior.
+  const handleDividerMouseDown = useCallback(
+    (e, divider) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      const vis = getVisibleCanvasRegion();
+      const z = vis && vis.z && vis.z > 0 ? vis.z : 1;
+
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+
+      const leftOrTop = liveSurfacesForDividers.find(
+        (s) => s.id === (divider.leftId || divider.topId)
+      );
+      const rightOrBottom = liveSurfacesForDividers.find(
+        (s) => s.id === (divider.rightId || divider.bottomId)
+      );
+      if (!leftOrTop || !rightOrBottom) return;
+
+      const leftStart = {
+        x: leftOrTop.x || 0,
+        y: leftOrTop.y || 0,
+        width: leftOrTop.width || 400,
+        height: leftOrTop.height || 300,
+      };
+      const rightStart = {
+        x: rightOrBottom.x || 0,
+        y: rightOrBottom.y || 0,
+        width: rightOrBottom.width || 400,
+        height: rightOrBottom.height || 300,
+      };
+
+      const isV = divider.type === 'v';
+
+      const move = (moveEvent) => {
+        const dx = (moveEvent.clientX - startClientX) / z;
+        const dy = (moveEvent.clientY - startClientY) / z;
+
+        if (isV) {
+          const newLeftW = Math.max(160, leftStart.width + dx);
+          const delta = newLeftW - leftStart.width;
+          onUpdateElement?.(divider.leftId, { width: newLeftW, x: leftStart.x });
+          onUpdateElement?.(divider.rightId, {
+            x: rightStart.x + delta,
+            width: Math.max(160, rightStart.width - delta),
+          });
+        } else {
+          const newTopH = Math.max(120, leftStart.height + dy);
+          const delta = newTopH - leftStart.height;
+          onUpdateElement?.(divider.topId, { height: newTopH, y: leftStart.y });
+          onUpdateElement?.(divider.bottomId, {
+            y: rightStart.y + delta,
+            height: Math.max(120, rightStart.height - delta),
+          });
+        }
+      };
+
+      const up = () => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+      };
+
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up, { once: true });
+    },
+    [liveSurfacesForDividers, onUpdateElement]
+  );
 
   return (
     <>
@@ -930,6 +1102,9 @@ function PizarraInner({
           onWorkspaceWindowSelect={onWorkspaceWindowSelect}
           onWorkspaceWindowAdd={onWorkspaceWindowAdd}
           onWorkspaceWindowRemove={onWorkspaceWindowRemove}
+          // Draggable zonas / dividers
+          layoutDividers={layoutDividers}
+          onDividerMouseDown={handleDividerMouseDown}
         />
       </div>
 
