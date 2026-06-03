@@ -60,7 +60,8 @@ import {
   sanitizeRightDockState,
   writeRightDockState,
 } from './workspace/rightDockState';
-import { applyRightDockTabSelect } from './workspace/rightDockLayout';
+import { applyRightDockTabSelect, applyZedOpenUrlDockUpdate } from './workspace/rightDockLayout';
+import { isValidZedOpenUrlEvent } from './zedOpenUrlEvent';
 import {
   buildBrowserWindowLabel,
   readBrowserWindowStates,
@@ -1552,7 +1553,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               preferences: restorePrefs,
             });
 
-            if (policy === 'auto' || policy === 'manual') {
+            // Manual/off stay suspended until the user continues; auto relaunches via queue.
+            if (policy === 'manual' || policy === 'off') {
               suspendedSeed[panel.id] = 'suspended';
             }
           });
@@ -1712,10 +1714,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, dockWorkspaceId, isClientLoaded, projectId, storage]);
 
   useEffect(() => {
-    if (rightDockState.visible && rightDockState.activeTab === 'editor') {
+    if (rightDockState.visible) {
       setHasMountedRightDock(true);
     }
-  }, [rightDockState.activeTab, rightDockState.visible]);
+  }, [rightDockState.visible]);
 
   useEffect(() => {
     if (!isDraggingDock) return undefined;
@@ -2211,7 +2213,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
-      const currentState = prev ?? { ...DEFAULT_RIGHT_DOCK_STATE };
+      const currentState = prev ?? { ... ...DEFAULT_RIGHT_DOCK_STATE };
       const resolvedState =
         typeof nextValue === 'function'
           ? nextValue(currentState)
@@ -2219,6 +2221,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return sanitizeRightDockState(resolvedState);
     });
   }, []);
+
+  const lastZedOpenUrlRef = useRef({ url: null, label: null });
 
   // Operator action cards — consumed from OperatorActionsDispatchContext (provider lives in App.js)
   const { cards: operatorCards, confirmCard, cancelCard } = useOperatorActionsDispatch();

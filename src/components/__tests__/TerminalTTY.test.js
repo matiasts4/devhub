@@ -11,13 +11,16 @@ const mockResizeObserverInstances = [];
 const mockNativeVteBridge = {
   closeNativeVtePanel: jest.fn(),
   focusNativeVtePanel: jest.fn(),
+  getCachedNativeVteProbeResult: jest.fn(() => null),
   isNativeVteRuntimeAvailable: jest.fn(() => false),
   openNativeVtePanel: jest.fn(async () => ({ opened: false, reason: 'tauri-unavailable' })),
   pasteNativeVtePanel: jest.fn(async () => ({ supported: false, reason: 'tauri-unavailable' })),
   probeNativeVte: jest.fn(async () => ({ ready: false, reason: 'tauri-unavailable' })),
+  resetNativeVteProbeCache: jest.fn(),
   resizeNativeVtePanel: jest.fn(),
   setNativeVtePanelVisibility: jest.fn(),
   subscribeNativeVteEvents: jest.fn(() => jest.fn()),
+  warmNativeVteProbe: jest.fn(async () => ({ ready: false, reason: 'tauri-unavailable' })),
 };
 
 jest.mock('framer-motion', () => ({
@@ -326,6 +329,10 @@ describe('shouldShowTerminalStatusOverlay()', () => {
   test('does not show overlay while initializing or when connected', () => {
     expect(shouldShowTerminalStatusOverlay(true, null, 'connecting')).toBe(false);
     expect(shouldShowTerminalStatusOverlay(false, null, 'connected')).toBe(false);
+  });
+
+  test('shows suspended overlay even while initializing (native VTE probe)', () => {
+    expect(shouldShowTerminalStatusOverlay(true, null, 'suspended')).toBe(true);
   });
 });
 
@@ -1198,7 +1205,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-1',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
     expect(mockTerminalInstances).toHaveLength(0);
@@ -1373,7 +1380,7 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
         expect.objectContaining({
           panelId: 'term-native-container-bounds',
-          bounds: expect.objectContaining({ x: 120, y: 180, width: 840, height: 520 }),
+          bounds: expect.objectContaining({ x: 121, y: 181, width: 838, height: 518 }),
         })
       );
     } finally {
@@ -1434,7 +1441,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-resize',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
   });
@@ -1473,7 +1480,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-panel-resize',
-        bounds: expect.objectContaining({ x: 24, y: 8, width: 920, height: 680 }),
+        bounds: expect.objectContaining({ x: 25, y: 9, width: 918, height: 678 }),
       })
     );
   });
@@ -1544,7 +1551,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-return-resize',
-        bounds: expect.objectContaining({ x: 984, y: 104, width: 920, height: 900 }),
+        bounds: expect.objectContaining({ x: 985, y: 105, width: 918, height: 898 }),
       })
     );
   });
@@ -1942,7 +1949,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-close',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
       panelId: 'term-native-close',
@@ -1950,7 +1957,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-close',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
   });
@@ -2037,7 +2044,7 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
         expect.objectContaining({
           panelId: 'term-native-open-after-bounds-settle',
-          bounds: expect.objectContaining({ width: 1280, height: 720 }),
+          bounds: expect.objectContaining({ width: 1278, height: 718 }),
         })
       );
       expect(view.container.textContent).not.toContain('Iniciando terminal...');
@@ -2119,7 +2126,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-stolen-lease',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledTimes(2);
   });
@@ -2184,7 +2191,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-reshow-visible',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
@@ -2220,7 +2227,6 @@ describe('TerminalTTY renderer fallback UI', () => {
         },
       })
     );
-    await new Promise((resolve) => setTimeout(resolve, 140));
     await flushTerminalEffects();
 
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
@@ -2247,12 +2253,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-workspace-sync',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-workspace-sync',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
   });
@@ -2325,12 +2331,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-suspend-resume',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-suspend-resume',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
     expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
@@ -2415,7 +2421,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-dock-fallback',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({ panelId: 'term-native-dock-fallback' })
@@ -2528,12 +2534,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-suspend-left',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-suspend-right',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({ panelId: 'term-native-suspend-left' })

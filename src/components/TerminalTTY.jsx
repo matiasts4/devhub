@@ -99,14 +99,14 @@ export function shouldShowTerminalViewport(isInitializing, initError) {
 }
 
 export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
+  if (connectionState === 'suspended') return true;
   if (isInitializing) return false;
 
   return Boolean(
     initError ||
     connectionState === 'error' ||
     connectionState === 'disconnected' ||
-    connectionState === 'terminated' ||
-    connectionState === 'suspended'
+    connectionState === 'terminated'
   );
 }
 
@@ -376,23 +376,11 @@ export function getNativeTerminalBounds(element) {
     }
   }
 
-  // Inset by 1px on all sides. This gives breathing room so that React-drawn
-  // split dividers (resize handles between terminals), title bars, borders,
-  // and the right-dock separator are not painted over by the native VTE or
-  // browser surface. Prevents "el divisor se rompe / desaparece en cierta parte"
-  // and reduces cases where a slightly oversized native rect covers the
-  // browser area or creates "terminal fantasma" visual artifacts at edges.
-  const INSET = 1;
-  const insetLeft = Number(rect.left || 0) + INSET;
-  const insetTop = Number(rect.top || 0) + INSET;
-  const insetWidth = Math.max(0, width - INSET * 2);
-  const insetHeight = Math.max(0, height - INSET * 2);
-
   return {
-    x: insetLeft,
-    y: insetTop,
-    width: insetWidth,
-    height: insetHeight,
+    x: Number(rect.left || 0),
+    y: Number(rect.top || 0),
+    width,
+    height,
   };
 }
 
@@ -400,6 +388,7 @@ export function shouldOpenNativeVtePanel({
   isActivePanel,
   isVisibleInLayout = true,
   suspendNativeSurface = false,
+  connectionSuspended = false,
   nativeVteOpenFailure,
   nativeVteProbe,
   requestedRendererMode,
@@ -409,6 +398,7 @@ export function shouldOpenNativeVtePanel({
   return Boolean(
     isVisibleInLayout &&
     !suspendNativeSurface &&
+    !connectionSuspended &&
     requestedRendererMode === 'vte-experimental' &&
     tauriAvailable &&
     getTerminalRuntimePlatform(runtimePlatform).includes('linux') &&
@@ -649,7 +639,9 @@ export default function TerminalTTY({
   });
   const shouldUseNativeRenderer =
     rendererViewModel.effectiveMode === 'vte-experimental' && runtimePhase !== 'fallback-xterm';
+  const isStartupSuspended = connectionState === 'suspended';
   const shouldBootXterm =
+    !isStartupSuspended &&
     shouldBootXtermRuntime({
       isActivePanel,
       isVisibleInLayout,
@@ -661,7 +653,7 @@ export default function TerminalTTY({
       requestedRendererMode,
       runtimePlatform: resolvedRuntimePlatform,
       tauriAvailable,
-    }) && connectionState !== 'suspended';
+    });
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -904,11 +896,18 @@ export default function TerminalTTY({
 
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
-    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!bounds) {
+    const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!rawBounds) {
       cliLog(`CLIENT:${id}`, 'native VTE show skipped — invalid bounds');
       return;
     }
+    // Safety inset so split dividers and dock chrome are not overpainted by the native.
+    const bounds = {
+      x: rawBounds.x + 1,
+      y: rawBounds.y + 1,
+      width: Math.max(0, rawBounds.width - 2),
+      height: Math.max(0, rawBounds.height - 2),
+    };
     cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds });
     await Promise.resolve(
       setNativeVtePanelVisibility({
@@ -921,11 +920,18 @@ export default function TerminalTTY({
 
   const resizeNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
-    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!bounds) {
+    const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!rawBounds) {
       cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
       return;
     }
+    // Safety inset so split dividers and dock chrome are not overpainted by the native.
+    const bounds = {
+      x: rawBounds.x + 1,
+      y: rawBounds.y + 1,
+      width: Math.max(0, rawBounds.width - 2),
+      height: Math.max(0, rawBounds.height - 2),
+    };
     cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
     await Promise.resolve(
       resizeNativeVtePanel({
@@ -1211,6 +1217,7 @@ export default function TerminalTTY({
         isActivePanel,
         isVisibleInLayout,
         suspendNativeSurface,
+        connectionSuspended: isStartupSuspended,
         nativeVteOpenFailure,
         nativeVteProbe: nativeVteProbeResult,
         requestedRendererMode,
@@ -1269,6 +1276,7 @@ export default function TerminalTTY({
     requestedRendererMode,
     resolvedRuntimePlatform,
     suspendNativeSurface,
+    isStartupSuspended,
     tauriAvailable,
   ]);
 
@@ -1287,6 +1295,7 @@ export default function TerminalTTY({
         isActivePanel,
         isVisibleInLayout,
         suspendNativeSurface,
+        connectionSuspended: isStartupSuspended,
         nativeVteOpenFailure,
         nativeVteProbe: nativeVteProbeResult,
         requestedRendererMode,
@@ -1425,6 +1434,7 @@ export default function TerminalTTY({
     resolvedRuntimePlatform,
     showNativeLease,
     suspendNativeSurface,
+    isStartupSuspended,
     tauriAvailable,
   ]);
 
@@ -1584,8 +1594,15 @@ export default function TerminalTTY({
     if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
     const sendNativeResize = () => {
-      const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-      if (!bounds) return;
+      const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+      if (!rawBounds) return;
+      // Safety inset (see getNativeTerminalBounds comment for rationale).
+      const bounds = {
+        x: rawBounds.x + 1,
+        y: rawBounds.y + 1,
+        width: Math.max(0, rawBounds.width - 2),
+        height: Math.max(0, rawBounds.height - 2),
+      };
       Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(
         handleNativeLeaseCommandError
       );
@@ -1981,7 +1998,11 @@ export default function TerminalTTY({
     if (!shouldBootXterm) {
       disposeXtermRuntime();
       setInitError(null);
-      setIsInitializing(runtimePhase === 'native-probing' || runtimePhase === 'native-opening');
+      setIsInitializing(
+        isStartupSuspended
+          ? false
+          : runtimePhase === 'native-probing' || runtimePhase === 'native-opening'
+      );
 
       return () => {
         mounted = false;
@@ -2201,6 +2222,24 @@ export default function TerminalTTY({
     waitForVisibleDimensions,
     disposeOnUnmount,
   ]);
+
+  // Suspended restore: show overlay only — do not probe/open native VTE or xterm yet.
+  useEffect(() => {
+    if (connectionState !== 'suspended') return undefined;
+
+    setIsInitializing(false);
+    setInitError(null);
+
+    if (!nativeVteOpened && !nativeLeaseRef.current) return undefined;
+
+    void setNativeVtePanelVisibility({
+      panelId: id,
+      visible: false,
+      reason: 'restore-suspended',
+    }).catch(handleNativeLeaseCommandError);
+
+    return undefined;
+  }, [connectionState, handleNativeLeaseCommandError, id, nativeVteOpened]);
 
   // Leaving parent-driven "suspended" must boot/reconnect (manual restore path).
   useEffect(() => {
@@ -2714,7 +2753,7 @@ export default function TerminalTTY({
           {/* Suspended state overlay */}
           {showTerminalStatusOverlay && connectionState === 'suspended' && (
             <div
-              className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm"
+              className="absolute inset-0 bg-[var(--surface-app)]/95 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto"
               data-testid="terminal-suspended-overlay"
             >
               <svg
