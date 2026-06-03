@@ -382,8 +382,13 @@ describe('CanvasTerminal — flicker fix (pizarra-shared-view-state Phase 1)', (
     }
   });
 
-  // ── 5. resize handle: same flicker fix applies ─────────────────────────
-  test('resize handle mousedown + 10px move: suspendNativeSurface flips to true', () => {
+  // ── 5. resize handle: content stays visible (user request) ───────────
+  // Unlike a full card drag (header), during border resize we deliberately
+  // keep the native VTE visible and painting so the terminal content
+  // continues to be seen while the user drags the edge (matching the
+  // behavior of the normal dock/workspace resizable panels).
+  // Only the 3px gate + isLiveDragging on *header* drags triggers suspend.
+  test('resize handle mousedown + 10px move: suspendNativeSurface stays false (content visible during resize)', () => {
     const harness = renderTerminal();
 
     const handle = getHandle('canvas-terminal-resize-e');
@@ -394,11 +399,11 @@ describe('CanvasTerminal — flicker fix (pizarra-shared-view-state Phase 1)', (
     });
     expect(lastSuspendCall()).toBe(false);
 
-    // 10px move: well past the 3px threshold.
+    // 10px move: well past the 3px threshold. For resize we do *not* suspend.
     flushSync(() => {
       window.dispatchEvent(makeMouseEvent('mousemove', 410, 150, 0));
     });
-    expect(lastSuspendCall()).toBe(true);
+    expect(lastSuspendCall()).toBe(false);
 
     flushSync(() => {
       window.dispatchEvent(makeMouseEvent('mouseup', 410, 150, 0));

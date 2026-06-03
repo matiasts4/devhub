@@ -110,16 +110,19 @@ export default function CanvasTerminal({
   //                    handle. Cleared on mouseup. Visual state only
   //                    (cursor / border / drag-frame visual).
   //   - isLiveDragging — set on the FIRST mousemove after pointerDown
-  //                    where Math.hypot(movementX, movementY) > 3.
-  //                    Cleared on mouseup. Drives suspendNativeSurface
-  //                    so the native VTE panel is hidden only when
-  //                    actual movement starts.
+  //                    (header/card drag path only). Drives suspendNativeSurface
+  //                    so the native VTE is hidden only during actual card moves
+  //                    (to avoid desync with absolute native positioning).
+  //   - isResizing — set during border resize (after threshold). Does NOT
+  //                  drive suspend, so content stays visible and live-updates
+  //                  during resize (matching normal workspace panel behavior).
   //
   // The 3px threshold is the smallest movement that reliably
   // distinguishes a click from a drag at typical pointer precision.
   // See design §6.1.
   const [pointerDown, setPointerDown] = useState(false);
   const [isLiveDragging, setIsLiveDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const hasMovedRef = useRef(false);
   // pizarra-resize-fluidity: ref for direct style mutation on the container root
   // during resize (unifies with browser + drag pattern).
@@ -210,7 +213,12 @@ export default function CanvasTerminal({
           );
           if (rawTravel > DRAG_THRESHOLD_PX) {
             hasMovedRef.current = true;
-            setIsLiveDragging(true);
+            setIsResizing(true);
+            // Note: we deliberately do NOT setIsLiveDragging here.
+            // isLiveDragging is only for full card drags (header), so that
+            // during border resize the native VTE content stays visible and
+            // keeps painting, matching the behavior of the normal dock/workspace
+            // resizable panels.
           }
         }
 
@@ -273,6 +281,7 @@ export default function CanvasTerminal({
         hasMovedRef.current = false;
         setPointerDown(false);
         setIsLiveDragging(false);
+        setIsResizing(false);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
       };
@@ -476,22 +485,21 @@ export default function CanvasTerminal({
         </div>
       </div>
 
-      {/* pizarra-resize-affordance (pizarra-ux): zoom-aware resize handles.
-          Hit areas (edge/corner) stay large + inverse-scaled for grabability.
-          NOW render subtle visible rails (edges) + grip dots (corners) *inside*
-          the hit zones when selected. This makes the "thin line" obvious and
-          targetable while preserving the forgiving hit area and cursor.
-          Discoverability no longer relies only on cursor + 1.5px frame border.
-          data-testids and all resize behavior unchanged. */}
+      {/* pizarra-resize-affordance: zoom-aware resize handles.
+          Hit areas (edge ~28px base, corner ~38px base, inverse-scaled with zoom)
+          are kept large so the resize is easy to grab (cursor changes when the
+          pointer is over them). Visuals are minimal to preserve aesthetics:
+          - No permanent edge rails or "líneas".
+          - No corner cuadritos / grip dots.
+          Selection indication comes from the frame chrome (resolveFrameVisual
+          selected border + shadow). The large hit areas + cursor provide the
+          easy targeting the user liked ("puedo seleccionarla mucho mas facil").
+          data-testids preserved. */}
       {selected &&
         (() => {
           const e = handleSizing.edge;
           const c = handleSizing.corner;
           const ins = handleSizing.inset;
-          // FI = visible frame inset (the inner chrome sits 10px inside the
-          // positioned container). Center the hit-areas ON the visible border
-          // instead of on the container edge, so the grab zone lands exactly
-          // where the user sees the frame — not in the empty gap above it.
           const FI = 10;
           const edgeStyle = (extra) => ({
             position: 'absolute',
@@ -507,9 +515,6 @@ export default function CanvasTerminal({
             zIndex: 6,
             ...extra,
           });
-          // Visible affordance color (inside the transparent hit area).
-          // Uses existing ACCENT for cohesion with selected frame/shadow.
-          const railColor = ACCENT.strong;
           return (
             <>
               <div
@@ -522,24 +527,7 @@ export default function CanvasTerminal({
                   height: e,
                   cursor: 'ns-resize',
                 })}
-              >
-                {/* visible rail centered in the hit strip */}
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: '50%',
-                    height: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateY(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="canvas-terminal-resize-s"
                 onMouseDown={(ev) => handleResizeStart(ev, 's')}
@@ -550,23 +538,7 @@ export default function CanvasTerminal({
                   height: e,
                   cursor: 'ns-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: '50%',
-                    height: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateY(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="canvas-terminal-resize-w"
                 onMouseDown={(ev) => handleResizeStart(ev, 'w')}
@@ -577,23 +549,7 @@ export default function CanvasTerminal({
                   width: e,
                   cursor: 'ew-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: '50%',
-                    width: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateX(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="canvas-terminal-resize-e"
                 onMouseDown={(ev) => handleResizeStart(ev, 'e')}
@@ -604,86 +560,22 @@ export default function CanvasTerminal({
                   width: e,
                   cursor: 'ew-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: '50%',
-                    width: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateX(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="canvas-terminal-resize-nw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
                 style={cornerStyle({ top: FI - c / 2, left: FI - c / 2, cursor: 'nwse-resize' })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="canvas-terminal-resize-ne"
                 onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
                 style={cornerStyle({ top: FI - c / 2, right: FI - c / 2, cursor: 'nesw-resize' })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="canvas-terminal-resize-sw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
                 style={cornerStyle({ bottom: FI - c / 2, left: FI - c / 2, cursor: 'nesw-resize' })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="canvas-terminal-resize-se"
                 onMouseDown={(ev) => handleResizeStart(ev, 'se')}
@@ -692,23 +584,7 @@ export default function CanvasTerminal({
                   right: FI - c / 2,
                   cursor: 'nwse-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
             </>
           );
         })()}

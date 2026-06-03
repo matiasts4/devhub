@@ -49,17 +49,16 @@ export const SURFACE_BORDER = {
 };
 
 /**
- * Resize handle sizing. Hit areas are deliberately larger than the visible
- * indicators so the handles are easy to grab. They scale inversely with zoom
- * so they stay grabbable when the canvas is zoomed out.
- *
- * pizarra-resize-affordance: base sizes increased + callers now render
- * visible rails/dots *inside* the hit areas (selected only) so the "thin line"
- * problem is solved while keeping the large forgiving hit zone.
+ * Resize handle sizing. Hit areas are sized generously (and inverse-scaled
+ * with zoom) so resize is easy to target via cursor change even without
+ * strong permanent visuals. We keep the hit areas large for usability
+ * ("puedo seleccionarla mucho mas facil") while the visual chrome on the
+ * inner frame (selected state) + cursor provide the cues. No permanent
+ * edge rails or corner cuadritos by default (aesthetics).
  */
 const HANDLE_BASE = {
-  edge: 28, // edge strip thickness (hit area) — larger for forgiveness + rail inside
-  corner: 38, // corner square side (hit area)
+  edge: 28, // edge hit strip thickness — forgiving target
+  corner: 38, // corner hit square side
   inset: 18, // gap from the corner where edge strips start
 };
 

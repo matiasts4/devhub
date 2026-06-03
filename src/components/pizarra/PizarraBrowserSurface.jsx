@@ -23,6 +23,7 @@ import { Move, RefreshCw, X } from 'lucide-react';
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
+import { resizeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
 // pizarra-shared-view-state Phase 3: same tab strip as the
 // workspace right-dock (single source of truth). Pizarra is
 // always opt-in: tabsMode defaults to 'multi' on this surface.
@@ -388,6 +389,37 @@ export default function PizarraBrowserSurface({
           }
         }
 
+        // Force reflow so that inner elements (including the viewport shell) and
+        // getBoundingClientRect see the updated sizes in this same mousemove tick.
+        if (liveWrapper) void liveWrapper.offsetWidth;
+        if (surfaceRoot) void surfaceRoot.offsetWidth;
+
+        // Live native resize call (stronger sync): directly instruct the native
+        // WebKit webview to resize its bounds to the current screen rect of the
+        // shell. This makes the "cuerpo" (actual browser page content) follow the
+        // JS header/chrome with much less delay than relying only on RO + CSS.
+        // Scoped query inside this pizarra surface's root so it doesn't affect
+        // other browser instances. Combined with not suspending during resize,
+        // this should feel "mucho más fluido y fuerte".
+        try {
+          const shell = surfaceRoot?.querySelector?.('[data-testid="browser-viewport-shell"]');
+          if (shell) {
+            const r = shell.getBoundingClientRect();
+            if (r.width > 10 && r.height > 10) {
+              const pid = `browser-${projectId || 'pizarra'}-${workspaceId || shape.id}`;
+              resizeNativeBrowser({
+                panelId: pid,
+                bounds: {
+                  x: Math.round(r.left),
+                  y: Math.round(r.top),
+                  width: Math.round(r.width),
+                  height: Math.round(r.height),
+                },
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+
         // Track last logical for the single commit on up.
         const logicalW = Math.max(minW, Math.round(nextScreenW / z));
         const logicalH = Math.max(minH, Math.round(nextScreenH / z));
@@ -417,7 +449,7 @@ export default function PizarraBrowserSurface({
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
-    [bounds, onSelect, onUpdateElement, shape, zoom]
+    [bounds, onSelect, onUpdateElement, projectId, shape, workspaceId, zoom]
   );
 
   const handleDragStart = usePizarraSurfaceDrag({
@@ -653,12 +685,11 @@ export default function PizarraBrowserSurface({
         ) : null}
       </div>
 
-      {/* pizarra-resize-affordance (pizarra-ux): zoom-aware resize handles.
-          Hit areas (edge/corner) stay large + inverse-scaled for grabability.
-          NOW render subtle visible rails (edges) + grip dots (corners) *inside*
-          the hit zones when selected. This makes the "thin line" obvious and
-          targetable while preserving the forgiving hit area and cursor.
-          The drag-handle exclusion (closest) is kept. data-testids unchanged. */}
+      {/* pizarra-resize-affordance: zoom-aware resize handles (browser surface).
+          Same approach as CanvasTerminal: large hit areas for easy grab,
+          but no permanent visible rails or corner cuadritos to keep the
+          aesthetic clean. The frame selection chrome + cursor on hit areas
+          are the affordances. data-testids and drag-handle exclusion kept. */}
       {selected &&
         (() => {
           const eg = handleSizing.edge;
@@ -678,7 +709,6 @@ export default function PizarraBrowserSurface({
             zIndex: 6,
             ...extra,
           });
-          const railColor = ACCENT.strong;
           return (
             <>
               <div
@@ -691,23 +721,7 @@ export default function PizarraBrowserSurface({
                   height: eg,
                   cursor: 'ns-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: '50%',
-                    height: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateY(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="pizarra-browser-resize-s"
                 onMouseDown={(ev) => handleResizeStart(ev, 's')}
@@ -718,23 +732,7 @@ export default function PizarraBrowserSurface({
                   height: eg,
                   cursor: 'ns-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: '50%',
-                    height: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateY(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="pizarra-browser-resize-w"
                 onMouseDown={(ev) => handleResizeStart(ev, 'w')}
@@ -745,23 +743,7 @@ export default function PizarraBrowserSurface({
                   width: eg,
                   cursor: 'ew-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: '50%',
-                    width: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateX(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="pizarra-browser-resize-e"
                 onMouseDown={(ev) => handleResizeStart(ev, 'e')}
@@ -772,23 +754,7 @@ export default function PizarraBrowserSurface({
                   width: eg,
                   cursor: 'ew-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: '50%',
-                    width: 3,
-                    background: railColor,
-                    opacity: 0.65,
-                    transform: 'translateX(-50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="pizarra-browser-resize-nw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
@@ -797,23 +763,7 @@ export default function PizarraBrowserSurface({
                   left: FRAME_INSET - c / 2,
                   cursor: 'nwse-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="pizarra-browser-resize-ne"
                 onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
@@ -822,23 +772,7 @@ export default function PizarraBrowserSurface({
                   right: FRAME_INSET - c / 2,
                   cursor: 'nesw-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="pizarra-browser-resize-sw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
@@ -847,23 +781,7 @@ export default function PizarraBrowserSurface({
                   left: FRAME_INSET - c / 2,
                   cursor: 'nesw-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
               <div
                 data-testid="pizarra-browser-resize-se"
                 onMouseDown={(ev) => handleResizeStart(ev, 'se')}
@@ -872,23 +790,7 @@ export default function PizarraBrowserSurface({
                   right: FRAME_INSET - c / 2,
                   cursor: 'nwse-resize',
                 })}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 8,
-                    height: 8,
-                    background: railColor,
-                    opacity: 0.8,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              />
             </>
           );
         })()}
