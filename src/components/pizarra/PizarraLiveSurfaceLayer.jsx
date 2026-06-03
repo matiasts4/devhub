@@ -1,10 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import CanvasTerminal from './CanvasTerminal';
 import PizarraBrowserSurface from './PizarraBrowserSurface';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
+import {
+  resizeNativeBrowser,
+  setNativeBrowserVisibility,
+} from '@/lib/browser/nativeBrowserBridge';
 
 export default function PizarraLiveSurfaceLayer({
   elements,
@@ -322,6 +326,7 @@ function LiveSurfaceItem({
       dragStartBoundsRef.current = null;
       const group = groupDragStartRef.current;
       groupDragStartRef.current = null;
+      const moved = [];
       if (group) {
         // Commit each selected sibling's new position once (canvas units).
         for (const sid of group.keys()) {
@@ -332,15 +337,50 @@ function LiveSurfaceItem({
               x: siblingShape.x + totalDeltaX,
               y: siblingShape.y + totalDeltaY,
             });
+            moved.push({ sid, shape: siblingShape, entry });
           }
         }
-        return;
+      } else {
+        const s = shapeRef.current;
+        onMoveElementRef.current?.(s.id, {
+          x: s.x + totalDeltaX,
+          y: s.y + totalDeltaY,
+        });
+        const entry = registryRef.current.get(s.id);
+        moved.push({ sid: s.id, shape: s, entry });
       }
-      const s = shapeRef.current;
-      onMoveElementRef.current?.(s.id, {
-        x: s.x + totalDeltaX,
-        y: s.y + totalDeltaY,
-      });
+
+      // pizarra-browser-drag-immediate-sync: right at mouseup, while the wrapper
+      // still has the direct-mutated final screen rect (before any React commit
+      // from the onMove above), measure the live DOM rect and push it to the
+      // native browser bridge immediately.
+      // This makes the "vista adaptada" (the loaded web content) appear at the
+      // new position/size with zero delay after releasing the drag — no waiting
+      // for state update, re-render, layoutSyncKey change, useEffect, etc.
+      // The normal React path will later run the same resize+visible (idempotent).
+      // Fixes the "mucho retardo en cargar la vista adaptada" when moving browser
+      // surfaces, and reduces chances of the content getting into a bad state
+      // that requires new workspace to recover.
+      for (const { sid, shape: movedShape, entry } of moved) {
+        if (!movedShape || movedShape.type !== SHAPE_TYPES.BROWSER) continue;
+        const el = entry?.el;
+        if (!el) continue;
+        try {
+          const rect = el.getBoundingClientRect();
+          const bounds = {
+            x: Number(rect.x) || 0,
+            y: Number(rect.y) || 0,
+            width: Math.max(1, Number(rect.width) || 0),
+            height: Math.max(1, Number(rect.height) || 0),
+          };
+          const panelId = movedShape.panelId || `pizarra-browser-${sid}`;
+          // fire-and-forget; errors are non-fatal (normal path will recover)
+          resizeNativeBrowser({ panelId, bounds }).catch(() => {});
+          setNativeBrowserVisibility({ panelId, visible: true, bounds }).catch(() => {});
+        } catch {
+          // ignore; the hook's normal sync on next render will handle
+        }
+      }
     },
     [onMoveElementRef, registryRef]
   );
