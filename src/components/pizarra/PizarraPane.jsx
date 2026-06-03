@@ -585,6 +585,20 @@ function PizarraInner({
         },
       ];
 
+      // pizarra-adapt: also consider edges of other live elements for alignment snap
+      // (post-drag only; keeps it simple and non-surprising).
+      (mergedElements || []).forEach((el) => {
+        if (el.id === id) return;
+        const ew = el.width || shapeWidth;
+        const eh = el.height || shapeHeight;
+        targets.push(
+          { name: 'align-l', x: el.x || 0, y: position.y },
+          { name: 'align-r', x: (el.x || 0) + ew - shapeWidth, y: position.y },
+          { name: 'align-t', x: position.x, y: el.y || 0 },
+          { name: 'align-b', x: position.x, y: (el.y || 0) + eh - shapeHeight }
+        );
+      });
+
       // Find the closest target within threshold
       let closestTarget = null;
       let minDistance = Infinity;
@@ -646,84 +660,215 @@ function PizarraInner({
     [handleAddElement, updateElement, setActiveTerminalId, mergedElements, activeTerminalId]
   );
 
-  // ── Apply layout preset ─────────────────────────────────────────────────
+  // ── Apply layout preset (or arrange action) ──────────────────────────────
+  // Presets are destructive (reset + load a starting configuration) but now
+  // use viewport-relative proportions so they adapt to current zoom/pan/ window size.
+  // Arrange-* are non-destructive: they adapt the *current* selection (or all live
+  // terminal/browser surfaces) using equal sizing + abut + centering. Directly
+  // addresses "no tener que ajustar tan a detalle cada ventanita".
   const handleApplyLayout = useCallback(
     (presetType, centerCoords) => {
-      // Use visible center if no explicit center provided
       const vis = getVisibleCanvasRegion();
       const cx = centerCoords?.x ?? vis.x + vis.width / 2;
       const cy = centerCoords?.y ?? vis.y + vis.height / 2;
+
+      // Arrange actions (non-destructive, operate on live surfaces)
+      if (presetType.startsWith('arrange-')) {
+        const mode = presetType.slice('arrange-'.length); // h | v | equal | grid
+        const live = (mergedElements || []).filter(
+          (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
+        );
+        if (live.length === 0) return;
+
+        // Targets: prefer current multi-selection if it contains live items
+        const selectedLive = live.filter((el) => state.selectedElementIds.includes(el.id));
+        const targets = selectedLive.length >= 2 ? selectedLive : live;
+
+        const n = targets.length;
+        if (n === 0) return;
+
+        // Compute a sensible container from current selection bbox or visible
+        const minX = Math.min(...targets.map((t) => t.x || 0));
+        const minY = Math.min(...targets.map((t) => t.y || 0));
+        const maxX = Math.max(...targets.map((t) => (t.x || 0) + (t.width || 400)));
+        const maxY = Math.max(...targets.map((t) => (t.y || 0) + (t.height || 300)));
+        const bboxW = Math.max(200, maxX - minX);
+        const bboxH = Math.max(160, maxY - minY);
+
+        const gap = 16;
+        const updates = [];
+
+        if (mode === 'h' || mode === 'horizontal') {
+          // Equal widths, keep individual or average heights, abut left-to-right
+          const totalGap = gap * (n - 1);
+          const w = Math.max(160, Math.round((bboxW - totalGap) / n));
+          let x = minX;
+          const avgH = Math.max(
+            120,
+            Math.round(targets.reduce((s, t) => s + (t.height || 300), 0) / n)
+          );
+          targets
+            .slice()
+            .sort((a, b) => (a.x || 0) - (b.x || 0))
+            .forEach((t, i) => {
+              const h = Math.max(120, t.height || avgH);
+              updates.push({ id: t.id, x, y: minY, width: w, height: h });
+              x += w + gap;
+            });
+        } else if (mode === 'v' || mode === 'vertical') {
+          const totalGap = gap * (n - 1);
+          const h = Math.max(120, Math.round((bboxH - totalGap) / n));
+          let y = minY;
+          const avgW = Math.max(
+            160,
+            Math.round(targets.reduce((s, t) => s + (t.width || 400), 0) / n)
+          );
+          targets
+            .slice()
+            .sort((a, b) => (a.y || 0) - (b.y || 0))
+            .forEach((t, i) => {
+              const w = Math.max(160, t.width || avgW);
+              updates.push({ id: t.id, x: minX, y, width: w, height: h });
+              y += h + gap;
+            });
+        } else if (mode === 'equal') {
+          // Same size for all (use median-ish or first clamped), keep positions
+          const refW = Math.max(
+            200,
+            Math.round(targets.reduce((s, t) => s + (t.width || 400), 0) / n)
+          );
+          const refH = Math.max(
+            160,
+            Math.round(targets.reduce((s, t) => s + (t.height || 300), 0) / n)
+          );
+          targets.forEach((t) => {
+            updates.push({ id: t.id, width: refW, height: refH });
+          });
+        } else if (mode === 'grid' || mode === 'grid-2') {
+          // Simple 2-col grid (or 1-col if n<2), equal cell size, fill bbox-ish
+          const cols = Math.min(2, n);
+          const rows = Math.ceil(n / cols);
+          const cellW = Math.max(160, Math.round((bboxW - gap * (cols - 1)) / cols));
+          const cellH = Math.max(120, Math.round((bboxH - gap * (rows - 1)) / rows));
+          targets
+            .slice()
+            .sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0))
+            .forEach((t, i) => {
+              const col = i % cols;
+              const row = Math.floor(i / cols);
+              const x = minX + col * (cellW + gap);
+              const y = minY + row * (cellH + gap);
+              updates.push({ id: t.id, x, y, width: cellW, height: cellH });
+            });
+        }
+
+        // Apply (handleUpdateElement will grid-snap + route to registry/reducer)
+        updates.forEach((u) => onUpdateElement?.(u.id, u));
+        // Keep selection on the group
+        if (updates.length) {
+          // re-select to keep handles
+          const ids = updates.map((u) => u.id);
+          // best-effort: the onSelect in parent may support multi; fall back to first
+          onSelect?.(ids[0], true);
+        }
+        return;
+      }
+
+      // Presets below: destructive reset + load (now viewport-relative)
       const newElements = [];
 
       if (presetType === 'dev-split') {
+        const bw = Math.max(320, Math.round(vis.width * 0.55));
+        const tw = Math.max(240, vis.width - bw - 24);
+        const h = Math.max(280, Math.min(Math.round(vis.height * 0.78), 620));
         newElements.push(
           createShape(SHAPE_TYPES.BROWSER, {
-            x: cx - 810,
-            y: cy - 300,
-            width: 800,
-            height: 600,
+            x: cx - bw - 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
           })
         );
         newElements.push(
           createShape(SHAPE_TYPES.TERMINAL, {
-            x: cx + 10,
-            y: cy - 300,
-            width: 800,
-            height: 600,
+            x: cx + 12,
+            y: cy - h / 2,
+            width: tw,
+            height: h,
           })
         );
       } else if (presetType === 'dev-trio') {
+        const bw = Math.max(320, Math.round(vis.width * 0.52));
+        const tw = Math.max(220, vis.width - bw - 24);
+        const h = Math.max(240, Math.min(Math.round(vis.height * 0.72), 520));
+        const th = Math.max(120, Math.round((h - 12) / 2));
         newElements.push(
           createShape(SHAPE_TYPES.BROWSER, {
-            x: cx - 810,
-            y: cy - 300,
-            width: 800,
-            height: 600,
+            x: cx - bw - 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
           })
         );
         newElements.push(
           createShape(SHAPE_TYPES.TERMINAL, {
-            x: cx + 10,
-            y: cy - 300,
-            width: 800,
-            height: 290,
-            label: 'Terminal Left',
+            x: cx + 12,
+            y: cy - h / 2,
+            width: tw,
+            height: th,
+            label: 'Terminal Top',
           })
         );
         newElements.push(
           createShape(SHAPE_TYPES.TERMINAL, {
-            x: cx + 10,
-            y: cy + 10,
-            width: 800,
-            height: 290,
-            label: 'Terminal Right',
+            x: cx + 12,
+            y: cy - h / 2 + th + 12,
+            width: tw,
+            height: th,
+            label: 'Terminal Bottom',
           })
         );
       } else if (presetType === 'dual-browser') {
+        const bw = Math.max(280, Math.round((vis.width - 24) / 2));
+        const h = Math.max(280, Math.min(Math.round(vis.height * 0.78), 620));
         newElements.push(
           createShape(SHAPE_TYPES.BROWSER, {
-            x: cx - 810,
-            y: cy - 300,
-            width: 800,
-            height: 600,
+            x: cx - bw - 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
             label: 'Browser 1',
           })
         );
         newElements.push(
           createShape(SHAPE_TYPES.BROWSER, {
-            x: cx + 10,
-            y: cy - 300,
-            width: 800,
-            height: 600,
+            x: cx + 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
             label: 'Browser 2',
           })
         );
+      } else if (presetType === 'clear') {
+        resetElements([]);
+        setActiveTerminalId(null);
+        return;
       }
 
-      resetElements(newElements);
-      setActiveTerminalId(null);
+      if (newElements.length > 0) {
+        resetElements(newElements);
+        setActiveTerminalId(null);
+      }
     },
-    [resetElements, getVisibleCanvasRegion, setActiveTerminalId]
+    [
+      resetElements,
+      getVisibleCanvasRegion,
+      setActiveTerminalId,
+      mergedElements,
+      state.selectedElementIds,
+      onUpdateElement,
+      onSelect,
+    ]
   );
 
   const selectedElement = selectedElements.length === 1 ? selectedElements[0] : null;

@@ -20,6 +20,10 @@ import {
   LayoutGrid,
   Layout,
   Trash2,
+  ArrowLeftRight,
+  ArrowUpDown,
+  Maximize2,
+  Grid2X2,
 } from 'lucide-react';
 import { btnSecondaryStyle } from '@/chrome/morphology';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
@@ -45,7 +49,18 @@ const LAYOUT_PRESETS = [
   { value: 'clear', label: 'Clear Whiteboard', Icon: Trash2 },
 ];
 
+// Arrange actions operate on current selection (or all live surfaces) and are
+// non-destructive. They compute responsive layouts from visible region + current bounds.
+const ARRANGE_ACTIONS = [
+  { value: 'arrange-h', label: 'Tile horizontal (equal widths)', Icon: ArrowLeftRight },
+  { value: 'arrange-v', label: 'Tile vertical (equal heights)', Icon: ArrowUpDown },
+  { value: 'arrange-equal', label: 'Equalize sizes (keep positions)', Icon: Maximize2 },
+  { value: 'arrange-grid', label: 'Grid 2-col (auto rows)', Icon: Grid2X2 },
+];
+
 export default function PizarraToolPalette({ value, onChange, onAddElement, onApplyLayout }) {
+  // onApplyLayout is reused for both destructive presets ('dev-split' etc + 'clear')
+  // and non-destructive arrange actions ('arrange-h' etc). Pane dispatches accordingly.
   const { viewportToCanvas, canvasRect } = useCanvasViewport();
 
   const handleShapeToolChange = (val) => val && onChange(val);
@@ -221,7 +236,7 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
         }}
       />
 
-      {/* Predefined Layouts */}
+      {/* Predefined Layouts (destructive: load full preset, clears current) */}
       <div
         style={{
           display: 'flex',
@@ -267,6 +282,61 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
                 presetVal === 'clear'
                   ? '1px solid rgba(239, 68, 68, 0.2)'
                   : '1px solid var(--border-subtle)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Icon size={16} strokeWidth={2.5} />
+          </button>
+        ))}
+      </div>
+
+      {/* Arrange / organize (non-destructive: adapts current selection or live surfaces) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--chrome-radius-panel)',
+          padding: 6,
+          boxShadow: 'var(--shadow-soft)',
+          marginTop: 4,
+        }}
+      >
+        {ARRANGE_ACTIONS.map(({ value: arrangeVal, label, Icon }) => (
+          <button
+            key={arrangeVal}
+            type="button"
+            data-testid={`pizarra-arrange-${arrangeVal}`}
+            aria-label={label}
+            title={label}
+            onClick={() => handleApplyLayout(arrangeVal)}
+            onMouseEnter={(event) => {
+              event.currentTarget.dataset.pizarraHovered = 'true';
+            }}
+            onMouseLeave={(event) => {
+              delete event.currentTarget.dataset.pizarraHovered;
+            }}
+            onMouseDown={(event) => {
+              event.currentTarget.dataset.pizarraActive = 'true';
+            }}
+            onMouseUp={(event) => {
+              delete event.currentTarget.dataset.pizarraActive;
+            }}
+            style={{
+              ...btnSecondaryStyle({ size: 'sm' }),
+              width: 36,
+              height: 36,
+              padding: 0,
+              borderRadius: 'var(--chrome-radius-control)',
+              background: 'var(--chrome-control-fill)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-subtle)',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
               display: 'flex',
