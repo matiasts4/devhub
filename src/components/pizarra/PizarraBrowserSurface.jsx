@@ -523,57 +523,81 @@ export default function PizarraBrowserSurface({
           pointerEvents: 'auto',
         }}
       >
-        {/* Close button kept minimal, top-right. Drag is now via the browser's own top chrome (tab strip area)
-            like the terminal's full header bar. No separate "crucecita" Move button that wastes space or
-            looks inconsistent. Clicking the tab/header background selects/moves the surface. */}
-        <button
-          type="button"
-          data-testid="pizarra-browser-close"
-          data-pizarra-close-button="true"
-          title="Cerrar navegador"
-          aria-label="Cerrar navegador"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose?.(shape.id);
-          }}
-          style={{
-            position: 'absolute',
-            top: 10,
-            right: 10,
-            zIndex: 30,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 28,
-            height: 28,
-            padding: 0,
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.08)',
-            background: 'rgba(6, 16, 27, 0.9)',
-            color: '#9fb5d1',
-            cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-          }}
-        >
-          <X size={14} />
-        </button>
-
-        {/* The tab strip / top browser chrome area now acts as the draggable header, exactly like
-            the terminal's <div data-pizarra-surface-drag-handle ... onMouseDown={handleHeader...} >.
-            This unifies the affordance, removes the floating Move icon, and doesn't waste extra
-            space above the browser content. Tabs/toolbar clicks are handled by their components
-            (they stopPropagation on interactive elements). */}
+        {/* Explicit pizarra card header (like CanvasTerminal's 28px header bar).
+            Provides consistent drag target ("seleccionarlo igual que en la terminal"),
+            label, and close. Placed "sobre el browser" (above its tabstrip/pane).
+            We use a compact 24px height + tight padding to avoid wasting space.
+            The browser's own tabstrip + content sit below. Drag attrs on the header. */}
         <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            minHeight: 0,
-          }}
-          data-tabs-mode={tabsMode}
+          data-pizarra-browser-header="true"
           data-pizarra-surface-drag-handle="true"
           data-testid="pizarra-drag-handle"
           onMouseDown={handleDragStart}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 20,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 6px',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            background: 'rgba(7, 17, 28, 0.96)',
+            color: '#d6e2ff',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 8,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            cursor: 'move',
+            userSelect: 'none',
+            zIndex: 20,
+          }}
+        >
+          <span>{shape.label || 'Browser'}</span>
+          <button
+            type="button"
+            data-testid="pizarra-browser-close"
+            data-pizarra-close-button="true"
+            title="Cerrar navegador"
+            aria-label="Cerrar navegador"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose?.(shape.id);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 20,
+              height: 20,
+              padding: 0,
+              borderRadius: 4,
+              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(6, 16, 27, 0.9)',
+              color: '#9fb5d1',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={12} />
+          </button>
+        </div>
+
+        {/* Browser content (tabs + pane) positioned below the pizarra header.
+            No extra floating crucecita. The header above unifies the move/select
+            affordance without wasting vertical space (compact 24px). */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 20,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            minHeight: 0,
+          }}
+          data-tabs-mode={tabsMode}
         >
           {showTabStrip ? (
             <BrowserTabStrip
