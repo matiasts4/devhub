@@ -23,12 +23,13 @@ import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 
-// pizarra-ux-overhaul: module-scope env read for the opt-in texture.
-// Read once at import time; subsequent mounts reuse the cached value.
+// pizarra-ux-overhaul: module-scope env read for the texture.
+// Default ON (subtle dots) so the pizarra never looks like a pure "submarino"
+// flat dark void when empty. Set NEXT_PUBLIC_PIZARRA_GRID_TEXTURE=0 to disable.
 const PIZARRA_GRID_TEXTURE_ENABLED =
   typeof process !== 'undefined' &&
   process.env &&
-  process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE === '1';
+  process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE !== '0';
 
 // pizarra-multi-select: AABB overlap test used by the marquee to decide
 // which shapes fall inside the selection rectangle.
@@ -360,10 +361,11 @@ export default function PizarraCanvas({
 
   // ── Render ─────────────────────────────────────────────────────────────
 
-  // pizarra-ux-overhaul: solid background + opt-in texture. The grid
-  // is gone. When the env flag is enabled, a CSS radial-gradient is
-  // applied at low opacity so the canvas still has a hint of texture
-  // for users who miss the visual rhythm.
+  // pizarra-ux-overhaul: solid background + texture (default on).
+  // The old Konva grid lines are gone. A very subtle CSS radial dot pattern
+  // is applied (unless explicitly disabled via env=0) so even an empty pizarra
+  // doesn't look like pure flat "submarino" darkness. Low opacity so it doesn't
+  // fight content.
   const wrapperBackgroundImage = PIZARRA_GRID_TEXTURE_ENABLED
     ? 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)'
     : 'none';

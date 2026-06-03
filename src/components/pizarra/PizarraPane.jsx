@@ -133,6 +133,10 @@ export default function PizarraPane({
   const lastDividerVRef = useRef(null);
   const lastDividerHRef = useRef(null);
 
+  // pizarra-empty-state: track if we auto-initialized on first access to avoid
+  // showing completely blank dark "submarino" canvas with nothing visible.
+  const didAutoInitRef = useRef(false);
+
   // Resize observer to track container size
   React.useEffect(() => {
     if (!containerRef.current) return;
@@ -1098,6 +1102,26 @@ function PizarraInner({
     },
     [liveSurfacesForDividers, onUpdateElement]
   );
+
+  // Auto-initialize with a starter layout (dev-split: browser + terminal side-by-side)
+  // the very first time the pizarra canvas becomes visible and is empty.
+  // This prevents the "empty dark submarine" UX where user accesses pizarra
+  // and sees absolutely nothing (solid #1a1f2e bg, no surfaces, palette hard to spot).
+  // Once initialized (or user clears/adds manually), we don't auto again in this mount.
+  React.useEffect(() => {
+    if (didAutoInitRef.current) return;
+    if (canvasSize.width < 200 || canvasSize.height < 200) return; // wait for real size
+
+    const liveSurfaces = (mergedElements || []).filter(
+      (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
+    );
+    if (liveSurfaces.length === 0) {
+      didAutoInitRef.current = true;
+      // Spawn a nice default that demonstrates the feature: one browser + one terminal,
+      // sized and positioned responsively to current view (from the improved presets).
+      handleApplyLayout('dev-split');
+    }
+  }, [canvasSize, mergedElements, handleApplyLayout]);
 
   return (
     <>
