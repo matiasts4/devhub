@@ -97,6 +97,7 @@ import {
   extractOpenCodeSessionId,
   inferPanelSessionKind,
   resolveEffectiveRestorePolicy,
+  resolveOpenCodeSessionIdForPanel,
 } from '@/lib/terminal/restorePolicyResolver';
 import {
   dispatchStartupRestoreQueue,
@@ -2595,7 +2596,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       const targetWindow = windows.find((win) => win.id === windowId);
       if (targetWindow?.columns?.length) {
-        await closeTerminalSessions(getAllPanelIds(targetWindow.columns));
+        const panelIds = getAllPanelIds(targetWindow.columns);
+        await closeTerminalSessions(panelIds);
+        // Also close any native VTE visuals for the panels in the removed window
+        // to avoid ghosts when closing sub-windows/tabs of terminals.
+        try {
+          const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
+          for (const pid of panelIds) {
+            await closeNativeVtePanel({ panelId: pid, reason: 'workspace-window-removed' }).catch(() => {});
+          }
+        } catch {}
       }
 
       const nextWindows = windows.filter((win) => win.id !== windowId);
@@ -2678,6 +2688,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
 
     await closeTerminalSessions(panelIdsToClean);
+    // Close native VTEs for all panels of the removed workspace so no
+    // "terminal fantasma" can remain and paint over browser or other workspaces.
+    try {
+      const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
+      for (const pid of panelIdsToClean) {
+        await closeNativeVtePanel({ panelId: pid, reason: 'workspace-removed' }).catch(() => {});
+      }
+    } catch {}
     await new Promise((resolve) => setTimeout(resolve, 200));
     await closeWorkspaceBrowserWindow(idToRemove);
 
@@ -3326,6 +3344,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       await closeTerminalSessions([targetId]);
 
+      // Force-close the native VTE (the actual terminal "window") for this panel.
+      // The React unmount of TerminalTTY will also try via its cleanup, but
+      // explicit here guarantees we don't leave "terminal fantasma" that can
+      // paint on top of the browser dock, other terminals, or make the visual
+      // divider (resize handle) between terminals disappear because a stale
+      // native rect is still covering the handle's screen area.
+      try {
+        const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
+        await closeNativeVtePanel({ panelId: targetId, reason: 'workspace-panel-closed' }).catch(() => {});
+      } catch {
+        // Non-fatal; the per-TTY unmount cleanup will still attempt it.
+      }
+
       const nextColumnsSnapshot = activeWorkspace.columns
         .map((col) => ({
           ...col,
@@ -3914,26 +3945,42 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       });
     };
 
-    // Handles manual session revival triggered by TerminalSettingsModal's "Continuar sesión" CTA.
+    // Handles manual session revival (overlay "Continuar" or settings modal).
     const handleManualReviveRequested = (e) => {
-      const { panelId, sessionId } = e.detail || {};
+      const { panelId, sessionId: hintSessionId } = e.detail || {};
       if (!panelId) return;
 
-      const targetSessionId = sessionId || panelId;
-      const newCommand = `opencode --session ${targetSessionId}`;
+      const panel = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
 
-      setWorkspaces((prev) =>
-        prev.map((ws) => ({
-          ...ws,
-          columns: ws.columns.map((col) => ({
-            ...col,
-            panels: col.panels.map((p) => {
-              if (p.id !== panelId) return p;
-              if (p.initialCommand === newCommand) return p;
-              return { ...p, initialCommand: newCommand };
-            }),
-          })),
-        }))
+      const agentRun = readAgentRunsByPanel(storage)[panelId] || null;
+      const opencodeSessionId = resolveOpenCodeSessionIdForPanel({
+        panel,
+        agentRun,
+        hintSessionId,
+      });
+
+      if (!opencodeSessionId) {
+        setReopenActionError(
+          'No se encontró un id de sesión OpenCode guardado. Abrí una sesión nueva o usá política automática.'
+        );
+        return;
+      }
+
+      setReopenActionError(null);
+      setPanelRestoreModes((prev) => {
+        const next = { ...prev };
+        delete next[panelId];
+        return next;
+      });
+      setRestoreBootstrapActive(false);
+
+      applyPanelRelaunchCommand(
+        panelId,
+        `opencode --session ${opencodeSessionId}`,
+        panel?.cwd || null
       );
     };
 
@@ -4055,7 +4102,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
       window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
     };
-  }, [failPendingReopen, projectId, storage, terminalStateStorageKey]);
+  }, [applyPanelRelaunchCommand, failPendingReopen, projectId, storage, terminalStateStorageKey]);
 
   // --- Window Controls (for integrated titlebar) ---
   const getTauriWindow = useCallback(async () => {
@@ -4725,6 +4772,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                   }),
                                   onResetRendererToXterm: () =>
                                     handleResetPanelRendererToXterm(ws.id, focusedPanel.id),
+                                  connectionState: getPanelConnectionState(focusedPanel),
                                 })}
                               </div>
                             ) : (
@@ -4790,6 +4838,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                       ws.id,
                                                       panel.id
                                                     ),
+                                                  connectionState: getPanelConnectionState(panel),
                                                 })}
                                               </Panel>
                                               {panelIndex < column.panels.length - 1 ? (
@@ -4863,6 +4912,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                 ws.id,
                                                 column.panels[0].id
                                               ),
+                                            connectionState: getPanelConnectionState(column.panels[0]),
                                           })}
                                         </div>
                                       )}

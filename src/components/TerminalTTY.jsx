@@ -19,8 +19,13 @@ import {
   probeNativeVte,
   resizeNativeVtePanel,
   setNativeVtePanelVisibility,
+  getCachedNativeVteProbeResult,
   subscribeNativeVteEvents,
 } from '@/lib/terminal/nativeVteBridge';
+import {
+  NATIVE_SURFACE_SETTLE_DELAYS_MS,
+  scheduleNativeSurfaceActivation,
+} from '@/components/terminal/nativeLayoutSync';
 import {
   getTerminalRendererFallbackCopy,
   getTerminalRendererOptionLabel,
@@ -36,6 +41,10 @@ import {
 // The import is wrapped in a try so SSR / non-React environments
 // without the workspace chunk don't break the existing module.
 import { useSurfaceRegistry } from '@/components/workspace/SharedSurfacesProvider';
+import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
+
+/** One initial-command inject per panel (survives React Strict Mode remount). */
+const nativeInitialCommandInjected = new Set();
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -367,11 +376,23 @@ export function getNativeTerminalBounds(element) {
     }
   }
 
+  // Inset by 1px on all sides. This gives breathing room so that React-drawn
+  // split dividers (resize handles between terminals), title bars, borders,
+  // and the right-dock separator are not painted over by the native VTE or
+  // browser surface. Prevents "el divisor se rompe / desaparece en cierta parte"
+  // and reduces cases where a slightly oversized native rect covers the
+  // browser area or creates "terminal fantasma" visual artifacts at edges.
+  const INSET = 1;
+  const insetLeft = Number(rect.left || 0) + INSET;
+  const insetTop = Number(rect.top || 0) + INSET;
+  const insetWidth = Math.max(0, width - INSET * 2);
+  const insetHeight = Math.max(0, height - INSET * 2);
+
   return {
-    x: Number(rect.left || 0),
-    y: Number(rect.top || 0),
-    width,
-    height,
+    x: insetLeft,
+    y: insetTop,
+    width: insetWidth,
+    height: insetHeight,
   };
 }
 
@@ -570,7 +591,10 @@ export default function TerminalTTY({
     }
   });
 
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(
+    () =>
+      requestedRendererMode !== 'vte-experimental' || !getCachedNativeVteProbeResult()?.ready
+  );
   const [initError, setInitError] = useState(null);
   const [internalConnectionState, setInternalConnectionState] = useState('idle');
   const [copied, setCopied] = useState(false);
@@ -601,6 +625,7 @@ export default function TerminalTTY({
     nativeVteReady: requestedRendererMode === 'vte-experimental' && nativeVteOpened,
   });
   const hasSentInitialCommand = useRef(false);
+  const prevExternalConnectionRef = useRef(externalConnectionState);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -1123,6 +1148,14 @@ export default function TerminalTTY({
       return undefined;
     }
 
+    const cachedProbe = getCachedNativeVteProbeResult();
+    if (cachedProbe?.ready) {
+      setNativeVteProbeResult(cachedProbe);
+      setNativeVteOpenFailure(null);
+      setIsInitializing(false);
+      return undefined;
+    }
+
     probeNativeVte({
       panelId: id,
       requestedMode: requestedRendererMode,
@@ -1139,6 +1172,7 @@ export default function TerminalTTY({
         if (result?.ready) {
           nativeVteProbeRetryCountRef.current = 0;
           clearNativeVteProbeRetryTimer();
+          setIsInitializing(false);
         } else {
           setNativeVteOpenFailure(null);
           setNativeVteOpened(false);
@@ -1214,7 +1248,7 @@ export default function TerminalTTY({
       retryNativeOpenWhenBoundsRecover();
     });
 
-    const intervalId = setInterval(retryNativeOpenWhenBoundsRecover, 250);
+    const intervalId = setInterval(retryNativeOpenWhenBoundsRecover, 48);
     window.addEventListener('resize', retryNativeOpenWhenBoundsRecover);
 
     return () => {
@@ -1273,8 +1307,24 @@ export default function TerminalTTY({
       panelId: id,
       bounds,
       cwd: cwd || null,
-      initialCommand: initialCommand || null,
+      // Interactive shell only — command is pasted after spawn (like xterm onopen).
+      initialCommand: null,
       sessionId: id,
+    };
+
+    const injectNativeInitialCommand = async (command) => {
+      const clean = String(command || '')
+        .replace(/\s*#recovery-\d+\s*$/, '')
+        .trim();
+      if (!clean || hasSentInitialCommand.current || nativeInitialCommandInjected.has(id)) {
+        return;
+      }
+      nativeInitialCommandInjected.add(id);
+      hasSentInitialCommand.current = true;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
+      await pasteNativeVtePanel({ panelId: id, text: `${clean}\n` });
+      cliLog(`CLIENT:${id}`, 'native VTE injected initial command', { command: clean });
     };
 
     const applyNativeOpenResult = (result) => {
@@ -1289,6 +1339,9 @@ export default function TerminalTTY({
         setConnectionState('connected');
         setIsInitializing(false);
         clearNativeVteProbeRetryTimer();
+        if (initialCommand) {
+          void injectNativeInitialCommand(initialCommand);
+        }
         return true;
       }
 
@@ -1422,38 +1475,22 @@ export default function TerminalTTY({
   useEffect(() => {
     if (requestedRendererMode !== 'vte-experimental') return undefined;
 
-    const settleTimers = [];
-    let rafId = null;
+    let cancelScheduledShow = null;
 
-    const clearScheduledSync = () => {
-      settleTimers.forEach((timerId) => clearTimeout(timerId));
-      settleTimers.length = 0;
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
+    const clearScheduledShow = () => {
+      cancelScheduledShow?.();
+      cancelScheduledShow = null;
+    };
+
+    const runShowAndResize = () => {
+      if (!isVisibleInLayout) return;
+      if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
+      void showAndResizeNativeLease();
     };
 
     const scheduleShowAndResize = () => {
-      clearScheduledSync();
-      const sync = () => {
-        if (!isVisibleInLayout) return;
-        if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
-        showAndResizeNativeLease();
-      };
-
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        sync();
-      });
-
-      [80, 180, 400].forEach((delayMs) => {
-        settleTimers.push(
-          setTimeout(() => {
-            sync();
-          }, delayMs)
-        );
-      });
+      clearScheduledShow();
+      cancelScheduledShow = scheduleNativeSurfaceActivation(runShowAndResize);
     };
 
     const handleWorkspaceNativeSurfaceSync = (event) => {
@@ -1466,14 +1503,12 @@ export default function TerminalTTY({
       );
 
       if (hiddenPanelIds.has(id)) {
-        clearScheduledSync();
+        clearScheduledShow();
         if (hideTimerRef.current) {
           clearTimeout(hideTimerRef.current);
-        }
-        hideTimerRef.current = setTimeout(() => {
           hideTimerRef.current = null;
-          hideNativeLease(detail.reason || 'workspace-hidden');
-        }, 100);
+        }
+        void hideNativeLease(detail.reason || 'workspace-hidden');
         return;
       }
 
@@ -1482,14 +1517,19 @@ export default function TerminalTTY({
           clearTimeout(hideTimerRef.current);
           hideTimerRef.current = null;
         }
-        scheduleShowAndResize();
+        if (nativeVteOpened) {
+          runShowAndResize();
+          scheduleShowAndResize();
+        } else {
+          scheduleShowAndResize();
+        }
       }
     };
 
     window.addEventListener('devhub:native-vte-workspace-sync', handleWorkspaceNativeSurfaceSync);
 
     return () => {
-      clearScheduledSync();
+      clearScheduledShow();
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
@@ -1504,6 +1544,7 @@ export default function TerminalTTY({
     id,
     isVisibleInLayout,
     nativeSurfacePolicy,
+    nativeVteOpened,
     requestedRendererMode,
     showAndResizeNativeLease,
     suspendNativeSurface,
@@ -1563,7 +1604,7 @@ export default function TerminalTTY({
     const scheduleNativeResizeAfterLayoutSettles = () => {
       clearNativeResizeSettleTimers();
       scheduleNativeResize();
-      nativeResizeSettleTimersRef.current = [80, 180].map((delayMs) =>
+      nativeResizeSettleTimersRef.current = NATIVE_SURFACE_SETTLE_DELAYS_MS.map((delayMs) =>
         setTimeout(() => {
           sendNativeResize();
         }, delayMs)
@@ -1604,6 +1645,7 @@ export default function TerminalTTY({
   useEffect(() => {
     const handleSessionClosing = (event) => {
       if (event.detail?.panelId !== id) return;
+      nativeInitialCommandInjected.delete(id);
       closeNativeLease('session-close');
     };
 
@@ -2160,6 +2202,17 @@ export default function TerminalTTY({
     disposeOnUnmount,
   ]);
 
+  // Leaving parent-driven "suspended" must boot/reconnect (manual restore path).
+  useEffect(() => {
+    const wasSuspended = prevExternalConnectionRef.current === 'suspended';
+    prevExternalConnectionRef.current = externalConnectionState;
+
+    if (wasSuspended && externalConnectionState !== 'suspended') {
+      hasSentInitialCommand.current = false;
+      setTerminalRuntimeNonce((nonce) => nonce + 1);
+    }
+  }, [externalConnectionState]);
+
   useEffect(() => {
     const handleSearch = (event) => {
       const detail = event.detail || {};
@@ -2441,6 +2494,8 @@ export default function TerminalTTY({
     initError,
     connectionState
   );
+  const showLoadingOverlay =
+    !shouldUseNativeRenderer && (isInitializing || connectionState === 'connecting');
   const isSuspended = connectionState === 'suspended';
   const statusLabel = isConnected
     ? 'Conectado'
@@ -2588,15 +2643,13 @@ export default function TerminalTTY({
             data-testid="terminal-content-body"
             style={TERMINAL_NATIVE_CONTENT_BODY_STYLE}
           >
-            {shouldUseNativeRenderer && (
+            {shouldUseNativeRenderer ? (
               <div
-                className="absolute inset-0 z-10 rounded-md border bg-[var(--surface-app)]"
+                className="absolute inset-0 z-0 pointer-events-none"
                 data-testid="terminal-native-placeholder"
-                style={getTerminalViewportFrameStyle()}
-              >
-                <div className="h-full w-full" aria-hidden="true" />
-              </div>
-            )}
+                aria-hidden="true"
+              />
+            ) : null}
 
             <motion.div
               ref={containerRef}
@@ -2620,7 +2673,7 @@ export default function TerminalTTY({
           )}
 
           {/* Loading overlay — only during init or connecting */}
-          {(isInitializing || connectionState === 'connecting') && (
+          {showLoadingOverlay && (
             <div className="absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
               <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
               {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
@@ -2684,9 +2737,10 @@ export default function TerminalTTY({
               <button
                 data-testid="terminal-suspended-continue-btn"
                 onClick={() => {
+                  const sessionId = extractOpenCodeSessionId(initialCommand) || id;
                   window.dispatchEvent(
                     new CustomEvent('devhub:manual-revive-requested', {
-                      detail: { panelId: id, sessionId: id },
+                      detail: { panelId: id, sessionId },
                     })
                   );
                 }}
