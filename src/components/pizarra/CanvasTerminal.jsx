@@ -271,6 +271,30 @@ export default function CanvasTerminal({
         }
 
         onResize?.(next);
+
+        // pizarra-resize-live-native: during the resize gesture, directly tell the native VTE the exact content area rect
+        // (full surface screen size minus chrome insets/header) using the current mutated position.
+        // This keeps the terminal content area perfectly matched to the header chrome at all times, even mid-drag.
+        // Prevents the prompt/path text from "leaking" or duplicating into the header area after repeated resizes,
+        // wrong section colors (bg leaking), or cut-off text. The React effect will reconcile on commit.
+        if (requestedRendererMode === 'vte-experimental' && terminalId) {
+          const inset = 10;
+          const headerH = 28;
+          const contentW = Math.max(1, screenW - inset * 2);
+          const contentH = Math.max(1, screenH - inset * 2 - headerH);
+          // use the just-mutated liveWrapper position if available, else fall back to current resolved
+          const surfScreenX = liveWrapper ? parseFloat(liveWrapper.style.left) || 0 : (resolvedBounds.screenX ?? resolvedBounds.x ?? 0);
+          const surfScreenY = liveWrapper ? parseFloat(liveWrapper.style.top) || 0 : (resolvedBounds.screenY ?? resolvedBounds.y ?? 0);
+          resizeNativeVtePanel({
+            panelId: terminalId,
+            bounds: {
+              x: surfScreenX + inset,
+              y: surfScreenY + inset + headerH,
+              width: contentW,
+              height: contentH,
+            },
+          }).catch(() => {});
+        }
       };
 
       const handleMouseUp = () => {
