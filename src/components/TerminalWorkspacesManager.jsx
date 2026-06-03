@@ -89,6 +89,19 @@ import {
   buildRestoreManifestFromWorkspaceState,
   buildStartupRestorePlan,
 } from '@/lib/terminal/startupRestoreCoordinator';
+import {
+  readWorkspaceRestorePreferences,
+  normalizeWorkspacesOpenCodeCommands,
+  isOpenCodePanel,
+  extractOpenCodeSessionId,
+  inferPanelSessionKind,
+  resolveEffectiveRestorePolicy,
+} from '@/lib/terminal/restorePolicyResolver';
+import {
+  dispatchStartupRestoreQueue,
+  runOpenCodeStartupRestoreMutex,
+  shouldBumpRelaunchCommand,
+} from '@/lib/terminal/startupRestoreRunner';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import {
   useLiveSurfaceRegistry,
@@ -471,6 +484,21 @@ function shortenSemanticLabel(value, maxLength = 40) {
   return `${raw.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+function resolvePanelStartupConnectionState(
+  panel,
+  agentRun,
+  panelRestoreModes,
+  restoreBootstrapActive
+) {
+  if (panelRestoreModes?.[panel?.id] === 'suspended') {
+    return 'suspended';
+  }
+  if (restoreBootstrapActive && isOpenCodePanel(panel, agentRun)) {
+    return 'suspended';
+  }
+  return undefined;
+}
+
 function readAgentRunsByPanel(storage) {
   if (!storage) return {};
 
@@ -646,6 +674,7 @@ function renderWorkspacePanel(
     panelSemanticMetadata,
     suspendNativeSurface,
     nativeSurfacePolicy,
+    connectionState,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
@@ -820,6 +849,7 @@ function renderWorkspacePanel(
             isActivePanel={Boolean(isActivePanel ?? isActive)}
             isVisibleInLayout={Boolean(isVisibleInLayout)}
             initialCommand={panel.initialCommand}
+            connectionState={connectionState}
             requestedRendererMode={requestedRendererMode}
             onResetRendererToXterm={onResetRendererToXterm}
             onActivatePanel={onActivatePanel}
@@ -1015,6 +1045,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     restorePolicy: 'manual',
   });
   const [restoreSettingsModal, setRestoreSettingsModal] = useState({ open: false });
+  const [restoreBootstrapActive, setRestoreBootstrapActive] = useState(false);
+  const [panelRestoreModes, setPanelRestoreModes] = useState({});
+  const getPanelConnectionState = useCallback(
+    (panel) =>
+      resolvePanelStartupConnectionState(
+        panel,
+        agentRunsByPanel[panel.id],
+        panelRestoreModes,
+        restoreBootstrapActive
+      ),
+    [agentRunsByPanel, panelRestoreModes, restoreBootstrapActive]
+  );
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
@@ -1152,6 +1194,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const colCounterRef = useRef(1);
   const windowCounterRef = useRef(1);
   const hasRunStartupRestoreRef = useRef(false);
+  const relaunchInFlightRef = useRef(new Set());
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
@@ -3193,6 +3236,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   // ─── Shared Live Surface Registry Hook & Interceptors ───────────────────
   const registry = useLiveSurfaceRegistry(projectId, activeWorkspace?.id);
 
+  // Distinguishes the single dedicated/detached browser window (tied to
+  // browserWindowState.open + WebviewWindow) from independent embedded
+  // browser *surfaces* that live only inside a pizarra canvas.
+  const isDedicatedBrowserSurface = useCallback(
+    (s) => {
+      if (!activeWorkspace?.id) return false;
+      const wid = activeWorkspace.id;
+      return s.id === `shape-browser-${wid}` || s.panelId === `browser-${wid}`;
+    },
+    [activeWorkspace?.id]
+  );
+
   const registryAddSurface = useCallback(
     (surface) => {
       if (!activeWorkspace) return null;
@@ -3217,13 +3272,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         }
         return null;
       } else if (surface.type === 'browser' && !surface.panelId) {
-        // Open browser window
-        updateBrowserWindowState(activeWorkspace.id, { open: true });
+        // Pizarra embedded browser surface (independent card on the canvas).
+        // Do NOT touch browserWindowState 'open' — that exclusively drives the
+        // detached dedicated "alternativo" WebviewWindow and its auto-injection
+        // into pizarra. Setting it caused reconcile to force false (no window)
+        // and the filter to prune the surface we just added.
+        const unique = `piz-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 7)}`;
         const finalSurface = {
           ...surface,
-          id: `shape-browser-${activeWorkspace.id}`,
-          panelId: `browser-${activeWorkspace.id}`,
-          label: `Browser ${activeWorkspace.id}`,
+          id: `shape-browser-${unique}`,
+          panelId: `pizarra-browser-${unique}`,
+          label: surface.label || 'Browser',
           url: surface.url || 'http://localhost:3000/',
           pizarra: {
             ...surface.pizarra,
@@ -3237,7 +3298,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         return surface;
       }
     },
-    [activeWorkspace, handleSplit, registry.addSurface, updateBrowserWindowState]
+    [activeWorkspace, handleSplit, registry.addSurface]
   );
 
   const registryRemoveSurface = useCallback(
@@ -3249,7 +3310,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (surface.type === 'terminal') {
         handleClosePanel(surface.panelId);
       } else if (surface.type === 'browser') {
-        closeWorkspaceBrowserWindow(activeWorkspace.id);
+        // Only close dedicated for the canonical ws surface (the one that
+        // represents the detached alternative browser). Pizarra-only cards
+        // must not affect it.
+        if (isDedicatedBrowserSurface(surface)) {
+          closeWorkspaceBrowserWindow(activeWorkspace.id);
+        }
       }
       registry.removeSurface(id);
     },
@@ -3259,6 +3325,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       registry.removeSurface,
       handleClosePanel,
       closeWorkspaceBrowserWindow,
+      isDedicatedBrowserSurface,
     ]
   );
 
@@ -3356,11 +3423,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const stillExists = activeSurfaces.some(
         (as) => as.id === s.id || (s.panelId && as.panelId === s.panelId)
       );
-      if (!stillExists) {
-        changed = true;
-        return false;
+      if (stillExists) return true;
+
+      // Preserve pizarra-only browser surfaces (the ones added by "Add Browser"
+      // in the canvas, with pizarra- ids). They are not backed by workspace
+      // panels or the dedicated open flag, so must not be pruned by reconcile.
+      // (Terminals without backing panel are always dropped.)
+      if (s.type === 'browser' && !isDedicatedBrowserSurface(s)) {
+        return true;
       }
-      return true;
+
+      changed = true;
+      return false;
     });
 
     if (changed) {
@@ -3372,6 +3446,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     registry.isLoaded,
     registry.surfaces,
     registry.resetSurfaces,
+    isDedicatedBrowserSurface,
   ]);
 
   const failPendingReopen = useCallback(
