@@ -60,6 +60,7 @@ import {
   sanitizeRightDockState,
   writeRightDockState,
 } from './workspace/rightDockState';
+import { applyRightDockTabSelect } from './workspace/rightDockLayout';
 import {
   buildBrowserWindowLabel,
   readBrowserWindowStates,
@@ -102,6 +103,10 @@ import {
   runOpenCodeStartupRestoreMutex,
   shouldBumpRelaunchCommand,
 } from '@/lib/terminal/startupRestoreRunner';
+import {
+  buildCleanTerminalStatePayload,
+  flushTerminalSessionPersistence,
+} from '@/lib/terminal/terminalSessionFlush';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import {
   useLiveSurfaceRegistry,
@@ -1194,11 +1199,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const colCounterRef = useRef(1);
   const windowCounterRef = useRef(1);
   const hasRunStartupRestoreRef = useRef(false);
+  const startupRestoreCompletedRef = useRef(false);
+  const terminalHydrationReadyRef = useRef(false);
   const relaunchInFlightRef = useRef(new Set());
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
   const activeWindowIdsRef = useRef(activeWindowIds);
+  const workspaceWindowsRef = useRef(workspaceWindows);
 
   // TIC-2: Randomize panel/col/ws counters to HIGH range [1000,10000] on first mount
   // when workspaces exist (hydrated from localStorage). This prevents stale devhub_agent_runs
@@ -1286,28 +1294,34 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             parsed.activePanelIds
           );
 
-          setWorkspaces(normalizedState.workspaces);
+          const hydratedAgentRuns = readAgentRunsByPanel(storage);
+          const hydratedWorkspaces = normalizeWorkspacesOpenCodeCommands(
+            normalizedState.workspaces,
+            hydratedAgentRuns
+          );
+
+          setWorkspaces(hydratedWorkspaces);
           setActiveWsId(normalizedState.activeWsId);
           setActivePanelIds(normalizedState.activePanelIds);
 
           const normalizedWindows = normalizeWorkspaceWindows(
             parsed.workspaceWindows || {},
             parsed.activeWindowIds || {},
-            normalizedState.workspaces,
+            hydratedWorkspaces,
             normalizedState.activePanelIds
           );
 
           setWorkspaceWindows(normalizedWindows.workspaceWindows);
           setActiveWindowIds(normalizedWindows.activeWindowIds);
           setTerminalRendererPreferences(
-            readTerminalRendererPreferences(storage, projectId, normalizedState.workspaces)
+            readTerminalRendererPreferences(storage, projectId, hydratedWorkspaces)
           );
           windowCounterRef.current = Math.max(
             windowCounterRef.current,
             normalizedWindows.windowCounter
           );
 
-          const nextCounters = syncWorkspaceCountersMonotonic(normalizedState.workspaces, {
+          const nextCounters = syncWorkspaceCountersMonotonic(hydratedWorkspaces, {
             workspace: wsCounterRef.current,
             column: colCounterRef.current,
             panel: panelCounterRef.current,
@@ -1316,33 +1330,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           wsCounterRef.current = nextCounters.workspace;
           colCounterRef.current = nextCounters.column;
           panelCounterRef.current = nextCounters.panel;
-
-          // Session recovery: mark panels that need relaunch after TTY server restart
-          // This detects orphaned opencode processes and triggers clean relaunch
-          try {
-            const restoredPanelIds = new Set();
-            normalizedState.workspaces.forEach((ws) => {
-              ws.columns?.forEach((col) => {
-                col.panels?.forEach((panel) => {
-                  if (panel.initialCommand && /opencode/i.test(panel.initialCommand)) {
-                    restoredPanelIds.add(panel.id);
-                  }
-                });
-              });
-            });
-            if (restoredPanelIds.size > 0) {
-              localStorage.setItem(
-                'devhub_pending_session_recovery',
-                JSON.stringify({ panelIds: Array.from(restoredPanelIds), timestamp: Date.now() })
-              );
-            }
-          } catch {
-            // Ignore recovery tracking failures
-          }
+          terminalHydrationReadyRef.current = true;
         }
       }
     } catch (e) {
       console.error('Failed to load terminal state:', e);
+    }
+    if (!terminalHydrationReadyRef.current) {
+      terminalHydrationReadyRef.current = true;
     }
     const initialDockWorkspaceId =
       (typeof activeWsIdRef.current === 'string' && activeWsIdRef.current) ||
@@ -1362,29 +1357,31 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setIsClientLoaded(true);
   }, [projectId, storage, terminalStateStorageKey]);
 
+  const flushTerminalPersistenceNow = useCallback(() => {
+    if (!storage || !isClientLoaded) return false;
+
+    return flushTerminalSessionPersistence(storage, {
+      workspaces: workspacesRef.current,
+      activeWsId: activeWsIdRef.current,
+      activePanelIds: activePanelIdsRef.current,
+      workspaceWindows: workspaceWindowsRef.current,
+      activeWindowIds: activeWindowIdsRef.current,
+      projectId,
+      appSessionId: `shutdown-${Date.now()}`,
+      agentRunsByPanel: readAgentRunsByPanel(storage),
+    });
+  }, [isClientLoaded, projectId, storage]);
+
   useEffect(() => {
     if (isClientLoaded) {
-      const cleanWorkspaces = workspaces.map((ws) => ({
-        ...ws,
-        columns: ws.columns.map((col) => ({
-          ...col,
-          panels: col.panels.map((p) => ({
-            id: p.id,
-            cwd: p.cwd || null,
-            initialCommand: p.initialCommand || null,
-          })),
-        })),
-      }));
-      storage?.setItem(
-        terminalStateStorageKey,
-        JSON.stringify({
-          workspaces: cleanWorkspaces,
-          activeWsId,
-          activePanelIds,
-          workspaceWindows,
-          activeWindowIds,
-        })
-      );
+      const payload = buildCleanTerminalStatePayload({
+        workspaces,
+        activeWsId,
+        activePanelIds,
+        workspaceWindows,
+        activeWindowIds,
+      });
+      storage?.setItem(terminalStateStorageKey, JSON.stringify(payload));
     }
   }, [
     workspaces,
@@ -1412,6 +1409,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         projectId,
         appSessionId: `live-${Date.now()}`,
         agentRunsByPanel: readAgentRunsByPanel(storage),
+        restorePreferences: readWorkspaceRestorePreferences(storage),
       });
       storage.setItem(restoreManifestStorageKey, JSON.stringify(manifest));
     } catch {
@@ -1419,82 +1417,245 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
   }, [activeWsId, isClientLoaded, projectId, restoreManifestStorageKey, storage, workspaces]);
 
-  // --- Startup restore coordinator: build restore plan once and dispatch idempotent relaunch actions ---
+  const applyPanelRelaunchCommand = useCallback(
+    (panelId, command, panelCwd, { bumpCommand = true, emitEvent = true } = {}) => {
+      if (!panelId || !command) return;
+      if (relaunchInFlightRef.current.has(panelId)) return;
+      relaunchInFlightRef.current.add(panelId);
+
+      const normalizedCommand = String(command)
+        .replace(/\s*#recovery-\d+\s*$/i, '')
+        .trim();
+      const panel = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+
+      const nextCommand =
+        bumpCommand && shouldBumpRelaunchCommand(panel?.initialCommand, normalizedCommand)
+          ? `${normalizedCommand} #recovery-${Date.now()}`
+          : normalizedCommand;
+
+      setWorkspaces((prev) =>
+        prev.map((ws) => ({
+          ...ws,
+          columns: ws.columns.map((col) => ({
+            ...col,
+            panels: col.panels.map((p) => {
+              if (p.id !== panelId) return p;
+              return { ...p, initialCommand: nextCommand, cwd: panelCwd || p.cwd };
+            }),
+          })),
+        }))
+      );
+
+      try {
+        const savedState = JSON.parse(storage?.getItem(terminalStateStorageKey) || '{}');
+        if (savedState.workspaces) {
+          savedState.workspaces = savedState.workspaces.map((ws) => ({
+            ...ws,
+            columns: ws.columns.map((col) => ({
+              ...col,
+              panels: col.panels.map((p) => {
+                if (p.id !== panelId) return p;
+                return { ...p, initialCommand: nextCommand, cwd: panelCwd || p.cwd };
+              }),
+            })),
+          }));
+          storage?.setItem(terminalStateStorageKey, JSON.stringify(savedState));
+        }
+      } catch {
+        // Ignore persistence failures
+      }
+
+      setPanelRestoreModes((prev) => {
+        const next = { ...prev };
+        delete next[panelId];
+        return next;
+      });
+
+      if (emitEvent && typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('devhub:relaunch-panel', {
+            detail: {
+              panelId,
+              command: nextCommand,
+              cwd: panelCwd || null,
+              reason: 'panel-relaunch',
+            },
+          })
+        );
+      }
+
+      relaunchInFlightRef.current.delete(panelId);
+    },
+    [storage, terminalStateStorageKey]
+  );
+
+  // --- Startup restore: global prefs + queued OpenCode resume (reboot-safe via --session) ---
   useEffect(() => {
     if (!isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
+
+    const snapshotWorkspaces =
+      workspacesRef.current.length > 0 ? workspacesRef.current : workspaces;
+
+    let expectsHydratedWorkspaces = false;
+    try {
+      const savedRaw =
+        storage.getItem(terminalStateStorageKey) || storage.getItem('devhub_terminal_state');
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
+        expectsHydratedWorkspaces =
+          Array.isArray(parsed?.workspaces) && parsed.workspaces.length > 0;
+      }
+    } catch {
+      expectsHydratedWorkspaces = false;
+    }
+
+    const hasHydratedPanels = snapshotWorkspaces.some((ws) =>
+      (ws?.columns || []).some((col) => (col?.panels || []).length > 0)
+    );
+
+    if (expectsHydratedWorkspaces && !terminalHydrationReadyRef.current) {
+      return;
+    }
+
+    if (expectsHydratedWorkspaces && !hasHydratedPanels) {
+      return;
+    }
+
     hasRunStartupRestoreRef.current = true;
 
     let cancelled = false;
+    const restorePrefs = readWorkspaceRestorePreferences(storage);
+
+    const hasOpenCodePanels = snapshotWorkspaces.some((ws) =>
+      (ws.columns || []).some((col) =>
+        (col.panels || []).some((panel) =>
+          isOpenCodePanel(panel, agentRunsByPanel[panel.id])
+        )
+      )
+    );
+
+    if (hasOpenCodePanels) {
+      const suspendedSeed = {};
+      snapshotWorkspaces.forEach((ws) => {
+        ws.columns?.forEach((col) => {
+          col.panels?.forEach((panel) => {
+            const agentRun = agentRunsByPanel[panel.id];
+            if (!isOpenCodePanel(panel, agentRun)) return;
+
+            const policy = resolveEffectiveRestorePolicy({
+              sessionKind: 'opencode',
+              perSessionPolicy: agentRun?.restorePolicy || null,
+              preferences: restorePrefs,
+            });
+
+            if (policy === 'auto' || policy === 'manual') {
+              suspendedSeed[panel.id] = 'suspended';
+            }
+          });
+        });
+      });
+      if (Object.keys(suspendedSeed).length > 0) {
+        setPanelRestoreModes(suspendedSeed);
+        setRestoreBootstrapActive(true);
+      }
+    }
 
     const runStartupRestore = async () => {
       try {
-        const runtimeResponse = await fetch('/api/swarm/runtime-diagnostics', {
-          cache: 'no-store',
-        });
-        const runtimeSnapshot = runtimeResponse.ok ? await runtimeResponse.json() : null;
+        await runOpenCodeStartupRestoreMutex(storage, async () => {
+          const runtimeResponse = await fetch('/api/swarm/runtime-diagnostics', {
+            cache: 'no-store',
+          });
+          const runtimeSnapshot = runtimeResponse.ok ? await runtimeResponse.json() : null;
 
-        if (cancelled) return;
-
-        const manifest = buildRestoreManifestFromWorkspaceState({
-          workspaces,
-          activeWorkspaceId: activeWsId,
-          projectId,
-          appSessionId: `startup-${Date.now()}`,
-          agentRunsByPanel,
-        });
-
-        const plan = buildStartupRestorePlan({ manifest, runtimeSnapshot });
-        const panelMap = new Map(
-          workspaces.flatMap((workspace) =>
-            (workspace?.columns || []).flatMap((column) =>
-              (column?.panels || []).map((panel) => [panel.id, panel])
-            )
-          )
-        );
-        const relaunchDispatched = new Set();
-
-        plan.actions.forEach((action) => {
           if (cancelled) return;
 
-          if (action.action === RESTORE_ACTION.QUOTA_BLOCKED) {
+          const latestAgentRuns = readAgentRunsByPanel(storage);
+          const manifest = buildRestoreManifestFromWorkspaceState({
+            workspaces: snapshotWorkspaces,
+            activeWorkspaceId: activeWsIdRef.current || activeWsId,
+            projectId,
+            appSessionId: `startup-${Date.now()}`,
+            agentRunsByPanel: latestAgentRuns,
+            restorePreferences: restorePrefs,
+          });
+
+          const plan = buildStartupRestorePlan({ manifest, runtimeSnapshot });
+
+          if (plan.actions.some((action) => action.action === RESTORE_ACTION.QUOTA_BLOCKED)) {
             setReopenActionError(
               'OpenCode appears quota-blocked (429). Review runtime diagnostics before relaunching sessions.'
             );
-            return;
           }
 
-          if (
-            action.action === RESTORE_ACTION.RESTORE_READY ||
-            action.action === RESTORE_ACTION.REATTACH_LIVE_TERMINAL ||
-            action.action === RESTORE_ACTION.TERMINATED
-          ) {
-            return;
-          }
-
-          const panel = panelMap.get(action.terminalId);
-          const command =
-            panel?.initialCommand ||
-            (action.opencodeSessionId ? `opencode --session ${action.opencodeSessionId}` : null);
-
-          if (!action.terminalId || !command) return;
-
-          const dedupeKey = `${action.terminalId}:${command}`;
-          if (relaunchDispatched.has(dedupeKey)) return;
-          relaunchDispatched.add(dedupeKey);
-
-          window.dispatchEvent(
-            new CustomEvent('devhub:relaunch-panel', {
-              detail: {
-                panelId: action.terminalId,
-                command,
-                cwd: panel?.cwd || null,
-                reason: action.reason || action.action,
-              },
-            })
+          const panelMap = new Map(
+            snapshotWorkspaces.flatMap((workspace) =>
+              (workspace?.columns || []).flatMap((column) =>
+                (column?.panels || []).map((panel) => [panel.id, panel])
+              )
+            )
           );
+
+          const queueResult = await dispatchStartupRestoreQueue({
+            actions: plan.actions,
+            getPanel: (panelId) => panelMap.get(panelId),
+            onRelaunch: async (action, panel, command) => {
+              if (cancelled) return;
+              applyPanelRelaunchCommand(action.terminalId, command, panel?.cwd || null, {
+                emitEvent: true,
+              });
+            },
+            onPanelLive: (panelId) => {
+              if (cancelled) return;
+              setPanelRestoreModes((prev) => {
+                const next = { ...prev };
+                delete next[panelId];
+                return next;
+              });
+            },
+          });
+
+          if (cancelled) return;
+
+          setPanelRestoreModes((prev) => {
+            const next = { ...prev };
+            queueResult.manualPanelIds.forEach((panelId) => {
+              next[panelId] = 'suspended';
+            });
+            manifest.terminalSessions.forEach((session) => {
+              if (session.restorePolicy === 'off' && session.sessionKind === 'opencode') {
+                next[session.terminalId] = 'suspended';
+              }
+            });
+            queueResult.livePanelIds.forEach((panelId) => {
+              delete next[panelId];
+            });
+            Object.keys(next).forEach((panelId) => {
+              if (
+                !queueResult.manualPanelIds.includes(panelId) &&
+                !manifest.terminalSessions.some(
+                  (session) =>
+                    session.terminalId === panelId &&
+                    session.restorePolicy === 'off' &&
+                    session.sessionKind === 'opencode'
+                )
+              ) {
+                delete next[panelId];
+              }
+            });
+            return next;
+          });
         });
       } catch {
         // Startup restore must not block workspace boot.
+      } finally {
+        if (!cancelled) {
+          startupRestoreCompletedRef.current = true;
+          setRestoreBootstrapActive(false);
+        }
       }
     };
 
@@ -1503,7 +1664,34 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return () => {
       cancelled = true;
     };
-  }, [activeWsId, isClientLoaded, projectId, storage, workspaces]);
+  }, [activeWsId, applyPanelRelaunchCommand, isClientLoaded, projectId, storage, terminalStateStorageKey]);
+
+  // Synchronous flush before app/window close so opencode --session survives reboot.
+  useEffect(() => {
+    if (!isClientLoaded || typeof window === 'undefined') return undefined;
+
+    const runFlush = () => {
+      flushTerminalPersistenceNow();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        runFlush();
+      }
+    };
+
+    window.addEventListener('beforeunload', runFlush);
+    window.addEventListener('pagehide', runFlush);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('devhub:flush-terminal-persistence', runFlush);
+
+    return () => {
+      window.removeEventListener('beforeunload', runFlush);
+      window.removeEventListener('pagehide', runFlush);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('devhub:flush-terminal-persistence', runFlush);
+    };
+  }, [flushTerminalPersistenceNow, isClientLoaded]);
 
   // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
@@ -1728,9 +1916,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const shouldSuspendNativeSurfaces =
     isGridLauncherOpen ||
     swarmLaunchWizardOpen ||
-    restoreSettingsModal.open ||
-    isDraggingDock ||
-    isDraggingInternalSplit;
+    restoreSettingsModal.open;
+  // During dock and internal split resizes we keep 'live' so the native VTE
+  // (and native browser if in dock) surfaces stay visible and continue
+  // rendering/resizing without being suspended to xterm or transient overlay.
+  // This fulfills the request: no more "ocultar y quitar las ventanas de las
+  // terminales" while doing resize (or dock width drag). The isDragging*
+  // flags are still maintained for resizer UX and global-up safety, but
+  // decoupled from native suspend.
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
@@ -1827,6 +2020,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   activeWsIdRef.current = activeWsId;
   activePanelIdsRef.current = activePanelIds;
   activeWindowIdsRef.current = activeWindowIds;
+  workspaceWindowsRef.current = workspaceWindows;
 
   useEffect(() => {
     setSwarmLaunchDraft((current) =>
@@ -2201,42 +2395,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const handleRightDockTabSelect = useCallback(
     (tab) => {
-      updateRightDockState((currentState) => {
-        const isPizarra = tab === 'pizarra';
-        const isCurrentlyPizarra =
-          currentState.maximized && currentState.maximizedView === 'pizarra';
-
-        // Pizarra switch: toggle ON (activate) / OFF (deactivate)
-        if (isPizarra) {
-          if (isCurrentlyPizarra) {
-            // Toggle OFF — restore normal terminal view (not browser)
-            return {
-              ...currentState,
-              visible: false,
-              maximized: false,
-              maximizedView: 'browser',
-            };
-          } else {
-            // Toggle ON — activate pizarra fullscreen
-            return {
-              ...currentState,
-              visible: true,
-              activeTab: 'pizarra',
-              maximized: true,
-              maximizedView: 'pizarra',
-            };
-          }
-        }
-
-        // Other tabs: restore normal dock state (not maximized)
-        return {
-          ...currentState,
-          visible: currentState.visible && currentState.activeTab === tab ? false : true,
-          activeTab: tab,
-          maximized: false,
-          maximizedView: tab,
-        };
-      });
+      updateRightDockState((currentState) => applyRightDockTabSelect(currentState, tab));
     },
     [updateRightDockState]
   );
@@ -2604,6 +2763,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const { taskId, selectedAgent, launchOrigin, promptSummary, taskTitle } = request || {};
     if (!taskId || !panelId) return;
     const swarmRole = buildSwarmRoleMetadata(request);
+    const restorePrefs = readWorkspaceRestorePreferences(storage);
+    const sessionKind = inferPanelSessionKind({
+      initialCommand: commandToRun,
+      agentRun: { swarmRole: swarmRole?.roleKey, launchOrigin },
+    });
+    const defaultRestorePolicy = resolveEffectiveRestorePolicy({
+      sessionKind,
+      perSessionPolicy: null,
+      preferences: restorePrefs,
+    });
+    const opencodeSessionId = extractOpenCodeSessionId(commandToRun);
 
     try {
       const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
@@ -2621,6 +2791,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         workspaceId: request?.workspaceId || null,
         runId: request?.runId || null,
         sessionId: request?.sessionId || null,
+        opencodeSessionId: opencodeSessionId || runs[taskId]?.opencodeSessionId || null,
+        restorePolicy: runs[taskId]?.restorePolicy || defaultRestorePolicy,
         launchedAt: Date.now(),
       };
       localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
@@ -2629,7 +2801,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
 
     // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
-  }, []);
+  }, [storage]);
 
   const createWorkspaceForSwarmLaunchRequests = useCallback(
     (requests = []) => {
@@ -3614,7 +3786,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         // This fixes a race condition where the app crashes before the flush,
         // causing restore to treat the session as shell-ephemeral (no command).
         if (taskEntry?.[0]) {
-          runs[taskEntry[0]] = { ...runs[taskEntry[0]], opencodeSessionId: sessionId };
+          const restorePrefs = readWorkspaceRestorePreferences(storage);
+          const sessionKind = inferPanelSessionKind({
+            initialCommand: `opencode --session ${sessionId}`,
+            agentRun: runs[taskEntry[0]],
+          });
+          const defaultRestorePolicy = resolveEffectiveRestorePolicy({
+            sessionKind,
+            perSessionPolicy: null,
+            preferences: restorePrefs,
+          });
+          runs[taskEntry[0]] = {
+            ...runs[taskEntry[0]],
+            opencodeSessionId: sessionId,
+            restorePolicy: runs[taskEntry[0]]?.restorePolicy || defaultRestorePolicy,
+          };
           localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
         }
 
@@ -3649,21 +3835,31 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         setReopenActionError(null);
       }
 
-      setWorkspaces((prev) =>
-        prev.map((ws) => ({
-          ...ws,
-          columns: ws.columns.map((col) => ({
-            ...col,
-            panels: col.panels.map((p) => {
-              if (p.id !== panelId) return p;
-              const newCommand = `opencode --session ${sessionId}`;
-              // Only update if the command actually changed to avoid unnecessary re-renders
-              if (p.initialCommand === newCommand) return p;
-              return { ...p, initialCommand: newCommand };
-            }),
-          })),
-        }))
-      );
+      const nextWorkspaces = workspacesRef.current.map((ws) => ({
+        ...ws,
+        columns: ws.columns.map((col) => ({
+          ...col,
+          panels: col.panels.map((p) => {
+            if (p.id !== panelId) return p;
+            const newCommand = `opencode --session ${sessionId}`;
+            if (p.initialCommand === newCommand) return p;
+            return { ...p, initialCommand: newCommand };
+          }),
+        })),
+      }));
+
+      flushTerminalSessionPersistence(storage, {
+        workspaces: nextWorkspaces,
+        activeWsId: activeWsIdRef.current,
+        activePanelIds: activePanelIdsRef.current,
+        workspaceWindows: workspaceWindowsRef.current,
+        activeWindowIds: activeWindowIdsRef.current,
+        projectId,
+        appSessionId: `opencode-detect-${sessionId}`,
+        agentRunsByPanel: readAgentRunsByPanel(storage),
+      });
+
+      setWorkspaces(nextWorkspaces);
     };
 
     const handleTerminalExit = (e) => {
@@ -3749,7 +3945,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const { panelId, command, cwd, reason } = e.detail || {};
       if (!panelId || !command) return;
 
+      if (relaunchInFlightRef.current.has(panelId)) return;
+
       console.log(`[Session Recovery] Relaunching panel ${panelId}: ${reason}`);
+
+      // Startup restore already persisted the bumped command; avoid double-apply.
+      if (reason === 'panel-relaunch') return;
 
       // Update the panel's initialCommand to force TerminalTTY to reconnect
       // We append a timestamp to ensure the command is "new" and triggers reconnection
@@ -3854,7 +4055,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
       window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
     };
-  }, [failPendingReopen, storage, terminalStateStorageKey]);
+  }, [failPendingReopen, projectId, storage, terminalStateStorageKey]);
 
   // --- Window Controls (for integrated titlebar) ---
   const getTauriWindow = useCallback(async () => {
@@ -4181,11 +4382,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   type="button"
                   data-testid="right-dock-tab-zed"
                   data-pizarra-active-tab={
-                    rightDockState.activeTab === 'zed' && rightDockState.visible ? 'true' : 'false'
+                    (rightDockState.zedVisible || rightDockState.activeTab === 'zed') &&
+                    rightDockState.visible
+                      ? 'true'
+                      : 'false'
                   }
                   onClick={() => handleRightDockTabSelect('zed')}
                   className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-                    rightDockState.activeTab === 'zed' && rightDockState.visible
+                    (rightDockState.zedVisible || rightDockState.activeTab === 'zed') &&
+                    rightDockState.visible
                       ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
                       : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
                   }`}

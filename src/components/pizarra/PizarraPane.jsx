@@ -127,6 +127,12 @@ export default function PizarraPane({
   // tracks the canvas container position for coordinate translation.
   const canvasContainerRef = useRef(null);
 
+  // pizarra-divider-fluid: last committed values captured during rAF-batched
+  // divider drag so that on mouseup we can force a final model update even
+  // if the last rAF was cancelled. Declared at component level (hooks rule).
+  const lastDividerVRef = useRef(null);
+  const lastDividerHRef = useRef(null);
+
   // Resize observer to track container size
   React.useEffect(() => {
     if (!containerRef.current) return;
@@ -1011,6 +1017,29 @@ function PizarraInner({
 
       const isV = divider.type === 'v';
 
+      // pizarra-divider-fluid: batch onUpdateElement via rAF so we don't
+      // spam React re-renders (and potential native surface churn) on every
+      // mousemove pixel. Visual resize of the live surfaces still happens
+      // because the surface components + their wrappers react to the final
+      // bounds on the commit, and during the gesture the Konva frames + any
+      // direct style from inner resizers keep things responsive. On pure
+      // divider resize the per-surface isResizing flags stay false so their
+      // suspendNativeSurface stays false (content visible, matching the
+      // single-handle resize behavior).
+      let raf = null;
+
+      const scheduleUpdate = (updater, lastValue) => {
+        if (raf) cancelAnimationFrame(raf);
+        if (lastValue) {
+          if (isV) lastDividerVRef.current = lastValue;
+          else lastDividerHRef.current = lastValue;
+        }
+        raf = requestAnimationFrame(() => {
+          raf = null;
+          updater();
+        });
+      };
+
       const move = (moveEvent) => {
         const dx = (moveEvent.clientX - startClientX) / z;
         const dy = (moveEvent.clientY - startClientY) / z;
@@ -1018,25 +1047,50 @@ function PizarraInner({
         if (isV) {
           const newLeftW = Math.max(160, leftStart.width + dx);
           const delta = newLeftW - leftStart.width;
-          onUpdateElement?.(divider.leftId, { width: newLeftW, x: leftStart.x });
-          onUpdateElement?.(divider.rightId, {
+          const leftUpdate = { width: newLeftW, x: leftStart.x };
+          const rightUpdate = {
             x: rightStart.x + delta,
             width: Math.max(160, rightStart.width - delta),
-          });
+          };
+          scheduleUpdate(() => {
+            onUpdateElement?.(divider.leftId, leftUpdate);
+            onUpdateElement?.(divider.rightId, rightUpdate);
+          }, { left: leftUpdate, right: rightUpdate });
         } else {
           const newTopH = Math.max(120, leftStart.height + dy);
           const delta = newTopH - leftStart.height;
-          onUpdateElement?.(divider.topId, { height: newTopH, y: leftStart.y });
-          onUpdateElement?.(divider.bottomId, {
+          const topUpdate = { height: newTopH, y: leftStart.y };
+          const bottomUpdate = {
             y: rightStart.y + delta,
             height: Math.max(120, rightStart.height - delta),
-          });
+          };
+          scheduleUpdate(() => {
+            onUpdateElement?.(divider.topId, topUpdate);
+            onUpdateElement?.(divider.bottomId, bottomUpdate);
+          }, { top: topUpdate, bottom: bottomUpdate });
         }
       };
 
       const up = () => {
+        if (raf) {
+          cancelAnimationFrame(raf);
+          raf = null;
+        }
         window.removeEventListener('mousemove', move);
         window.removeEventListener('mouseup', up);
+        // Final commit using last captured values (guarantees model matches
+        // what user saw at end of gesture even if last rAF was cancelled).
+        if (isV && lastDividerVRef.current) {
+          const { left, right } = lastDividerVRef.current;
+          onUpdateElement?.(divider.leftId, left);
+          onUpdateElement?.(divider.rightId, right);
+          lastDividerVRef.current = null;
+        } else if (!isV && lastDividerHRef.current) {
+          const { top, bottom } = lastDividerHRef.current;
+          onUpdateElement?.(divider.topId, top);
+          onUpdateElement?.(divider.bottomId, bottom);
+          lastDividerHRef.current = null;
+        }
       };
 
       window.addEventListener('mousemove', move);
