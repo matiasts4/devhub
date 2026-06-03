@@ -46,6 +46,19 @@ pub fn ensure_shared_native_overlay(
         return Ok(existing_overlay);
     }
 
+    // En dev mode NO reparentamos el WebView principal de Tauri: todavía está
+    // cargando `devUrl` (Next.js) y moverlo en pleno paint rompe la composición
+    // GTK, dejando la pantalla en blanco. Sólo agregamos el overlay como hijo
+    // del default_vbox para que los WebView nativos del browser se monten
+    // encima sin tocar el árbol del WebView principal.
+    if cfg!(debug_assertions) && direct_webview.is_none() {
+        let overlay = gtk::Overlay::new();
+        overlay.set_widget_name(SHARED_NATIVE_OVERLAY_NAME);
+        default_vbox.pack_start(&overlay, true, true, 0);
+        overlay.show_all();
+        return Ok(overlay);
+    }
+
     let webview_widget = direct_webview
         .map(|webview| webview.upcast::<gtk::Widget>())
         .or_else(|| default_vbox.children().into_iter().last())
