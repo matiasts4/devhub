@@ -1420,7 +1420,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, isClientLoaded, projectId, restoreManifestStorageKey, storage, workspaces]);
 
   const applyPanelRelaunchCommand = useCallback(
-    (panelId, command, panelCwd, { bumpCommand = true, emitEvent = true } = {}) => {
+    (panelId, command, panelCwd, { bumpCommand = true, forceBump = false, emitEvent = true } = {}) => {
       if (!panelId || !command) return;
       if (relaunchInFlightRef.current.has(panelId)) return;
       relaunchInFlightRef.current.add(panelId);
@@ -1433,10 +1433,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         .flatMap((col) => col.panels || [])
         .find((entry) => entry.id === panelId);
 
-      const nextCommand =
-        bumpCommand && shouldBumpRelaunchCommand(panel?.initialCommand, normalizedCommand)
-          ? `${normalizedCommand} #recovery-${Date.now()}`
-          : normalizedCommand;
+      const shouldAppendRecovery =
+        forceBump ||
+        (bumpCommand && shouldBumpRelaunchCommand(panel?.initialCommand, normalizedCommand));
+      const nextCommand = shouldAppendRecovery
+        ? `${normalizedCommand} #recovery-${Date.now()}`
+        : normalizedCommand;
 
       setWorkspaces((prev) =>
         prev.map((ws) => ({
@@ -1916,17 +1918,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       effectiveRightDockState.maximizedView === 'pizarra');
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
-  const shouldSuspendNativeSurfaces =
-    isGridLauncherOpen ||
-    swarmLaunchWizardOpen ||
-    restoreSettingsModal.open;
-  // During dock and internal split resizes we keep 'live' so the native VTE
-  // (and native browser if in dock) surfaces stay visible and continue
-  // rendering/resizing without being suspended to xterm or transient overlay.
-  // This fulfills the request: no more "ocultar y quitar las ventanas de las
-  // terminales" while doing resize (or dock width drag). The isDragging*
-  // flags are still maintained for resizer UX and global-up safety, but
-  // decoupled from native suspend.
+  // We deliberately do *not* suspend native terminals for transient overlays
+  // such as the grid launcher (Grillas Predefinidas dropdown), swarm wizard,
+  // or restore settings modal. Terminals must stay live and visible (no black)
+  // even when any modal/popup is placed on top of them. The web-rendered
+  // chrome (modal, dropdown, backdrop) sits in the webview layer; by keeping
+  // the native VTE 'live' the content remains there underneath (or around a
+  // small popup) and recovers instantly when the overlay closes.
+  // Previously these flags forced 'transient-overlay' / 'native-suspended'
+  // which made the entire terminal area go black.
+  // (Drag-based suspend was already removed earlier for the same live-resize
+  // reason.)
+  const shouldSuspendNativeSurfaces = false;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
@@ -2213,7 +2216,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
-      const currentState = prev ?? { ... ...DEFAULT_RIGHT_DOCK_STATE };
+      const currentState = prev ?? { ...DEFAULT_RIGHT_DOCK_STATE };
       const resolvedState =
         typeof nextValue === 'function'
           ? nextValue(currentState)
@@ -3960,31 +3963,63 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         .find((entry) => entry.id === panelId);
 
       const agentRun = readAgentRunsByPanel(storage)[panelId] || null;
-      const opencodeSessionId = resolveOpenCodeSessionIdForPanel({
-        panel,
+      const sessionKind = inferPanelSessionKind({
+        initialCommand: panel?.initialCommand,
         agentRun,
-        hintSessionId,
       });
 
-      if (!opencodeSessionId) {
-        setReopenActionError(
-          'No se encontró un id de sesión OpenCode guardado. Abrí una sesión nueva o usá política automática.'
+      const clearSuspended = () => {
+        setReopenActionError(null);
+        setPanelRestoreModes((prev) => {
+          const next = { ...prev };
+          delete next[panelId];
+          return next;
+        });
+        setRestoreBootstrapActive(false);
+      };
+
+      if (sessionKind === 'opencode') {
+        const opencodeSessionId = resolveOpenCodeSessionIdForPanel({
+          panel,
+          agentRun,
+          hintSessionId,
+        });
+
+        if (!opencodeSessionId) {
+          setReopenActionError(
+            'No se encontró un id de sesión OpenCode guardado. Abrí una sesión nueva o usá política automática.'
+          );
+          return;
+        }
+
+        clearSuspended();
+        applyPanelRelaunchCommand(
+          panelId,
+          `opencode --session ${opencodeSessionId}`,
+          panel?.cwd || null,
+          { forceBump: true, emitEvent: false }
+        );
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-resume-requested', { detail: { panelId } })
         );
         return;
       }
 
-      setReopenActionError(null);
-      setPanelRestoreModes((prev) => {
-        const next = { ...prev };
-        delete next[panelId];
-        return next;
-      });
-      setRestoreBootstrapActive(false);
+      // Shell genérico / swarm: reconectar en cwd (sin opencode --session).
+      clearSuspended();
+      const shellCommand = String(panel?.initialCommand || '')
+        .replace(/\s*#recovery-\d+\s*$/i, '')
+        .trim();
 
-      applyPanelRelaunchCommand(
-        panelId,
-        `opencode --session ${opencodeSessionId}`,
-        panel?.cwd || null
+      if (shellCommand) {
+        applyPanelRelaunchCommand(panelId, shellCommand, panel?.cwd || null, {
+          forceBump: true,
+          emitEvent: false,
+        });
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('devhub:terminal-resume-requested', { detail: { panelId } })
       );
     };
 
@@ -4095,6 +4130,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     window.addEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
     window.addEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
 
+    const handleZedOpenUrl = (e) => {
+      if (!isValidZedOpenUrlEvent(e.detail)) return;
+      const { url, label, focus = false } = e.detail;
+      const last = lastZedOpenUrlRef.current;
+      if (last.url === url && (last.label ?? null) === (label ?? null)) {
+        return;
+      }
+      lastZedOpenUrlRef.current = { url, label: label ?? null };
+      updateRightDockState((currentState) =>
+        applyZedOpenUrlDockUpdate(currentState, { url, focus })
+      );
+    };
+
+    window.addEventListener('devhub:zed-open-url', handleZedOpenUrl);
+
     return () => {
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
@@ -4105,8 +4155,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       );
       window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
       window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
+      window.removeEventListener('devhub:zed-open-url', handleZedOpenUrl);
     };
-  }, [applyPanelRelaunchCommand, failPendingReopen, projectId, storage, terminalStateStorageKey]);
+  }, [applyPanelRelaunchCommand, failPendingReopen, projectId, storage, terminalStateStorageKey, updateRightDockState]);
 
   // --- Window Controls (for integrated titlebar) ---
   const getTauriWindow = useCallback(async () => {
