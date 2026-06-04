@@ -582,8 +582,7 @@ export default function TerminalTTY({
   });
 
   const [isInitializing, setIsInitializing] = useState(
-    () =>
-      requestedRendererMode !== 'vte-experimental' || !getCachedNativeVteProbeResult()?.ready
+    () => requestedRendererMode !== 'vte-experimental' || !getCachedNativeVteProbeResult()?.ready
   );
   const [initError, setInitError] = useState(null);
   const [internalConnectionState, setInternalConnectionState] = useState('idle');
@@ -1330,7 +1329,9 @@ export default function TerminalTTY({
       nativeInitialCommandInjected.add(id);
       hasSentInitialCommand.current = true;
       await new Promise((resolve) => setTimeout(resolve, 200));
-      await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
+      await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
+        handleNativeLeaseCommandError
+      );
       await pasteNativeVtePanel({ panelId: id, text: `${clean}\n` });
       cliLog(`CLIENT:${id}`, 'native VTE injected initial command', { command: clean });
     };
@@ -1532,6 +1533,22 @@ export default function TerminalTTY({
         } else {
           scheduleShowAndResize();
         }
+
+        // xterm (or fallback) path: on explicit workspace activation for this panel,
+        // re-assert the saved viewport if user had scrolled up. The isVisibleInLayout
+        // effect + resize observer already do preservation; this makes the
+        // "ws now front" signal from TWM explicit so scroll doesn't land on top
+        // after the many fit/reactivate calls during a workspace switch transition.
+        if (termRef.current && !nativeVteOpened) {
+          const saved = lastViewportYRef.current;
+          if (saved != null) {
+            if (!isTerminalViewportNearBottom(termRef.current)) {
+              restoreTerminalViewportScroll(termRef.current, saved);
+            }
+          } else {
+            scrollTerminalToBottom(true);
+          }
+        }
       }
     };
 
@@ -1593,7 +1610,9 @@ export default function TerminalTTY({
     if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
     const sendNativeResize = () => {
-      const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+      const rawBounds = getNativeTerminalBounds(
+        containerRef.current || nativePlaceholderRef.current
+      );
       if (!rawBounds) return;
       // Safety inset (see getNativeTerminalBounds comment for rationale).
       const bounds = {

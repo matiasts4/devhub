@@ -205,6 +205,10 @@ struct NativeVtePanelHost {
     child_pid: Option<glib::Pid>,
     visible: bool,
     last_bounds: Option<NativeVteBounds>,
+    /// Saved vadjustment value (scroll offset in the VTE buffer) captured before parking
+    /// an inactive workspace's terminal offscreen. Restored on show to preserve where the
+    /// user had scrolled (prevents jumping to top/first message on workspace switch).
+    last_scroll_value: Option<f64>,
 }
 
 fn unsupported_platform_reason() -> Option<String> {
@@ -828,8 +832,13 @@ fn derive_native_vte_panel_geometry(
     terminal_metrics: Option<(i32, i32)>,
     gutter_px: i32,
 ) -> NativeVtePanelGeometry {
-    let wrapper_x = bounds.x.round().max(0.0) as i32;
-    let wrapper_y = bounds.y.round().max(0.0) as i32;
+    // NOTE: do NOT clamp x/y to >=0 here. Negative coordinates are intentionally used
+    // to park inactive workspace terminals FAR offscreen while preserving their FULL
+    // logical size (cols/rows). This prevents sending tiny SIGWINCH to the child TUI
+    // process (OpenCode, Grok Build etc) which was causing their internal view/scroll
+    // to reset to the first message on workspace switch.
+    let wrapper_x = bounds.x.round() as i32;
+    let wrapper_y = bounds.y.round() as i32;
     let wrapper_width = bounds.width.round().max(1.0) as i32;
     let wrapper_height = bounds.height.round().max(1.0) as i32;
     let inset = gutter_px.max(0);
@@ -866,6 +875,32 @@ fn derive_hidden_native_vte_panel_bounds() -> NativeVteBounds {
         y: -10_000.0,
         width: 1.0,
         height: 1.0,
+    }
+}
+
+/// Capture current VTE scroll offset (vadjustment) into the panel before parking it.
+/// This is the "where the user was looking" in the buffer (chat history etc).
+#[cfg(target_os = "linux")]
+fn capture_panel_scroll(panel: &mut NativeVtePanelHost) {
+    if let Some(adj) = panel.terminal.vadjustment() {
+        panel.last_scroll_value = Some(adj.value());
+    }
+}
+
+/// Restore previously captured scroll offset after the panel is shown at its target size.
+/// Clamps to valid range (upper - page_size) because buffer may have grown while parked.
+/// Called after show + apply so the adjustment has correct page/upper from the realized grid.
+#[cfg(target_os = "linux")]
+fn restore_panel_scroll(panel: &NativeVtePanelHost) {
+    if let Some(val) = panel.last_scroll_value {
+        if let Some(adj) = panel.terminal.vadjustment() {
+            let upper = adj.upper();
+            let page = adj.page_size();
+            let max_valid = (upper - page).max(0.0);
+            let clamped = val.max(0.0).min(max_valid);
+            adj.set_value(clamped);
+            panel.terminal.queue_draw();
+        }
     }
 }
 
@@ -1014,6 +1049,12 @@ fn registry_show_panel(registry: &mut NativeVteRegistry, panel_id: &str) -> Resu
     panel.visible = true;
     panel.wrapper.show_all();
     sync_registry_layout_visibility(registry);
+
+    // Restore using a fresh lookup so the &mut panel borrow from get_mut is released
+    // before the immutable borrow that sync takes on registry.
+    if let Some(p) = registry.panels.get(panel_id) {
+        restore_panel_scroll(p);
+    }
 
     Ok(())
 }
@@ -1186,6 +1227,7 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
                 child_pid: Some(child_pid),
                 visible: true,
                 last_bounds: request.bounds.clone(),
+                last_scroll_value: None,
             },
         );
         registry_show_panel(registry, request.panel_id.as_str())?;
@@ -1318,13 +1360,32 @@ fn registry_set_panel_visibility(
                 panel.last_bounds = Some(bounds.clone());
             }
             registry_show_panel(registry, panel_id)?;
+            // After show + size, restore the scroll the user had before the workspace switch.
+            // Do it on the fresh panel ref (show may have updated internal adj).
+            if let Some(panel) = registry.panels.get(panel_id) {
+                restore_panel_scroll(panel);
+            }
         } else {
             let panel = registry
                 .panels
                 .get_mut(panel_id)
                 .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
             if let Some(layout) = layout.as_ref() {
-                let hidden_bounds = derive_hidden_native_vte_panel_bounds();
+                // Capture scroll BEFORE we move/resize the widget.
+                capture_panel_scroll(panel);
+                // Park offscreen but with FULL previous size so pty winsize (set_size)
+                // and VTE grid stay identical. No tiny winch -> child TUIs keep their
+                // internal scroll/view state (e.g. chat history position).
+                let hidden_bounds = if let Some(last) = &panel.last_bounds {
+                    NativeVteBounds {
+                        x: -100_000.0,
+                        y: -100_000.0,
+                        width: last.width.max(80.0),
+                        height: last.height.max(24.0),
+                    }
+                } else {
+                    derive_hidden_native_vte_panel_bounds()
+                };
                 apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, &hidden_bounds);
             }
             panel.wrapper.set_visible(false);
@@ -2071,7 +2132,10 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn native_vte_hidden_panel_bounds_reset_geometry_offscreen_during_suspend() {
+    fn native_vte_hidden_panel_bounds_fallback_is_tiny_offscreen() {
+        // Fallback when no last_bounds known yet (e.g. hide before first successful layout).
+        // Normal workspace-switch hide now preserves full size via last_bounds in
+        // registry_set_panel_visibility (see capture + park with prior w/h).
         assert_eq!(
             derive_hidden_native_vte_panel_bounds(),
             NativeVteBounds {
