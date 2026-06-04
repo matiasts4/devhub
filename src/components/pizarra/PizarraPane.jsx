@@ -133,10 +133,6 @@ export default function PizarraPane({
   const lastDividerVRef = useRef(null);
   const lastDividerHRef = useRef(null);
 
-  // pizarra-empty-state: track if we auto-initialized on first access to avoid
-  // showing completely blank dark "submarino" canvas with nothing visible.
-  const didAutoInitRef = useRef(false);
-
   // Resize observer to track container size
   React.useEffect(() => {
     if (!containerRef.current) return;
@@ -190,6 +186,48 @@ export default function PizarraPane({
     }
     prevSurfacesRef.current = registry.surfaces;
   }, [registry.surfaces, selectElement]);
+
+  // ── Initial layout for imported workspace surfaces (fix superposition) ────
+  // When switching to pizarra, TWM registers current terminals (and browser)
+  // with pizarra:{x:null,...} so pizarra can decide placement.
+  // If they have no position yet, spread them with small offsets from a
+  // visible center so they don't all pile at the same default (100,100).
+  // We call updatePizarraLayout so the coords are persisted in the shared
+  // registry (survives toggle/reload). Only once per surface id.
+  const laidOutRegistryRef = useRef(new Set());
+  React.useEffect(() => {
+    if (!registry || typeof registry.updatePizarraLayout !== 'function') return;
+    const surfaces = registry.surfaces || [];
+    const needs = surfaces.filter((s) => {
+      const p = s.pizarra || {};
+      return (p.x == null || typeof p.x !== 'number') && !laidOutRegistryRef.current.has(s.id);
+    });
+    if (needs.length === 0) return;
+
+    // Basic spread using canvasSize (no full viewport transform needed for initial)
+    const w = canvasSize.width || 900;
+    const h = canvasSize.height || 600;
+    const baseX = Math.max(40, Math.round(w * 0.15));
+    const baseY = Math.max(40, Math.round(h * 0.15));
+    const step = 32;
+
+    needs.forEach((s, idx) => {
+      const isTerm = s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL;
+      const ww = s.pizarra?.width || (isTerm ? 640 : 1024);
+      const hh = s.pizarra?.height || (isTerm ? 400 : 700);
+      const layout = {
+        x: baseX + idx * step,
+        y: baseY + idx * step,
+        width: ww,
+        height: hh,
+        visible: true,
+      };
+      try {
+        registry.updatePizarraLayout(s.id, layout);
+      } catch {}
+      laidOutRegistryRef.current.add(s.id);
+    });
+  }, [registry, registry.surfaces, registry.updatePizarraLayout, canvasSize, SHAPE_TYPES]);
 
   // ── Shape creation from canvas ──────────────────────────────────────────
 
@@ -415,6 +453,10 @@ function PizarraInner({
   onWorkspaceWindowRemove,
 }) {
   const { zoom, pan, viewportToCanvas } = useCanvasViewport();
+
+  // pizarra-empty-state: track if we auto-initialized on first access to avoid
+  // showing completely blank dark "submarino" canvas with nothing visible.
+  const didAutoInitRef = useRef(false);
 
   // ── Viewport-aware visible region ────────────────────────────────────────
   // Returns the canvas-space bounding box of what is currently visible on screen.
@@ -784,100 +826,120 @@ function PizarraInner({
         return;
       }
 
-      // Presets below: destructive reset + load (now viewport-relative)
-      const newElements = [];
-
-      if (presetType === 'dev-split') {
-        // Improved: browser gets primary real-estate (common for web/dev work),
-        // terminals get enough width for readable output. Heights adapt to viewport.
-        const bw = Math.max(360, Math.round(vis.width * 0.62));
-        const tw = Math.max(260, vis.width - bw - 24);
-        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
-        newElements.push(
-          createShape(SHAPE_TYPES.BROWSER, {
-            x: cx - bw - 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-          })
-        );
-        newElements.push(
-          createShape(SHAPE_TYPES.TERMINAL, {
-            x: cx + 12,
-            y: cy - h / 2,
-            width: tw,
-            height: h,
-          })
-        );
-      } else if (presetType === 'dev-trio') {
-        // Improved: browser still prominent on the left, right column gives
-        // two terminals decent vertical space (logs/cmd output love height).
-        const bw = Math.max(340, Math.round(vis.width * 0.5));
-        const tw = Math.max(240, vis.width - bw - 24);
-        const h = Math.max(280, Math.min(Math.round(vis.height * 0.8), 620));
-        const th = Math.max(140, Math.round((h - 14) / 2));
-        newElements.push(
-          createShape(SHAPE_TYPES.BROWSER, {
-            x: cx - bw - 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-          })
-        );
-        newElements.push(
-          createShape(SHAPE_TYPES.TERMINAL, {
-            x: cx + 12,
-            y: cy - h / 2,
-            width: tw,
-            height: th,
-            label: 'Terminal Top',
-          })
-        );
-        newElements.push(
-          createShape(SHAPE_TYPES.TERMINAL, {
-            x: cx + 12,
-            y: cy - h / 2 + th + 14,
-            width: tw,
-            height: th,
-            label: 'Terminal Bottom',
-          })
-        );
-      } else if (presetType === 'dual-browser') {
-        const bw = Math.max(300, Math.round((vis.width - 24) / 2));
-        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
-        newElements.push(
-          createShape(SHAPE_TYPES.BROWSER, {
-            x: cx - bw - 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-            label: 'Browser 1',
-          })
-        );
-        newElements.push(
-          createShape(SHAPE_TYPES.BROWSER, {
-            x: cx + 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-            label: 'Browser 2',
-          })
-        );
-      } else if (presetType === 'clear') {
+      // Presets for live layouts: add via registry (so they appear as movable/resizable
+      // terminal/browser surfaces in the pizarra). Drawings cleared for clean start.
+      // This makes auto-init and applying layouts actually populate visible content.
+      if (presetType === 'clear') {
         resetElements([]);
         setActiveTerminalId(null);
         return;
       }
 
-      if (newElements.length > 0) {
-        resetElements(newElements);
-        setActiveTerminalId(null);
+      resetElements([]);
+      setActiveTerminalId(null);
+
+      if (presetType === 'dev-split') {
+        const bw = Math.max(360, Math.round(vis.width * 0.62));
+        const tw = Math.max(260, vis.width - bw - 24);
+        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+        registry.addSurface({
+          type: 'browser',
+          pizarra: {
+            x: cx - bw - 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
+            visible: true,
+          },
+          url: 'http://localhost:3000/',
+          label: 'Browser',
+        });
+        const added = registry.addSurface({
+          type: 'terminal',
+          pizarra: {
+            x: cx + 12,
+            y: cy - h / 2,
+            width: tw,
+            height: h,
+            visible: true,
+          },
+          label: 'Terminal',
+        });
+        if (added?.id) setActiveTerminalId(added.id);
+      } else if (presetType === 'dev-trio') {
+        const bw = Math.max(340, Math.round(vis.width * 0.5));
+        const tw = Math.max(240, vis.width - bw - 24);
+        const h = Math.max(280, Math.min(Math.round(vis.height * 0.8), 620));
+        const th = Math.max(140, Math.round((h - 14) / 2));
+        registry.addSurface({
+          type: 'browser',
+          pizarra: {
+            x: cx - bw - 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
+            visible: true,
+          },
+          url: 'http://localhost:3000/',
+          label: 'Browser',
+        });
+        registry.addSurface({
+          type: 'terminal',
+          pizarra: {
+            x: cx + 12,
+            y: cy - h / 2,
+            width: tw,
+            height: th,
+            visible: true,
+          },
+          label: 'Terminal Top',
+        });
+        const added = registry.addSurface({
+          type: 'terminal',
+          pizarra: {
+            x: cx + 12,
+            y: cy - h / 2 + th + 14,
+            width: tw,
+            height: th,
+            visible: true,
+          },
+          label: 'Terminal Bottom',
+        });
+        if (added?.id) setActiveTerminalId(added.id);
+      } else if (presetType === 'dual-browser') {
+        const bw = Math.max(300, Math.round((vis.width - 24) / 2));
+        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+        registry.addSurface({
+          type: 'browser',
+          pizarra: {
+            x: cx - bw - 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
+            visible: true,
+          },
+          url: 'http://localhost:3000/',
+          label: 'Browser 1',
+        });
+        registry.addSurface({
+          type: 'browser',
+          pizarra: {
+            x: cx + 12,
+            y: cy - h / 2,
+            width: bw,
+            height: h,
+            visible: true,
+          },
+          url: 'http://localhost:3000/',
+          label: 'Browser 2',
+        });
       }
     },
     [
       resetElements,
       getVisibleCanvasRegion,
       setActiveTerminalId,
+      registry,
       mergedElements,
       state.selectedElementIds,
       onUpdateElement,

@@ -1422,7 +1422,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, isClientLoaded, projectId, restoreManifestStorageKey, storage, workspaces]);
 
   const applyPanelRelaunchCommand = useCallback(
-    (panelId, command, panelCwd, { bumpCommand = true, forceBump = false, emitEvent = true } = {}) => {
+    (
+      panelId,
+      command,
+      panelCwd,
+      { bumpCommand = true, forceBump = false, emitEvent = true } = {}
+    ) => {
       if (!panelId || !command) return;
       if (relaunchInFlightRef.current.has(panelId)) return;
       relaunchInFlightRef.current.add(panelId);
@@ -1502,8 +1507,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   useEffect(() => {
     if (!isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
 
-    const sessionStorage =
-      typeof window !== 'undefined' ? window.sessionStorage : null;
+    const sessionStorage = typeof window !== 'undefined' ? window.sessionStorage : null;
 
     if (!shouldRunStartupRestoreThisPageLoad(sessionStorage)) {
       hasRunStartupRestoreRef.current = true;
@@ -1545,9 +1549,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     const hasOpenCodePanels = snapshotWorkspaces.some((ws) =>
       (ws.columns || []).some((col) =>
-        (col.panels || []).some((panel) =>
-          isOpenCodePanel(panel, agentRunsByPanel[panel.id])
-        )
+        (col.panels || []).some((panel) => isOpenCodePanel(panel, agentRunsByPanel[panel.id]))
       )
     );
 
@@ -1722,7 +1724,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return () => {
       cancelled = true;
     };
-  }, [activeWsId, applyPanelRelaunchCommand, isClientLoaded, projectId, storage, terminalStateStorageKey]);
+  }, [
+    activeWsId,
+    applyPanelRelaunchCommand,
+    isClientLoaded,
+    projectId,
+    storage,
+    terminalStateStorageKey,
+  ]);
 
   // Synchronous flush before app/window close so opencode --session survives reboot.
   useEffect(() => {
@@ -1979,9 +1988,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   // Hiding the native lets the web-rendered modal render cleanly on top.
   // (We already removed the drag-based suspends earlier to keep live resize.)
   const shouldSuspendNativeSurfaces =
-    isGridLauncherOpen ||
-    swarmLaunchWizardOpen ||
-    restoreSettingsModal.open;
+    isGridLauncherOpen || swarmLaunchWizardOpen || restoreSettingsModal.open;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
@@ -2715,7 +2722,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         try {
           const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
           for (const pid of panelIds) {
-            await closeNativeVtePanel({ panelId: pid, reason: 'workspace-window-removed' }).catch(() => {});
+            await closeNativeVtePanel({ panelId: pid, reason: 'workspace-window-removed' }).catch(
+              () => {}
+            );
           }
         } catch {}
       }
@@ -2899,49 +2908,52 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     );
   };
 
-  const persistAgentRunMetadata = useCallback(async (request, panelId, commandToRun) => {
-    const { taskId, selectedAgent, launchOrigin, promptSummary, taskTitle } = request || {};
-    if (!taskId || !panelId) return;
-    const swarmRole = buildSwarmRoleMetadata(request);
-    const restorePrefs = readWorkspaceRestorePreferences(storage);
-    const sessionKind = inferPanelSessionKind({
-      initialCommand: commandToRun,
-      agentRun: { swarmRole: swarmRole?.roleKey, launchOrigin },
-    });
-    const defaultRestorePolicy = resolveEffectiveRestorePolicy({
-      sessionKind,
-      perSessionPolicy: null,
-      preferences: restorePrefs,
-    });
-    const opencodeSessionId = extractOpenCodeSessionId(commandToRun);
+  const persistAgentRunMetadata = useCallback(
+    async (request, panelId, commandToRun) => {
+      const { taskId, selectedAgent, launchOrigin, promptSummary, taskTitle } = request || {};
+      if (!taskId || !panelId) return;
+      const swarmRole = buildSwarmRoleMetadata(request);
+      const restorePrefs = readWorkspaceRestorePreferences(storage);
+      const sessionKind = inferPanelSessionKind({
+        initialCommand: commandToRun,
+        agentRun: { swarmRole: swarmRole?.roleKey, launchOrigin },
+      });
+      const defaultRestorePolicy = resolveEffectiveRestorePolicy({
+        sessionKind,
+        perSessionPolicy: null,
+        preferences: restorePrefs,
+      });
+      const opencodeSessionId = extractOpenCodeSessionId(commandToRun);
 
-    try {
-      const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
-      const hints = JSON.parse(localStorage.getItem('devhub_agent_task_hints') || '{}');
-      runs[taskId] = {
-        panelId,
-        commandSummary: hints[taskId] || shortenCommandSummary(commandToRun),
-        promptSummary: promptSummary || hints[taskId] || shortenCommandSummary(commandToRun),
-        selectedAgent: selectedAgent || null,
-        launchOrigin: launchOrigin || null,
-        roleKey: swarmRole?.roleKey || request?.roleKey || null,
-        roleLabel: swarmRole?.label || request?.roleLabel || null,
-        roleAbbrev: swarmRole?.abbrev || request?.roleAbbrev || null,
-        taskTitle: taskTitle || null,
-        workspaceId: request?.workspaceId || null,
-        runId: request?.runId || null,
-        sessionId: request?.sessionId || null,
-        opencodeSessionId: opencodeSessionId || runs[taskId]?.opencodeSessionId || null,
-        restorePolicy: runs[taskId]?.restorePolicy || defaultRestorePolicy,
-        launchedAt: Date.now(),
-      };
-      localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
-    } catch {
-      // Ignore localStorage failures.
-    }
+      try {
+        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
+        const hints = JSON.parse(localStorage.getItem('devhub_agent_task_hints') || '{}');
+        runs[taskId] = {
+          panelId,
+          commandSummary: hints[taskId] || shortenCommandSummary(commandToRun),
+          promptSummary: promptSummary || hints[taskId] || shortenCommandSummary(commandToRun),
+          selectedAgent: selectedAgent || null,
+          launchOrigin: launchOrigin || null,
+          roleKey: swarmRole?.roleKey || request?.roleKey || null,
+          roleLabel: swarmRole?.label || request?.roleLabel || null,
+          roleAbbrev: swarmRole?.abbrev || request?.roleAbbrev || null,
+          taskTitle: taskTitle || null,
+          workspaceId: request?.workspaceId || null,
+          runId: request?.runId || null,
+          sessionId: request?.sessionId || null,
+          opencodeSessionId: opencodeSessionId || runs[taskId]?.opencodeSessionId || null,
+          restorePolicy: runs[taskId]?.restorePolicy || defaultRestorePolicy,
+          launchedAt: Date.now(),
+        };
+        localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+      } catch {
+        // Ignore localStorage failures.
+      }
 
-    // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
-  }, [storage]);
+      // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
+    },
+    [storage]
+  );
 
   const createWorkspaceForSwarmLaunchRequests = useCallback(
     (requests = []) => {
@@ -3474,7 +3486,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       // native rect is still covering the handle's screen area.
       try {
         const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
-        await closeNativeVtePanel({ panelId: targetId, reason: 'workspace-panel-closed' }).catch(() => {});
+        await closeNativeVtePanel({ panelId: targetId, reason: 'workspace-panel-closed' }).catch(
+          () => {}
+        );
       } catch {
         // Non-fatal; the per-TTY unmount cleanup will still attempt it.
       }
@@ -3602,9 +3616,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         // detached dedicated "alternativo" WebviewWindow and its auto-injection
         // into pizarra. Setting it caused reconcile to force false (no window)
         // and the filter to prune the surface we just added.
-        const unique = `piz-${Date.now().toString(36)}-${Math.random()
-          .toString(36)
-          .slice(2, 7)}`;
+        const unique = `piz-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
         const finalSurface = {
           ...surface,
           id: `shape-browser-${unique}`,
@@ -3699,26 +3711,27 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     });
 
-    // 2. Gather browser panel if active workspace has an open browser window
-    const browserOpen = browserWindowStates?.[activeWorkspace.id]?.open === true;
+    // 2. Browser surface for the workspace — always include one so that
+    // a browser open in normal dock/workspace is automatically carried
+    // over to pizarra view (with layout applied on pizarra side).
+    // Uses dedicated window state if present, otherwise a default that
+    // pizarra can position and the shared browser pane can hydrate.
     const browsers = [];
-    if (browserOpen) {
-      const browserState = browserWindowStates[activeWorkspace.id];
-      browsers.push({
-        id: `shape-browser-${activeWorkspace.id}`,
-        type: 'browser',
-        panelId: `browser-${activeWorkspace.id}`,
-        label: browserState?.label || `Browser ${activeWorkspace.id}`,
-        url: browserState?.url || 'http://localhost:3000/',
-        pizarra: {
-          x: null,
-          y: null,
-          width: 1024,
-          height: 700,
-          visible: true,
-        },
-      });
-    }
+    const browserState = browserWindowStates?.[activeWorkspace.id] || {};
+    browsers.push({
+      id: `shape-browser-${activeWorkspace.id}`,
+      type: 'browser',
+      panelId: `browser-${activeWorkspace.id}`,
+      label: browserState?.label || `Browser ${activeWorkspace.id}`,
+      url: browserState?.url || 'http://localhost:3000/',
+      pizarra: {
+        x: null, // pizarra side will assign initial spread position
+        y: null,
+        width: 1024,
+        height: 700,
+        visible: true,
+      },
+    });
 
     const activeSurfaces = [...terminals, ...browsers];
 
@@ -4248,11 +4261,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (!isValidZedOpenUrlEvent(e.detail)) return;
       const { url, label, focus = false } = e.detail;
       const last = lastZedOpenUrlRef.current;
-      if (
-        focus !== true &&
-        last.url === url &&
-        (last.label ?? null) === (label ?? null)
-      ) {
+      if (focus !== true && last.url === url && (last.label ?? null) === (label ?? null)) {
         return;
       }
       lastZedOpenUrlRef.current = { url, label: label ?? null };
@@ -4275,7 +4284,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
       window.removeEventListener('devhub:zed-open-url', handleZedOpenUrl);
     };
-  }, [applyPanelRelaunchCommand, failPendingReopen, projectId, storage, terminalStateStorageKey, updateRightDockState]);
+  }, [
+    applyPanelRelaunchCommand,
+    failPendingReopen,
+    projectId,
+    storage,
+    terminalStateStorageKey,
+    updateRightDockState,
+  ]);
 
   // --- Window Controls (for integrated titlebar) ---
   const getTauriWindow = useCallback(async () => {
@@ -5075,7 +5091,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                 ws.id,
                                                 column.panels[0].id
                                               ),
-                                            connectionState: getPanelConnectionState(column.panels[0]),
+                                            connectionState: getPanelConnectionState(
+                                              column.panels[0]
+                                            ),
                                           })}
                                         </div>
                                       )}

@@ -106,7 +106,23 @@ export default function PizarraBrowserSurface({
   onWorkspaceWindowRemove,
   tabsMode = 'multi',
 }) {
-  const [localDockState, setLocalDockState] = useState(() => createDockState(shape.url));
+  // Compute early (before any hooks/state) so initial dockState can use it.
+  // isCarriedFromWorkspace: the surface was auto-registered by TWM from the
+  // normal workspace browser (not a fresh "Add Browser" in pizarra). For these,
+  // we want instant content (reuse live native webview) + no loading chrome.
+  const nativePanelId = shape.panelId || `browser-${projectId || 'pizarra'}-${workspaceId || shape.id}`;
+  const isCarriedFromWorkspace = !!(shape.panelId && shape.panelId.startsWith('browser-'));
+
+  const [localDockState, setLocalDockState] = useState(() => {
+    const ds = createDockState(shape.url);
+    // For carried (from normal mode switch): start on native-gtk using the live
+    // webview instance (no re-load, no spinner). New pizarra adds start on iframe
+    // for safety until native ready.
+    if (isCarriedFromWorkspace) {
+      ds.browserRuntime = 'native-gtk';
+    }
+    return ds;
+  });
 
   const resolvedDockState = parentDockState || localDockState;
   const resolvedOnDockStateChange = useCallback(
@@ -127,7 +143,10 @@ export default function PizarraBrowserSurface({
   const [loadFailed, setLoadFailed] = useState(null);
   // pizarra-ux-overhaul: tracks whether the iframe emitted a load
   // event during the 5s window. Cleared on reload.
-  const [iframeLoaded, setIframeLoaded] = useState(false);
+  // For carried workspace browsers on switch to pizarra: start "loaded" so no
+  // perpetual spinner; the live native content is already there, we just re-parent
+  // its bounds to the card.
+  const [iframeLoaded, setIframeLoaded] = useState(!!isCarriedFromWorkspace);
   // pizarra-ux-overhaul: reload key forces iframe re-mount when
   // incremented. Bump on Reload click.
   const [srcReloadKey, setSrcReloadKey] = useState(0);
@@ -283,9 +302,40 @@ export default function PizarraBrowserSurface({
   }, []);
 
   // Newly added browser surface should start on top (including above any terminals).
+  // For carried: use nativePanelId (the registered one from normal) so the live
+  // webview moves under this pizarra card immediately.
   useEffect(() => {
-    raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
-  }, []); // mount only
+    raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
+  }, [nativePanelId]); // mount only
+
+  // Immediate native bounds sync for carried browsers on pizarra mount/switch.
+  // Ensures the live webview (from normal mode) gets raised + resized to *this card's*
+  // screen rect right away. Combined with starting as native-gtk + loaded=true,
+  // the content appears instantly without "cargando todo el rato" or broken view.
+  // Uses RAF so the shell ref and DOM are ready; re-runs if bounds change early.
+  useEffect(() => {
+    if (!isCarriedFromWorkspace) return;
+    const pid = nativePanelId;
+    raiseNativeBrowser({ panelId: pid }).catch(() => {});
+    const raf = requestAnimationFrame(() => {
+      const shell = surfaceRootRef.current?.querySelector?.('[data-testid="browser-viewport-shell"]');
+      if (shell) {
+        const r = shell.getBoundingClientRect();
+        if (r.width > 10 && r.height > 10) {
+          resizeNativeBrowser({
+            panelId: pid,
+            bounds: {
+              x: Math.round(r.left),
+              y: Math.round(r.top),
+              width: Math.round(r.width),
+              height: Math.round(r.height),
+            },
+          }).catch(() => {});
+        }
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isCarriedFromWorkspace, nativePanelId, bounds.x, bounds.y, bounds.width, bounds.height]);
 
   const handleFrameMouseDown = useCallback(
     (event) => {
@@ -295,7 +345,7 @@ export default function PizarraBrowserSurface({
       onSelect?.(shape.id);
       // Raise native browser webview so this surface's content is above
       // other native surfaces (terminals etc) in pizarra z-order.
-      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
+      raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
     },
     [onSelect, shape.id]
   );
@@ -315,7 +365,7 @@ export default function PizarraBrowserSurface({
       event.stopPropagation();
       event.preventDefault();
       onSelect?.(shape.id);
-      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
+      raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
 
       const z = zoom > 0 ? zoom : 1;
       const startLogical = {
@@ -413,9 +463,10 @@ export default function PizarraBrowserSurface({
           if (shell) {
             const r = shell.getBoundingClientRect();
             if (r.width > 10 && r.height > 10) {
-              const pid = `browser-${projectId || 'pizarra'}-${workspaceId || shape.id}`;
+              // Use nativePanelId (prefers shape.panelId from TWM registration) for
+              // consistency with normal mode's browser webview instance.
               resizeNativeBrowser({
-                panelId: pid,
+                panelId: nativePanelId,
                 bounds: {
                   x: Math.round(r.left),
                   y: Math.round(r.top),
@@ -468,12 +519,12 @@ export default function PizarraBrowserSurface({
       setIsDragging(false);
       // Re-raise after drop so the browser native ends up on top in the final
       // canvas order (allows browser above terminals after drag).
-      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
+      raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
       onDragEnd?.(args);
     },
     onDragStart: () => {
       setIsDragging(true);
-      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
+      raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
     },
     moveMeta: { panelId },
   });
@@ -538,11 +589,12 @@ export default function PizarraBrowserSurface({
           pointerEvents: 'auto',
         }}
       >
-        {/* Explicit pizarra card header (like CanvasTerminal's 28px header bar).
-            Provides consistent drag target ("seleccionarlo igual que en la terminal"),
-            label, and close. Placed "sobre el browser" (above its tabstrip/pane).
-            We use a compact 24px height + tight padding to avoid wasting space.
-            The browser's own tabstrip + content sit below. Drag attrs on the header. */}
+        {/* Explicit pizarra card header for browser container.
+            Consistent with CanvasTerminal header (28px -> using 24px for balance in canvas cards).
+            Clear drag target across full header, label left, close right (larger hit area, better positioned).
+            Subtle styling, no heavy border on close (avoids looking cramped/small).
+            Better vertical rhythm and space use: header chrome + tabstrip + compact toolbar below.
+            The browser content (tabs + pane) sits tight below without waste. */}
         <div
           data-pizarra-browser-header="true"
           data-pizarra-surface-drag-handle="true"
@@ -553,17 +605,17 @@ export default function PizarraBrowserSurface({
             top: 0,
             left: 0,
             right: 0,
-            height: 20,
+            height: 24,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 6px',
+            padding: '0 8px',
             borderBottom: '1px solid rgba(255,255,255,0.08)',
             background: 'rgba(7, 17, 28, 0.96)',
             color: '#d6e2ff',
             fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 8,
-            letterSpacing: '0.04em',
+            fontSize: 9,
+            letterSpacing: '0.06em',
             textTransform: 'uppercase',
             cursor: 'move',
             userSelect: 'none',
@@ -586,14 +638,14 @@ export default function PizarraBrowserSurface({
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 20,
-              height: 20,
-              padding: 0,
-              borderRadius: 4,
-              border: '1px solid rgba(255,255,255,0.08)',
-              background: 'rgba(6, 16, 27, 0.9)',
+              width: 18,
+              height: 18,
+              padding: 2,
+              background: 'transparent',
+              border: 'none',
               color: '#9fb5d1',
               cursor: 'pointer',
+              borderRadius: 4,
             }}
           >
             <X size={12} />
@@ -601,12 +653,12 @@ export default function PizarraBrowserSurface({
         </div>
 
         {/* Browser content (tabs + pane) positioned below the pizarra header.
-            No extra floating crucecita. The header above unifies the move/select
-            affordance without wasting vertical space (compact 24px). */}
+            Tight spacing (top:24 matches header height) for max content area in canvas cards.
+            No extra floating buttons; header unifies drag/close. */}
         <div
           style={{
             position: 'absolute',
-            top: 20,
+            top: 24,
             left: 0,
             right: 0,
             bottom: 0,
