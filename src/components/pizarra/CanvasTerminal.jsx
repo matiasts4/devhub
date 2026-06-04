@@ -82,6 +82,14 @@ export default function CanvasTerminal({
     ensureSurfaceMotionKeyframes();
   }, []);
 
+  // New surfaces should appear on top of existing ones (including different native types).
+  // Raise on mount so a freshly added terminal gets its native on top in the GTK order.
+  useEffect(() => {
+    if (requestedRendererMode === 'vte-experimental') {
+      raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
+    }
+  }, []); // run once on mount
+
   // pizarra-motion: hover state drives the idle border/shadow highlight.
   const [isHovered, setIsHovered] = useState(false);
   const handleFrameMouseEnter = useCallback(() => setIsHovered(true), []);

@@ -282,6 +282,11 @@ export default function PizarraBrowserSurface({
     ensureSurfaceMotionKeyframes();
   }, []);
 
+  // Newly added browser surface should start on top (including above any terminals).
+  useEffect(() => {
+    raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
+  }, []); // mount only
+
   const handleFrameMouseDown = useCallback(
     (event) => {
       if (event.target?.closest?.('[data-pizarra-surface-drag-handle="true"]')) {
