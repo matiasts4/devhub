@@ -118,6 +118,7 @@ import {
   buildCleanTerminalStatePayload,
   flushTerminalSessionPersistence,
 } from '@/lib/terminal/terminalSessionFlush';
+import { schedulePostLayoutNativeSync } from '@/components/terminal/nativeLayoutSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import {
   useLiveSurfaceRegistry,
@@ -2482,64 +2483,117 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return columns.flatMap((col) => col.panels.map((p) => p.id));
   }, []);
 
+  const buildNativeWorkspaceSyncDetail = useCallback(
+    (reason = 'workspace-switch') => {
+      const activePanelIdsForNativeSurface = [];
+      const hiddenPanelIdsForNativeSurface = [];
+
+      workspaces.forEach((workspace) => {
+        const panelIds = getAllPanelIds(workspace.columns || []);
+        const focusedPanelId = focusedPanelByWorkspace[workspace.id];
+
+        if (workspace.id === activeWsId) {
+          if (focusedPanelId) {
+            activePanelIdsForNativeSurface.push(focusedPanelId);
+            panelIds.forEach((id) => {
+              if (id !== focusedPanelId) {
+                hiddenPanelIdsForNativeSurface.push(id);
+              }
+            });
+          } else {
+            activePanelIdsForNativeSurface.push(...panelIds);
+          }
+        } else {
+          hiddenPanelIdsForNativeSurface.push(...panelIds);
+        }
+      });
+
+      return {
+        activeWorkspaceId: activeWsId,
+        workspaceId: activeWsId,
+        activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
+        hiddenPanelIds: isVisible
+          ? hiddenPanelIdsForNativeSurface
+          : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
+        reason: isVisible ? reason : 'terminal-manager-hidden',
+      };
+    },
+    [activeWsId, focusedPanelByWorkspace, getAllPanelIds, isVisible, workspaces]
+  );
+
+  const layoutSettleCleanupRef = useRef(null);
+
+  const notifyNativeLayoutSettled = useCallback(
+    (reason) => {
+      if (typeof window === 'undefined') return;
+
+      layoutSettleCleanupRef.current?.();
+      layoutSettleCleanupRef.current = schedulePostLayoutNativeSync({
+        layoutReason: reason,
+        workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
+      });
+    },
+    [buildNativeWorkspaceSyncDetail]
+  );
+
+  useEffect(
+    () => () => {
+      layoutSettleCleanupRef.current?.();
+      layoutSettleCleanupRef.current = null;
+    },
+    []
+  );
+
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
+    notifyNativeLayoutSettled('workspace-switch');
+    return undefined;
+  }, [notifyNativeLayoutSettled]);
 
-    const activePanelIdsForNativeSurface = [];
-    const hiddenPanelIdsForNativeSurface = [];
+  const panelLayoutDebounceRef = useRef(null);
 
-    workspaces.forEach((workspace) => {
-      const panelIds = getAllPanelIds(workspace.columns || []);
-      const focusedPanelId = focusedPanelByWorkspace[workspace.id];
+  const handlePanelGroupLayout = useCallback(() => {
+    if (isDraggingInternalSplit || isDraggingDock) return;
 
-      if (workspace.id === activeWsId) {
-        if (focusedPanelId) {
-          activePanelIdsForNativeSurface.push(focusedPanelId);
-          panelIds.forEach((id) => {
-            if (id !== focusedPanelId) {
-              hiddenPanelIdsForNativeSurface.push(id);
-            }
-          });
-        } else {
-          activePanelIdsForNativeSurface.push(...panelIds);
-        }
-      } else {
-        hiddenPanelIdsForNativeSurface.push(...panelIds);
-      }
-    });
-
-    const detail = {
-      activeWorkspaceId: activeWsId,
-      workspaceId: activeWsId,
-      activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
-      hiddenPanelIds: isVisible
-        ? hiddenPanelIdsForNativeSurface
-        : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
-      reason: isVisible ? 'workspace-switch' : 'terminal-manager-hidden',
-    };
-
-    const dispatchNativeWorkspaceSync = () => {
-      window.dispatchEvent(new CustomEvent('devhub:native-vte-workspace-sync', { detail }));
-    };
-
-    dispatchNativeWorkspaceSync();
-
-    let rafId = null;
-    if (typeof requestAnimationFrame === 'function') {
-      rafId = requestAnimationFrame(dispatchNativeWorkspaceSync);
+    if (panelLayoutDebounceRef.current) {
+      clearTimeout(panelLayoutDebounceRef.current);
     }
 
-    const settleTimers = [80, 180, 400].map((delayMs) =>
-      setTimeout(dispatchNativeWorkspaceSync, delayMs)
-    );
+    panelLayoutDebounceRef.current = setTimeout(() => {
+      panelLayoutDebounceRef.current = null;
+      notifyNativeLayoutSettled('panel-group-layout');
+    }, 32);
+  }, [isDraggingDock, isDraggingInternalSplit, notifyNativeLayoutSettled]);
 
-    return () => {
-      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(rafId);
+  useEffect(
+    () => () => {
+      if (panelLayoutDebounceRef.current) {
+        clearTimeout(panelLayoutDebounceRef.current);
+        panelLayoutDebounceRef.current = null;
       }
-      settleTimers.forEach((timerId) => clearTimeout(timerId));
-    };
-  }, [activeWsId, getAllPanelIds, isVisible, workspaces, focusedPanelByWorkspace]);
+    },
+    []
+  );
+
+  const handleInternalSplitDragging = useCallback(
+    (dragging) => {
+      setIsDraggingInternalSplit(dragging);
+      if (!dragging) {
+        notifyNativeLayoutSettled('internal-split-drag-end');
+      }
+    },
+    [notifyNativeLayoutSettled]
+  );
+
+  const handleDockDragging = useCallback(
+    (dragging) => {
+      setIsDraggingDock(dragging);
+      if (!dragging) {
+        notifyNativeLayoutSettled('right-dock-drag-end');
+      }
+    },
+    [notifyNativeLayoutSettled]
+  );
 
   const findPanelInWorkspace = (workspace, panelId) => {
     if (!workspace || !panelId) return null;
@@ -2796,6 +2850,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   };
 
   const handleApplyGrid = (numCols, numRows) => {
+    // Close the launcher immediately. This is critical: while isGridLauncherOpen is true,
+    // shouldSuspendNativeSurfaces forces suspend=true for panels (even newly created ones
+    // in the just-activated ws). New grid terminals would initialize under suspend (or xterm
+    // fallback), and the resume/re-inject paths for initialCommand could be skipped or
+    // guards (hasSentInitialCommand) prevent the typed command (e.g. "groc"/"GROC") from
+    // actually running in the launched terminals. By closing here, the batched state update
+    // that creates the panels will have launcher closed => no suspend => clean native/xterm
+    // open + initialCommand paste/send for *all* the selected quantity of terminals.
+    setIsGridLauncherOpen(false);
+
     wsCounterRef.current += 1;
     const newWsId = `ws${wsCounterRef.current}`;
 
@@ -4890,6 +4954,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                 className="h-full w-full"
                                 data-testid={`workspace-columns-${ws.id}`}
                                 data-layout-direction="horizontal"
+                                onLayout={handlePanelGroupLayout}
                               >
                                 {ws.columns.map((column, columnIndex) => (
                                   <React.Fragment key={column.id}>
@@ -4900,6 +4965,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                           className="h-full w-full"
                                           data-testid={`workspace-column-panels-${column.id}`}
                                           data-layout-direction="vertical"
+                                          onLayout={handlePanelGroupLayout}
                                         >
                                           {column.panels.map((panel, panelIndex) => (
                                             <React.Fragment key={panel.id}>
@@ -4954,19 +5020,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                 <PanelResizeHandle
                                                   className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
                                                   data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
-                                                  onDragging={setIsDraggingInternalSplit}
-                                                  onPointerDown={() =>
-                                                    setIsDraggingInternalSplit(true)
-                                                  }
-                                                  onPointerUp={() =>
-                                                    setIsDraggingInternalSplit(false)
-                                                  }
-                                                  onMouseDown={() =>
-                                                    setIsDraggingInternalSplit(true)
-                                                  }
-                                                  onMouseUp={() =>
-                                                    setIsDraggingInternalSplit(false)
-                                                  }
+                                                  onDragging={handleInternalSplitDragging}
                                                 >
                                                   <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
                                                 </PanelResizeHandle>
@@ -5030,11 +5084,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                       <PanelResizeHandle
                                         className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
                                         data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
-                                        onDragging={setIsDraggingInternalSplit}
-                                        onPointerDown={() => setIsDraggingInternalSplit(true)}
-                                        onPointerUp={() => setIsDraggingInternalSplit(false)}
-                                        onMouseDown={() => setIsDraggingInternalSplit(true)}
-                                        onMouseUp={() => setIsDraggingInternalSplit(false)}
+                                        onDragging={handleInternalSplitDragging}
                                       >
                                         <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
                                       </PanelResizeHandle>
@@ -5051,7 +5101,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                             key={`${ws.id}-right-dock-resize`}
                             className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
                             data-testid="workspace-right-dock-resize-handle"
-                            onDragging={setIsDraggingDock}
+                            onDragging={handleDockDragging}
                           >
                             <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
                             <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
