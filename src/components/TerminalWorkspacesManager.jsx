@@ -2726,7 +2726,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               () => {}
             );
           }
-        } catch {}
+        } catch {
+          /* ignore close error for native panel */
+        }
       }
 
       const nextWindows = windows.filter((win) => win.id !== windowId);
@@ -2816,7 +2818,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       for (const pid of panelIdsToClean) {
         await closeNativeVtePanel({ panelId: pid, reason: 'workspace-removed' }).catch(() => {});
       }
-    } catch {}
+    } catch {
+      /* ignore native close during ws remove */
+    }
     await new Promise((resolve) => setTimeout(resolve, 200));
     await closeWorkspaceBrowserWindow(idToRemove);
 
@@ -3711,27 +3715,32 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     });
 
-    // 2. Browser surface for the workspace — always include one so that
-    // a browser open in normal dock/workspace is automatically carried
-    // over to pizarra view (with layout applied on pizarra side).
-    // Uses dedicated window state if present, otherwise a default that
-    // pizarra can position and the shared browser pane can hydrate.
+    // 2. Browser surface for the workspace — only include if the ws "browser is open"
+    // (controlled by dock/browser state in normal view, or set via pizarra close).
+    // This allows: close browser card in pizarra (sets open=false + removes surface) =>
+    // when switch back to normal, browser is not open by default (minimized/closed).
+    // Carry happens because when open in normal, surface is registered; pizarra picks it
+    // via registry for the card (with layout). Pizarra-only extra browsers (from "Add Browser")
+    // are separate and not re-added by this reconcile.
+    const browserOpen = browserWindowStates?.[activeWorkspace.id]?.open === true;
     const browsers = [];
-    const browserState = browserWindowStates?.[activeWorkspace.id] || {};
-    browsers.push({
-      id: `shape-browser-${activeWorkspace.id}`,
-      type: 'browser',
-      panelId: `browser-${activeWorkspace.id}`,
-      label: browserState?.label || `Browser ${activeWorkspace.id}`,
-      url: browserState?.url || 'http://localhost:3000/',
-      pizarra: {
-        x: null, // pizarra side will assign initial spread position
-        y: null,
-        width: 1024,
-        height: 700,
-        visible: true,
-      },
-    });
+    if (browserOpen) {
+      const browserState = browserWindowStates?.[activeWorkspace.id] || {};
+      browsers.push({
+        id: `shape-browser-${activeWorkspace.id}`,
+        type: 'browser',
+        panelId: `browser-${activeWorkspace.id}`,
+        label: browserState?.label || `Browser ${activeWorkspace.id}`,
+        url: browserState?.url || 'http://localhost:3000/',
+        pizarra: {
+          x: null, // pizarra side will assign initial spread position
+          y: null,
+          width: 1024,
+          height: 700,
+          visible: true,
+        },
+      });
+    }
 
     const activeSurfaces = [...terminals, ...browsers];
 
