@@ -118,7 +118,11 @@ import {
   buildCleanTerminalStatePayload,
   flushTerminalSessionPersistence,
 } from '@/lib/terminal/terminalSessionFlush';
-import { schedulePostLayoutNativeSync } from '@/components/terminal/nativeLayoutSync';
+import {
+  schedulePostLayoutNativeSync,
+  dispatchNativeVteWorkspaceSync,
+  computeCarvedBounds,
+} from '@/components/terminal/nativeLayoutSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import {
   useLiveSurfaceRegistry,
@@ -1048,11 +1052,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [swarmLaunchWizardOpen, setSwarmLaunchWizardOpen] = useState(false);
 
   // overlayAvoidRects: list of {x,y,width,height, source} for transient popups/modals
-  // (starting with the "GRILLAS PREDEFINIDAS" launcher) that need to render above
-  // native terminal content. We use this to temporarily crop/adjust the VTE bounds
-  // instead of full suspend/hide. This keeps the terminal "live" (no black screen)
-  // in the uncovered area while the popup shows cleanly without the terminal
-  // painting on top of it.
+  // (Grillas Predefinidas, swarm wizard, etc). When present we compute *carved* bounds
+  // for affected terminal panels and pass reduced rects to native VTE (instead of
+  // full suspend/hide). This lets web UI paint "sobre la terminal" while keeping
+  // the VTE widget live (full pty size, no winch to child TUIs, visible in non-covered
+  // areas). Core fix for bad UX of "no se logra mostrar cosas sobre la terminal sin suspenderla".
+  const [overlayAvoidRects, setOverlayAvoidRects] = useState([]);
+
   const [terminalSettingsModal, setTerminalSettingsModal] = useState({
     open: false,
     panelId: null,
@@ -2064,16 +2070,62 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       effectiveRightDockState.maximizedView === 'pizarra');
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
-  // Suspend native terminals when certain transient UI overlays are open
-  // (grid launcher "Grillas Predefinidas", swarm wizard, restore settings).
-  // This is necessary because the native VTE widgets are always composited
-  // *above* the webview content. If we don't hide them, the terminal content
-  // paints over the modal/popup (the "se ve por encima del todo" problem).
-  // Hiding the native lets the web-rendered modal render cleanly on top.
-  // (We already removed the drag-based suspends earlier to keep live resize.)
+  // With carve/avoid rects we can show web popups (Grillas, swarm wizard, etc)
+  // over *live* (carved) terminals without full suspend for most cases.
+  // We still compute shouldSuspend for legacy/restore paths, but carve takes
+  // precedence for "mostrar cosas sobre la terminal" in active panels.
+  // See overlayAvoidRects + computeCarvedBounds + registration below.
   const shouldSuspendNativeSurfaces =
-    isGridLauncherOpen || swarmLaunchWizardOpen || restoreSettingsModal.open;
+    /* isGridLauncherOpen || swarmLaunchWizardOpen || */ restoreSettingsModal.open;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
+
+  // --- Carve / avoid rects registration for popups over live terminals ---
+  // When a popup (grillas dropdown, wizard, etc) opens that must sit above terminal
+  // areas, we measure its rect and add to overlayAvoidRects. The native sync then
+  // sends avoids to TTYs; TTYs compute carved bounds and pass reduced rects to
+  // setNativeVtePanelVisibility (visible=true + small bounds). VTE widget shrinks
+  // temporarily to the visible parts; web paints in the "hole". On close, full
+  // bounds restored. Terminal pty size stays full (child TUIs unaffected).
+  // This is the main path to fix "no se logra mostrar cosas sobre la terminal sin
+  // tener que suspenderla".
+  useEffect(() => {
+    if (!isGridLauncherOpen) {
+      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'grillas-launcher'));
+      return;
+    }
+    let rafId = 0;
+    const measure = () => {
+      const el = document.querySelector('[data-testid="workspace-grid-launcher-content"]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const rect = {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          source: 'grillas-launcher',
+        };
+        setOverlayAvoidRects((prev) => {
+          const others = prev.filter((r) => r.source !== 'grillas-launcher');
+          return [...others, rect];
+        });
+      }
+    };
+    measure();
+    rafId = requestAnimationFrame(measure);
+    const t = setTimeout(measure, 60);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(t);
+    };
+  }, [isGridLauncherOpen]);
+
+  // TODO for other popups (swarm wizard, restore, pizarra palette, tooltips, etc):
+  // add similar useEffect + data-testid on their root content, measure on open,
+  // add/remove from overlayAvoidRects with unique source. Or expose a
+  // useRegisterTerminalAvoidRect hook for arbitrary components.
+  // For now grillas (the launcher) + general dispatch mechanism is wired.
+
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
     size: effectiveRightDockState.size,
@@ -2667,9 +2719,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           ? hiddenPanelIdsForNativeSurface
           : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
         reason: isVisible ? reason : 'terminal-manager-hidden',
+        // Sent to TTYs so they can carve bounds for panels under popups (see
+        // computeCarvedBounds). Enables showing web UI over live terminals.
+        avoidRects: overlayAvoidRects,
       };
     },
-    [activeWsId, focusedPanelByWorkspace, getAllPanelIds, isVisible, workspaces]
+    [activeWsId, focusedPanelByWorkspace, getAllPanelIds, isVisible, workspaces, overlayAvoidRects]
   );
 
   const layoutSettleCleanupRef = useRef(null);
@@ -2700,6 +2755,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     notifyNativeLayoutSettled('workspace-switch');
     return undefined;
   }, [notifyNativeLayoutSettled]);
+
+  // When avoid rects change (popup opened/closed/resized), immediately tell active
+  // terminals so they carve (or restore full) without waiting for a layout event.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const detail = buildNativeWorkspaceSyncDetail('popup-avoid-rects');
+    dispatchNativeVteWorkspaceSync(detail);
+  }, [overlayAvoidRects, buildNativeWorkspaceSyncDetail]);
 
   const panelLayoutDebounceRef = useRef(null);
 

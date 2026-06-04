@@ -25,6 +25,7 @@ import {
 import {
   NATIVE_SURFACE_SETTLE_DELAYS_MS,
   scheduleNativeSurfaceActivation,
+  computeCarvedBounds,
 } from '@/components/terminal/nativeLayoutSync';
 import {
   getTerminalRendererFallbackCopy,
@@ -623,6 +624,10 @@ export default function TerminalTTY({
   const consecutiveStaleFitFailuresRef = useRef(0);
   const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
   const lastViewportYRef = useRef(null);
+  // Last seen avoid rects from TWM (for carve when popups are over this terminal).
+  // Updated via the workspace-sync event; used in show paths to compute carved
+  // bounds so web content can render on top without full suspend.
+  const avoidRectsRef = useRef([]);
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
     isVisibleInLayout,
@@ -899,19 +904,25 @@ export default function TerminalTTY({
       cliLog(`CLIENT:${id}`, 'native VTE show skipped — invalid bounds');
       return;
     }
+    // Carve for popups if we have avoids (from last sync or ref). This keeps
+    // terminal live while web UI is shown "sobre" it.
+    const avoids = avoidRectsRef.current || [];
+    const carved = computeCarvedBounds(rawBounds, avoids);
+    const base = carved || rawBounds;
     // Safety inset so split dividers and dock chrome are not overpainted by the native.
     const bounds = {
-      x: rawBounds.x + 1,
-      y: rawBounds.y + 1,
-      width: Math.max(0, rawBounds.width - 2),
-      height: Math.max(0, rawBounds.height - 2),
+      x: base.x + 1,
+      y: base.y + 1,
+      width: Math.max(0, base.width - 2),
+      height: Math.max(0, base.height - 2),
     };
-    cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds });
+    cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds, carved: !!carved });
     await Promise.resolve(
       setNativeVtePanelVisibility({
         panelId: id,
         visible: true,
         bounds,
+        reason: carved ? 'show-carved' : 'show-lease',
       })
     ).catch(handleNativeLeaseCommandError);
   }, [handleNativeLeaseCommandError, id]);
@@ -1512,6 +1523,10 @@ export default function TerminalTTY({
         Array.isArray(detail.hiddenPanelIds) ? detail.hiddenPanelIds.filter(Boolean) : []
       );
 
+      if (detail.avoidRects) {
+        avoidRectsRef.current = detail.avoidRects;
+      }
+
       if (hiddenPanelIds.has(id)) {
         clearScheduledShow();
         if (hideTimerRef.current) {
@@ -1547,6 +1562,29 @@ export default function TerminalTTY({
             }
           } else {
             scrollTerminalToBottom(true);
+          }
+        }
+
+        // Carve support: if avoid rects (popups) overlap this panel, compute reduced
+        // bounds and apply via visibility (visible + carved) so web paints over the
+        // avoided area while VTE stays live outside it. If fully covered, hide.
+        // This (plus registration in TWM) lets you show "cosas sobre la terminal"
+        // (grillas, wizards, dock content, pizarra elements, etc) without full suspend.
+        const rawBounds = getNativeTerminalBounds(
+          containerRef.current || nativePlaceholderRef.current
+        );
+        if (rawBounds) {
+          const avoids = detail.avoidRects || avoidRectsRef.current || [];
+          const carved = computeCarvedBounds(rawBounds, avoids);
+          if (carved) {
+            void setNativeVtePanelVisibility({
+              panelId: id,
+              visible: true,
+              bounds: carved,
+              reason: 'carve-avoid-popup',
+            }).catch(handleNativeLeaseCommandError);
+          } else if (avoids.length > 0) {
+            void hideNativeLease('avoid-fully-covered');
           }
         }
       }
