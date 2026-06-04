@@ -35,7 +35,7 @@ import {
   resolveBrowserRuntimeSelection,
   shouldWarnAboutFraming,
 } from './browserPreviewSupport';
-import { focusNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
+import { closeNativeBrowser, focusNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
 import { useNativeBrowserCapability, useNativeBrowserSurface } from './useNativeBrowserSurface';
 import { reloadBrowserRuntime } from './browserRuntimeReload';
 // pizarra-shared-view-state Phase 3: opt-in tab strip shared with

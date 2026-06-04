@@ -25,6 +25,7 @@ import { createPizarraSurfaceController } from '@/lib/commandBar/surface/pizarra
 import { LiveSurfaceRegistryContext } from '@/lib/pizarra/useLiveSurfaceRegistry';
 import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
+import { closeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
 
 // SSR-safe canvas import
 const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
@@ -191,43 +192,7 @@ export default function PizarraPane({
   // When switching to pizarra, TWM registers current terminals (and browser)
   // with pizarra:{x:null,...} so pizarra can decide placement.
   // If they have no position yet, spread them with small offsets from a
-  // visible center so they don't all pile at the same default (100,100).
-  // We call updatePizarraLayout so the coords are persisted in the shared
-  // registry (survives toggle/reload). Only once per surface id.
-  const laidOutRegistryRef = useRef(new Set());
-  React.useEffect(() => {
-    if (!registry || typeof registry.updatePizarraLayout !== 'function') return;
-    const surfaces = registry.surfaces || [];
-    const needs = surfaces.filter((s) => {
-      const p = s.pizarra || {};
-      return (p.x == null || typeof p.x !== 'number') && !laidOutRegistryRef.current.has(s.id);
-    });
-    if (needs.length === 0) return;
-
-    // Basic spread using canvasSize (no full viewport transform needed for initial)
-    const w = canvasSize.width || 900;
-    const h = canvasSize.height || 600;
-    const baseX = Math.max(40, Math.round(w * 0.15));
-    const baseY = Math.max(40, Math.round(h * 0.15));
-    const step = 32;
-
-    needs.forEach((s, idx) => {
-      const isTerm = s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL;
-      const ww = s.pizarra?.width || (isTerm ? 640 : 1024);
-      const hh = s.pizarra?.height || (isTerm ? 400 : 700);
-      const layout = {
-        x: baseX + idx * step,
-        y: baseY + idx * step,
-        width: ww,
-        height: hh,
-        visible: true,
-      };
-      try {
-        registry.updatePizarraLayout(s.id, layout);
-      } catch {}
-      laidOutRegistryRef.current.add(s.id);
-    });
-  }, [registry, registry.surfaces, registry.updatePizarraLayout, canvasSize, SHAPE_TYPES]);
+  // (laidOut ref moved to just before the unpos effect for declaration order)
 
   // ── Shape creation from canvas ──────────────────────────────────────────
 
@@ -308,12 +273,28 @@ export default function PizarraPane({
     (id) => {
       const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
       if (isRegistrySurface) {
+        const surface = registry.surfaces.find((s) => s.id === id);
+        if (surface && surface.type === 'browser') {
+          const pid = surface.panelId || id;
+          // Explicitly close the native webview for this browser surface when the
+          // pizarra "ventana"/card is removed. This releases the instance.
+          closeNativeBrowser({ panelId: pid, reason: 'pizarra-browser-surface-removed' }).catch(() => {});
+          // If main ws browser, also close in ws state (so normal view doesn't re-open it by default).
+          if (pid && (pid.includes(`browser-${workspaceId}`) || pid.startsWith('browser-'))) {
+            onBrowserWindowStateChange?.(workspaceId, {
+              open: false,
+              label: '',
+              url: '',
+              updatedAt: Date.now(),
+            });
+          }
+        }
         registry.removeSurface(id);
       } else {
         dispatch({ type: PIZARRA_ACTIONS.DELETE_ELEMENT, payload: id });
       }
     },
-    [dispatch, registry.surfaces, registry.removeSurface]
+    [dispatch, registry.surfaces, registry.removeSurface, onBrowserWindowStateChange, workspaceId]
   );
 
   React.useEffect(() => {
@@ -457,6 +438,8 @@ function PizarraInner({
   // pizarra-empty-state: track if we auto-initialized on first access to avoid
   // showing completely blank dark "submarino" canvas with nothing visible.
   const didAutoInitRef = useRef(false);
+  // Track if we applied default structure (preset-based pos) to carried surfaces on first pizarra entry.
+  const didAutoStructureRef = useRef(false);
 
   // ── Viewport-aware visible region ────────────────────────────────────────
   // Returns the canvas-space bounding box of what is currently visible on screen.
@@ -476,6 +459,92 @@ function PizarraInner({
       z,
     };
   }, [canvasSize, zoom, viewportToCanvas]);
+
+  const laidOutRegistryRef = useRef(new Set());
+
+  // ── Unpositioned registry surfaces layout (smart structure on first pizarra with carried) ──
+  // When carried terminals/browsers from normal appear with x:null (first switch), assign
+  // positions using matching default preset (dev-split etc) based on counts, so they start
+  // in the "split sections" / trio / dual as user expects, instead of spread or default.
+  // Fallback to basic spread for other cases. Done once via ref.
+  React.useEffect(() => {
+    if (!registry || typeof registry.updatePizarraLayout !== 'function') return;
+    const surfaces = registry.surfaces || [];
+    const needs = surfaces.filter((s) => {
+      const p = s.pizarra || {};
+      return (p.x == null || typeof p.x !== 'number') && !laidOutRegistryRef.current.has(s.id);
+    });
+    if (needs.length === 0) return;
+
+    const bNeeds = needs.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
+    const tNeeds = needs.filter((s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL);
+
+    const vis = getVisibleCanvasRegion ? getVisibleCanvasRegion() : { width: canvasSize.width || 900, height: canvasSize.height || 600, x: 0, y: 0 };
+    const cx = vis.x + vis.width / 2;
+    const cy = vis.y + vis.height / 2;
+
+    let assigned = false;
+    if (!didAutoStructureRef.current) {
+      if (bNeeds.length === 1 && tNeeds.length === 1) {
+        didAutoStructureRef.current = true;
+        const slots = computeDevSplitSlots(vis, cx, cy);
+        registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
+        registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
+        laidOutRegistryRef.current.add(bNeeds[0].id);
+        laidOutRegistryRef.current.add(tNeeds[0].id);
+        assigned = true;
+      } else if (bNeeds.length === 1 && tNeeds.length === 2) {
+        didAutoStructureRef.current = true;
+        const slots = computeDevTrioSlots(vis, cx, cy);
+        registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
+        registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
+        registry.updatePizarraLayout(tNeeds[1].id, { ...slots.terminals[1], visible: true });
+        laidOutRegistryRef.current.add(bNeeds[0].id);
+        laidOutRegistryRef.current.add(tNeeds[0].id);
+        laidOutRegistryRef.current.add(tNeeds[1].id);
+        assigned = true;
+      } else if (bNeeds.length === 2 && tNeeds.length === 0) {
+        didAutoStructureRef.current = true;
+        const slots = computeDualBrowserSlots(vis, cx, cy);
+        bNeeds.forEach((s, i) => {
+          if (slots.browsers[i]) {
+            registry.updatePizarraLayout(s.id, { ...slots.browsers[i], visible: true });
+            laidOutRegistryRef.current.add(s.id);
+          }
+        });
+        assigned = true;
+      }
+    }
+
+    if (!assigned) {
+      // Fallback spread
+      const w = canvasSize.width || 900;
+      const h = canvasSize.height || 600;
+      const baseX = Math.max(40, Math.round(w * 0.15));
+      const baseY = Math.max(40, Math.round(h * 0.15));
+      const step = 32;
+
+      needs.forEach((s, idx) => {
+        if (laidOutRegistryRef.current.has(s.id)) return;
+        const isTerm = s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL;
+        const ww = s.pizarra?.width || (isTerm ? 640 : 1024);
+        const hh = s.pizarra?.height || (isTerm ? 400 : 700);
+        const layout = {
+          x: baseX + idx * step,
+          y: baseY + idx * step,
+          width: ww,
+          height: hh,
+          visible: true,
+        };
+        try {
+          registry.updatePizarraLayout(s.id, layout);
+        } catch {
+          // best-effort
+        }
+        laidOutRegistryRef.current.add(s.id);
+      });
+    }
+  }, [registry, registry.surfaces, registry.updatePizarraLayout, canvasSize, SHAPE_TYPES, getVisibleCanvasRegion]);
 
   // ── handleAddElement — spawns at current visible viewport center ─────────
   const handleAddElement = useCallback(
@@ -712,6 +781,45 @@ function PizarraInner({
     [handleAddElement, updateElement, setActiveTerminalId, mergedElements, activeTerminalId]
   );
 
+  // ── Preset layout slot calculators (extracted for clarity and reuse).
+  // These define the "estructuras por defecto" (dev-split, trio, dual-browser)
+  // that match common workspace setups. Used both for destructive presets (palette)
+  // and for smart auto-positioning of carried surfaces on first pizarra entry.
+  const computeDevSplitSlots = (vis, cx, cy) => {
+    const bw = Math.max(360, Math.round(vis.width * 0.62));
+    const tw = Math.max(260, vis.width - bw - 24);
+    const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+    return {
+      browser: { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
+      terminals: [{ x: cx + 12, y: cy - h / 2, width: tw, height: h }]
+    };
+  };
+
+  const computeDevTrioSlots = (vis, cx, cy) => {
+    const bw = Math.max(340, Math.round(vis.width * 0.5));
+    const tw = Math.max(240, vis.width - bw - 24);
+    const h = Math.max(280, Math.min(Math.round(vis.height * 0.8), 620));
+    const th = Math.max(140, Math.round((h - 14) / 2));
+    return {
+      browser: { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
+      terminals: [
+        { x: cx + 12, y: cy - h / 2, width: tw, height: th },
+        { x: cx + 12, y: cy - h / 2 + th + 14, width: tw, height: th }
+      ]
+    };
+  };
+
+  const computeDualBrowserSlots = (vis, cx, cy) => {
+    const bw = Math.max(300, Math.round((vis.width - 24) / 2));
+    const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+    return {
+      browsers: [
+        { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
+        { x: cx + 12, y: cy - h / 2, width: bw, height: h }
+      ]
+    };
+  };
+
   // ── Apply layout preset (or arrange action) ──────────────────────────────
   // Presets are destructive (reset + load a starting configuration) but now
   // use viewport-relative proportions so they adapt to current zoom/pan/ window size.
@@ -839,97 +947,49 @@ function PizarraInner({
       setActiveTerminalId(null);
 
       if (presetType === 'dev-split') {
-        const bw = Math.max(360, Math.round(vis.width * 0.62));
-        const tw = Math.max(260, vis.width - bw - 24);
-        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+        const slots = computeDevSplitSlots(vis, cx, cy);
         registry.addSurface({
           type: 'browser',
-          pizarra: {
-            x: cx - bw - 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-            visible: true,
-          },
+          pizarra: { ...slots.browser, visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser',
         });
         const added = registry.addSurface({
           type: 'terminal',
-          pizarra: {
-            x: cx + 12,
-            y: cy - h / 2,
-            width: tw,
-            height: h,
-            visible: true,
-          },
+          pizarra: { ...slots.terminals[0], visible: true },
           label: 'Terminal',
         });
         if (added?.id) setActiveTerminalId(added.id);
       } else if (presetType === 'dev-trio') {
-        const bw = Math.max(340, Math.round(vis.width * 0.5));
-        const tw = Math.max(240, vis.width - bw - 24);
-        const h = Math.max(280, Math.min(Math.round(vis.height * 0.8), 620));
-        const th = Math.max(140, Math.round((h - 14) / 2));
+        const slots = computeDevTrioSlots(vis, cx, cy);
         registry.addSurface({
           type: 'browser',
-          pizarra: {
-            x: cx - bw - 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-            visible: true,
-          },
+          pizarra: { ...slots.browser, visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser',
         });
         registry.addSurface({
           type: 'terminal',
-          pizarra: {
-            x: cx + 12,
-            y: cy - h / 2,
-            width: tw,
-            height: th,
-            visible: true,
-          },
+          pizarra: { ...slots.terminals[0], visible: true },
           label: 'Terminal Top',
         });
         const added = registry.addSurface({
           type: 'terminal',
-          pizarra: {
-            x: cx + 12,
-            y: cy - h / 2 + th + 14,
-            width: tw,
-            height: th,
-            visible: true,
-          },
+          pizarra: { ...slots.terminals[1], visible: true },
           label: 'Terminal Bottom',
         });
         if (added?.id) setActiveTerminalId(added.id);
       } else if (presetType === 'dual-browser') {
-        const bw = Math.max(300, Math.round((vis.width - 24) / 2));
-        const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+        const slots = computeDualBrowserSlots(vis, cx, cy);
         registry.addSurface({
           type: 'browser',
-          pizarra: {
-            x: cx - bw - 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-            visible: true,
-          },
+          pizarra: { ...slots.browsers[0], visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser 1',
         });
         registry.addSurface({
           type: 'browser',
-          pizarra: {
-            x: cx + 12,
-            y: cy - h / 2,
-            width: bw,
-            height: h,
-            visible: true,
-          },
+          pizarra: { ...slots.browsers[1], visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser 2',
         });
