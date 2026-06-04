@@ -1123,6 +1123,94 @@ export default function TerminalTTY({
     }
   }, [isCanvasMode]);
 
+  // pizarra offscreen VTE texture consumer: listen for frames emitted by the Rust
+  // offscreen host (real VTE pty+emu, widget not in overlay). Paint rgba frames
+  // directly to the canvas for perfect web layering (browser surfaces can pass
+  // over without native widget superposition) while keeping full TUI fidelity.
+  const paintRgbaFrame = useCallback((payload) => {
+    const c = canvasRef.current;
+    if (!c || !isCanvasMode) return;
+    const { width: fw = 0, height: fh = 0, data, format } = payload || {};
+    if (!data || fw <= 0 || fh <= 0) return;
+    let ctx = canvasCtxRef.current;
+    if (!ctx) {
+      ctx = c.getContext('2d', { alpha: false });
+      if (!ctx) return;
+      canvasCtxRef.current = ctx;
+    }
+    if (c.width !== fw || c.height !== fh) {
+      c.width = fw;
+      c.height = fh;
+    }
+    if (format === 'rgba') {
+      try {
+        const bin = atob(data);
+        const arr = new Uint8ClampedArray(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i) & 0xff;
+        const imgData = new ImageData(arr, fw, fh);
+        ctx.putImageData(imgData, 0, 0);
+        return;
+      } catch {
+        // ignore decode error; keep prior frame
+      }
+    }
+    // fallback: leave previous or the stub init
+  }, [isCanvasMode]);
+
+  // Basic input forward from the texture canvas to the offscreen VTE pty (via paste which
+  // accepts sequences). Supports printable + common specials. Enough for shells + simple TUIs
+  // in pizarra; full xterm-style key encoding can be expanded later.
+  const handleCanvasKeyDown = useCallback((ev) => {
+    if (!isCanvasMode) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    let text = '';
+    const k = ev.key;
+    if (k.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+      text = k;
+    } else if (k === 'Enter') text = '\r';
+    else if (k === 'Backspace') text = '\x7f';
+    else if (k === 'Tab') text = '\t';
+    else if (k === 'Escape') text = '\x1b';
+    else if (k === 'ArrowUp') text = '\x1b[A';
+    else if (k === 'ArrowDown') text = '\x1b[B';
+    else if (k === 'ArrowRight') text = '\x1b[C';
+    else if (k === 'ArrowLeft') text = '\x1b[D';
+    else if (k === 'Delete') text = '\x1b[3~';
+    else if (k === 'Home') text = '\x1b[H';
+    else if (k === 'End') text = '\x1b[F';
+    if (text) {
+      // pasteNative accepts the request shape {panelId, text?}
+      pasteNativeVtePanel({ panelId: id, text }).catch(() => {});
+    }
+  }, [isCanvasMode, id]);
+
+  // Subscribe to Tauri 'terminal:frame' for this panel when in canvas texture mode.
+  useEffect(() => {
+    if (!isCanvasMode) return undefined;
+    let unlisten = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        if (cancelled) return;
+        unlisten = await listen('terminal:frame', (ev) => {
+          const p = ev?.payload || {};
+          if (p.panelId !== id) return;
+          paintRgbaFrame(p);
+        });
+      } catch {
+        // no tauri or event api (e.g. web preview); frames won't arrive, stub stays
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (unlisten) {
+        try { unlisten(); } catch {}
+      }
+    };
+  }, [isCanvasMode, id, paintRgbaFrame]);
+
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
     if (!termRef.current) return;
@@ -2916,8 +3004,10 @@ export default function TerminalTTY({
           {isCanvasMode && (
             <canvas
               ref={canvasRef}
-              className="absolute inset-0 z-20 bg-[#0f1724]"
-              style={{ imageRendering: 'crisp-edges' }}
+              tabIndex={0}
+              onKeyDown={handleCanvasKeyDown}
+              className="absolute inset-0 z-20 bg-[#0f1724] outline-none focus:ring-1 focus:ring-sky-500/40"
+              style={{ imageRendering: 'crisp-edges', cursor: 'text' }}
             />
           )}
           {/* Restored session toast */}

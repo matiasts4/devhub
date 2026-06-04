@@ -1,16 +1,14 @@
 /**
  * Helper for the `devhub:zed-open-url` CustomEvent contract (ZEB-003, ZEB-004).
  *
- * Producer: `src/lib/asistente/tools/browser.js` (T-WSR-zed-003) dispatches
- *   `devhub:zed-open-url` with detail `{ url, label, focus }` AFTER the
- *   `isSafeHttpUrl` check, alongside the existing xdg-open fallback. The
- *   system browser still opens (existing behavior preserved) — the in-app
- *   browser pane navigates too, in parallel.
+ * Producer: `src/components/asistente/ChatPanel.jsx` dispatches after an
+ *   `open_url` tool result (server-side tool only returns the URL; no
+ *   xdg-open / system browser). In-app native GTK browser only.
  *
- * Consumer: `src/components/workspace/WorkspaceBrowserPane.jsx`
- *   (T-WSR-zed-003) registers a `useEffect` listener that calls
- *   `onDockStateChange` with the new URL and (when `focus === true` and
- *   pizarra is maximized) de-maximizes pizarra. Idempotent on (url, label)
+ * Consumer: `src/components/TerminalWorkspacesManager.jsx`
+ *   (T-WSR-zed-003) registers a window listener that calls
+ *   `updateRightDockState` + `applyZedOpenUrlDockUpdate` so the browser
+ *   dock opens even when only Zed is visible. Idempotent on (url, label)
  *   via a `useRef` of the last applied pair.
  *
  * Pure function surface (validators, resolvers) is testable without a DOM.
@@ -52,6 +50,65 @@ export function resolveZedOpenUrlBrowserShape(detail) {
   return typeof detail.label === 'string' && detail.label.length > 0 ? detail.label : null;
 }
 
+function safeParseJson(value) {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Coerce model/tool `focus` params (boolean or string) for dock navigation.
+ *
+ * @param {unknown} value
+ * @param {boolean} [defaultValue=true]
+ * @returns {boolean}
+ */
+export function coerceZedOpenUrlFocus(value, defaultValue = true) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+  return defaultValue;
+}
+
+/**
+ * Build an event detail from an `open_url` tool result object.
+ *
+ * @param {unknown} result
+ * @returns {{ url: string, label: string|null, focus: boolean }|null}
+ */
+export function resolveZedOpenUrlFromToolResult(result) {
+  const parsed = safeParseJson(result);
+  if (!parsed || parsed.error || !parsed.url) return null;
+  const safety = isSafeHttpUrl(parsed.url);
+  if (!safety || !safety.url) return null;
+  return {
+    url: safety.url,
+    label: typeof parsed.label === 'string' && parsed.label.length > 0 ? parsed.label : null,
+    focus: coerceZedOpenUrlFocus(parsed.focus, true),
+  };
+}
+
+/**
+ * Dispatch one event per successful `open_url` entry in a tool_results array.
+ *
+ * @param {Array<{ tool: string, result: unknown }>|null|undefined} toolResults
+ * @returns {void}
+ */
+export function dispatchZedOpenUrlFromToolResults(toolResults) {
+  if (!Array.isArray(toolResults)) return;
+  for (const entry of toolResults) {
+    if (!entry || entry.tool !== 'open_url') continue;
+    const detail = resolveZedOpenUrlFromToolResult(entry.result);
+    if (!detail) continue;
+    dispatchZedOpenUrl(detail);
+  }
+}
+
 /**
  * Dispatches `devhub:zed-open-url` on `window`. SSR-safe (no-op when
  * `window` is undefined). This is the ONLY allowed site for an inline
@@ -73,7 +130,7 @@ export function dispatchZedOpenUrl(detail) {
   const payload = {
     url: safety.url,
     label: detail && typeof detail.label === 'string' ? detail.label : null,
-    focus: Boolean(detail && detail.focus === true),
+    focus: coerceZedOpenUrlFocus(detail && detail.focus, true),
   };
   window.dispatchEvent(new CustomEvent('devhub:zed-open-url', { detail: payload }));
 }

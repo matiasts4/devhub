@@ -1,5 +1,3 @@
-// Mock fetch at the module boundary so the tools hit the local Next API
-// the same way the live UI does, without real network.
 const { terminalTool, listTerminalsTool, reviewTerminalTool } = require('../../tools/terminal');
 
 const REAL_FETCH = global.fetch;
@@ -14,77 +12,46 @@ function mockFetch(impl) {
 }
 
 describe('open_terminal (terminalTool)', () => {
-  test('POSTs body { command, program, cwd } to /api/terminal/session', async () => {
-    const calls = [];
-    mockFetch(async (url, init) => {
-      calls.push({ url, init });
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ id: 'abc', port: 4001, wsPath: '/terminal' }),
-      };
+  test('opens workspace UI path without POST /api/terminal/session', async () => {
+    mockFetch(async () => {
+      throw new Error('fetch should not be called');
     });
 
     const result = await terminalTool.execute(
-      { program: 'zsh', cwd: '/tmp/devhub-x', command: 'ls' },
+      { cwd: '/tmp/devhub-x', command: 'ls' },
       {}
     );
 
-    expect(calls).toHaveLength(1);
-    const { url, init } = calls[0];
-    expect(url).toMatch(/\/api\/terminal\/session$/);
-    expect(init.method).toBe('POST');
-    const body = JSON.parse(init.body);
-    expect(body).toEqual({ program: 'zsh', cwd: '/tmp/devhub-x', command: 'ls' });
     expect(result).toEqual({
-      session_id: 'abc',
-      port: 4001,
-      wsPath: '/terminal',
+      opened: true,
+      workspace: true,
+      cwd: '/tmp/devhub-x',
       command_sent: 'ls',
+      command: 'ls',
+      hint: expect.stringMatching(/list_terminals/i),
     });
   });
 
+  test('supports explicit agent program= (opencode) by building launch command and returning it as command_sent', async () => {
+    const result = await terminalTool.execute({ program: 'opencode' }, {});
+    expect(result.opened).toBe(true);
+    expect(result.workspace).toBe(true);
+    // Should have computed a launch command (contains "opencode" or "--agent")
+    expect(result.command_sent || result.command || '').toMatch(/opencode|--agent/i);
+    expect(result.program).toBe('opencode');
+  });
+
   test('open_terminal echoes command_sent when command is provided', async () => {
-    mockFetch(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 'abc', port: 4001, wsPath: '/terminal' }),
-    }));
-
     const result = await terminalTool.execute({ command: 'ls -la' }, {});
-
     expect(result.command_sent).toBe('ls -la');
-    expect(result.session_id).toBe('abc');
-    expect(result.port).toBe(4001);
-    expect(result.wsPath).toBe('/terminal');
-    expect(result.note).toBeUndefined();
+    expect(result.workspace).toBe(true);
+    expect(result.opened).toBe(true);
   });
 
   test('open_terminal adds a note when no command is provided', async () => {
-    mockFetch(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 'abc', port: 4001, wsPath: '/terminal' }),
-    }));
-
     const result = await terminalTool.execute({}, {});
-
-    expect(result.note).toMatch(/no command was sent/i);
-    expect(result.session_id).toBe('abc');
-    expect(result.port).toBe(4001);
-    expect(result.wsPath).toBe('/terminal');
-    expect(result.command_sent).toBeUndefined();
-  });
-
-  test('returns error when backend response is missing fields', async () => {
-    mockFetch(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 'abc' }),
-    }));
-    const result = await terminalTool.execute({}, {});
-    expect(result.error).toMatch(/missing required fields/i);
-    expect(result.raw).toEqual({ id: 'abc' });
+    expect(result.note).toMatch(/empty/i);
+    expect(result.opened).toBe(true);
   });
 });
 
@@ -96,12 +63,12 @@ describe('list_terminals (listTerminalsTool)', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ processes: [{ id: 's1' }, { id: 's2' }] }),
+        json: async () => ({ processes: [{ terminalId: 'p1' }, { terminalId: 'p2' }] }),
       };
     });
     const result = await listTerminalsTool.execute({}, {});
     expect(calls[0].url).toMatch(/\/api\/terminal\/processes$/);
-    expect(result.processes).toEqual([{ id: 's1' }, { id: 's2' }]);
+    expect(result.processes).toEqual([{ terminalId: 'p1' }, { terminalId: 'p2' }]);
   });
 
   test('returns empty processes array when backend has none', async () => {
@@ -123,13 +90,13 @@ describe('review_terminal_output (reviewTerminalTool)', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ output: 'hello\n', session_id: 'sess-1' }),
+        json: async () => ({ output: 'hello\n', session_id: 'p1' }),
       };
     });
-    const result = await reviewTerminalTool.execute({ session_id: 'sess-1' }, {});
-    expect(calls[0].url).toMatch(/\/api\/terminal\/session\/sess-1\/capture$/);
+    const result = await reviewTerminalTool.execute({ session_id: 'p1' }, {});
+    expect(calls[0].url).toMatch(/\/api\/terminal\/session\/p1\/capture$/);
     expect(result.output).toBe('hello\n');
-    expect(result.session_id).toBe('sess-1');
+    expect(result.session_id).toBe('p1');
   });
 
   test('returns missing-parameter error and does NOT call fetch', async () => {

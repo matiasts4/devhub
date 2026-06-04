@@ -51,7 +51,9 @@ describe('GET /api/terminal/session/[id]/capture (T-022)', () => {
 
     expect(mockGetSessionOutput).toHaveBeenCalledWith('sess-123');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ output: 'hello\n', session_id: 'sess-123' });
+    // Now includes source for debugging which backend served the buffer (tty or sidecar)
+    expect(response.body).toMatchObject({ output: 'hello\n', session_id: 'sess-123' });
+    expect(response.body.source).toBe('tty');
   });
 
   test('returns 400 with session_id required when params is empty/missing', async () => {

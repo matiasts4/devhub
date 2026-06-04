@@ -15,9 +15,12 @@
  */
 
 const {
+  coerceZedOpenUrlFocus,
+  dispatchZedOpenUrl,
+  dispatchZedOpenUrlFromToolResults,
   isValidZedOpenUrlEvent,
   resolveZedOpenUrlBrowserShape,
-  dispatchZedOpenUrl,
+  resolveZedOpenUrlFromToolResult,
 } = require('../zedOpenUrlEvent.js');
 
 describe('isValidZedOpenUrlEvent (T-WSR-zed-003)', () => {
@@ -140,5 +143,46 @@ describe('dispatchZedOpenUrl (T-WSR-zed-003, ZEB-005/ZEB-006)', () => {
     dispatchSpy.mockRestore();
     delete global.CustomEvent;
     dom.window.close();
+  });
+});
+
+describe('coerceZedOpenUrlFocus', () => {
+  test('defaults to true', () => {
+    expect(coerceZedOpenUrlFocus(undefined)).toBe(true);
+    expect(coerceZedOpenUrlFocus('')).toBe(true);
+  });
+
+  test('parses string false', () => {
+    expect(coerceZedOpenUrlFocus('false')).toBe(false);
+  });
+});
+
+describe('dispatchZedOpenUrlFromToolResults', () => {
+  test('dispatches with focus from tool result', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html><body></body></html>');
+    global.window = dom.window;
+    global.CustomEvent = dom.window.CustomEvent;
+    const dispatchSpy = jest.spyOn(dom.window, 'dispatchEvent');
+
+    dispatchZedOpenUrlFromToolResults([
+      {
+        tool: 'open_url',
+        result: { url: 'https://github.com', focus: true, in_app: true },
+      },
+    ]);
+
+    const calls = dispatchSpy.mock.calls.filter(
+      (call) => call[0] && call[0].type === 'devhub:zed-open-url'
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].detail.focus).toBe(true);
+
+    dispatchSpy.mockRestore();
+    dom.window.close();
+  });
+
+  test('resolveZedOpenUrlFromToolResult returns null on error', () => {
+    expect(resolveZedOpenUrlFromToolResult({ error: 'bad' })).toBeNull();
   });
 });

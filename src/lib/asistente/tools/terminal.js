@@ -1,15 +1,5 @@
-// Terminal tools for the ZED chat route. Five tools backed by HTTP calls to
-// the local Next API routes:
-//
-//   open_terminal             POST /api/terminal/session
-//   list_terminals            GET  /api/terminal/processes
-//   review_terminal_output    GET  /api/terminal/session/:id/capture
-//   execute_in_terminal       PUT  /api/terminal/session/:id/input
-//   close_terminal            (no HTTP; uses closeTerminalSessionById)
-//
-// close_terminal is the only one that mutates state directly — see T-005b
-// for that implementation. This file is split across two commits so each
-// stays under the 130-line pre-commit gate.
+// Terminal tools for the ZED workspace assistant. Visible terminals are opened
+// by the UI (same panel type as Split right / +), not via a headless POST PTY.
 
 import { zedLog } from '../utils/zed-logger';
 
@@ -25,63 +15,68 @@ function requireParam(params, name) {
   return null;
 }
 
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes']);
+
 export const terminalTool = {
   name: 'open_terminal',
   description:
-    'Open a new PTY terminal session and optionally run a command. Returns the session id, port, and websocket path.',
+    'Open a new workspace terminal panel (same shell as manual split) and optionally run a command visibly. Pass program=opencode (or codex/hermes) only when the user explicitly asks to launch that agent TUI in the new visible terminal; the tool will build the proper launch command.',
   parameters: {
     program: {
       type: 'string',
-      description: 'Program to run: opencode, codex, hermes, or leave empty for shell',
+      description: 'Agent program to launch in the terminal (opencode, codex, hermes). Only when user explicitly requests the TUI. The tool will compute the correct command.',
     },
     cwd: { type: 'string', description: 'Working directory' },
     command: {
       type: 'string',
-      description: 'Command to execute immediately after opening the terminal',
+      description: 'Command to execute immediately after opening the terminal (for normal shells). When program=agent is used, this is usually omitted and the tool provides the launch command.',
     },
   },
   async execute(params /* , context */) {
     const { program, cwd, command } = params || {};
-    zedLog.info('TOOL', 'open_terminal', { program, cwd, command });
+    const normalizedProgram = typeof program === 'string' ? program.trim().toLowerCase() : '';
 
-    const baseUrl = getBaseUrl();
-    const response = await fetch(`${baseUrl}/api/terminal/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...(command !== undefined ? { command } : {}),
-        ...(program !== undefined ? { program } : {}),
-        ...(cwd !== undefined ? { cwd } : {}),
-      }),
-    });
+    let effectiveCommand = command;
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      zedLog.error('TOOL', 'open_terminal FAILED', { status: response.status, errText });
-      return {
-        error: `Failed to open terminal: ${response.statusText || errText || response.status}`,
-      };
+    if (normalizedProgram && AGENT_PROGRAMS.has(normalizedProgram)) {
+      // Support explicit launch of agent TUIs in a visible workspace terminal.
+      // Build the inner launch command (no tmux wrapper, so it runs inside the panel's shell).
+      try {
+        const { buildAgentLaunchCommand } = await import('../../agentLaunchCommand.shared.js');
+        effectiveCommand = buildAgentLaunchCommand(normalizedProgram, '', {
+          opencodeAgent: 'sdd-orchestrator',
+          cwd: cwd || process.cwd(),
+          disableTmuxWrap: true,
+          interactiveBootstrapPrompt: true,
+          // No prompt → launches the interactive TUI / chat
+        });
+        zedLog.info('TOOL', 'open_terminal (agent TUI via launch command)', { program: normalizedProgram, effectiveCommand: effectiveCommand?.slice(0, 120) });
+      } catch (e) {
+        return {
+          error: `Could not build launch command for program=${normalizedProgram}: ${e?.message || e}`,
+        };
+      }
     }
 
-    const data = await response.json().catch(() => ({}));
-    // Backend returns `id`; we normalize to `session_id` per the spec.
-    const session_id = data.id || data.session_id;
-    const { port, wsPath } = data;
-    if (!session_id || port === undefined || !wsPath) {
-      return {
-        error: 'terminal session response missing required fields',
-        raw: data,
-      };
-    }
-    // T-026: surface to the model whether a command was actually sent.
-    // Without this signal, the model only sees a port+wsPath and may
-    // hallucinate success when no command ever ran.
-    const result = { session_id, port, wsPath };
-    if (command) {
-      result.command_sent = command;
+    zedLog.info('TOOL', 'open_terminal (workspace UI)', { cwd, command: effectiveCommand || command });
+
+    const result = {
+      opened: true,
+      workspace: true,
+      cwd: cwd || null,
+      hint: 'Terminal opens in the workspace UI. Call list_terminals afterward to get terminalId for execute_in_terminal.',
+    };
+    const cmdToReport = effectiveCommand || command;
+    if (cmdToReport) {
+      result.command_sent = cmdToReport;
+      result.command = cmdToReport;
     } else {
       result.note =
-        "Terminal opened but no command was sent. To run a command, pass command='<your command>' or call execute_in_terminal after opening.";
+        "Terminal will open empty. To run a command, pass command='<your command>' or call execute_in_terminal after list_terminals.";
+    }
+    if (normalizedProgram) {
+      result.program = normalizedProgram;
+      result.note = `Will launch ${normalizedProgram} TUI in the visible panel.`;
     }
     return result;
   },
@@ -89,21 +84,54 @@ export const terminalTool = {
 
 export const listTerminalsTool = {
   name: 'list_terminals',
-  description: 'List the active terminal sessions tracked by the local server.',
+  description: 'List active terminal sessions visible in the workspace. Sources: sidecar PTYs (main Tauri-visible panels for shells and agent TUIs like OpenCode/Hermes), ttyServer tracked sessions, and tmux discovery fallback. Use the terminalId values with review_terminal_output to read their current contents/scrollback, or execute_in_terminal to send input to controllable ones.',
   parameters: {},
   async execute(/* params, context */) {
     zedLog.info('TOOL', 'list_terminals', {});
     const baseUrl = getBaseUrl();
+    let processes = [];
     try {
       const response = await fetch(`${baseUrl}/api/terminal/processes`);
-      if (!response.ok) {
-        return { error: `Failed to list terminals: ${response.status}` };
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        processes = data.processes || [];
       }
-      const data = await response.json().catch(() => ({}));
-      return { processes: data.processes || [] };
     } catch (err) {
-      return { error: `Failed to list terminals: ${err.message}` };
+      // fall through to tmux discovery
     }
+
+    // Enrich with tmux sessions (visible in workspace, often host the orchestrator/OpenCode/etc.)
+    // This makes list_terminals truthful even for terminals not created via the Zed open_terminal path
+    // or when a TUI (OpenCode) takes over the PTY and the internal tracker drops it.
+    try {
+      const { execSync } = await import('child_process');
+      const tmuxOut = execSync(
+        'tmux list-sessions -F "#{session_name}:#{session_created}:#{session_attached}" 2>/dev/null || true',
+        { encoding: 'utf8', timeout: 1200 }
+      ).trim();
+      if (tmuxOut) {
+        const discovered = tmuxOut
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            const [name, created, attached] = line.split(':');
+            return {
+              terminalId: `tmux:${name}`,
+              type: 'tmux',
+              title: name,
+              createdAt: created || null,
+              attached: attached === '1',
+              cwd: null,
+            };
+          })
+          .filter((t) => !processes.some((p) => p.terminalId === t.terminalId || p.id === t.terminalId));
+        processes = [...processes, ...discovered];
+      }
+    } catch {
+      // tmux not available or no sessions — fine, we still return whatever the API gave
+    }
+
+    return { processes };
   },
 };
 
@@ -135,10 +163,10 @@ export const reviewTerminalTool = {
   },
 };
 
-// T-005b: real implementations of execute_in_terminal and close_terminal.
 export const executeInTerminalTool = {
   name: 'execute_in_terminal',
-  description: 'Send input (keystrokes) to a running terminal session.',
+  description:
+    'Send input (keystrokes) to a running terminal session. session_id is the terminalId from list_terminals (e.g. p2), not a term-* orphan id.',
   parameters: {
     session_id: { type: 'string', required: true },
     input: { type: 'string', required: true },
@@ -167,7 +195,27 @@ export const executeInTerminalTool = {
       if (!response.ok) {
         return { error: `Failed to send input: ${response.status}` };
       }
-      return await response.json().catch(() => ({ session_id, sent: true }));
+      const base = await response.json().catch(() => ({ session_id, sent: true }));
+
+      // Observability boost (point 3): immediately capture recent output so the
+      // model sees what the command produced without needing an explicit extra
+      // review_terminal_output turn in most cases. The visible terminal is still
+      // the source of truth for the user.
+      try {
+        const capRes = await fetch(
+          `${baseUrl}/api/terminal/session/${encodeURIComponent(session_id)}/capture`
+        );
+        if (capRes.ok) {
+          const cap = await capRes.json().catch(() => ({}));
+          if (cap && cap.output) {
+            base.recent_output = String(cap.output).slice(-2000);
+          }
+        }
+      } catch {
+        // best-effort only; model can still call review_terminal_output for full/current
+      }
+
+      return base;
     } catch (err) {
       return { error: `Failed to send input: ${err.message}` };
     }

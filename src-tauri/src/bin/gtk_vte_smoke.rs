@@ -184,6 +184,7 @@ fn main() {
 
     let terminal = Terminal::new();
     terminal.set_input_enabled(true);
+    #[allow(deprecated)] // set_rewrap_on_resize: kept for compatibility with zoha-vte 0.6 / vte <0.58
     terminal.set_rewrap_on_resize(true);
 
     let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -196,6 +197,7 @@ fn main() {
     let envv_refs: Vec<&Path> = envv.iter().map(PathBuf::as_path).collect();
 
     let child_pid = match with_noop_child_setup(|child_setup| {
+        #[allow(deprecated)] // spawn_sync: standard API for zoha-vte 0.6 / vte 0.10
         terminal.spawn_sync(
             PtyFlags::DEFAULT,
             config

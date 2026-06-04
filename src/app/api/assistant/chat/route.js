@@ -60,12 +60,13 @@ export async function buildZedSystemPrompt() {
   return loadSystemPrompt();
 }
 
-async function callMinimax({ model, maxTokens, system, messages, apiKey }) {
+async function callMinimax({ model, maxTokens, system, messages, apiKey, tools }) {
   const body = {
     model,
     max_tokens: maxTokens,
     ...(system ? { system } : {}),
     messages,
+    ...(tools && tools.length ? { tools } : {}),
   };
 
   const start = Date.now();
@@ -88,9 +89,14 @@ async function callMinimax({ model, maxTokens, system, messages, apiKey }) {
   }
 
   const data = await response.json();
+  const contentTypes = data.content?.map((b) => b.type) || [];
+  const hasToolUse = contentTypes.includes('tool_use');
   zedLog.info('API', `MiniMax response (${duration}ms)`, {
-    contentTypes: data.content?.map((b) => b.type) || [],
+    contentTypes,
+    hasToolUse,
   });
+  // Also emit the detailed apiResponse for the readable log (includes tool_use flag)
+  zedLog.apiResponse?.(duration, contentTypes, contentTypes.includes('text'), contentTypes.includes('thinking'), hasToolUse);
   return data;
 }
 
@@ -170,6 +176,9 @@ export async function POST(request) {
     // still appends assistant + tool-result messages after this point —
     // those stay server-side and never round-trip.
     const conversation = [...safeHistory, { role: 'user', content: message }];
+    const registry = buildRegistry();
+    const anthropicTools = registry.toAnthropicTools();
+
     let turn = 0;
     let finalText = '';
     let allToolResults = [];
@@ -196,6 +205,7 @@ export async function POST(request) {
           system: systemPrompt,
           messages: conversation,
           apiKey,
+          tools: anthropicTools,
         });
       } catch (err) {
         const upstreamStatus = err?.upstream_status;
@@ -220,39 +230,56 @@ export async function POST(request) {
         break;
       }
 
-      const textBlocks = data.content.filter((b) => b.type === 'text');
-      const thinkingBlocks = data.content.filter((b) => b.type === 'thinking');
-      const rawText = textBlocks.map((b) => b.text).join('\n');
+      const content = data.content;
+      const toolUseBlocks = content.filter((b) => b.type === 'tool_use');
+      const textBlocks = content.filter((b) => b.type === 'text');
+      const thinkingBlocks = content.filter((b) => b.type === 'thinking');
+
+      const hasNativeToolUse = toolUseBlocks.length > 0;
+      let toolCalls = [];
+      let rawText = '';
+
+      if (hasNativeToolUse) {
+        // Native Anthropic-style tool calling (preferred — no mangling, parsed inputs)
+        toolCalls = toolUseBlocks.map((b) => ({
+          name: b.name,
+          input: b.input || {},
+          id: b.id,
+        }));
+        rawText = textBlocks.map((b) => b.text || '').join('\n');
+        if (!rawText.trim() && thinkingBlocks.length) {
+          rawText = thinkingBlocks.map((b) => b.thinking || b.text || '').join('\n');
+        }
+      } else {
+        // Legacy textual TOOL:/PARAM: fallback (for tests + transition)
+        rawText = textBlocks.map((b) => b.text).join('\n');
+        toolCalls = parseToolCalls(rawText);
+      }
 
       zedLog.info('MODEL', `Raw response text (${rawText.length} chars)`, {
         preview: rawText.slice(0, 300),
+        nativeToolUse: hasNativeToolUse,
+        toolCallCount: toolCalls.length,
       });
 
-      const toolCalls = parseToolCalls(rawText);
-
       if (toolCalls.length > 0) {
-        zedLog.info('MODEL', `Found ${toolCalls.length} tool call(s) in text`, {
-          toolCalls,
+        zedLog.info('MODEL', `Found ${toolCalls.length} tool call(s)`, {
+          mode: hasNativeToolUse ? 'native' : 'textual',
+          toolCalls: toolCalls.map((c) => ({ name: c.name, hasId: !!c.id })),
         });
 
-        for (const { name, input } of toolCalls) {
-          // T-010a (C1) + T-015: if the model emitted a TOOL: with no PARAM:
-          // lines, skip dispatch and surface the canonical "missing required
-          // parameters" error as the tool result — BUT only when the tool
-          // actually requires at least one parameter. Tools like
-          // `list_terminals` and `get_swarm_status` legitimately accept zero
-          // params and must be called with `{}`. See toolHasRequiredSchema.
-          // Spec asistente-chat §5.1/§5.2.
-          let effectiveInput = input;
+        for (const tc of toolCalls) {
+          const name = tc.name;
+          let effectiveInput = tc.input || {};
+          // T-010a (C1) + T-015: no-params handling (works for both modes)
           if (!effectiveInput || Object.keys(effectiveInput).length === 0) {
-            const toolDef = buildRegistry().get(name);
+            const toolDef = registry.get(name);
             if (toolHasRequiredSchema(toolDef)) {
               const result = { error: 'missing required parameters' };
               zedLog.toolResult(name, result, 0);
-              turnToolResults.push({ tool: name, input: effectiveInput || {}, result });
+              turnToolResults.push({ tool: name, input: effectiveInput || {}, result, id: tc.id });
               continue;
             }
-            // No required params — dispatch with empty input.
             effectiveInput = {};
           }
 
@@ -261,35 +288,50 @@ export async function POST(request) {
 
           let result;
           try {
-            result = await buildRegistry().execute(name, effectiveInput, context);
+            result = await registry.execute(name, effectiveInput, context);
           } catch (err) {
             result = { error: err.message };
           }
 
           const duration = Date.now() - toolStart;
           zedLog.toolResult(name, result, duration);
-          turnToolResults.push({ tool: name, input: effectiveInput, result });
+          turnToolResults.push({ tool: name, input: effectiveInput, result, id: tc.id });
         }
 
-        conversation.push({ role: 'assistant', content: rawText });
-
-        // Push each tool result as a structured assistant-visible message
-        // (parsed object, not stringified JSON) so the next model turn can
-        // see the data directly. T-031: iterate THIS turn's results only,
-        // not the cumulative `allToolResults` (quadratic growth bug).
-        for (const r of turnToolResults) {
-          conversation.push({
-            role: 'user',
-            content: `Tool ${r.tool} result: ${JSON.stringify(r.result)}`,
-          });
+        // Feed back to conversation using the right format for the mode.
+        // Native: use full content blocks + proper tool_result blocks (with id).
+        // Textual (legacy): use the raw text containing TOOL: + "Tool xxx result: json" strings.
+        if (hasNativeToolUse) {
+          conversation.push({ role: 'assistant', content });
+          for (const r of turnToolResults) {
+            conversation.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: r.id || `textual-${r.tool}`,
+                  content: JSON.stringify(r.result),
+                },
+              ],
+            });
+          }
+        } else {
+          conversation.push({ role: 'assistant', content: rawText });
+          for (const r of turnToolResults) {
+            conversation.push({
+              role: 'user',
+              content: `Tool ${r.tool} result: ${JSON.stringify(r.result)}`,
+            });
+          }
         }
 
-        // Aggregate into the final response payload (kept across turns).
         allToolResults.push(...turnToolResults);
       } else {
         finalText = rawText;
         if (!finalText.trim() && thinkingBlocks.length > 0) {
-          finalText = '(El modelo está razonando, aún no tiene respuesta final...)';
+          finalText =
+            thinkingBlocks.map((b) => b.thinking || b.text || '').join('\n').trim() ||
+            '(El modelo está razonando, aún no tiene respuesta final...)';
         }
         break;
       }

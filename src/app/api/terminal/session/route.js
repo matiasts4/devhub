@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
-import { createSession, ensureTTYServer, pushSessionInput } from '@/lib/terminal/ttyServer';
+import { createSession, ensureTTYServer } from '@/lib/terminal/ttyServer';
 
 export { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 
@@ -215,20 +215,8 @@ export async function POST(request) {
     const { port, wsPath } = await ensureTTYServer(cwd);
     const session = createSession({ cwd, shell });
 
-    // T-030: if the caller provided a `command`, execute it in the new PTY
-    // immediately. Previously the route ignored body.command, forcing the
-    // assistant tool to send a second execute_in_terminal call (the 6-turn
-    // latency loop the assistant tools were spending on). Writing the
-    // command + '\n' makes the PTY run it as if the user typed it.
-    if (typeof body.command === 'string' && body.command.trim() !== '') {
-      try {
-        pushSessionInput(session.id, body.command + '\n');
-      } catch (err) {
-        // The session is already up — don't fail the whole POST if the
-        // command write blows up; just log and let the caller continue.
-        console.error('[terminal/session] pushSessionInput failed:', err?.message || err);
-      }
-    }
+    // Session id is reserved for Zed / execute_in_terminal. Command execution
+    // runs in the visible panel (initialCommand on connect), not on a hidden PTY.
 
     return NextResponse.json({ id: session.id, port, wsPath });
   } catch (error) {

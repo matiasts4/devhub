@@ -22,7 +22,7 @@ tauri-build = { version = "2.5.6", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.10.3", features = [] }
+tauri = { version = "2.10.3", features = ["tray-icon"] }
 glib = "0.18.5"
 libc = "0.2"
 gtk = "0.18.2"
@@ -37,3 +37,12 @@ sysinfo = "0.36.1"
 dirs = "6.0.0"
 tauri-plugin-dialog = "2.0.0-rc"
 reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"
+
+[profile.release]
+codegen-units = 16
+lto = "thin"
+strip = true
+opt-level = 3
+panic = "abort"
+incremental = true

@@ -22,14 +22,25 @@
 
 ---
 
-## Architecture: Two Distinct Zed Systems
+## Architecture (corrected intent, 2026-06-03)
 
-| System            | Purpose                             | Tool Execution                |
-| ----------------- | ----------------------------------- | ----------------------------- |
-| **Asistente Zed** | Direct chat API to MiniMax M2.7     | ✅ Via ToolRegistry (5 tools) |
-| **Swarm Zed**     | Named agent persona in swarm roster | ❌ Via OpenCode subscription  |
+| Surface | What it is | Status |
+| ------- | ---------- | ------ |
+| **Asistente Zed** | Workspace assistant: chat in right dock, visible terminals/browser | **Canonical** — 9 tools, MiniMax M3, `TOOL:`/`PARAM:` protocol |
+| **Launchpad “Zed” entry** | Legacy label in swarm launch roster mapping to `swarm-director` | **Misaligned** — not the same as Asistente Zed; should be renamed or removed |
+| **CommandBar** (WIP) | Single-shot command executor (deterministic router) | Complementary, not a replacement |
 
-Asistente Zed and Swarm Zed share the `zed-logger` utility but are otherwise completely separate systems.
+**Zed is not a swarm agent.** It can call `get_swarm_status` or (future) launch a mission, but it does not run inside the swarm protocol as a participant.
+
+### Visible execution contract
+
+When the user asks to run a command in a terminal:
+
+1. `open_terminal` reserves a `session_id` on the server.
+2. The UI opens a **visible** workspace panel with that id and passes `command_sent` via `devhub:zed-open-terminal`.
+3. The panel runs `initialCommand` on connect (xterm WebSocket or native VTE) so the user **sees** the command — not a hidden PTY.
+
+Bug fixed 2026-06-03: `ChatPanel` previously read `result.command` while the tool returns `command_sent`, so panels opened empty.
 
 ---
 

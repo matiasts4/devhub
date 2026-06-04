@@ -32,6 +32,8 @@ function WorkspaceWindowTabBar({
     <div
       key="workspace-top-tab-bar"
       data-testid="workspace-top-tab-bar"
+      data-tauri-drag-region
+      onDoubleClick={onWinToggleMaximize}
       className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
     >
       <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
@@ -68,9 +70,10 @@ function WorkspaceWindowTabBar({
                   : dragOverWsId === ws.id && draggedWsId !== ws.id
                     ? {
                         background: 'rgba(var(--accent-rgb,88,166,255),0.07)',
-                        borderColor: 'rgba(var(--accent-rgb,88,166,255),0.35)',
+                        borderColor: `rgba(var(--accent-rgb,88,166,255),0.35)`,
                       }
                     : {}),
+                WebkitAppRegion: 'no-drag',
               }}
             >
               <div className="flex items-center gap-2">
@@ -140,12 +143,12 @@ function WorkspaceWindowTabBar({
 
       {/* Window Controls */}
       <div
-        className="flex items-center h-full shrink-0 gap-2.5"
+        className="flex items-center h-full shrink-0 gap-2"
         style={{ WebkitAppRegion: 'no-drag' }}
       >
         <button
           onClick={onWinMinimize}
-          className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+          className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#2f323e] hover:brightness-125 transition-[filter] duration-150"
           title="Minimize"
         >
           <Minus
@@ -155,7 +158,7 @@ function WorkspaceWindowTabBar({
         </button>
         <button
           onClick={onWinToggleMaximize}
-          className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+          className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#464a57] hover:brightness-125 transition-[filter] duration-150"
           title={isWinMaximized ? 'Restore' : 'Maximize'}
         >
           <Plus
@@ -165,7 +168,7 @@ function WorkspaceWindowTabBar({
         </button>
         <button
           onClick={onWinClose}
-          className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+          className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#B80096] hover:brightness-110 transition-[filter] duration-150"
           title="Close"
         >
           <X className="w-2.5 h-2.5 text-black stroke-[3px]" />

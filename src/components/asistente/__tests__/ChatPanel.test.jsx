@@ -152,11 +152,40 @@ describe('ChatPanel — open_terminal visual dispatch (T-024)', () => {
     await flushEffects();
   }
 
-  test('dispatches devhub:zed-open-terminal when open_terminal returns { session_id, port, wsPath } (no command)', async () => {
-    // T-024 regression: the previous guard `if (parsed?.command)` rejected the
-    // common case where the model just says "abre una terminal" without naming
-    // a command. The tool's result shape is { session_id, port, wsPath } — no
-    // `command` field — so the event never fired. Fix: gate on session_id.
+  test('dispatches workspace open with command_sent (no orphan term-* session)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        text: 'Terminal lista.',
+        tool_results: [
+          {
+            tool: 'open_terminal',
+            result: {
+              opened: true,
+              workspace: true,
+              command_sent: 'ls',
+              cwd: '/home/me/proj',
+            },
+          },
+        ],
+      }),
+    });
+
+    const { container, cleanup } = await renderIntoDom(React.createElement(ChatPanel));
+    await sendAndSettle(container, 'abre terminal y ejecuta ls');
+
+    const calls = findOpenTerminalEvents();
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].detail.command).toBe('ls');
+    expect(calls[0][0].detail.workspace).toBe(true);
+    expect(calls[0][0].detail.session_id).toBeNull();
+    expect(calls[0][0].detail.focus).toBe(true);
+
+    cleanup();
+  });
+
+  test('dispatches devhub:zed-open-terminal when open_terminal returns workspace open (no command)', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -165,7 +194,7 @@ describe('ChatPanel — open_terminal visual dispatch (T-024)', () => {
         tool_results: [
           {
             tool: 'open_terminal',
-            result: { session_id: 'term-abc-123', port: 4077, wsPath: '/terminal' },
+            result: { opened: true, workspace: true, cwd: null },
           },
         ],
       }),
@@ -178,10 +207,8 @@ describe('ChatPanel — open_terminal visual dispatch (T-024)', () => {
     expect(calls).toHaveLength(1);
     const ev = calls[0][0];
     expect(ev).toBeInstanceOf(dom.window.CustomEvent);
-    // No command was supplied; handleSplit (TerminalWorkspacesManager) is
-    // safe with `null` and defaults to no initial command.
     expect(ev.detail.command).toBeNull();
-    expect(ev.detail.cwd).toBeNull();
+    expect(ev.detail.workspace).toBe(true);
 
     cleanup();
   });

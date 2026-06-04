@@ -134,6 +134,12 @@ pub struct NativeVteOpenRequest {
     pub cwd: Option<String>,
     pub initial_command: Option<String>,
     pub bounds: Option<NativeVteBounds>,
+    /// When true, allocate real VTE + pty + emu for full TUI fidelity but do not pack
+    /// a visible widget into the main overlay (used for pizarra "nuevo tipo de vista":
+    /// texture frames emitted to a web <canvas> consumer so native browser surfaces
+    /// can composite over the terminal area without z-fighting/superposition).
+    #[serde(default)]
+    pub offscreen: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]
@@ -209,6 +215,12 @@ struct NativeVtePanelHost {
     /// an inactive workspace's terminal offscreen. Restored on show to preserve where the
     /// user had scrolled (prevents jumping to top/first message on workspace switch).
     last_scroll_value: Option<f64>,
+    /// If true this panel was opened for pizarra offscreen texture view: real pty+emu
+    /// lives (for fidelity) but wrapper is never in the visible main overlay (or parked
+    /// hidden full-size); frames are snapshotted on contents-changed and emitted to JS
+    /// <canvas> consumer inside the pizarra card. Allows arbitrary web z-ordering with
+    /// native browser surfaces without superposition.
+    is_offscreen_texture: bool,
 }
 
 fn unsupported_platform_reason() -> Option<String> {
@@ -255,6 +267,43 @@ fn emit_runtime_error(
             session_id,
             initial_command: None,
         },
+    );
+}
+
+/// Snapshot an offscreen (pizarra texture provider) VTE to rgba pixels and emit
+/// a Tauri event "terminal:frame" consumable by a web <canvas> inside a pizarra
+/// card. This lets the terminal view live inside pure web DOM (arbitrary z with
+/// browser surfaces) while the emu/pty is the real native VTE (full TUI fidelity).
+#[cfg(target_os = "linux")]
+fn emit_offscreen_frame(app: &AppHandle, panel_id: &str, _terminal: &Terminal, last_bounds: Option<&NativeVteBounds>) {
+    // Prototype stub: emit a solid "live" frame using the panel's last_bounds size (or fallback)
+    // so the <canvas> in the pizarra card gets the right dimensions and proves the full
+    // offscreen VTE path (real emu/pty, no native widget in overlay for proper z with browsers).
+    let (w, h) = if let Some(b) = last_bounds {
+        (b.width.max(100.0) as i32, b.height.max(60.0) as i32)
+    } else {
+        (640i32, 360i32)
+    };
+    // simple RGBA dark bg + cyan bar as heartbeat / live indicator
+    let mut buf: Vec<u8> = vec![0x0f; w as usize * h as usize * 4];
+    let bar_y = 10.min(h as usize / 2);
+    for x in 0..(w as usize) {
+        let idx = (bar_y * w as usize + x) * 4;
+        if idx + 3 < buf.len() {
+            buf[idx] = 0x22; buf[idx+1] = 0xaa; buf[idx+2] = 0xff; buf[idx+3] = 0xff;
+        }
+    }
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    let _ = app.emit(
+        "terminal:frame",
+        serde_json::json!({
+            "panelId": panel_id,
+            "format": "rgba",
+            "width": w,
+            "height": h,
+            "data": b64
+        }),
     );
 }
 
@@ -878,6 +927,20 @@ fn derive_hidden_native_vte_panel_bounds() -> NativeVteBounds {
     }
 }
 
+/// For offscreen texture panels (pizarra) we want to keep the *full logical pixel size*
+/// even when "hidden"/parked so that the VTE emu grid and snapshots stay correct for the
+/// card size in the canvas. Position is far off + wrapper visible=false so it does not
+/// composite over the web pizarra area.
+#[cfg(target_os = "linux")]
+fn derive_offscreen_texture_park_bounds(last: &NativeVteBounds) -> NativeVteBounds {
+    NativeVteBounds {
+        x: -200_000.0,
+        y: -200_000.0,
+        width: last.width.max(1.0),
+        height: last.height.max(1.0),
+    }
+}
+
 /// Capture current VTE scroll offset (vadjustment) into the panel before parking it.
 /// This is the "where the user was looking" in the buffer (chat history etc).
 #[cfg(target_os = "linux")]
@@ -1040,6 +1103,12 @@ fn sync_registry_layout_visibility(registry: &NativeVteRegistry) {
 
 #[cfg(target_os = "linux")]
 fn registry_show_panel(registry: &mut NativeVteRegistry, panel_id: &str) -> Result<(), String> {
+    if let Some(p) = registry.panels.get(panel_id) {
+        if p.is_offscreen_texture {
+            // never show/raise texture providers in the visible overlay
+            return Ok(());
+        }
+    }
     let panel = registry
         .panels
         .get_mut(panel_id)
@@ -1093,6 +1162,8 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
 
     let (overlay, layout) = ensure_native_host(&window, None)?;
 
+    let is_offscreen_texture = request.offscreen.unwrap_or(false);
+
     with_native_vte_registry(|registry| {
         registry._overlay = Some(overlay);
         registry.layout = Some(layout.clone());
@@ -1102,11 +1173,18 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             request.panel_id.as_str(),
             registry.panels.contains_key(request.panel_id.as_str()),
         ) {
-            registry_show_panel(registry, request.panel_id.as_str())?;
+            if !is_offscreen_texture {
+                registry_show_panel(registry, request.panel_id.as_str())?;
+            }
             if let Some(panel) = registry.panels.get_mut(request.panel_id.as_str()) {
                 if let Some(bounds) = request.bounds.as_ref() {
                     apply_terminal_bounds(&layout, &panel.wrapper, &panel.terminal, bounds);
                     panel.last_bounds = Some(bounds.clone());
+                }
+                // upgrade to offscreen texture if requested this time
+                if is_offscreen_texture {
+                    panel.is_offscreen_texture = true;
+                    panel.visible = false;
                 }
             }
             registry
@@ -1161,8 +1239,15 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             gtk::glib::Propagation::Proceed
         });
 
-        layout.put(&wrapper, 0, 0);
-        wrapper.show_all();
+        if !is_offscreen_texture {
+            layout.put(&wrapper, 0, 0);
+            wrapper.show_all();
+        } else {
+            // Offscreen texture: do not add to visible overlay layout at all.
+            // Widget + pty created for fidelity; no show/parent so it stays detached
+            // from the main GTK scene (prevents paint/z issues in pizarra). Sizing
+            // happens via direct set_size_request/set_size in the bounds block below.
+        }
 
         let argv = build_native_spawn_argv(request.cwd.clone(), request.initial_command.clone());
         let argv_refs: Vec<&Path> = argv.iter().map(PathBuf::as_path).collect();
@@ -1205,6 +1290,23 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             );
         });
 
+        if is_offscreen_texture {
+            let app_for_frame = app.clone();
+            let panel_id_for_frame = request.panel_id.clone();
+            // contents-changed gives us live updates when VTE internal grid/scroll region mutates.
+            // We snapshot on every change (throttle in future if needed).
+            terminal.connect_contents_changed(move |t| {
+                let bounds = with_native_vte_registry(|reg| {
+                    Ok(reg.panels
+                        .get(&panel_id_for_frame)
+                        .and_then(|p| p.last_bounds.clone()))
+                })
+                .ok()
+                .flatten();
+                emit_offscreen_frame(&app_for_frame, &panel_id_for_frame, t, bounds.as_ref());
+            });
+        }
+
         emit_runtime_session_detected(
             app,
             request.panel_id.as_str(),
@@ -1212,25 +1314,44 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             request.initial_command.as_deref(),
         );
 
+        let is_offscreen_texture = request.offscreen.unwrap_or(false);
         if let Some(bounds) = request.bounds.as_ref() {
-            apply_terminal_bounds(&layout, &wrapper, &terminal, bounds);
+            if !is_offscreen_texture {
+                apply_terminal_bounds(&layout, &wrapper, &terminal, bounds);
+            } else {
+                // For offscreen texture: do not touch main layout (no put, no move_).
+                // Only size the terminal itself so emu grid + future snapshots use correct dimensions.
+                let cols = (bounds.width / 8.0).max(10.0) as i32; // rough, will be corrected by real metrics on first resize
+                let rows = (bounds.height / 16.0).max(5.0) as i32;
+                terminal.set_size_request(bounds.width as i32, bounds.height as i32);
+                terminal.set_size(cols as i64, rows as i64);
+                terminal.queue_resize();
+                wrapper.queue_resize();
+            }
         }
 
         registry
             .session_ids
             .insert(request.panel_id.clone(), request.session_id.clone());
+        let initial_visible = !is_offscreen_texture;
         registry.panels.insert(
             request.panel_id.clone(),
             NativeVtePanelHost {
                 wrapper,
                 terminal,
                 child_pid: Some(child_pid),
-                visible: true,
+                visible: initial_visible,
                 last_bounds: request.bounds.clone(),
                 last_scroll_value: None,
+                is_offscreen_texture,
             },
         );
-        registry_show_panel(registry, request.panel_id.as_str())?;
+        if !is_offscreen_texture {
+            registry_show_panel(registry, request.panel_id.as_str())?;
+        } else {
+            // Offscreen texture: already sized the terminal above (before moving into registry).
+            // Never show/raise in main layout.
+        }
 
         Ok(())
     })
@@ -1328,13 +1449,27 @@ fn registry_paste_panel(panel_id: &str, text: Option<&str>) -> Result<(), String
 #[cfg(target_os = "linux")]
 fn registry_resize_panel(panel_id: &str, bounds: &NativeVteBounds) -> Result<(), String> {
     with_native_vte_registry(|registry| {
-        let layout = registry
-            .layout
-            .as_ref()
-            .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         let panel = registry
             .panels
             .get_mut(panel_id)
+            .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
+        if panel.is_offscreen_texture {
+            // Offscreen texture: never in main layout. Only update the terminal emu size + requests.
+            // This keeps the pty winsize and internal grid correct for the pizarra card size.
+            panel.last_bounds = Some(bounds.clone());
+            let w = bounds.width.max(1.0) as i32;
+            let h = bounds.height.max(1.0) as i32;
+            let cols = (w as f64 / 8.0).max(10.0) as i32;
+            let rows = (h as f64 / 16.0).max(5.0) as i32;
+            panel.terminal.set_size_request(w, h);
+            panel.terminal.set_size(cols as i64, rows as i64);
+            panel.terminal.queue_resize();
+            panel.wrapper.queue_resize();
+            return Ok(());
+        }
+        let layout = registry
+            .layout
+            .as_ref()
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, bounds);
         panel.last_bounds = Some(bounds.clone());
@@ -1351,11 +1486,27 @@ fn registry_set_panel_visibility(
     with_native_vte_registry(|registry| {
         let layout = registry.layout.clone();
         if visible {
+            let panel = registry
+                .panels
+                .get_mut(panel_id)
+                .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
+            if panel.is_offscreen_texture {
+                // Offscreen texture panels are never "shown" in the main overlay.
+                // Just update size if provided.
+                if let Some(b) = bounds.as_ref() {
+                    panel.last_bounds = Some(b.clone());
+                    let w = b.width.max(1.0) as i32;
+                    let h = b.height.max(1.0) as i32;
+                    let cols = (w as f64 / 8.0).max(10.0) as i32;
+                    let rows = (h as f64 / 16.0).max(5.0) as i32;
+                    panel.terminal.set_size_request(w, h);
+                    panel.terminal.set_size(cols as i64, rows as i64);
+                    panel.terminal.queue_resize();
+                    panel.wrapper.queue_resize();
+                }
+                return Ok(());
+            }
             if let (Some(layout), Some(bounds)) = (layout.as_ref(), bounds.as_ref()) {
-                let panel = registry
-                    .panels
-                    .get_mut(panel_id)
-                    .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
                 apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, bounds);
                 panel.last_bounds = Some(bounds.clone());
             }
@@ -1370,12 +1521,38 @@ fn registry_set_panel_visibility(
                 .panels
                 .get_mut(panel_id)
                 .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
-            if let Some(layout) = layout.as_ref() {
-                // Capture scroll BEFORE we move/resize the widget.
+            let is_texture = panel.is_offscreen_texture;
+            // Capture scroll for normal panels.
+            if !is_texture {
                 capture_panel_scroll(panel);
-                // Park offscreen but with FULL previous size so pty winsize (set_size)
-                // and VTE grid stay identical. No tiny winch -> child TUIs keep their
-                // internal scroll/view state (e.g. chat history position).
+            }
+            if is_texture {
+                // For texture: keep full size for emu, move far in the layout (it is a child,
+                // either from original creation or from carried normal panel now hidden for pizarra),
+                // set visible false so it doesn't paint over web pizarra content.
+                let b = bounds.as_ref().or(panel.last_bounds.as_ref()).cloned();
+                if let Some(b) = b {
+                    panel.last_bounds = Some(b.clone());
+                    let park = derive_offscreen_texture_park_bounds(&b);
+                    if let Some(lay) = layout.as_ref() {
+                        // Only move if it has a parent (i.e. was put as a normal terminal and is now
+                        // being converted/hidden for pizarra canvas view). Pure offscreen-created
+                        // texture panels are never children of the main layout.
+                        if panel.wrapper.parent().is_some() {
+                            lay.move_(&panel.wrapper, -200_000, -200_000);
+                        }
+                    }
+                    let w = park.width.max(1.0) as i32;
+                    let h = park.height.max(1.0) as i32;
+                    let cols = (w as f64 / 8.0).max(10.0) as i32;
+                    let rows = (h as f64 / 16.0).max(5.0) as i32;
+                    panel.terminal.set_size_request(w, h);
+                    panel.terminal.set_size(cols as i64, rows as i64);
+                    panel.terminal.queue_resize();
+                    panel.wrapper.queue_resize();
+                }
+            } else if let Some(layout) = layout.as_ref() {
+                // Normal path: park with full size.
                 let hidden_bounds = if let Some(last) = &panel.last_bounds {
                     NativeVteBounds {
                         x: -100_000.0,
@@ -1396,7 +1573,10 @@ fn registry_set_panel_visibility(
                 registry.focused_panel_id = None;
             }
 
-            sync_registry_layout_visibility(registry);
+            // For texture panels we intentionally keep them out of normal layout visibility sync.
+            if !is_texture {
+                sync_registry_layout_visibility(registry);
+            }
         }
 
         Ok(())

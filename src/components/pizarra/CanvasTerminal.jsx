@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
 import {
+  openNativeVtePanel,
   raiseNativeVtePanel,
   resizeNativeVtePanel,
   setNativeVtePanelVisibility,
@@ -51,18 +52,17 @@ export default function CanvasTerminal({
   isActivePanel = false,
   requestedRendererMode = 'vte-experimental',
 }) {
-  // NUEVO TIPO DE VISTA DE TERMINAL para pizarra:
-  // Usamos renderer web (xterm) dentro de la card del canvas para permitir
-  // layering correcto con superficies de browser y otro contenido web en pizarra.
-  // El widget nativo VTE se parquea (no se mueve ni pinta en el área de pizarra).
-  // Esto resuelve la superposición de terminal nativa sobre browser cuando
-  // se "pasa el browser por encima" en pizarra.
-  // (El native se usa en la vista principal de workspaces; aquí en pizarra
-  // priorizamos la vista web para integridad de capas).
-  // Si surgen problemas con TUIs en el path web, se puede pulir el xterm o
-  // implementar un emulador canvas más fiel como "nuevo tipo".
-  const useWebRendererInPizarra = true;
-  const effectiveRendererMode = useWebRendererInPizarra ? 'canvas' : requestedRendererMode;
+  // Siempre usamos la terminal nativa (VTE widget) para superficies de tipo terminal
+  // dentro de la pizarra. Posicionamos el widget exactamente sobre el rect de
+  // contenido de la card (inset por el header web). Fidelidad completa para TUIs,
+  // sin xterm, sin "canvas externo" para el contenido.
+  //
+  // Layering: los raises en select/drag/reorder de la surface llaman raiseNativeVtePanel
+  // (o raiseNativeBrowser para browsers). Cuando una browser card queda "arriba" en
+  // el z de pizarra, su raise debe dejar su webkit por encima del VTE de la terminal.
+  // Si hace falta, podemos sincronizar el orden global de todos los natives de pizarra
+  // surfaces según el stacking actual de las cards.
+  const effectiveRendererMode = 'vte-experimental';
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = useMemo(
     () =>
@@ -81,8 +81,8 @@ export default function CanvasTerminal({
     (shapeId) => {
       onSelect?.(shapeId);
       onActivatePanel?.(terminalId);
-      // Raise the native VTE ... (only for native renderer; for pizarra web view
-      // the content is in the web card, no native widget to raise).
+      // Raise the native VTE so this pizarra terminal card's content is above other
+      // native surfaces (e.g. browsers) when the card is top in pizarra stacking.
       if (effectiveRendererMode === 'vte-experimental') {
         raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
       }
@@ -96,13 +96,40 @@ export default function CanvasTerminal({
   }, []);
 
   // New surfaces should appear on top of existing ones (including different native types).
-  // Raise on mount only for native renderer. For pizarra web terminal view, no native
-  // widget is used in the overlay (parked), content is web inside card.
+  // For pizarra terminal cards we use the real native VTE widget (positioned over the
+  // content rect of the card). Raise it so this terminal is above other natives when
+  // its pizarra surface is top in the stacking order.
   useEffect(() => {
     if (effectiveRendererMode === 'vte-experimental') {
       raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
     }
   }, []); // run once on mount
+
+  // Ensure native VTE is open for this pizarra terminal card (newly added in pizarra,
+  // not only carried from workspace). Uses normal (non-offscreen) open so the real
+  // widget is created and can be positioned/raised over the card content rect.
+  const nativeOpenedRef = useRef(false);
+  useEffect(() => {
+    if (effectiveRendererMode !== 'vte-experimental' || !terminalId || nativeOpenedRef.current) return;
+    const b = resolvedBounds;
+    const contentW = Math.max(10, (b.width || 800) - 20);
+    const contentH = Math.max(10, (b.height || 600) - 20 - 28);
+    nativeOpenedRef.current = true;
+    openNativeVtePanel({
+      panelId: terminalId,
+      cwd,
+      initialCommand,
+      bounds: {
+        x: (b.screenX ?? b.x ?? 0) + 10,
+        y: (b.screenY ?? b.y ?? 0) + 10 + 28,
+        width: contentW,
+        height: contentH,
+      },
+      // no offscreen: we want the real widget for this card (user wants to utilize native)
+    }).catch(() => {
+      nativeOpenedRef.current = false; // allow retry
+    });
+  }, [effectiveRendererMode, terminalId, resolvedBounds, cwd, initialCommand]);
 
   // pizarra-motion: hover state drives the idle border/shadow highlight.
   const [isHovered, setIsHovered] = useState(false);
@@ -110,6 +137,8 @@ export default function CanvasTerminal({
   const handleFrameMouseLeave = useCallback(() => setIsHovered(false), []);
 
   useEffect(() => {
+    // Para pizarra terminales: siempre native VTE. Posicionamos el widget exactamente
+    // sobre el área de contenido de la card (inset por el header web del frame).
     if (effectiveRendererMode === 'vte-experimental' && resolvedBounds) {
       const inset = 10;
       const headerH = 28;
@@ -125,29 +154,16 @@ export default function CanvasTerminal({
     }
   }, [resolvedBounds, terminalId, effectiveRendererMode]);
 
-  // Park native VTE for pizarra web terminal view (nuevo tipo).
-  // This ensures no native terminal widget is present in the pizarra overlay area,
-  // so it cannot superpose browser native content when browser surfaces are dragged
-  // over terminal areas (or vice versa). The web xterm inside the card provides the view.
-  // Unpark on cleanup so if the surface is removed, main ws native can show.
-  useEffect(() => {
-    if (useWebRendererInPizarra && terminalId) {
-      setNativeVtePanelVisibility({
-        panelId: terminalId,
-        visible: false,
-        reason: 'pizarra-web-terminal-view',
-      }).catch(() => {});
-    }
-    return () => {
-      if (useWebRendererInPizarra && terminalId) {
-        setNativeVtePanelVisibility({
-          panelId: terminalId,
-          visible: true,
-          reason: 'pizarra-web-terminal-closed',
-        }).catch(() => {});
-      }
-    };
-  }, [useWebRendererInPizarra, terminalId]);
+  // Usamos la terminal nativa VTE widget también para las cards de terminal en pizarra.
+  // No parqueamos ni usamos canvas "externo" para el contenido (el usuario pidió utilizar
+  // la nativa). El widget se posiciona vía los efectos de resize/raise/visibility abajo,
+  // que cubren el área de contenido de la card (debajo del header web).
+  // El chrome (header, bordes, handles) sigue siendo web para integrarse con el resto
+  // de la pizarra. El contenido real de la TUI viene del VTE nativo (fidelidad completa).
+  //
+  // Si al arrastrar un browser surface "por encima" de una terminal card sigue habiendo
+  // superposición visual, el fix es mejorar el orden de raises o agregar un sync global
+  // de z de pizarra → orden de widgets nativos en el overlay.
 
   const handleFrameMouseDown = useCallback(
     (event) => {
@@ -524,7 +540,7 @@ export default function CanvasTerminal({
           <span>{resolvedShape.label || 'Terminal'}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span>
-              {requestedRendererMode === 'vte-experimental' ? 'native auto' : requestedRendererMode}
+              {effectiveRendererMode === 'vte-experimental' ? 'native (pizarra)' : effectiveRendererMode}
             </span>
             <button
               type="button"
@@ -576,8 +592,10 @@ export default function CanvasTerminal({
             // false (pointerDown is true but the threshold was never
             // crossed), so the native VTE panel stays visible — no
             // IPC round-trip, no flicker. See design §6.1.
-            // For pizarra web terminal view, no native, so no suspend needed.
-            suspendNativeSurface={useWebRendererInPizarra ? false : isLiveDragging}
+            // En pizarra con native VTE: suspendemos solo durante el drag real de la card
+            // para que el widget nativo no pelee con la transformación web del contenedor.
+            // El threshold + isResizing ya evita flicker en clicks puros.
+            suspendNativeSurface={isLiveDragging}
           />
         </div>
       </div>

@@ -57,26 +57,22 @@ describe('packaged-launcher integration', () => {
       fs.readFileSync(path.join(process.cwd(), 'src-tauri', 'tauri.conf.json'), 'utf8')
     );
 
-    // Check binaries array places sidecar at absolute path inside /usr/lib/DevHub
-    const binaries = tauriConf.bundle?.binaries || [];
-    const sidecarEntry = binaries.find(
-      (b) => b.dest === '/usr/lib/DevHub/binaries/devhub-server'
-    );
-    expect(sidecarEntry).toBeDefined();
-    expect(sidecarEntry.src).toBe('binaries/devhub-server-x86_64-unknown-linux-gnu');
+    // Sidecar is provided via externalBin (Tauri places it as /usr/bin/devhub-server alongside the main ELF)
+    const externalBin = tauriConf.bundle?.externalBin || [];
+    expect(externalBin).toContain('binaries/devhub-server');
 
-    // Check deb files map the launcher to /usr/lib/DevHub/bin/devhub-launcher
-    // IMPORTANT: /usr/bin/devhub must NOT be in deb files — it is the Tauri ELF
+    // Check deb files map (correct format: target-in-pkg : source-on-fs relative to tauri.conf.json)
+    // IMPORTANT: /usr/bin/devhub must NOT be in deb files — it is the Tauri ELF provided by bundler
     const debFiles = tauriConf.bundle?.linux?.deb?.files;
     expect(debFiles).toBeDefined();
-    expect(debFiles['../packaging/linux/devhub-launcher']).toBe('/usr/lib/DevHub/bin/devhub-launcher');
-    // Verify /usr/bin/devhub is NOT being overwritten by the launcher mapping
-    const usrBinDevhub = Object.values(debFiles).find(v => v === '/usr/bin/devhub');
-    expect(usrBinDevhub).toBeUndefined();
+    expect(debFiles['/usr/lib/DevHub/bin/devhub-launcher']).toBe('../packaging/linux/devhub-launcher');
+    // Verify /usr/bin/devhub is NOT being overwritten by any files mapping
+    const usrBinDevhubTarget = Object.keys(debFiles).find(k => k === '/usr/bin/devhub');
+    expect(usrBinDevhubTarget).toBeUndefined();
 
-    // Desktop entry should land at /usr/share/applications/DevHub.desktop
-    const desktopDest = debFiles['../packaging/linux/DevHub.desktop'];
-    expect(desktopDest).toBe('/usr/share/applications/DevHub.desktop');
+    // Desktop entry should land at /usr/share/applications/DevHub.desktop (overriding Tauri-generated minimal one)
+    const desktopDest = debFiles['/usr/share/applications/DevHub.desktop'];
+    expect(desktopDest).toBe('../packaging/linux/DevHub.desktop');
   });
 
   test('launcher detects Node >=24 and exports DEVHUB_ALLOW_NODE24=1', () => {
@@ -92,14 +88,15 @@ describe('packaged-launcher integration', () => {
     const libRsPath = path.join(process.cwd(), 'src-tauri', 'src', 'lib.rs');
     const content = fs.readFileSync(libRsPath, 'utf8');
     // spawn_sidecar must forward DEVHUB_ALLOW_NODE24 so the sidecar respects it
-    expect(content).toMatch(/\.env\("DEVHUB_ALLOW_NODE24"/);
+    // tolerate multiline .env( "KEY", ... )
+    expect(content).toMatch(/\.env\s*\(\s*"DEVHUB_ALLOW_NODE24"/);
   });
 
   test('Rust sidecar spawn forwards DEVHUB_NODE_BIN and DEVHUB_NPM_BIN env', () => {
     const libRsPath = path.join(process.cwd(), 'src-tauri', 'src', 'lib.rs');
     const content = fs.readFileSync(libRsPath, 'utf8');
     // spawn_sidecar should forward these env vars so the sidecar wrapper gets stable node selection
-    expect(content).toMatch(/\.env\("DEVHUB_NODE_BIN"/);
-    expect(content).toMatch(/\.env\("DEVHUB_NPM_BIN"/);
+    expect(content).toMatch(/\.env\s*\(\s*"DEVHUB_NODE_BIN"/);
+    expect(content).toMatch(/\.env\s*\(\s*"DEVHUB_NPM_BIN"/);
   });
 });

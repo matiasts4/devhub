@@ -1,22 +1,14 @@
 /**
  * Helper for the `devhub:zed-open-terminal` CustomEvent contract.
  *
- * Producer: `src/components/asistente/ChatPanel.jsx` (T-024) dispatches
- *   `devhub:zed-open-terminal` with detail
- *   `{ command, cwd, session_id }` whenever an `open_terminal` tool
- *   result has a `session_id`. `command` is null when the user did not
- *   request a specific command (open empty shell), and a string when the
- *   user wants to run something on open. `session_id` is the PTY session
- *   id returned by the ttyServer (e.g. `term-1780361321206-upe6n`); it
- *   is the same id `execute_in_terminal` uses, so the consumer can
- *   reuse the model-created session instead of opening a fresh one.
+ * Producer: `ChatPanel.jsx` dispatches after `open_terminal` with
+ *   `{ command, cwd, workspace: true, focus }`. Workspace opens use the
+ *   same panel flow as Split right (`p1`, `p2`, …) — not orphan `term-*`
+ *   ids from a headless POST PTY.
  *
- * Consumer: `src/components/TerminalWorkspacesManager.jsx` opens a new
- *   panel via `handleSplit` based on the event. Before T-025, the consumer
- *   guard was `if (!command) return;` which dropped the no-command case
- *   (`!null === true`). T-025 fixes that by replacing the guard with a
- *   check on the event payload itself. T-029 wires `session_id` through
- *   to the new panel id so the model and the visual panel share one PTY.
+ * Consumer: `TerminalWorkspacesManager.jsx` calls `handleSplit` (vertical
+ *   when the workspace already has 2+ columns, else horizontal) with a
+ *   normal panel id. Legacy events may still pass `session_id` for reattach.
  *
  * Extracted here as a pure function so it can be unit-tested without
  * mounting the full TerminalWorkspacesManager (4380 lines, heavy

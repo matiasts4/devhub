@@ -1,0 +1,87 @@
+const { JSDOM } = require('jsdom');
+const { RESTORE_ACTION } = require('../startupRestoreCoordinator');
+const {
+  dispatchStartupRestoreQueue,
+  shouldBumpRelaunchCommand,
+  buildOpenCodeResumeCommand,
+  waitForRestoreMutexClear,
+  shouldRunStartupRestoreThisPageLoad,
+  markStartupRestoreCompletedForSession,
+  STARTUP_RESTORE_SESSION_KEY,
+} = require('../startupRestoreRunner');
+
+describe('startupRestoreRunner', () => {
+  beforeEach(() => {
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://devhub.test' });
+    global.window = dom.window;
+    global.localStorage = dom.window.localStorage;
+    global.sessionStorage = dom.window.sessionStorage;
+    global.localStorage.clear();
+    global.sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    global.window?.close?.();
+    delete global.window;
+    delete global.localStorage;
+    delete global.sessionStorage;
+  });
+
+  test('shouldRunStartupRestoreThisPageLoad skips after session is marked completed', () => {
+    expect(shouldRunStartupRestoreThisPageLoad(global.sessionStorage)).toBe(true);
+    markStartupRestoreCompletedForSession(global.sessionStorage);
+    expect(shouldRunStartupRestoreThisPageLoad(global.sessionStorage)).toBe(false);
+    expect(global.sessionStorage.getItem(STARTUP_RESTORE_SESSION_KEY)).toBe('1');
+  });
+
+  test('shouldBumpRelaunchCommand is false when command already matches', () => {
+    expect(
+      shouldBumpRelaunchCommand('opencode --session abc', 'opencode --session abc')
+    ).toBe(false);
+  });
+
+  test('buildOpenCodeResumeCommand prefers panel command', () => {
+    expect(
+      buildOpenCodeResumeCommand(
+        { initialCommand: 'opencode --session panel-1' },
+        { opencodeSessionId: 'fallback' }
+      )
+    ).toBe('opencode --session panel-1');
+  });
+
+  test('dispatchStartupRestoreQueue runs relaunches with bounded concurrency', async () => {
+    const relaunched = [];
+    const panel = { id: 'p1', initialCommand: null, cwd: '/tmp' };
+
+    await dispatchStartupRestoreQueue({
+      actions: [
+        {
+          action: RESTORE_ACTION.RESUME_OPENCODE_SESSION,
+          terminalId: 'p1',
+          opencodeSessionId: 'oc-1',
+        },
+        {
+          action: RESTORE_ACTION.RESUME_OPENCODE_SESSION,
+          terminalId: 'p2',
+          opencodeSessionId: 'oc-2',
+        },
+      ],
+      getPanel: (id) => (id === 'p1' ? panel : { id: 'p2', initialCommand: null }),
+      onRelaunch: async (action) => {
+        relaunched.push(action.terminalId);
+      },
+      maxConcurrency: 1,
+      delayMs: 0,
+    });
+
+    expect(relaunched).toEqual(['p1', 'p2']);
+  });
+
+  test('waitForRestoreMutexClear resolves when mutex is absent', async () => {
+    const cleared = await waitForRestoreMutexClear(global.localStorage, {
+      timeoutMs: 500,
+      pollMs: 50,
+    });
+    expect(cleared).toBe(true);
+  });
+});

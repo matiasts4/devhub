@@ -193,8 +193,8 @@ El `externalBin: ["binaries/devhub-server"]` en nivel `bundle` ya existía y sig
   "deb": {
     "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
     "files": {
-      "../packaging/linux/devhub-launcher": "/usr/lib/DevHub/bin/devhub-launcher",
-      "../packaging/linux/DevHub.desktop": "/usr/share/applications/DevHub.desktop"
+      "/usr/lib/DevHub/bin/devhub-launcher": "../packaging/linux/devhub-launcher",
+      "/usr/share/applications/DevHub.desktop": "../packaging/linux/DevHub.desktop"
     }
   }
 }

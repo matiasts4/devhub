@@ -184,7 +184,47 @@ describe('chat route — module contract', () => {
       expect(body.text).toBe('No terminals running.');
       expect(body.tool_results).toHaveLength(1);
       expect(body.tool_results[0].tool).toBe('list_terminals');
-      expect(body.tool_results[0].result).toEqual({ processes: [] });
+      // list_terminals now enriches with tmux discovery (best effort). The mock only controlled the /processes part.
+      expect(body.tool_results[0].result.processes).toEqual([]);
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
+
+  test('native tool_use path: model returns tool_use block (not textual) → executes tool → result fed back with tool_result block', async () => {
+    const realFetch = global.fetch;
+    let callIndex = 0;
+    global.fetch = jest.fn(async (url, init) => {
+      callIndex++;
+      if (typeof url === 'string' && url.includes('/api/terminal/processes')) {
+        return { ok: true, status: 200, json: async () => ({ processes: [{id: 'p1'}] }) };
+      }
+      // First model call returns native tool_use (as MiniMax does when tools= provided)
+      const isFirst = callIndex === 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: isFirst
+            ? [
+                { type: 'text', text: 'Listing terminals via tool.' },
+                { type: 'tool_use', id: 'call_abc123', name: 'list_terminals', input: {} },
+              ]
+            : [{ type: 'text', text: 'There is one terminal: p1.' }],
+        }),
+      };
+    });
+
+    try {
+      const request = { json: async () => ({ message: 'list terminals' }) };
+      const res = await POST(request);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.text).toBe('There is one terminal: p1.');
+      expect(body.tool_results).toHaveLength(1);
+      expect(body.tool_results[0].tool).toBe('list_terminals');
+      // Native path should have used the id
+      expect(body.tool_results[0].id).toBe('call_abc123');
     } finally {
       global.fetch = realFetch;
     }

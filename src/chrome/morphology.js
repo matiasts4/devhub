@@ -80,7 +80,8 @@ export function btnPrimaryStyle({ size = 'sm' } = {}) {
     background: 'var(--accent-primary)',
     border: `var(--chrome-border-width) solid var(--accent-primary)`,
     color: '#0d1117',
-    boxShadow: 'var(--chrome-shadow-control)',
+    // No shadow on small controls — refined 2026-06-03 to keep brutalist-stage
+    // hard-shadow reserved for panels only. Use hover transform instead.
     borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     textTransform: 'uppercase',
@@ -108,7 +109,7 @@ export function btnSecondaryStyle({ size = 'sm' } = {}) {
     background: 'var(--chrome-control-fill)',
     border: `var(--chrome-border-width) solid var(--chrome-border-color)`,
     color: 'var(--text-primary)',
-    boxShadow: 'var(--chrome-shadow-control)',
+    // No shadow on small controls — refined 2026-06-03.
     borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     cursor: 'pointer',
@@ -134,7 +135,7 @@ export function btnDangerStyle({ size = 'sm' } = {}) {
     background: 'var(--danger)',
     border: `var(--chrome-border-width) solid var(--danger)`,
     color: '#fff',
-    boxShadow: 'var(--chrome-shadow-control)',
+    // No shadow on small controls — refined 2026-06-03.
     borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     cursor: 'pointer',
@@ -157,7 +158,7 @@ export function pillStyle({ tone = 'neutral' } = {}) {
     borderWidth: 'var(--chrome-border-width)',
     borderStyle: 'solid',
     borderColor: 'var(--chrome-border-color)',
-    boxShadow: 'var(--chrome-shadow-control)',
+    // No shadow on small controls — refined 2026-06-03.
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
   };

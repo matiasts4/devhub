@@ -976,7 +976,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     );
   });
 
-  test('suspends native surfaces during internal split drag and restores them on drag end without changing active panel', async () => {
+  test('keeps native surfaces live during internal split drag and settles layout on drag end without changing active panel', async () => {
     persistWorkspaceState({
       workspaces: [
         {
@@ -1020,10 +1020,10 @@ describe('TerminalWorkspacesManager split layout', () => {
     await Promise.resolve();
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
-      'suspended'
+      'live'
     );
     expect(view.container.querySelector('[data-testid="terminal-suspend-p2"]')?.textContent).toBe(
-      'suspended'
+      'live'
     );
     expect(view.container.querySelector('[data-testid="terminal-active-p1"]')?.textContent).toBe(
       'inactive'
@@ -1032,8 +1032,17 @@ describe('TerminalWorkspacesManager split layout', () => {
       'active'
     );
 
+    const settledDetails = [];
+    const onLayoutSettled = (event) => settledDetails.push(event.detail || {});
+    window.addEventListener('devhub:terminal-layout-settled', onLayoutSettled);
+
     handle?.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
     await Promise.resolve();
+
+    window.removeEventListener('devhub:terminal-layout-settled', onLayoutSettled);
+    expect(
+      settledDetails.some((detail) => detail.reason === 'internal-split-drag-end')
+    ).toBe(true);
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
       'live'

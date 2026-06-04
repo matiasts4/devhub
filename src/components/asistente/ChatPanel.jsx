@@ -4,21 +4,22 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Loader2, Square } from 'lucide-react';
 import ToolResult from './ToolResult';
 import { dispatchZedOpenTerminal } from '@/components/zedOpenTerminalEvent';
+import { dispatchZedOpenUrlFromToolResults } from '@/components/zedOpenUrlEvent';
 
 function ChatMessage({ role, content, timestamp }) {
   const isZed = role === 'zed' || role === 'assistant';
   return (
     <div className={`flex ${isZed ? 'justify-start' : 'justify-end'}`}>
       <div
-        className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] ${
+        className={`max-w-[88%] rounded-2xl px-4 py-2.5 text-[13px] shadow-sm ${
           isZed
-            ? 'bg-[var(--surface-muted)] border border-[var(--border-subtle)]'
-            : 'bg-[var(--accent-primary)] text-white'
+            ? 'border border-[color-mix(in_srgb,var(--accent-primary)_18%,var(--border-subtle))] bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-muted)_92%,#0d1520)_0%,var(--surface-muted)_100%)]'
+            : 'bg-[linear-gradient(135deg,var(--accent-primary)_0%,color-mix(in_srgb,var(--accent-primary)_82%,#1a3a5c)_100%)] text-white'
         }`}
         style={isZed ? { color: 'var(--text-primary)' } : {}}
       >
         <p className="whitespace-pre-wrap leading-relaxed">{content}</p>
-        <p className={`text-[10px] mt-1 ${isZed ? 'text-[var(--text-muted)]' : 'text-white/60'}`}>
+        <p className={`text-[10px] mt-1.5 ${isZed ? 'text-[var(--text-muted)]' : 'text-white/60'}`}>
           {timestamp
             ? new Date(timestamp).toLocaleTimeString('en-GB', {
                 hour: '2-digit',
@@ -31,19 +32,31 @@ function ChatMessage({ role, content, timestamp }) {
   );
 }
 
-export default function ChatPanel({ className = '' }) {
+const DEFAULT_ZED_GREETING = {
+  role: 'assistant',
+  content: 'Hola, soy Zed. ¿En qué te puedo ayudar?',
+  timestamp: 'initial',
+};
+
+function readPersistedZedMessages(sessionKey) {
+  if (typeof window === 'undefined' || !sessionKey) return null;
+  try {
+    const raw = window.sessionStorage.getItem(sessionKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function ChatPanel({ className = '', sessionKey = 'devhub-zed-chat-default' }) {
   // D9 + T-010b: hydration-safe sentinel. Server and client must produce the
   // SAME first-render output, so we cannot call `new Date()` in the lazy
   // initializer (server time ≠ client time → React 18 hydration mismatch).
   // The initializer returns the literal sentinel `'initial'`, and a useEffect
   // below replaces it with a real ISO string AFTER mount.
-  const [messages, setMessages] = useState(() => [
-    {
-      role: 'assistant',
-      content: 'Hola, soy Zed. ¿En qué te puedo ayudar?',
-      timestamp: 'initial',
-    },
-  ]);
+  const [messages, setMessages] = useState(() => [DEFAULT_ZED_GREETING]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [abortController, setAbortController] = useState(null);
@@ -92,15 +105,18 @@ export default function ChatPanel({ className = '' }) {
 
       const data = await response.json();
 
+      const toolResults = data.tool_results;
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
           content: data.text || 'No pude procesar tu mensaje.',
           timestamp: new Date().toISOString(),
-          tool_results: data.tool_results,
+          tool_results: toolResults,
         },
       ]);
+      // Open the in-app browser dock immediately (do not wait for useEffect).
+      dispatchZedOpenUrlFromToolResults(toolResults);
     } catch (error) {
       const aborted = error?.name === 'AbortError';
       setMessages((prev) => [
@@ -156,13 +172,27 @@ export default function ChatPanel({ className = '' }) {
   // Server and first client render share the same `'initial'` string; only
   // after the client commits does the real time appear in the UI.
   useEffect(() => {
+    const persisted = readPersistedZedMessages(sessionKey);
+    if (persisted) {
+      setMessages(persisted);
+      return;
+    }
     setMessages((prev) => {
       if (prev.length === 0 || prev[0].timestamp !== 'initial') return prev;
       const updated = [...prev];
       updated[0] = { ...updated[0], timestamp: new Date().toISOString() };
       return updated;
     });
-  }, []);
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !sessionKey) return;
+    try {
+      window.sessionStorage.setItem(sessionKey, JSON.stringify(messages));
+    } catch {
+      // Ignore quota / private mode failures.
+    }
+  }, [messages, sessionKey]);
 
   // D9: dispatch `devhub:zed-open-terminal` when an open_terminal tool result
   // arrives. Replaces the side-effect that used to live inside the old
@@ -189,19 +219,26 @@ export default function ChatPanel({ className = '' }) {
     const result = openTerminalResult?.result;
     if (!result || result.error) return;
     const parsed = typeof result === 'string' ? safeParse(result) : result;
-    if (!parsed?.session_id) return;
+    const isWorkspaceOpen = parsed?.workspace === true || parsed?.opened === true;
+    if (!isWorkspaceOpen && !parsed?.session_id) return;
 
-    // Re-fire guard: bail if this session_id was already dispatched.
-    if (dispatchedSessionIdsRef.current.has(parsed.session_id)) return;
-    dispatchedSessionIdsRef.current.add(parsed.session_id);
+    const commandToRun =
+      (typeof parsed?.command_sent === 'string' && parsed.command_sent) ||
+      (typeof parsed?.command === 'string' && parsed.command) ||
+      null;
+    const dispatchKey = isWorkspaceOpen
+      ? `ws:${commandToRun || ''}:${parsed?.cwd || ''}`
+      : parsed.session_id;
 
-    // Dispatch via the helper (ZEB-005: this is the ONLY allowed site
-    // for a `devhub:zed-open-terminal` dispatch).
+    if (dispatchedSessionIdsRef.current.has(dispatchKey)) return;
+    dispatchedSessionIdsRef.current.add(dispatchKey);
+
     dispatchZedOpenTerminal({
-      command: parsed?.command || null,
+      command: commandToRun,
       cwd: parsed?.cwd || null,
-      session_id: parsed.session_id,
-      focus: parsed.focus === true,
+      workspace: isWorkspaceOpen,
+      session_id: isWorkspaceOpen ? null : parsed.session_id,
+      focus: parsed.focus !== false,
     });
   }, [messages]);
 
@@ -215,26 +252,26 @@ export default function ChatPanel({ className = '' }) {
   }, []);
 
   return (
-    <div className={`flex flex-col h-full min-h-0 ${className}`}>
-      {/* Header */}
-      <div className="flex-shrink-0 px-4 py-3 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-[var(--accent-primary)] flex items-center justify-center">
-            <span className="text-white font-bold text-sm">Z</span>
+    <div
+      className={`flex flex-col h-full min-h-0 bg-[linear-gradient(180deg,#070d14_0%,#0a1119_48%,#060b10_100%)] ${className}`}
+    >
+      <div className="flex-shrink-0 px-4 py-3 border-b border-[color-mix(in_srgb,var(--accent-primary)_20%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--surface-card)_40%,transparent)]">
+        <div className="flex items-center gap-3">
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--accent-primary),color-mix(in_srgb,var(--accent-primary)_55%,#0f2744))] shadow-[0_0_20px_color-mix(in_srgb,var(--accent-primary)_35%,transparent)]">
+            <span className="text-sm font-bold text-white">Z</span>
           </div>
-          <div>
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               Zed
             </h2>
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              Asistente
+            <p className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+              Asistente del workspace · terminales y navegador visibles
             </p>
           </div>
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 scroll-smooth">
         {messages.map((msg, i) => (
           <div key={i}>
             <ChatMessage role={msg.role} content={msg.content} timestamp={msg.timestamp} />
@@ -256,8 +293,7 @@ export default function ChatPanel({ className = '' }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="flex-shrink-0 px-4 py-3 border-t border-[var(--border-subtle)]">
+      <div className="flex-shrink-0 px-4 py-3 border-t border-[color-mix(in_srgb,var(--accent-primary)_16%,var(--border-subtle))] bg-[color-mix(in_srgb,#0a121c_85%,transparent)]">
         <div className="flex items-end gap-2">
           <textarea
             ref={textareaRef}
@@ -268,9 +304,9 @@ export default function ChatPanel({ className = '' }) {
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Escribile a Zed..."
+            placeholder="Ej: abrí una terminal y ejecutá ls · abrí github.com en el navegador"
             rows={1}
-            className="flex-1 bg-[var(--surface-muted)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-[13px] outline-none focus:border-[var(--accent-primary)] resize-none"
+            className="flex-1 rounded-xl border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--surface-muted)_90%,#0c141e)] px-3 py-2.5 text-[13px] outline-none transition-colors focus:border-[var(--accent-primary)] resize-none"
             style={{ color: 'var(--text-primary)', maxHeight: '120px' }}
           />
           {isLoading ? (

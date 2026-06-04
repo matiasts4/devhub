@@ -39,7 +39,7 @@ const { buildAgentLaunchWrapper } = require('../agentLaunchWrapper.js');
  * @returns {{ busBinaryPath: string, dbPath: string }}
  */
 function resolveBusHelperPaths({ repoRoot, env } = {}) {
-  const root = path.resolve(repoRoot || process.cwd());
+  const root = path.resolve(/*turbopackIgnore: true*/ repoRoot || process.cwd());
   const sourceEnv = env || process.env;
   const dbPath = sourceEnv.DEVHUB_DB_PATH
     ? path.resolve(sourceEnv.DEVHUB_DB_PATH)

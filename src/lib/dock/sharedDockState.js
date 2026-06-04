@@ -29,7 +29,7 @@
  */
 
 const SHARED_DOCK_STATE_VERSION = 1;
-const MAX_TABS_PER_SURFACE = 20;
+const MAX_TABS_PER_SURFACE = 3; // unified pizarra/normal: cap at small number (2-3) per browser surface per user request; keeps UI light while allowing tabs in the single shared browser per workspace.
 
 const LEGACY_KEY_PREFIXES = [
   // Phase 1 spec draft: pizarra.dockState.v1_{p}_{w} — accept BOTH

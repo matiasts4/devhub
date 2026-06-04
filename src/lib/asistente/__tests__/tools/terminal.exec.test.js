@@ -42,10 +42,13 @@ describe('execute_in_terminal (executeInTerminalTool)', () => {
       {}
     );
 
-    expect(calls).toHaveLength(1);
+    // We now also do a best-effort capture after send for observability (recent_output in result when available)
+    expect(calls).toHaveLength(2);
     expect(calls[0].url).toMatch(/\/api\/terminal\/session\/sess-1\/input$/);
     expect(calls[0].init.method).toBe('PUT');
     expect(JSON.parse(calls[0].init.body)).toEqual({ data: 'ls -la\n' });
+    expect(calls[1].url).toMatch(/\/api\/terminal\/session\/sess-1\/capture$/);
+    // The mock capture returned the same {sent:true} (no .output), so no recent_output attached
     expect(result).toEqual({ session_id: 'sess-1', sent: true });
   });
 

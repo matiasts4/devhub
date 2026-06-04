@@ -7,6 +7,10 @@ const MAX_RIGHT_DOCK_SIZE = 82;
 const DEFAULT_RIGHT_DOCK_STATE = {
   visible: false,
   activeTab: 'browser',
+  /** When true, Zed assistant stacks above workspace tools (browser/editor/swarm). */
+  zedVisible: false,
+  /** Bumped when the in-app browser dock opens/resizes so native GTK re-measures bounds. */
+  browserLayoutEpoch: 0,
   browserRuntime: 'native-gtk',
   editMode: false,
   maximized: false,
@@ -134,6 +138,14 @@ function sanitizeRightDockState(rawState = {}) {
   const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
+  const zedVisible =
+    rawState.zedVisible === true || (activeTab === 'zed' && rawState.zedVisible !== false);
+  const normalizedActiveTab =
+    activeTab === 'zed' &&
+    zedVisible &&
+    ['browser', 'editor', 'swarm', 'operator'].includes(rawState.workspaceTab)
+      ? rawState.workspaceTab
+      : activeTab;
   const maximizedView = [
     'browser',
     'editor',
@@ -144,15 +156,15 @@ function sanitizeRightDockState(rawState = {}) {
     'window',
   ].includes(rawState.maximizedView)
     ? rawState.maximizedView
-    : activeTab === 'editor'
+    : normalizedActiveTab === 'editor'
       ? 'editor'
-      : activeTab === 'swarm'
+      : normalizedActiveTab === 'swarm'
         ? 'swarm'
-        : activeTab === 'operator'
+        : normalizedActiveTab === 'operator'
           ? 'operator'
-          : activeTab === 'zed'
+          : normalizedActiveTab === 'zed'
             ? 'zed'
-            : activeTab === 'pizarra'
+            : normalizedActiveTab === 'pizarra'
               ? 'pizarra'
               : 'browser';
   const rawSize = Number(rawState.size);
@@ -188,9 +200,15 @@ function sanitizeRightDockState(rawState = {}) {
   // iframe-first browser path.
   const browserLoadFallback = rawState.browserLoadFallback === true;
 
+  const browserLayoutEpoch = Number.isFinite(Number(rawState.browserLayoutEpoch))
+    ? Math.max(0, Math.floor(Number(rawState.browserLayoutEpoch)))
+    : 0;
+
   return {
     visible,
-    activeTab,
+    activeTab: normalizedActiveTab,
+    zedVisible,
+    browserLayoutEpoch,
     browserRuntime,
     editMode,
     maximized,

@@ -86,8 +86,8 @@ function validateWorktreePath(worktreePath, fsImpl = fs) {
   }
 
   // Must have .git (worktree marker)
-  const gitMarker = path.join(worktreePath, '.git');
-  if (!fsImpl.existsSync(gitMarker)) {
+  const gitMarker = path.join(/*turbopackIgnore: true*/ worktreePath, '.git');
+  if (!fsImpl.existsSync(/*turbopackIgnore: true*/ gitMarker)) {
     return {
       valid: false,
       error: `Worktree path missing .git marker: ${worktreePath}`,

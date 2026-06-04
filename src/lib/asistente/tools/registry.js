@@ -32,4 +32,25 @@ export class ToolRegistry {
     }
     return tool.execute(input, context);
   }
+
+  // Convert registered tools to Anthropic/MiniMax compatible tool definitions
+  // for native function calling (input_schema). This enables reliable tool_use
+  // blocks instead of fragile textual TOOL:/PARAM: scraping.
+  toAnthropicTools() {
+    return Array.from(this.tools.values()).map((tool) => {
+      const params = tool.parameters || {};
+      const required = Object.keys(params).filter(
+        (k) => params[k] && params[k].required === true
+      );
+      return {
+        name: tool.name,
+        description: tool.description || '',
+        input_schema: {
+          type: 'object',
+          properties: params,
+          ...(required.length ? { required } : {}),
+        },
+      };
+    });
+  }
 }

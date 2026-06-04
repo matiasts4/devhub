@@ -33,7 +33,7 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
-    "targets": ["deb", "appimage", "rpm"],
+    "targets": ["deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -45,10 +45,10 @@
     "externalBin": ["binaries/devhub-server"],
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"],
         "files": {
-          "../packaging/linux/devhub-launcher": "/usr/lib/DevHub/bin/devhub-launcher",
-          "../packaging/linux/DevHub.desktop": "/usr/share/applications/DevHub.desktop"
+          "/usr/share/applications/DevHub.desktop": "../packaging/linux/DevHub.desktop",
+          "/usr/lib/DevHub/bin/devhub-launcher": "../packaging/linux/devhub-launcher"
         }
       }
     }

@@ -1,4 +1,9 @@
 import { normalizeRestoreManifest } from './restoreManifest';
+import {
+  extractOpenCodeSessionId,
+  inferPanelSessionKind,
+  resolveEffectiveRestorePolicy,
+} from './restorePolicyResolver';
 
 export const RESTORE_ACTION = Object.freeze({
   RESTORE_READY: 'restore-ready',
@@ -59,6 +64,7 @@ export function buildRestoreManifestFromWorkspaceState({
   projectId = null,
   appSessionId = null,
   agentRunsByPanel = {},
+  restorePreferences = null,
 } = {}) {
   const panelEntries = collectWorkspacePanels(workspaces);
 
@@ -67,16 +73,23 @@ export function buildRestoreManifestFromWorkspaceState({
       if (!panel?.id) return null;
 
       const initialCommand = String(panel.initialCommand || '').trim();
-      const opencodeMatch = initialCommand.match(/opencode\s+--session\s+([\w-]+)/i);
       const agentRun = panel?.id ? agentRunsByPanel?.[panel.id] || null : null;
+      const sessionKind = inferPanelSessionKind({ initialCommand, agentRun });
+      const opencodeSessionId =
+        agentRun?.opencodeSessionId || extractOpenCodeSessionId(initialCommand) || null;
 
       return {
         terminalId: panel.id,
         panelId: panel.id,
         workspaceId: workspace?.id || null,
         cwd: panel?.cwd || null,
-        opencodeSessionId: agentRun?.opencodeSessionId || opencodeMatch?.[1] || null,
-        restorePolicy: agentRun?.restorePolicy || null,
+        sessionKind,
+        opencodeSessionId,
+        restorePolicy: resolveEffectiveRestorePolicy({
+          sessionKind,
+          perSessionPolicy: agentRun?.restorePolicy || null,
+          preferences: restorePreferences,
+        }),
         runId: agentRun?.runId || null,
         launchId: agentRun?.launchId || null,
         missionId: agentRun?.missionId || null,
@@ -216,9 +229,8 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
       });
     }
 
-    // Policy gating: 'manual' → TERMINATED (no auto restore), 'off' → skip entirely
+    // Policy gating (per-session + workspace defaults applied in manifest build)
     const policy = session.restorePolicy;
-    // const isAuto = policy === 'auto' || policy == null || policy === undefined;
     const isManual = policy === 'manual';
     const isOff = policy === 'off';
 

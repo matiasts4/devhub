@@ -7,6 +7,7 @@ import {
   panelStyle,
   panelHeaderStripStyle,
   btnSecondaryStyle,
+  btnPrimaryStyle,
   pillStyle,
 } from '@/chrome/morphology';
 import {
@@ -36,11 +37,13 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
     generic: RESTORE_POLICY.AUTO,
     swarm: RESTORE_POLICY.AUTO,
   });
+  const [saveHint, setSaveHint] = useState(null);
 
   useEffect(() => {
     if (open && typeof window !== 'undefined') {
       const saved = readTerminalRestorePreferences(window.localStorage);
       setRestorePrefs(saved);
+      setSaveHint('Los cambios en cada selector se guardan al instante.');
     }
   }, [open]);
 
@@ -55,11 +58,24 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [open, onClose]);
 
-  const handlePolicyChange = (sessionType) => (nextPolicy) => {
-    setRestorePrefs((prev) => ({ ...prev, [sessionType]: nextPolicy }));
-    if (typeof window !== 'undefined') {
-      writeTerminalRestorePreferences(window.localStorage, { [sessionType]: nextPolicy });
+  const persistPreferences = (nextPrefs, { announce = true } = {}) => {
+    if (typeof window === 'undefined') return;
+    writeTerminalRestorePreferences(window.localStorage, nextPrefs);
+    if (announce) {
+      setSaveHint(`Guardado: OpenCode ${nextPrefs.opencode}, Shell ${nextPrefs.generic}, Swarm ${nextPrefs.swarm}.`);
     }
+  };
+
+  const handlePolicyChange = (sessionType) => (nextPolicy) => {
+    setRestorePrefs((prev) => {
+      const next = { ...prev, [sessionType]: nextPolicy };
+      persistPreferences({ [sessionType]: nextPolicy });
+      return next;
+    });
+  };
+
+  const handleSaveAll = () => {
+    persistPreferences(restorePrefs, { announce: true });
   };
 
   const SESSION_TYPES = [
@@ -125,6 +141,15 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
+          {saveHint ? (
+            <p
+              className="mb-4 rounded-lg border px-3 py-2 text-xs"
+              style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-subtle)' }}
+              data-testid="restore-prefs-save-hint"
+            >
+              {saveHint}
+            </p>
+          ) : null}
           <div className="space-y-4">
             {SESSION_TYPES.map(({ key, label }) => (
               <div key={key} className="flex items-center justify-between gap-4">
@@ -215,12 +240,25 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
 
         {/* Footer */}
         <div
-          className="flex items-center justify-end gap-2 border-t px-6 py-4"
+          className="flex items-center justify-between gap-2 border-t px-6 py-4"
           style={panelHeaderStripStyle()}
         >
-          <button type="button" onClick={onClose} style={btnSecondaryStyle()}>
-            Cerrar
-          </button>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Afecta el próximo arranque de DevHub
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              style={btnPrimaryStyle()}
+              data-testid="restore-prefs-save-btn"
+            >
+              Guardar
+            </button>
+            <button type="button" onClick={onClose} style={btnSecondaryStyle()}>
+              Cerrar
+            </button>
+          </div>
         </div>
       </div>
     </div>

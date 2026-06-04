@@ -3,8 +3,8 @@
  * 
  * Responsabilidades:
  * 1. Gestionar sesiones PTY persistentes (sobreviven al cierre de ventana)
- * 2. Escribir PID en ~/.devhub/sidecar.pid para que Tauri detecte si ya corre
- * 3. Escribir puerto en ~/.devhub/sidecar-port.txt para el shutdown graceful
+ * 2. Escribir PID en $DEVHUB_HOME/sidecar.pid (o ~/.devhub) para que Tauri detecte si ya corre
+ * 3. Escribir puerto en $DEVHUB_HOME/sidecar-port.txt para el shutdown graceful
  * 4. Exponer POST /shutdown para que Tauri cierre el sidecar limpiamente
  */
 
@@ -28,7 +28,10 @@ const {
 } = require('./sessionTransport');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
-const DEVHUB_DIR = path.join(os.homedir(), '.devhub');
+// Respeta DEVHUB_HOME cuando el wrapper / Tauri lo pasan (permite tests con home
+// temporal y consistencia con la lógica de extracción del wrapper). Fallback al
+// default para compatibilidad.
+const DEVHUB_DIR = process.env.DEVHUB_HOME || path.join(os.homedir(), '.devhub');
 const PID_FILE   = path.join(DEVHUB_DIR, 'sidecar.pid');
 const PORT_FILE  = path.join(DEVHUB_DIR, 'sidecar-port.txt');
 const PORT       = parseInt(process.env.SIDECAR_PORT || '4000', 10);
@@ -179,6 +182,21 @@ app.get('/sessions', (_req, res) => {
     createdAt: s.createdAt,
   }));
   res.json({ sessions: list });
+});
+
+// Output buffer for a specific session (for external observers like Zed assistant to "see" contents)
+app.get('/sessions/:id/output', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  const output = (session.history || []).join('');
+  res.json({
+    output,
+    session_id: req.params.id,
+    cwd: session.cwd || null,
+    createdAt: session.createdAt || null,
+  });
 });
 
 app.delete('/sessions/:sessionId', (req, res) => {

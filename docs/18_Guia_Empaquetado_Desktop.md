@@ -101,3 +101,34 @@ Este script bash cumple tres funciones vitales cuando el usuario hace clic en el
      pkill -9 -x devhub devhub-server sidecar-backend
      rm -rf ~/.devhub/standalone
      ```
+
+### C. Bloat en standalone.zip y assets faltantes (post 2026-06 fixes)
+
+- El script de build ahora incluye un paso de "prune" explícito después de `next build` para eliminar dirs junk (opencode/, research/, data/, docs/, logs/, sidecar-backend/ etc.) que se acumulaban en `.next/standalone/` por experimentos/manual copies. Esto hace que el zip sea mucho más pequeño y el extract rápido.
+- `public/` (logo, icons, manifest) ahora se fuerza limpio antes del cp para que esté siempre presente en el zip y servido por el Next standalone (evita 404s que dejaban UI incompleta/gris).
+- Desktop + launcher: `tauri.conf.json` + post-patch en `scripts/tauri-cli.cjs` + `deb.files` aseguran que el .deb instalado tenga el `DevHub.desktop` rico (con `Exec=/usr/lib/DevHub/bin/devhub-launcher`) + el launcher script en `/usr/lib/DevHub/bin/`. El launcher hace NVM bootstrap + export DEVHUB_NODE_BIN etc antes de exec el ELF (mejor para lanzamientos desde menú/gestor de apps donde la sesión no es interactiva).
+
+### D. Puertos 3400 (Next prod) vs 3100 (dev) y conflictos al lanzar instalado
+
+- El binario instalado (release) siempre usa 3400 para el standalone Next y 4000 para el PTY sidecar.
+- Si tenés un `pnpm next dev` (3100) o un next-server zombie en 3400 corriendo, el wrapper puede fallar con EADDRINUSE y el Tauri espera 60s+120s recovery → "no responde" o gris.
+- Cleanup en Rust + pre-kill en wrapper intentan matar listeners "next"/"devhub", pero hacé fuerza manual antes de probar el instalado:
+  ```bash
+  pkill -9 -f 'next-server.*3400|devhub-server|node.*3400|node.*4000' || true
+  rm -rf ~/.devhub/standalone
+  ```
+- Luego `gtk-launch DevHub` o `/usr/bin/devhub`. Mirá `~/.local/share/com.devhub.desktop/logs/DevHub.log`.
+
+### E. Actualizar / re-instalar después de cambios de empaquetado
+
+```bash
+pnpm run build
+pnpm run tauri:build
+sudo dpkg -i --force-overwrite src-tauri/target/release/bundle/deb/DevHub_*.deb
+# verificar
+cat /usr/share/applications/DevHub.desktop | grep -E 'Exec=|StartupWMClass'
+ls -l /usr/lib/DevHub/bin/devhub-launcher
+# lanzar
+pkill -9 -f 'next|devhub' || true; rm -rf ~/.devhub/standalone; gtk-launch DevHub
+tail -f ~/.local/share/com.devhub.desktop/logs/DevHub.log
+```

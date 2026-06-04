@@ -94,11 +94,16 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
         position: 'absolute',
         top: 12,
         left: 12,
-        zIndex: 10,
+        zIndex: 100,
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
         pointerEvents: 'auto',
+        background: 'rgba(15, 23, 42, 0.85)',
+        border: '1px solid rgba(88, 166, 255, 0.2)',
+        borderRadius: 8,
+        padding: 6,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
       }}
     >
       <ToggleGroup.Root

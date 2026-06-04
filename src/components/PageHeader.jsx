@@ -54,7 +54,21 @@ export default function PageHeader({
 
   const handleWinToggleMaximize = useCallback(async () => {
     const win = await getTauriWindow();
-    await win?.toggleMaximize().catch(() => {});
+    if (!win) return;
+    // Use explicit maximize/unmaximize instead of toggleMaximize — Tauri v2's
+    // toggleMaximize races with the onResized listener and can return
+    // a no-op when local state and native state disagree. The explicit
+    // pair is deterministic. We do NOT call setIsWinMaximized here — the
+    // onResized listener (above) will read win.isMaximized() and update
+    // state once the window actually resizes, avoiding any local-vs-native
+    // race. Tauri v2 API only exposes maximize() / unmaximize() / toggleMaximize();
+    // there is no setMaximized(boolean).
+    const current = await win.isMaximized().catch(() => false);
+    if (current) {
+      await win.unmaximize().catch(() => {});
+    } else {
+      await win.maximize().catch(() => {});
+    }
   }, [getTauriWindow]);
 
   const handleWinClose = useCallback(async () => {

@@ -950,7 +950,7 @@ export default function Tareas() {
   return (
     <div className="h-full flex flex-col" style={getWorkspacePageShellStyle()}>
       {/* Content */}
-      <div className="flex-1 overflow-hidden flex flex-col gap-5" style={getWorkspacePageContentStyle()}>
+      <div className="flex-1 overflow-hidden flex flex-col gap-5 min-h-0" style={getWorkspacePageContentStyle()}>
         <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
           <div className="border px-5 py-4" style={getQueueHeroStyle()}>
             <div className="mb-2 flex items-center gap-2">
@@ -1160,13 +1160,13 @@ export default function Tareas() {
             navigate={navigate}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-4 items-start">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-4">
             {COLUMNS.map((col) => {
               const colTasks = visibleTasks.filter((t) => t.status === col.id);
               return (
                 <div
                   key={col.id}
-                  className="overflow-hidden flex min-h-[74vh] flex-col"
+                  className="overflow-hidden flex h-full max-h-full flex-col"
                   style={getKanbanColumnShellStyle({ accent: col.color })}
                 >
                   {/* Column header */}
@@ -1215,7 +1215,7 @@ export default function Tareas() {
                             setEditingTask(task);
                             setModalOpen(true);
                           }}
-                          className="border px-4 py-4 transition-all cursor-pointer group relative border-borders-subtle hover:border-borders-strong hover:-translate-y-px"
+                          className="border px-4 py-4 transition-all cursor-pointer group relative z-0 border-borders-subtle hover:border-borders-strong hover:-translate-y-px"
                           data-testid={`task-card-${task.id}`}
                           style={getTaskCardChromeStyle({ blocked: isBlocked, accent: prio.color })}
                         >
@@ -1275,7 +1275,7 @@ export default function Tareas() {
                                 <ChevronDown className="w-3 h-3" />
                               </button>
                               <div
-                                className="absolute right-0 top-8 bg-surface-card border border-borders-subtle py-1 hidden group-hover/move:block z-10 w-40 shadow-xl"
+                                className="absolute right-0 top-8 bg-surface-card border border-borders-subtle py-1 hidden group-hover/move:block z-20 w-40 shadow-xl"
                                 data-testid={`task-move-menu-${task.id}`}
                                 style={getMoveMenuChromeStyle()}
                               >

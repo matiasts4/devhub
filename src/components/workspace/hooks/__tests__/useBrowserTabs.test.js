@@ -22,6 +22,7 @@ const { renderHook, act } = require('@testing-library/react');
 
 const { useBrowserTabs } = require('../useBrowserTabs');
 const { SharedDockStorageContext } = require('../useSharedDockState');
+const { MAX_TABS_PER_SURFACE } = require('@/lib/dock/sharedDockState');
 
 function createStorage(initial = {}) {
   const store = new Map();
@@ -146,7 +147,7 @@ describe('useBrowserTabs — addTab / closeTab / selectTab / updateTabUrl', () =
   });
 });
 
-describe('useBrowserTabs — 20-tab cap', () => {
+describe('useBrowserTabs — tab cap (MAX_TABS_PER_SURFACE)', () => {
   let dom;
   beforeEach(() => {
     dom = installDom();
@@ -155,23 +156,23 @@ describe('useBrowserTabs — 20-tab cap', () => {
     dom.window.close();
   });
 
-  test('addTab returns null once 20 tabs already exist', () => {
+  test('addTab returns null once MAX_TABS_PER_SURFACE tabs already exist', () => {
     const storage = createStorage();
     const { result } = renderWithStorage(storage, { projectId: 'p-1', workspaceId: 'w-1' });
     act(() => {
-      for (let i = 0; i < 20; i += 1) {
+      for (let i = 0; i < MAX_TABS_PER_SURFACE; i += 1) {
         const id = result.current.addTab(`https://t${i}.example`);
         if (id == null) {
           throw new Error(`addTab returned null early at i=${i}`);
         }
       }
     });
-    expect(result.current.tabs).toHaveLength(20);
+    expect(result.current.tabs).toHaveLength(MAX_TABS_PER_SURFACE);
     let rejected;
     act(() => {
       rejected = result.current.addTab('https://overflow.example');
     });
     expect(rejected).toBeNull();
-    expect(result.current.tabs).toHaveLength(20);
+    expect(result.current.tabs).toHaveLength(MAX_TABS_PER_SURFACE);
   });
 });

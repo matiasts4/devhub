@@ -1,7 +1,31 @@
 import { NextResponse } from 'next/server';
 import { getSessionOutput } from '@/lib/terminal/ttyServer';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 export const dynamic = 'force-dynamic';
+
+async function trySidecarCapture(sessionId) {
+  try {
+    const portFile = path.join(os.homedir(), '.devhub', 'sidecar-port.txt');
+    if (!fs.existsSync(portFile)) return null;
+
+    const port = Number(fs.readFileSync(portFile, 'utf8').trim());
+    if (!Number.isInteger(port) || port <= 0) return null;
+
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/${encodeURIComponent(sessionId)}/output`, { cache: 'no-store' });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data && typeof data.output === 'string') {
+      return { output: data.output, session_id: sessionId, source: 'sidecar' };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(_request, { params }) {
   const { id } = (await params) || {};
@@ -9,10 +33,17 @@ export async function GET(_request, { params }) {
     return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   }
 
+  // 1. Try local ttyServer (Zed / dev PTYs)
   const output = getSessionOutput(id);
-  if (output === null) {
-    return NextResponse.json({ error: 'unknown session' }, { status: 404 });
+  if (output !== null) {
+    return NextResponse.json({ output, session_id: id, source: 'tty' });
   }
 
-  return NextResponse.json({ output, session_id: id });
+  // 2. Fallback to sidecar (main visible workspace terminals / agent TUIs)
+  const sidecar = await trySidecarCapture(id);
+  if (sidecar) {
+    return NextResponse.json(sidecar);
+  }
+
+  return NextResponse.json({ error: 'unknown session' }, { status: 404 });
 }

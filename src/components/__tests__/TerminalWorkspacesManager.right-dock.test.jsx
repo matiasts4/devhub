@@ -430,13 +430,24 @@ describe('TerminalWorkspacesManager right dock', () => {
   });
 
   test('pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear', async () => {
-    const view = await renderIntoDom(
-      React.createElement(TerminalWorkspacesManager, {
-        cwd: '/workspace/devhub',
-        isVisible: true,
-        projectId: 'project-1',
-      })
-    );
+    // Force shared-view flag OFF for this test so ModeTransitionShell is no-op and
+    // dockBody (incl pizarra) is returned directly — guarantees the pizarra-pane testid
+    // is queryable without AnimatePresence passthrough quirks in the jsdom framer mock.
+    const prev = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = '0';
+    try {
+      // reset cached flag
+      try {
+        const flagMod = require('@/lib/pizarra/featureFlag');
+        flagMod._resetFlagForTests?.();
+      } catch {}
+      const view = await renderIntoDom(
+        React.createElement(TerminalWorkspacesManager, {
+          cwd: '/workspace/devhub',
+          isVisible: true,
+          projectId: 'project-1',
+        })
+      );
 
     expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
       'visible'
@@ -446,6 +457,12 @@ describe('TerminalWorkspacesManager right dock', () => {
     );
 
     await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+
+    // pizarra visibility: after toggle to pizarra mode the pane (with its tool palette buttons)
+    // must be present in the DOM. The host wrapper provides relative + size for the absolute
+    // canvas + palette inside PizarraPane. Prevents the "submarino blank, no buttons" UX.
+    expect(view.container.querySelector('[data-testid="pizarra-pane"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="pizarra-host"]')).not.toBeNull();
 
     expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
       'hidden'
@@ -462,6 +479,14 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
       'visible'
     );
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+      else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prev;
+      try {
+        const flagMod = require('@/lib/pizarra/featureFlag');
+        flagMod._resetFlagForTests?.();
+      } catch {}
+    }
   });
 
   test('opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer', async () => {

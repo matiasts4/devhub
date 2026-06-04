@@ -54,7 +54,7 @@ export default function WorkspaceRightDock({
 
   const dockBody = (
     <section
-      className="h-full min-h-0 flex flex-col border-l border-[color-mix(in_srgb,var(--accent-primary)_14%,var(--border-subtle))] bg-[linear-gradient(180deg,#0b121d_0%,#08101a_100%)] text-[var(--text-primary)]"
+      className={`h-full min-h-0 flex flex-col ${isPizarraActive ? '' : 'border-l border-[color-mix(in_srgb,var(--accent-primary)_14%,var(--border-subtle))]'} bg-[linear-gradient(180deg,#0b121d_0%,#08101a_100%)] text-[var(--text-primary)]`}
       data-testid="workspace-right-dock"
     >
       <div className="flex-1 min-h-0" data-testid="workspace-right-dock-shell">
@@ -96,7 +96,7 @@ export default function WorkspaceRightDock({
         )}
 
         {isPizarraActive && (
-          <div className="h-full min-h-0">
+          <div className="h-full min-h-0 relative" data-testid="pizarra-host">
             <PizarraPane
               projectId={project?.id}
               workspaceId={workspaceId}
@@ -114,8 +114,8 @@ export default function WorkspaceRightDock({
         )}
       </div>
 
-      {/* Operator action cards — always visible, below tab content */}
-      {(executionCards?.length ?? 0) > 0 && (
+      {/* Operator action cards — hide in pizarra fullscreen takeover to avoid overlapping the canvas/palette */}
+      {(executionCards?.length ?? 0) > 0 && !isPizarraActive && (
         <div className="border-t border-[var(--border-subtle)] p-3">
           <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
             Operator Actions

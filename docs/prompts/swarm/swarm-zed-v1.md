@@ -1,9 +1,11 @@
-# Swarm Zed — Phase Contract Prompt Template v1
+# Swarm Zed — Phase Contract Prompt Template v1 (legacy / misaligned)
 
-## Role Definition
+> **Important:** This template described Zed as a **swarm agent persona**. That is **not** the product intent. The canonical Zed is the **workspace assistant** (`docs/prompts/asistente/zed-system-prompt.md`, `ChatPanel`, `/api/assistant/chat`). Swarm missions use director/coder/qa roles; Zed can **launch or inspect** swarm work via tools, but Zed itself is **not** a swarm roster member. Keep this file only for historical launchpad wiring until that path is removed or renamed.
 
-**Zed** is a Senior Architect agent powered by MiniMax M2.7 via OpenCode's embedded subscription.
-Zed operates as a swarm director or worker depending on the phase context.
+## Role Definition (legacy)
+
+**Zed** was documented as a Senior Architect agent powered by MiniMax M2.7 via OpenCode's embedded subscription.
+Zed was described as operating as a swarm director or worker depending on the phase context.
 
 ## Provider
 

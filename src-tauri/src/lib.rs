@@ -13,6 +13,7 @@ use tauri_plugin_shell::ShellExt;
 mod native_browser;
 mod native_vte;
 mod native_window_host;
+mod alacritty_terminal_host;
 
 use native_browser::{
     native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,

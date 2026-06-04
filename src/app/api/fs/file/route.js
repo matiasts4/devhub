@@ -27,15 +27,15 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Ruta no proporcionada' }, { status: 400 });
     }
 
-    const absolutePath = path.resolve(basePath, filePathParam);
+    const absolutePath = path.resolve(/*turbopackIgnore: true*/ basePath, filePathParam);
 
     // En un entorno de escritorio local asumiremos confianza en localhost
     // Si quisieras restringirlo de vuelta pon aquí la lógica de path traversal.
 
     const ext = path.extname(absolutePath).toLowerCase();
     const contentType = mimeTypes[ext] || 'application/octet-stream';
-    
-    const fileBuffer = await fs.readFile(absolutePath);
+
+    const fileBuffer = await fs.readFile(/*turbopackIgnore: true*/ absolutePath);
     
     return new NextResponse(fileBuffer, {
       status: 200,

@@ -23,20 +23,22 @@
 }
 
 [data-morphology='default'] {
-  --chrome-radius-panel: 0.5rem;
+  /* Default (refined 2026-06-03): softer, app-like, more vertical density.
+     `brutalist-stage` is intentionally left untouched. */
+  --chrome-radius-panel: 0.75rem;
   --chrome-radius-control: 999px;
   --chrome-border-width: 1px;
-  --chrome-border-color: var(--border-subtle);
-  --chrome-shadow-panel: var(--shadow-soft);
-  --chrome-shadow-control: 0 10px 24px rgba(1, 4, 9, 0.18);
+  --chrome-border-color: color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  --chrome-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  --chrome-shadow-control: 0 1px 0 rgba(0, 0, 0, 0.4) inset, 0 1px 2px rgba(0, 0, 0, 0.12);
   --chrome-panel-fill: var(--surface-card);
   --chrome-panel-fill-emphasis: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--accent-primary) 12%, transparent),
+    color-mix(in srgb, var(--accent-primary) 8%, transparent),
     var(--surface-card)
   );
-  --chrome-control-fill: color-mix(in srgb, var(--surface-card) 84%, transparent);
-  --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  --chrome-control-fill: color-mix(in srgb, var(--surface-card) 80%, transparent);
+  --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
   --chrome-press-offset: 0px;
 }
 
@@ -45,8 +47,11 @@
   --chrome-radius-control: 0;
   --chrome-border-width: 2px;
   --chrome-border-color: var(--border-strong);
-  --chrome-shadow-panel: 4px 4px 0 0 var(--border-strong);
-  --chrome-shadow-control: 3px 3px 0 0 var(--border-strong);
+  /* Refined 2026-06-03: shadows reduced 1px and reserved for large panels only.
+     morphology.js no longer applies --chrome-shadow-control to small controls
+     (buttons, pills, inputs), so the hard-shadow is now contained to panels. */
+  --chrome-shadow-panel: 2px 2px 0 0 var(--border-strong);
+  --chrome-shadow-control: 2px 2px 0 0 var(--border-strong);
   --chrome-panel-fill: var(--surface-card);
   --chrome-panel-fill-emphasis: var(--surface-elevated);
   --chrome-control-fill: var(--surface-muted);

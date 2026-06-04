@@ -6,7 +6,7 @@ function normalizeCwd(candidate) {
   if (typeof candidate !== 'string') return null;
   const trimmed = candidate.trim();
   if (!trimmed) return null;
-  return path.resolve(trimmed);
+  return path.resolve(/*turbopackIgnore: true*/ trimmed);
 }
 
 function isUsableDirectory(candidate, { fsImpl = fs } = {}) {
@@ -14,7 +14,7 @@ function isUsableDirectory(candidate, { fsImpl = fs } = {}) {
   if (!normalized) return false;
 
   try {
-    return fsImpl.statSync(normalized).isDirectory();
+    return fsImpl.statSync(/*turbopackIgnore: true*/ normalized).isDirectory();
   } catch {
     return false;
   }
@@ -93,7 +93,7 @@ function validateSwarmCwd({
     }
 
     // Path must exist
-    if (!fsImpl.existsSync(normalized)) {
+    if (!fsImpl.existsSync(/*turbopackIgnore: true*/ normalized)) {
       return {
         valid: false,
         error: `Swarm worktree does not exist: ${normalized}`,
@@ -102,8 +102,8 @@ function validateSwarmCwd({
     }
 
     // Must have .git marker
-    const gitMarker = path.join(normalized, '.git');
-    if (!fsImpl.existsSync(gitMarker)) {
+    const gitMarker = path.join(/*turbopackIgnore: true*/ normalized, '.git');
+    if (!fsImpl.existsSync(/*turbopackIgnore: true*/ gitMarker)) {
       return {
         valid: false,
         error: `Swarm worktree missing .git marker: ${normalized}`,

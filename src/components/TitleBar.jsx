@@ -64,7 +64,21 @@ export default function TitleBar({
 
   const handleToggleMaximize = useCallback(async () => {
     const win = await getTauriWindow();
-    await win?.toggleMaximize().catch(() => {});
+    if (!win) return;
+    // Use explicit maximize/unmaximize instead of toggleMaximize — Tauri v2's
+    // toggleMaximize races with the onResized listener and can return
+    // a no-op when local state and native state disagree. The explicit
+    // pair is deterministic. We do NOT call setIsMaximized here — the
+    // onResized listener (above) will read win.isMaximized() and update
+    // state once the window actually resizes, avoiding any local-vs-native
+    // race. Tauri v2 API only exposes maximize() / unmaximize() / toggleMaximize();
+    // there is no setMaximized(boolean).
+    const current = await win.isMaximized().catch(() => false);
+    if (current) {
+      await win.unmaximize().catch(() => {});
+    } else {
+      await win.maximize().catch(() => {});
+    }
   }, [getTauriWindow]);
 
   const handleClose = useCallback(async () => {
@@ -76,7 +90,7 @@ export default function TitleBar({
 
   return (
     <div
-      className={`relative flex items-center w-full select-none shrink-0 pr-[100px] border-b backdrop-blur-xl ${className}`}
+      className={`relative flex items-center w-full select-none shrink-0 pr-[80px] border-b backdrop-blur-xl ${className}`}
       style={{
         height: 46,
         minHeight: 46,
@@ -106,7 +120,7 @@ export default function TitleBar({
                 {menuItems.map((item) => (
                   <button
                     key={item}
-                    className="px-2.5 py-1.5 text-[11px] text-gray-400 hover:text-white hover:bg-white/8 rounded-full transition-colors"
+                    className="px-2.5 py-1.5 text-[11px] font-sans text-gray-400 hover:text-white hover:bg-white/[0.06] rounded-full transition-colors duration-150"
                     style={{ WebkitAppRegion: 'no-drag' }}
                   >
                     {item}
@@ -129,7 +143,7 @@ export default function TitleBar({
         onDoubleClick={handleToggleMaximize}
       >
         <div className="flex items-center gap-2 px-2">
-          <span className="text-[11px] font-semibold text-gray-300 truncate">{title}</span>
+          <span className="text-[11.5px] font-semibold text-gray-200/90 truncate">{title}</span>
           {subtitle && <span className="text-[10px] text-gray-500 truncate">— {subtitle}</span>}
         </div>
       </div>
@@ -144,26 +158,26 @@ export default function TitleBar({
 
       {showWindowControls && (
         <div
-          className="absolute right-4 top-0 z-40 flex items-center h-full shrink-0 gap-2.5"
+          className="absolute right-4 top-0 z-40 flex items-center h-full shrink-0 gap-2"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <button
             onClick={handleMinimize}
-            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+            className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#2f323e] hover:brightness-125 transition-[filter] duration-150"
             title="Minimize"
           >
             <Minus className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={3} />
           </button>
           <button
             onClick={handleToggleMaximize}
-            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+            className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#464a57] hover:brightness-125 transition-[filter] duration-150"
             title={isMaximized ? 'Restore' : 'Maximize'}
           >
             <Plus className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={3} />
           </button>
           <button
             onClick={handleClose}
-            className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+            className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#B80096] hover:brightness-110 transition-[filter] duration-150"
             title="Close"
           >
             <X className="w-2.5 h-2.5 text-black stroke-[3px]" />

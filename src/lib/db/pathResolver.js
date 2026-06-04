@@ -47,8 +47,8 @@ function copySqliteFamily(sourceDbPath, targetDbPath) {
       continue;
     }
 
-    if (fs.existsSync(targetPath)) {
-      fs.rmSync(targetPath, { force: true });
+    if (fs.existsSync(/*turbopackIgnore: true*/ targetPath)) {
+      fs.rmSync(/*turbopackIgnore: true*/ targetPath, { force: true });
     }
   }
 }

@@ -77,70 +77,45 @@ describe('zed-system-prompt.md (T-027 regression)', () => {
 
   test('includes a WRONG vs RIGHT example for the run-verb bug', () => {
     const prompt = readPrompt();
-    // The example must contain both a wrong and a right call, and the wrong
-    // call must be missing `command=ls` while the right one includes it.
+    // Updated for native tools: still has WRONG/RIGHT guidance + the example sentence.
+    // No longer contains the old textual PARAM: syntax (we use function calling now).
     expect(prompt).toMatch(/WRONG/);
     expect(prompt).toMatch(/RIGHT/);
     expect(prompt).toMatch(/abre una terminal y ejecuta ls/);
-    expect(prompt).toMatch(/PARAM:\s*command=ls/);
+    // The right way now emphasizes passing the command param (schema level).
+    expect(prompt).toMatch(/with the `command`/i);
   });
 
-  // ----- T-032: latency fix — do not re-verify after the tool confirmed -----
+  // ----- Observability (point 3) + native tools update -----
+  // The old T-032 "never review after confirm to save turns" policy was relaxed
+  // because reliable native tool_use + auto recent_output on execute make it
+  // cheap and valuable for the model to see actual command output and give
+  // accurate final answers to the user. These tests now guard the new guidance.
 
-  test('T-032: action rules section says "do not" near the "tool confirms" / command_sent context', () => {
+  test('action rules now encourage using review / recent_output after commands for accurate answers', () => {
     const prompt = readPrompt();
-    // The new rule must live in the ## Action rules section AND mention
-    // "do not" in the same paragraph as the tool-confirmation context
-    // (either "tool confirms" or "command_sent"). We assert the
-    // "do not" phrase appears at all (case-insensitive) — the
-    // section-scoped regex below pins it to the right neighborhood.
-    const actionRules = prompt.match(/## Action rules[\s\S]*?(?=\n## )/);
+    const actionRules = prompt.match(/## Action rules[\s\S]*?(?=\n## |$)/);
     expect(actionRules).not.toBeNull();
-    expect(actionRules[0].toLowerCase()).toMatch(/do not/);
-    // The phrasing must connect "do not" with the tool-confirmation
-    // vocabulary, not just appear in passing.
-    expect(actionRules[0]).toMatch(/(tool confirms|command\s*s[en]t)/i);
+    const lower = actionRules[0].toLowerCase();
+    // Model should use output (recent_output in result or explicit review) to summarize
+    expect(lower).toMatch(/review_terminal_output|recent_output/);
+    expect(lower).toMatch(/accurate summary|what happened/);
   });
 
-  test('T-032: prompt names both command_sent and sent: true as confirmation signals', () => {
+  test('open_terminal and execute sections mention output / review for good final replies', () => {
     const prompt = readPrompt();
-    // open_terminal returns { command_sent: "ls" } and execute_in_terminal
-    // returns { sent: true }. Both must appear in the prompt so the model
-    // recognizes either signature as a confirmation.
-    expect(prompt).toMatch(/command_sent/);
-    expect(prompt).toMatch(/sent:\s*true/);
+    const openSec = prompt.match(/### 1\. open_terminal[\s\S]*?(?=\n### |$)/);
+    const execSec = prompt.match(/### 4\. execute_in_terminal[\s\S]*?(?=\n### |$)/);
+    expect(openSec).not.toBeNull();
+    expect(execSec).not.toBeNull();
+    // Both should talk about output or review (we no longer forbid it)
+    expect(openSec[0].toLowerCase() + execSec[0].toLowerCase()).toMatch(/recent_output|review_terminal_output|output/);
   });
 
-  test('T-032: open_terminal section says "do not call review_terminal_output"', () => {
+  test('rules section describes terminal workflow including review for output', () => {
     const prompt = readPrompt();
-    const section = prompt.match(/### 1\. open_terminal[\s\S]*?(?=\n### )/);
-    expect(section).not.toBeNull();
-    // The "do not" phrasing must target review_terminal_output, not
-    // be a generic warning about something else. Allow optional
-    // backticks around the tool name (markdown formatting) so the
-    // assertion is robust to `` `review_terminal_output` `` vs
-    // bare `review_terminal_output`.
-    expect(section[0].toLowerCase()).toMatch(/do not call\s+`?review_terminal_output`?/);
-  });
-
-  test('T-032: execute_in_terminal section says "do not call review_terminal_output"', () => {
-    const prompt = readPrompt();
-    const section = prompt.match(/### 4\. execute_in_terminal[\s\S]*?(?=\n### )/);
-    expect(section).not.toBeNull();
-    expect(section[0].toLowerCase()).toMatch(/do not call\s+`?review_terminal_output`?/);
-  });
-
-  test('T-032: prompt warns against re-calling review_terminal_output on the same session_id after ANSI capture', () => {
-    const prompt = readPrompt();
-    // The guard must mention (a) ANSI escape sequences (or ANSI), (b)
-    // session_id (so it scopes to a specific session, not a generic
-    // "don't retry" rule), and (c) the no-retry instruction.
-    expect(prompt).toMatch(/ANSI/);
-    expect(prompt).toMatch(/session_id/);
-    // Phrasing like "do NOT re-call" / "do not re-call" / "do not call … again".
-    // Accept any of those as long as the re-call is forbidden.
-    const lower = prompt.toLowerCase();
-    expect(lower).toMatch(/(do not re[- ]?call|do not .* on the same session_id)/);
+    expect(prompt).toMatch(/After running commands, use `review_terminal_output`/);
+    expect(prompt).toMatch(/recent_output/);
   });
 
   // ----- T-WSR-zed-002 (ASST-CHAT-003) -----
