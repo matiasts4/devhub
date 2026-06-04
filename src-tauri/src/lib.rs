@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
 use sysinfo::System;
+use tauri::menu::{MenuBuilder, MenuItem};
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -14,13 +16,13 @@ mod native_window_host;
 
 use native_browser::{
     native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
-    native_browser_open, native_browser_probe, native_browser_reload, native_browser_resize,
-    native_browser_select_all, native_browser_selector_command, native_browser_set_visibility,
-    NativeBrowserState,
+    native_browser_open, native_browser_probe, native_browser_raise, native_browser_reload,
+    native_browser_resize, native_browser_select_all, native_browser_selector_command,
+    native_browser_set_visibility, NativeBrowserState,
 };
 use native_vte::{
     native_vte_close, native_vte_focus, native_vte_open, native_vte_paste, native_vte_probe,
-    native_vte_resize, native_vte_set_visibility, NativeVteState,
+    native_vte_raise, native_vte_resize, native_vte_set_visibility, NativeVteState,
 };
 
 const NEXTJS_READY_POLL_MS: u64 = 500;
@@ -30,6 +32,7 @@ const NEXTJS_READY_RECOVERY_ATTEMPTS: usize = 240;
 /// Canonical absolute path to the server entry point inside the packaged standalone.
 /// Works from both dev (`.next/standalone/server.js`) and installed
 /// (`~/.devhub/standalone/server.js`) layouts.
+#[allow(dead_code)]
 fn standalone_server_path() -> PathBuf {
     let dir = devhub_dir();
     // Installed layout: ~/.devhub/standalone/server.js
@@ -114,17 +117,25 @@ fn is_ready_http_status(status: u16) -> bool {
 
 fn is_http_route_ready(port: u16, path: &str) -> bool {
     let address = format!("127.0.0.1:{}", port);
-    let mut stream =
-        match TcpStream::connect_timeout(&address.parse().unwrap(), Duration::from_millis(500)) {
-            Ok(stream) => stream,
-            Err(_) => return false,
-        };
+    // Timeouts más generosos: en dev (Turbopack + first-hit compilation) la respuesta
+    // puede demorar >500ms fácilmente. En prod standalone es más rápido.
+    let connect_timeout_ms: u64 = if cfg!(debug_assertions) { 3000 } else { 1500 };
+    let read_timeout_ms: u64 = if cfg!(debug_assertions) { 8000 } else { 3000 };
+    let write_timeout_ms: u64 = 2000;
 
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+    let mut stream = match TcpStream::connect_timeout(
+        &address.parse().unwrap(),
+        Duration::from_millis(connect_timeout_ms),
+    ) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(read_timeout_ms)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(write_timeout_ms)));
 
     let request = format!(
-        "GET {} HTTP/1.1\r\nHost: localhost:{}\r\nConnection: close\r\n\r\n",
+        "GET {} HTTP/1.1\r\nHost: localhost:{}\r\nConnection: close\r\nUser-Agent: DevHub-Readiness/1.0\r\nAccept: */*\r\n\r\n",
         path, port,
     );
 
@@ -132,7 +143,7 @@ fn is_http_route_ready(port: u16, path: &str) -> bool {
         return false;
     }
 
-    let mut response = [0u8; 512];
+    let mut response = [0u8; 1024];
     let bytes_read = match stream.read(&mut response) {
         Ok(bytes_read) if bytes_read > 0 => bytes_read,
         _ => return false,
@@ -163,6 +174,8 @@ fn is_devhub_runtime_process(name: &str, cmdline: &str) -> bool {
     normalized_name.contains("node")
         || normalized_name.contains("bun")
         || normalized_name.contains("mainthread")
+        || normalized_name.contains("next-server")
+        || normalized_name.contains("next")
 }
 
 /// Espera hasta que el puerto de Next.js esté disponible.
@@ -222,10 +235,19 @@ fn schedule_main_window_recovery(app: tauri::AppHandle, reason: &str) {
     });
 }
 
-/// Matar procesos zombie que ocupan los puertos del sidecar (4000) y Next.js.
+/// Matar procesos zombie que ocupan los puertos del sidecar/PTY y (solo en prod) Next.js.
+/// En dev NO tocamos el puerto de Next porque lo maneja el beforeDevCommand de `tauri dev`.
 /// Esto pasa cuando `tauri dev` se cierra con Ctrl+C y los procesos hijos no mueren.
 fn cleanup_zombie_ports() {
-    let zombie_ports = [nextjs_port(), 4000u16];
+    // En dev (tauri dev) el Next.js es lanzado por beforeDevCommand y es "propiedad" del harness de Tauri.
+    // NO debemos matarlo aquí, o matamos el servidor que el propio `tauri:dev` acaba de iniciar.
+    // Solo limpiamos el sidecar/PTY (que sí puede quedar zombi de sesiones previas).
+    // En builds empaquetadas sí limpiamos también el next (porque lo lanza nuestro sidecar wrapper).
+    let mut zombie_ports: Vec<u16> = vec![sidecar_port()];
+    if !cfg!(debug_assertions) {
+        zombie_ports.push(nextjs_port());
+    }
+
     let mut sys = System::new_all();
     sys.refresh_all();
 
@@ -598,7 +620,18 @@ fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<bool> {
     shutdown_sidecar();
     cleanup_zombie_ports();
     spawn_sidecar(app);
-    let next_ready = wait_for_nextjs_ready(NEXTJS_READY_STARTUP_ATTEMPTS, "startup");
+
+    // En dev mode el Next.js ya está corriendo (lo lanzó beforeDevCommand del tauri dev).
+    // No esperes 60s ni mates nada del next. Solo verifica sidecar/pty y hacé una espera corta
+    // por si el primer request a Next tarda un poco (Turbopack on-demand).
+    let next_ready = if cfg!(debug_assertions) {
+        // Espera corta y tolerante (máx ~15s). Si no responde, igual seguimos:
+        // la ventana se muestra igual y Tauri carga el devUrl directamente.
+        // El recovery también es más corto en dev.
+        wait_for_nextjs_ready(30, "startup-dev")
+    } else {
+        wait_for_nextjs_ready(NEXTJS_READY_STARTUP_ATTEMPTS, "startup")
+    };
 
     Ok(next_ready)
 }
@@ -668,7 +701,6 @@ async fn dh_dispatch_action(
     target_json: String,
 ) -> Result<DispatchResult, String> {
     use std::time::Duration;
-    use std::io::{Write, BufRead, BufReader};
 
     let port = nextjs_port();
     let url = format!("http://127.0.0.1:{}/api/operator/dispatch", port);
@@ -719,6 +751,81 @@ async fn dh_dispatch_action(
     })
 }
 
+/// Construye el tray icon con menú contextual para que el usuario pueda
+/// recuperar la ventana aunque la oculte con la X.
+///
+/// Esto resuelve el caso donde la app se queda invisible: sin tray, cerrar
+/// la ventana con la X solo la oculta y no había forma de traerla de vuelta.
+fn build_main_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let menu = MenuBuilder::new(app)
+        .items(&[
+            &MenuItem::with_id(app, "show", "Mostrar ventana", true, None::<&str>)?,
+            &MenuItem::with_id(app, "hide", "Ocultar ventana", true, None::<&str>)?,
+            &MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?,
+        ])
+        .build()?;
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().cloned().unwrap())
+        .tooltip("DevHub")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                    log::info!("[DevHub] Tray menu: mostrar ventana principal.");
+                } else {
+                    log::warn!("[DevHub] Tray menu show: ventana 'main' no encontrada.");
+                }
+            }
+            "hide" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                    log::info!("[DevHub] Tray menu: ocultar ventana principal.");
+                } else {
+                    log::warn!("[DevHub] Tray menu hide: ventana 'main' no encontrada.");
+                }
+            }
+            "quit" => {
+                log::info!("[DevHub] Tray menu: salir solicitado por el usuario.");
+                app.exit(0);
+            }
+            _ => {
+                log::warn!(
+                    "[DevHub] Tray menu: id de menú no reconocido '{}'.",
+                    event.id.as_ref()
+                );
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            // Click izquierdo: toggle de visibilidad. En Linux tauri no emite
+            // este evento (solo el menú contextual con click derecho), pero
+            // dejamos el handler para Windows/macOS.
+            if let TrayIconEvent::Click { button, .. } = event {
+                if button == MouseButton::Left {
+                    let app = tray.app_handle();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let visible = window.is_visible().unwrap_or(false);
+                        if visible {
+                            let _ = window.hide();
+                            log::info!("[DevHub] Tray click izquierdo: ocultar ventana.");
+                        } else {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                            log::info!("[DevHub] Tray click izquierdo: mostrar ventana.");
+                        }
+                    }
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -734,6 +841,7 @@ pub fn run() {
             native_browser_reload,
             native_browser_resize,
             native_browser_focus,
+            native_browser_raise,
             native_browser_set_visibility,
             native_browser_selector_command,
             native_browser_select_all,
@@ -743,6 +851,7 @@ pub fn run() {
             native_vte_open,
             native_vte_focus,
             native_vte_paste,
+            native_vte_raise,
             native_vte_resize,
             native_vte_set_visibility,
             native_vte_close,
@@ -770,14 +879,25 @@ pub fn run() {
                     let _ = window.set_icon(icon.clone());
                 }
 
-                if next_ready {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                } else {
-                    let _ = window.hide();
+                // Always show the window early (with a loading state served by the
+                // Next standalone or the page.js skeleton). This avoids the "minutes
+                // of nothing / gray" perception when the backend takes time on first
+                // extract or cold start. The old hide was to "avoid blank screen" but
+                // users saw gray/empty anyway; frontend now owns a branded loading UI.
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+
+                if !next_ready {
                     schedule_main_window_recovery(app.handle().clone(), "setup");
                 }
+            }
+
+            // Tray icon con menú contextual: punto de recuperación cuando el
+            // usuario oculta la ventana con la X. Si falla, la app sigue
+            // funcionando, solo no hay tray.
+            if let Err(err) = build_main_tray(app.handle()) {
+                log::warn!("[DevHub] No se pudo crear el tray icon: {}", err);
             }
 
             Ok(())
@@ -787,6 +907,15 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             log::info!("[DevHub] Segunda instancia detectada → restaurando ventana principal.");
             restore_main_window(app);
+            // Forzar show DESPUÉS de restore_main_window: el gate de next_ready
+            // dentro de restore_main_window puede ocultar la ventana, pero en
+            // segunda instancia el sidecar ya está corriendo y el usuario
+            // espera ver la ventana de inmediato.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
         }));
     }
 

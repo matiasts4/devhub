@@ -204,6 +204,7 @@ struct NativeVtePanelHost {
     terminal: Terminal,
     child_pid: Option<glib::Pid>,
     visible: bool,
+    last_bounds: Option<NativeVteBounds>,
 }
 
 fn unsupported_platform_reason() -> Option<String> {
@@ -506,7 +507,8 @@ fn build_native_shell_script(cwd: Option<String>, initial_command: Option<String
     }
 
     if let Some(command) = initial_command.filter(|value| !value.trim().is_empty()) {
-        segments.push(format!("exec {}", command.trim()));
+        // Do not `exec` — keep an interactive shell so Ctrl+C returns to the prompt.
+        segments.push(command.trim().to_string());
     } else {
         segments.push(DEFAULT_SHELL_COMMAND.to_string());
     }
@@ -688,13 +690,8 @@ fn build_native_spawn_argv(cwd: Option<String>, initial_command: Option<String>)
         .and_then(|value| value.to_str())
         .unwrap_or_default();
 
-    if shell_program == "zsh"
-        && initial_command
-            .as_deref()
-            .unwrap_or_default()
-            .trim()
-            .is_empty()
-    {
+    if shell_program == "zsh" {
+        let _ = initial_command;
         return vec![
             PathBuf::from(shell),
             PathBuf::from("-lic"),
@@ -704,7 +701,8 @@ fn build_native_spawn_argv(cwd: Option<String>, initial_command: Option<String>)
         ];
     }
 
-    let script = build_native_shell_script(cwd, initial_command);
+    let script = build_native_shell_script(cwd, None);
+    let _ = initial_command;
 
     vec![
         PathBuf::from(shell),
@@ -1064,9 +1062,10 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             registry.panels.contains_key(request.panel_id.as_str()),
         ) {
             registry_show_panel(registry, request.panel_id.as_str())?;
-            if let Some(panel) = registry.panels.get(request.panel_id.as_str()) {
+            if let Some(panel) = registry.panels.get_mut(request.panel_id.as_str()) {
                 if let Some(bounds) = request.bounds.as_ref() {
                     apply_terminal_bounds(&layout, &panel.wrapper, &panel.terminal, bounds);
+                    panel.last_bounds = Some(bounds.clone());
                 }
             }
             registry
@@ -1078,6 +1077,7 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
         let terminal = Terminal::new();
         terminal.set_widget_name(&format!("devhub-native-vte-terminal-{}", request.panel_id));
         terminal.set_input_enabled(true);
+        #[allow(deprecated)] // set_rewrap_on_resize: kept for compatibility with zoha-vte 0.6 / vte <0.58
         terminal.set_rewrap_on_resize(true);
         if let Some(system_font) = resolve_native_system_monospace_font() {
             terminal.set_font(Some(&system_font));
@@ -1128,6 +1128,7 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
         let envv = build_native_spawn_env();
         let envv_refs: Vec<&Path> = envv.iter().map(PathBuf::as_path).collect();
         let child_pid = with_noop_child_setup(|child_setup| {
+            #[allow(deprecated)] // spawn_sync: standard API for zoha-vte 0.6 / vte 0.10
             terminal.spawn_sync(
                 PtyFlags::DEFAULT,
                 request
@@ -1184,6 +1185,7 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
                 terminal,
                 child_pid: Some(child_pid),
                 visible: true,
+                last_bounds: request.bounds.clone(),
             },
         );
         registry_show_panel(registry, request.panel_id.as_str())?;
@@ -1202,6 +1204,39 @@ fn registry_focus_panel(panel_id: &str) -> Result<(), String> {
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         panel.terminal.grab_focus();
         registry.focused_panel_id = Some(panel_id.to_string());
+        Ok(())
+    })
+}
+
+/// Raise the panel to the top of the paint order in the GTK Fixed layout
+/// (so its native content appears above sibling native surfaces like other
+/// terminals or browser webviews). Does not change input focus.
+/// Uses stored last_bounds to re-put at the correct position (remove + put
+/// changes child order, which controls z in Fixed).
+#[cfg(target_os = "linux")]
+fn registry_raise_panel(panel_id: &str) -> Result<(), String> {
+    with_native_vte_registry(|registry| {
+        let layout = match registry.layout.as_ref() {
+            Some(l) => l,
+            None => return Ok(()),
+        };
+        let panel = match registry.panels.get_mut(panel_id) {
+            Some(p) if p.visible => p,
+            _ => return Ok(()),
+        };
+
+        let (x, y) = if let Some(b) = &panel.last_bounds {
+            (b.x.round() as i32, b.y.round() as i32)
+        } else {
+            // Fallback; apply will have set it in normal flows
+            (0, 0)
+        };
+
+        layout.remove(&panel.wrapper);
+        layout.put(&panel.wrapper, x, y);
+        panel.wrapper.show_all();
+        // No need to touch terminal visibility here; it stays as-is.
+
         Ok(())
     })
 }
@@ -1247,9 +1282,10 @@ fn registry_resize_panel(panel_id: &str, bounds: &NativeVteBounds) -> Result<(),
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         let panel = registry
             .panels
-            .get(panel_id)
+            .get_mut(panel_id)
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, bounds);
+        panel.last_bounds = Some(bounds.clone());
         Ok(())
     })
 }
@@ -1266,9 +1302,10 @@ fn registry_set_panel_visibility(
             if let (Some(layout), Some(bounds)) = (layout.as_ref(), bounds.as_ref()) {
                 let panel = registry
                     .panels
-                    .get(panel_id)
+                    .get_mut(panel_id)
                     .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
                 apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, bounds);
+                panel.last_bounds = Some(bounds.clone());
             }
             registry_show_panel(registry, panel_id)?;
         } else {
@@ -1449,6 +1486,40 @@ pub fn native_vte_focus(
         let _ = _state;
         let _ = request;
         Err("unsupported-platform".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn native_vte_raise(
+    _app: AppHandle,
+    _state: State<'_, NativeVteState>,
+    request: NativeVtePanelRequest,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let panel_id = request.panel_id;
+        let panel_id_for_raise = panel_id.clone();
+        let window = _app
+            .get_webview_window("main")
+            .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
+
+        execute_main_thread_job(
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
+            move || registry_raise_panel(&panel_id_for_raise),
+        )?;
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = _state;
+        let _ = request;
+        Ok(())
     }
 }
 
@@ -1777,6 +1848,38 @@ mod tests {
                 session_id: Some("ses_left".to_string()),
                 initial_command: None,
             }
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_vte_spawn_argv_uses_interactive_zsh_even_when_initial_command_set() {
+        let original_shell = std::env::var_os("SHELL");
+        std::env::set_var("SHELL", "/bin/zsh");
+
+        let argv = build_native_spawn_argv(
+            Some("/workspace/devhub".to_string()),
+            Some("npm run tauri:dev".to_string()),
+        );
+        let argv = argv
+            .iter()
+            .map(|entry| entry.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        match original_shell {
+            Some(value) => std::env::set_var("SHELL", value),
+            None => std::env::remove_var("SHELL"),
+        }
+
+        assert_eq!(
+            argv,
+            vec![
+                "/bin/zsh".to_string(),
+                "-lic".to_string(),
+                "exec zsh -i".to_string(),
+                "devhub-shell".to_string(),
+                "--no-use".to_string(),
+            ]
         );
     }
 

@@ -48,6 +48,25 @@ function normalizeNativeBrowserReason(reason, fallbackReason) {
   return String(reason);
 }
 
+export function isTransientNativeBrowserProbeFailure(reason) {
+  if (!reason) return false;
+  const r = String(reason);
+  if (
+    r === 'probe-failed' ||
+    r === 'probe-missing-main-window' ||
+    r === 'probe-missing-default-vbox' ||
+    r === 'probe-missing-webview-handle' ||
+    r === 'probe-missing-host-primitives' ||
+    r === 'missing-bounds' ||
+    r === 'open-failed' ||
+    r.includes('host-primitives') ||
+    r.includes('open-failed')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 async function invokeNativeBrowser(command, payload = {}, failureShape = {}) {
   if (!isNativeBrowserRuntimeAvailable()) {
     return failureShape;
@@ -98,6 +117,10 @@ export async function resizeNativeBrowser(payload = {}) {
 
 export async function focusNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_focus', payload, {});
+}
+
+export async function raiseNativeBrowser(payload = {}) {
+  return invokeNativeBrowser('native_browser_raise', payload, {});
 }
 
 export async function setNativeBrowserVisibility(payload = {}) {

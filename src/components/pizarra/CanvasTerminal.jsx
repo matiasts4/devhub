@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
-import { resizeNativeVtePanel, setNativeVtePanelVisibility } from '@/lib/terminal/nativeVteBridge';
+import { raiseNativeVtePanel, resizeNativeVtePanel, setNativeVtePanelVisibility } from '@/lib/terminal/nativeVteBridge';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
 import {
   ensureSurfaceMotionKeyframes,
@@ -65,8 +65,16 @@ export default function CanvasTerminal({
     (shapeId) => {
       onSelect?.(shapeId);
       onActivatePanel?.(terminalId);
+      // Raise the native VTE so this terminal's content paints above other
+      // native surfaces (other terminals or browser webviews) when selected
+      // or dragged over them in pizarra. This is the core of making "drag
+      // browser over terminal" (or vice versa) respect logical z without
+      // full suspend of the top surface.
+      if (requestedRendererMode === 'vte-experimental') {
+        raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
+      }
     },
-    [onActivatePanel, onSelect, terminalId]
+    [onActivatePanel, onSelect, terminalId, requestedRendererMode]
   );
 
   // pizarra-motion: inject shared enter keyframes once.
@@ -330,6 +338,12 @@ export default function CanvasTerminal({
     onDragStart: () => {
       hasMovedRef.current = false;
       setPointerDown(true);
+      // Ensure raised at drag start (select may have done it, but for
+      // direct header drags we guarantee the native is topmost so its
+      // content wins over other natives while moving).
+      if (requestedRendererMode === 'vte-experimental') {
+        raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
+      }
     },
     onDragMove: (moveEvent, rawDeltas) => {
       if (!hasMovedRef.current) {

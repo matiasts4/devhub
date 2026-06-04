@@ -2743,6 +2743,13 @@ export default function TerminalTTY({
                 className="absolute inset-0 z-0 pointer-events-none"
                 data-testid="terminal-native-placeholder"
                 aria-hidden="true"
+                style={{
+                  // Match the exact bg the native VTE uses so when we suspend
+                  // (for modals or transient overlays) the web content that
+                  // covers it doesn't have a jarring color shift or "black hole".
+                  // This is cheap CSS, no capture/IPC cost.
+                  background: '#0d1117',
+                }}
               />
             ) : null}
 
@@ -2809,7 +2816,8 @@ export default function TerminalTTY({
           {/* Suspended state overlay */}
           {showTerminalStatusOverlay && connectionState === 'suspended' && (
             <div
-              className="absolute inset-0 bg-[var(--surface-app)]/95 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto"
+              style={{ background: '#0d1117' }}
               data-testid="terminal-suspended-overlay"
             >
               <svg

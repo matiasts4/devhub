@@ -23,7 +23,7 @@ import { RefreshCw, X } from 'lucide-react';
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
-import { resizeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
+import { raiseNativeBrowser, resizeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
 // pizarra-shared-view-state Phase 3: same tab strip as the
 // workspace right-dock (single source of truth). Pizarra is
 // always opt-in: tabsMode defaults to 'multi' on this surface.
@@ -152,12 +152,12 @@ export default function PizarraBrowserSurface({
   // the module graph stays valid even if it is not yet present.
   const nativeCapability = useNativeBrowserCapabilitySafe();
 
-  // pizarra-shared-view-state Phase 3: same tab strip as the
-  // workspace right-dock (single source of truth). Tabs and the
-  // +/close/select ops are driven by the TWM-owned useSharedDockState
-  // via useBrowserTabs. The shape.id is used as the workspace
-  // dimension so multiple pizarra browser surfaces in the same
-  // project do not collide.
+  // pizarra-shared-view-state: use the *workspace* key for tabs so the browser
+  // tabs/state ("la misma") are identical between pizarra cards and the normal
+  // right-dock WorkspaceBrowserPane. Multiple pizarra browser shapes currently
+  // share the single ws browser tabs list (the "one browser per workspace" model
+  // with internal tabs; multi-surface browser is future per shared-dock comment).
+  // This makes switch pizarra<->normal preserve the live tabs/urls without loss.
   const tabStripApi = useBrowserTabs({
     projectId: projectId || 'pizarra',
     workspaceId: workspaceId || shape.id,
@@ -288,6 +288,9 @@ export default function PizarraBrowserSurface({
         return;
       }
       onSelect?.(shape.id);
+      // Raise native browser webview so this surface's content is above
+      // other native surfaces (terminals etc) in pizarra z-order.
+      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
     },
     [onSelect, shape.id]
   );
@@ -307,6 +310,7 @@ export default function PizarraBrowserSurface({
       event.stopPropagation();
       event.preventDefault();
       onSelect?.(shape.id);
+      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
 
       const z = zoom > 0 ? zoom : 1;
       const startLogical = {
@@ -459,7 +463,10 @@ export default function PizarraBrowserSurface({
       setIsDragging(false);
       onDragEnd?.(args);
     },
-    onDragStart: () => setIsDragging(true),
+    onDragStart: () => {
+      setIsDragging(true);
+      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
+    },
     moveMeta: { panelId },
   });
   const layoutSyncKey = useMemo(

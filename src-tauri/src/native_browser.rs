@@ -71,7 +71,7 @@ pub struct NativeBrowserProbeRequest {
     pub tauri_available: Option<bool>,
 }
 
-#[derive(serde::Deserialize, Serialize, Clone)]
+#[derive(serde::Deserialize, Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeBrowserBounds {
     pub x: f64,
@@ -213,6 +213,7 @@ struct NativeBrowserPanelHost {
     webview: WebView,
     selector_context: NativeBrowserSelectorContext,
     visible: bool,
+    last_bounds: Option<NativeBrowserBounds>,
 }
 
 #[cfg(target_os = "linux")]
@@ -839,6 +840,7 @@ fn registry_open_panel(_app: &AppHandle, request: &NativeBrowserOpenRequest) -> 
             panel.webview.load_uri(request.url.as_str());
             if let Some(bounds) = request.bounds.as_ref() {
                 apply_browser_bounds(&layout, &panel.wrapper, bounds);
+                panel.last_bounds = Some(bounds.clone());
             }
             registry_show_panel(registry, request.panel_id.as_str())?;
             return Ok(());
@@ -874,6 +876,7 @@ fn registry_open_panel(_app: &AppHandle, request: &NativeBrowserOpenRequest) -> 
                 webview,
                 selector_context,
                 visible: true,
+                last_bounds: request.bounds.clone(),
             },
         );
         registry_show_panel(registry, request.panel_id.as_str())
@@ -893,6 +896,34 @@ fn registry_focus_panel(panel_id: &str) -> Result<(), String> {
     })
 }
 
+/// Raise the browser panel to top of GTK Fixed paint order (for cross-surface
+/// occlusion in pizarra etc). Re-put changes child order => higher z.
+#[cfg(target_os = "linux")]
+fn registry_raise_panel(panel_id: &str) -> Result<(), String> {
+    with_native_browser_registry(|registry| {
+        let layout = match registry.layout.as_ref() {
+            Some(l) => l,
+            None => return Ok(()),
+        };
+        let panel = match registry.panels.get_mut(panel_id) {
+            Some(p) if p.visible => p,
+            _ => return Ok(()),
+        };
+
+        let (x, y) = if let Some(b) = &panel.last_bounds {
+            (b.x.round() as i32, b.y.round() as i32)
+        } else {
+            (0, 0)
+        };
+
+        layout.remove(&panel.wrapper);
+        layout.put(&panel.wrapper, x, y);
+        panel.wrapper.show_all();
+
+        Ok(())
+    })
+}
+
 #[cfg(target_os = "linux")]
 fn registry_resize_panel(panel_id: &str, bounds: &NativeBrowserBounds) -> Result<(), String> {
     with_native_browser_registry(|registry| {
@@ -902,9 +933,10 @@ fn registry_resize_panel(panel_id: &str, bounds: &NativeBrowserBounds) -> Result
             .ok_or_else(|| PANEL_NOT_FOUND_REASON.to_string())?;
         let panel = registry
             .panels
-            .get(panel_id)
+            .get_mut(panel_id)
             .ok_or_else(|| PANEL_NOT_FOUND_REASON.to_string())?;
         apply_browser_bounds(layout, &panel.wrapper, bounds);
+        panel.last_bounds = Some(bounds.clone());
         Ok(())
     })
 }
@@ -922,9 +954,10 @@ fn registry_set_panel_visibility(
             if let (Some(layout), Some(bounds)) = (layout.as_ref(), bounds.as_ref()) {
                 let panel = registry
                     .panels
-                    .get(panel_id)
+                    .get_mut(panel_id)
                     .ok_or_else(|| PANEL_NOT_FOUND_REASON.to_string())?;
                 apply_browser_bounds(layout, &panel.wrapper, bounds);
+                panel.last_bounds = Some(bounds.clone());
             }
             registry_show_panel(registry, panel_id)?;
         } else {
@@ -1054,7 +1087,16 @@ pub fn native_browser_open(
         };
 
         let panel_id = request.panel_id.clone();
+        let url_for_log = request.url.clone();
+        let bounds_for_log = request.bounds.clone();
         let request_for_ui = request;
+
+        log::info!(
+            "[DevHub] native_browser_open panel={} url={} bounds={:?}",
+            panel_id,
+            url_for_log,
+            bounds_for_log
+        );
 
         match prepare_same_window_host(&app, OPEN_FAILED_REASON).and_then(|_| {
             let window = app
@@ -1083,18 +1125,23 @@ pub fn native_browser_open(
         }) {
             Ok(()) => {
                 if let Ok(mut focused_panel_id) = state.focused_panel_id.lock() {
-                    *focused_panel_id = Some(panel_id);
+                    *focused_panel_id = Some(panel_id.clone());
                 }
+
+                log::info!("[DevHub] native_browser_open success panel={}", panel_id);
 
                 NativeBrowserOpenResponse {
                     opened: true,
                     reason: None,
                 }
             }
-            Err(reason) => NativeBrowserOpenResponse {
-                opened: false,
-                reason: Some(reason),
-            },
+            Err(reason) => {
+                log::error!("[DevHub] native_browser_open failed panel={} reason={}", panel_id, reason);
+                NativeBrowserOpenResponse {
+                    opened: false,
+                    reason: Some(reason),
+                }
+            }
         }
     }
 
@@ -1271,6 +1318,41 @@ pub fn native_browser_focus(
         let _ = state;
         let _ = request;
         Err("unsupported-platform".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn native_browser_raise(
+    app: AppHandle,
+    _state: State<'_, NativeBrowserState>,
+    request: NativeBrowserPanelRequest,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let panel_id = request.panel_id;
+        let panel_id_for_raise = panel_id.clone();
+        let window = app
+            .get_webview_window("main")
+            .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
+
+        execute_main_thread_job(
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
+            move || registry_raise_panel(&panel_id_for_raise),
+        )?;
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        let _ = _state;
+        let _ = request;
+        Ok(())
     }
 }
 
