@@ -461,6 +461,9 @@ export default function PizarraBrowserSurface({
     onMove,
     onDragEnd: (args) => {
       setIsDragging(false);
+      // Re-raise after drop so the browser native ends up on top in the final
+      // canvas order (allows browser above terminals after drag).
+      raiseNativeBrowser({ panelId: shape.id }).catch(() => {});
       onDragEnd?.(args);
     },
     onDragStart: () => {

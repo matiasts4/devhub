@@ -920,6 +920,15 @@ fn registry_raise_panel(panel_id: &str) -> Result<(), String> {
         layout.put(&panel.wrapper, x, y);
         panel.wrapper.show_all();
 
+        // Bring the entire browser layout above other native layouts (e.g. VTE/terminal layout)
+        // in the shared overlay so that when a browser surface is brought to front
+        // (select/drag in pizarra), its content can cover terminals.
+        if let Some(ov) = registry._overlay.as_ref() {
+            if let Some(lay) = registry.layout.as_ref() {
+                ov.reorder_overlay(lay, -1);
+            }
+        }
+
         Ok(())
     })
 }

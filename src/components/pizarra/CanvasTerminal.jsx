@@ -368,6 +368,10 @@ export default function CanvasTerminal({
       // with visible:true in the same React commit tick.
       setPointerDown(false);
       setIsLiveDragging(false);
+      // Re-raise on drop so the final position respects the surface being topmost.
+      if (requestedRendererMode === 'vte-experimental') {
+        raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
+      }
       onDragEnd?.(args);
     },
     moveMeta: { terminalId },

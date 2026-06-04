@@ -1235,7 +1235,17 @@ fn registry_raise_panel(panel_id: &str) -> Result<(), String> {
         layout.remove(&panel.wrapper);
         layout.put(&panel.wrapper, x, y);
         panel.wrapper.show_all();
-        // No need to touch terminal visibility here; it stays as-is.
+
+        // Bring the entire VTE layout above other native layouts (e.g. browser layout)
+        // in the shared overlay. This allows a terminal surface to paint above
+        // browser surfaces (and vice versa) when the terminal is the logical top
+        // in pizarra or other overlapping UI. Within same type, the per-panel
+        // remove+put already handles relative order.
+        if let Some(ov) = registry._overlay.as_ref() {
+            if let Some(lay) = registry.layout.as_ref() {
+                ov.reorder_overlay(lay, -1);
+            }
+        }
 
         Ok(())
     })
