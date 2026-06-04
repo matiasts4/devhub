@@ -131,7 +131,9 @@ jest.mock('@/components/TerminalTTY', () => ({
 // assert the synchronous reattach contract.
 const mockSetNativeVtePanelVisibility = jest.fn(() => Promise.resolve());
 const mockResizeNativeVtePanel = jest.fn(() => Promise.resolve());
+const mockRaiseNativeVtePanel = jest.fn(() => Promise.resolve());
 jest.mock('@/lib/terminal/nativeVteBridge', () => ({
+  raiseNativeVtePanel: (...args) => mockRaiseNativeVtePanel(...args),
   setNativeVtePanelVisibility: (...args) => mockSetNativeVtePanelVisibility(...args),
   resizeNativeVtePanel: (...args) => mockResizeNativeVtePanel(...args),
 }));
@@ -200,12 +202,14 @@ function unmountTerminal(harness) {
   harness.container.remove();
 }
 
-function getHeader() {
-  return document.querySelector('[data-testid="canvas-terminal-header"]');
+function getHeader(container) {
+  const root = container || document;
+  return root.querySelector('[data-testid="canvas-terminal-header"]');
 }
 
-function getHandle(testid) {
-  return document.querySelector(`[data-testid="${testid}"]`);
+function getHandle(testid, container) {
+  const root = container || document;
+  return root.querySelector(`[data-testid="${testid}"]`);
 }
 
 function lastSuspendCall() {
@@ -246,7 +250,7 @@ describe('CanvasTerminal — flicker fix (pizarra-shared-view-state Phase 1)', (
   test('mousedown + mouseup with no move: TerminalTTY never receives suspendNativeSurface=true', () => {
     const harness = renderTerminal();
 
-    const header = getHeader();
+    const header = getHeader(harness.container);
     expect(header).toBeTruthy();
 
     // Capture the initial suspendNativeSurface value (render).
@@ -282,7 +286,7 @@ describe('CanvasTerminal — flicker fix (pizarra-shared-view-state Phase 1)', (
   test('mousedown + 2px jitter (< 3px threshold): no flicker', () => {
     const harness = renderTerminal();
 
-    const header = getHeader();
+    const header = getHeader(harness.container);
     flushSync(() => {
       header.dispatchEvent(makeMouseEvent('mousedown', 50, 60, 0));
     });
@@ -313,7 +317,7 @@ describe('CanvasTerminal — flicker fix (pizarra-shared-view-state Phase 1)', (
   test('mousedown + 10px move (> 3px threshold): suspendNativeSurface flips to true on TerminalTTY', () => {
     const harness = renderTerminal();
 
-    const header = getHeader();
+    const header = getHeader(harness.container);
     flushSync(() => {
       header.dispatchEvent(makeMouseEvent('mousedown', 50, 60, 0));
     });
@@ -343,7 +347,7 @@ describe('CanvasTerminal — flicker fix (pizarra-shared-view-state Phase 1)', (
       const harness = renderTerminal();
       mockSetNativeVtePanelVisibility.mockClear();
 
-      const header = getHeader();
+      const header = getHeader(harness.container);
       flushSync(() => {
         header.dispatchEvent(makeMouseEvent('mousedown', 50, 60, 0));
       });
@@ -391,7 +395,7 @@ describe('CanvasTerminal — flicker fix (pizarra-shared-view-state Phase 1)', (
   test('resize handle mousedown + 10px move: suspendNativeSurface stays false (content visible during resize)', () => {
     const harness = renderTerminal();
 
-    const handle = getHandle('canvas-terminal-resize-e');
+    const handle = getHandle('canvas-terminal-resize-e', harness.container);
     expect(handle).toBeTruthy();
 
     flushSync(() => {
