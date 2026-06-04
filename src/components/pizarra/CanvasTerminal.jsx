@@ -62,7 +62,7 @@ export default function CanvasTerminal({
   // Si surgen problemas con TUIs en el path web, se puede pulir el xterm o
   // implementar un emulador canvas más fiel como "nuevo tipo".
   const useWebRendererInPizarra = true;
-  const effectiveRendererMode = useWebRendererInPizarra ? 'xterm' : requestedRendererMode;
+  const effectiveRendererMode = useWebRendererInPizarra ? 'canvas' : requestedRendererMode;
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = useMemo(
     () =>

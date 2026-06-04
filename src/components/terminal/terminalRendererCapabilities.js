@@ -1,4 +1,4 @@
-export const TERMINAL_RENDERER_MODES = ['vte-experimental', 'xterm'];
+export const TERMINAL_RENDERER_MODES = ['vte-experimental', 'xterm', 'canvas'];
 
 export const TERMINAL_VTE_FALLBACK_REASONS = Object.freeze({
   NOT_READY: 'not-ready',
@@ -16,6 +16,7 @@ export const TERMINAL_VTE_FALLBACK_REASONS = Object.freeze({
 const TERMINAL_RENDERER_LABELS = {
   xterm: 'xterm',
   'vte-experimental': 'GTK VTE',
+  canvas: 'Canvas (pizarra web view)',
 };
 
 function normalizeRendererMode(mode) {

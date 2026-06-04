@@ -614,6 +614,7 @@ export default function TerminalTTY({
     rendererCapabilities,
     nativeVteReady: requestedRendererMode === 'vte-experimental' && nativeVteOpened,
   });
+  const isCanvasMode = rendererViewModel.effectiveMode === 'canvas';
   const hasSentInitialCommand = useRef(false);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
@@ -628,6 +629,9 @@ export default function TerminalTTY({
   // Updated via the workspace-sync event; used in show paths to compute carved
   // bounds so web content can render on top without full suspend.
   const avoidRectsRef = useRef([]);
+  const canvasRef = useRef(null);
+  const canvasCtxRef = useRef(null);
+  const canvasLinesRef = useRef([]); // simple buffer for stub canvas renderer (new view type for pizarra)
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
     isVisibleInLayout,
@@ -657,6 +661,7 @@ export default function TerminalTTY({
       runtimePlatform: resolvedRuntimePlatform,
       tauriAvailable,
     });
+  const shouldBootCanvas = rendererViewModel.effectiveMode === 'canvas' && !isStartupSuspended;
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -1048,6 +1053,75 @@ export default function TerminalTTY({
       }
     }, 120);
   }, [fitAndResize, clearTimers, scrollTerminalToBottom]);
+
+  // Stub for new 'canvas' terminal view type (for pizarra to avoid native widget and xterm lib).
+  // Basic ANSI strip + canvas text draw. Later can be upgraded to full VT parser + colors/cursor.
+  const stripAnsi = useCallback((str = '') => {
+    return str.replace(
+      /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+      ''
+    );
+  }, []);
+
+  const drawToCanvas = useCallback(
+    (data = '') => {
+      const c = canvasRef.current;
+      if (!c || !isCanvasMode) return;
+      let ctx = canvasCtxRef.current;
+      if (!ctx) {
+        ctx = c.getContext('2d', { alpha: false });
+        if (!ctx) return;
+        canvasCtxRef.current = ctx;
+      }
+      const text = stripAnsi(data);
+      const newLines = text.split(/\r?\n/);
+      const buf = canvasLinesRef.current;
+      for (const l of newLines) {
+        if (l) buf.push(l);
+      }
+      while (buf.length > 80) buf.shift();
+      // size to parent
+      const parent = c.parentElement;
+      const pw = parent ? parent.clientWidth || 800 : 800;
+      const ph = parent ? parent.clientHeight || 600 : 600;
+      if (c.width !== pw || c.height !== ph) {
+        c.width = pw;
+        c.height = ph;
+      }
+      ctx.fillStyle = '#0f1724';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      const lh = 16;
+      const max = Math.floor(c.height / lh) || 30;
+      const toDraw = buf.slice(-max);
+      toDraw.forEach((line, i) => {
+        ctx.fillText(line.slice(0, Math.floor(c.width / 7) || 80), 8, 14 + i * lh);
+      });
+    },
+    [isCanvasMode, stripAnsi]
+  );
+
+  // Init stub canvas for 'canvas' mode (new terminal view type).
+  useEffect(() => {
+    if (!isCanvasMode || !canvasRef.current) return;
+    const c = canvasRef.current;
+    const parent = c.parentElement;
+    const w = (parent && parent.clientWidth) || 800;
+    const h = (parent && parent.clientHeight) || 600;
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      canvasCtxRef.current = ctx;
+      ctx.fillStyle = '#0f1724';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px monospace';
+      ctx.fillText('[Canvas Terminal View - stub for pizarra (no xterm, native parked)]', 10, 20);
+      ctx.fillText('PTY content will render here via drawToCanvas on data.', 10, 36);
+    }
+  }, [isCanvasMode]);
 
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
@@ -1872,10 +1946,14 @@ export default function TerminalTTY({
       socket.onmessage = (event) => {
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
-            const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
-            termRef.current?.write(event.data);
-            if (shouldStickToBottom) {
-              scrollTerminalToBottom(true);
+            if (isCanvasMode) {
+              drawToCanvas(event.data);
+            } else if (termRef.current) {
+              const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
+              termRef.current?.write(event.data);
+              if (shouldStickToBottom) {
+                scrollTerminalToBottom(true);
+              }
             }
           }
           return;
@@ -1885,10 +1963,14 @@ export default function TerminalTTY({
           const payload = JSON.parse(event.data);
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
-            const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
-            termRef.current?.write(payload.data);
-            if (shouldStickToBottom) {
-              scrollTerminalToBottom(true);
+            if (isCanvasMode) {
+              drawToCanvas(payload.data);
+            } else if (termRef.current) {
+              const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
+              termRef.current?.write(payload.data);
+              if (shouldStickToBottom) {
+                scrollTerminalToBottom(true);
+              }
             }
             return;
           }
@@ -2061,8 +2143,13 @@ export default function TerminalTTY({
   useEffect(() => {
     let mounted = true;
 
-    if (!shouldBootXterm) {
+    if (!shouldBootXterm && !shouldBootCanvas) {
       disposeXtermRuntime();
+      // stub dispose for canvas
+      if (canvasRef.current) {
+        canvasRef.current.width = 0;
+        canvasRef.current.height = 0;
+      }
       setInitError(null);
       setIsInitializing(
         isStartupSuspended
@@ -2826,6 +2913,13 @@ export default function TerminalTTY({
               {...getXtermContainerAnimProps(showTerminalViewport)}
             />
           </div>
+          {isCanvasMode && (
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 z-20 bg-[#0f1724]"
+              style={{ imageRendering: 'crisp-edges' }}
+            />
+          )}
           {/* Restored session toast */}
           {restoredToast && (
             <div

@@ -3,7 +3,7 @@ export const TERMINAL_RENDERER_INHERIT_MODE = 'inherit';
 export const TERMINAL_RENDERER_DEFAULT_MODE = 'vte-experimental';
 export const TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY = 'devhub_terminal_renderer_default_mode';
 
-const VALID_RENDERER_MODES = new Set(['xterm', 'vte-experimental']);
+const VALID_RENDERER_MODES = new Set(['xterm', 'vte-experimental', 'canvas']);
 const VALID_PANEL_MODES = new Set([TERMINAL_RENDERER_INHERIT_MODE, ...VALID_RENDERER_MODES]);
 
 function normalizeRendererMode(mode, fallback = TERMINAL_RENDERER_DEFAULT_MODE) {
