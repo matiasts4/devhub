@@ -2120,11 +2120,80 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     };
   }, [isGridLauncherOpen]);
 
-  // TODO for other popups (swarm wizard, restore, pizarra palette, tooltips, etc):
-  // add similar useEffect + data-testid on their root content, measure on open,
-  // add/remove from overlayAvoidRects with unique source. Or expose a
-  // useRegisterTerminalAvoidRect hook for arbitrary components.
-  // For now grillas (the launcher) + general dispatch mechanism is wired.
+  // Measurement for swarm wizard (large modal) - carve instead of suspend while open
+  // so terminals under it stay live (partial view).
+  useEffect(() => {
+    if (!swarmLaunchWizardOpen) {
+      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'swarm-wizard'));
+      return;
+    }
+    const measure = () => {
+      // inner content card of the wizard
+      const el = document.querySelector('.max-w-6xl.flex-col.overflow-hidden.rounded-none.border');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setOverlayAvoidRects((prev) => {
+          const others = prev.filter((r) => r.source !== 'swarm-wizard');
+          return [
+            ...others,
+            { x: r.x, y: r.y, width: r.width, height: r.height, source: 'swarm-wizard' },
+          ];
+        });
+      }
+    };
+    measure();
+    const t = setTimeout(measure, 120);
+    return () => clearTimeout(t);
+  }, [swarmLaunchWizardOpen]);
+
+  // Measurement for restore settings modal.
+  useEffect(() => {
+    if (!restoreSettingsModal.open) {
+      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'restore-settings'));
+      return;
+    }
+    const measure = () => {
+      const el = document.querySelector('[role="dialog"] .fixed.inset-0');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setOverlayAvoidRects((prev) => {
+          const others = prev.filter((r) => r.source !== 'restore-settings');
+          return [
+            ...others,
+            { x: r.x, y: r.y, width: r.width, height: r.height, source: 'restore-settings' },
+          ];
+        });
+      }
+    };
+    measure();
+    const t = setTimeout(measure, 80);
+    return () => clearTimeout(t);
+  }, [restoreSettingsModal.open]);
+
+  // TODO for pizarra palette / overlapping canvas elements: register their rects
+  // when they overlap terminal surfaces (can use the register event below or direct).
+
+  // General registration for any component to carve terminals under it without
+  // full suspend. Components dispatch CustomEvent with {rect, source, action?}
+  // on open/mount and remove on close/unmount. Decoupled, works from pizarra etc.
+  useEffect(() => {
+    const handler = (ev) => {
+      const { rect, source, action = 'add' } = ev?.detail || {};
+      if (!source || !rect) return;
+      setOverlayAvoidRects((prev) => {
+        if (action === 'remove' || action === 'clear') {
+          return prev.filter((r) => r.source !== source);
+        }
+        const others = prev.filter((r) => r.source !== source);
+        return [
+          ...others,
+          { x: rect.x, y: rect.y, width: rect.width, height: rect.height, source },
+        ];
+      });
+    };
+    window.addEventListener('devhub:register-avoid-rect', handler);
+    return () => window.removeEventListener('devhub:register-avoid-rect', handler);
+  }, []);
 
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,

@@ -99,36 +99,89 @@ export function rectsOverlap(a, b) {
  */
 export function computeCarvedBounds(panelRect, avoidRects = []) {
   if (!panelRect || !avoidRects || avoidRects.length === 0) return panelRect;
-  const x = panelRect.x || 0;
-  let y = panelRect.y || 0;
-  const width = panelRect.width || 0;
-  let height = panelRect.height || 0;
+
+  // Start with full rect. For each overlapping avoid, consider carving by
+  // removing the avoid overlap from one of the 4 sides, and keep the candidate
+  // with the largest remaining area that no longer overlaps that avoid.
+  // This gives a better "max visible subrect" than pure heuristic top/bottom.
+  // Successive for multiple avoids. Prefers largest possible live area.
+  let best = { ...panelRect };
+  let bestArea = Math.max(0, best.width * best.height);
+
   for (const avoid of avoidRects) {
-    if (!rectsOverlap({ x, y, width, height }, avoid)) continue;
-    const overlapTop = Math.max(y, avoid.y);
-    const overlapBottom = Math.min(y + height, avoid.y + avoid.height);
-    if (overlapTop < y + height && overlapBottom > y) {
-      if (overlapTop - y < 8) {
-        // popup mostly covers from the top of this panel area -> carve top
-        const clip = overlapBottom - y;
-        y += clip;
-        height = Math.max(0, height - clip);
-      } else if (y + height - overlapBottom < 8) {
-        // covers near bottom -> keep top
-        height = Math.max(0, overlapTop - y);
-      } else {
-        // middle or large; prefer bottom slice (live output)
-        height = Math.max(0, y + height - overlapBottom);
-        y = overlapBottom;
+    if (!rectsOverlap(best, avoid)) continue;
+
+    const candidates = [];
+
+    // Carve top strip (remove from top up to avoid bottom)
+    if (avoid.y > best.y) {
+      const h = Math.max(0, avoid.y - best.y);
+      if (h > 0) candidates.push({ ...best, height: h });
+    }
+    // Carve bottom strip (remove from avoid top down)
+    const panelBottom = best.y + best.height;
+    const avoidBottom = avoid.y + avoid.height;
+    if (avoidBottom < panelBottom) {
+      const newY = avoidBottom;
+      const h = Math.max(0, panelBottom - newY);
+      if (h > 0) candidates.push({ ...best, y: newY, height: h });
+    }
+    // Carve left strip
+    if (avoid.x > best.x) {
+      const w = Math.max(0, avoid.x - best.x);
+      if (w > 0) candidates.push({ ...best, width: w });
+    }
+    // Carve right strip
+    const panelRight = best.x + best.width;
+    const avoidRight = avoid.x + avoid.width;
+    if (avoidRight < panelRight) {
+      const newX = avoidRight;
+      const w = Math.max(0, panelRight - newX);
+      if (w > 0) candidates.push({ ...best, x: newX, width: w });
+    }
+
+    for (const c of candidates) {
+      if (c.width <= 0 || c.height <= 0) continue;
+      if (!rectsOverlap(c, avoid)) {
+        const area = c.width * c.height;
+        if (area > bestArea) {
+          best = { ...c };
+          bestArea = area;
+        }
       }
     }
-    // (left/right clips could be added for side panels)
   }
-  if (width < 40 || height < 16) return null; // too little visible, better full hide for this panel
+
+  if (best.width < 40 || best.height < 16) return null; // too little visible -> caller may full hide
   return {
-    x: Math.round(x),
-    y: Math.round(y),
-    width: Math.round(width),
-    height: Math.round(height),
+    x: Math.round(best.x),
+    y: Math.round(best.y),
+    width: Math.round(best.width),
+    height: Math.round(best.height),
+  };
+}
+
+/**
+ * Helper for any component (modals, pizarra palette, custom popups, etc.)
+ * to register a rect that should "carve" under it so terminal stays live
+ * (no full suspend). Returns unregister fn.
+ * Usage:
+ *   const unreg = registerTerminalAvoidRect(myRect, 'my-popup');
+ *   // later unreg();
+ * This feeds overlayAvoidRects in TWM -> carve in TTY.
+ */
+export function registerTerminalAvoidRect(rect, source) {
+  if (typeof window === 'undefined' || !rect || !source) return () => {};
+  const payload = {
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    source,
+  };
+  window.dispatchEvent(
+    new CustomEvent('devhub:register-avoid-rect', { detail: { ...payload, action: 'add' } })
+  );
+  return () => {
+    window.dispatchEvent(
+      new CustomEvent('devhub:register-avoid-rect', { detail: { source, action: 'remove' } })
+    );
   };
 }

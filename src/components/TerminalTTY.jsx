@@ -1470,6 +1470,16 @@ export default function TerminalTTY({
     }
     if (isVisibleInLayout && !suspendNativeSurface) return undefined;
 
+    // If we have active avoid rects (popups over us), prefer carve path (live partial
+    // terminal) instead of full hide/suspend. The sync/show will carve the bounds.
+    // This is key to "continuar con la mejor opcion" (carve) without relying on
+    // improving suspend UX.
+    const currentAvoids = avoidRectsRef.current || [];
+    if (currentAvoids.length > 0) {
+      // carve will be applied via handler or show; don't force hide here
+      return undefined;
+    }
+
     (async () => {
       try {
         await setNativeVtePanelVisibility({
