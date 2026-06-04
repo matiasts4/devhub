@@ -1019,6 +1019,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const panelSubtabsBarRef = useRef(null);
   const workspaceGridAreaRef = useRef(null);
   const rightDockPlaceholderRef = useRef(null);
+  const nudgeBrowserNativeLiveRef = useRef(null);
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
   const agentRunsByPanel = readAgentRunsByPanel(storage);
   const terminalStateStorageKey = projectId
@@ -1801,14 +1802,37 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // Live mousemove nudge while dragging the dock handle: call the direct
+    // browser native resize (rAF-batched) so the webview tracks the handle
+    // position in the same gesture tick as the panel DOM updates.
+    // Use ref to the nudge so this early effect doesn't create TDZ or extra
+    // re-subscriptions when the nudge fn is recreated.
+    let raf = null;
+    const onMove = () => {
+      if (raf != null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
+          nudgeBrowserNativeLiveRef.current?.();
+          // Also keep the measured in sync (for the web layer style).
+          syncRightDockMeasuredBounds();
+        }
+      });
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    window.addEventListener('pointermove', onMove, { passive: true });
+
     return () => {
       window.removeEventListener('mouseup', stopDockDrag);
       window.removeEventListener('pointerup', stopDockDrag);
       window.removeEventListener('dragend', stopDockDrag);
       window.removeEventListener('blur', stopDockDrag);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('pointermove', onMove);
+      if (raf != null) cancelAnimationFrame(raf);
     };
-  }, [isDraggingDock]);
+  }, [isDraggingDock, syncRightDockMeasuredBounds]);
 
   useEffect(() => {
     if (!isDraggingInternalSplit) return undefined;
@@ -1965,6 +1989,66 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     effectiveRightDockState?.maximizedView,
   ]);
 
+  // Live direct nudge for the (native gtk) browser surface during dock drag.
+  // Mirrors the strong-sync pattern in PizarraBrowserSurface (direct DOM + direct
+  // resizeNativeBrowser in mousemove tick + force reflow + query shell rect).
+  // This makes the embedded browser content follow the dock resize handle with
+  // minimal latency instead of waiting for React state + motion + RO roundtrip.
+  // Only active while isDraggingDock to avoid unnecessary work.
+  const nudgeBrowserNativeLive = useCallback(() => {
+    if (!isDraggingDock) return;
+    if (typeof document === 'undefined') return;
+    // Only worth it if the right dock is showing browser content.
+    const showingBrowser =
+      effectiveRightDockState.visible &&
+      !effectiveRightDockState.maximized &&
+      (effectiveRightDockState.activeTab === 'browser' || !effectiveRightDockState.activeTab);
+    if (!showingBrowser) return;
+
+    try {
+      // Query the actual viewport shell that the browser pane uses for native bounds.
+      // Scoped to the current dock layer if possible.
+      const dockLayer = document.querySelector('[data-testid="workspace-right-dock-layer"]');
+      const shell =
+        (dockLayer && dockLayer.querySelector('[data-testid="browser-viewport-shell"]')) ||
+        document.querySelector('[data-testid="browser-viewport-shell"]');
+      if (!shell) return;
+
+      const r = shell.getBoundingClientRect();
+      if (r.width < 10 || r.height < 10) return;
+
+      const wsId = activeWsIdRef.current;
+      if (!projectId || !wsId) return;
+
+      const panelId = `browser-${projectId}-${wsId}`;
+
+      // Dynamic so we don't pull the bridge into the main bundle unconditionally.
+      import('@/lib/browser/nativeBrowserBridge')
+        .then(({ resizeNativeBrowser }) => {
+          resizeNativeBrowser({
+            panelId,
+            bounds: {
+              x: Math.round(r.left),
+              y: Math.round(r.top),
+              width: Math.round(r.width),
+              height: Math.round(r.height),
+            },
+          }).catch(() => {});
+        })
+        .catch(() => {});
+    } catch {
+      /* best effort during gesture */
+    }
+  }, [
+    isDraggingDock,
+    effectiveRightDockState.visible,
+    effectiveRightDockState.maximized,
+    effectiveRightDockState.activeTab,
+    projectId,
+  ]);
+
+  nudgeBrowserNativeLiveRef.current = nudgeBrowserNativeLive;
+
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
   const requestedRendererMode = resolveRequestedRenderer({
     workspaceId: activeWsId,
@@ -2034,10 +2118,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
       return nextBounds;
     });
+
+    // Best-effort live nudge to native browser while the dock is being resized
+    // (the RO on placeholder fires live thanks to the panel lib mutating styles).
+    if (isDraggingDock && (typeof process === 'undefined' || process.env.NODE_ENV !== 'test')) {
+      nudgeBrowserNativeLiveRef.current?.();
+    }
   }, [
     effectiveRightDockState.maximized,
     effectiveRightDockState.visible,
     hideRightDockPanel,
+    isDraggingDock,
     isFullscreenBrowser,
   ]);
 
@@ -2068,6 +2159,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     const observer = new ResizeObserver(() => {
       syncRightDockMeasuredBounds();
+      // During dock drag (or any live placeholder change) also push directly to
+      // the browser native so it follows without waiting for the next React commit
+      // of measuredBounds into the motion style + inner shell RO.
+      if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
+        nudgeBrowserNativeLiveRef.current?.();
+      }
     });
 
     observer.observe(containerElement);
@@ -2076,6 +2173,53 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [
     effectiveRightDockState.maximized,
     effectiveRightDockState.visible,
+    hideRightDockPanel,
+    isFullscreenBrowser,
+    syncRightDockMeasuredBounds,
+  ]);
+
+  // Initial / visibility-change eager measurement for the right dock layer.
+  // On default open of the browser (or dock), the first measuredBounds (pixel-accurate
+  // from placeholder) may arrive after the motion layer has already rendered with the
+  // % fallback. That causes the initial "dimensiones bastante alejados".
+  // We force a few syncs (layout + microtasks + rAFs) so the first style passed to the
+  // motion is already the correct rect, and the inner browser shell + native get good
+  // bounds immediately. Also helps when switching tabs to browser.
+  useEffect(() => {
+    if (
+      isFullscreenBrowser ||
+      !effectiveRightDockState.visible ||
+      effectiveRightDockState.maximized ||
+      hideRightDockPanel
+    ) {
+      return undefined;
+    }
+
+    // Run immediately (useLayout already does one), then a few more beats to let
+    // inner content (toolbar heights etc) and any pending panel lib measurements settle.
+    // In tests we only do the immediate one to avoid async setState after flushEffects
+    // that would make subsequent queries/clicks see a different tree (elements become null).
+    syncRightDockMeasuredBounds();
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
+      return undefined;
+    }
+    const t0 = setTimeout(() => syncRightDockMeasuredBounds(), 0);
+    const t1 = setTimeout(() => syncRightDockMeasuredBounds(), 16);
+    const r1 = requestAnimationFrame(() => syncRightDockMeasuredBounds());
+    const r2 = requestAnimationFrame(() =>
+      requestAnimationFrame(() => syncRightDockMeasuredBounds())
+    );
+
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
+  }, [
+    effectiveRightDockState.visible,
+    effectiveRightDockState.maximized,
+    effectiveRightDockState.activeTab, // when user or code switches to browser tab
     hideRightDockPanel,
     isFullscreenBrowser,
     syncRightDockMeasuredBounds,
@@ -3703,6 +3847,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             type: 'terminal',
             panelId: p.id,
             label: p.initialCommand || `Terminal ${p.id}`,
+            cwd: p.cwd || null,
+            initialCommand: p.initialCommand || null,
+            requestedRendererMode: p.requestedRendererMode || 'vte-experimental',
             pizarra: {
               x: null, // Let PizarraPane place it if not already placed
               y: null,
@@ -5159,11 +5306,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 })}
                 {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
                   <motion.div
-                    layout
+                    layout={!isDraggingDock}
                     data-testid="workspace-right-dock-layer"
                     className={`absolute overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
                     style={{ ...rightDockLayerStyle, zIndex: isFullscreenBrowser ? 200 : 50 }}
-                    transition={{ layout: { duration: 0.38, ease: [0.25, 1, 0.5, 1] } }}
+                    transition={
+                      isDraggingDock
+                        ? { layout: { duration: 0 } }
+                        : { layout: { duration: 0.38, ease: [0.25, 1, 0.5, 1] } }
+                    }
                   >
                     <WorkspaceRightDock
                       project={{ id: projectId, local_path: cwd }}
