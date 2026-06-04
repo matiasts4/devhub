@@ -5,10 +5,7 @@ import CanvasTerminal from './CanvasTerminal';
 import PizarraBrowserSurface from './PizarraBrowserSurface';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
-import {
-  resizeNativeBrowser,
-  setNativeBrowserVisibility,
-} from '@/lib/browser/nativeBrowserBridge';
+import { resizeNativeBrowser, setNativeBrowserVisibility } from '@/lib/browser/nativeBrowserBridge';
 
 export default function PizarraLiveSurfaceLayer({
   elements,
@@ -116,65 +113,13 @@ export default function PizarraLiveSurfaceLayer({
         );
       })}
 
-      {/* Draggable layout dividers (the "zonas arrastrables" the user wanted).
-          Purely presentational here — click/drag is forwarded to the parent
-          via onDividerMouseDown. The parent owns the resize math so that the
-          two (or more) neighboring windows auto-adjust. */}
-      {(layoutDividers || []).map((div) => {
-        const isV = div.type === 'v';
-        const screenRect = projectRect({
-          x: isV ? div.x - 5 : div.x,
-          y: isV ? div.y : div.y - 5,
-          width: isV ? 10 : div.length,
-          height: isV ? div.length : 10,
-        });
-
-        const barStyle = isV
-          ? {
-              left: screenRect.x,
-              top: screenRect.y,
-              width: 10,
-              height: screenRect.height,
-              cursor: 'col-resize',
-            }
-          : {
-              left: screenRect.x,
-              top: screenRect.y,
-              width: screenRect.width,
-              height: 10,
-              cursor: 'row-resize',
-            };
-
-        return (
-          <div
-            key={div.id}
-            data-testid={`pizarra-layout-divider-${div.id}`}
-            onMouseDown={(ev) => onDividerMouseDown?.(ev, div)}
-            style={{
-              position: 'absolute',
-              zIndex: 110,
-              pointerEvents: 'auto',
-              background: 'rgba(88, 166, 255, 0.15)',
-              border: '1px solid rgba(88, 166, 255, 0.4)',
-              borderRadius: 4,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'background 80ms ease',
-              ...barStyle,
-            }}
-          >
-            <div
-              aria-hidden
-              style={{
-                background: 'rgba(88, 166, 255, 0.85)',
-                borderRadius: 999,
-                ...(isV ? { width: 3, height: 18 } : { width: 18, height: 3 }),
-              }}
-            />
-          </div>
-        );
-      })}
+      {/* Draggable layout dividers DISABLED per user feedback.
+          The vertical blue "píldora" (pill) bar between live surfaces (terminal <-> browser etc.)
+          looked bad, added visual noise, and didn't deliver clear value/function (the between-card
+          resize UX wasn't polished or needed yet). Keeping the layoutDividers computation + handler
+          in PizarraPane in case we revive it later (e.g. as subtle hover-only grips or only during
+          multi-select drag). For now: no rendering, cleaner pizarra canvas. */}
+      {/* (layoutDividers rendering removed) */}
     </div>
   );
 }

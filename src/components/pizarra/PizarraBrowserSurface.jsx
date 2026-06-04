@@ -110,7 +110,8 @@ export default function PizarraBrowserSurface({
   // isCarriedFromWorkspace: the surface was auto-registered by TWM from the
   // normal workspace browser (not a fresh "Add Browser" in pizarra). For these,
   // we want instant content (reuse live native webview) + no loading chrome.
-  const nativePanelId = shape.panelId || `browser-${projectId || 'pizarra'}-${workspaceId || shape.id}`;
+  const nativePanelId =
+    shape.panelId || `browser-${projectId || 'pizarra'}-${workspaceId || shape.id}`;
   const isCarriedFromWorkspace = !!(shape.panelId && shape.panelId.startsWith('browser-'));
 
   const [localDockState, setLocalDockState] = useState(() => {
@@ -318,7 +319,9 @@ export default function PizarraBrowserSurface({
     const pid = nativePanelId;
     raiseNativeBrowser({ panelId: pid }).catch(() => {});
     const raf = requestAnimationFrame(() => {
-      const shell = surfaceRootRef.current?.querySelector?.('[data-testid="browser-viewport-shell"]');
+      const shell = surfaceRootRef.current?.querySelector?.(
+        '[data-testid="browser-viewport-shell"]'
+      );
       if (shell) {
         const r = shell.getBoundingClientRect();
         if (r.width > 10 && r.height > 10) {
@@ -476,7 +479,9 @@ export default function PizarraBrowserSurface({
               }).catch(() => {});
             }
           }
-        } catch {}
+        } catch {
+          /* ignore native resize query failure during gesture */
+        }
 
         // Track last logical for the single commit on up.
         const logicalW = Math.max(minW, Math.round(nextScreenW / z));
@@ -589,76 +594,18 @@ export default function PizarraBrowserSurface({
           pointerEvents: 'auto',
         }}
       >
-        {/* Explicit pizarra card header for browser container.
-            Consistent with CanvasTerminal header (28px -> using 24px for balance in canvas cards).
-            Clear drag target across full header, label left, close right (larger hit area, better positioned).
-            Subtle styling, no heavy border on close (avoids looking cramped/small).
-            Better vertical rhythm and space use: header chrome + tabstrip + compact toolbar below.
-            The browser content (tabs + pane) sits tight below without waste. */}
+        {/* Browser card "header" is now the tabstrip itself (standard browser UI pattern).
+            Tabs sit directly as the top chrome of the pizarra browser container.
+            This fixes the "pestañas sobre el browser" looking bad / double-header feel.
+            Drag the card by mousedown on the tab bar area (empty space or tabs bg).
+            Card-level close button (the "borrar ventana") is placed at the far right of the
+            tab bar for clear, accessible location – next to the + add-tab.
+            Styled to blend with the tabstrip's bar (no extra 24px label bar above).
+            Better space, modern look, buttons well positioned. */}
         <div
-          data-pizarra-browser-header="true"
-          data-pizarra-surface-drag-handle="true"
-          data-testid="pizarra-drag-handle"
-          onMouseDown={handleDragStart}
           style={{
             position: 'absolute',
             top: 0,
-            left: 0,
-            right: 0,
-            height: 24,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 8px',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            background: 'rgba(7, 17, 28, 0.96)',
-            color: '#d6e2ff',
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 9,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            cursor: 'move',
-            userSelect: 'none',
-            zIndex: 20,
-          }}
-        >
-          <span>{shape.label || 'Browser'}</span>
-          <button
-            type="button"
-            data-testid="pizarra-browser-close"
-            data-pizarra-close-button="true"
-            title="Cerrar navegador"
-            aria-label="Cerrar navegador"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose?.(shape.id);
-            }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 18,
-              height: 18,
-              padding: 2,
-              background: 'transparent',
-              border: 'none',
-              color: '#9fb5d1',
-              cursor: 'pointer',
-              borderRadius: 4,
-            }}
-          >
-            <X size={12} />
-          </button>
-        </div>
-
-        {/* Browser content (tabs + pane) positioned below the pizarra header.
-            Tight spacing (top:24 matches header height) for max content area in canvas cards.
-            No extra floating buttons; header unifies drag/close. */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 24,
             left: 0,
             right: 0,
             bottom: 0,
@@ -667,14 +614,56 @@ export default function PizarraBrowserSurface({
           data-tabs-mode={tabsMode}
         >
           {showTabStrip ? (
-            <BrowserTabStrip
-              tabs={tabStripApi.tabs}
-              activeTabId={tabStripApi.activeTabId}
-              onSelectTab={tabStripApi.selectTab}
-              onCloseTab={tabStripApi.closeTab}
-              onAddTab={tabStripApi.addTab}
-              currentUrl={resolvedDockState.browserUrl}
-            />
+            <div
+              style={{ position: 'relative' }}
+              onMouseDown={handleDragStart}
+              data-pizarra-browser-tab-header="true"
+              data-testid="pizarra-drag-handle"
+              data-pizarra-surface-drag-handle="true"
+            >
+              <BrowserTabStrip
+                tabs={tabStripApi.tabs}
+                activeTabId={tabStripApi.activeTabId}
+                onSelectTab={tabStripApi.selectTab}
+                onCloseTab={tabStripApi.closeTab}
+                onAddTab={tabStripApi.addTab}
+                currentUrl={resolvedDockState.browserUrl}
+              />
+              {/* Card/window close button – far right of the tab bar (browser "header").
+                  Better location than floating small bar. Accessible, clear target.
+                  Stops drag/select. Calls the same onClose as before (removes the surface/ventana). */}
+              <button
+                type="button"
+                data-testid="pizarra-browser-close"
+                data-pizarra-close-button="true"
+                title="Cerrar ventana del navegador (en pizarra)"
+                aria-label="Cerrar ventana del navegador"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose?.(shape.id);
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 6,
+                  top: 6,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 20,
+                  height: 20,
+                  padding: 0,
+                  borderRadius: 4,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(6, 16, 27, 0.9)',
+                  color: '#9fb5d1',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
           ) : null}
           <WorkspaceBrowserPane
             projectId={projectId || 'pizarra'}
