@@ -732,14 +732,20 @@ export default function TerminalTTY({
       wsRef.current = null;
     }
 
+    // WebGL addon MUST be disposed BEFORE xterm.dispose(). xterm's
+    // internal dispose chain calls each registered addon's dispose(),
+    // and WebglAddon.dispose() touches this._renderer.value.onRequestRedraw.
+    // If the addon is disposed twice (once by xterm, once by us) or if
+    // xterm runs dispose() with the addon in a half-torn-down state, that
+    // call site dereferences a freed renderer and throws. Disposing the
+    // addon first leaves xterm's dispose chain a no-op for the addon path.
+    webglAddonRef.current?.dispose?.();
+    webglAddonRef.current = null;
+
     termRef.current?.dispose();
     termRef.current = null;
     fitRef.current = null;
     searchRef.current = null;
-    // WebGL addon lives independently of the Terminal instance — dispose
-    // it here so re-mounts do not leak a stale WebGLRenderer.
-    webglAddonRef.current?.dispose?.();
-    webglAddonRef.current = null;
   }, []);
 
   // WebGL addon disposal on unmount: the addon owns GPU resources that
@@ -1234,9 +1240,9 @@ export default function TerminalTTY({
     return () => {
       cancelled = true;
       if (unlisten) {
-        // eslint-disable-next-line no-empty -- intentional swallow of unlisten error
         try {
           unlisten();
+          // eslint-disable-next-line no-empty -- intentional swallow of unlisten error
         } catch {}
       }
     };

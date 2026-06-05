@@ -387,4 +387,63 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
       WebglAddon.prototype.dispose = originalDispose;
     }
   });
+
+  // Regression: switching renderer per-panel (WebGL -> DOM) used to throw
+  // `undefined is not an object (evaluating 'this._renderer.value.onRequestRedraw')`
+  // inside WebglAddon's setRenderer during xterm.dispose()'s addon chain.
+  // Root cause: xterm's dispose() walks every registered addon and calls
+  // addon.dispose(). If the WebGL addon was already disposed by the addon
+  // ref's unmount cleanup BEFORE xterm.dispose(), the second call hits a
+  // freed renderer. Fix: dispose the WebGL addon EXPLICITLY in
+  // disposeXtermRuntime BEFORE termRef.current.dispose(), so xterm's
+  // addon-chain no-ops. This test asserts that ordering.
+  test('WebglAddon.dispose is invoked BEFORE the underlying Terminal.dispose on unmount', async () => {
+    const callOrder = [];
+    const originalWebglDispose = WebglAddon.prototype.dispose;
+    const originalTerminalDispose = Terminal.prototype.dispose;
+    WebglAddon.prototype.dispose = function patchedWebglDispose() {
+      callOrder.push('webgl');
+      return originalWebglDispose?.apply(this, arguments);
+    };
+    Terminal.prototype.dispose = function patchedTerminalDispose() {
+      callOrder.push('terminal');
+      return originalTerminalDispose?.apply(this, arguments);
+    };
+
+    try {
+      const harness = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-xw-dispose-order',
+          requestedRendererMode: 'xterm-webgl',
+          autoFocus: false,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+
+      expect(WebglAddon.instances).toHaveLength(1);
+
+      flushSync(() => {
+        harness.root.unmount();
+      });
+      await flushTerminalEffects();
+
+      const webglIndex = callOrder.indexOf('webgl');
+      const terminalIndex = callOrder.indexOf('terminal');
+      // Both must have been called.
+      expect(webglIndex).toBeGreaterThanOrEqual(0);
+      expect(terminalIndex).toBeGreaterThanOrEqual(0);
+      // WebGL must come first. (Multiple invocations are fine: the
+      // explicit pre-dispose in disposeXtermRuntime is followed by
+      // xterm's internal addon chain which then no-ops on the addon
+      // whose dispose is a no-op the second time around.)
+      const firstWebgl = callOrder.findIndex((m) => m === 'webgl');
+      const firstTerminal = callOrder.findIndex((m) => m === 'terminal');
+      expect(firstWebgl).toBeLessThan(firstTerminal);
+    } finally {
+      WebglAddon.prototype.dispose = originalWebglDispose;
+      Terminal.prototype.dispose = originalTerminalDispose;
+    }
+  });
 });
