@@ -250,8 +250,8 @@ describe('PanelRendererSelect — presentational contract', () => {
     view.unmount();
   });
 
-  // ── 7. VTE active mode → trigger is aria-disabled with a title ───────
-  test('when currentMode is vte-experimental, the trigger is aria-disabled and title mentions VTE', () => {
+  // ── 7. VTE active mode → trigger stays openable with an explanatory title ──
+  test('when currentMode is vte-experimental, the trigger is openable and the title mentions the re-mount', () => {
     const view = renderComponent({
       panelId: 'p1',
       currentMode: 'vte-experimental',
@@ -261,7 +261,10 @@ describe('PanelRendererSelect — presentational contract', () => {
 
     const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
     expect(trigger).not.toBeNull();
-    expect(trigger.getAttribute('aria-disabled')).toBe('true');
+    // The trigger stays clickable so the user can switch OUT of VTE.
+    expect(trigger.getAttribute('aria-disabled')).not.toBe('true');
+    expect(trigger.hasAttribute('disabled')).toBe(false);
+    // The title still surfaces that re-mounting will happen.
     expect(trigger.getAttribute('title') || '').toMatch(/VTE/i);
 
     view.unmount();

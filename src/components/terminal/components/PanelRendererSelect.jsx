@@ -112,15 +112,17 @@ export default function PanelRendererSelect({
     [onChange]
   );
 
-  // VTE-experimental: the runtime path is not JS-switchable (the panel
-  // must be re-launched under GTK VTE). Surface as aria-disabled and
-  // via title; the dropdown still opens so the user can see the
-  // available options for the next launch.
+  // VTE-experimental: the switcher is OPENABLE. Selecting a non-VTE
+  // option re-mounts the TerminalTTY under the new renderer (the
+  // requestedRendererMode effect closes the native VTE lease and
+  // boots the new backend). The title still surfaces that the panel
+  // is currently on VTE so the user knows a re-mount will happen.
   const isVteActive = currentMode === 'vte-experimental';
   const triggerTitle = isVteActive
-    ? disabledReason || 'GTK VTE es el backend activo. Cámbialo desde el default del workspace.'
+    ? disabledReason ||
+      'Estás sobre GTK VTE. Al cambiar se re-monta la terminal con el renderer elegido.'
     : 'Cambiar renderer del panel';
-  const triggerAriaDisabled = disabled || isVteActive;
+  const triggerAriaDisabled = Boolean(disabled);
 
   // Resolved current label for the trigger (shows the friendly name).
   const triggerLabel = getOptionLabel(currentMode) || currentMode;
