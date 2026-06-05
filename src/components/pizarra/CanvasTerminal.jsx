@@ -18,6 +18,7 @@ import {
   SURFACE_ENTER_ANIMATION,
   ACCENT,
 } from '@/lib/pizarra/surfaceMotion';
+import { resolveRendererSelection } from '@/components/terminal/terminalRendererCapabilities';
 
 // pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
 // pointer travel that separates a click from a drag. Below this
@@ -62,7 +63,14 @@ export default function CanvasTerminal({
   // el z de pizarra, su raise debe dejar su webkit por encima del VTE de la terminal.
   // Si hace falta, podemos sincronizar el orden global de todos los natives de pizarra
   // surfaces según el stacking actual de las cards.
-  const effectiveRendererMode = 'vte-experimental';
+  //
+  // Resolver parity (C3 of terminal-renderer-xterm-webgl): we honor the
+  // requested renderer selection. In practice pizarra only carries VTE
+  // (the legacy 'vte-experimental' value), but going through the resolver
+  // keeps the chrome label honest if a future shape requests xterm-webgl.
+  const effectiveRendererMode = requestedRendererMode
+    ? resolveRendererSelection({ requestedMode: requestedRendererMode })?.effectiveMode
+    : 'vte-experimental';
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = useMemo(
     () =>
@@ -110,7 +118,8 @@ export default function CanvasTerminal({
   // widget is created and can be positioned/raised over the card content rect.
   const nativeOpenedRef = useRef(false);
   useEffect(() => {
-    if (effectiveRendererMode !== 'vte-experimental' || !terminalId || nativeOpenedRef.current) return;
+    if (effectiveRendererMode !== 'vte-experimental' || !terminalId || nativeOpenedRef.current)
+      return;
     const b = resolvedBounds;
     const contentW = Math.max(10, (b.width || 800) - 20);
     const contentH = Math.max(10, (b.height || 600) - 20 - 28);
@@ -540,7 +549,9 @@ export default function CanvasTerminal({
           <span>{resolvedShape.label || 'Terminal'}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span>
-              {effectiveRendererMode === 'vte-experimental' ? 'native (pizarra)' : effectiveRendererMode}
+              {effectiveRendererMode === 'vte-experimental'
+                ? 'native (pizarra)'
+                : effectiveRendererMode}
             </span>
             <button
               type="button"

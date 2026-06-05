@@ -3,15 +3,10 @@
 
 import React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import {
-  SplitSquareVertical,
-  SplitSquareHorizontal,
-  Maximize2,
-  Minimize2,
-  X,
-} from 'lucide-react';
+import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } from 'lucide-react';
 import TerminalTTY from '../../TerminalTTY';
 import { derivePanelSemanticMetadata } from '../utils/semanticMetadata';
+import PanelRendererSelect from './PanelRendererSelect';
 
 function WorkspaceTerminalSurface({
   workspace,
@@ -34,6 +29,7 @@ function WorkspaceTerminalSurface({
   togglePanelFocus,
   activateWorkspacePanel,
   handleResetPanelRendererToXterm,
+  handleSetPanelRenderer,
   resolveRequestedRenderer,
   getPanelDisplayLabel,
   wsDockState,
@@ -51,6 +47,16 @@ function WorkspaceTerminalSurface({
     const semanticMetadata = derivePanelSemanticMetadata(panel, agentRunsByPanel?.[panel.id]);
     const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
     const panelChromeSafeZoneMinTop = 34;
+    // Resolve the per-panel renderer once so the chrome switcher and the
+    // TerminalTTY below stay in lockstep. See
+    // openspec/changes/terminal-renderer-xterm-webgl/specs/terminal-renderer-selection/spec.md
+    // RS-03 / RS-04.
+    const resolvedRendererMode =
+      resolveRequestedRenderer?.({
+        workspaceId: workspace.id,
+        panelId: panel.id,
+        prefs: terminalRendererPreferences,
+      }) || 'xterm';
 
     return (
       <div
@@ -106,7 +112,10 @@ function WorkspaceTerminalSurface({
               </span>
               {semanticMetadata.secondary ? (
                 <>
-                  <span aria-hidden="true" className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]">
+                  <span
+                    aria-hidden="true"
+                    className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]"
+                  >
                     {' · '}
                   </span>
                   <span
@@ -140,6 +149,12 @@ function WorkspaceTerminalSurface({
               data-testid={`panel-header-actions-${panel.id}`}
               title={`Panel ${getPanelDisplayLabel(workspace, panel.id) || panel.id} actions`}
             >
+              <PanelRendererSelect
+                panelId={panel.id}
+                currentMode={resolvedRendererMode}
+                availableModes={['xterm-webgl', 'vte-experimental']}
+                onChange={(mode) => handleSetPanelRenderer?.(workspace.id, panel.id, mode)}
+              />
               <button
                 type="button"
                 data-testid={`panel-split-right-${panel.id}`}
@@ -218,12 +233,10 @@ function WorkspaceTerminalSurface({
               isActivePanel={Boolean(isActive)}
               isVisibleInLayout={Boolean(activeWsId === workspace.id && isVisible)}
               initialCommand={panel.initialCommand}
-              requestedRendererMode={resolveRequestedRenderer?.({
-                workspaceId: workspace.id,
-                panelId: panel.id,
-                prefs: terminalRendererPreferences,
-              })}
-              onResetRendererToXterm={() => handleResetPanelRendererToXterm?.(workspace.id, panel.id)}
+              requestedRendererMode={resolvedRendererMode}
+              onResetRendererToXterm={() =>
+                handleResetPanelRendererToXterm?.(workspace.id, panel.id)
+              }
               onActivatePanel={(panelId) => activateWorkspacePanel?.(workspace.id, panelId)}
               suspendNativeSurface={Boolean(
                 activeWsId === workspace.id && isVisible && shouldSuspendNativeSurfaces
@@ -271,8 +284,9 @@ function WorkspaceTerminalSurface({
             ) : (
               <PanelGroup
                 key={`workspace-columns-layout-${workspace.id}-${workspace.columns
-                  .map((column) =>
-                    `${column.id}:${(column.panels || []).map((panel) => panel.id).join(',')}`
+                  .map(
+                    (column) =>
+                      `${column.id}:${(column.panels || []).map((panel) => panel.id).join(',')}`
                   )
                   .join('|')}`}
                 direction="horizontal"

@@ -3,15 +3,10 @@
 // NOT a React component — called from JSX, not rendered with < />.
 
 import React from 'react';
-import {
-  SplitSquareVertical,
-  SplitSquareHorizontal,
-  Maximize2,
-  Minimize2,
-  X,
-} from 'lucide-react';
+import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } from 'lucide-react';
 import TerminalTTY from '../../TerminalTTY';
 import { derivePanelCommandMetadata } from '../utils/semanticMetadata';
+import PanelRendererSelect from './PanelRendererSelect';
 
 function renderWorkspacePanel(
   panel,
@@ -30,6 +25,7 @@ function renderWorkspacePanel(
     isFocusedPanel,
     requestedRendererMode,
     onResetRendererToXterm,
+    onSetPanelRenderer,
     onActivatePanel,
     panelLabel,
     panelSemanticMetadata,
@@ -134,6 +130,12 @@ function renderWorkspacePanel(
             data-testid={`panel-header-actions-${panel.id}`}
             title={`Panel ${panelLabel || panel.id} actions`}
           >
+            <PanelRendererSelect
+              panelId={panel.id}
+              currentMode={requestedRendererMode}
+              availableModes={['xterm-webgl', 'vte-experimental']}
+              onChange={(mode) => onSetPanelRenderer?.(mode)}
+            />
             <button
               type="button"
               data-testid={`panel-split-right-${panel.id}`}

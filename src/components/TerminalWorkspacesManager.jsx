@@ -81,6 +81,7 @@ import {
   TERMINAL_RENDERER_INHERIT_MODE,
   writeTerminalRendererPreferences,
 } from './terminal/terminalRendererPreferences';
+import PanelRendererSelect from './terminal/components/PanelRendererSelect';
 import {
   createSwarmLaunchDraft,
   deriveSwarmLaunchPreview,
@@ -682,6 +683,7 @@ function renderWorkspacePanel(
     isFocusedPanel,
     requestedRendererMode,
     onResetRendererToXterm,
+    onSetPanelRenderer,
     onActivatePanel,
     panelLabel,
     panelSemanticMetadata,
@@ -783,6 +785,12 @@ function renderWorkspacePanel(
             title={`Panel ${panelLabel || panel.id} actions`}
             style={getTerminalFloatingControlStyle({ active: isActive })}
           >
+            <PanelRendererSelect
+              panelId={panel.id}
+              currentMode={requestedRendererMode}
+              availableModes={['xterm-webgl', 'vte-experimental']}
+              onChange={(mode) => onSetPanelRenderer?.(mode)}
+            />
             <button
               type="button"
               data-testid={`panel-split-right-${panel.id}`}
@@ -2572,6 +2580,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const handleResetPanelRendererToXterm = useCallback((workspaceId, panelId) => {
     setTerminalRendererPreferences((prev) =>
       setPanelRendererPreference(prev, workspaceId, panelId, 'xterm')
+    );
+  }, []);
+
+  // Set the per-panel renderer preference (driven by the per-panel header
+  // switcher in WorkspaceTerminalSurface / renderWorkspacePanel).
+  // Mirrors handleResetPanelRendererToXterm but accepts an arbitrary mode
+  // (xterm-webgl | vte-experimental | inherit). See
+  // openspec/changes/terminal-renderer-xterm-webgl/specs/terminal-renderer-selection/spec.md
+  // RS-04.
+  const handleSetPanelRenderer = useCallback((workspaceId, panelId, mode) => {
+    if (!workspaceId || !panelId) return;
+    setTerminalRendererPreferences((prev) =>
+      setPanelRendererPreference(prev, workspaceId, panelId, mode)
     );
   }, []);
 
@@ -5249,6 +5270,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                   }),
                                   onResetRendererToXterm: () =>
                                     handleResetPanelRendererToXterm(ws.id, focusedPanel.id),
+                                  onSetPanelRenderer: (mode) =>
+                                    handleSetPanelRenderer(ws.id, focusedPanel.id, mode),
                                   connectionState: getPanelConnectionState(focusedPanel),
                                 })}
                               </div>
@@ -5317,6 +5340,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                       ws.id,
                                                       panel.id
                                                     ),
+                                                  onSetPanelRenderer: (mode) =>
+                                                    handleSetPanelRenderer(ws.id, panel.id, mode),
                                                   connectionState: getPanelConnectionState(panel),
                                                 })}
                                               </Panel>
@@ -5378,6 +5403,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                               handleResetPanelRendererToXterm(
                                                 ws.id,
                                                 column.panels[0].id
+                                              ),
+                                            onSetPanelRenderer: (mode) =>
+                                              handleSetPanelRenderer(
+                                                ws.id,
+                                                column.panels[0].id,
+                                                mode
                                               ),
                                             connectionState: getPanelConnectionState(
                                               column.panels[0]
