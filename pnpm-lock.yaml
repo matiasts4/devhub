@@ -251,6 +251,9 @@ importers:
       xterm-addon-search:
         specifier: ^0.13.0
         version: 0.13.0(xterm@5.3.0)
+      xterm-addon-webgl:
+        specifier: ^0.16.0
+        version: 0.16.0(xterm@5.3.0)
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -8540,6 +8543,12 @@ packages:
   xterm-addon-search@0.13.0:
     resolution: {integrity: sha512-sDUwG4CnqxUjSEFh676DlS3gsh3XYCzAvBPSvJ5OPgF3MRL3iHLPfsb06doRicLC2xXNpeG2cWk8x1qpESWJMA==}
     deprecated: This package is now deprecated. Move to @xterm/addon-search instead.
+    peerDependencies:
+      xterm: ^5.0.0
+
+  xterm-addon-webgl@0.16.0:
+    resolution: {integrity: sha512-E8cq1AiqNOv0M/FghPT+zPAEnvIQRDbAbkb04rRYSxUym69elPWVJ4sv22FCLBqM/3LcrmBLl/pELnBebVFKgA==}
+    deprecated: This package is now deprecated. Move to @xterm/addon-webgl instead.
     peerDependencies:
       xterm: ^5.0.0
 
@@ -18204,6 +18213,10 @@ snapshots:
       xterm: 5.3.0
 
   xterm-addon-search@0.13.0(xterm@5.3.0):
+    dependencies:
+      xterm: 5.3.0
+
+  xterm-addon-webgl@0.16.0(xterm@5.3.0):
     dependencies:
       xterm: 5.3.0
 

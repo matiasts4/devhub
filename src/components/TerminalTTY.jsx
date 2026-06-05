@@ -32,6 +32,8 @@ import {
   getTerminalRendererOptionLabel,
   getTerminalRendererRuntimeCapabilities,
   resolveRendererSelection,
+  TERMINAL_WEBGL_FALLBACK_REASONS,
+  WEBGL_FALLBACK_WARNING_TEXT,
 } from '@/components/terminal/terminalRendererCapabilities';
 // Phase 4 of pizarra-shared-view-state: when mounted inside a
 // <SharedSurfacesProvider>, register this TerminalTTY as the
@@ -553,6 +555,7 @@ export default function TerminalTTY({
   const nativeResizeSettleTimersRef = useRef([]);
   const wsRef = useRef(null);
   const searchRef = useRef(null);
+  const webglAddonRef = useRef(null);
   const transportRef = useRef('json');
   const lastViewportDiagnosticRef = useRef(null);
   const connectionStateRef = useRef('idle');
@@ -596,6 +599,7 @@ export default function TerminalTTY({
   const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
   const [terminalRuntimeNonce, setTerminalRuntimeNonce] = useState(0);
+  const [webglFallback, setWebglFallback] = useState(null);
   // External connectionState prop takes precedence (allows parent to set 'suspended')
   const connectionState =
     externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
@@ -732,6 +736,23 @@ export default function TerminalTTY({
     termRef.current = null;
     fitRef.current = null;
     searchRef.current = null;
+    // WebGL addon lives independently of the Terminal instance — dispose
+    // it here so re-mounts do not leak a stale WebGLRenderer.
+    webglAddonRef.current?.dispose?.();
+    webglAddonRef.current = null;
+  }, []);
+
+  // WebGL addon disposal on unmount: the addon owns GPU resources that
+  // survive xterm.dispose() (the addon adds itself to the Terminal but
+  // the WebGLRenderer it constructed is independent). Guarantee dispose
+  // runs on EVERY unmount, not only when disposeOnUnmount is set — so
+  // the Strict-TDD contract (XW-04 unmount cleanup) is satisfied even
+  // for surfaces that get soft-cleaned across React re-mounts.
+  useEffect(() => {
+    return () => {
+      webglAddonRef.current?.dispose?.();
+      webglAddonRef.current = null;
+    };
   }, []);
 
   // Phase 4: explicit hard-destroy of the surface. Called from
@@ -1058,6 +1079,7 @@ export default function TerminalTTY({
   // Basic ANSI strip + canvas text draw. Later can be upgraded to full VT parser + colors/cursor.
   const stripAnsi = useCallback((str = '') => {
     return str.replace(
+      // eslint-disable-next-line no-control-regex -- intentional ANSI escape stripping
       /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
       ''
     );
@@ -1127,63 +1149,69 @@ export default function TerminalTTY({
   // offscreen host (real VTE pty+emu, widget not in overlay). Paint rgba frames
   // directly to the canvas for perfect web layering (browser surfaces can pass
   // over without native widget superposition) while keeping full TUI fidelity.
-  const paintRgbaFrame = useCallback((payload) => {
-    const c = canvasRef.current;
-    if (!c || !isCanvasMode) return;
-    const { width: fw = 0, height: fh = 0, data, format } = payload || {};
-    if (!data || fw <= 0 || fh <= 0) return;
-    let ctx = canvasCtxRef.current;
-    if (!ctx) {
-      ctx = c.getContext('2d', { alpha: false });
-      if (!ctx) return;
-      canvasCtxRef.current = ctx;
-    }
-    if (c.width !== fw || c.height !== fh) {
-      c.width = fw;
-      c.height = fh;
-    }
-    if (format === 'rgba') {
-      try {
-        const bin = atob(data);
-        const arr = new Uint8ClampedArray(bin.length);
-        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i) & 0xff;
-        const imgData = new ImageData(arr, fw, fh);
-        ctx.putImageData(imgData, 0, 0);
-        return;
-      } catch {
-        // ignore decode error; keep prior frame
+  const paintRgbaFrame = useCallback(
+    (payload) => {
+      const c = canvasRef.current;
+      if (!c || !isCanvasMode) return;
+      const { width: fw = 0, height: fh = 0, data, format } = payload || {};
+      if (!data || fw <= 0 || fh <= 0) return;
+      let ctx = canvasCtxRef.current;
+      if (!ctx) {
+        ctx = c.getContext('2d', { alpha: false });
+        if (!ctx) return;
+        canvasCtxRef.current = ctx;
       }
-    }
-    // fallback: leave previous or the stub init
-  }, [isCanvasMode]);
+      if (c.width !== fw || c.height !== fh) {
+        c.width = fw;
+        c.height = fh;
+      }
+      if (format === 'rgba') {
+        try {
+          const bin = atob(data);
+          const arr = new Uint8ClampedArray(bin.length);
+          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i) & 0xff;
+          const imgData = new ImageData(arr, fw, fh);
+          ctx.putImageData(imgData, 0, 0);
+          return;
+        } catch {
+          // ignore decode error; keep prior frame
+        }
+      }
+      // fallback: leave previous or the stub init
+    },
+    [isCanvasMode]
+  );
 
   // Basic input forward from the texture canvas to the offscreen VTE pty (via paste which
   // accepts sequences). Supports printable + common specials. Enough for shells + simple TUIs
   // in pizarra; full xterm-style key encoding can be expanded later.
-  const handleCanvasKeyDown = useCallback((ev) => {
-    if (!isCanvasMode) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    let text = '';
-    const k = ev.key;
-    if (k.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
-      text = k;
-    } else if (k === 'Enter') text = '\r';
-    else if (k === 'Backspace') text = '\x7f';
-    else if (k === 'Tab') text = '\t';
-    else if (k === 'Escape') text = '\x1b';
-    else if (k === 'ArrowUp') text = '\x1b[A';
-    else if (k === 'ArrowDown') text = '\x1b[B';
-    else if (k === 'ArrowRight') text = '\x1b[C';
-    else if (k === 'ArrowLeft') text = '\x1b[D';
-    else if (k === 'Delete') text = '\x1b[3~';
-    else if (k === 'Home') text = '\x1b[H';
-    else if (k === 'End') text = '\x1b[F';
-    if (text) {
-      // pasteNative accepts the request shape {panelId, text?}
-      pasteNativeVtePanel({ panelId: id, text }).catch(() => {});
-    }
-  }, [isCanvasMode, id]);
+  const handleCanvasKeyDown = useCallback(
+    (ev) => {
+      if (!isCanvasMode) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      let text = '';
+      const k = ev.key;
+      if (k.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+        text = k;
+      } else if (k === 'Enter') text = '\r';
+      else if (k === 'Backspace') text = '\x7f';
+      else if (k === 'Tab') text = '\t';
+      else if (k === 'Escape') text = '\x1b';
+      else if (k === 'ArrowUp') text = '\x1b[A';
+      else if (k === 'ArrowDown') text = '\x1b[B';
+      else if (k === 'ArrowRight') text = '\x1b[C';
+      else if (k === 'ArrowLeft') text = '\x1b[D';
+      else if (k === 'Delete') text = '\x1b[3~';
+      else if (k === 'Home') text = '\x1b[H';
+      else if (k === 'End') text = '\x1b[F';
+      if (text) {
+        // pasteNative accepts the request shape {panelId, text?}
+        pasteNativeVtePanel({ panelId: id, text }).catch(() => {});
+      }
+    },
+    [isCanvasMode, id]
+  );
 
   // Subscribe to Tauri 'terminal:frame' for this panel when in canvas texture mode.
   useEffect(() => {
@@ -1206,7 +1234,10 @@ export default function TerminalTTY({
     return () => {
       cancelled = true;
       if (unlisten) {
-        try { unlisten(); } catch {}
+        // eslint-disable-next-line no-empty -- intentional swallow of unlisten error
+        try {
+          unlisten();
+        } catch {}
       }
     };
   }, [isCanvasMode, id, paintRgbaFrame]);
@@ -2277,10 +2308,12 @@ export default function TerminalTTY({
         effectiveRendererMode: rendererViewModel.effectiveMode,
       });
       try {
-        const [{ Terminal }, { FitAddon }, { SearchAddon }] = await Promise.all([
+        const isWebglRequested = rendererViewModel.effectiveMode === 'xterm-webgl';
+        const [{ Terminal }, { FitAddon }, { SearchAddon }, webglAddonModule] = await Promise.all([
           import('xterm'),
           import('xterm-addon-fit'),
           import('xterm-addon-search'),
+          isWebglRequested ? import('xterm-addon-webgl') : Promise.resolve({ WebglAddon: null }),
         ]);
 
         if (!mounted || !containerRef.current) {
@@ -2308,6 +2341,37 @@ export default function TerminalTTY({
         const searchAddon = new SearchAddon();
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(searchAddon);
+        // xterm-addon-webgl: opt-in only. When effectiveMode is 'xterm-webgl'
+        // we construct the addon and register it on the Terminal instance.
+        // On failure (WebGL context creation throws inside loadAddon) we
+        // keep the existing DOM renderer mounted and surface a one-line
+        // warning in the panel body — the user's stored preference is NOT
+        // mutated (XW-05). dispose() is wired into the unmount cleanup.
+        if (isWebglRequested && webglAddonModule?.WebglAddon) {
+          const WebglAddonCtor = webglAddonModule.WebglAddon;
+          try {
+            const webglAddon = new WebglAddonCtor();
+            terminal.loadAddon(webglAddon);
+            webglAddonRef.current = webglAddon;
+            setWebglFallback(null);
+          } catch (err) {
+            cliLog(`CLIENT:${id}`, 'xterm-addon-webgl loadAddon threw', {
+              error: err?.message,
+            });
+            setWebglFallback({
+              active: true,
+              reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED,
+              error: err,
+            });
+            // DOM renderer is already mounted via terminal.open; no unmount.
+          }
+        } else if (isWebglRequested && !webglAddonModule?.WebglAddon) {
+          // Import resolved but no WebglAddon export (e.g. shimmed module).
+          setWebglFallback({
+            active: true,
+            reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
+          });
+        }
         terminal.open(containerRef.current);
 
         const initialRect = externalDimensionSource
@@ -3000,6 +3064,16 @@ export default function TerminalTTY({
               className="devhub-xterm-container h-full w-full p-2.5"
               {...getXtermContainerAnimProps(showTerminalViewport)}
             />
+            {webglFallback?.active ? (
+              <div
+                data-testid={`terminal-renderer-fallback-${id}`}
+                className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[rgba(255,193,7,0.92)] bg-[rgba(7,17,28,0.78)] border-t border-[rgba(255,193,7,0.32)]"
+                role="status"
+                aria-live="polite"
+              >
+                {WEBGL_FALLBACK_WARNING_TEXT}
+              </div>
+            ) : null}
           </div>
           {isCanvasMode && (
             <canvas
