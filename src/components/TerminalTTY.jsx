@@ -896,6 +896,16 @@ export default function TerminalTTY({
         await closeNativeVtePanel({ panelId: id, reason });
       } catch (error) {
         cliLog(`CLIENT:${id}`, 'native VTE close FAILED', { reason, error: error?.message });
+        // A close that happens because the user switched renderers (or
+        // because the panel was never actually open under the new
+        // renderer) MUST NOT trigger handleNativeLeaseCommandError.
+        // That handler increments nativeVteRecoveryAttempt, which is in
+        // the deps array of the effect at line ~1625 that re-calls
+        // closeNativeLease on every increment — yielding a 'Maximum
+        // update depth exceeded' loop. A renderer-disabled close is
+        // expected to fail (panel-not-active) and is a one-shot, not a
+        // recovery candidate.
+        if (reason === 'renderer-disabled') return;
         handleNativeLeaseCommandError(error);
       }
     },
