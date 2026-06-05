@@ -8,7 +8,7 @@ const {
 
 describe('terminalRendererCapabilities', () => {
   test('keeps xterm permanently ready as the baseline capability', () => {
-    expect(TERMINAL_RENDERER_MODES).toEqual(['vte-experimental', 'xterm']);
+    expect(TERMINAL_RENDERER_MODES).toEqual(['vte-experimental', 'xterm', 'xterm-webgl', 'canvas']);
     expect(getTerminalRendererCapability('xterm')).toEqual(
       expect.objectContaining({
         mode: 'xterm',
@@ -64,7 +64,9 @@ describe('terminalRendererCapabilities', () => {
   });
 
   test('returns recoverable copy that tells the user xterm is the live fallback', () => {
-    const copy = getTerminalRendererFallbackCopy(resolveRendererSelection({ requestedMode: 'vte-experimental' }));
+    const copy = getTerminalRendererFallbackCopy(
+      resolveRendererSelection({ requestedMode: 'vte-experimental' })
+    );
 
     expect(copy).toContain('GTK VTE');
     expect(copy).toContain('xterm');
@@ -237,7 +239,9 @@ describe('terminalRendererCapabilities', () => {
     });
 
     expect(capabilities['ghostty-experimental']).toBeUndefined();
-    expect(resolveRendererSelection({ requestedMode: 'ghostty-experimental', capabilities })).toEqual(
+    expect(
+      resolveRendererSelection({ requestedMode: 'ghostty-experimental', capabilities })
+    ).toEqual(
       expect.objectContaining({
         requestedMode: 'xterm',
         effectiveMode: 'xterm',

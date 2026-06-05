@@ -3,7 +3,7 @@ export const TERMINAL_RENDERER_INHERIT_MODE = 'inherit';
 export const TERMINAL_RENDERER_DEFAULT_MODE = 'vte-experimental';
 export const TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY = 'devhub_terminal_renderer_default_mode';
 
-const VALID_RENDERER_MODES = new Set(['xterm', 'vte-experimental', 'canvas']);
+const VALID_RENDERER_MODES = new Set(['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']);
 const VALID_PANEL_MODES = new Set([TERMINAL_RENDERER_INHERIT_MODE, ...VALID_RENDERER_MODES]);
 
 function normalizeRendererMode(mode, fallback = TERMINAL_RENDERER_DEFAULT_MODE) {
@@ -16,7 +16,9 @@ function normalizePanelRendererMode(mode) {
   return normalizeRendererMode(mode, null);
 }
 
-export function createDefaultTerminalRendererPreferences(defaultMode = TERMINAL_RENDERER_DEFAULT_MODE) {
+export function createDefaultTerminalRendererPreferences(
+  defaultMode = TERMINAL_RENDERER_DEFAULT_MODE
+) {
   return {
     version: TERMINAL_RENDERER_PREFERENCE_VERSION,
     defaultMode: normalizeRendererMode(defaultMode),
@@ -50,7 +52,10 @@ export function writeTerminalRendererDefaultModeSetting(storage, mode) {
 }
 
 function sanitizeWorkspaceRendererPreference(workspacePreference, panelIds, fallbackDefaultMode) {
-  const safeDefaultMode = normalizeRendererMode(workspacePreference?.defaultMode, fallbackDefaultMode);
+  const safeDefaultMode = normalizeRendererMode(
+    workspacePreference?.defaultMode,
+    fallbackDefaultMode
+  );
 
   const safePanels = panelIds.reduce((accumulator, panelId) => {
     const requestedMode = normalizePanelRendererMode(workspacePreference?.panels?.[panelId]);
@@ -74,7 +79,10 @@ export function sanitizeTerminalRendererPreferences(rawValue, { workspaces = [] 
 
   const nextWorkspaces = workspaces.reduce((accumulator, workspace) => {
     if (!workspace?.id) return accumulator;
-    const panelIds = (workspace.columns || []).flatMap((column) => column?.panels || []).map((panel) => panel?.id).filter(Boolean);
+    const panelIds = (workspace.columns || [])
+      .flatMap((column) => column?.panels || [])
+      .map((panel) => panel?.id)
+      .filter(Boolean);
     const sanitized = sanitizeWorkspaceRendererPreference(
       rawValue.workspaces?.[workspace.id],
       panelIds,
@@ -100,7 +108,8 @@ export function readTerminalRendererPreferences(storage, projectId, workspaces =
 
   try {
     const scopedKey = getTerminalRendererPreferencesStorageKey(projectId);
-    const rawValue = storage.getItem(scopedKey) || storage.getItem('devhub_terminal_renderer_preferences');
+    const rawValue =
+      storage.getItem(scopedKey) || storage.getItem('devhub_terminal_renderer_preferences');
     if (!rawValue) return fallback;
     return {
       ...sanitizeTerminalRendererPreferences(JSON.parse(rawValue), { workspaces }),
@@ -127,7 +136,10 @@ export function resolveRequestedRenderer({ workspaceId, panelId, prefs }) {
     return normalizeRendererMode(panelMode);
   }
 
-  return normalizeRendererMode(workspacePreference.defaultMode, normalizeRendererMode(prefs?.defaultMode));
+  return normalizeRendererMode(
+    workspacePreference.defaultMode,
+    normalizeRendererMode(prefs?.defaultMode)
+  );
 }
 
 export function getPanelRendererPreferenceMode({ workspaceId, panelId, prefs }) {

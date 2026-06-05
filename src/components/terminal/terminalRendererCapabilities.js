@@ -1,4 +1,14 @@
-export const TERMINAL_RENDERER_MODES = ['vte-experimental', 'xterm', 'canvas'];
+export const TERMINAL_RENDERER_MODES = ['vte-experimental', 'xterm', 'xterm-webgl', 'canvas'];
+
+export const TERMINAL_WEBGL_FALLBACK_REASONS = Object.freeze({
+  WEBGL_UNSUPPORTED_IN_WEBVIEW: 'webgl-unsupported-in-webview',
+  WEBGL_CONTEXT_CREATION_FAILED: 'webgl-context-creation-failed',
+  WEBGL_CONTEXT_LOST: 'webgl-context-lost',
+  WEBGL_ADDON_IMPORT_FAILED: 'webgl-addon-import-failed',
+  WEBGL_ADDON_REGISTER_FAILED: 'webgl-addon-register-failed',
+});
+
+export const WEBGL_FALLBACK_WARNING_TEXT = 'Renderer fallback: xterm DOM (WebGL unavailable)';
 
 export const TERMINAL_VTE_FALLBACK_REASONS = Object.freeze({
   NOT_READY: 'not-ready',
@@ -14,7 +24,8 @@ export const TERMINAL_VTE_FALLBACK_REASONS = Object.freeze({
 });
 
 const TERMINAL_RENDERER_LABELS = {
-  xterm: 'xterm',
+  xterm: 'xterm (DOM fallback)',
+  'xterm-webgl': 'xterm + WebGL',
   'vte-experimental': 'GTK VTE',
   canvas: 'Canvas (pizarra web view)',
 };
@@ -32,7 +43,12 @@ export function normalizeTerminalRendererPlatform(platform) {
   return 'unknown';
 }
 
-function resolveNativeVteCapability({ platform, tauriAvailable, nativeVteProbe, nativeVteOpenFailure }) {
+function resolveNativeVteCapability({
+  platform,
+  tauriAvailable,
+  nativeVteProbe,
+  nativeVteOpenFailure,
+}) {
   if (platform !== 'linux') {
     return {
       ready: false,
@@ -101,6 +117,7 @@ export function getTerminalRendererRuntimeCapabilities({
   tauriAvailable = false,
   nativeVteProbe = null,
   nativeVteOpenFailure = null,
+  webglProbe = null,
 } = {}) {
   const normalizedPlatform = normalizeTerminalRendererPlatform(platform);
 
@@ -122,9 +139,40 @@ export function getTerminalRendererRuntimeCapabilities({
       return accumulator;
     }
 
+    if (mode === 'xterm-webgl') {
+      const webglCapability = resolveWebglCapability({ webglProbe });
+      accumulator[mode] = {
+        mode,
+        label: TERMINAL_RENDERER_LABELS[mode],
+        ready: webglCapability.ready,
+        reason: webglCapability.reason,
+      };
+      return accumulator;
+    }
+
     accumulator[mode] = getTerminalRendererCapability(mode);
     return accumulator;
   }, {});
+}
+
+function resolveWebglCapability({ webglProbe } = {}) {
+  if (webglProbe && typeof webglProbe === 'object') {
+    if (webglProbe.ready) {
+      return { ready: true, reason: null };
+    }
+    if (
+      webglProbe.reason &&
+      Object.values(TERMINAL_WEBGL_FALLBACK_REASONS).includes(webglProbe.reason)
+    ) {
+      return { ready: false, reason: webglProbe.reason };
+    }
+    return { ready: false, reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED };
+  }
+  // No explicit probe provided — JSDOM / default behaviour: the addon import
+  // and registration are validated at runtime; we optimistically report ready.
+  // TerminalTTY wraps the loadAddon call in try/catch and surfaces a
+  // warning line + silent DOM fallback if registration actually throws.
+  return { ready: true, reason: null };
 }
 
 export function getTerminalRendererCapabilities() {
@@ -137,7 +185,8 @@ export function getTerminalRendererCapabilities() {
 export function resolveRendererSelection({ requestedMode, capabilities } = {}) {
   const normalizedMode = normalizeRendererMode(requestedMode);
   const resolvedCapabilities = capabilities || getTerminalRendererCapabilities();
-  const capability = resolvedCapabilities[normalizedMode] || getTerminalRendererCapability(normalizedMode);
+  const capability =
+    resolvedCapabilities[normalizedMode] || getTerminalRendererCapability(normalizedMode);
 
   if (capability.ready) {
     return {
@@ -161,7 +210,10 @@ export function resolveRendererSelection({ requestedMode, capabilities } = {}) {
 export function getTerminalRendererFallbackCopy(selection) {
   if (!selection?.didFallback) return '';
 
-  const label = selection.capability?.label || TERMINAL_RENDERER_LABELS[selection.requestedMode] || 'Este renderer';
+  const label =
+    selection.capability?.label ||
+    TERMINAL_RENDERER_LABELS[selection.requestedMode] ||
+    'Este renderer';
   const reason = selection.fallbackReason || selection.capability?.reason;
 
   if (reason === TERMINAL_VTE_FALLBACK_REASONS.UNSUPPORTED_PLATFORM) {
@@ -201,6 +253,26 @@ export function getTerminalRendererFallbackCopy(selection) {
   }
 
   return `${label} todavía no está listo en TERM-02. DevHub sigue usando xterm como fallback estable.`;
+}
+
+export function getTerminalRendererWebglFallbackCopy(reason) {
+  const label = TERMINAL_RENDERER_LABELS['xterm-webgl'];
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW) {
+    return `${label} requiere un WebView con WebGL habilitado. DevHub sigue usando xterm como fallback estable.`;
+  }
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED) {
+    return `${label} no pudo crear el contexto WebGL en este WebView. DevHub sigue usando xterm como fallback estable.`;
+  }
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST) {
+    return `${label} perdió el contexto WebGL en esta sesión. DevHub sigue usando xterm como fallback estable.`;
+  }
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED) {
+    return `${label} no pudo importar el módulo xterm-addon-webgl. DevHub sigue usando xterm como fallback estable.`;
+  }
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED) {
+    return `${label} no pudo registrar el addon WebGL en este Terminal. DevHub sigue usando xterm como fallback estable.`;
+  }
+  return `${label} todavía no está disponible. DevHub sigue usando xterm como fallback estable.`;
 }
 
 export function getTerminalRendererOptionLabel(mode) {
