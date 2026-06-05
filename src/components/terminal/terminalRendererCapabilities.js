@@ -175,6 +175,48 @@ function resolveWebglCapability({ webglProbe } = {}) {
   return { ready: true, reason: null };
 }
 
+/**
+ * Real WebGL capability probe: creates an off-screen <canvas> and asks the
+ * browser for a webgl2 context. Safe to call in any browser (the canvas
+ * is created and immediately discarded). Returns a frozen descriptor
+ * matching the shape expected by resolveWebglCapability.
+ *
+ * JSDOM has no canvas impl — this returns ready: false with the
+ * WEBGL_UNSUPPORTED_IN_WEBVIEW reason. Real WebViews return ready: true
+ * when WebGL2 is available, or ready: false with the matching enum when
+ * not (WebKitGTK on Linux without GPU acceleration, for example).
+ */
+export function probeWebglSupport() {
+  if (typeof document === 'undefined' || typeof HTMLCanvasElement === 'undefined') {
+    return Object.freeze({
+      ready: false,
+      reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW,
+    });
+  }
+  let canvas;
+  try {
+    canvas = document.createElement('canvas');
+  } catch {
+    return Object.freeze({
+      ready: false,
+      reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW,
+    });
+  }
+  let context = null;
+  try {
+    context = canvas.getContext('webgl2') || canvas.getContext('webgl');
+  } catch {
+    context = null;
+  }
+  if (context) {
+    return Object.freeze({ ready: true, reason: null });
+  }
+  return Object.freeze({
+    ready: false,
+    reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
+  });
+}
+
 export function getTerminalRendererCapabilities() {
   return TERMINAL_RENDERER_MODES.reduce((accumulator, mode) => {
     accumulator[mode] = getTerminalRendererCapability(mode);

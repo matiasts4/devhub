@@ -28,10 +28,11 @@ import {
   computeCarvedBounds,
 } from '@/components/terminal/nativeLayoutSync';
 import {
-  getTerminalRendererFallbackCopy,
   getTerminalRendererOptionLabel,
   getTerminalRendererRuntimeCapabilities,
+  getTerminalRendererFallbackCopy,
   resolveRendererSelection,
+  probeWebglSupport,
   TERMINAL_WEBGL_FALLBACK_REASONS,
   WEBGL_FALLBACK_WARNING_TEXT,
 } from '@/components/terminal/terminalRendererCapabilities';
@@ -612,6 +613,7 @@ export default function TerminalTTY({
     tauriAvailable,
     nativeVteProbe: nativeVteProbeResult,
     nativeVteOpenFailure,
+    webglProbe: probeWebglSupport(),
   });
   const rendererViewModel = resolveTerminalRendererViewModel({
     requestedRendererMode,
