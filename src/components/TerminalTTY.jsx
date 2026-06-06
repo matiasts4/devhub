@@ -608,12 +608,18 @@ export default function TerminalTTY({
     externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
+  // probeWebglSupport() must run exactly once per mount. Calling it in the
+  // render body fires on every re-render and produces a fresh canvas +
+  // getContext() call each time → 'Automatic fallback to software WebGL
+  // has been deprecated' spam (real Chromium) and unnecessary work in
+  // general. useState lazy init guarantees single execution.
+  const [webglProbe] = useState(() => probeWebglSupport());
   const rendererCapabilities = getTerminalRendererRuntimeCapabilities({
     platform: resolvedRuntimePlatform,
     tauriAvailable,
     nativeVteProbe: nativeVteProbeResult,
     nativeVteOpenFailure,
-    webglProbe: probeWebglSupport(),
+    webglProbe,
   });
   const rendererViewModel = resolveTerminalRendererViewModel({
     requestedRendererMode,
@@ -2371,6 +2377,21 @@ export default function TerminalTTY({
             const webglAddon = new WebglAddonCtor();
             terminal.loadAddon(webglAddon);
             webglAddonRef.current = webglAddon;
+            // Real xterm-addon-webgl exposes onContextLoss() for cases where
+            // the WebGL context is lost (or fails to create during the
+            // renderer's async activate). The sync try/catch above cannot
+            // catch the deferred failure, so we wire this handler to flip
+            // the panel into DOM-fallback mode with the warning line.
+            if (typeof webglAddon.onContextLoss === 'function') {
+              webglAddon.onContextLoss(() => {
+                cliLog(`CLIENT:${id}`, 'xterm-addon-webgl context loss', {});
+                setWebglFallback({
+                  active: true,
+                  reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST,
+                  error: null,
+                });
+              });
+            }
             setWebglFallback(null);
           } catch (err) {
             cliLog(`CLIENT:${id}`, 'xterm-addon-webgl loadAddon threw', {
