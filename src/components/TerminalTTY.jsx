@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardPaste, Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
@@ -19,36 +19,18 @@ import {
   probeNativeVte,
   resizeNativeVtePanel,
   setNativeVtePanelVisibility,
-  getCachedNativeVteProbeResult,
   subscribeNativeVteEvents,
 } from '@/lib/terminal/nativeVteBridge';
 import {
-  NATIVE_SURFACE_SETTLE_DELAYS_MS,
-  scheduleNativeSurfaceActivation,
-  computeCarvedBounds,
-} from '@/components/terminal/nativeLayoutSync';
-import {
+  getTerminalRendererFallbackCopy,
   getTerminalRendererOptionLabel,
   getTerminalRendererRuntimeCapabilities,
-  getTerminalRendererFallbackCopy,
-  resolveRendererSelection,
   probeWebglSupport,
+  probeWebglSupportSync,
+  resolveRendererSelection,
   TERMINAL_WEBGL_FALLBACK_REASONS,
   WEBGL_FALLBACK_WARNING_TEXT,
 } from '@/components/terminal/terminalRendererCapabilities';
-// Phase 4 of pizarra-shared-view-state: when mounted inside a
-// <SharedSurfacesProvider>, register this TerminalTTY as the
-// singleton for `surfaceId`. The WebSocket / VTE lease are
-// preserved across React re-mounts (e.g. when the user toggles
-// workspace ↔ pizarra mode). The provider's onSurfaceDestroy
-// is the only path that closes the WS and disposes XTerm.
-// The import is wrapped in a try so SSR / non-React environments
-// without the workspace chunk don't break the existing module.
-import { useSurfaceRegistry } from '@/components/workspace/SharedSurfacesProvider';
-import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
-
-/** One initial-command inject per panel (survives React Strict Mode remount). */
-const nativeInitialCommandInjected = new Set();
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -81,29 +63,11 @@ export function getXtermContainerAnimProps(visible) {
   };
 }
 
-const DEFAULT_TERMINAL_FONT_FAMILY =
-  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
-
-export function resolveTerminalFontFamily() {
-  if (typeof document === 'undefined' || typeof window === 'undefined') {
-    return DEFAULT_TERMINAL_FONT_FAMILY;
-  }
-
-  const cssMonoStack = window
-    .getComputedStyle(document.documentElement)
-    .getPropertyValue('--font-family-mono')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return cssMonoStack || DEFAULT_TERMINAL_FONT_FAMILY;
-}
-
 export function shouldShowTerminalViewport(isInitializing, initError) {
   return !isInitializing && !initError;
 }
 
 export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
-  if (connectionState === 'suspended') return true;
   if (isInitializing) return false;
 
   return Boolean(
@@ -138,67 +102,6 @@ export function stabilizeTerminalRenderer(term) {
   return refreshTerminalViewport(term);
 }
 
-export function isTerminalViewportNearBottom(term, threshold = 2) {
-  const activeBuffer = term?.buffer?.active;
-  const baseY = activeBuffer?.baseY;
-  const viewportY = activeBuffer?.viewportY ?? activeBuffer?.ydisp;
-
-  if (!Number.isInteger(baseY) || !Number.isInteger(viewportY)) {
-    return false;
-  }
-
-  return baseY - viewportY <= threshold;
-}
-
-export function getTerminalViewportScrollOffset(term) {
-  const activeBuffer = term?.buffer?.active;
-  const viewportY = activeBuffer?.viewportY ?? activeBuffer?.ydisp;
-  return Number.isInteger(viewportY) ? viewportY : null;
-}
-
-export function restoreTerminalViewportScroll(term, targetViewportY) {
-  if (!term || typeof term.scrollToLine !== 'function') return false;
-  if (!Number.isInteger(targetViewportY)) return false;
-
-  const buffer = term?.buffer?.active;
-  if (!buffer) return false;
-
-  // After resize/reflow the buffer line count can change.
-  // Clamp to valid range so scrollToLine does not silently default to top.
-  const totalLines = buffer.length;
-  const rows = term.rows;
-  let clampedY = targetViewportY;
-  if (
-    typeof totalLines === 'number' &&
-    typeof rows === 'number' &&
-    !Number.isNaN(totalLines) &&
-    !Number.isNaN(rows)
-  ) {
-    const maxY = Math.max(0, totalLines - rows);
-    clampedY = Math.max(0, Math.min(targetViewportY, maxY));
-  }
-
-  try {
-    term.scrollToLine(clampedY);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function shouldRunTerminalViewportReactivation({
-  isActivePanel,
-  isVisibleInLayout = true,
-  documentVisibilityState,
-} = {}) {
-  // All *visible* web terminals (including secondary splits in the grid) need
-  // viewport stabilization, scroll preservation and occasional re-fit/repaint.
-  // The isActivePanel gate is only relevant for native VTE focus leases and
-  // "bring to front" semantics. For xterm / xterm-webgl we must keep every
-  // live panel's renderer healthy even when it is not the focused one.
-  return Boolean(isVisibleInLayout && documentVisibilityState !== 'hidden');
-}
-
 export function isTerminalRendererReady(term) {
   if (!term) return false;
 
@@ -226,12 +129,11 @@ export function fitTerminalViewport({
   term,
   socket,
   websocketOpenState = WebSocket.OPEN,
-  getRect,
 }) {
   if (!container || !fitAddon || !term) return false;
   if (!isTerminalRendererReady(term)) return false;
 
-  const rect = getRect ? getRect() : container.getBoundingClientRect();
+  const rect = container.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return false;
 
   try {
@@ -240,7 +142,6 @@ export function fitTerminalViewport({
     if (isStaleXtermRendererError(error)) return false;
     throw error;
   }
-
   stabilizeTerminalRenderer(term);
 
   if (socket?.readyState === websocketOpenState) {
@@ -397,7 +298,6 @@ export function shouldOpenNativeVtePanel({
   isActivePanel,
   isVisibleInLayout = true,
   suspendNativeSurface = false,
-  connectionSuspended = false,
   nativeVteOpenFailure,
   nativeVteProbe,
   requestedRendererMode,
@@ -407,7 +307,6 @@ export function shouldOpenNativeVtePanel({
   return Boolean(
     isVisibleInLayout &&
     !suspendNativeSurface &&
-    !connectionSuspended &&
     requestedRendererMode === 'vte-experimental' &&
     tauriAvailable &&
     getTerminalRuntimePlatform(runtimePlatform).includes('linux') &&
@@ -508,7 +407,6 @@ const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
 
 export default function TerminalTTY({
   id,
-  surfaceId: explicitSurfaceId,
   onClose,
   onActivatePanel,
   cwd,
@@ -525,31 +423,7 @@ export default function TerminalTTY({
   runtimePlatform,
   showQuickCopyButton = true,
   swarmContext = null,
-  connectionState: externalConnectionState,
-  externalDimensionSource,
-  // Phase 4 (pizarra-shared-view-state): explicit escape
-  // valves. By default the surface is registered with the
-  // SharedSurfacesProvider (when present) and kept alive on
-  // unmount. Set `disposeOnUnmount` to true to opt out of
-  // keepAlive and dispose the WS / XTerm when this React
-  // instance unmounts. Useful for tests and the standalone
-  // TWM panel mode (which doesn't have a provider).
-  disposeOnUnmount = false,
-  // Parent can listen for the destroy callback (e.g. to
-  // remove the surface from the SharedSurfaceRegistry).
-  onSurfaceDestroy: onSurfaceDestroyCallback,
 }) {
-  // Phase 4: surfaceId defaults to `id` so existing callers
-  // that already pass a stable `id` get singleton semantics
-  // for free when mounted inside a provider.
-  const surfaceId = explicitSurfaceId || id;
-  // Access the surface registry leniently: when this component
-  // is mounted OUTSIDE a SharedSurfacesProvider (the legacy
-  // TWM path), registry is null and the component falls back
-  // to its original unmount-disposes behavior. Legacy behavior
-  // is critical for the existing test infrastructure.
-  const surfaceRegistry = useSurfaceRegistry();
-
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
   const nativePlaceholderRef = useRef(null);
@@ -561,7 +435,6 @@ export default function TerminalTTY({
   const nativeResizeSettleTimersRef = useRef([]);
   const wsRef = useRef(null);
   const searchRef = useRef(null);
-  const webglAddonRef = useRef(null);
   const transportRef = useRef('json');
   const lastViewportDiagnosticRef = useRef(null);
   const connectionStateRef = useRef('idle');
@@ -572,13 +445,6 @@ export default function TerminalTTY({
   const nativeVteProbeRetryDelayRef = useRef(null);
   const shouldRetryNativeVteProbeRef = useRef(false);
   const hideTimerRef = useRef(null);
-  // Phase 4 (pizarra-shared-view-state): when this instance is
-  // mounted inside a <SharedSurfacesProvider>, we mark the
-  // surface as "kept alive" by default. `destroyedRef` becomes
-  // true only after an explicit destroy (X button, kill
-  // session) — at which point WS / XTerm are disposed.
-  const destroyedRef = useRef(false);
-  const surfaceRegisteredRef = useRef(false);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
@@ -591,11 +457,9 @@ export default function TerminalTTY({
     }
   });
 
-  const [isInitializing, setIsInitializing] = useState(
-    () => requestedRendererMode !== 'vte-experimental' || !getCachedNativeVteProbeResult()?.ready
-  );
+  const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
-  const [internalConnectionState, setInternalConnectionState] = useState('idle');
+  const [connectionState, setConnectionState] = useState('idle');
   const [copied, setCopied] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [restoredToast, setRestoredToast] = useState(false);
@@ -604,131 +468,31 @@ export default function TerminalTTY({
   const [nativeVteOpened, setNativeVteOpened] = useState(false);
   const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
-  const [terminalRuntimeNonce, setTerminalRuntimeNonce] = useState(0);
+  const [webglProbeResult, setWebglProbeResult] = useState(() => probeWebglSupportSync());
   const [webglFallback, setWebglFallback] = useState(null);
-  // External connectionState prop takes precedence (allows parent to set 'suspended')
-  const connectionState =
-    externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
-  const setConnectionState =
-    externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
+  const [xtermBootNonce, setXtermBootNonce] = useState(0);
+  const webglAddonRef = useRef(null);
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
-  // probeWebglSupport() must run exactly once per mount. Calling it in the
-  // render body fires on every re-render and produces a fresh canvas +
-  // getContext() call each time → 'Automatic fallback to software WebGL
-  // has been deprecated' spam (real Chromium) and unnecessary work in
-  // general. useState lazy init guarantees single execution.
-  const [webglProbe] = useState(() => probeWebglSupport());
   const rendererCapabilities = getTerminalRendererRuntimeCapabilities({
     platform: resolvedRuntimePlatform,
     tauriAvailable,
     nativeVteProbe: nativeVteProbeResult,
     nativeVteOpenFailure,
-    webglProbe,
+    webglProbe: webglProbeResult,
   });
   const rendererViewModel = resolveTerminalRendererViewModel({
     requestedRendererMode,
     rendererCapabilities,
     nativeVteReady: requestedRendererMode === 'vte-experimental' && nativeVteOpened,
   });
-  const isCanvasMode = rendererViewModel.effectiveMode === 'canvas';
   const hasSentInitialCommand = useRef(false);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
   const initTimeoutRef = useRef(null);
   const autoScrollRafRef = useRef(null);
-  const xtermInstanceTokenRef = useRef(0);
-  const consecutiveStaleFitFailuresRef = useRef(0);
   const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
-  const lastViewportYRef = useRef(null);
-  // Holds the setTimeout id for the post-mount WebGL canvas check, so
-  // we can clear it on unmount and avoid a stale callback touching refs
-  // after the panel is gone.
-  const webglPostMountCheckTimeoutRef = useRef(null);
-  // Holds the setTimeout id for the content-validation check that runs
-  // after the size check passes. If the canvas is large but its WebGL
-  // drawing buffer is still transparent, we dispose and fall back.
-  const webglContentCheckTimeoutRef = useRef(null);
-  // Sticky flag set by the post-mount check when xterm-addon-webgl was
-  // attempted and failed (no renderable canvas). initializeTerminal
-  // reads this to skip the addon import on its next run so the rebuilt
-  // terminal boots as plain xterm DOM and the user gets a working
-  // shell. Reset to false on every remount via the useEffect that
-  // depends on terminalRuntimeNonce.
-  const webglDemotedToDomRef = useRef(false);
-
-  // XW-06: when the user requested xterm-webgl but the runtime capability
-  // says WebGL is not available, the resolver demotes to plain 'xterm' and
-  // the WebglAddon path in initializeTerminal never runs. Without this
-  // sync the panel silently boots DOM xterm with no indication that the
-  // preferred renderer was unavailable. Surface a demotion warning that
-  // matches the prose copy produced by getTerminalRendererWebglFallbackCopy.
-  // XW-07: clear the demotion warning when the user moves away from
-  // xterm-webgl so a stale 'WebGL unavailable' banner never lingers.
-  useEffect(() => {
-    const demotedFromXtermWebgl =
-      requestedRendererMode === 'xterm-webgl' && rendererViewModel.effectiveMode !== 'xterm-webgl';
-    if (demotedFromXtermWebgl) {
-      const probeReason =
-        webglProbe &&
-        typeof webglProbe.reason === 'string' &&
-        Object.values(TERMINAL_WEBGL_FALLBACK_REASONS).includes(webglProbe.reason)
-          ? webglProbe.reason
-          : TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW;
-      console.log(
-        `[TTY:${id}] [xterm-webgl] demotion: requested=xterm-webgl but resolver picked ` +
-          `${rendererViewModel.effectiveMode}. Setting fallback reason=${probeReason}. ` +
-          `Probe: ${JSON.stringify(webglProbe)}`
-      );
-      cliLog(`CLIENT:${id}`, 'xterm-webgl demotion — setting fallback', {
-        requested: 'xterm-webgl',
-        effective: rendererViewModel.effectiveMode,
-        reason: probeReason,
-        probe: webglProbe,
-      });
-      setWebglFallback((current) => {
-        if (current?.active) return current;
-        return {
-          active: true,
-          reason: probeReason,
-          error: null,
-        };
-      });
-      return undefined;
-    }
-    // User is no longer requesting xterm-webgl — clear any demotion
-    // warning so we don't keep showing 'WebGL unavailable' on a panel
-    // that's now on a different renderer.
-    setWebglFallback((current) => {
-      if (!current?.active) return current;
-      // Only auto-clear the demotion-shaped reasons; leave the addon-side
-      // ones (CONTEXT_LOST / ADDON_REGISTER_FAILED) alone — those indicate
-      // runtime issues that the addon path itself should clear when it
-      // successfully re-registers.
-      const demotionReasons = [
-        TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW,
-        TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
-        TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
-      ];
-      if (demotionReasons.includes(current.reason)) {
-        console.log(
-          `[TTY:${id}] [xterm-webgl] clearing demotion fallback ` +
-            `(user moved away from xterm-webgl, previous reason=${current.reason})`
-        );
-        return null;
-      }
-      return current;
-    });
-    return undefined;
-  }, [requestedRendererMode, rendererViewModel.effectiveMode, webglProbe, id]);
-  // Last seen avoid rects from TWM (for carve when popups are over this terminal).
-  // Updated via the workspace-sync event; used in show paths to compute carved
-  // bounds so web content can render on top without full suspend.
-  const avoidRectsRef = useRef([]);
-  const canvasRef = useRef(null);
-  const canvasCtxRef = useRef(null);
-  const canvasLinesRef = useRef([]); // simple buffer for stub canvas renderer (new view type for pizarra)
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
     isVisibleInLayout,
@@ -743,22 +507,18 @@ export default function TerminalTTY({
   });
   const shouldUseNativeRenderer =
     rendererViewModel.effectiveMode === 'vte-experimental' && runtimePhase !== 'fallback-xterm';
-  const isStartupSuspended = connectionState === 'suspended';
-  const shouldBootXterm =
-    !isStartupSuspended &&
-    shouldBootXtermRuntime({
-      isActivePanel,
-      isVisibleInLayout,
-      suspendNativeSurface,
-      nativeSurfacePolicy,
-      nativeVteOpenFailure,
-      nativeVteOpened,
-      nativeVteProbe: nativeVteProbeResult,
-      requestedRendererMode,
-      runtimePlatform: resolvedRuntimePlatform,
-      tauriAvailable,
-    });
-  const shouldBootCanvas = rendererViewModel.effectiveMode === 'canvas' && !isStartupSuspended;
+  const shouldBootXterm = shouldBootXtermRuntime({
+    isActivePanel,
+    isVisibleInLayout,
+    suspendNativeSurface,
+    nativeSurfacePolicy,
+    nativeVteOpenFailure,
+    nativeVteOpened,
+    nativeVteProbe: nativeVteProbeResult,
+    requestedRendererMode,
+    runtimePlatform: resolvedRuntimePlatform,
+    tauriAvailable,
+  });
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -769,11 +529,6 @@ export default function TerminalTTY({
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
-    }
-
-    if (initTimeoutRef.current) {
-      clearTimeout(initTimeoutRef.current);
-      initTimeoutRef.current = null;
     }
 
     if (nativeVteProbeRetryTimerRef.current) {
@@ -796,21 +551,6 @@ export default function TerminalTTY({
     nativeVteProbeRetryDelayRef.current = null;
   }, []);
 
-  const handleNativeLeaseCommandError = useCallback(
-    (error) => {
-      const reason = String(error?.message || error || '');
-      if (!reason.includes('panel-not-active')) return;
-
-      nativeLeaseRef.current = false;
-      setNativeVteOpened(false);
-      setNativeVteOpenFailure(null);
-      nativeVteProbeRetryCountRef.current = 0;
-      clearNativeVteProbeRetryTimer();
-      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
-    },
-    [clearNativeVteProbeRetryTimer]
-  );
-
   const disposeXtermRuntime = useCallback(() => {
     resizeObserverRef.current?.disconnect();
     resizeObserverRef.current = null;
@@ -825,95 +565,20 @@ export default function TerminalTTY({
       wsRef.current = null;
     }
 
-    // WebGL addon MUST be disposed BEFORE xterm.dispose(). xterm's
-    // internal dispose chain calls each registered addon's dispose(),
-    // and WebglAddon.dispose() touches this._renderer.value.onRequestRedraw.
-    // If the addon is disposed twice (once by xterm, once by us) or if
-    // xterm runs dispose() with the addon in a half-torn-down state, that
-    // call site dereferences a freed renderer and throws. Disposing the
-    // addon first leaves xterm's dispose chain a no-op for the addon path.
-    webglAddonRef.current?.dispose?.();
-    webglAddonRef.current = null;
-
-    // Clear the post-mount WebGL render check so a stale timeout can't
-    // try to touch disposed refs after this point.
-    if (webglPostMountCheckTimeoutRef.current !== null) {
-      clearTimeout(webglPostMountCheckTimeoutRef.current);
-      webglPostMountCheckTimeoutRef.current = null;
-    }
-
     termRef.current?.dispose();
     termRef.current = null;
     fitRef.current = null;
     searchRef.current = null;
-  }, []);
 
-  // WebGL addon disposal on unmount: the addon owns GPU resources that
-  // survive xterm.dispose() (the addon adds itself to the Terminal but
-  // the WebGLRenderer it constructed is independent). Guarantee dispose
-  // runs on EVERY unmount, not only when disposeOnUnmount is set — so
-  // the Strict-TDD contract (XW-04 unmount cleanup) is satisfied even
-  // for surfaces that get soft-cleaned across React re-mounts.
-  useEffect(() => {
-    return () => {
-      webglAddonRef.current?.dispose?.();
-      webglAddonRef.current = null;
-      if (webglPostMountCheckTimeoutRef.current !== null) {
-        clearTimeout(webglPostMountCheckTimeoutRef.current);
-        webglPostMountCheckTimeoutRef.current = null;
-      }
-      if (webglContentCheckTimeoutRef.current !== null) {
-        clearTimeout(webglContentCheckTimeoutRef.current);
-        webglContentCheckTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  // Phase 4: explicit hard-destroy of the surface. Called from
-  // the X button, kill-session command, or the provider's
-  // releaseSurface(id, { keepAlive: false }) path. Closes the
-  // WS, disposes XTerm, fires the consumer's onSurfaceDestroy
-  // callback (so the parent can also remove the surface from
-  // its registry), AND releases the surface from the provider
-  // with keepAlive: false so the provider can free the slot.
-  const destroySurface = useCallback(() => {
-    if (destroyedRef.current) return;
-    destroyedRef.current = true;
-    try {
-      closeNativeLease('destroy');
-    } catch {
-      // ignore — best-effort
-    }
-    try {
-      if (onSurfaceDestroyCallback) onSurfaceDestroyCallback(surfaceId);
-    } catch (err) {
-      cliLog(`CLIENT:${surfaceId}`, 'onSurfaceDestroy threw', { error: err?.message });
-    }
-    disposeXtermRuntime();
-    if (surfaceRegistry && surfaceId) {
+    if (webglAddonRef.current) {
       try {
-        surfaceRegistry.releaseSurface(surfaceId, { keepAlive: false });
-      } catch (err) {
-        cliLog(`CLIENT:${surfaceId}`, 'releaseSurface threw', { error: err?.message });
+        webglAddonRef.current.dispose?.();
+      } catch {
+        // ignore dispose errors on hot path
       }
+      webglAddonRef.current = null;
     }
-  }, [surfaceRegistry, surfaceId, onSurfaceDestroyCallback]);
-
-  // Phase 4: register this surface with the provider on mount
-  // (if a provider exists). Soft release on unmount by default
-  // (keepAlive: true); the WS / XTerm are NOT disposed. When
-  // `disposeOnUnmount` is true OR the surface was destroyed
-  // explicitly, the unmount path hard-disposes.
-  useEffect(() => {
-    if (!surfaceRegistry || !surfaceId) return undefined;
-    if (surfaceRegisteredRef.current) return undefined;
-    surfaceRegisteredRef.current = true;
-    const unregister = surfaceRegistry.registerSurface(surfaceId, { type: 'terminal' });
-    return () => {
-      unregister();
-      surfaceRegisteredRef.current = false;
-    };
-  }, [surfaceRegistry, surfaceId]);
+  }, []);
 
   const shouldRetryNativeVteProbe =
     isActivePanel &&
@@ -967,19 +632,70 @@ export default function TerminalTTY({
   }, [connectionState]);
 
   useEffect(() => {
-    const previous = requestedRendererModeRef.current;
     requestedRendererModeRef.current = requestedRendererMode;
-    // If the user explicitly changed away from xterm-webgl, clear the
-    // sticky demotion flag so a future switch back to xterm-webgl can
-    // attempt the GL path again.
-    if (previous === 'xterm-webgl' && requestedRendererMode !== 'xterm-webgl') {
-      webglDemotedToDomRef.current = false;
-    }
   }, [requestedRendererMode]);
 
   useEffect(() => {
     effectiveRendererModeRef.current = rendererViewModel.effectiveMode;
   }, [rendererViewModel.effectiveMode]);
+
+  // Real WebGL capability probe (runs once per mount, cheap detached canvas test).
+  // Populates webglProbeResult so the runtime capabilities and switcher labels are honest.
+  useEffect(() => {
+    let cancelled = false;
+    probeWebglSupport()
+      .then((result) => {
+        if (!cancelled) {
+          setWebglProbeResult((prev) => {
+            if (prev && prev.ready === result.ready && prev.reason === result.reason) {
+              return prev;
+            }
+            return result;
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWebglProbeResult((prev) => {
+            const result = {
+              ready: false,
+              reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
+            };
+            if (prev && prev.ready === result.ready && prev.reason === result.reason) {
+              return prev;
+            }
+            return result;
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Surface xterm-webgl demotion as a visible warning when the user asked for WebGL
+  // but the resolver (or probe) forced fallback to plain xterm. Clears only demotion-shaped
+  // reasons when the user picks a different renderer.
+  useEffect(() => {
+    if (
+      requestedRendererMode === 'xterm-webgl' &&
+      rendererViewModel.effectiveMode !== 'xterm-webgl'
+    ) {
+      setWebglFallback({
+        active: true,
+        reason:
+          webglProbeResult?.reason || TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW,
+      });
+    } else if (
+      webglFallback &&
+      (webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW ||
+        webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED ||
+        webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED)
+    ) {
+      // user moved away from the demoted choice — clear the demotion banner
+      setWebglFallback(null);
+    }
+  }, [requestedRendererMode, rendererViewModel.effectiveMode, webglProbeResult]);
 
   const logViewportDiagnostic = useCallback(
     createTerminalViewportDiagnosticLogger({
@@ -1005,69 +721,27 @@ export default function TerminalTTY({
 
   const closeNativeLease = useCallback(
     async (reason = 'deactivate') => {
+      if (!nativeLeaseRef.current) return;
       nativeLeaseRef.current = false;
       setNativeVteOpened(false);
-      try {
-        await closeNativeVtePanel({ panelId: id, reason });
-      } catch (error) {
-        // Some close reasons are EXPECTED to fail because the panel is
-        // not actually open under the current renderer state:
-        //   - 'renderer-disabled': user just switched away from VTE
-        //   - 'unmount': panel is being torn down
-        //   - 'session-close': the WS already closed, VTE was never opened
-        // Logging these as FAILED spams the operator console and makes
-        // the switch-renderer flow look broken when it is not. Skip-vs-
-        // fail distinction matters for triage.
-        const expectedCloseReasons = ['renderer-disabled', 'unmount', 'session-close'];
-        if (expectedCloseReasons.includes(reason)) {
-          cliLog(`CLIENT:${id}`, 'native VTE close skipped (expected)', {
-            reason,
-            error: error?.message,
-          });
-        } else {
-          cliLog(`CLIENT:${id}`, 'native VTE close FAILED', { reason, error: error?.message });
-        }
-        // A close that happens because the user switched renderers (or
-        // because the panel was never actually open under the new
-        // renderer) MUST NOT trigger handleNativeLeaseCommandError.
-        // That handler increments nativeVteRecoveryAttempt, which is in
-        // the deps array of the effect at line ~1625 that re-calls
-        // closeNativeLease on every increment — yielding a 'Maximum
-        // update depth exceeded' loop. A renderer-disabled close is
-        // expected to fail (panel-not-active) and is a one-shot, not a
-        // recovery candidate.
-        if (reason === 'renderer-disabled') return;
-        handleNativeLeaseCommandError(error);
-      }
+      await Promise.resolve(closeNativeVtePanel({ panelId: id, reason })).catch(() => {});
     },
-    [id, handleNativeLeaseCommandError]
+    [id]
   );
 
   const hideNativeLease = useCallback(
     async (reason = 'inactive') => {
+      if (!nativeLeaseRef.current) return;
       cliLog(`CLIENT:${id}`, 'native VTE hide requested', { reason });
-      try {
-        await setNativeVtePanelVisibility({
+      await Promise.resolve(
+        setNativeVtePanelVisibility({
           panelId: id,
           visible: false,
           reason,
-        });
-      } catch (error) {
-        // 'terminal-manager-hidden' fires when the panel is no longer
-        // visible — the visibility call is a no-op in that case. Other
-        // hide reasons are real failures that need recovery.
-        if (reason === 'terminal-manager-hidden') {
-          cliLog(`CLIENT:${id}`, 'native VTE hide skipped (expected)', {
-            reason,
-            error: error?.message,
-          });
-        } else {
-          cliLog(`CLIENT:${id}`, 'native VTE hide FAILED', { reason, error: error?.message });
-          handleNativeLeaseCommandError(error);
-        }
-      }
+        })
+      ).catch(() => {});
     },
-    [id, handleNativeLeaseCommandError]
+    [id]
   );
 
   useEffect(() => {
@@ -1076,54 +750,49 @@ export default function TerminalTTY({
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
-      closeNativeLease('unmount');
+      hideNativeLease('unmount');
     };
-  }, [closeNativeLease]);
+  }, [hideNativeLease]);
+
+  const handleNativeLeaseCommandError = useCallback(
+    (error) => {
+      const reason = String(error?.message || error || '');
+      if (!reason.includes('panel-not-active')) return;
+
+      nativeLeaseRef.current = false;
+      setNativeVteOpened(false);
+      setNativeVteOpenFailure(null);
+      nativeVteProbeRetryCountRef.current = 0;
+      clearNativeVteProbeRetryTimer();
+      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
+    },
+    [clearNativeVteProbeRetryTimer]
+  );
 
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
-    const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!rawBounds) {
+    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!bounds) {
       cliLog(`CLIENT:${id}`, 'native VTE show skipped — invalid bounds');
       return;
     }
-    // Carve for popups if we have avoids (from last sync or ref). This keeps
-    // terminal live while web UI is shown "sobre" it.
-    const avoids = avoidRectsRef.current || [];
-    const carved = computeCarvedBounds(rawBounds, avoids);
-    const base = carved || rawBounds;
-    // Safety inset so split dividers and dock chrome are not overpainted by the native.
-    const bounds = {
-      x: base.x + 1,
-      y: base.y + 1,
-      width: Math.max(0, base.width - 2),
-      height: Math.max(0, base.height - 2),
-    };
-    cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds, carved: !!carved });
+    cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds });
     await Promise.resolve(
       setNativeVtePanelVisibility({
         panelId: id,
         visible: true,
         bounds,
-        reason: carved ? 'show-carved' : 'show-lease',
       })
     ).catch(handleNativeLeaseCommandError);
   }, [handleNativeLeaseCommandError, id]);
 
   const resizeNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
-    const rawBounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!rawBounds) {
+    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    if (!bounds) {
       cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
       return;
     }
-    // Safety inset so split dividers and dock chrome are not overpainted by the native.
-    const bounds = {
-      x: rawBounds.x + 1,
-      y: rawBounds.y + 1,
-      width: Math.max(0, rawBounds.width - 2),
-      height: Math.max(0, rawBounds.height - 2),
-    };
     cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
     await Promise.resolve(
       resizeNativeVtePanel({
@@ -1144,19 +813,14 @@ export default function TerminalTTY({
       if (!container) return false;
 
       const rect = container.getBoundingClientRect();
-      if (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        (typeof document === 'undefined' || document.visibilityState !== 'hidden')
-      ) {
+      if (rect.width > 0 && rect.height > 0 && document.visibilityState !== 'hidden') {
         return true;
       }
 
       await new Promise((resolve) => {
-        initTimeoutRef.current = setTimeout(() => {
-          initTimeoutRef.current = null;
-          resolve();
-        }, 40);
+        rafRef.current = requestAnimationFrame(() => {
+          timeoutRef.current = setTimeout(resolve, 40);
+        });
       });
     }
 
@@ -1164,36 +828,19 @@ export default function TerminalTTY({
     return Boolean(rect && rect.width > 0 && rect.height > 0);
   }, []);
 
-  const getRect = externalDimensionSource ? () => externalDimensionSource() : undefined;
-
   const fitAndResize = useCallback(() => {
     const fitWorked = fitTerminalViewport({
       container: containerRef.current,
       fitAddon: fitRef.current,
       term: termRef.current,
       socket: wsRef.current,
-      getRect,
     });
 
     logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
+  }, [logViewportDiagnostic]);
 
-    if (!fitWorked) {
-      consecutiveStaleFitFailuresRef.current += 1;
-      if (consecutiveStaleFitFailuresRef.current >= 3) {
-        consecutiveStaleFitFailuresRef.current = 0;
-        disposeXtermRuntime();
-        clearTimers();
-        setTerminalRuntimeNonce((n) => n + 1);
-        cliLog(`CLIENT:${id}`, 'force xterm runtime reinit after stale fits');
-      }
-    } else {
-      consecutiveStaleFitFailuresRef.current = 0;
-    }
-  }, [logViewportDiagnostic, disposeXtermRuntime, clearTimers, id]);
-
-  const scrollTerminalToBottom = useCallback((force = false) => {
+  const scrollTerminalToBottom = useCallback(() => {
     if (!termRef.current) return;
-    if (!force && !isTerminalViewportNearBottom(termRef.current)) return;
 
     if (autoScrollRafRef.current) {
       cancelAnimationFrame(autoScrollRafRef.current);
@@ -1209,275 +856,43 @@ export default function TerminalTTY({
     if (!termRef.current || !fitRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
-    const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
-    const instanceToken = xtermInstanceTokenRef.current;
     fitAndResize();
-    if (shouldStickToBottom) {
-      scrollTerminalToBottom(true);
-    }
+    scrollTerminalToBottom();
     clearTimers();
     rafRef.current = requestAnimationFrame(() => {
-      if (xtermInstanceTokenRef.current !== instanceToken) return;
       fitAndResize();
-      if (shouldStickToBottom) {
-        scrollTerminalToBottom(true);
-      }
+      scrollTerminalToBottom();
     });
     timeoutRef.current = setTimeout(() => {
-      if (xtermInstanceTokenRef.current !== instanceToken) return;
       fitAndResize();
-      if (shouldStickToBottom) {
-        scrollTerminalToBottom(true);
-      }
+      scrollTerminalToBottom();
     }, 120);
   }, [fitAndResize, clearTimers, scrollTerminalToBottom]);
 
-  // Stub for new 'canvas' terminal view type (for pizarra to avoid native widget and xterm lib).
-  // Basic ANSI strip + canvas text draw. Later can be upgraded to full VT parser + colors/cursor.
-  const stripAnsi = useCallback((str = '') => {
-    return str.replace(
-      // eslint-disable-next-line no-control-regex -- intentional ANSI escape stripping
-      /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
-      ''
-    );
-  }, []);
-
-  const drawToCanvas = useCallback(
-    (data = '') => {
-      const c = canvasRef.current;
-      if (!c || !isCanvasMode) return;
-      let ctx = canvasCtxRef.current;
-      if (!ctx) {
-        ctx = c.getContext('2d', { alpha: false });
-        if (!ctx) return;
-        canvasCtxRef.current = ctx;
-      }
-      const text = stripAnsi(data);
-      const newLines = text.split(/\r?\n/);
-      const buf = canvasLinesRef.current;
-      for (const l of newLines) {
-        if (l) buf.push(l);
-      }
-      while (buf.length > 80) buf.shift();
-      // size to parent
-      const parent = c.parentElement;
-      const pw = parent ? parent.clientWidth || 800 : 800;
-      const ph = parent ? parent.clientHeight || 600 : 600;
-      if (c.width !== pw || c.height !== ph) {
-        c.width = pw;
-        c.height = ph;
-      }
-      ctx.fillStyle = '#0f1724';
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      const lh = 16;
-      const max = Math.floor(c.height / lh) || 30;
-      const toDraw = buf.slice(-max);
-      toDraw.forEach((line, i) => {
-        ctx.fillText(line.slice(0, Math.floor(c.width / 7) || 80), 8, 14 + i * lh);
-      });
-    },
-    [isCanvasMode, stripAnsi]
-  );
-
-  // Init stub canvas for 'canvas' mode (new terminal view type).
-  useEffect(() => {
-    if (!isCanvasMode || !canvasRef.current) return;
-    const c = canvasRef.current;
-    const parent = c.parentElement;
-    const w = (parent && parent.clientWidth) || 800;
-    const h = (parent && parent.clientHeight) || 600;
-    c.width = w;
-    c.height = h;
-    const ctx = c.getContext('2d');
-    if (ctx) {
-      canvasCtxRef.current = ctx;
-      ctx.fillStyle = '#0f1724';
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#64748b';
-      ctx.font = '12px monospace';
-      ctx.fillText('[Canvas Terminal View - stub for pizarra (no xterm, native parked)]', 10, 20);
-      ctx.fillText('PTY content will render here via drawToCanvas on data.', 10, 36);
-    }
-  }, [isCanvasMode]);
-
-  // pizarra offscreen VTE texture consumer: listen for frames emitted by the Rust
-  // offscreen host (real VTE pty+emu, widget not in overlay). Paint rgba frames
-  // directly to the canvas for perfect web layering (browser surfaces can pass
-  // over without native widget superposition) while keeping full TUI fidelity.
-  const paintRgbaFrame = useCallback(
-    (payload) => {
-      const c = canvasRef.current;
-      if (!c || !isCanvasMode) return;
-      const { width: fw = 0, height: fh = 0, data, format } = payload || {};
-      if (!data || fw <= 0 || fh <= 0) return;
-      let ctx = canvasCtxRef.current;
-      if (!ctx) {
-        ctx = c.getContext('2d', { alpha: false });
-        if (!ctx) return;
-        canvasCtxRef.current = ctx;
-      }
-      if (c.width !== fw || c.height !== fh) {
-        c.width = fw;
-        c.height = fh;
-      }
-      if (format === 'rgba') {
-        try {
-          const bin = atob(data);
-          const arr = new Uint8ClampedArray(bin.length);
-          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i) & 0xff;
-          const imgData = new ImageData(arr, fw, fh);
-          ctx.putImageData(imgData, 0, 0);
-          return;
-        } catch {
-          // ignore decode error; keep prior frame
-        }
-      }
-      // fallback: leave previous or the stub init
-    },
-    [isCanvasMode]
-  );
-
-  // Basic input forward from the texture canvas to the offscreen VTE pty (via paste which
-  // accepts sequences). Supports printable + common specials. Enough for shells + simple TUIs
-  // in pizarra; full xterm-style key encoding can be expanded later.
-  const handleCanvasKeyDown = useCallback(
-    (ev) => {
-      if (!isCanvasMode) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      let text = '';
-      const k = ev.key;
-      if (k.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
-        text = k;
-      } else if (k === 'Enter') text = '\r';
-      else if (k === 'Backspace') text = '\x7f';
-      else if (k === 'Tab') text = '\t';
-      else if (k === 'Escape') text = '\x1b';
-      else if (k === 'ArrowUp') text = '\x1b[A';
-      else if (k === 'ArrowDown') text = '\x1b[B';
-      else if (k === 'ArrowRight') text = '\x1b[C';
-      else if (k === 'ArrowLeft') text = '\x1b[D';
-      else if (k === 'Delete') text = '\x1b[3~';
-      else if (k === 'Home') text = '\x1b[H';
-      else if (k === 'End') text = '\x1b[F';
-      if (text) {
-        // pasteNative accepts the request shape {panelId, text?}
-        pasteNativeVtePanel({ panelId: id, text }).catch(() => {});
-      }
-    },
-    [isCanvasMode, id]
-  );
-
-  // Subscribe to Tauri 'terminal:frame' for this panel when in canvas texture mode.
-  useEffect(() => {
-    if (!isCanvasMode) return undefined;
-    let unlisten = null;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        if (cancelled) return;
-        unlisten = await listen('terminal:frame', (ev) => {
-          const p = ev?.payload || {};
-          if (p.panelId !== id) return;
-          paintRgbaFrame(p);
-        });
-      } catch {
-        // no tauri or event api (e.g. web preview); frames won't arrive, stub stays
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (unlisten) {
-        try {
-          unlisten();
-          // eslint-disable-next-line no-empty -- intentional swallow of unlisten error
-        } catch {}
-      }
-    };
-  }, [isCanvasMode, id, paintRgbaFrame]);
-
-  // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
-  useEffect(() => {
-    if (!termRef.current) return;
-    if (isVisibleInLayout) {
-      // Panel just became visible - restore scroll position
-      const saved = lastViewportYRef.current;
-      if (saved != null) {
-        restoreTerminalViewportScroll(termRef.current, saved);
-      } else {
-        scrollTerminalToBottom(true);
-      }
-    } else {
-      // Panel becoming invisible - save current scroll position
-      lastViewportYRef.current = getTerminalViewportScrollOffset(termRef.current);
-    }
-  }, [isVisibleInLayout]);
-
   const reactivateTerminalViewport = useCallback(() => {
-    if (
-      !shouldRunTerminalViewportReactivation({
-        isActivePanel,
-        isVisibleInLayout,
-        documentVisibilityState:
-          typeof document !== 'undefined' ? document.visibilityState : 'visible',
-      })
-    ) {
-      return;
-    }
-
     logViewportDiagnostic('reactivate-start');
-    const savedViewportY = getTerminalViewportScrollOffset(termRef.current);
-    const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
     const repaint = () => {
       stabilizeTerminalRenderer(termRef.current);
-      if (shouldStickToBottom) {
-        scrollTerminalToBottom(true);
-      }
+      scrollTerminalToBottom();
     };
 
-    const instanceToken = xtermInstanceTokenRef.current;
     sendResize();
     repaint();
 
-    // Restore scroll position if the user was not at bottom,
-    // guarding against xterm.js resize/fit resetting the viewport.
-    if (!shouldStickToBottom && savedViewportY != null) {
-      restoreTerminalViewportScroll(termRef.current, savedViewportY);
-    }
-
     rafRef.current = requestAnimationFrame(() => {
-      if (xtermInstanceTokenRef.current !== instanceToken) return;
       repaint();
-
-      if (!shouldStickToBottom && savedViewportY != null) {
-        restoreTerminalViewportScroll(termRef.current, savedViewportY);
-      }
 
       if (autoFocus) {
         termRef.current?.focus?.();
       }
 
       timeoutRef.current = setTimeout(() => {
-        if (xtermInstanceTokenRef.current !== instanceToken) return;
         sendResize();
         repaint();
-        if (!shouldStickToBottom && savedViewportY != null) {
-          restoreTerminalViewportScroll(termRef.current, savedViewportY);
-        }
         logViewportDiagnostic('reactivate-settled');
       }, 120);
     });
-  }, [
-    autoFocus,
-    isActivePanel,
-    isVisibleInLayout,
-    logViewportDiagnostic,
-    scrollTerminalToBottom,
-    sendResize,
-  ]);
+  }, [autoFocus, logViewportDiagnostic, scrollTerminalToBottom, sendResize]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1513,14 +928,6 @@ export default function TerminalTTY({
       return undefined;
     }
 
-    const cachedProbe = getCachedNativeVteProbeResult();
-    if (cachedProbe?.ready) {
-      setNativeVteProbeResult(cachedProbe);
-      setNativeVteOpenFailure(null);
-      setIsInitializing(false);
-      return undefined;
-    }
-
     probeNativeVte({
       panelId: id,
       requestedMode: requestedRendererMode,
@@ -1537,7 +944,6 @@ export default function TerminalTTY({
         if (result?.ready) {
           nativeVteProbeRetryCountRef.current = 0;
           clearNativeVteProbeRetryTimer();
-          setIsInitializing(false);
         } else {
           setNativeVteOpenFailure(null);
           setNativeVteOpened(false);
@@ -1563,79 +969,8 @@ export default function TerminalTTY({
     closeNativeLease,
     id,
     isActivePanel,
-    isVisibleInLayout,
     nativeVteProbeAttempt,
     requestedRendererMode,
-    tauriAvailable,
-  ]);
-
-  useEffect(() => {
-    if (
-      nativeVteOpened ||
-      !shouldOpenNativeVtePanel({
-        isActivePanel,
-        isVisibleInLayout,
-        suspendNativeSurface,
-        connectionSuspended: isStartupSuspended,
-        nativeVteOpenFailure,
-        nativeVteProbe: nativeVteProbeResult,
-        requestedRendererMode,
-        runtimePlatform: resolvedRuntimePlatform,
-        tauriAvailable,
-      })
-    ) {
-      return undefined;
-    }
-
-    if (getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current)) {
-      return undefined;
-    }
-
-    let retryQueued = false;
-    let rafId = null;
-
-    const retryNativeOpenWhenBoundsRecover = () => {
-      if (retryQueued) return;
-
-      const recoveredBounds = getNativeTerminalBounds(
-        containerRef.current || nativePlaceholderRef.current
-      );
-      if (!recoveredBounds) return;
-
-      retryQueued = true;
-      cliLog(`CLIENT:${id}`, 'native VTE bounds recovered — retry open', {
-        bounds: recoveredBounds,
-      });
-      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
-    };
-
-    rafId = requestAnimationFrame(() => {
-      rafId = null;
-      retryNativeOpenWhenBoundsRecover();
-    });
-
-    const intervalId = setInterval(retryNativeOpenWhenBoundsRecover, 48);
-    window.addEventListener('resize', retryNativeOpenWhenBoundsRecover);
-
-    return () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-      clearInterval(intervalId);
-      window.removeEventListener('resize', retryNativeOpenWhenBoundsRecover);
-    };
-  }, [
-    id,
-    isActivePanel,
-    isVisibleInLayout,
-    nativeVteOpenFailure,
-    nativeVteOpened,
-    nativeVteProbeResult,
-    nativeVteRecoveryAttempt,
-    requestedRendererMode,
-    resolvedRuntimePlatform,
-    suspendNativeSurface,
-    isStartupSuspended,
     tauriAvailable,
   ]);
 
@@ -1654,7 +989,6 @@ export default function TerminalTTY({
         isActivePanel,
         isVisibleInLayout,
         suspendNativeSurface,
-        connectionSuspended: isStartupSuspended,
         nativeVteOpenFailure,
         nativeVteProbe: nativeVteProbeResult,
         requestedRendererMode,
@@ -1675,26 +1009,8 @@ export default function TerminalTTY({
       panelId: id,
       bounds,
       cwd: cwd || null,
-      // Interactive shell only — command is pasted after spawn (like xterm onopen).
-      initialCommand: null,
+      initialCommand: initialCommand || null,
       sessionId: id,
-    };
-
-    const injectNativeInitialCommand = async (command) => {
-      const clean = String(command || '')
-        .replace(/\s*#recovery-\d+\s*$/, '')
-        .trim();
-      if (!clean || hasSentInitialCommand.current || nativeInitialCommandInjected.has(id)) {
-        return;
-      }
-      nativeInitialCommandInjected.add(id);
-      hasSentInitialCommand.current = true;
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-        handleNativeLeaseCommandError
-      );
-      await pasteNativeVtePanel({ panelId: id, text: `${clean}\n` });
-      cliLog(`CLIENT:${id}`, 'native VTE injected initial command', { command: clean });
     };
 
     const applyNativeOpenResult = (result) => {
@@ -1709,9 +1025,6 @@ export default function TerminalTTY({
         setConnectionState('connected');
         setIsInitializing(false);
         clearNativeVteProbeRetryTimer();
-        if (initialCommand) {
-          void injectNativeInitialCommand(initialCommand);
-        }
         return true;
       }
 
@@ -1795,7 +1108,6 @@ export default function TerminalTTY({
     resolvedRuntimePlatform,
     showNativeLease,
     suspendNativeSurface,
-    isStartupSuspended,
     tauriAvailable,
   ]);
 
@@ -1820,16 +1132,6 @@ export default function TerminalTTY({
     }
     if (isVisibleInLayout && !suspendNativeSurface) return undefined;
 
-    // If we have active avoid rects (popups over us), prefer carve path (live partial
-    // terminal) instead of full hide/suspend. The sync/show will carve the bounds.
-    // This is key to "continuar con la mejor opcion" (carve) without relying on
-    // improving suspend UX.
-    const currentAvoids = avoidRectsRef.current || [];
-    if (currentAvoids.length > 0) {
-      // carve will be applied via handler or show; don't force hide here
-      return undefined;
-    }
-
     (async () => {
       try {
         await setNativeVtePanelVisibility({
@@ -1853,25 +1155,103 @@ export default function TerminalTTY({
     suspendNativeSurface,
   ]);
 
+  // When the user explicitly changes the renderer away from native VTE on a *visible* panel,
+  // we must proactively close the native lease. The existing hide effects are mostly gated
+  // behind "still vte but temporarily suspended/not visible". Without this, the GTK widget
+  // can stay on top even after requestedRendererMode becomes xterm / xterm-webgl.
+  useEffect(() => {
+    if (requestedRendererMode === 'vte-experimental' || !nativeVteOpened) return undefined;
+
+    (async () => {
+      try {
+        await setNativeVtePanelVisibility({
+          panelId: id,
+          visible: false,
+          reason: 'renderer-changed',
+        });
+        cliLog(`CLIENT:${id}`, 'native VTE lease hidden due to renderer mode change', {
+          requestedRendererMode,
+        });
+      } catch (error) {
+        handleNativeLeaseCommandError(error);
+      }
+    })();
+
+    return undefined;
+  }, [
+    handleNativeLeaseCommandError,
+    id,
+    nativeVteOpened,
+    requestedRendererMode,
+    setNativeVtePanelVisibility,
+  ]);
+
+  // When we leave vte-experimental, also make sure any partial xterm runtime is cleaned
+  // and we (re)boot the web layer for the new requested mode. This complements the
+  // existing initialize effect (which may not always re-fire on prop change alone).
+  //
+  // We cannot call the inner `initializeTerminal` (it is scoped inside the main xterm boot effect).
+  // Instead we dispose here and increment a nonce that is part of the main boot effect's deps.
+  // That forces the main effect body to re-execute and call its local initializeTerminal()
+  // (which contains the full xterm + webgl dynamic import + banner logic).
+  const lastRequestedModeRef = useRef(requestedRendererMode);
+  const lastIdRef = useRef(id);
+  useEffect(() => {
+    if (lastRequestedModeRef.current === requestedRendererMode && lastIdRef.current === id) {
+      return undefined;
+    }
+    lastRequestedModeRef.current = requestedRendererMode;
+    lastIdRef.current = id;
+
+    if (requestedRendererMode === 'vte-experimental') {
+      // If we switched back to vte, dispose any web runtime so it doesn't fight the native.
+      disposeXtermRuntime();
+      return undefined;
+    }
+
+    // For xterm / xterm-webgl: dispose whatever was there and force the main boot effect
+    // to re-run (via nonce) so the web terminal layer actually initializes.
+    disposeXtermRuntime();
+    setXtermBootNonce((n) => n + 1);
+
+    return undefined;
+  }, [requestedRendererMode, disposeXtermRuntime, id]);
+
   useEffect(() => {
     if (requestedRendererMode !== 'vte-experimental') return undefined;
 
-    let cancelScheduledShow = null;
+    const settleTimers = [];
+    let rafId = null;
 
-    const clearScheduledShow = () => {
-      cancelScheduledShow?.();
-      cancelScheduledShow = null;
-    };
-
-    const runShowAndResize = () => {
-      if (!isVisibleInLayout) return;
-      if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
-      void showAndResizeNativeLease();
+    const clearScheduledSync = () => {
+      settleTimers.forEach((timerId) => clearTimeout(timerId));
+      settleTimers.length = 0;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
     };
 
     const scheduleShowAndResize = () => {
-      clearScheduledShow();
-      cancelScheduledShow = scheduleNativeSurfaceActivation(runShowAndResize);
+      clearScheduledSync();
+      const sync = () => {
+        if (!isVisibleInLayout) return;
+        if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
+        showAndResizeNativeLease();
+      };
+
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        sync();
+      });
+
+      [80, 180, 400].forEach((delayMs) => {
+        settleTimers.push(
+          setTimeout(() => {
+            sync();
+          }, delayMs)
+        );
+      });
     };
 
     const handleWorkspaceNativeSurfaceSync = (event) => {
@@ -1883,17 +1263,16 @@ export default function TerminalTTY({
         Array.isArray(detail.hiddenPanelIds) ? detail.hiddenPanelIds.filter(Boolean) : []
       );
 
-      if (detail.avoidRects) {
-        avoidRectsRef.current = detail.avoidRects;
-      }
-
       if (hiddenPanelIds.has(id)) {
-        clearScheduledShow();
+        clearScheduledSync();
         if (hideTimerRef.current) {
           clearTimeout(hideTimerRef.current);
-          hideTimerRef.current = null;
         }
-        void hideNativeLease(detail.reason || 'workspace-hidden');
+        const delay = process.env.NODE_ENV === 'test' ? 0 : 100;
+        hideTimerRef.current = setTimeout(() => {
+          hideTimerRef.current = null;
+          hideNativeLease(detail.reason || 'workspace-hidden');
+        }, delay);
         return;
       }
 
@@ -1902,62 +1281,14 @@ export default function TerminalTTY({
           clearTimeout(hideTimerRef.current);
           hideTimerRef.current = null;
         }
-        if (nativeVteOpened) {
-          runShowAndResize();
-          scheduleShowAndResize();
-        } else {
-          scheduleShowAndResize();
-        }
-
-        // xterm (or fallback) path: on explicit workspace activation for this panel,
-        // re-assert the saved viewport if user had scrolled up. The isVisibleInLayout
-        // effect + resize observer already do preservation; this makes the
-        // "ws now front" signal from TWM explicit so scroll doesn't land on top
-        // after the many fit/reactivate calls during a workspace switch transition.
-        if (termRef.current && !nativeVteOpened) {
-          const saved = lastViewportYRef.current;
-          if (saved != null) {
-            if (!isTerminalViewportNearBottom(termRef.current)) {
-              restoreTerminalViewportScroll(termRef.current, saved);
-            }
-          } else {
-            scrollTerminalToBottom(true);
-          }
-        }
-
-        // Carve support: if avoid rects (popups) overlap this panel, compute reduced
-        // bounds and apply via visibility (visible + carved) so web paints over the
-        // avoided area while VTE stays live outside it. If fully covered, hide.
-        // This (plus registration in TWM) lets you show "cosas sobre la terminal"
-        // (grillas, wizards, dock content, pizarra elements, etc) without full suspend.
-        const rawBounds = getNativeTerminalBounds(
-          containerRef.current || nativePlaceholderRef.current
-        );
-        if (rawBounds) {
-          const avoids = detail.avoidRects || avoidRectsRef.current || [];
-          const carved = computeCarvedBounds(rawBounds, avoids);
-          if (carved) {
-            void setNativeVtePanelVisibility({
-              panelId: id,
-              visible: true,
-              bounds: carved,
-              reason: 'carve-avoid-popup',
-            }).catch(handleNativeLeaseCommandError);
-          } else if (avoids.length > 0) {
-            void hideNativeLease('avoid-fully-covered');
-          }
-        }
+        scheduleShowAndResize();
       }
     };
 
     window.addEventListener('devhub:native-vte-workspace-sync', handleWorkspaceNativeSurfaceSync);
 
     return () => {
-      clearScheduledShow();
-      if (hideTimerRef.current) {
-        clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = null;
-      }
+      clearScheduledSync();
       window.removeEventListener(
         'devhub:native-vte-workspace-sync',
         handleWorkspaceNativeSurfaceSync
@@ -1968,7 +1299,6 @@ export default function TerminalTTY({
     id,
     isVisibleInLayout,
     nativeSurfacePolicy,
-    nativeVteOpened,
     requestedRendererMode,
     showAndResizeNativeLease,
     suspendNativeSurface,
@@ -2008,17 +1338,8 @@ export default function TerminalTTY({
     if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
     const sendNativeResize = () => {
-      const rawBounds = getNativeTerminalBounds(
-        containerRef.current || nativePlaceholderRef.current
-      );
-      if (!rawBounds) return;
-      // Safety inset (see getNativeTerminalBounds comment for rationale).
-      const bounds = {
-        x: rawBounds.x + 1,
-        y: rawBounds.y + 1,
-        width: Math.max(0, rawBounds.width - 2),
-        height: Math.max(0, rawBounds.height - 2),
-      };
+      const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+      if (!bounds) return;
       Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(
         handleNativeLeaseCommandError
       );
@@ -2037,7 +1358,7 @@ export default function TerminalTTY({
     const scheduleNativeResizeAfterLayoutSettles = () => {
       clearNativeResizeSettleTimers();
       scheduleNativeResize();
-      nativeResizeSettleTimersRef.current = NATIVE_SURFACE_SETTLE_DELAYS_MS.map((delayMs) =>
+      nativeResizeSettleTimersRef.current = [80, 180].map((delayMs) =>
         setTimeout(() => {
           sendNativeResize();
         }, delayMs)
@@ -2078,7 +1399,6 @@ export default function TerminalTTY({
   useEffect(() => {
     const handleSessionClosing = (event) => {
       if (event.detail?.panelId !== id) return;
-      nativeInitialCommandInjected.delete(id);
       closeNativeLease('session-close');
     };
 
@@ -2197,14 +1517,6 @@ export default function TerminalTTY({
         cliLog(`CLIENT:${id}`, 'WS onopen — connected');
         setConnectionState('connected');
         sendResize();
-        // Extra settle for xterm-webgl (and plain xterm) right after the transport
-        // is live. History replay from the PTY server may have already been sent;
-        // make sure the renderer (esp. WebGL texture atlas) commits a frame.
-        if (webglAddonRef.current || effectiveRendererModeRef.current?.includes('xterm')) {
-          requestAnimationFrame(() => {
-            if (termRef.current) stabilizeTerminalRenderer(termRef.current);
-          });
-        }
 
         // Show restored toast for sessions from previous run
         if (restored && cwd) {
@@ -2230,15 +1542,8 @@ export default function TerminalTTY({
       socket.onmessage = (event) => {
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
-            if (isCanvasMode) {
-              drawToCanvas(event.data);
-            } else if (termRef.current) {
-              const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
-              termRef.current?.write(event.data);
-              if (shouldStickToBottom) {
-                scrollTerminalToBottom(true);
-              }
-            }
+            termRef.current?.write(event.data);
+            scrollTerminalToBottom();
           }
           return;
         }
@@ -2247,15 +1552,8 @@ export default function TerminalTTY({
           const payload = JSON.parse(event.data);
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
-            if (isCanvasMode) {
-              drawToCanvas(payload.data);
-            } else if (termRef.current) {
-              const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
-              termRef.current?.write(payload.data);
-              if (shouldStickToBottom) {
-                scrollTerminalToBottom(true);
-              }
-            }
+            termRef.current?.write(payload.data);
+            scrollTerminalToBottom();
             return;
           }
 
@@ -2294,11 +1592,8 @@ export default function TerminalTTY({
           }
         } catch {
           if (typeof event.data === 'string' && event.data.length > 0) {
-            const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
             termRef.current?.write(event.data);
-            if (shouldStickToBottom) {
-              scrollTerminalToBottom(true);
-            }
+            scrollTerminalToBottom();
           }
         }
       };
@@ -2390,15 +1685,16 @@ export default function TerminalTTY({
       const clipboardApi = getClipboardApi();
       const text = clipboardApi?.readText ? await clipboardApi.readText() : null;
       cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text?.length ?? 0}`);
+      await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
+        handleNativeLeaseCommandError
+      );
+      const pastePayload = { panelId: id };
       if (text) {
-        await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-          handleNativeLeaseCommandError
-        );
-        const result = await pasteNativeVtePanel({ panelId: id, text });
-        cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
-        return Boolean(result?.supported);
+        pastePayload.text = text;
       }
-      return false;
+      const result = await pasteNativeVtePanel(pastePayload);
+      cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
+      return Boolean(result?.supported);
     }
 
     const clipboardApi = getClipboardApi();
@@ -2427,19 +1723,10 @@ export default function TerminalTTY({
   useEffect(() => {
     let mounted = true;
 
-    if (!shouldBootXterm && !shouldBootCanvas) {
+    if (!shouldBootXterm) {
       disposeXtermRuntime();
-      // stub dispose for canvas
-      if (canvasRef.current) {
-        canvasRef.current.width = 0;
-        canvasRef.current.height = 0;
-      }
       setInitError(null);
-      setIsInitializing(
-        isStartupSuspended
-          ? false
-          : runtimePhase === 'native-probing' || runtimePhase === 'native-opening'
-      );
+      setIsInitializing(runtimePhase === 'native-probing' || runtimePhase === 'native-opening');
 
       return () => {
         mounted = false;
@@ -2451,358 +1738,129 @@ export default function TerminalTTY({
           cancelAnimationFrame(nativeResizeRafRef.current);
           nativeResizeRafRef.current = null;
         }
-        // Phase 4: only hard-dispose when the surface was
-        // explicitly destroyed (X click, kill command) or
-        // when the consumer opts in via disposeOnUnmount.
-        if (destroyedRef.current || disposeOnUnmount) {
-          disposeXtermRuntime();
-        } else {
-          // Soft cleanup: keep WS / XTerm alive across React
-          // re-mounts. The surface descriptor in the provider
-          // persists. The next mount re-attaches to the same
-          // scrollback.
-        }
+        disposeXtermRuntime();
       };
     }
 
     async function initializeTerminal() {
-      // Each new initializeTerminal run starts fresh — clear any
-      // post-mount timeout left over from a previous attempt (the
-      // post-mount check is only allowed to fire once per mount) and
-      // reset the demotion flag so a future switch back to xterm-webgl
-      // gets a clean shot at the addon.
-      if (webglPostMountCheckTimeoutRef.current !== null) {
-        clearTimeout(webglPostMountCheckTimeoutRef.current);
-        webglPostMountCheckTimeoutRef.current = null;
-      }
-      if (webglContentCheckTimeoutRef.current !== null) {
-        clearTimeout(webglContentCheckTimeoutRef.current);
-        webglContentCheckTimeoutRef.current = null;
-      }
-      // NOTE: do NOT reset webglDemotedToDomRef here.
-      // The sticky flag must survive the re-mount triggered by the
-      // post-mount/content check failure. It is only cleared when the
-      // user explicitly changes requestedRendererMode (see the effect
-      // below that watches requestedRendererModeRef).
-      console.log(
-        `[TTY:${id}] [xterm-webgl] initializeTerminal start. ` +
-          `requested=${requestedRendererModeRef.current} ` +
-          `effective=${rendererViewModel.effectiveMode} ` +
-          `webglProbe=${JSON.stringify(webglProbe)}`
-      );
       cliLog(`CLIENT:${id}`, 'initializeTerminal() start', {
         cwd,
         autoFocus,
         requestedRendererMode: requestedRendererModeRef.current,
         effectiveRendererMode: rendererViewModel.effectiveMode,
-        webglProbe,
       });
       try {
-        // IMPORTANT: the sticky demotion flag must be checked against the
-        // ORIGINAL user preference (requestedRendererModeRef), not against
-        // the resolver's effectiveMode. If the capability says WebGL is
-        // available, the resolver will keep returning effectiveMode=xterm-webgl,
-        // which would bypass the sticky flag. By checking the raw request + flag,
-        // we ensure that once the content check fails, we never attempt the
-        // WebGL path again for this panel's lifetime (until the user manually
-        // switches the preference).
-        const isWebglRequested =
-          requestedRendererModeRef.current === 'xterm-webgl' && !webglDemotedToDomRef.current;
-        const [{ Terminal }, { FitAddon }, { SearchAddon }, webglAddonModule] = await Promise.all([
+        const importList = [
           import('xterm'),
           import('xterm-addon-fit'),
           import('xterm-addon-search'),
-          isWebglRequested ? import('xterm-addon-webgl') : Promise.resolve({ WebglAddon: null }),
-        ]);
+        ];
+        // Attempt WebGL addon on explicit user choice (requested) even if the snapshot effective
+        // was still 'xterm' because the async probe had not arrived yet. The probe only informs
+        // the switcher labels and initial resolver; the actual load decides.
+        const wantsWebgl = rendererViewModel.effectiveMode === 'xterm-webgl';
+        if (wantsWebgl) {
+          importList.push(
+            import('xterm-addon-webgl').catch((err) => {
+              console.warn(`[TTY:${id}] Failed to import xterm-addon-webgl:`, err?.message || err);
+              return { failed: true };
+            })
+          );
+        }
+        const importResults = await Promise.all(importList);
+
+        const [{ Terminal }, { FitAddon }, { SearchAddon }] = importResults;
+        const WebglAddonCtor =
+          wantsWebgl && importResults[3] && !importResults[3].failed
+            ? importResults[3].WebglAddon
+            : null;
 
         if (!mounted || !containerRef.current) {
           cliLog(
             `CLIENT:${id}`,
-            'initializeTerminal() aborted — unmounted or no container (after import)',
-            {
-              hadContainerAtStart: !!containerRef.current,
-              isInitializing,
-              connectionState,
-            }
+            'initializeTerminal() aborted — unmounted or no container (after import)'
           );
-          // Do not leave the panel stuck in initializing/connecting state.
-          // A layout race (split, key change on PanelGroup, late size) can make
-          // the container appear after the dynamic import resolves. Reset state
-          // and bump the nonce to schedule a fresh attempt on the next effect run.
+          return;
+        }
+
+        const ready = await waitForVisibleDimensions();
+        cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
+          ready,
+          width: containerRef.current?.getBoundingClientRect().width,
+          height: containerRef.current?.getBoundingClientRect().height,
+        });
+        if (!mounted || !containerRef.current) {
+          cliLog(
+            `CLIENT:${id}`,
+            'initializeTerminal() aborted — unmounted after waitForVisibleDimensions'
+          );
           setIsInitializing(false);
-          if (mounted) {
-            // Small delay lets the resizable-panel / split layout settle before retry.
-            setTimeout(() => {
-              if (mounted) setTerminalRuntimeNonce((n) => n + 1);
-            }, 16);
-          }
           return;
         }
 
         const terminal = new Terminal({
           cursorBlink: true,
-          fontFamily: resolveTerminalFontFamily(),
+          fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
           fontSize: fontSize,
-          letterSpacing: 0,
           lineHeight: 1.4,
           allowTransparency: false,
           theme: getTerminalTheme(),
         });
 
-        xtermInstanceTokenRef.current += 1;
-        consecutiveStaleFitFailuresRef.current = 0;
-
         const fitAddon = new FitAddon();
         const searchAddon = new SearchAddon();
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(searchAddon);
-        // xterm-addon-webgl: opt-in only. When effectiveMode is 'xterm-webgl'
-        // we construct the addon and register it on the Terminal instance.
-        // On failure (WebGL context creation throws inside loadAddon) we
-        // keep the existing DOM renderer mounted and surface a one-line
-        // warning in the panel body — the user's stored preference is NOT
-        // mutated (XW-05). dispose() is wired into the unmount cleanup.
-        if (isWebglRequested && webglAddonModule?.WebglAddon) {
-          const WebglAddonCtor = webglAddonModule.WebglAddon;
-          try {
-            const webglAddon = new WebglAddonCtor();
-            terminal.loadAddon(webglAddon);
-            webglAddonRef.current = webglAddon;
-            // Give the WebGL renderer an early settle kick so the texture atlas and
-            // first paint happen even if no PTY data or user input has arrived yet.
-            // Safe no-op if fit hasn't run; the later sendResize / reactivate will
-            // reinforce it.
+
+        if (wantsWebgl) {
+          if (WebglAddonCtor) {
             try {
-              requestAnimationFrame(() => {
-                if (webglAddonRef.current && termRef.current) {
-                  stabilizeTerminalRenderer(termRef.current);
-                }
-              });
-            } catch {
-              // best-effort
-            }
-            // Real xterm-addon-webgl exposes onContextLoss() for cases where
-            // the WebGL context is lost (or fails to create during the
-            // renderer's async activate). The sync try/catch above cannot
-            // catch the deferred failure, so we wire this handler to flip
-            // the panel into DOM-fallback mode with the warning line.
-            if (typeof webglAddon.onContextLoss === 'function') {
-              webglAddon.onContextLoss(() => {
-                cliLog(`CLIENT:${id}`, 'xterm-addon-webgl context loss', {});
-                setWebglFallback({
-                  active: true,
-                  reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST,
-                  error: null,
-                });
-              });
-            }
-            // Post-mount safety net: xterm-addon-webgl can construct +
-            // loadAddon without throwing, then fail to actually render
-            // (canvas stays 0x0, or sized too small relative to the
-            // container, or transparent) when the WebGL context
-            // supports getContext but lacks texture/shader capabilities
-            // the addon's render path requires (common in restricted
-            // WebKitGTK builds and SwiftShader). After ~2s check the
-            // DOM for a renderable canvas whose size is at least half
-            // the container's size (catches the case where the addon
-            // sized its buffer to 560x504 because xterm hadn't yet
-            // applied the final layout pass). If missing/zero-sized/
-            // too-small, dispose the addon, the terminal, and force a
-            // re-mount with DOM xterm via terminalRuntimeNonce bump.
-            if (typeof window !== 'undefined' && webglPostMountCheckTimeoutRef.current === null) {
-              const timeoutId = window.setTimeout(() => {
-                webglPostMountCheckTimeoutRef.current = null;
-                if (!mounted) return;
-                const container = containerRef.current;
-                if (!container) return;
-                const canvases = container.querySelectorAll('canvas');
-                const sizes = Array.from(canvases).map((c) => `${c.width}x${c.height}`);
-                const containerRect = container.getBoundingClientRect();
-                const containerW = Math.max(1, Math.round(containerRect.width));
-                const containerH = Math.max(1, Math.round(containerRect.height));
-                // Require a canvas at least 50% of the container's
-                // larger dimension — guards against false positives
-                // where the addon sized its buffer to its initial
-                // 80x24 grid dimensions before xterm's first fit pass.
-                const threshold = Math.max(containerW, containerH) * 0.5;
-                const renderable = Array.from(canvases).some(
-                  (c) => c.width >= threshold && c.height >= threshold
-                );
-                console.log(
-                  `[TTY:${id}] [xterm-webgl] post-mount check: ${canvases.length} canvas(es), ` +
-                    `sizes=[${sizes.join(',')}], container=${containerW}x${containerH}, ` +
-                    `threshold=${Math.round(threshold)}, renderable=${renderable}`
-                );
-                cliLog(`CLIENT:${id}`, 'xterm-webgl post-mount check', {
-                  canvasCount: canvases.length,
-                  sizes,
-                  container: { width: containerW, height: containerH },
-                  threshold: Math.round(threshold),
-                  renderable,
-                });
-                if (renderable && termRef.current) {
-                  // WebGL can allocate backbuffers at good size but still need an
-                  // explicit stabilize (clear atlas + refresh) + fit to guarantee the
-                  // first frame / history replay is actually drawn. This is especially
-                  // important for split panels that may have received their initial
-                  // PTY output before the final layout pass + reactivate.
-                  try {
-                    stabilizeTerminalRenderer(termRef.current);
-                    // One more raf fit helps the renderer pick up the final pixel size
-                    // after any late flex/resize-settle from react-resizable-panels.
-                    requestAnimationFrame(() => {
-                      if (mounted && fitRef.current && termRef.current) {
-                        try {
-                          fitRef.current.fit();
-                        } catch {
-                          // best-effort
-                        }
-                      }
-                    });
-                  } catch {
-                    // best-effort
-                  }
-                  // CONTENT CHECK: even if the canvas is large, the GL renderer may
-                  // have silently failed to activate (async activate path in
-                  // xterm-addon-webgl). Read a 4x4 sample from the center of the
-                  // first canvas. If all pixels are transparent (alpha=0), the
-                  // renderer never drew — fall back to DOM.
-                  const contentCheckDelay = 800;
-                  const contentTimeoutId = window.setTimeout(() => {
-                    if (!mounted || !termRef.current) return;
-                    const firstCanvas = canvases[0];
-                    if (!firstCanvas) return;
-                    try {
-                      const ctx = firstCanvas.getContext('2d', { willReadFrequently: true });
-                      if (!ctx) return;
-                      const cx = Math.floor(firstCanvas.width / 2);
-                      const cy = Math.floor(firstCanvas.height / 2);
-                      const sample = ctx.getImageData(cx - 2, cy - 2, 4, 4).data;
-                      // Check if any alpha channel is non-zero
-                      let hasContent = false;
-                      for (let i = 3; i < sample.length; i += 4) {
-                        if (sample[i] > 0) {
-                          hasContent = true;
-                          break;
-                        }
-                      }
-                      console.log(
-                        `[TTY:${id}] [xterm-webgl] content check: hasContent=${hasContent} ` +
-                          `(sample alpha at center: ${sample[3]},${sample[7]},${sample[11]},${sample[15]})`
-                      );
-                      cliLog(`CLIENT:${id}`, 'xterm-webgl content check', {
-                        hasContent,
-                        sampleAlpha: [sample[3], sample[7], sample[11], sample[15]],
-                      });
-                      if (!hasContent) {
-                        console.log(
-                          `[TTY:${id}] [xterm-webgl] FAILED content check: canvas sized but blank. ` +
-                            `Disposing addon AND xterm; forcing re-mount with DOM xterm.`
-                        );
-                        cliLog(
-                          `CLIENT:${id}`,
-                          'xterm-webgl content check FAILED — canvas blank, re-mounting with DOM',
-                          { sizes, container: { width: containerW, height: containerH } }
-                        );
-                        try {
-                          webglAddon.dispose();
-                        } catch {
-                          // best-effort
-                        }
-                        webglAddonRef.current = null;
-                        setWebglFallback({
-                          active: true,
-                          reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED,
-                          error: null,
-                        });
-                        try {
-                          disposeXtermRuntime();
-                        } catch {
-                          // best-effort
-                        }
-                        setTerminalRuntimeNonce((n) => n + 1);
-                        webglDemotedToDomRef.current = true;
-                      }
-                    } catch (err) {
-                      // If we cannot read pixels (e.g., tainted canvas), log and continue.
-                      console.log(
-                        `[TTY:${id}] [xterm-webgl] content check skipped (read error): ${err?.message}`
-                      );
-                    }
-                  }, contentCheckDelay);
-                  // Store so we can clear on unmount if needed
-                  webglContentCheckTimeoutRef.current = contentTimeoutId;
-                }
-                if (!renderable) {
-                  console.log(
-                    `[TTY:${id}] [xterm-webgl] FAILED post-mount: no renderable canvas. ` +
-                      `Disposing addon AND xterm; forcing re-mount with DOM xterm.`
-                  );
-                  cliLog(
-                    `CLIENT:${id}`,
-                    'xterm-webgl post-mount FAILED — no renderable canvas, re-mounting with DOM',
-                    {
-                      sizes,
-                      container: { width: containerW, height: containerH },
-                    }
-                  );
+              const webglAddon = new WebglAddonCtor();
+              webglAddonRef.current = webglAddon;
+
+              if (typeof webglAddon.onContextLoss === 'function') {
+                webglAddon.onContextLoss(() => {
+                  console.warn(`[TTY:${id}] WebGL context lost, falling back to DOM renderer`);
                   try {
                     webglAddon.dispose();
                   } catch {
-                    // best-effort
+                    // Ignore double dispose
                   }
-                  webglAddonRef.current = null;
                   setWebglFallback({
                     active: true,
-                    reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED,
-                    error: null,
+                    reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST,
                   });
-                  // Tear down the entire xterm runtime and bump
-                  // terminalRuntimeNonce so the useEffect re-runs and
-                  // rebuilds the Terminal WITHOUT the WebglAddon. The
-                  // demotion is sticky for this mount — the post-mount
-                  // check is only allowed to fire once.
-                  try {
-                    disposeXtermRuntime();
-                  } catch {
-                    // best-effort
-                  }
-                  setTerminalRuntimeNonce((n) => n + 1);
-                  webglDemotedToDomRef.current = true;
-                }
-              }, 2000);
-              webglPostMountCheckTimeoutRef.current = timeoutId;
+                });
+              }
+
+              terminal.loadAddon(webglAddon);
+              setWebglFallback(null);
+              cliLog(`CLIENT:${id}`, 'WebGL addon loaded and attached');
+            } catch (err) {
+              console.warn(
+                `[TTY:${id}] xterm-webgl addon failed to register (WebGL context issue or WebKitGTK limitation)`,
+                err?.message || err
+              );
+              setWebglFallback({
+                active: true,
+                reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED,
+              });
             }
-            setWebglFallback(null);
-          } catch (err) {
-            cliLog(`CLIENT:${id}`, 'xterm-addon-webgl loadAddon threw', {
-              error: err?.message,
-            });
+          } else {
             setWebglFallback({
               active: true,
-              reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED,
-              error: err,
+              reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
             });
-            // DOM renderer is already mounted via terminal.open; no unmount.
           }
-        } else if (isWebglRequested && !webglAddonModule?.WebglAddon) {
-          // Import resolved but no WebglAddon export (e.g. shimmed module).
-          setWebglFallback({
-            active: true,
-            reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
-          });
         }
+
         terminal.open(containerRef.current);
 
-        const initialRect = externalDimensionSource
-          ? (externalDimensionSource() ?? containerRef.current?.getBoundingClientRect())
-          : containerRef.current?.getBoundingClientRect();
-        const initiallyVisible =
-          initialRect.width > 0 &&
-          initialRect.height > 0 &&
-          (typeof document === 'undefined' || document.visibilityState !== 'hidden');
+        logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
 
-        logViewportDiagnostic(initiallyVisible ? 'terminal-open-visible' : 'terminal-open-pending');
+        if (ready) {
+          fitAddon.fit();
+        }
 
         terminal.onData((data) => {
           if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -2815,19 +1873,10 @@ export default function TerminalTTY({
         });
 
         resizeObserverRef.current = new ResizeObserver(() => {
-          const rect = externalDimensionSource
-            ? (externalDimensionSource() ?? containerRef.current?.getBoundingClientRect())
-            : containerRef.current?.getBoundingClientRect();
+          const rect = containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
-          // Preserve scroll position across resize events (e.g., workspace switches)
-          const savedViewportY = getTerminalViewportScrollOffset(termRef.current);
-          const shouldStickToBottom = isTerminalViewportNearBottom(termRef.current);
-          lastViewportYRef.current = savedViewportY;
           sendResize();
-          if (!shouldStickToBottom && savedViewportY != null) {
-            restoreTerminalViewportScroll(termRef.current, savedViewportY);
-          }
         });
         resizeObserverRef.current.observe(containerRef.current);
 
@@ -2839,51 +1888,7 @@ export default function TerminalTTY({
         setIsInitializing(false);
         connect();
 
-        if (initiallyVisible) {
-          sendResize();
-
-          // Re-fit after fonts load to recalibrate character metrics.
-          // xterm.js CharMeasure may use fallback font metrics if the
-          // preferred font has not finished loading at open time.
-          if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
-            void document.fonts
-              .load(`${fontSize}px "JetBrains Mono"`)
-              .then(() => {
-                if (termRef.current && fitRef.current && mounted) {
-                  cliLog(`CLIENT:${id}`, 'font-load-refit', { fontSize });
-                  sendResize();
-                }
-              })
-              .catch(() => {});
-          }
-
-          return;
-        }
-
-        void waitForVisibleDimensions()
-          .then((ready) => {
-            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
-              ready,
-              width: containerRef.current?.getBoundingClientRect().width,
-              height: containerRef.current?.getBoundingClientRect().height,
-            });
-
-            if (!mounted || !containerRef.current || !termRef.current || !fitRef.current) {
-              return;
-            }
-
-            if (ready) {
-              sendResize();
-              return;
-            }
-
-            logViewportDiagnostic('terminal-open-timeout');
-          })
-          .catch((error) => {
-            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions failed', {
-              error: error?.message,
-            });
-          });
+        sendResize();
       } catch (error) {
         console.error(`[TTY:${id}] initializeTerminal() failed:`, error);
         cliLog(`CLIENT:${id}`, 'initializeTerminal() failed', { error: error?.message });
@@ -2911,127 +1916,30 @@ export default function TerminalTTY({
         cancelAnimationFrame(nativeResizeRafRef.current);
         nativeResizeRafRef.current = null;
       }
-      // Phase 4: silence the socket so it does not flip the
-      // connectionState on a re-mounting component. The actual
-      // close happens only when the surface is being hard-
-      // destroyed (X click, kill, or `disposeOnUnmount` opt-in).
-      // In the singleton path the WS / XTerm / scrollback are
-      // preserved across mode toggles.
+      // Silence the socket before closing so it doesn't set 'disconnected'
+      // on the (possibly re-mounting) component during React Strict Mode double-invoke.
       if (wsRef.current) {
         const stale = wsRef.current;
         stale.onopen = null;
         stale.onmessage = null;
         stale.onerror = null;
         stale.onclose = null;
+        stale.close();
+        wsRef.current = null;
       }
-      if (destroyedRef.current || disposeOnUnmount) {
-        if (wsRef.current) {
-          wsRef.current.close();
-          wsRef.current = null;
-        }
-        disposeXtermRuntime();
-      }
-      // Otherwise: leave wsRef and termRef intact. The hidden
-      // mount in the SharedSurfacesProvider holds the live
-      // instance; the next React re-mount re-attaches.
+      disposeXtermRuntime();
     };
   }, [
     clearTimers,
     connect,
     disposeXtermRuntime,
     logViewportDiagnostic,
+    requestedRendererMode,
     runtimePhase,
     sendResize,
     shouldBootXterm,
-    terminalRuntimeNonce,
     waitForVisibleDimensions,
-    disposeOnUnmount,
-  ]);
-
-  const prevSuspendedRef = useRef(connectionState === 'suspended');
-
-  // Suspended restore ↔ resume (manual "Continuar" or auto relaunch).
-  useEffect(() => {
-    const wasSuspended = prevSuspendedRef.current;
-    const isSuspended = connectionState === 'suspended';
-    prevSuspendedRef.current = isSuspended;
-
-    if (isSuspended) {
-      setIsInitializing(false);
-      setInitError(null);
-      if (nativeVteOpened || nativeLeaseRef.current) {
-        void setNativeVtePanelVisibility({
-          panelId: id,
-          visible: false,
-          reason: 'restore-suspended',
-        }).catch(handleNativeLeaseCommandError);
-      }
-      return undefined;
-    }
-
-    if (wasSuspended) {
-      hasSentInitialCommand.current = false;
-      nativeInitialCommandInjected.delete(id);
-      setTerminalRuntimeNonce((nonce) => nonce + 1);
-      if (nativeVteOpened || nativeLeaseRef.current) {
-        void setNativeVtePanelVisibility({
-          panelId: id,
-          visible: true,
-          reason: 'restore-resumed',
-        })
-          .catch(handleNativeLeaseCommandError)
-          .finally(() => {
-            setNativeVteRecoveryAttempt((attempt) => attempt + 1);
-          });
-      }
-    }
-
-    return undefined;
-  }, [connectionState, handleNativeLeaseCommandError, id, nativeVteOpened]);
-
-  useEffect(() => {
-    const handleTerminalResumeRequested = (event) => {
-      const { panelId } = event.detail || {};
-      if (!panelId || panelId !== id) return;
-      if (connectionState === 'suspended') return;
-
-      hasSentInitialCommand.current = false;
-      nativeInitialCommandInjected.delete(id);
-      setTerminalRuntimeNonce((nonce) => nonce + 1);
-
-      if (shouldUseNativeRenderer && nativeVteOpened && initialCommand) {
-        const clean = String(initialCommand)
-          .replace(/\s*#recovery-\d+\s*$/i, '')
-          .trim();
-        if (!clean) return;
-        void (async () => {
-          await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-            handleNativeLeaseCommandError
-          );
-          await pasteNativeVtePanel({ panelId: id, text: `${clean}\n` });
-          hasSentInitialCommand.current = true;
-          nativeInitialCommandInjected.add(id);
-        })();
-        return;
-      }
-
-      if (shouldBootXterm) {
-        reconnect();
-      }
-    };
-
-    window.addEventListener('devhub:terminal-resume-requested', handleTerminalResumeRequested);
-    return () =>
-      window.removeEventListener('devhub:terminal-resume-requested', handleTerminalResumeRequested);
-  }, [
-    connectionState,
-    handleNativeLeaseCommandError,
-    id,
-    initialCommand,
-    nativeVteOpened,
-    reconnect,
-    shouldBootXterm,
-    shouldUseNativeRenderer,
+    xtermBootNonce,
   ]);
 
   useEffect(() => {
@@ -3057,14 +1965,16 @@ export default function TerminalTTY({
 
   // Handle focus when tab becomes active
   useEffect(() => {
-    if (!autoFocus || !termRef.current || !isActivePanel || !isVisibleInLayout) return undefined;
+    if (!autoFocus || !termRef.current) return undefined;
 
     const focusTimer = setTimeout(() => {
+      termRef.current?.focus?.();
+      scrollTerminalToBottom();
       reactivateTerminalViewport();
     }, 50);
 
     return () => clearTimeout(focusTimer);
-  }, [autoFocus, isActivePanel, isVisibleInLayout, reactivateTerminalViewport]);
+  }, [autoFocus, reactivateTerminalViewport, scrollTerminalToBottom]);
 
   // Auto-reconnect when disconnected or error, with exponential backoff.
   // No hard attempt limit — the EBADF server fix prevents infinite hammering.
@@ -3107,14 +2017,7 @@ export default function TerminalTTY({
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (
-        document.visibilityState === 'visible' &&
-        shouldRunTerminalViewportReactivation({
-          isActivePanel,
-          isVisibleInLayout,
-          documentVisibilityState: document.visibilityState,
-        })
-      ) {
+      if (document.visibilityState === 'visible') {
         logViewportDiagnostic('visibility-visible');
         reactivateTerminalViewport();
         queueNativeVteProbeRetry(0);
@@ -3127,52 +2030,28 @@ export default function TerminalTTY({
       queueNativeVteProbeRetry();
     };
     const handleWindowFocus = () => {
-      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
-        return;
-      }
       logViewportDiagnostic('window-focus');
       reactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
     };
     const handlePageShow = () => {
-      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
-        return;
-      }
       logViewportDiagnostic('pageshow');
       reactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
-    };
-
-    const handleLayoutSettled = () => {
-      // All visible terminals (splits included) benefit from a settle resize
-      // after the resizable panels finish their transitions. Critical for
-      // xterm-webgl first paint / atlas after dynamic split creation.
-      if (isVisibleInLayout) {
-        sendResize();
-      }
     };
 
     window.addEventListener('resize', handleWindowResize);
     window.addEventListener('focus', handleWindowFocus);
     window.addEventListener('pageshow', handlePageShow);
     document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
 
     return () => {
       window.removeEventListener('resize', handleWindowResize);
       window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('pageshow', handlePageShow);
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
     };
-  }, [
-    isActivePanel,
-    isVisibleInLayout,
-    logViewportDiagnostic,
-    queueNativeVteProbeRetry,
-    reactivateTerminalViewport,
-    sendResize,
-  ]);
+  }, [logViewportDiagnostic, queueNativeVteProbeRetry, reactivateTerminalViewport, sendResize]);
 
   // ── Custom context menu for terminal ────────────────────────────────────────
   const handleContextMenu = useCallback((e) => {
@@ -3226,15 +2105,11 @@ export default function TerminalTTY({
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
-      // T-018 fix: the previous check also matched when `isActivePanel` was
-      // true, which intercepted paste events fired from OTHER panels (e.g.
-      // the right-dock ChatPanel textarea) whenever a terminal happened to
-      // be the active workspace panel. Now: the event must actually be
-      // for the terminal — focus or target inside the terminal root.
       const belongsToTerminal = Boolean(
         rootElement &&
         ((activeElement && rootElement.contains(activeElement)) ||
-          (eventTarget && rootElement.contains(eventTarget)))
+          (eventTarget && rootElement.contains(eventTarget)) ||
+          isActivePanel)
       );
       if (!belongsToTerminal) return;
 
@@ -3275,20 +2150,22 @@ export default function TerminalTTY({
         if (norm === 'v') action = 'paste';
       }
 
+      // If we use the native VTE renderer, copy is handled natively by VTE/GTK, not JavaScript.
+      if (action === 'copy' && shouldUseNativeRenderer) {
+        action = null;
+      }
+
       if (!action) return;
 
       // Check if event belongs to terminal
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
-      // T-018 fix: tightened `belongsToTerminal` — removed `isActivePanel`
-      // so that key shortcuts (Ctrl+V/Ctrl+C/Ctrl+Shift+V) fired from
-      // other panels (e.g. the right-dock ChatPanel textarea) are not
-      // hijacked just because some terminal is the active workspace panel.
       const belongsToTerminal = Boolean(
         rootElement &&
         ((activeElement && rootElement.contains(activeElement)) ||
-          (eventTarget && rootElement.contains(eventTarget)))
+          (eventTarget && rootElement.contains(eventTarget)) ||
+          isActivePanel)
       );
 
       cliLog('[keydown]', `action=${action} belongs=${belongsToTerminal}`);
@@ -3318,27 +2195,19 @@ export default function TerminalTTY({
     initError,
     connectionState
   );
-  const showLoadingOverlay =
-    !shouldUseNativeRenderer && (isInitializing || connectionState === 'connecting');
-  const isSuspended = connectionState === 'suspended';
   const statusLabel = isConnected
     ? 'Conectado'
     : connectionState === 'connecting'
       ? 'Conectando...'
       : connectionState === 'terminated'
         ? 'Finalizada'
-        : isSuspended
-          ? 'Suspendida'
-          : 'Desconectado';
+        : 'Desconectado';
 
   return (
     <div
       ref={terminalRootRef}
       className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative"
-      style={{
-        ...getTerminalAppShellStyle(),
-        pointerEvents: suspendNativeSurface ? 'none' : 'auto',
-      }}
+      style={getTerminalAppShellStyle()}
     >
       {!hideTitleBar && (
         <div
@@ -3399,43 +2268,9 @@ export default function TerminalTTY({
             >
               <RotateCcw className="w-3 h-3 text-gray-400 group-hover:text-white" strokeWidth={2} />
             </button>
-            {isSuspended && (
-              <button
-                data-testid="terminal-settings-gear-btn"
-                onClick={() =>
-                  window.dispatchEvent(
-                    new CustomEvent('devhub:terminal-settings-modal-requested', {
-                      detail: { panelId: id },
-                    })
-                  )
-                }
-                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
-                title="Configuración"
-              >
-                <svg
-                  className="w-3.5 h-3.5 text-yellow-500 group-hover:text-yellow-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-              </button>
-            )}
             {onClose && (
               <button
-                data-testid="terminal-close-btn"
-                onClick={(event) => {
-                  // Phase 4: in singleton mode, close also
-                  // hard-destroys the surface (closes WS, XTerm,
-                  // removes from provider registry). The
-                  // consumer's onClose is then called so it can
-                  // remove the shape from its local state.
-                  destroySurface();
-                  if (typeof onClose === 'function') onClose(event);
-                }}
+                onClick={onClose}
                 className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
               >
                 <X
@@ -3467,47 +2302,22 @@ export default function TerminalTTY({
             data-testid="terminal-content-body"
             style={TERMINAL_NATIVE_CONTENT_BODY_STYLE}
           >
-            {shouldUseNativeRenderer ? (
+            {shouldUseNativeRenderer && (
               <div
-                className="absolute inset-0 z-0 pointer-events-none"
+                className="absolute inset-0 z-10 rounded-md border bg-[var(--surface-app)]"
                 data-testid="terminal-native-placeholder"
-                aria-hidden="true"
-                style={{
-                  // Match the exact bg the native VTE uses so when we suspend
-                  // (for modals or transient overlays) the web content that
-                  // covers it doesn't have a jarring color shift or "black hole".
-                  // This is cheap CSS, no capture/IPC cost.
-                  background: '#0d1117',
-                }}
-              />
-            ) : null}
+                style={getTerminalViewportFrameStyle()}
+              >
+                <div className="h-full w-full" aria-hidden="true" />
+              </div>
+            )}
 
             <motion.div
               ref={containerRef}
               className="devhub-xterm-container h-full w-full p-2.5"
-              style={{ position: 'relative' }}
               {...getXtermContainerAnimProps(showTerminalViewport)}
             />
-            {webglFallback?.active ? (
-              <div
-                data-testid={`terminal-renderer-fallback-${id}`}
-                className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[rgba(255,193,7,0.92)] bg-[rgba(7,17,28,0.78)] border-t border-[rgba(255,193,7,0.32)]"
-                role="status"
-                aria-live="polite"
-              >
-                {WEBGL_FALLBACK_WARNING_TEXT}
-              </div>
-            ) : null}
           </div>
-          {isCanvasMode && (
-            <canvas
-              ref={canvasRef}
-              tabIndex={0}
-              onKeyDown={handleCanvasKeyDown}
-              className="absolute inset-0 z-20 bg-[#0f1724] outline-none focus:ring-1 focus:ring-sky-500/40"
-              style={{ imageRendering: 'crisp-edges', cursor: 'text' }}
-            />
-          )}
           {/* Restored session toast */}
           {restoredToast && (
             <div
@@ -3523,8 +2333,24 @@ export default function TerminalTTY({
             </div>
           )}
 
+          {/* xterm-webgl demotion / fallback warning (visible, does not unmount the xterm) */}
+          {webglFallback?.active && (
+            <div
+              className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1 rounded-md border text-[10px] font-mono"
+              style={{
+                background: 'color-mix(in oklch, #fbbf24 12%, var(--surface-elevated))',
+                borderColor: '#fbbf24',
+                color: '#fef08c',
+              }}
+              data-testid={`terminal-renderer-fallback-${id}`}
+              title="El renderer WebGL no estuvo disponible en esta sesión. Se usa el fallback DOM de xterm (puede mostrar rayas en TUIs complejas)."
+            >
+              {WEBGL_FALLBACK_WARNING_TEXT}
+            </div>
+          )}
+
           {/* Loading overlay — only during init or connecting */}
-          {showLoadingOverlay && (
+          {(isInitializing || connectionState === 'connecting') && (
             <div className="absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
               <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
               {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
@@ -3532,7 +2358,7 @@ export default function TerminalTTY({
           )}
 
           {/* Error/Disconnected overlay */}
-          {showTerminalStatusOverlay && connectionState !== 'suspended' && (
+          {showTerminalStatusOverlay && (
             <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
               <WifiOff className="w-8 h-8 text-red-400" />
               <span className="text-red-400 font-semibold">
@@ -3558,50 +2384,6 @@ export default function TerminalTTY({
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Reconectar
-              </button>
-            </div>
-          )}
-
-          {/* Suspended state overlay */}
-          {showTerminalStatusOverlay && connectionState === 'suspended' && (
-            <div
-              className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto"
-              style={{ background: '#0d1117' }}
-              data-testid="terminal-suspended-overlay"
-            >
-              <svg
-                className="w-8 h-8 text-yellow-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <span className="text-yellow-500 font-semibold">Sesión suspendida</span>
-              <span className="text-gray-500 text-center max-w-xs">
-                {extractOpenCodeSessionId(initialCommand)
-                  ? `OpenCode en pausa${cwd ? ` — ${cwd}` : ''}`
-                  : cwd
-                    ? `Shell en pausa — ${cwd}`
-                    : 'Panel en pausa — pulsá Continuar para reconectar'}
-              </span>
-              <button
-                data-testid="terminal-suspended-continue-btn"
-                onClick={() => {
-                  const sessionId = extractOpenCodeSessionId(initialCommand) || id;
-                  window.dispatchEvent(
-                    new CustomEvent('devhub:manual-revive-requested', {
-                      detail: { panelId: id, sessionId },
-                    })
-                  );
-                }}
-                className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Continuar
               </button>
             </div>
           )}
