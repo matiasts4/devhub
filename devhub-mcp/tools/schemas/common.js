@@ -12,6 +12,14 @@ export const UUID_OR_LEGACY_ID_SCHEMA = z
 
 export const PROJECT_ID_SCHEMA = z.string().uuid().describe('UUID del proyecto');
 export const TASK_ID_SCHEMA = UUID_OR_LEGACY_ID_SCHEMA.describe('ID de la tarea (UUID o legacy)');
-export const WORKSPACE_ID_SCHEMA = z.string().min(1).describe('ID del workspace');
+export const WORKSPACE_ID_SCHEMA = z
+  .string()
+  .min(1)
+  .describe('ID del workspace (devhub-cloud-foundation: required for all 30 tools in cloud mode)');
 export const AGENT_ID_SCHEMA = z.string().min(1).describe('ID del agente');
 export const RUN_ID_SCHEMA = z.string().min(1).describe('ID del run');
+
+// devhub-cloud-foundation: workspace role enum for membership tools.
+export const WORKSPACE_ROLE_SCHEMA = z
+  .enum(['owner', 'admin', 'member', 'viewer'])
+  .describe('Workspace role. Default for add_member is "member".');

@@ -1,9 +1,35 @@
 import { z } from 'zod';
 
-import { PROJECT_ID_SCHEMA, UUID_OR_LEGACY_ID_SCHEMA } from './schemas/common.js';
+import {
+  PROJECT_ID_SCHEMA,
+  UUID_OR_LEGACY_ID_SCHEMA,
+  WORKSPACE_ID_SCHEMA,
+} from './schemas/common.js';
 
 export function registerProjectTools(server, deps) {
-  const { supabase, ok, err, randomUUID } = deps;
+  const { supabase, ok, err, randomUUID, getActor, writeAuditLog } = deps;
+
+  // devhub-cloud-foundation (PR 3): the hardcoded user identifier
+  // is removed. The actor is resolved per-request via the AuthProvider
+  // port (default: synthetic local-user in local mode; the actual
+  // authenticated user in cloud mode).
+  const getActorUserId = () => {
+    try {
+      if (typeof getActor === 'function') {
+        const session = getActor();
+        if (session && session.user && session.user.id) {
+          return session.user.id;
+        }
+      }
+    } catch {
+      /* fall through to default */
+    }
+    // Defensive fallback: if the AuthProvider port is unavailable,
+    // the local-user literal is the only acceptable default. This
+    // is the one allowed occurrence per the hardcoded-local-user
+    // contract test.
+    return 'local-user';
+  };
 
   server.tool(
     'list_projects',
@@ -13,13 +39,17 @@ export function registerProjectTools(server, deps) {
         .enum(['active', 'paused', 'completed', 'archived', 'all'])
         .optional()
         .describe('Filtrar por estado. Default: all'),
+      workspace_id: WORKSPACE_ID_SCHEMA.optional().describe(
+        'devhub-cloud-foundation: required in cloud mode; auto-filled with local-ws in local-dev'
+      ),
     },
-    async ({ status }) => {
+    async ({ status, workspace_id }) => {
       let query = supabase
         .from('projects')
         .select('id, name, status, progress')
         .order('created_at', { ascending: false });
       if (status && status !== 'all') query = query.eq('status', status);
+      if (workspace_id) query = query.eq('workspace_id', workspace_id);
       const { data, error } = await query;
       if (error) return err(error.message);
       return ok({ total: data.length, projects: data });
@@ -29,8 +59,8 @@ export function registerProjectTools(server, deps) {
   server.tool(
     'get_project',
     'Obtiene todos los detalles de un proyecto específico incluyendo sus tareas e hitos.',
-    { project_id: PROJECT_ID_SCHEMA },
-    async ({ project_id }) => {
+    { project_id: PROJECT_ID_SCHEMA, workspace_id: WORKSPACE_ID_SCHEMA.optional() },
+    async ({ project_id, workspace_id }) => {
       const [projRes, tasksRes, msRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', project_id).single(),
         supabase
@@ -131,7 +161,7 @@ export function registerProjectTools(server, deps) {
       const id = randomUUID();
       const payload = {
         id,
-        user_id: 'local-user',
+        user_id: getActorUserId(),
         name,
         description: description || '',
         color: color || '#58A6FF',

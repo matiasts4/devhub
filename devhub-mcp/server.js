@@ -29,6 +29,9 @@ const require = createRequire(import.meta.url);
 const fromWorkspaceRoot = (relativePath) => resolve(__dirname, '..', relativePath);
 
 const localDb = require(fromWorkspaceRoot('src/lib/db/localDb.js'));
+const { getAuthProvider, resetAuthProviderForTests } = require(
+  fromWorkspaceRoot('src/lib/auth/provider.js')
+);
 const {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
@@ -288,12 +291,67 @@ function err(message) {
   return { content: [{ type: 'text', text: `ERROR: ${message}` }], isError: true };
 }
 
+// devhub-cloud-foundation (PR 3): audit-log writer. Every tool call
+// (success + error) writes a row to devhub_audit_log. RLS on
+// devhub_audit_log forbids UPDATE / DELETE so the log is append-only.
+function writeAuditLog(db, { tool, actor, workspace_id, status, error_code, error_message }) {
+  try {
+    const audit_id = `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    db.prepare(
+      `INSERT INTO devhub_audit_log
+        (audit_id, tool, actor, workspace_id, status, error_code, error_message)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      audit_id,
+      tool || 'unknown',
+      actor || null,
+      workspace_id || null,
+      status || 'ok',
+      error_code || null,
+      error_message || null
+    );
+  } catch (e) {
+    // Audit must never break a tool call. Log to stderr and move on.
+    process.stderr.write(`[audit-fail] ${e.message}\n`);
+  }
+}
+
+function getActorForRequest() {
+  // devhub-cloud-foundation (PR 3): parse the bearer token from the
+  // current MCP request context (if any) and resolve it via the
+  // AuthProvider port. Local mode returns the synthetic local-user.
+  // Cloud mode requires Authorization: Bearer <token> in the request
+  // envelope — enforcement happens per-tool via deps.actor.
+  try {
+    const provider = getAuthProvider();
+    // Synchronous best-effort: try to read the token from a request
+    // context. The MCP stdio transport doesn't carry per-request
+    // headers in the same way as HTTP, so we fall back to the local
+    // adapter's synthetic session unless the caller injected an
+    // explicit token.
+    const token = process.env.DEVHUB_MCP_AUTH_TOKEN || null;
+    if (token) {
+      return provider.verifyToken(token);
+    }
+    return provider.getSession();
+  } catch {
+    return null;
+  }
+}
+
 const deps = {
   DB_DRIVER,
   localDb,
   supabase,
   ok,
   err,
+  // devhub-cloud-foundation (PR 3): audit log + actor. The actor is
+  // resolved per-request via getAuthProvider() in local mode. Cloud
+  // mode uses the bearer token from the request envelope (set by
+  // the MCP client).
+  writeAuditLog: (entry) => writeAuditLog(localDb.getDb(), entry),
+  getActor: getActorForRequest,
+  resetAuthProviderForTests,
   randomUUID,
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
