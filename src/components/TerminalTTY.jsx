@@ -637,6 +637,56 @@ export default function TerminalTTY({
   const consecutiveStaleFitFailuresRef = useRef(0);
   const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
   const lastViewportYRef = useRef(null);
+
+  // XW-06: when the user requested xterm-webgl but the runtime capability
+  // says WebGL is not available, the resolver demotes to plain 'xterm' and
+  // the WebglAddon path in initializeTerminal never runs. Without this
+  // sync the panel silently boots DOM xterm with no indication that the
+  // preferred renderer was unavailable. Surface a demotion warning that
+  // matches the prose copy produced by getTerminalRendererWebglFallbackCopy.
+  // XW-07: clear the demotion warning when the user moves away from
+  // xterm-webgl so a stale 'WebGL unavailable' banner never lingers.
+  useEffect(() => {
+    const demotedFromXtermWebgl =
+      requestedRendererMode === 'xterm-webgl' && rendererViewModel.effectiveMode !== 'xterm-webgl';
+    if (demotedFromXtermWebgl) {
+      setWebglFallback((current) => {
+        if (current?.active) return current;
+        const probeReason =
+          webglProbe &&
+          typeof webglProbe.reason === 'string' &&
+          Object.values(TERMINAL_WEBGL_FALLBACK_REASONS).includes(webglProbe.reason)
+            ? webglProbe.reason
+            : TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW;
+        return {
+          active: true,
+          reason: probeReason,
+          error: null,
+        };
+      });
+      return undefined;
+    }
+    // User is no longer requesting xterm-webgl — clear any demotion
+    // warning so we don't keep showing 'WebGL unavailable' on a panel
+    // that's now on a different renderer.
+    setWebglFallback((current) => {
+      if (!current?.active) return current;
+      // Only auto-clear the demotion-shaped reasons; leave the addon-side
+      // ones (CONTEXT_LOST / ADDON_REGISTER_FAILED) alone — those indicate
+      // runtime issues that the addon path itself should clear when it
+      // successfully re-registers.
+      const demotionReasons = [
+        TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW,
+        TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
+        TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
+      ];
+      if (demotionReasons.includes(current.reason)) {
+        return null;
+      }
+      return current;
+    });
+    return undefined;
+  }, [requestedRendererMode, rendererViewModel.effectiveMode, webglProbe]);
   // Last seen avoid rects from TWM (for carve when popups are over this terminal).
   // Updated via the workspace-sync event; used in show paths to compute carved
   // bounds so web content can render on top without full suspend.

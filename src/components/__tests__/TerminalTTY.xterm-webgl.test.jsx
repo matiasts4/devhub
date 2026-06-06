@@ -365,14 +365,81 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
       React.createElement(TerminalTTY, {
         id: 'term-xw-not-webgl',
         requestedRendererMode: 'xterm-webgl',
-        autoFocus: false,
-        isActivePanel: true,
-        isVisibleInLayout: true,
         showQuickCopyButton: false,
       })
     );
 
     expect(WebglAddon.instances).toHaveLength(0);
+  });
+
+  // XW-06: when the user requested xterm-webgl but the runtime capability
+  // demotes it (probe says no WebGL), the resolver picks plain 'xterm'
+  // and the WebglAddon path is never even attempted. Without this fix the
+  // user sees a silent DOM xterm with no warning that their preferred
+  // renderer is unavailable — confusing. The warning line must surface
+  // the demotion reason, matching the prose returned by
+  // getTerminalRendererWebglFallbackCopy.
+  test('xterm-webgl demoted by capability: warning line surfaces the demotion reason (XW-06)', async () => {
+    mockProbeReady = false;
+    mockProbeReason = 'webgl-unsupported-in-webview';
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-xw-demote',
+        requestedRendererMode: 'xterm-webgl',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    // No addon constructed (resolver demoted to xterm).
+    expect(WebglAddon.instances).toHaveLength(0);
+
+    // The warning line IS rendered.
+    const warning = view.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-term-xw-demote"]'
+    );
+    expect(warning).not.toBeNull();
+    // The standard copy used by the warning line is the same English
+    // 'Renderer fallback: xterm DOM (WebGL unavailable)' text — the
+    // Spanish detailed copy is in getTerminalRendererWebglFallbackCopy.
+    expect(warning?.textContent).toContain('Renderer fallback: xterm DOM (WebGL unavailable)');
+  });
+
+  // XW-07: once the user moves AWAY from xterm-webgl, the demotion warning
+  // must clear (no stale 'WebGL unavailable' banner on a different mode).
+  test('clearing xterm-webgl demotion warning when the user picks a different renderer (XW-07)', async () => {
+    mockProbeReady = false;
+    mockProbeReason = 'webgl-unsupported-in-webview';
+    const harness = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-xw-demote-clear',
+        requestedRendererMode: 'xterm-webgl',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    let warning = harness.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-term-xw-demote-clear"]'
+    );
+    expect(warning).not.toBeNull();
+
+    // Re-render with a different requested mode (e.g. user picks 'xterm').
+    const otherModeElement = React.createElement(TerminalTTY, {
+      id: 'term-xw-demote-clear',
+      requestedRendererMode: 'xterm',
+      showQuickCopyButton: false,
+    });
+    flushSync(() => {
+      harness.root.render(otherModeElement);
+    });
+    await flushTerminalEffects();
+
+    warning = harness.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-term-xw-demote-clear"]'
+    );
+    expect(warning).toBeNull();
   });
 
   test('on unmount, the registered WebglAddon instance is disposed', async () => {
