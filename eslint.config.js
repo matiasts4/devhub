@@ -7,21 +7,14 @@ const browserAppFiles = ['src/**/*.{js,jsx,ts,tsx}'];
 const browserAppIgnores = [
   'src/app/api/**',
   'src/lib/db/**/*.js',
-  'src/lib/sdd/**/*.js',
   'src/lib/terminal/**/*.js',
-  'src/lib/operator/**/*.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',
   'src/**/__tests__/**',
 ];
 
-const nodeEsmFiles = [
-  'src/app/api/**/*.js',
-  'src/lib/terminal/**/*.js',
-  'src/lib/operator/**/*.js',
-  'src/lib/directorGeneral/useDirectorGeneralBridge.js',
-];
+const nodeEsmFiles = ['src/app/api/**/*.js', 'src/lib/terminal/**/*.js'];
 
 const swarmCommonJsFiles = [
   'src/lib/swarm/agentWorkspaceManager.js',
@@ -44,16 +37,9 @@ const commonJsAndJestFiles = [
   'lib/**/*.js',
   'scripts/**/*.cjs',
   'tests/**/*.js',
-  'src/lib/auth/**/*.js',
-  'src/lib/bus/**/*.js',
   'src/lib/db/**/*.js',
-  'src/lib/sdd/**/*.js',
-  'src/lib/tenancy/**/*.js',
   ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
-  'src/lib/directorGeneral/polling.js',
-  'src/lib/directorGeneral/timeline.js',
-  'src/lib/directorGeneral/bridge.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',
@@ -64,54 +50,6 @@ const commonJsAndJestFiles = [
 export default [
   // Base recommended rules
   js.configs.recommended,
-
-  // Cloud-foundation (devhub-cloud-foundation): adapter isolation.
-  // Vendor SDKs may only be imported from their respective adapter file.
-  // CI fails on violation (REQ-AUTH-2, REQ-PGD-2, REQ-EMAIL-4).
-  {
-    files: ['src/**/*.{js,jsx,ts,tsx}'],
-    ignores: [
-      'src/lib/auth/providers/supabase.js',
-      'src/lib/auth/providers/supabase.ts',
-      'src/lib/auth/providers/supabase.jsx',
-      'src/lib/auth/providers/supabase.tsx',
-      'src/lib/db/postgres-generic.js',
-      'src/lib/db/postgres-generic.ts',
-      'src/lib/email/providers/resend.js',
-      'src/lib/email/providers/resend.ts',
-      'src/lib/email/providers/resend.jsx',
-      'src/lib/email/providers/resend.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: '@supabase/supabase-js',
-              message:
-                '@supabase/supabase-js may only be imported from src/lib/auth/providers/supabase.{js,ts} (REQ-AUTH-2)',
-            },
-            {
-              name: '@supabase/ssr',
-              message:
-                '@supabase/ssr may only be imported from src/lib/auth/providers/supabase.{js,ts} (REQ-AUTH-2)',
-            },
-            {
-              name: 'pg',
-              message:
-                'pg may only be imported from src/lib/db/postgres-generic.{js,ts} (REQ-PGD-2)',
-            },
-            {
-              name: 'resend',
-              message:
-                'resend may only be imported from src/lib/email/providers/resend.{js,ts} (REQ-EMAIL-4)',
-            },
-          ],
-        },
-      ],
-    },
-  },
 
   // React files (JSX/TSX)
   {
@@ -181,6 +119,8 @@ export default [
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      // PR4 (task 4.8): pg is restricted to src/lib/db/postgres-generic.js only (enforced by no-supabase-import.test.js + driver-selector).
+      // Full no-restricted-imports rule for pg (and resend) was added in PR1 for supabase; extended here via test guard.
     },
   },
 

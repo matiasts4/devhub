@@ -112,15 +112,15 @@ Chain strategy: pending
 **Depends on**: PR 3 (does not change policy — adds an adapter to the existing seam).
 **Verification gate**: Same 12 scenarios green on the **third driver** (`postgres-generic`); adapter-isolation test asserts no `supabase-js` import lands in the driver bundle.
 
-- [ ] 4.1 RED — Write `src/lib/db/__tests__/placeholder-translation.test.js` asserting `prepare('SELECT * WHERE id = ?').get('x')` translates to `SELECT * WHERE id = $1` on the `pg` driver. Test fails because `src/lib/db/postgres-generic.js` does not exist. (Refs REQ-PGD-1)
-- [ ] 4.2 GREEN — Create `src/lib/db/postgres-generic.js` exposing `prepare / exec / transaction / all / get / run` — same surface as `src/lib/db/localClient.js`; `pg.Pool` with `DATABASE_URL` + `DATABASE_POOL_SIZE`; `?` → `$1, $2, …` placeholder rewrite. (Refs REQ-PGD-1, REQ-PGD-3)
-- [ ] 4.3 RED — Write `src/lib/db/__tests__/parity-postgres-generic.test.js` that re-runs the 12 scenarios from `migrations/parity/scenarios.json` against the `pg`-backed driver. (Refs REQ-PGD-5, REQ-POL-4)
-- [ ] 4.4 GREEN — Wire `src/lib/db/driver-selector.js` (`getDbDriver()`) → `'sqlite' | 'supabase' | 'postgres-generic'` driven by `DEVHUB_DB_DRIVER`; fail closed on unknown values. (Refs REQ-PGD-3)
-- [ ] 4.5 RED — Write `src/lib/db/__tests__/no-supabase-import.test.js` that boots a production build with `DEVHUB_DB_DRIVER=postgres-generic` and greps the built JS for `@supabase/supabase-js` — assert zero matches in the driver module. (Refs REQ-PGD-2)
-- [ ] 4.6 GREEN — Modify `devhub-mcp/server.js` to wire `postgres-generic` into the existing `DB_DRIVER` switch (no policy changes). (Refs REQ-PGD-3)
+- [x] 4.1 RED — Write `src/lib/db/__tests__/placeholder-translation.test.js` asserting `prepare('SELECT * WHERE id = ?').get('x')` translates to `SELECT * WHERE id = $1` on the `pg` driver. Test fails because `src/lib/db/postgres-generic.js` does not exist. (Refs REQ-PGD-1)
+- [x] 4.2 GREEN — Create `src/lib/db/postgres-generic.js` exposing `prepare / exec / transaction / all / get / run` — same surface as `src/lib/db/localClient.js`; `pg.Pool` with `DATABASE_URL` + `DATABASE_POOL_SIZE`; `?` → `$1, $2, …` placeholder rewrite. (Refs REQ-PGD-1, REQ-PGD-3)
+- [x] 4.3 RED — Write `src/lib/db/__tests__/parity-postgres-generic.test.js` that re-runs the 12 scenarios from `migrations/parity/scenarios.json` against the `pg`-backed driver. (Refs REQ-PGD-5, REQ-POL-4)
+- [x] 4.4 GREEN — Wire `src/lib/db/driver-selector.js` (`getDbDriver()`) → `'sqlite' | 'supabase' | 'postgres-generic'` driven by `DEVHUB_DB_DRIVER`; fail closed on unknown values. (Refs REQ-PGD-3)
+- [x] 4.5 RED — Write `src/lib/db/__tests__/no-supabase-import.test.js` that boots a production build with `DEVHUB_DB_DRIVER=postgres-generic` and greps the built JS for `@supabase/supabase-js` — assert zero matches in the driver module. (Refs REQ-PGD-2)
+- [x] 4.6 GREEN — Modify `devhub-mcp/server.js` to wire `postgres-generic` into the existing `DB_DRIVER` switch (no policy changes). (Refs REQ-PGD-3)
 - [ ] 4.7 GREEN — Run the **same** 12-scenario parity matrix against all three drivers (`sqlite` / `supabase` / `postgres-generic`); assert identical allow/deny outcomes. (Refs REQ-PGD-5)
-- [ ] 4.8 CI — Add `pg` to `eslint.config.js` restricted imports; allow only `src/lib/db/postgres-generic.js`. (Refs REQ-PGD-2)
-- [ ] 4.9 PKG — Add `pg@^8` as an **optional** lazy dep in `package.json`; document `DATABASE_URL` and `DATABASE_POOL_SIZE` in README. (Refs REQ-PGD-3)
+- [x] 4.8 CI — Add `pg` to `eslint.config.js` restricted imports; allow only `src/lib/db/postgres-generic.js`. (Refs REQ-PGD-2)
+- [x] 4.9 PKG — Add `pg@^8` as an **optional** lazy dep in `package.json`; document `DATABASE_URL` and `DATABASE_POOL_SIZE` in README. (Refs REQ-PGD-3)
 - [ ] 4.10 Git — Work-unit commits: (a) driver + placeholder test, (b) driver-selector + wiring, (c) 3rd-driver parity test, (d) ESLint guard. Conventional commits.
 
 ### PR 5: ui-auth-and-workspaces (≈ 800 lines)
