@@ -561,23 +561,31 @@ export default function TerminalTTY({
       stale.onmessage = null;
       stale.onerror = null;
       stale.onclose = null;
-      stale.close();
+      try {
+        stale.close();
+      } catch {
+        // ignore
+      }
       wsRef.current = null;
     }
-
-    termRef.current?.dispose();
-    termRef.current = null;
-    fitRef.current = null;
-    searchRef.current = null;
 
     if (webglAddonRef.current) {
       try {
         webglAddonRef.current.dispose?.();
-      } catch {
-        // ignore dispose errors on hot path
+      } catch (err) {
+        console.warn('Error disposing WebglAddon:', err);
       }
       webglAddonRef.current = null;
     }
+
+    try {
+      termRef.current?.dispose();
+    } catch (err) {
+      console.warn('Error disposing Terminal instance:', err);
+    }
+    termRef.current = null;
+    fitRef.current = null;
+    searchRef.current = null;
   }, []);
 
   const shouldRetryNativeVteProbe =
