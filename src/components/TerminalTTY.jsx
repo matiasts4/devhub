@@ -637,6 +637,10 @@ export default function TerminalTTY({
   const consecutiveStaleFitFailuresRef = useRef(0);
   const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
   const lastViewportYRef = useRef(null);
+  // Holds the setTimeout id for the post-mount WebGL canvas check, so
+  // we can clear it on unmount and avoid a stale callback touching refs
+  // after the panel is gone.
+  const webglPostMountCheckTimeoutRef = useRef(null);
 
   // XW-06: when the user requested xterm-webgl but the runtime capability
   // says WebGL is not available, the resolver demotes to plain 'xterm' and
@@ -815,6 +819,13 @@ export default function TerminalTTY({
     webglAddonRef.current?.dispose?.();
     webglAddonRef.current = null;
 
+    // Clear the post-mount WebGL render check so a stale timeout can't
+    // try to touch disposed refs after this point.
+    if (webglPostMountCheckTimeoutRef.current !== null) {
+      clearTimeout(webglPostMountCheckTimeoutRef.current);
+      webglPostMountCheckTimeoutRef.current = null;
+    }
+
     termRef.current?.dispose();
     termRef.current = null;
     fitRef.current = null;
@@ -831,6 +842,10 @@ export default function TerminalTTY({
     return () => {
       webglAddonRef.current?.dispose?.();
       webglAddonRef.current = null;
+      if (webglPostMountCheckTimeoutRef.current !== null) {
+        clearTimeout(webglPostMountCheckTimeoutRef.current);
+        webglPostMountCheckTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -2489,6 +2504,58 @@ export default function TerminalTTY({
                   error: null,
                 });
               });
+            }
+            // Post-mount safety net: xterm-addon-webgl can construct +
+            // loadAddon without throwing, then fail to actually render
+            // (canvas stays 0x0 or transparent) when the WebGL context
+            // supports getContext but lacks texture/shader capabilities
+            // the addon's render path requires (common in restricted
+            // WebKitGTK builds and SwiftShader). After ~800ms check the
+            // DOM for a renderable canvas; if missing/zero-sized, dispose
+            // the addon and surface WEBGL_RENDER_FAILED so the user sees
+            // a clear warning instead of a blank panel.
+            if (typeof window !== 'undefined' && webglPostMountCheckTimeoutRef.current === null) {
+              const timeoutId = window.setTimeout(() => {
+                webglPostMountCheckTimeoutRef.current = null;
+                if (!mounted) return;
+                const container = containerRef.current;
+                if (!container) return;
+                const canvases = container.querySelectorAll('canvas');
+                const sizes = Array.from(canvases).map((c) => `${c.width}x${c.height}`);
+                const renderable = Array.from(canvases).some((c) => c.width > 0 && c.height > 0);
+                console.log(
+                  `[TTY:${id}] [xterm-webgl] post-mount check: ${canvases.length} canvas(es), ` +
+                    `sizes=[${sizes.join(',')}], renderable=${renderable}`
+                );
+                cliLog(`CLIENT:${id}`, 'xterm-webgl post-mount check', {
+                  canvasCount: canvases.length,
+                  sizes,
+                  renderable,
+                });
+                if (!renderable) {
+                  console.log(
+                    `[TTY:${id}] [xterm-webgl] FAILED post-mount: no renderable canvas. ` +
+                      `Disposing addon and surfacing WEBGL_RENDER_FAILED.`
+                  );
+                  cliLog(
+                    `CLIENT:${id}`,
+                    'xterm-webgl post-mount FAILED — no renderable canvas, falling back to DOM',
+                    {}
+                  );
+                  try {
+                    webglAddon.dispose();
+                  } catch {
+                    // best-effort
+                  }
+                  webglAddonRef.current = null;
+                  setWebglFallback({
+                    active: true,
+                    reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED,
+                    error: null,
+                  });
+                }
+              }, 800);
+              webglPostMountCheckTimeoutRef.current = timeoutId;
             }
             setWebglFallback(null);
           } catch (err) {

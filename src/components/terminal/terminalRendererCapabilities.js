@@ -3,9 +3,12 @@ export const TERMINAL_RENDERER_MODES = ['vte-experimental', 'xterm', 'xterm-webg
 export const TERMINAL_WEBGL_FALLBACK_REASONS = Object.freeze({
   WEBGL_UNSUPPORTED_IN_WEBVIEW: 'webgl-unsupported-in-webview',
   WEBGL_CONTEXT_CREATION_FAILED: 'webgl-context-creation-failed',
+  WEBGL_TEXTURE_ALLOC_FAILED: 'webgl-texture-alloc-failed',
+  WEBGL_SHADER_COMPILE_FAILED: 'webgl-shader-compile-failed',
   WEBGL_CONTEXT_LOST: 'webgl-context-lost',
   WEBGL_ADDON_IMPORT_FAILED: 'webgl-addon-import-failed',
   WEBGL_ADDON_REGISTER_FAILED: 'webgl-addon-register-failed',
+  WEBGL_RENDER_FAILED: 'webgl-render-failed',
 });
 
 export const WEBGL_FALLBACK_WARNING_TEXT = 'Renderer fallback: xterm DOM (WebGL unavailable)';
@@ -208,13 +211,100 @@ export function probeWebglSupport() {
   } catch {
     context = null;
   }
-  if (context) {
-    return Object.freeze({ ready: true, reason: null });
+  if (!context) {
+    return Object.freeze({
+      ready: false,
+      reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
+    });
   }
-  return Object.freeze({
-    ready: false,
-    reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
-  });
+
+  // Stronger probe: xterm-addon-webgl's renderer path needs more than
+  // just a context handle. It allocates a 1x1 RGBA texture in the
+  // constructor, compiles a vertex+fragment shader for the glyph atlas,
+  // and runs a clear+draw on every refresh. WebKitGTK (and other
+  // software-renderer or restricted WebGL builds) often report a valid
+  // context but fail silently on texture/shader operations. Run the
+  // same minimal subset here so the resolver reflects what the addon
+  // will actually be able to do.
+  try {
+    const tex = context.createTexture();
+    if (!tex) {
+      contextlose(context);
+      return Object.freeze({
+        ready: false,
+        reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_TEXTURE_ALLOC_FAILED,
+      });
+    }
+    context.bindTexture(context.TEXTURE_2D, tex);
+    context.texImage2D(
+      context.TEXTURE_2D,
+      0,
+      context.RGBA,
+      1,
+      1,
+      0,
+      context.RGBA,
+      context.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 0, 0])
+    );
+    const allocErr = context.getError();
+    if (allocErr !== context.NO_ERROR) {
+      contextlose(context);
+      return Object.freeze({
+        ready: false,
+        reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_TEXTURE_ALLOC_FAILED,
+        glError: allocErr,
+      });
+    }
+
+    const vs = context.createShader(context.VERTEX_SHADER);
+    const fs = context.createShader(context.FRAGMENT_SHADER);
+    if (!vs || !fs) {
+      contextlose(context);
+      return Object.freeze({
+        ready: false,
+        reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_SHADER_COMPILE_FAILED,
+      });
+    }
+    context.shaderSource(vs, 'attribute vec2 p;void main(){gl_Position=vec4(p,0,1);}');
+    context.shaderSource(fs, 'precision mediump float;void main(){gl_FragColor=vec4(1,0,0,1);}');
+    context.compileShader(vs);
+    context.compileShader(fs);
+    const vsOk = context.getShaderParameter(vs, context.COMPILE_STATUS);
+    const fsOk = context.getShaderParameter(fs, context.COMPILE_STATUS);
+    context.deleteShader(vs);
+    context.deleteShader(fs);
+    if (!vsOk || !fsOk) {
+      contextlose(context);
+      return Object.freeze({
+        ready: false,
+        reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_SHADER_COMPILE_FAILED,
+      });
+    }
+
+    context.deleteTexture(tex);
+    contextlose(context);
+  } catch {
+    contextlose(context);
+    return Object.freeze({
+      ready: false,
+      reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
+    });
+  }
+
+  return Object.freeze({ ready: true, reason: null });
+}
+
+// best-effort: release the WebGL context so we don't leak a backing store.
+// getContext() returns the SAME context for repeated calls on the same
+// canvas, so this is idempotent.
+function contextlose(context) {
+  try {
+    const loseExt = context.getExtension('WEBGL_lose_context');
+    if (loseExt) loseExt.loseContext();
+  } catch {
+    // ignore
+  }
 }
 
 export function getTerminalRendererCapabilities() {
@@ -305,6 +395,12 @@ export function getTerminalRendererWebglFallbackCopy(reason) {
   if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED) {
     return `${label} no pudo crear el contexto WebGL en este WebView. DevHub sigue usando xterm como fallback estable.`;
   }
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_TEXTURE_ALLOC_FAILED) {
+    return `${label} no pudo alocar texturas WebGL en este WebView (suele pasar con SwiftShader o drivers restringidos). DevHub sigue usando xterm como fallback estable.`;
+  }
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_SHADER_COMPILE_FAILED) {
+    return `${label} no pudo compilar sus shaders WebGL en este WebView (driver incompleto). DevHub sigue usando xterm como fallback estable.`;
+  }
   if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST) {
     return `${label} perdió el contexto WebGL en esta sesión. DevHub sigue usando xterm como fallback estable.`;
   }
@@ -313,6 +409,9 @@ export function getTerminalRendererWebglFallbackCopy(reason) {
   }
   if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED) {
     return `${label} no pudo registrar el addon WebGL en este Terminal. DevHub sigue usando xterm como fallback estable.`;
+  }
+  if (reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED) {
+    return `${label} cargó pero el canvas quedó vacío tras montar (WebGL no renderiza en este WebView). DevHub sigue usando xterm como fallback estable.`;
   }
   return `${label} todavía no está disponible. DevHub sigue usando xterm como fallback estable.`;
 }
