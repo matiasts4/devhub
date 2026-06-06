@@ -968,7 +968,23 @@ export default function TerminalTTY({
       try {
         await closeNativeVtePanel({ panelId: id, reason });
       } catch (error) {
-        cliLog(`CLIENT:${id}`, 'native VTE close FAILED', { reason, error: error?.message });
+        // Some close reasons are EXPECTED to fail because the panel is
+        // not actually open under the current renderer state:
+        //   - 'renderer-disabled': user just switched away from VTE
+        //   - 'unmount': panel is being torn down
+        //   - 'session-close': the WS already closed, VTE was never opened
+        // Logging these as FAILED spams the operator console and makes
+        // the switch-renderer flow look broken when it is not. Skip-vs-
+        // fail distinction matters for triage.
+        const expectedCloseReasons = ['renderer-disabled', 'unmount', 'session-close'];
+        if (expectedCloseReasons.includes(reason)) {
+          cliLog(`CLIENT:${id}`, 'native VTE close skipped (expected)', {
+            reason,
+            error: error?.message,
+          });
+        } else {
+          cliLog(`CLIENT:${id}`, 'native VTE close FAILED', { reason, error: error?.message });
+        }
         // A close that happens because the user switched renderers (or
         // because the panel was never actually open under the new
         // renderer) MUST NOT trigger handleNativeLeaseCommandError.
@@ -995,8 +1011,18 @@ export default function TerminalTTY({
           reason,
         });
       } catch (error) {
-        cliLog(`CLIENT:${id}`, 'native VTE hide FAILED', { reason, error: error?.message });
-        handleNativeLeaseCommandError(error);
+        // 'terminal-manager-hidden' fires when the panel is no longer
+        // visible — the visibility call is a no-op in that case. Other
+        // hide reasons are real failures that need recovery.
+        if (reason === 'terminal-manager-hidden') {
+          cliLog(`CLIENT:${id}`, 'native VTE hide skipped (expected)', {
+            reason,
+            error: error?.message,
+          });
+        } else {
+          cliLog(`CLIENT:${id}`, 'native VTE hide FAILED', { reason, error: error?.message });
+          handleNativeLeaseCommandError(error);
+        }
       }
     },
     [id, handleNativeLeaseCommandError]
