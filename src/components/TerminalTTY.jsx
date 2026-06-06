@@ -641,6 +641,13 @@ export default function TerminalTTY({
   // we can clear it on unmount and avoid a stale callback touching refs
   // after the panel is gone.
   const webglPostMountCheckTimeoutRef = useRef(null);
+  // Sticky flag set by the post-mount check when xterm-addon-webgl was
+  // attempted and failed (no renderable canvas). initializeTerminal
+  // reads this to skip the addon import on its next run so the rebuilt
+  // terminal boots as plain xterm DOM and the user gets a working
+  // shell. Reset to false on every remount via the useEffect that
+  // depends on terminalRuntimeNonce.
+  const webglDemotedToDomRef = useRef(false);
 
   // XW-06: when the user requested xterm-webgl but the runtime capability
   // says WebGL is not available, the resolver demotes to plain 'xterm' and
@@ -2431,6 +2438,16 @@ export default function TerminalTTY({
     }
 
     async function initializeTerminal() {
+      // Each new initializeTerminal run starts fresh — clear any
+      // post-mount timeout left over from a previous attempt (the
+      // post-mount check is only allowed to fire once per mount) and
+      // reset the demotion flag so a future switch back to xterm-webgl
+      // gets a clean shot at the addon.
+      if (webglPostMountCheckTimeoutRef.current !== null) {
+        clearTimeout(webglPostMountCheckTimeoutRef.current);
+        webglPostMountCheckTimeoutRef.current = null;
+      }
+      webglDemotedToDomRef.current = false;
       console.log(
         `[TTY:${id}] [xterm-webgl] initializeTerminal start. ` +
           `requested=${requestedRendererModeRef.current} ` +
@@ -2445,7 +2462,8 @@ export default function TerminalTTY({
         webglProbe,
       });
       try {
-        const isWebglRequested = rendererViewModel.effectiveMode === 'xterm-webgl';
+        const isWebglRequested =
+          rendererViewModel.effectiveMode === 'xterm-webgl' && !webglDemotedToDomRef.current;
         const [{ Terminal }, { FitAddon }, { SearchAddon }, webglAddonModule] = await Promise.all([
           import('xterm'),
           import('xterm-addon-fit'),
@@ -2507,13 +2525,17 @@ export default function TerminalTTY({
             }
             // Post-mount safety net: xterm-addon-webgl can construct +
             // loadAddon without throwing, then fail to actually render
-            // (canvas stays 0x0 or transparent) when the WebGL context
+            // (canvas stays 0x0, or sized too small relative to the
+            // container, or transparent) when the WebGL context
             // supports getContext but lacks texture/shader capabilities
             // the addon's render path requires (common in restricted
-            // WebKitGTK builds and SwiftShader). After ~800ms check the
-            // DOM for a renderable canvas; if missing/zero-sized, dispose
-            // the addon and surface WEBGL_RENDER_FAILED so the user sees
-            // a clear warning instead of a blank panel.
+            // WebKitGTK builds and SwiftShader). After ~2s check the
+            // DOM for a renderable canvas whose size is at least half
+            // the container's size (catches the case where the addon
+            // sized its buffer to 560x504 because xterm hadn't yet
+            // applied the final layout pass). If missing/zero-sized/
+            // too-small, dispose the addon, the terminal, and force a
+            // re-mount with DOM xterm via terminalRuntimeNonce bump.
             if (typeof window !== 'undefined' && webglPostMountCheckTimeoutRef.current === null) {
               const timeoutId = window.setTimeout(() => {
                 webglPostMountCheckTimeoutRef.current = null;
@@ -2522,25 +2544,41 @@ export default function TerminalTTY({
                 if (!container) return;
                 const canvases = container.querySelectorAll('canvas');
                 const sizes = Array.from(canvases).map((c) => `${c.width}x${c.height}`);
-                const renderable = Array.from(canvases).some((c) => c.width > 0 && c.height > 0);
+                const containerRect = container.getBoundingClientRect();
+                const containerW = Math.max(1, Math.round(containerRect.width));
+                const containerH = Math.max(1, Math.round(containerRect.height));
+                // Require a canvas at least 50% of the container's
+                // larger dimension — guards against false positives
+                // where the addon sized its buffer to its initial
+                // 80x24 grid dimensions before xterm's first fit pass.
+                const threshold = Math.max(containerW, containerH) * 0.5;
+                const renderable = Array.from(canvases).some(
+                  (c) => c.width >= threshold && c.height >= threshold
+                );
                 console.log(
                   `[TTY:${id}] [xterm-webgl] post-mount check: ${canvases.length} canvas(es), ` +
-                    `sizes=[${sizes.join(',')}], renderable=${renderable}`
+                    `sizes=[${sizes.join(',')}], container=${containerW}x${containerH}, ` +
+                    `threshold=${Math.round(threshold)}, renderable=${renderable}`
                 );
                 cliLog(`CLIENT:${id}`, 'xterm-webgl post-mount check', {
                   canvasCount: canvases.length,
                   sizes,
+                  container: { width: containerW, height: containerH },
+                  threshold: Math.round(threshold),
                   renderable,
                 });
                 if (!renderable) {
                   console.log(
                     `[TTY:${id}] [xterm-webgl] FAILED post-mount: no renderable canvas. ` +
-                      `Disposing addon and surfacing WEBGL_RENDER_FAILED.`
+                      `Disposing addon AND xterm; forcing re-mount with DOM xterm.`
                   );
                   cliLog(
                     `CLIENT:${id}`,
-                    'xterm-webgl post-mount FAILED — no renderable canvas, falling back to DOM',
-                    {}
+                    'xterm-webgl post-mount FAILED — no renderable canvas, re-mounting with DOM',
+                    {
+                      sizes,
+                      container: { width: containerW, height: containerH },
+                    }
                   );
                   try {
                     webglAddon.dispose();
@@ -2553,8 +2591,20 @@ export default function TerminalTTY({
                     reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED,
                     error: null,
                   });
+                  // Tear down the entire xterm runtime and bump
+                  // terminalRuntimeNonce so the useEffect re-runs and
+                  // rebuilds the Terminal WITHOUT the WebglAddon. The
+                  // demotion is sticky for this mount — the post-mount
+                  // check is only allowed to fire once.
+                  try {
+                    disposeXtermRuntime();
+                  } catch {
+                    // best-effort
+                  }
+                  setTerminalRuntimeNonce((n) => n + 1);
+                  webglDemotedToDomRef.current = true;
                 }
-              }, 800);
+              }, 2000);
               webglPostMountCheckTimeoutRef.current = timeoutId;
             }
             setWebglFallback(null);
