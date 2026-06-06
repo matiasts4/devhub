@@ -2498,8 +2498,16 @@ export default function TerminalTTY({
         webglProbe,
       });
       try {
+        // IMPORTANT: the sticky demotion flag must be checked against the
+        // ORIGINAL user preference (requestedRendererModeRef), not against
+        // the resolver's effectiveMode. If the capability says WebGL is
+        // available, the resolver will keep returning effectiveMode=xterm-webgl,
+        // which would bypass the sticky flag. By checking the raw request + flag,
+        // we ensure that once the content check fails, we never attempt the
+        // WebGL path again for this panel's lifetime (until the user manually
+        // switches the preference).
         const isWebglRequested =
-          rendererViewModel.effectiveMode === 'xterm-webgl' && !webglDemotedToDomRef.current;
+          requestedRendererModeRef.current === 'xterm-webgl' && !webglDemotedToDomRef.current;
         const [{ Terminal }, { FitAddon }, { SearchAddon }, webglAddonModule] = await Promise.all([
           import('xterm'),
           import('xterm-addon-fit'),
