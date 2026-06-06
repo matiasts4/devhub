@@ -191,7 +191,12 @@ export function shouldRunTerminalViewportReactivation({
   isVisibleInLayout = true,
   documentVisibilityState,
 } = {}) {
-  return Boolean(isActivePanel && isVisibleInLayout && documentVisibilityState !== 'hidden');
+  // All *visible* web terminals (including secondary splits in the grid) need
+  // viewport stabilization, scroll preservation and occasional re-fit/repaint.
+  // The isActivePanel gate is only relevant for native VTE focus leases and
+  // "bring to front" semantics. For xterm / xterm-webgl we must keep every
+  // live panel's renderer healthy even when it is not the focused one.
+  return Boolean(isVisibleInLayout && documentVisibilityState !== 'hidden');
 }
 
 export function isTerminalRendererReady(term) {
@@ -641,6 +646,10 @@ export default function TerminalTTY({
   // we can clear it on unmount and avoid a stale callback touching refs
   // after the panel is gone.
   const webglPostMountCheckTimeoutRef = useRef(null);
+  // Holds the setTimeout id for the content-validation check that runs
+  // after the size check passes. If the canvas is large but its WebGL
+  // drawing buffer is still transparent, we dispose and fall back.
+  const webglContentCheckTimeoutRef = useRef(null);
   // Sticky flag set by the post-mount check when xterm-addon-webgl was
   // attempted and failed (no renderable canvas). initializeTerminal
   // reads this to skip the addon import on its next run so the rebuilt
@@ -852,6 +861,10 @@ export default function TerminalTTY({
       if (webglPostMountCheckTimeoutRef.current !== null) {
         clearTimeout(webglPostMountCheckTimeoutRef.current);
         webglPostMountCheckTimeoutRef.current = null;
+      }
+      if (webglContentCheckTimeoutRef.current !== null) {
+        clearTimeout(webglContentCheckTimeoutRef.current);
+        webglContentCheckTimeoutRef.current = null;
       }
     };
   }, []);
@@ -2177,6 +2190,14 @@ export default function TerminalTTY({
         cliLog(`CLIENT:${id}`, 'WS onopen — connected');
         setConnectionState('connected');
         sendResize();
+        // Extra settle for xterm-webgl (and plain xterm) right after the transport
+        // is live. History replay from the PTY server may have already been sent;
+        // make sure the renderer (esp. WebGL texture atlas) commits a frame.
+        if (webglAddonRef.current || effectiveRendererModeRef.current?.includes('xterm')) {
+          requestAnimationFrame(() => {
+            if (termRef.current) stabilizeTerminalRenderer(termRef.current);
+          });
+        }
 
         // Show restored toast for sessions from previous run
         if (restored && cwd) {
@@ -2447,6 +2468,10 @@ export default function TerminalTTY({
         clearTimeout(webglPostMountCheckTimeoutRef.current);
         webglPostMountCheckTimeoutRef.current = null;
       }
+      if (webglContentCheckTimeoutRef.current !== null) {
+        clearTimeout(webglContentCheckTimeoutRef.current);
+        webglContentCheckTimeoutRef.current = null;
+      }
       webglDemotedToDomRef.current = false;
       console.log(
         `[TTY:${id}] [xterm-webgl] initializeTerminal start. ` +
@@ -2474,8 +2499,24 @@ export default function TerminalTTY({
         if (!mounted || !containerRef.current) {
           cliLog(
             `CLIENT:${id}`,
-            'initializeTerminal() aborted — unmounted or no container (after import)'
+            'initializeTerminal() aborted — unmounted or no container (after import)',
+            {
+              hadContainerAtStart: !!containerRef.current,
+              isInitializing,
+              connectionState,
+            }
           );
+          // Do not leave the panel stuck in initializing/connecting state.
+          // A layout race (split, key change on PanelGroup, late size) can make
+          // the container appear after the dynamic import resolves. Reset state
+          // and bump the nonce to schedule a fresh attempt on the next effect run.
+          setIsInitializing(false);
+          if (mounted) {
+            // Small delay lets the resizable-panel / split layout settle before retry.
+            setTimeout(() => {
+              if (mounted) setTerminalRuntimeNonce((n) => n + 1);
+            }, 16);
+          }
           return;
         }
 
@@ -2508,6 +2549,19 @@ export default function TerminalTTY({
             const webglAddon = new WebglAddonCtor();
             terminal.loadAddon(webglAddon);
             webglAddonRef.current = webglAddon;
+            // Give the WebGL renderer an early settle kick so the texture atlas and
+            // first paint happen even if no PTY data or user input has arrived yet.
+            // Safe no-op if fit hasn't run; the later sendResize / reactivate will
+            // reinforce it.
+            try {
+              requestAnimationFrame(() => {
+                if (webglAddonRef.current && termRef.current) {
+                  stabilizeTerminalRenderer(termRef.current);
+                }
+              });
+            } catch {
+              // best-effort
+            }
             // Real xterm-addon-webgl exposes onContextLoss() for cases where
             // the WebGL context is lost (or fails to create during the
             // renderer's async activate). The sync try/catch above cannot
@@ -2567,6 +2621,99 @@ export default function TerminalTTY({
                   threshold: Math.round(threshold),
                   renderable,
                 });
+                if (renderable && termRef.current) {
+                  // WebGL can allocate backbuffers at good size but still need an
+                  // explicit stabilize (clear atlas + refresh) + fit to guarantee the
+                  // first frame / history replay is actually drawn. This is especially
+                  // important for split panels that may have received their initial
+                  // PTY output before the final layout pass + reactivate.
+                  try {
+                    stabilizeTerminalRenderer(termRef.current);
+                    // One more raf fit helps the renderer pick up the final pixel size
+                    // after any late flex/resize-settle from react-resizable-panels.
+                    requestAnimationFrame(() => {
+                      if (mounted && fitRef.current && termRef.current) {
+                        try {
+                          fitRef.current.fit();
+                        } catch {
+                          // best-effort
+                        }
+                      }
+                    });
+                  } catch {
+                    // best-effort
+                  }
+                  // CONTENT CHECK: even if the canvas is large, the GL renderer may
+                  // have silently failed to activate (async activate path in
+                  // xterm-addon-webgl). Read a 4x4 sample from the center of the
+                  // first canvas. If all pixels are transparent (alpha=0), the
+                  // renderer never drew — fall back to DOM.
+                  const contentCheckDelay = 800;
+                  const contentTimeoutId = window.setTimeout(() => {
+                    if (!mounted || !termRef.current) return;
+                    const firstCanvas = canvases[0];
+                    if (!firstCanvas) return;
+                    try {
+                      const ctx = firstCanvas.getContext('2d', { willReadFrequently: true });
+                      if (!ctx) return;
+                      const cx = Math.floor(firstCanvas.width / 2);
+                      const cy = Math.floor(firstCanvas.height / 2);
+                      const sample = ctx.getImageData(cx - 2, cy - 2, 4, 4).data;
+                      // Check if any alpha channel is non-zero
+                      let hasContent = false;
+                      for (let i = 3; i < sample.length; i += 4) {
+                        if (sample[i] > 0) {
+                          hasContent = true;
+                          break;
+                        }
+                      }
+                      console.log(
+                        `[TTY:${id}] [xterm-webgl] content check: hasContent=${hasContent} ` +
+                          `(sample alpha at center: ${sample[3]},${sample[7]},${sample[11]},${sample[15]})`
+                      );
+                      cliLog(`CLIENT:${id}`, 'xterm-webgl content check', {
+                        hasContent,
+                        sampleAlpha: [sample[3], sample[7], sample[11], sample[15]],
+                      });
+                      if (!hasContent) {
+                        console.log(
+                          `[TTY:${id}] [xterm-webgl] FAILED content check: canvas sized but blank. ` +
+                            `Disposing addon AND xterm; forcing re-mount with DOM xterm.`
+                        );
+                        cliLog(
+                          `CLIENT:${id}`,
+                          'xterm-webgl content check FAILED — canvas blank, re-mounting with DOM',
+                          { sizes, container: { width: containerW, height: containerH } }
+                        );
+                        try {
+                          webglAddon.dispose();
+                        } catch {
+                          // best-effort
+                        }
+                        webglAddonRef.current = null;
+                        setWebglFallback({
+                          active: true,
+                          reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED,
+                          error: null,
+                        });
+                        try {
+                          disposeXtermRuntime();
+                        } catch {
+                          // best-effort
+                        }
+                        setTerminalRuntimeNonce((n) => n + 1);
+                        webglDemotedToDomRef.current = true;
+                      }
+                    } catch (err) {
+                      // If we cannot read pixels (e.g., tainted canvas), log and continue.
+                      console.log(
+                        `[TTY:${id}] [xterm-webgl] content check skipped (read error): ${err?.message}`
+                      );
+                    }
+                  }, contentCheckDelay);
+                  // Store so we can clear on unmount if needed
+                  webglContentCheckTimeoutRef.current = contentTimeoutId;
+                }
                 if (!renderable) {
                   console.log(
                     `[TTY:${id}] [xterm-webgl] FAILED post-mount: no renderable canvas. ` +
@@ -2978,7 +3125,10 @@ export default function TerminalTTY({
     };
 
     const handleLayoutSettled = () => {
-      if (isActivePanel && isVisibleInLayout) {
+      // All visible terminals (splits included) benefit from a settle resize
+      // after the resizable panels finish their transitions. Critical for
+      // xterm-webgl first paint / atlas after dynamic split creation.
+      if (isVisibleInLayout) {
         sendResize();
       }
     };
@@ -3316,6 +3466,7 @@ export default function TerminalTTY({
             <motion.div
               ref={containerRef}
               className="devhub-xterm-container h-full w-full p-2.5"
+              style={{ position: 'relative' }}
               {...getXtermContainerAnimProps(showTerminalViewport)}
             />
             {webglFallback?.active ? (
