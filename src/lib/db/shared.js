@@ -298,6 +298,23 @@ const tables = {
       return deleteProjectsTxn(projectIds);
     },
   },
+  // devhub-cloud-foundation: tenancy tables. REQ-TEN-1.
+  workspaces: makeTableOps('workspaces', 'id'),
+  workspace_members: {
+    ...makeTableOps('workspace_members', 'workspace_id'),
+    selectByUser(userId) {
+      const db = getDb();
+      return db
+        .prepare(
+          `SELECT workspace_id, user_id, role, joined_at FROM workspace_members WHERE user_id = ?`
+        )
+        .all(userId);
+    },
+  },
+  project_members: makeTableOps('project_members', 'project_id'),
+  workspace_invitations: makeTableOps('workspace_invitations', 'workspace_id'),
+  project_invitations: makeTableOps('project_invitations', 'project_id'),
+  devhub_audit_log: makeTableOps('devhub_audit_log', 'audit_id'),
   tasks: makeTableOps('tasks', 'id'),
   milestones: makeTableOps('milestones', 'id'),
   task_comments: makeTableOps('task_comments', 'id'),
