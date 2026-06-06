@@ -967,7 +967,14 @@ export default function TerminalTTY({
   }, [connectionState]);
 
   useEffect(() => {
+    const previous = requestedRendererModeRef.current;
     requestedRendererModeRef.current = requestedRendererMode;
+    // If the user explicitly changed away from xterm-webgl, clear the
+    // sticky demotion flag so a future switch back to xterm-webgl can
+    // attempt the GL path again.
+    if (previous === 'xterm-webgl' && requestedRendererMode !== 'xterm-webgl') {
+      webglDemotedToDomRef.current = false;
+    }
   }, [requestedRendererMode]);
 
   useEffect(() => {
@@ -2472,7 +2479,11 @@ export default function TerminalTTY({
         clearTimeout(webglContentCheckTimeoutRef.current);
         webglContentCheckTimeoutRef.current = null;
       }
-      webglDemotedToDomRef.current = false;
+      // NOTE: do NOT reset webglDemotedToDomRef here.
+      // The sticky flag must survive the re-mount triggered by the
+      // post-mount/content check failure. It is only cleared when the
+      // user explicitly changes requestedRendererMode (see the effect
+      // below that watches requestedRendererModeRef).
       console.log(
         `[TTY:${id}] [xterm-webgl] initializeTerminal start. ` +
           `requested=${requestedRendererModeRef.current} ` +
