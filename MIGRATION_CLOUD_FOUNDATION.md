@@ -126,3 +126,45 @@ Once you say "dale, aprobá y subí" (or similar), I will:
 This is the controlled "inmigración total" start. Everything else (actual data migration script, removing shims, hardening ESLint, full parity in CI, team features on top) can be the next small slices.
 
 Ready when you are — just reply with the approvals + keys (or "llénalo vos" if you prefer to edit .env.local yourself).
+
+---
+
+## Activation wiring complete (this session — minimal diff per constraints)
+
+The smallest possible diff that makes the new system active when vars are present (local behavior 100% preserved when unset):
+
+**Files changed for runtime:**
+
+- devhub-mcp/server.js: import getAuthProvider, createStubSupabaseClient for harness TDD, comments on legacy Supabase client + transition note, authProvider + async getActor in deps (CRIT-001 style, operation-modes respected).
+- devhub-mcp/tools/workspaces.js: createRequire for tenancy/policy (no stray @supabase), wire 6 tools to resolve actor from deps.getActor() / authProvider and pass it, make helpers async + full supabase branches (query workspace_members + workspaces by actor.user.id, attach role), create/update/remove now use withWorkspaceContext (sqlite path) + ensureActorWithMemberships + assertCan (cloud service path) — policy enforcement started for new tools. Exported helpers for TDD. nowIso used for timestamps.
+- devhub-mcp/tests/integration/workspaces.test.js: added TDD direct tests for the new cloud helper logic (list + create with rich supabase mock + actor) — written first (failing on import/return-[]), then impl made them pass. Harness its (local path + with wiring) also exercised.
+
+**Docs / config (placeholders only):**
+
+- .env.local: added detailed DEVHUB\_\* section + comments explaining Path A, modes, rollback=unset, "fill real keys".
+- .env.example: enhanced cloud section with operation-modes respect, CRIT-001 note, "ask user", rollback.
+- README.md: new "Cloud Foundation Migration (Path A)" subsection with vars, quick switch, tests list, link to migration doc.
+- MIGRATION_CLOUD_FOUNDATION.md: this section added (activation summary + files).
+
+**Tests run (all green, no PG needed):**
+
+- adapter-isolation: PASS (6/6)
+- hardcoded-local-user: PASS (defensive fallbacks still <=2)
+- catalog-no-invite: PASS (no _invite_ tools)
+- workspaces (mcp harness + new TDD cloud helpers): 8/8 PASS (local path + withWorkspaceContext for mutators + supabase actor branches)
+- src/lib/db/workspaces.test: PASS (7/7)
+
+**En gram saves:** decision on minimal plan + this summary (see protocol).
+
+**What still needs user approval (explicit, per this doc):**
+
+1. Fill real Supabase keys in your .env.local (or confirm "llénalo vos" and I leave placeholders).
+2. `git commit` of the activation files only (work-unit conventional, [git:checkpoint], no AI co-author).
+3. `git push` (or you do after review).
+4. Any constraint on scope (e.g. only these files; leave other pending renderer work alone).
+
+Before commit I ran `git status --short` (tree was dirty from other work — we will `git add` only the 6-7 activation files + docs).
+
+Once approved, the foundation is live for you to test with real keys. Rollback is one comment.
+
+**Summary of changes at end of session:** see the list in the final response + engram.

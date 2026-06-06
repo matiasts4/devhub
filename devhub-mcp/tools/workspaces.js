@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createRequire } from 'module';
 
 import {
   AGENT_ID_SCHEMA,
@@ -8,6 +9,12 @@ import {
   WORKSPACE_ID_SCHEMA,
   WORKSPACE_ROLE_SCHEMA,
 } from './schemas/common.js';
+
+const requireCjs = createRequire(import.meta.url);
+const { withWorkspaceContext, findRole } = requireCjs(
+  '../../src/lib/tenancy/with-workspace-context.js'
+);
+const { assertCan } = requireCjs('../../src/lib/tenancy/policy.js');
 
 const AGENT_WORKSPACE_STATUSES = [
   'planned',
@@ -868,13 +875,19 @@ export function registerWorkspaceTools(server, deps) {
   // These are the programmatic direct-management tools; invitations are
   // web-only (CAP-8).
 
+  // devhub-cloud-foundation: the 6 workspace.* tools now receive actor from
+  // AuthProvider (deps.getActor / deps.authProvider). In cloud mode the actor
+  // comes from the real session (or bootstrap); in local it is the synthetic.
+  // workspace-scoped writes start going through withWorkspaceContext (sqlite)
+  // or explicit assertCan (supabase service path, since RLS is bypassed by key).
   server.tool(
     'workspace.list',
     'Lista los workspaces en los que el actor es miembro. Cada entry incluye id, name, slug, role, member_count, project_count.',
     {},
     async () => {
       try {
-        const rows = listWorkspacesForActor(deps);
+        const actor = await (typeof deps.getActor === 'function' ? deps.getActor() : null);
+        const rows = await listWorkspacesForActor(deps, actor);
         return ok({ workspaces: rows });
       } catch (e) {
         return err(e.message);
@@ -891,7 +904,8 @@ export function registerWorkspaceTools(server, deps) {
     },
     async ({ name, slug }) => {
       try {
-        const created = createWorkspaceForActor(deps, { name, slug });
+        const actor = await (typeof deps.getActor === 'function' ? deps.getActor() : null);
+        const created = await createWorkspaceForActor(deps, { name, slug }, actor);
         return ok({ workspace: created });
       } catch (e) {
         return err(e.message);
@@ -907,7 +921,8 @@ export function registerWorkspaceTools(server, deps) {
     },
     async ({ workspace_id }) => {
       try {
-        const members = listWorkspaceMembers(deps, workspace_id);
+        const actor = await (typeof deps.getActor === 'function' ? deps.getActor() : null);
+        const members = await listWorkspaceMembers(deps, workspace_id, actor);
         return ok({ members });
       } catch (e) {
         return err(e.message);
@@ -922,10 +937,30 @@ export function registerWorkspaceTools(server, deps) {
       workspace_id: WORKSPACE_ID_SCHEMA,
       user_id: z.string().min(1).describe('ID del usuario a agregar'),
       role: WORKSPACE_ROLE_SCHEMA.optional().default('member'),
+      project_id: z.string().optional().describe('Optional project scope (PR7)'),
     },
-    async ({ workspace_id, user_id, role }) => {
+    async ({ workspace_id, user_id, role, project_id }) => {
       try {
-        const result = addWorkspaceMember(deps, { workspace_id, user_id, role });
+        const actor = await (typeof deps.getActor === 'function' ? deps.getActor() : null);
+        let result;
+        if (deps.DB_DRIVER !== 'supabase') {
+          // sqlite path: policy enforcement + context via the wrapper (mirrors RLS)
+          result = await withWorkspaceContext(actor, workspace_id, async () =>
+            addWorkspaceMember(deps, { workspace_id, user_id, role, project_id }, actor)
+          );
+        } else {
+          // supabase service path: RLS bypassed, so explicit policy check here
+          const fullActor = await ensureActorWithMemberships(deps, actor);
+          const roleInWs = findRoleInActor(fullActor, workspace_id) || 'viewer';
+          assertCan({ userId: fullActor.user.id, workspaceRole: roleInWs }, 'admin', {
+            workspaceId: workspace_id,
+          });
+          result = await addWorkspaceMember(
+            deps,
+            { workspace_id, user_id, role, project_id },
+            actor
+          );
+        }
         return ok({ member: result });
       } catch (e) {
         return err(e.message);
@@ -943,7 +978,20 @@ export function registerWorkspaceTools(server, deps) {
     },
     async ({ workspace_id, user_id, role }) => {
       try {
-        const result = updateWorkspaceMemberRole(deps, { workspace_id, user_id, role });
+        const actor = await (typeof deps.getActor === 'function' ? deps.getActor() : null);
+        let result;
+        if (deps.DB_DRIVER !== 'supabase') {
+          result = await withWorkspaceContext(actor, workspace_id, async () =>
+            updateWorkspaceMemberRole(deps, { workspace_id, user_id, role }, actor)
+          );
+        } else {
+          const fullActor = await ensureActorWithMemberships(deps, actor);
+          const roleInWs = findRoleInActor(fullActor, workspace_id) || 'viewer';
+          assertCan({ userId: fullActor.user.id, workspaceRole: roleInWs }, 'admin', {
+            workspaceId: workspace_id,
+          });
+          result = await updateWorkspaceMemberRole(deps, { workspace_id, user_id, role }, actor);
+        }
         return ok({ member: result });
       } catch (e) {
         return err(e.message);
@@ -960,7 +1008,20 @@ export function registerWorkspaceTools(server, deps) {
     },
     async ({ workspace_id, user_id }) => {
       try {
-        const result = removeWorkspaceMember(deps, { workspace_id, user_id });
+        const actor = await (typeof deps.getActor === 'function' ? deps.getActor() : null);
+        let result;
+        if (deps.DB_DRIVER !== 'supabase') {
+          result = await withWorkspaceContext(actor, workspace_id, async () =>
+            removeWorkspaceMember(deps, { workspace_id, user_id }, actor)
+          );
+        } else {
+          const fullActor = await ensureActorWithMemberships(deps, actor);
+          const roleInWs = findRoleInActor(fullActor, workspace_id) || 'viewer';
+          assertCan({ userId: fullActor.user.id, workspaceRole: roleInWs }, 'admin', {
+            workspaceId: workspace_id,
+          });
+          result = await removeWorkspaceMember(deps, { workspace_id, user_id }, actor);
+        }
         return ok({ removed: result });
       } catch (e) {
         return err(e.message);
@@ -975,13 +1036,36 @@ export function registerWorkspaceTools(server, deps) {
 // the postgres-generic driver from PR 4, which exposes the same
 // tableOps surface).
 
-function listWorkspacesForActor(deps) {
-  const db = deps.localDb.getDb();
-  // Local-user sees the singleton local-ws; in cloud mode this is
-  // replaced by a query that filters by workspace_members.
+async function listWorkspacesForActor(deps, actor = null) {
+  const userId = actor?.user?.id || deps.localUserId;
   if (deps.DB_DRIVER === 'supabase') {
-    return [];
+    // Cloud path: actor comes from authProvider.getSession() (or bootstrap).
+    // Query membership first (service key bypasses RLS, so we filter here).
+    const { data: mems, error: memErr } = await deps.supabase
+      .from('workspace_members')
+      .select('workspace_id, role')
+      .eq('user_id', userId);
+    if (memErr) throw new Error(memErr.message);
+    if (!mems || mems.length === 0) return [];
+    const wsIds = mems.map((m) => m.workspace_id);
+    const { data: wss, error: wsErr } = await deps.supabase
+      .from('workspaces')
+      .select('id, name, slug, created_at, owner_id')
+      .in('id', wsIds);
+    if (wsErr) throw new Error(wsErr.message);
+    return (wss || []).map((r) => ({
+      workspace_id: r.id,
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      role: mems.find((m) => m.workspace_id === r.id)?.role || 'member',
+      member_count: 1,
+      project_count: 0,
+      created_at: r.created_at,
+    }));
   }
+  // Local (sqlite) — unchanged behavior, synthetic local-ws + local-user.
+  const db = deps.localDb.getDb();
   const rows = db
     .prepare('SELECT id, name, slug, created_at, owner_id FROM workspaces ORDER BY created_at ASC')
     .all();
@@ -997,27 +1081,53 @@ function listWorkspacesForActor(deps) {
   }));
 }
 
-function createWorkspaceForActor(deps, { name, slug }) {
-  const db = deps.localDb.getDb();
+async function createWorkspaceForActor(deps, { name, slug }, actor = null) {
   const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const finalSlug = slug || `ws-${Date.now().toString(36)}`;
-  // Local adapter: inject the synthetic local-user as owner.
-  // Local adapter: inject the synthetic local-user as owner.
-  // The actor is resolved via the AuthProvider port; in local mode
-  // this is the synthetic `local-user` session.
-  const actorUserId = (() => {
+  // Actor from authProvider (cloud) or synthetic (local). The create helper
+  // already had the getActor attempt; now properly awaited for async provider.
+  let actorUserId = (actor && actor.user && actor.user.id) || null;
+  if (!actorUserId && typeof deps.getActor === 'function') {
     try {
-      if (typeof deps.getActor === 'function') {
-        const session = deps.getActor();
-        if (session && session.user && session.user.id) {
-          return session.user.id;
-        }
+      const session = await deps.getActor();
+      if (session && session.user && session.user.id) {
+        actorUserId = session.user.id;
       }
     } catch {
-      /* fall through to default */
+      /* fall through */
     }
-    return 'local-user';
-  })();
+  }
+  actorUserId = actorUserId || deps.localUserId || 'local-user';
+
+  if (deps.DB_DRIVER === 'supabase') {
+    const payload = {
+      id,
+      name,
+      slug: finalSlug,
+      owner_id: actorUserId,
+      created_at: nowIso(),
+    };
+    const { data, error } = await deps.supabase
+      .from('workspaces')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    // also insert membership (owner)
+    await deps.supabase
+      .from('workspace_members')
+      .insert({ workspace_id: id, user_id: actorUserId, role: 'owner', joined_at: nowIso() });
+    return {
+      workspace_id: id,
+      id,
+      name,
+      slug: finalSlug,
+      actor_role: 'owner',
+    };
+  }
+
+  // Local sqlite path (exact previous behavior).
+  const db = deps.localDb.getDb();
   const stmt = db.prepare('INSERT INTO workspaces (id, name, slug, owner_id) VALUES (?, ?, ?, ?)');
   stmt.run(id, name, finalSlug, actorUserId);
   db.prepare(
@@ -1032,7 +1142,16 @@ function createWorkspaceForActor(deps, { name, slug }) {
   };
 }
 
-function listWorkspaceMembers(deps, workspaceId) {
+async function listWorkspaceMembers(deps, workspaceId, actor = null) {
+  if (deps.DB_DRIVER === 'supabase') {
+    const { data, error } = await deps.supabase
+      .from('workspace_members')
+      .select('workspace_id, user_id, role, joined_at')
+      .eq('workspace_id', workspaceId)
+      .order('joined_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
   const db = deps.localDb.getDb();
   const rows = db
     .prepare(
@@ -1042,12 +1161,26 @@ function listWorkspaceMembers(deps, workspaceId) {
   return rows;
 }
 
-function addWorkspaceMember(deps, { workspace_id, user_id, role }) {
-  // Admin/owner only — checked by the policy module on the caller.
-  // Last-owner protection happens at the call site (the policy module
-  // is consulted via withWorkspaceContext; the harness also re-checks).
-  const db = deps.localDb.getDb();
+async function addWorkspaceMember(deps, { workspace_id, user_id, role }, actor = null) {
+  // Admin/owner only — now enforced by caller via withWorkspaceContext (local)
+  // or explicit assertCan (cloud). Last-owner protection stays in the helper.
   const finalRole = role || 'member';
+  if (deps.DB_DRIVER === 'supabase') {
+    const payload = {
+      workspace_id,
+      user_id,
+      role: finalRole,
+      joined_at: nowIso(),
+    };
+    const { data, error } = await deps.supabase
+      .from('workspace_members')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+  const db = deps.localDb.getDb();
   db.prepare(
     'INSERT OR REPLACE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)'
   ).run(workspace_id, user_id, finalRole);
@@ -1055,12 +1188,40 @@ function addWorkspaceMember(deps, { workspace_id, user_id, role }) {
     workspace_id,
     user_id,
     role: finalRole,
-    joined_at: new Date().toISOString(),
+    joined_at: nowIso(),
   };
 }
 
-function updateWorkspaceMemberRole(deps, { workspace_id, user_id, role }) {
-  // Last-owner protection: cannot demote the last owner.
+async function updateWorkspaceMemberRole(deps, { workspace_id, user_id, role }, actor = null) {
+  // Last-owner protection (same as before). Cloud path uses supabase update.
+  if (deps.DB_DRIVER === 'supabase') {
+    const currentQ = await deps.supabase
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', workspace_id)
+      .eq('user_id', user_id)
+      .single();
+    const current = currentQ.data;
+    if (current && current.role === 'owner' && role !== 'owner') {
+      const ownersQ = await deps.supabase
+        .from('workspace_members')
+        .select('user_id', { count: 'exact' })
+        .eq('workspace_id', workspace_id)
+        .eq('role', 'owner');
+      if ((ownersQ.count || 0) <= 1) {
+        throw new Error('workspace must retain at least one owner');
+      }
+    }
+    const { data, error } = await deps.supabase
+      .from('workspace_members')
+      .update({ role })
+      .eq('workspace_id', workspace_id)
+      .eq('user_id', user_id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
   const db = deps.localDb.getDb();
   const current = db
     .prepare('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?')
@@ -1087,8 +1248,34 @@ function updateWorkspaceMemberRole(deps, { workspace_id, user_id, role }) {
   };
 }
 
-function removeWorkspaceMember(deps, { workspace_id, user_id }) {
-  // Last-owner protection: cannot remove the last owner.
+async function removeWorkspaceMember(deps, { workspace_id, user_id }, actor = null) {
+  // Last-owner protection. Cloud: supabase delete after check.
+  if (deps.DB_DRIVER === 'supabase') {
+    const targetQ = await deps.supabase
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', workspace_id)
+      .eq('user_id', user_id)
+      .single();
+    const target = targetQ.data;
+    if (target && target.role === 'owner') {
+      const ownersQ = await deps.supabase
+        .from('workspace_members')
+        .select('user_id', { count: 'exact' })
+        .eq('workspace_id', workspace_id)
+        .eq('role', 'owner');
+      if ((ownersQ.count || 0) <= 1) {
+        throw new Error('workspace must retain at least one owner');
+      }
+    }
+    const { error } = await deps.supabase
+      .from('workspace_members')
+      .delete()
+      .eq('workspace_id', workspace_id)
+      .eq('user_id', user_id);
+    if (error) throw new Error(error.message);
+    return true;
+  }
   const db = deps.localDb.getDb();
   const target = db
     .prepare('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?')
@@ -1109,3 +1296,42 @@ function removeWorkspaceMember(deps, { workspace_id, user_id }) {
   );
   return true;
 }
+
+// ─── Cloud activation helpers (minimal, start of tenancy context) ────────
+// ensureActorWithMemberships: for supabase service-key path we must
+// populate workspaceMemberships from the table so that findRole / assertCan
+// and withWorkspaceContext (when used) see the real roles. Local already
+// carries them from the synthetic session.
+async function ensureActorWithMemberships(deps, baseActor) {
+  if (!baseActor || !baseActor.user || !baseActor.user.id)
+    return baseActor || { user: { id: deps.localUserId }, workspaceMemberships: [] };
+  if (deps.DB_DRIVER !== 'supabase') return baseActor; // local provider already has them
+  if (baseActor.workspaceMemberships && baseActor.workspaceMemberships.length > 0) return baseActor;
+  const { data: mems } = await deps.supabase
+    .from('workspace_members')
+    .select('workspace_id, role')
+    .eq('user_id', baseActor.user.id);
+  return {
+    ...baseActor,
+    workspaceMemberships: (mems || []).map((m) => ({ workspaceId: m.workspace_id, role: m.role })),
+  };
+}
+
+function findRoleInActor(actor, workspaceId) {
+  if (!actor || !actor.workspaceMemberships) return null;
+  const m = actor.workspaceMemberships.find((mm) => mm.workspaceId === workspaceId);
+  return m ? m.role : null;
+}
+
+// Re-export the helpers for TDD (direct mock tests) and any future internal use.
+// Not part of the public MCP surface.
+export {
+  listWorkspacesForActor,
+  createWorkspaceForActor,
+  listWorkspaceMembers,
+  addWorkspaceMember,
+  updateWorkspaceMemberRole,
+  removeWorkspaceMember,
+  ensureActorWithMemberships,
+  findRoleInActor,
+};

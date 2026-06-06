@@ -70,6 +70,30 @@ See `MIGRATION_CLOUD_FOUNDATION.md` for the full step-by-step, what the new syst
 
 The 6 workspace tools are additive only. Existing 24+ tools continue to work (with workspace scoping added gradually under the new context).
 
+## Cloud Foundation Migration (Path A — devhub-cloud-foundation) — NEW section
+
+This is the safe minimal diff that activates the multi-tenant system when the env vars are present (per archived SDD strict constraints).
+
+**Activated when set (local unchanged if unset or =local):**
+
+- Hexagonal AuthProvider port loaded via `getAuthProvider()` (src/lib/auth/provider.js).
+- Wired into devhub-mcp/server.js as `deps.authProvider` + async `getActor` (exact post-CRIT-001 pattern).
+- 6 `workspace.*` MCP tools receive proper actor + start of `withWorkspaceContext` (local) / `assertCan` (cloud) for tenancy policy.
+- DB Supabase: legacy direct client kept with comments + "transition note"; driver-selector marker used where possible.
+- Backward compat: no vars → synthetic local-user + local-ws + zero auth wall + all prior behavior.
+
+**Vars (placeholders only in repo; real keys in your .env.local):**
+
+- `DEVHUB_AUTH_PROVIDER=supabase`
+- `DEVHUB_DB_DRIVER=supabase` (respect operation-modes: cloud uses supabase+supabase or postgres-generic)
+- Fill Supabase URL + keys (service role for MCP). Ask the user to provide real values.
+
+**Rollback:** just unset the three vars (or set local/sqlite). Instant.
+
+**Tests (must pass after):** adapter-isolation, hardcoded-local-user, catalog-no-invite, workspaces (mcp harness), src workspaces/parity (sqlite path, no PG).
+
+Full instructions, what changes, "fill your Supabase keys", and approval items: `MIGRATION_CLOUD_FOUNDATION.md`.
+
 ## Contribuir (updated)
 
 Please review `docs/` and the archived `openspec/changes/archive/2026-06-06-devhub-cloud-foundation/` for the complete SDD trace (proposal, 13 specs, design, 89 TDD tasks, apply evidence, verify gates, archive report). All new UI uses the existing morphology system (no new tokens or base components). Strict TDD + adapter isolation enforced.
