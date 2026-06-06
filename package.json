@@ -34,6 +34,7 @@
     "@radix-ui/react-toggle": "^1.1.6",
     "@radix-ui/react-toggle-group": "^1.1.7",
     "@radix-ui/react-tooltip": "^1.2.4",
+    "@supabase/supabase-js": "^2.107.0",
     "@swc/helpers": "^0.5.23",
     "@tailwindcss/postcss": "^4.2.2",
     "@tauri-apps/api": "^2.10.1",
