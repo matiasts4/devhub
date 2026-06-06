@@ -34,3 +34,42 @@ Por favor asegúrate de revisar \`docs/\` (fases pasadas) para entender la evolu
 - `DATABASE_URL=postgres://...` (required for postgres-generic)
 - `DATABASE_POOL_SIZE=10` (optional, default 10 for pg driver)
 - `DATABASE_SSL=true` (optional for self-hosted pg)
+
+### Multi-tenant Cloud Foundation (devhub-cloud-foundation) — NEW
+
+The new system (Path A) turns DevHub into a multi-tenant platform with real auth, workspaces, and membership.
+
+**Local mode (default, zero change to your current flow):**
+
+- No env vars or `DEVHUB_OPERATION_MODE=local-dev`
+- `DEVHUB_AUTH_PROVIDER=local`
+- `DEVHUB_DB_DRIVER=sqlite`
+- Byte-identical: single 'local-ws', synthetic 'local-user', all old tools work, no auth wall.
+
+**Cloud / multi-tenant mode (activate the foundation you just built):**
+
+- `DEVHUB_OPERATION_MODE=cloud`
+- `DEVHUB_AUTH_PROVIDER=supabase`
+- `DEVHUB_DB_DRIVER=supabase` (or `postgres-generic` later)
+- Fill Supabase keys in `.env.local` (same project you already use for the MCP).
+- Then: 6 new MCP tools (`workspace.list`, `workspace.create`, `workspace.members`, `workspace.add_member`, `workspace.update_member_role`, `workspace.remove_member`), web auth pages, WorkspaceSwitcher, invitation flow (web-only — no invite tools on MCP surface), tenancy policy + workspace context on all operations.
+
+**Quick switch**
+
+1. `cp .env.example .env.local`
+2. Fill your real Supabase URL + keys (service role preferred for MCP).
+3. Restart the MCP server and `npm run dev`.
+4. Use the web `/login` `/signup` flow or the new workspace tools via MCP.
+
+**Rollback** (instant, no data loss in local):
+
+- Comment out or delete the three `DEVHUB_*` lines above.
+- Everything reverts to legacy single-user behavior.
+
+See `MIGRATION_CLOUD_FOUNDATION.md` for the full step-by-step, what the new system gives you, limitations, and how to seed your first workspace from your current data.
+
+The 6 workspace tools are additive only. Existing 24+ tools continue to work (with workspace scoping added gradually under the new context).
+
+## Contribuir (updated)
+
+Please review `docs/` and the archived `openspec/changes/archive/2026-06-06-devhub-cloud-foundation/` for the complete SDD trace (proposal, 13 specs, design, 89 TDD tasks, apply evidence, verify gates, archive report). All new UI uses the existing morphology system (no new tokens or base components). Strict TDD + adapter isolation enforced.

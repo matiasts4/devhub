@@ -29,6 +29,8 @@ const fromWorkspaceRoot = (relativePath) => resolve(__dirname, '..', relativePat
 
 const localDb = require(fromWorkspaceRoot('src/lib/db/localDb.js'));
 const { getDbDriver } = require(fromWorkspaceRoot('src/lib/db/driver-selector.js'));
+const localAuth = require(fromWorkspaceRoot('src/lib/auth/providers/local.js'));
+const { getAuthProvider } = require(fromWorkspaceRoot('src/lib/auth/provider.js'));
 const {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
@@ -76,6 +78,13 @@ if (activeDbDriver.kind === 'postgres-generic') {
   process.stderr.write('❌ ERROR: DEVHUB_MCP_DB_DRIVER=postgres-generic requires DATABASE_URL\n');
   process.exit(1);
 }
+
+// devhub-cloud-foundation migration (user-approved full activation):
+// Load the hexagonal AuthProvider port. When DEVHUB_AUTH_PROVIDER=supabase
+// (or DEVHUB_OPERATION_MODE=cloud) this returns the real supabase adapter.
+// Local mode falls back to synthetic local-user exactly as before.
+const authProvider = getAuthProvider();
+process.stderr.write(`ℹ️  DevHub MCP auth provider: ${authProvider.kind || 'local'}\n`);
 
 const UUID_REQUIRED_TABLES = new Set(['projects', 'tasks', 'milestones']);
 const AUTO_ID_TABLES = new Set([
@@ -293,7 +302,9 @@ if (DB_DRIVER === 'supabase') {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  process.stderr.write('ℹ️  DevHub MCP usando driver Supabase (DEVHUB_MCP_DB_DRIVER=supabase)\n');
+  process.stderr.write(
+    'ℹ️  DevHub MCP usando driver Supabase (DEVHUB_MCP_DB_DRIVER=supabase) — cloud-foundation tenancy active when DEVHUB_AUTH_PROVIDER=supabase\n'
+  );
 } else {
   supabase = createSqliteClient(localDb);
   process.stderr.write('ℹ️  DevHub MCP usando driver SQLite local (local-first)\n');
@@ -314,6 +325,24 @@ const deps = {
   ok,
   err,
   randomUUID,
+  localUserId: localAuth.LOCAL_USER_ID,
+  // Cloud foundation: prefer real actor from AuthProvider when in cloud mode.
+  // Falls back to synthetic local-user for local-dev / no-auth regression budget.
+  getActor: async () => {
+    try {
+      const session = await authProvider.getSession();
+      if (session && session.user && session.user.id) {
+        return {
+          user: session.user,
+          workspaceMemberships: session.workspaceMemberships || [],
+        };
+      }
+    } catch {
+      // ignore and fall through to local synthetic
+    }
+    return { user: { id: localAuth.LOCAL_USER_ID } };
+  },
+  authProvider, // the port instance (local | supabase). Tools can use for verifyToken etc.
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
   presentExecutionQueue,
