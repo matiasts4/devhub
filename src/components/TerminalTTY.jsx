@@ -650,14 +650,25 @@ export default function TerminalTTY({
     const demotedFromXtermWebgl =
       requestedRendererMode === 'xterm-webgl' && rendererViewModel.effectiveMode !== 'xterm-webgl';
     if (demotedFromXtermWebgl) {
+      const probeReason =
+        webglProbe &&
+        typeof webglProbe.reason === 'string' &&
+        Object.values(TERMINAL_WEBGL_FALLBACK_REASONS).includes(webglProbe.reason)
+          ? webglProbe.reason
+          : TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW;
+      console.log(
+        `[TTY:${id}] [xterm-webgl] demotion: requested=xterm-webgl but resolver picked ` +
+          `${rendererViewModel.effectiveMode}. Setting fallback reason=${probeReason}. ` +
+          `Probe: ${JSON.stringify(webglProbe)}`
+      );
+      cliLog(`CLIENT:${id}`, 'xterm-webgl demotion — setting fallback', {
+        requested: 'xterm-webgl',
+        effective: rendererViewModel.effectiveMode,
+        reason: probeReason,
+        probe: webglProbe,
+      });
       setWebglFallback((current) => {
         if (current?.active) return current;
-        const probeReason =
-          webglProbe &&
-          typeof webglProbe.reason === 'string' &&
-          Object.values(TERMINAL_WEBGL_FALLBACK_REASONS).includes(webglProbe.reason)
-            ? webglProbe.reason
-            : TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW;
         return {
           active: true,
           reason: probeReason,
@@ -681,12 +692,16 @@ export default function TerminalTTY({
         TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
       ];
       if (demotionReasons.includes(current.reason)) {
+        console.log(
+          `[TTY:${id}] [xterm-webgl] clearing demotion fallback ` +
+            `(user moved away from xterm-webgl, previous reason=${current.reason})`
+        );
         return null;
       }
       return current;
     });
     return undefined;
-  }, [requestedRendererMode, rendererViewModel.effectiveMode, webglProbe]);
+  }, [requestedRendererMode, rendererViewModel.effectiveMode, webglProbe, id]);
   // Last seen avoid rects from TWM (for carve when popups are over this terminal).
   // Updated via the workspace-sync event; used in show paths to compute carved
   // bounds so web content can render on top without full suspend.
@@ -2375,11 +2390,18 @@ export default function TerminalTTY({
     }
 
     async function initializeTerminal() {
+      console.log(
+        `[TTY:${id}] [xterm-webgl] initializeTerminal start. ` +
+          `requested=${requestedRendererModeRef.current} ` +
+          `effective=${rendererViewModel.effectiveMode} ` +
+          `webglProbe=${JSON.stringify(webglProbe)}`
+      );
       cliLog(`CLIENT:${id}`, 'initializeTerminal() start', {
         cwd,
         autoFocus,
         requestedRendererMode: requestedRendererModeRef.current,
         effectiveRendererMode: rendererViewModel.effectiveMode,
+        webglProbe,
       });
       try {
         const isWebglRequested = rendererViewModel.effectiveMode === 'xterm-webgl';
