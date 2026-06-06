@@ -2,7 +2,19 @@
 
 Servidor MCP local para el control plane de DevHub.
 
-**Baseline soportado:** 24 tools MCP. Telegram queda fuera del contrato público MCP; cualquier runtime o storage interno de Telegram sigue fuera de esta superficie.
+**Baseline soportado:** 24 tools MCP (legacy) → 32 tools con el módulo cloud-foundation. Telegram queda fuera del contrato público MCP; cualquier runtime o storage interno de Telegram sigue fuera de esta superficie.
+
+## Operation modes (devhub-cloud-foundation)
+
+El servidor respeta `DEVHUB_AUTH_PROVIDER` y `DEVHUB_DB_DRIVER`:
+
+- `DEVHUB_AUTH_PROVIDER=local` (default) → `local` adapter (synthetic `local-user`).
+- `DEVHUB_AUTH_PROVIDER=supabase` → magic-link vía `@supabase/supabase-js`. Requiere `SUPABASE_URL` y `SUPABASE_ANON_KEY`.
+- `DEVHUB_AUTH_PROVIDER=fake` → adapter de tests. Aborta en `NODE_ENV=production`.
+
+Valores desconocidos (`auth0`, `null`, typos) lanzan `ConfigError` y el boot falla cerrado.
+
+El provider vive en `src/lib/auth/` (CommonJS) y se invoca con `getAuthProvider()` desde `devhub-mcp/server.js`. Los detalles contractuales están en `openspec/changes/devhub-cloud-foundation/specs/auth-provider-abstraction/spec.md`.
 
 ---
 
