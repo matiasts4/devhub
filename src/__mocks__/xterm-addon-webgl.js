@@ -15,8 +15,30 @@
 class WebglAddon {
   constructor() {
     WebglAddon.instances.push(this);
+    this._contextLossHandlers = new Set();
   }
-  dispose() {}
+  // Real xterm-addon-webgl exposes onContextLoss(event) → IEvent<WebGLContextLostEvent>.
+  // The terminal registers a handler that flips into DOM-fallback mode if the
+  // WebGL context is lost (or fails to create). Tests use __triggerContextLoss
+  // to fire any registered handler.
+  onContextLoss(handler) {
+    this._contextLossHandlers.add(handler);
+    return {
+      dispose: () => this._contextLossHandlers.delete(handler),
+    };
+  }
+  __triggerContextLoss() {
+    for (const handler of this._contextLossHandlers) {
+      try {
+        handler();
+      } catch {
+        // Swallow handler errors so test assertions can detect them via spies.
+      }
+    }
+  }
+  dispose() {
+    this._contextLossHandlers.clear();
+  }
 }
 WebglAddon.instances = [];
 WebglAddon.shouldThrow = false;

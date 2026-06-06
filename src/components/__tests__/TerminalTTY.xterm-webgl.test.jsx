@@ -46,6 +46,7 @@ const mockNativeVteBridge = {
 };
 
 const { WebglAddon } = require('xterm-addon-webgl');
+const { Terminal: xtermTerminalMock } = require('xterm');
 
 jest.mock('framer-motion', () => ({
   motion: {
@@ -130,6 +131,29 @@ jest.mock(
 );
 
 jest.mock('@/lib/terminal/nativeVteBridge', () => mockNativeVteBridge, { virtual: true });
+
+// JSDOM doesn't have a real WebGL context, so the real
+// probeWebglSupport() returns ready:false and the resolver demotes
+// xterm-webgl to plain xterm. The test fixtures here want the
+// xterm-webgl code path to execute, so we mock probeWebglSupport
+// to return ready:true by default. Individual tests can flip the
+// `__mockProbeReady` flag to simulate the unready branch.
+let mockProbeReady = true;
+let mockProbeReason = null;
+const mockProbeSpy = jest.fn(() =>
+  Object.freeze({
+    ready: mockProbeReady,
+    reason: mockProbeReady ? null : mockProbeReason,
+  })
+);
+jest.mock('@/components/terminal/terminalRendererCapabilities', () => {
+  const actual = jest.requireActual('@/components/terminal/terminalRendererCapabilities');
+  return {
+    __esModule: true,
+    ...actual,
+    probeWebglSupport: () => mockProbeSpy(),
+  };
+});
 
 const TerminalTTYModule = require('../TerminalTTY.jsx');
 const TerminalTTY = TerminalTTYModule.default;
@@ -259,6 +283,9 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     mockWebSocketInstances.length = 0;
     mockResizeObserverInstances.length = 0;
     WebglAddon.__reset();
+    mockProbeReady = true;
+    mockProbeReason = null;
+    mockProbeSpy.mockClear();
   });
 
   afterEach(async () => {
@@ -270,6 +297,8 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     mockTerminalInstances.length = 0;
     mockWebSocketInstances.length = 0;
     WebglAddon.__reset();
+    mockProbeReady = true;
+    mockProbeReason = null;
     jest.clearAllMocks();
   });
 
@@ -330,24 +359,12 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
   });
 
   test('unready xterm-webgl capability: no WebglAddon is constructed and no WebGL code path runs', async () => {
-    // We simulate the unready branch by requesting xterm-webgl but with the
-    // xterm-addon-webgl module being a no-op. The easiest way to make
-    // the runtime pick the unready branch is to set a runtime capability
-    // override via the resolver. The cleanest approach here is to assert
-    // that when the runtime resolves to xterm (because xterm-webgl is
-    // unready in the caller's capability map), WebglAddon.instances is
-    // empty. TerminalTTY uses getTerminalRendererRuntimeCapabilities()
-    // internally, so we can pass a capability override via the public
-    // runtime capabilities path by mounting a TerminalTTY whose
-    // requestedRendererMode is 'xterm' (which the resolver leaves
-    // unchanged). For an explicit xterm-webgl path with capability
-    // 'unready', TerminalTTY's effect path needs the runtime to be
-    // mutated. The cleanest stand-in assertion is that mounting with
-    // requestedRendererMode='xterm' does NOT construct a WebglAddon.
+    mockProbeReady = false;
+    mockProbeReason = 'webgl-context-creation-failed';
     await renderIntoDom(
       React.createElement(TerminalTTY, {
         id: 'term-xw-not-webgl',
-        requestedRendererMode: 'xterm',
+        requestedRendererMode: 'xterm-webgl',
         autoFocus: false,
         isActivePanel: true,
         isVisibleInLayout: true,
@@ -388,6 +405,91 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     }
   });
 
+  test('probeWebglSupport runs ONCE per mount, not on every re-render (XW-PROBE-ONCE)', async () => {
+    // The probe runs in render body — if re-renders don't memoize, the
+    // spy count will grow with every render. We force 3 re-renders by
+    // calling root.render() repeatedly with the same element and assert
+    // the count stays at 1.
+    const callsBeforeMount = mockProbeSpy.mock.calls.length;
+
+    const harness = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-xw-probe-once',
+        requestedRendererMode: 'xterm-webgl',
+        autoFocus: false,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    const callsAfterMount = mockProbeSpy.mock.calls.length;
+    const mountDelta = callsAfterMount - callsBeforeMount;
+    // 1 is the post-fix expectation (lazy useState init). Currently the
+    // probe runs in render body, so this could be > 1 if React does an
+    // internal commit+render cycle, but at minimum it should not be 0
+    // (otherwise the test is meaningless) and ideally should be 1.
+    expect(mountDelta).toBeGreaterThanOrEqual(1);
+
+    // Force 3 additional renders.
+    const sameElement = React.createElement(TerminalTTY, {
+      id: 'term-xw-probe-once',
+      requestedRendererMode: 'xterm-webgl',
+      autoFocus: false,
+      isActivePanel: true,
+      isVisibleInLayout: true,
+      showQuickCopyButton: false,
+    });
+    flushSync(() => {
+      harness.root.render(sameElement);
+    });
+    flushSync(() => {
+      harness.root.render(sameElement);
+    });
+    flushSync(() => {
+      harness.root.render(sameElement);
+    });
+    await flushTerminalEffects();
+
+    const callsAfterRerenders = mockProbeSpy.mock.calls.length;
+    const rerenderDelta = callsAfterRerenders - callsAfterMount;
+    // Post-fix: probe must NOT be called again on re-renders.
+    expect(rerenderDelta).toBe(0);
+  });
+
+  test('WebglAddon.onContextLoss sets the WebGL fallback state (XW-CONTEXT-LOSS)', async () => {
+    const harness = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-xw-context-loss',
+        requestedRendererMode: 'xterm-webgl',
+        autoFocus: false,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    expect(WebglAddon.instances).toHaveLength(1);
+    const addon = WebglAddon.instances[0];
+
+    // No fallback warning yet.
+    let warning = harness.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-term-xw-context-loss"]'
+    );
+    expect(warning).toBeNull();
+
+    // Fire the context loss event.
+    addon.__triggerContextLoss();
+    await flushTerminalEffects();
+
+    // Fallback warning now visible.
+    warning = harness.container.querySelector(
+      '[data-testid="terminal-renderer-fallback-term-xw-context-loss"]'
+    );
+    expect(warning).not.toBeNull();
+    expect(warning?.textContent).toContain('Renderer fallback: xterm DOM (WebGL unavailable)');
+  });
+
   // Regression: switching renderer per-panel (WebGL -> DOM) used to throw
   // `undefined is not an object (evaluating 'this._renderer.value.onRequestRedraw')`
   // inside WebglAddon's setRenderer during xterm.dispose()'s addon chain.
@@ -400,12 +502,12 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
   test('WebglAddon.dispose is invoked BEFORE the underlying Terminal.dispose on unmount', async () => {
     const callOrder = [];
     const originalWebglDispose = WebglAddon.prototype.dispose;
-    const originalTerminalDispose = Terminal.prototype.dispose;
+    const originalTerminalDispose = xtermTerminalMock.prototype.dispose;
     WebglAddon.prototype.dispose = function patchedWebglDispose() {
       callOrder.push('webgl');
       return originalWebglDispose?.apply(this, arguments);
     };
-    Terminal.prototype.dispose = function patchedTerminalDispose() {
+    xtermTerminalMock.prototype.dispose = function patchedTerminalDispose() {
       callOrder.push('terminal');
       return originalTerminalDispose?.apply(this, arguments);
     };
@@ -443,7 +545,7 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
       expect(firstWebgl).toBeLessThan(firstTerminal);
     } finally {
       WebglAddon.prototype.dispose = originalWebglDispose;
-      Terminal.prototype.dispose = originalTerminalDispose;
+      xtermTerminalMock.prototype.dispose = originalTerminalDispose;
     }
   });
 });
