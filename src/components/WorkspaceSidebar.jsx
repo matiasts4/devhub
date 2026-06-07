@@ -20,9 +20,10 @@ import {
   Cpu,
   Plus,
   Sparkles,
+  LogIn,
+  Cloud,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import UserProfile from '@/components/UserProfile';
 import { useAuth } from '@/lib/auth/AuthContext';
 import StatusSignal from '@/components/ui/StatusSignal';
 import {
@@ -471,33 +472,81 @@ export default function WorkspaceSidebar({
           </motion.div>
         </div>
 
-        {/* User profile section at the bottom */}
-        <div className="px-2.5 py-2 border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
-          <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'} min-w-0`}>
-            <UserProfile align="left" direction="up" />
-            {!collapsed && (
-              <div className="flex flex-col min-w-0">
-                <span
-                  className="text-[11px] font-medium text-text-primary truncate"
-                  style={{ lineHeight: '1.2' }}
-                >
-                  {user ? user.email.split('@')[0] : 'Invitado'}
-                </span>
-                <span className="text-[9px] text-text-muted truncate" style={{ lineHeight: '1' }}>
-                  {user ? 'Cloud Sync Activo' : 'Guardado Local'}
-                </span>
+        {/* Bottom bar: user indicator + collapse toggle */}
+        <div className="border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
+          {/* User row — only show content when relevant */}
+          {user ? (
+            /* Logged in: compact avatar + info row */
+            <div
+              className={`flex items-center min-w-0 ${
+                collapsed ? 'justify-center px-1.5 py-2' : 'gap-2 px-2.5 py-2'
+              }`}
+            >
+              {/* Avatar */}
+              <div
+                className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                style={{
+                  background: 'var(--accent-primary)',
+                  boxShadow: '0 0 0 1px color-mix(in srgb, var(--accent-primary) 30%, transparent)',
+                }}
+                title={user.email}
+              >
+                {user.email[0].toUpperCase()}
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Sidebar collapse toggle */}
-        <div className="border-t p-2" style={{ borderColor: 'var(--border-subtle)' }}>
+              {/* Info - only when expanded */}
+              {!collapsed && (
+                <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
+                  <span
+                    className="text-[11px] font-medium truncate"
+                    style={{ color: 'var(--text-primary)', lineHeight: '1.3' }}
+                  >
+                    {user.email.split('@')[0]}
+                  </span>
+                  <span
+                    className="text-[9px] flex items-center gap-1 truncate"
+                    style={{ color: 'var(--accent-primary)', lineHeight: '1.2' }}
+                  >
+                    <Cloud className="w-2.5 h-2.5 shrink-0" />
+                    Cloud Sync
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Not logged in: nothing in collapsed, compact login button when expanded */
+            !collapsed && (
+              <button
+                onClick={() => {
+                  // Dispatch a custom event to open the auth modal from TitleBar UserProfile
+                  window.dispatchEvent(new CustomEvent('devhub:open-auth-modal'));
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors cursor-pointer hover:bg-white/[0.04]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <LogIn
+                  className="w-3.5 h-3.5 shrink-0"
+                  style={{ color: 'var(--accent-primary)' }}
+                />
+                <span
+                  className="text-[11px] font-medium"
+                  style={{ color: 'var(--accent-primary)' }}
+                >
+                  Iniciar Sesión
+                </span>
+              </button>
+            )
+          )}
+
+          {/* Collapse toggle */}
           <button
             data-testid="sidebar-toggle-bottom"
             onClick={() => onToggleCollapse && onToggleCollapse(!collapsed)}
             aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-all cursor-pointer rounded-none border"
+            title={collapsed ? 'Expandir' : 'Colapsar'}
+            className={`w-full flex items-center justify-center transition-all cursor-pointer border-t ${
+              collapsed ? 'py-1.5' : 'gap-1.5 px-2 py-1.5'
+            } text-[10px] font-medium`}
             style={{
               background: 'var(--chrome-control-fill)',
               borderColor: 'var(--chrome-border-color)',

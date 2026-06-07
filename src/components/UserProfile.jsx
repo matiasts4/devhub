@@ -47,7 +47,7 @@ const generateRequestId = () => {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 };
 
-export default function UserProfile({ align = 'right', direction = 'down' }) {
+export default function UserProfile({ align = 'right', direction = 'down', compact = false }) {
   const { user, workspaces, activeWorkspaceId, setActiveWorkspaceId, signOut } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -227,6 +227,16 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Listen for sidebar "Iniciar Sesión" button events
+  useEffect(() => {
+    function handleOpenAuthModal() {
+      setAuthMode('login');
+      setShowAuthModal(true);
+    }
+    window.addEventListener('devhub:open-auth-modal', handleOpenAuthModal);
+    return () => window.removeEventListener('devhub:open-auth-modal', handleOpenAuthModal);
+  }, []);
+
   const handleSignOut = async () => {
     setIsOpen(false);
     await signOut();
@@ -268,6 +278,7 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 p-1 rounded-full hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
         aria-label="User profile menu"
+        title={user ? user.email : 'Usuario invitado'}
       >
         {user ? (
           <div
@@ -280,9 +291,12 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
             <User className="w-3.5 h-3.5" />
           </div>
         )}
-        <ChevronDown
-          className={`w-3 h-3 text-text-muted transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-        />
+        {/* Chevron only shown in non-compact contexts (e.g. expanded sidebar or other usages) */}
+        {!compact && (
+          <ChevronDown
+            className={`w-3 h-3 text-text-muted transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          />
+        )}
       </button>
 
       {/* Dropdown Menu */}
