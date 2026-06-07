@@ -657,7 +657,7 @@ export default function ProjectHub() {
               </div>
 
               {/* Toggle Planning IA */}
-              <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted]">
+              <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
                     <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />

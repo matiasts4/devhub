@@ -78,12 +78,12 @@ export default function UserProfile() {
       >
         {user ? (
           <div
-            className={`w-6.5 h-6.5 rounded-full flex items-center justify-center text-white text-[11px] font-bold ${getAvatarBg()} border border-white/10 shadow-sm`}
+            className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold ${getAvatarBg()} border border-white/10 shadow-sm`}
           >
             {initial}
           </div>
         ) : (
-          <div className="w-6.5 h-6.5 rounded-full flex items-center justify-center bg-[#2d3139] text-gray-400 border border-gray-700/50">
+          <div className="w-7 h-7 rounded-full flex items-center justify-center bg-[#2d3139] text-gray-400 border border-gray-700/50">
             <User className="w-3.5 h-3.5" />
           </div>
         )}

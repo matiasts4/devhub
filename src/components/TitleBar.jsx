@@ -148,9 +148,12 @@ export default function TitleBar({
         </div>
       </div>
 
-      <div className="flex items-center h-full shrink-0 min-w-0 ml-auto" style={{ WebkitAppRegion: 'no-drag' }}>
+      <div
+        className="flex items-center h-full shrink-0 min-w-0 ml-auto"
+        style={{ WebkitAppRegion: 'no-drag' }}
+      >
         {rightSlot && (
-          <div className="flex items-center h-full min-w-0 max-w-[52vw] sm:max-w-[460px] overflow-hidden pr-2">
+          <div className="flex items-center h-full min-w-0 max-w-[52vw] sm:max-w-[460px] pr-2">
             {rightSlot}
           </div>
         )}
@@ -166,14 +169,20 @@ export default function TitleBar({
             className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#2f323e] hover:brightness-125 transition-[filter] duration-150"
             title="Minimize"
           >
-            <Minus className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={3} />
+            <Minus
+              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+              strokeWidth={3}
+            />
           </button>
           <button
             onClick={handleToggleMaximize}
             className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#464a57] hover:brightness-125 transition-[filter] duration-150"
             title={isMaximized ? 'Restore' : 'Maximize'}
           >
-            <Plus className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={3} />
+            <Plus
+              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+              strokeWidth={3}
+            />
           </button>
           <button
             onClick={handleClose}
