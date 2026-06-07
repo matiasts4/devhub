@@ -533,6 +533,7 @@ fn native_vte_overlay_layout_passes_through_to_webview() -> bool {
     true
 }
 
+#[cfg(target_os = "linux")]
 fn execute_main_thread_job<T, R, J>(runner: R, job: J) -> Result<T, String>
 where
     T: Send + 'static,
@@ -1734,7 +1735,7 @@ pub fn native_vte_focus(
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = _state;
+        let _ = state;
         let _ = request;
         Err("unsupported-platform".to_string())
     }
@@ -1868,7 +1869,7 @@ pub fn native_vte_resize(
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = state;
+        let _ = _state;
         let _ = request;
         Err("unsupported-platform".to_string())
     }

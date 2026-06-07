@@ -26,7 +26,6 @@ import {
   getTerminalRendererOptionLabel,
   getTerminalRendererRuntimeCapabilities,
   probeWebglSupport,
-  probeWebglSupportSync,
   resolveRendererSelection,
   TERMINAL_WEBGL_FALLBACK_REASONS,
   WEBGL_FALLBACK_WARNING_TEXT,
@@ -468,7 +467,7 @@ export default function TerminalTTY({
   const [nativeVteOpened, setNativeVteOpened] = useState(false);
   const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
-  const [webglProbeResult, setWebglProbeResult] = useState(() => probeWebglSupportSync());
+  const [webglProbeResult, setWebglProbeResult] = useState(() => probeWebglSupport());
   const [webglFallback, setWebglFallback] = useState(null);
   const [xtermBootNonce, setXtermBootNonce] = useState(0);
   const webglAddonRef = useRef(null);
@@ -650,35 +649,26 @@ export default function TerminalTTY({
   // Real WebGL capability probe (runs once per mount, cheap detached canvas test).
   // Populates webglProbeResult so the runtime capabilities and switcher labels are honest.
   useEffect(() => {
-    let cancelled = false;
-    probeWebglSupport()
-      .then((result) => {
-        if (!cancelled) {
-          setWebglProbeResult((prev) => {
-            if (prev && prev.ready === result.ready && prev.reason === result.reason) {
-              return prev;
-            }
-            return result;
-          });
+    try {
+      const result = probeWebglSupport();
+      setWebglProbeResult((prev) => {
+        if (prev && prev.ready === result.ready && prev.reason === result.reason) {
+          return prev;
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWebglProbeResult((prev) => {
-            const result = {
-              ready: false,
-              reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
-            };
-            if (prev && prev.ready === result.ready && prev.reason === result.reason) {
-              return prev;
-            }
-            return result;
-          });
-        }
+        return result;
       });
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      setWebglProbeResult((prev) => {
+        const result = {
+          ready: false,
+          reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
+        };
+        if (prev && prev.ready === result.ready && prev.reason === result.reason) {
+          return prev;
+        }
+        return result;
+      });
+    }
   }, []);
 
   // Surface xterm-webgl demotion as a visible warning when the user asked for WebGL
@@ -1203,12 +1193,18 @@ export default function TerminalTTY({
   // That forces the main effect body to re-execute and call its local initializeTerminal()
   // (which contains the full xterm + webgl dynamic import + banner logic).
   const lastRequestedModeRef = useRef(requestedRendererMode);
+  const lastEffectiveModeRef = useRef(rendererViewModel.effectiveMode);
   const lastIdRef = useRef(id);
   useEffect(() => {
-    if (lastRequestedModeRef.current === requestedRendererMode && lastIdRef.current === id) {
+    if (
+      lastRequestedModeRef.current === requestedRendererMode &&
+      lastEffectiveModeRef.current === rendererViewModel.effectiveMode &&
+      lastIdRef.current === id
+    ) {
       return undefined;
     }
     lastRequestedModeRef.current = requestedRendererMode;
+    lastEffectiveModeRef.current = rendererViewModel.effectiveMode;
     lastIdRef.current = id;
 
     if (requestedRendererMode === 'vte-experimental') {
@@ -1223,7 +1219,7 @@ export default function TerminalTTY({
     setXtermBootNonce((n) => n + 1);
 
     return undefined;
-  }, [requestedRendererMode, disposeXtermRuntime, id]);
+  }, [requestedRendererMode, rendererViewModel.effectiveMode, disposeXtermRuntime, id]);
 
   useEffect(() => {
     if (requestedRendererMode !== 'vte-experimental') return undefined;
@@ -1820,6 +1816,8 @@ export default function TerminalTTY({
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(searchAddon);
 
+        terminal.open(containerRef.current);
+
         if (wantsWebgl) {
           if (WebglAddonCtor) {
             try {
@@ -1861,8 +1859,6 @@ export default function TerminalTTY({
             });
           }
         }
-
-        terminal.open(containerRef.current);
 
         logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
 
