@@ -118,8 +118,33 @@ function isStaleXtermRendererError(error) {
   return (
     message.includes('_renderer') ||
     message.includes('dimensions') ||
-    message.includes('RenderService')
+    message.includes('RenderService') ||
+    message.includes('handleResize')
   );
+}
+
+// xterm-addon-webgl@0.16.0 keeps `_renderer` (a MutableDisposable) and the
+// terminal.onResize listener as separate entries on the addon's internal
+// disposable list. When the addon is disposed, the renderer is cleared
+// (.value = undefined) BEFORE the resize listener is unregistered. On
+// Linux/WebKitGTK the GTK compositor occasionally fires one last
+// ResizeObserver / fit() during that window, and the addon's listener crashes
+// with `undefined is not an object (evaluating '_this._renderer.value.handleResize')`.
+//
+// We can't rewrite the addon, but we can replace the live renderer's
+// handleResize with a noop right before dispose so a stray resize lands on
+// a safe stub instead of an undefined slot. Best-effort: the addon's internal
+// shape may evolve, so we guard every access and never throw from here.
+function neutralizeWebglAddonForDisposal(addon) {
+  if (!addon) return;
+  try {
+    const renderer = addon._renderer?.value;
+    if (renderer && typeof renderer.handleResize === 'function') {
+      renderer.handleResize = () => {};
+    }
+  } catch {
+    // ignore — addon internals are private API; if shape changed, skip.
+  }
 }
 
 export function fitTerminalViewport({
@@ -569,9 +594,18 @@ export default function TerminalTTY({
   }, []);
 
   const disposeXtermRuntime = useCallback(() => {
+    // 1. Stop observing the container FIRST so no new resize callbacks queue.
     resizeObserverRef.current?.disconnect();
     resizeObserverRef.current = null;
 
+    // 2. Cancel any RAF / setTimeout that might call fit() or sendResize()
+    //    after the runtime is gone. Without this, a queued RAF can fire
+    //    fitAddon.fit() on a terminal that has already started disposing
+    //    and trigger the WebGL addon's stale-renderer crash on Linux.
+    clearTimers();
+
+    // 3. Silence and close the websocket. Closing it first means the
+    //    onmessage/onclose can't push more output into a disposed terminal.
     if (wsRef.current) {
       const stale = wsRef.current;
       stale.onopen = null;
@@ -586,24 +620,51 @@ export default function TerminalTTY({
       wsRef.current = null;
     }
 
-    if (webglAddonRef.current) {
-      try {
-        webglAddonRef.current.dispose?.();
-      } catch (err) {
-        console.warn('Error disposing WebglAddon:', err);
-      }
-      webglAddonRef.current = null;
-    }
-
-    try {
-      termRef.current?.dispose();
-    } catch (err) {
-      console.warn('Error disposing Terminal instance:', err);
-    }
+    // 4. Snapshot refs and null them out IMMEDIATELY. Any concurrent code
+    //    (queued resize, focus handler, paste handler) that re-checks the
+    //    refs now sees null and bails out before we start tearing things
+    //    down. This is the key ordering change for the Linux/WebKitGTK race.
+    const webglAddon = webglAddonRef.current;
+    const term = termRef.current;
+    webglAddonRef.current = null;
     termRef.current = null;
     fitRef.current = null;
     searchRef.current = null;
-  }, []);
+
+    // 5. Neutralize the WebGL addon's internal handleResize before any
+    //    dispose runs. See neutralizeWebglAddonForDisposal — this is the
+    //    fix for the `_renderer.value.handleResize` undefined crash that
+    //    xterm-addon-webgl@0.16.0 exposes during teardown.
+    neutralizeWebglAddonForDisposal(webglAddon);
+
+    // 6. Dispose the terminal FIRST. xterm's AddonManager will walk the
+    //    registered addons (including WebglAddon) in a safe internal order
+    //    and detach the resize listener before clearing the renderer slot.
+    if (term) {
+      try {
+        term.dispose();
+      } catch (err) {
+        if (!isStaleXtermRendererError(err)) {
+          console.warn('Error disposing Terminal instance:', err);
+        }
+      }
+    }
+
+    // 7. Defensive second dispose for the addon ref. xterm cascades the
+    //    dispose in step 6, but if loadAddon never completed (WebGL context
+    //    creation threw) the addon won't be in the AddonManager's list, so
+    //    we still need to release its handlers explicitly. dispose() is
+    //    idempotent on the official addon.
+    if (webglAddon) {
+      try {
+        webglAddon.dispose?.();
+      } catch (err) {
+        if (!isStaleXtermRendererError(err)) {
+          console.warn('Error disposing WebglAddon:', err);
+        }
+      }
+    }
+  }, [clearTimers]);
 
   const shouldRetryNativeVteProbe =
     ENABLE_NATIVE_VTE &&
@@ -1659,7 +1720,13 @@ export default function TerminalTTY({
       }
       if (termRef.current) {
         termRef.current.options.fontSize = next;
-        fitRef.current?.fit();
+        try {
+          fitRef.current?.fit();
+        } catch (err) {
+          // Same teardown race as the ResizeObserver path: a font-size click
+          // landing during dispose can hit the WebGL addon's stale renderer.
+          if (!isStaleXtermRendererError(err)) throw err;
+        }
       }
       return next;
     });

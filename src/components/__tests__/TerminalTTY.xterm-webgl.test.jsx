@@ -557,20 +557,55 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     expect(warning?.textContent).toContain('Renderer fallback: xterm DOM (WebGL unavailable)');
   });
 
-  // Regression: switching renderer per-panel (WebGL -> DOM) used to throw
-  // `undefined is not an object (evaluating 'this._renderer.value.onRequestRedraw')`
-  // inside WebglAddon's setRenderer during xterm.dispose()'s addon chain.
-  // Root cause: xterm's dispose() walks every registered addon and calls
-  // addon.dispose(). If the WebGL addon was already disposed by the addon
-  // ref's unmount cleanup BEFORE xterm.dispose(), the second call hits a
-  // freed renderer. Fix: dispose the WebGL addon EXPLICITLY in
-  // disposeXtermRuntime BEFORE termRef.current.dispose(), so xterm's
-  // addon-chain no-ops. This test asserts that ordering.
-  // The dispose-order regression test was pre-existing broken (the xterm
-  // mock returned an instance with its own `dispose: jest.fn()` that
-  // shadowed the prototype, so `termRef.current?.dispose()` never reached
-  // the prototype patch). Out of scope for this fix — the unmount
-  // dispose test above already proves the addon is disposed.
-  // Re-enable once the mock is refactored to share dispose via prototype.
-  test.skip('WebglAddon.dispose is invoked BEFORE the underlying Terminal.dispose on unmount', async () => {});
+  // Regression — Linux/WebKitGTK xterm-addon-webgl@0.16.0 teardown race.
+  //
+  // The addon's `_renderer` MutableDisposable is cleared (.value = undefined)
+  // before its terminal.onResize listener is removed. A queued
+  // ResizeObserver/fit() that fires during that window calls
+  // `_this._renderer.value.handleResize(...)` and crashes with
+  // `undefined is not an object (evaluating '_this._renderer.value.handleResize')`.
+  //
+  // The fix in disposeXtermRuntime: (a) snapshot+null refs immediately,
+  // (b) neutralize the live addon's handleResize to a noop, and
+  // (c) dispose the terminal FIRST so the AddonManager removes the
+  // listener in a safe internal order. If a resize still lands mid-tear,
+  // it now hits the noop instead of an undefined slot.
+  test('teardown neutralizes WebglAddon.handleResize before disposing the terminal (Linux race)', async () => {
+    const harness = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-xw-race',
+        requestedRendererMode: 'xterm-webgl',
+        autoFocus: false,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    expect(WebglAddon.instances).toHaveLength(1);
+    const addon = WebglAddon.instances[0];
+
+    // Simulate the live addon shape that xterm-addon-webgl exposes at
+    // runtime: a `_renderer.value` slot whose `handleResize` is what
+    // crashes when invoked after disposal in production.
+    const handleResizeSpy = jest.fn();
+    addon._renderer = { value: { handleResize: handleResizeSpy } };
+
+    flushSync(() => {
+      harness.root.unmount();
+    });
+    await flushTerminalEffects();
+
+    // The fix swaps handleResize with a noop BEFORE dispose runs. Any
+    // late-firing onResize listener now lands on the noop, not on the
+    // original spy and not on `undefined.handleResize`.
+    expect(addon._renderer.value.handleResize).not.toBe(handleResizeSpy);
+    expect(() => addon._renderer.value.handleResize()).not.toThrow();
+
+    // Sanity: the mock terminal received dispose() too. The unmount path
+    // disposes the terminal first (so xterm's AddonManager can cascade
+    // safely) and then defensively disposes the addon ref.
+    const terminal = mockTerminalInstances[0];
+    expect(terminal.dispose).toHaveBeenCalled();
+  });
 });
