@@ -100,11 +100,21 @@ export function useLiveSurfaceRegistry(projectId, workspaceId) {
       setSurfaces((prev) => {
         const next = prev.map((s) => {
           if (s.id === id) {
+            const rootChanges = {};
+            const pizarraChanges = {};
+            Object.keys(layoutChanges).forEach((key) => {
+              if (['x', 'y', 'width', 'height', 'visible'].includes(key)) {
+                pizarraChanges[key] = layoutChanges[key];
+              } else {
+                rootChanges[key] = layoutChanges[key];
+              }
+            });
             return {
               ...s,
+              ...rootChanges,
               pizarra: {
                 ...s.pizarra,
-                ...layoutChanges,
+                ...pizarraChanges,
               },
             };
           }

@@ -404,7 +404,7 @@ function LiveSurfaceItem({
           cwd={shape.cwd}
           initialCommand={shape.initialCommand}
           isActivePanel={activeTerminalId === shape.id}
-          requestedRendererMode={shape.requestedRendererMode || 'vte-experimental'}
+          requestedRendererMode={shape.requestedRendererMode || 'xterm-webgl'}
           onClose={() => onRemoveElement?.(shape.id)}
         />
       </div>

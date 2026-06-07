@@ -83,6 +83,13 @@ jest.mock('@/components/TerminalTTY', () => ({
   default: mockTerminalTTY,
 }));
 
+jest.mock('@/components/terminal/components/PanelRendererSelect', () => ({
+  __esModule: true,
+  default: jest.fn(() =>
+    require('react').createElement('div', { 'data-testid': 'mock-renderer-select' })
+  ),
+}));
+
 describe('CanvasTerminal', () => {
   let container;
   let root;
@@ -116,7 +123,7 @@ describe('CanvasTerminal', () => {
 
   // ── Props passthrough ───────────────────────────────────────────────────
   describe('props passthrough to TerminalTTY', () => {
-    it('defaults to the native-capable renderer path used by the workspace terminal', () => {
+    it('defaults to the xterm-webgl renderer path used by pizarra', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');
       render(
         React.createElement(CanvasTerminal, {
@@ -130,7 +137,7 @@ describe('CanvasTerminal', () => {
       );
 
       expect(mockTerminalTTY).toHaveBeenCalledTimes(1);
-      expect(capturedProps.requestedRendererMode).toBe('vte-experimental');
+      expect(capturedProps.requestedRendererMode).toBe('xterm');
       expect(capturedProps.hideTitleBar).toBe(true);
       expect(capturedProps.id).toBe('my-session-1');
       expect(capturedProps.cwd).toBe('/home/user');

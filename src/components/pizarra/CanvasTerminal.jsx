@@ -19,6 +19,7 @@ import {
   ACCENT,
 } from '@/lib/pizarra/surfaceMotion';
 import { resolveRendererSelection } from '@/components/terminal/terminalRendererCapabilities';
+import PanelRendererSelect from '@/components/terminal/components/PanelRendererSelect';
 
 // pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
 // pointer travel that separates a click from a drag. Below this
@@ -51,7 +52,12 @@ export default function CanvasTerminal({
   initialCommand,
   autoFocus = false,
   isActivePanel = false,
-  requestedRendererMode = 'vte-experimental',
+  // pizarra: default renderer matches the terminals page (xterm-webgl). The
+  // native VTE path remains selectable per-shape via requestedRendererMode,
+  // but the out-of-the-box experience on the pizarra canvas is now the same
+  // xterm + WebGL renderer that TerminalWorkspacesManager exposes.
+  requestedRendererMode = 'xterm-webgl',
+  onUpdateRendererMode,
 }) {
   // Siempre usamos la terminal nativa (VTE widget) para superficies de tipo terminal
   // dentro de la pizarra. Posicionamos el widget exactamente sobre el rect de
@@ -548,11 +554,12 @@ export default function CanvasTerminal({
         >
           <span>{resolvedShape.label || 'Terminal'}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span>
-              {effectiveRendererMode === 'vte-experimental'
-                ? 'native (pizarra)'
-                : effectiveRendererMode}
-            </span>
+            <PanelRendererSelect
+              panelId={terminalId}
+              currentMode={requestedRendererMode}
+              availableModes={['xterm-webgl', 'vte-experimental']}
+              onChange={onUpdateRendererMode}
+            />
             <button
               type="button"
               data-testid="canvas-terminal-close"

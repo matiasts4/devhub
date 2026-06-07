@@ -120,7 +120,7 @@ describe('PizarraLiveSurfaceLayer', () => {
     });
     expect(terminalCalls[0].selected).toBe(true);
     expect(terminalCalls[0].isActivePanel).toBe(true);
-    expect(terminalCalls[0].requestedRendererMode).toBe('vte-experimental');
+    expect(terminalCalls[0].requestedRendererMode).toBe('xterm-webgl');
     expect(terminalCalls[1].isActivePanel).toBe(false);
 
     expect(browserCalls).toHaveLength(1);
