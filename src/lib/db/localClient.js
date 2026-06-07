@@ -302,6 +302,20 @@ LocalQueryClient.prototype.finally = function (onSettled) {
 // ── Auth stub (no auth needed for local) ──────────────────────────────────────
 
 const localAuth = {
+  async getSession() {
+    return {
+      data: {
+        session: {
+          user: {
+            id: 'local-user',
+            email: 'local@devhub.local',
+          },
+        },
+      },
+      error: null,
+    };
+  },
+
   async getUser() {
     return {
       data: {

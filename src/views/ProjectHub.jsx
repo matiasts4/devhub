@@ -33,6 +33,7 @@ import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth/AuthContext';
 import WorkspaceSwitcher from '@/components/workspace-switcher/WorkspaceSwitcher';
+import UserProfile from '@/components/UserProfile';
 import {
   dataTileStyle,
   filterBarStyle,
@@ -367,6 +368,7 @@ export default function ProjectHub() {
               <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
               Nuevo Proyecto
             </Button>
+            <UserProfile />
           </div>
         }
       />

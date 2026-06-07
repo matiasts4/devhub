@@ -1,6 +1,8 @@
+/* eslint-disable no-unused-vars */
 import { useCallback, useState, useEffect } from 'react';
 import { X, Minus, Plus, Terminal as TerminalIcon } from 'lucide-react';
 import NotificationCenter from './NotificationCenter';
+import UserProfile from './UserProfile';
 
 /**
  * PageHeader - Integrated header for all pages (except terminals)
@@ -117,6 +119,7 @@ export default function PageHeader({
       {/* Right: Notifications + Window Controls */}
       <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' }}>
         <NotificationCenter projectId={project?.id} variant="topbar" />
+        <UserProfile />
 
         {/* Window Controls - Circular macOS style */}
         <div className="flex items-center gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]">
