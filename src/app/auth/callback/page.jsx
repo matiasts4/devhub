@@ -1,31 +1,66 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/db/localClient';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Smartphone } from 'lucide-react';
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const [status, setStatus] = useState('loading'); // 'loading' | 'handshake_success' | 'handshake_error' | 'redirecting'
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     const db = createClient();
+    const params = new URLSearchParams(window.location.search);
+    const authRequestId = params.get('auth_request_id');
+
+    if (authRequestId) {
+      setStatus('loading');
+    }
 
     // Supabase client handles OAuth / Magic Link hash routing automatically.
-    // We listen for auth changes to redirect to the home page when the session is loaded.
     const {
       data: { subscription },
-    } = db.auth.onAuthStateChange((event, session) => {
+    } = db.auth.onAuthStateChange(async (event, session) => {
       if (session) {
-        router.push('/');
+        if (authRequestId) {
+          try {
+            const res = await fetch('/api/auth/handshake', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                auth_request_id: authRequestId,
+                session,
+              }),
+            });
+
+            if (res.ok) {
+              setStatus('handshake_success');
+            } else {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.error || 'No se pudo vincular la sesión.');
+            }
+          } catch (err) {
+            console.error('Error posting session handshake:', err);
+            setErrorMessage(err.message);
+            setStatus('handshake_error');
+          }
+        } else {
+          setStatus('redirecting');
+          router.push('/');
+        }
       }
     });
 
-    // Timeout fallback redirect to home page
+    // Timeout fallback redirect to home page ONLY if NOT a handshake flow
     const timeout = setTimeout(() => {
-      router.push('/');
-    }, 4000);
+      if (!authRequestId) {
+        setStatus('redirecting');
+        router.push('/');
+      }
+    }, 5000);
 
     return () => {
       subscription?.unsubscribe();
@@ -38,7 +73,7 @@ export default function AuthCallbackPage() {
       style={{
         width: '100vw',
         height: '100vh',
-        background: '#0d0d0d',
+        background: 'radial-gradient(circle at center, #161b22 0%, #0d1117 100%)',
         color: '#e5e7eb',
         display: 'flex',
         alignItems: 'center',
@@ -46,21 +81,159 @@ export default function AuthCallbackPage() {
         fontFamily: 'Inter, system-ui, sans-serif',
       }}
     >
-      <div style={{ textAlign: 'center', opacity: 0.9 }}>
-        <Loader2
-          size={32}
-          className="animate-spin"
-          style={{
-            color: 'var(--accent-primary)',
-            marginBottom: '1rem',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-          }}
-        />
-        <div style={{ fontSize: '14px', fontWeight: 600 }}>Iniciando sesión...</div>
-        <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '0.25rem' }}>
-          Por favor espera un momento
-        </div>
+      <div
+        style={{
+          maxWidth: '420px',
+          width: '90%',
+          padding: '2.5rem',
+          borderRadius: '12px',
+          border: '1px solid rgba(240, 246, 252, 0.1)',
+          background: 'rgba(22, 27, 34, 0.8)',
+          backdropFilter: 'blur(8px)',
+          textAlign: 'center',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.5), 0 0 40px rgba(88, 166, 255, 0.05)',
+        }}
+      >
+        {status === 'loading' && (
+          <div>
+            <Loader2
+              size={40}
+              className="animate-spin"
+              style={{
+                color: 'var(--accent-primary, #58a6ff)',
+                marginBottom: '1.5rem',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            />
+            <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 0.5rem 0' }}>
+              Confirmando tu sesión
+            </h2>
+            <p style={{ fontSize: '13px', color: '#8b949e', margin: 0, lineHeight: 1.5 }}>
+              Procesando credenciales de Supabase y vinculando con tu aplicación de DevHub.
+            </p>
+          </div>
+        )}
+
+        {status === 'redirecting' && (
+          <div>
+            <Loader2
+              size={40}
+              className="animate-spin"
+              style={{
+                color: 'var(--accent-primary, #58a6ff)',
+                marginBottom: '1.5rem',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            />
+            <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 0.5rem 0' }}>
+              Sesión iniciada
+            </h2>
+            <p style={{ fontSize: '13px', color: '#8b949e', margin: 0 }}>
+              Redirigiendo a la aplicación principal...
+            </p>
+          </div>
+        )}
+
+        {status === 'handshake_success' && (
+          <div className="animate-in fade-in zoom-in duration-300">
+            <CheckCircle2
+              size={48}
+              style={{
+                color: '#3fb950',
+                marginBottom: '1.5rem',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            />
+            <h2
+              style={{
+                fontSize: '20px',
+                fontWeight: 700,
+                margin: '0 0 0.75rem 0',
+                color: '#3fb950',
+              }}
+            >
+              ¡Conexión Completada!
+            </h2>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                background: 'rgba(63, 185, 80, 0.1)',
+                border: '1px solid rgba(63, 185, 80, 0.2)',
+                padding: '0.75rem',
+                borderRadius: '6px',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <Smartphone size={16} style={{ color: '#3fb950' }} />
+              <span style={{ fontSize: '12px', fontWeight: 500, color: '#e5e7eb' }}>
+                Sesión transferida con éxito a Tauri
+              </span>
+            </div>
+            <p style={{ fontSize: '13px', color: '#8b949e', margin: 0, lineHeight: 1.6 }}>
+              Ya podés cerrar esta pestaña del navegador seguro. Regresá a la ventana de{' '}
+              <strong style={{ color: '#ffffff' }}>DevHub App</strong>, donde tu sesión ya estará
+              activa.
+            </p>
+          </div>
+        )}
+
+        {status === 'handshake_error' && (
+          <div className="animate-in fade-in zoom-in duration-300">
+            <XCircle
+              size={48}
+              style={{
+                color: '#f85149',
+                marginBottom: '1.5rem',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            />
+            <h2
+              style={{
+                fontSize: '18px',
+                fontWeight: 600,
+                margin: '0 0 0.5rem 0',
+                color: '#f85149',
+              }}
+            >
+              Error en la vinculación
+            </h2>
+            <p
+              style={{
+                fontSize: '13px',
+                color: '#8b949e',
+                margin: '0 0 1.5rem 0',
+                lineHeight: 1.5,
+              }}
+            >
+              Ocurrió un problema al transferir la sesión a la aplicación de escritorio: <br />
+              <span style={{ color: '#ff7b72', fontFamily: 'monospace', fontSize: '12px' }}>
+                {errorMessage}
+              </span>
+            </p>
+            <button
+              onClick={() => router.push('/')}
+              style={{
+                background: '#21262d',
+                border: '1px solid #30363d',
+                color: '#c9d1d9',
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Ir al inicio en navegador
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

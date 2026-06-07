@@ -24,6 +24,29 @@ import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
 
+const getRedirectOrigin = () => {
+  if (typeof window !== 'undefined') {
+    if (process.env.NEXT_PUBLIC_DEVHUB_APP_URL) {
+      return process.env.NEXT_PUBLIC_DEVHUB_APP_URL;
+    }
+    if (window.location.origin.startsWith('http') && !window.location.origin.includes('tauri')) {
+      return window.location.origin;
+    }
+  }
+  return 'http://localhost:3100'; // Default fallback for development
+};
+
+const generateRequestId = () => {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    try {
+      return window.crypto.randomUUID();
+    } catch (e) {
+      // Fallback to random generator if randomUUID throws
+    }
+  }
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
 export default function UserProfile({ align = 'right', direction = 'down' }) {
   const { user, workspaces, activeWorkspaceId, setActiveWorkspaceId, signOut } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -36,10 +59,70 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // OTP Verification States
+  // OTP & Handshake Verification States
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [otpToken, setOtpToken] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [authRequestId, setAuthRequestId] = useState('');
+
+  const pollingIntervalRef = useRef(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const startPollingHandshake = (requestId) => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    const startTime = Date.now();
+    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+    pollingIntervalRef.current = setInterval(async () => {
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        toast.error('El tiempo de espera para el inicio de sesión ha expirado.');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/auth/handshake?auth_request_id=${requestId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success' && data.session) {
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+
+            const db = createClient();
+            const { error } = await db.auth.setSession(data.session);
+            if (error) {
+              toast.error('Error al iniciar sesión: ' + error.message);
+            } else {
+              toast.success('¡Sesión iniciada correctamente desde el navegador!');
+              setShowAuthModal(false);
+              setIsOtpSent(false);
+              setEmail('');
+              setOtpToken('');
+              setAuthRequestId('');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error polling handshake:', err);
+      }
+    }, 2000);
+  };
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -50,17 +133,25 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
     setLoading(true);
     try {
       const db = createClient();
+      const requestId = generateRequestId();
+      setAuthRequestId(requestId);
+
+      const redirectOrigin = getRedirectOrigin();
+      const emailRedirectTo = `${redirectOrigin}/auth/callback?auth_request_id=${requestId}`;
+
       const { error } = await db.auth.signInWithOtp({
         email,
         options: {
           shouldCreateUser: authMode === 'signup',
+          emailRedirectTo,
         },
       });
       if (error) {
         toast.error('Error: ' + error.message);
       } else {
-        toast.success('¡Código de verificación enviado! Revisa tu correo electrónico.');
+        toast.success('¡Instrucciones enviadas! Revisa tu correo electrónico.');
         setIsOtpSent(true);
+        startPollingHandshake(requestId);
       }
     } catch (err) {
       console.error(err);
@@ -76,6 +167,10 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
       toast.error('Por favor ingresa el código de verificación');
       return;
     }
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
     setVerifying(true);
     try {
       const db = createClient();
@@ -86,16 +181,24 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
       });
       if (error) {
         toast.error('Código incorrecto o expirado: ' + error.message);
+        // Resume polling if we have an active requestId
+        if (authRequestId) {
+          startPollingHandshake(authRequestId);
+        }
       } else {
         toast.success('¡Sesión iniciada correctamente!');
         setShowAuthModal(false);
         setIsOtpSent(false);
         setOtpToken('');
         setEmail('');
+        setAuthRequestId('');
       }
     } catch (err) {
       console.error(err);
       toast.error('Error al verificar el código');
+      if (authRequestId) {
+        startPollingHandshake(authRequestId);
+      }
     } finally {
       setVerifying(false);
     }
@@ -106,6 +209,11 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
     setIsOtpSent(false);
     setEmail('');
     setOtpToken('');
+    setAuthRequestId('');
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
   };
 
   // Close dropdown on click outside
@@ -321,7 +429,7 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             style={{ WebkitAppRegion: 'no-drag' }}
           >
-            <div className="w-full max-w-sm border border-borders-subtle bg-surface-card p-6 shadow-2xl rounded-lg relative">
+            <div className="w-full max-w-sm border border-borders-subtle bg-surface-card p-6 shadow-2xl rounded-lg relative animate-in fade-in zoom-in duration-200">
               {/* Close button */}
               <button
                 onClick={closeAuthModal}
@@ -338,9 +446,9 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
                 <h2 className="text-lg font-semibold text-text-primary">
                   {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
                 </h2>
-                <p className="text-xs text-text-muted mt-1 max-w-[260px]">
+                <p className="text-xs text-text-muted mt-1.5 max-w-[280px] leading-relaxed">
                   {isOtpSent
-                    ? `Ingresa el código de 6 dígitos que te enviamos a tu correo.`
+                    ? 'Hacé clic en el enlace del correo para ingresar automáticamente, o bien introducí el código de 6 dígitos si tu plantilla lo incluye.'
                     : authMode === 'login'
                       ? 'Accede a tus proyectos compartidos y sincronización en la nube.'
                       : 'Regístrate para colaborar y guardar tus proyectos en la nube.'}
@@ -373,7 +481,7 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
                     ) : (
                       <Mail className="w-3.5 h-3.5" />
                     )}
-                    <span>{loading ? 'Enviando código...' : 'Enviar código por correo'}</span>
+                    <span>{loading ? 'Enviando enlace...' : 'Enviar enlace de acceso'}</span>
                   </button>
 
                   <div className="text-center pt-2">
@@ -389,19 +497,27 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
                   </div>
                 </form>
               ) : (
-                <form onSubmit={handleOtpVerify} className="space-y-4">
-                  <div className="rounded-none border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-amber-500/95 rounded-md">
-                    Código enviado a <strong className="text-text-primary">{email}</strong>. Revisa
-                    tu bandeja de entrada (y spam).
+                <form
+                  onSubmit={handleOtpVerify}
+                  className="space-y-4 animate-in fade-in duration-300"
+                >
+                  <div className="border border-amber-500/20 bg-amber-500/5 p-3.5 text-[11px] leading-relaxed text-amber-500/90 rounded-md">
+                    Enviamos un correo a <strong className="text-text-primary">{email}</strong>.
+                    <br />
+                    <br />
+                    1. <strong className="text-text-primary">Enlace mágico:</strong> Hacé clic en el
+                    botón del correo y la app iniciará tu sesión automáticamente.
+                    <br />
+                    2. <strong className="text-text-primary">Código OTP:</strong> Si tu correo
+                    incluye un código, podés ingresarlo a continuación.
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-medium text-text-muted mb-1.5">
-                      Código de verificación
+                      Código de verificación (opcional si usas el enlace)
                     </label>
                     <input
                       type="text"
-                      required
                       maxLength={6}
                       value={otpToken}
                       onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, ''))}
@@ -426,10 +542,16 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
                   <div className="text-center pt-2">
                     <button
                       type="button"
-                      onClick={() => setIsOtpSent(false)}
+                      onClick={() => {
+                        setIsOtpSent(false);
+                        if (pollingIntervalRef.current) {
+                          clearInterval(pollingIntervalRef.current);
+                          pollingIntervalRef.current = null;
+                        }
+                      }}
                       className="text-xs text-text-muted hover:text-accent-primary transition-colors focus:outline-none cursor-pointer"
                     >
-                      ¿No recibiste el código? Volver a intentar
+                      ¿No recibiste el correo? Volver a intentar
                     </button>
                   </div>
                 </form>
