@@ -101,6 +101,16 @@ export default function PizarraPane({
           })
         );
       },
+      // Mirror of useLiveSurfaceRegistry.updateSurface: partial
+      // merge of root-level fields (e.g. `requestedRendererMode`).
+      // Used by the per-shape renderer switcher in the pizarra
+      // CanvasTerminal header.
+      updateSurface: (id, patch) => {
+        if (!patch || typeof patch !== 'object') return;
+        setLocalSurfaces((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, ...patch } : s))
+        );
+      },
       resetSurfaces: (nextSurfaces) => {
         setLocalSurfaces(nextSurfaces || []);
       },
@@ -462,6 +472,21 @@ function PizarraInner({
 
   const laidOutRegistryRef = useRef(new Set());
 
+  // pizarra-renderer-switcher: per-shape terminal renderer update.
+  // Routes the user's selection from the CanvasTerminal header's
+  // <PanelRendererSelect> into the surface registry as a root-level
+  // patch (NOT into `pizarra`, which is reserved for layout fields).
+  // Triggers a re-render with the new requestedRendererMode, which
+  // re-mounts TerminalTTY with the chosen renderer.
+  const handleUpdateSurfaceRenderer = useCallback(
+    (surfaceId, mode) => {
+      if (!surfaceId || !mode) return;
+      if (typeof registry?.updateSurface !== 'function') return;
+      registry.updateSurface(surfaceId, { requestedRendererMode: mode });
+    },
+    [registry]
+  );
+
   // ── Unpositioned registry surfaces layout (smart structure on first pizarra with carried) ──
   // When carried terminals/browsers from normal appear with x:null (first switch), assign
   // positions using matching default preset (dev-split etc) based on counts, so they start
@@ -612,6 +637,11 @@ function PizarraInner({
           url: cleanedExtraProps.url || (type === 'browser' ? 'http://localhost:3000/' : undefined),
           initialCommand: cleanedExtraProps.initialCommand,
           label: cleanedExtraProps.label || (isTerminal ? `Terminal` : `Browser`),
+          // terminal-renderer-default-xterm-webgl: defensive pin — even if
+          // a future regression in the resolver layer demotes xterm-webgl
+          // for new spawn paths, the preset stays the source of truth for
+          // the renderer of surfaces it creates.
+          requestedRendererMode: 'xterm-webgl',
         };
         const addedSurface = registry.addSurface(surfaceData);
         if (addedSurface && addedSurface.id) {
@@ -953,11 +983,13 @@ function PizarraInner({
           pizarra: { ...slots.browser, visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser',
+          requestedRendererMode: 'xterm-webgl',
         });
         const added = registry.addSurface({
           type: 'terminal',
           pizarra: { ...slots.terminals[0], visible: true },
           label: 'Terminal',
+          requestedRendererMode: 'xterm-webgl',
         });
         if (added?.id) setActiveTerminalId(added.id);
       } else if (presetType === 'dev-trio') {
@@ -967,16 +999,19 @@ function PizarraInner({
           pizarra: { ...slots.browser, visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser',
+          requestedRendererMode: 'xterm-webgl',
         });
         registry.addSurface({
           type: 'terminal',
           pizarra: { ...slots.terminals[0], visible: true },
           label: 'Terminal Top',
+          requestedRendererMode: 'xterm-webgl',
         });
         const added = registry.addSurface({
           type: 'terminal',
           pizarra: { ...slots.terminals[1], visible: true },
           label: 'Terminal Bottom',
+          requestedRendererMode: 'xterm-webgl',
         });
         if (added?.id) setActiveTerminalId(added.id);
       } else if (presetType === 'dual-browser') {
@@ -986,12 +1021,14 @@ function PizarraInner({
           pizarra: { ...slots.browsers[0], visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser 1',
+          requestedRendererMode: 'xterm-webgl',
         });
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browsers[1], visible: true },
           url: 'http://localhost:3000/',
           label: 'Browser 2',
+          requestedRendererMode: 'xterm-webgl',
         });
       }
     },
@@ -1291,6 +1328,7 @@ function PizarraInner({
           onActivateTerminal={onActivateTerminal}
           onUpdateElement={onUpdateElement}
           onRemoveElement={onRemoveElement}
+          onUpdateRendererMode={handleUpdateSurfaceRenderer}
           projectId={projectId}
           workspaceId={workspaceId}
           dockState={dockState}

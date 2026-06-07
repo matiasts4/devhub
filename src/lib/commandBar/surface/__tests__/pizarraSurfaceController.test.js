@@ -25,7 +25,7 @@ describe('PizarraSurfaceController', () => {
     mockShapes = [];
   });
 
-  test('spawnTerminal calls addElement with terminal shape props', async () => {
+  test('spawnTerminal calls addElement with terminal shape props (terminal-renderer-default pin)', async () => {
     const controller = createPizarraSurfaceController({
       addElement: mockAddElement,
       updateElement: mockUpdateElement,
@@ -46,12 +46,16 @@ describe('PizarraSurfaceController', () => {
     expect(mockAddElement).toHaveBeenCalledWith('terminal', {
       label: 'test-terminal',
       initialCommand: 'npm test',
+      // terminal-renderer-default-xterm-webgl: defensive pin so the
+      // command-bar spawn honors the new global default even if the
+      // resolver layer is bypassed.
+      requestedRendererMode: 'xterm-webgl',
     });
     expect(result.id).toBe('terminal-1');
     expect(result.label).toBe('test-terminal');
   });
 
-  test('spawnTerminal without label uses default', async () => {
+  test('spawnTerminal without label uses default and still pins xterm-webgl', async () => {
     const controller = createPizarraSurfaceController({
       addElement: mockAddElement,
       updateElement: mockUpdateElement,
@@ -69,6 +73,10 @@ describe('PizarraSurfaceController', () => {
     });
 
     expect(result.label).toBe('Terminal');
+    expect(mockAddElement).toHaveBeenCalledWith(
+      'terminal',
+      expect.objectContaining({ requestedRendererMode: 'xterm-webgl' })
+    );
   });
 
   test('focusTerminal calls setActiveTerminalId', () => {

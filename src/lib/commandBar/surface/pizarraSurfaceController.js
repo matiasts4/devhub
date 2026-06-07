@@ -31,11 +31,15 @@ export function createPizarraSurfaceController({
      */
     async spawnTerminal(opts = {}) {
       const { label, initialCommand } = opts;
-      
-      // Delegate to Pizarra's addElement with extra props
+
+      // Delegate to Pizarra's addElement with extra props. The
+      // requestedRendererMode pin honors the new global default
+      // (xterm-webgl) for command-bar spawns even if the resolver layer
+      // is bypassed; existing per-panel overrides still take precedence.
       const shape = addElement('terminal', {
         label: label || 'Terminal',
         initialCommand,
+        requestedRendererMode: 'xterm-webgl',
       });
 
       return {

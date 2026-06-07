@@ -26,7 +26,7 @@ describe('terminalRun action', () => {
     };
   });
 
-  test('spawns new terminal when no terminalName specified', async () => {
+  test('spawns new terminal when no terminalName specified (terminal-renderer-default pin)', async () => {
     const intent = {
       intent: 'terminal-run',
       slots: { command: 'npm test' },
@@ -36,11 +36,15 @@ describe('terminalRun action', () => {
 
     expect(fakeSurfaceController.spawnTerminal).toHaveBeenCalledWith({
       initialCommand: 'npm test',
+      // terminal-renderer-default-xterm-webgl: command bar honors the
+      // new global default by forwarding requestedRendererMode through
+      // to spawnTerminal.
+      requestedRendererMode: 'xterm-webgl',
     });
     expect(result.id).toBe('terminal-123');
   });
 
-  test('spawns terminal with label when terminalName provided but not found', async () => {
+  test('spawns terminal with label when terminalName provided but not found (terminal-renderer-default pin)', async () => {
     const intent = {
       intent: 'terminal-run',
       slots: { command: 'git status', terminalName: 'git-workspace' },
@@ -54,6 +58,7 @@ describe('terminalRun action', () => {
     expect(fakeSurfaceController.spawnTerminal).toHaveBeenCalledWith({
       label: 'git-workspace',
       initialCommand: 'git status',
+      requestedRendererMode: 'xterm-webgl',
     });
   });
 
