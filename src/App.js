@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   HashRouter,
@@ -7,6 +8,7 @@ import {
   Outlet,
   useParams,
   useLocation,
+  useNavigate,
 } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -45,6 +47,7 @@ import PageHeader from './components/PageHeader';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
 import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
 import { getWorkspaceShellChromeStyle } from './components/terminal/terminalChromeStyles';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -82,15 +85,24 @@ function WorkspaceLayout() {
   const db = useMemo(() => createClient(), []);
   const pollRef = useRef(null);
 
+  const { activeWorkspaceId } = useAuth();
+  const navigate = useNavigate();
+
   const loadProject = useCallback(async () => {
     const { data } = await db.from('projects').select('*').eq('id', projectId).single();
     setProject(data || null);
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, db]);
 
   useEffect(() => {
     loadProject();
   }, [loadProject]);
+
+  useEffect(() => {
+    if (project && activeWorkspaceId && project.workspace_id !== activeWorkspaceId) {
+      navigate('/hub');
+    }
+  }, [project, activeWorkspaceId, navigate]);
 
   useEffect(() => {
     if (!projectId) return;

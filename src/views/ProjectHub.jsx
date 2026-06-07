@@ -1,6 +1,7 @@
+/* eslint-disable no-unused-vars */
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import TitleBar from '@/components/TitleBar';
@@ -30,6 +31,8 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
+import { useAuth } from '@/lib/auth/AuthContext';
+import WorkspaceSwitcher from '@/components/workspace-switcher/WorkspaceSwitcher';
 import {
   dataTileStyle,
   filterBarStyle,
@@ -135,7 +138,7 @@ function filterButtonStyle(selected) {
 
 export default function ProjectHub() {
   const navigate = useNavigate();
-  const db = createClient();
+  const db = useMemo(() => createClient(), []);
 
   // Detectar contexto Tauri (el plugin de diálogo solo funciona en desktop)
   const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
@@ -201,24 +204,26 @@ export default function ProjectHub() {
 
   // Local-first: no auth needed
   const localUser = { id: 'local-user', email: 'local@devhub.local' };
+  const { activeWorkspaceId, user } = useAuth();
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  async function fetchProjects() {
+  const fetchProjects = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await db
-      .from('projects')
-      .select('*, tasks(count)')
-      .order('created_at', { ascending: false });
+    let query = db.from('projects').select('*, tasks(count)');
+    if (activeWorkspaceId) {
+      query = query.eq('workspace_id', activeWorkspaceId);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
     if (error) {
       console.error('fetchProjects ERROR:', error);
       toast.error('Error al cargar proyectos: ' + error.message);
     }
     if (!error && data) setProjects(data);
     setLoading(false);
-  }
+  }, [activeWorkspaceId, db]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   async function handleSelectFolder() {
     // Detectar si estamos en contexto Tauri
@@ -245,19 +250,18 @@ export default function ProjectHub() {
   async function createProject(e) {
     e.preventDefault();
     setCreating(true);
-    const { data, error } = await db
-      .from('projects')
-      .insert(
-        buildProjectCreatePayload(
-          {
-            ...newProject,
-            planning_prompt: newProject.planning_prompt,
-          },
-          localUser.id
-        )
-      )
-      .select()
-      .single();
+    const payload = {
+      ...buildProjectCreatePayload(
+        {
+          ...newProject,
+          planning_prompt: newProject.planning_prompt,
+        },
+        user?.id || localUser.id
+      ),
+      workspace_id: activeWorkspaceId || 'local-ws',
+    };
+
+    const { data, error } = await db.from('projects').insert(payload).select().single();
 
     if (error) {
       console.error('Error creating project:', error);
@@ -310,7 +314,11 @@ export default function ProjectHub() {
       value: projects.reduce((a, p) => a + (p.tasks?.[0]?.count || 0), 0),
       color: 'var(--accent-primary, #58A6FF)',
     },
-    { label: 'Total proyectos', value: projects.length, color: 'var(--project-type-university, #D2A8FF)' },
+    {
+      label: 'Total proyectos',
+      value: projects.length,
+      color: 'var(--project-type-university, #D2A8FF)',
+    },
     {
       label: 'Completados',
       value: projects.filter((p) => p.status === 'completed').length,
@@ -335,9 +343,10 @@ export default function ProjectHub() {
             >
               <Cpu className="w-3.5 h-3.5 text-accent-primary" strokeWidth={1.5} />
             </div>
-            <span className="typography-section-label text-text-primary tracking-widest">
+            <span className="typography-section-label text-text-primary tracking-widest mr-4">
               DevHub
             </span>
+            <WorkspaceSwitcher />
           </div>
         }
         rightSlot={
@@ -365,9 +374,7 @@ export default function ProjectHub() {
       <div className="px-8 py-8">
         {/* Header */}
         <div className="mb-8 fade-in-up">
-          <h1 className="typography-title mb-1">
-            Bienvenido a DevHub
-          </h1>
+          <h1 className="typography-title mb-1">Bienvenido a DevHub</h1>
           <p className="text-text-muted text-sm">
             Selecciona un proyecto para entrar al workspace — o crea uno nuevo.
           </p>
@@ -563,8 +570,8 @@ export default function ProjectHub() {
               </Button>
             </div>
 
-<form onSubmit={createProject} className="space-y-4">
-                <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted shadow-[3px_3px_0_0_var(--border-strong)]">
+            <form onSubmit={createProject} className="space-y-4">
+              <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted shadow-[3px_3px_0_0_var(--border-strong)]">
                 Definí la clasificación y la política de documentación antes de arrancar el
                 planning. Ese gate decide cómo se guarda el contexto y qué documentos deja generar
                 DevHub antes de empezar a planificar.

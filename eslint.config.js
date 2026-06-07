@@ -124,6 +124,21 @@ export default [
     },
   },
 
+  // Override for localClient.js and its test to support ESM
+  {
+    files: ['src/lib/db/localClient.js', 'src/lib/db/__tests__/localClient.test.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.jest,
+        ...globals.es2020,
+        process: 'readonly',
+      },
+    },
+  },
+
   // Ignore generated/config files
   {
     ignores: [

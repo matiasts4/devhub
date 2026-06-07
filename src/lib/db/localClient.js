@@ -1,3 +1,15 @@
+/* eslint-disable */
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+
+const isCloud =
+  process.env.NEXT_PUBLIC_DEVHUB_AUTH_PROVIDER === 'supabase' ||
+  process.env.NEXT_PUBLIC_DEVHUB_DB_DRIVER === 'supabase' ||
+  (typeof window !== 'undefined' &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+let supabaseInstance = null;
+
 /**
  * DevHub Local DB Client (CLIENT-SIDE ONLY)
  *
@@ -276,8 +288,14 @@ LocalQueryClient.prototype.catch = function (reject) {
 // Add finally() for full Promise compatibility
 LocalQueryClient.prototype.finally = function (onSettled) {
   return this.then(
-    (result) => { onSettled?.(); return result; },
-    (error) => { onSettled?.(); throw error; }
+    (result) => {
+      onSettled?.();
+      return result;
+    },
+    (error) => {
+      onSettled?.();
+      throw error;
+    }
   );
 };
 
@@ -305,6 +323,13 @@ const localAuth = {
         },
         session: { access_token: 'local' },
       },
+      error: null,
+    };
+  },
+
+  async signInWithOtp({ email }) {
+    return {
+      data: { status: 'sent' },
       error: null,
     };
   },
@@ -361,6 +386,21 @@ const localRealtime = {
 // ── Client factory ────────────────────────────────────────────────────────────
 
 export function createClient() {
+  if (isCloud) {
+    if (!supabaseInstance) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (url && anonKey) {
+        supabaseInstance = createSupabaseClient(url, anonKey);
+      } else {
+        console.error('Supabase credentials missing in NEXT_PUBLIC_ variables');
+      }
+    }
+    if (supabaseInstance) {
+      return supabaseInstance;
+    }
+  }
+
   return {
     from(table) {
       return new LocalQueryClient(table);
