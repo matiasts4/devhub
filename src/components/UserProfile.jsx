@@ -119,18 +119,18 @@ export default function UserProfile() {
                 </p>
                 <div className="mt-2.5 flex items-center gap-1.5 text-[10px] text-accent-primary">
                   <Cloud className="w-3.5 h-3.5" />
-                  <span>Sincronización Cloud Activa</span>
+                  <span>Sincronización en la Nube Activa</span>
                 </div>
               </div>
             ) : (
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-0.5">
-                  Modo de Operación
+                  Usuario Invitado
                 </p>
-                <p className="text-xs font-semibold text-amber-500">Desconectado (Modo Local)</p>
+                <p className="text-xs font-semibold text-amber-500">Sin Sincronizar</p>
                 <div className="mt-2 flex items-center gap-1.5 text-[10px] text-text-muted">
                   <Database className="w-3.5 h-3.5" />
-                  <span>SQLite local activa</span>
+                  <span>Guardado local activo</span>
                 </div>
               </div>
             )}
