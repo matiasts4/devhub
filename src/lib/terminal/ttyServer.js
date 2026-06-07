@@ -172,14 +172,24 @@ function resolveMcpServerPath() {
   );
 }
 
+import { createRequire } from 'module';
+
 function loadTerminalDependency(globalKey, moduleName) {
   if (globalThis[globalKey]) {
     return globalThis[globalKey];
   }
-  return eval('require')(moduleName);
+  try {
+    const nativeRequire = createRequire(path.resolve(process.cwd(), 'package.json'));
+    return nativeRequire(moduleName);
+  } catch (err) {
+    ttyLog('loadDepErr', `failed to load ${moduleName} via nativeRequire, trying eval`, {
+      error: err?.message,
+    });
+    return eval('require')(moduleName);
+  }
 }
 
-// Use global require via eval to bypass Webpack's statically analyzed requires
+// Use global require via eval or createRequire to bypass Webpack's statically analyzed requires
 // This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly
 // instead of getting stubbed or mangled by Next.js's dev compiler.
 const pty = loadTerminalDependency('__DEVHUB_TTY_NODE_PTY__', 'node-pty');

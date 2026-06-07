@@ -18,15 +18,16 @@ const ACTIVE_RENDERER_MODES = LEGACY_VTE_ENABLED
   ? ['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']
   : ['xterm', 'xterm-webgl', 'canvas'];
 
-const VALID_RENDERER_MODES = new Set(ACTIVE_RENDERER_MODES);
-const VALID_PANEL_MODES = new Set([TERMINAL_RENDERER_INHERIT_MODE, ...ACTIVE_RENDERER_MODES]);
+const VALID_RENDERER_MODES = new Set([...ACTIVE_RENDERER_MODES, 'vte-experimental']);
+const VALID_PANEL_MODES = new Set([
+  TERMINAL_RENDERER_INHERIT_MODE,
+  ...ACTIVE_RENDERER_MODES,
+  'vte-experimental',
+]);
 
 function normalizeRendererMode(mode, fallback = TERMINAL_RENDERER_DEFAULT_MODE) {
   if (mode === 'ghostty-experimental') return 'xterm';
-  if (!LEGACY_VTE_ENABLED && mode === 'vte-experimental') {
-    // Disabled: map any legacy VTE request to the enforced webgl default.
-    return TERMINAL_RENDERER_DEFAULT_MODE;
-  }
+  if (mode === 'vte-experimental') return 'vte-experimental';
   return VALID_RENDERER_MODES.has(mode) ? mode : fallback;
 }
 

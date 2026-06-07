@@ -724,7 +724,12 @@ export default function AppearancePage() {
               }}
             >
               <Monitor size={12} style={{ color: 'var(--accent-primary)' }} />
-              Active: {terminalRendererMode === 'xterm-webgl' ? 'xterm-webgl' : 'xterm (fallback)'}
+              Active:{' '}
+              {terminalRendererMode === 'xterm-webgl'
+                ? 'xterm-webgl'
+                : terminalRendererMode === 'vte-experimental'
+                  ? 'vte-experimental'
+                  : 'xterm (fallback)'}
             </div>
           </div>
 
@@ -743,6 +748,7 @@ export default function AppearancePage() {
               }}
             >
               <option value="xterm-webgl">xterm-webgl (always active)</option>
+              <option value="vte-experimental">vte-experimental (legacy Linux/Tauri opt-in)</option>
               <option value="xterm">xterm (DOM fallback)</option>
             </select>
           </label>

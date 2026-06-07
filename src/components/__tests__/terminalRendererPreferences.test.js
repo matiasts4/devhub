@@ -71,19 +71,19 @@ describe('terminalRendererPreferences', () => {
       version: 1,
       workspaces: {
         'ws-1': {
-          defaultMode: 'vte-experimental',
+          defaultMode: 'xterm',
           panels: {
             p1: 'inherit',
-            p2: 'xterm',
+            p2: 'xterm-webgl',
           },
         },
       },
     };
 
-    expect(resolveRequestedRenderer({ workspaceId: 'ws-1', panelId: 'p1', prefs })).toBe(
-      'vte-experimental'
+    expect(resolveRequestedRenderer({ workspaceId: 'ws-1', panelId: 'p1', prefs })).toBe('xterm');
+    expect(resolveRequestedRenderer({ workspaceId: 'ws-1', panelId: 'p2', prefs })).toBe(
+      'xterm-webgl'
     );
-    expect(resolveRequestedRenderer({ workspaceId: 'ws-1', panelId: 'p2', prefs })).toBe('xterm');
     expect(resolveRequestedRenderer({ workspaceId: 'ws-unknown', panelId: 'p-x', prefs })).toBe(
       'xterm-webgl'
     );
