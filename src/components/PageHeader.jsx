@@ -84,6 +84,7 @@ export default function PageHeader({
       data-tauri-drag-region
       onDoubleClick={handleWinToggleMaximize}
       style={{
+        zIndex: 50,
         borderBottomColor: 'color-mix(in srgb, var(--border-subtle) 92%, transparent)',
         background:
           'linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.028) 100%), linear-gradient(180deg, color-mix(in srgb, var(--surface-app) 90%, black), color-mix(in srgb, var(--surface-card) 82%, black))',

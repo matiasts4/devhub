@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 'use client';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
@@ -21,6 +22,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import UserProfile from '@/components/UserProfile';
+import { useAuth } from '@/lib/auth/AuthContext';
 import StatusSignal from '@/components/ui/StatusSignal';
 import {
   getVisibleNavKeys,
@@ -106,10 +109,17 @@ function ProgressRing({ value, color = 'oklch(0.74 0.16 57)' }) {
   );
 }
 
-export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, onToggleCollapse, className }) {
+export default function WorkspaceSidebar({
+  project,
+  collapsed,
+  isTerminalOpen,
+  onToggleCollapse,
+  className,
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
+  const { user } = useAuth();
 
   const [activeAgentsCount, setActiveAgentsCount] = useState(0);
 
@@ -174,9 +184,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
           exit={{ opacity: 0, height: 0 }}
           transition={SLIDE_TRANSITION}
         >
-          <p className="typography-section-label">
-            {title}
-          </p>
+          <p className="typography-section-label">{title}</p>
           {extra}
         </motion.div>
       )}
@@ -347,10 +355,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
         </nav>
 
         {/* Identity block - moved to bottom */}
-        <div
-          className="px-2.5 py-2.5 border-t"
-          style={{ borderTopColor: 'var(--border-subtle)' }}
-        >
+        <div className="px-2.5 py-2.5 border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
           <motion.div
             layout
             className={collapsed ? 'flex justify-center' : 'rounded-none border p-2.5'}
@@ -464,6 +469,26 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
               </div>
             )}
           </motion.div>
+        </div>
+
+        {/* User profile section at the bottom */}
+        <div className="px-2.5 py-2 border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
+          <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'} min-w-0`}>
+            <UserProfile align="left" direction="up" />
+            {!collapsed && (
+              <div className="flex flex-col min-w-0">
+                <span
+                  className="text-[11px] font-medium text-text-primary truncate"
+                  style={{ lineHeight: '1.2' }}
+                >
+                  {user ? user.email.split('@')[0] : 'Invitado'}
+                </span>
+                <span className="text-[9px] text-text-muted truncate" style={{ lineHeight: '1' }}>
+                  {user ? 'Cloud Sync Activo' : 'Guardado Local'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sidebar collapse toggle */}

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export default function UserProfile() {
+export default function UserProfile({ align = 'right', direction = 'down' }) {
   const { user, workspaces, activeWorkspaceId, setActiveWorkspaceId, signOut } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -95,7 +95,7 @@ export default function UserProfile() {
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className="absolute right-0 mt-2.5 w-64 rounded-lg border border-borders-subtle bg-surface-card p-1.5 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-100"
+          className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} ${direction === 'up' ? 'bottom-[120%] mb-2' : 'mt-2.5'} w-64 rounded-lg border border-borders-subtle bg-surface-card p-1.5 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-100`}
           style={{
             borderColor: 'var(--chrome-border-color, var(--border-subtle))',
             background: 'var(--surface-card, #161b22)',
