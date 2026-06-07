@@ -33,9 +33,24 @@ jest.mock('@/lib/theme/themes', () => ({
     ALLOY: 'alloy',
   },
   PALETTE_OPTIONS: [
-    { id: 'mineral', label: 'Mineral Teal', description: 'Cold-mineral dark with teal accent.', primary: '#63d0c2' },
-    { id: 'cobalt', label: 'Cobalt Relay', description: 'Blue accent, navy-dark surface.', primary: '#7a93ff' },
-    { id: 'alloy', label: 'Alloy Sand', description: 'Bronze accent, warm dark surface.', primary: '#d4a16a' },
+    {
+      id: 'mineral',
+      label: 'Mineral Teal',
+      description: 'Cold-mineral dark with teal accent.',
+      primary: '#63d0c2',
+    },
+    {
+      id: 'cobalt',
+      label: 'Cobalt Relay',
+      description: 'Blue accent, navy-dark surface.',
+      primary: '#7a93ff',
+    },
+    {
+      id: 'alloy',
+      label: 'Alloy Sand',
+      description: 'Bronze accent, warm dark surface.',
+      primary: '#d4a16a',
+    },
   ],
   THEME_OPTIONS: [
     { id: 'deep-sea', label: 'Deep Sea', description: 'desc' },
@@ -61,7 +76,11 @@ jest.mock('@/lib/theme/themes', () => ({
 jest.mock('@/lib/terminal/restorePreferences', () => ({
   RESTORE_POLICY: { AUTO: 'auto', MANUAL: 'manual', OFF: 'off' },
   RESTORE_PREFERENCES_STORAGE_KEY: 'devhub_terminal_restore_prefs',
-  readTerminalRestorePreferences: jest.fn(() => ({ opencode: 'auto', generic: 'auto', swarm: 'auto' })),
+  readTerminalRestorePreferences: jest.fn(() => ({
+    opencode: 'auto',
+    generic: 'auto',
+    swarm: 'auto',
+  })),
   writeTerminalRestorePreferences: jest.fn(),
 }));
 
@@ -117,15 +136,17 @@ describe('Settings appearance page terminal renderer', () => {
     jest.clearAllMocks();
   });
 
-  test('shows terminal renderer preference in Settings with GTK VTE and xterm options only', async () => {
+  test('shows terminal renderer preference in Settings with xterm-webgl, vte-experimental, and xterm options; xterm-webgl is pre-selected', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const select = rendered.container.querySelector('[data-testid="settings-terminal-renderer-select"]');
+    const select = rendered.container.querySelector(
+      '[data-testid="settings-terminal-renderer-select"]'
+    );
     const options = Array.from(select.querySelectorAll('option')).map((option) => option.value);
 
     expect(rendered.container.textContent).toContain('Terminal renderer');
-    expect(options).toEqual(['vte-experimental', 'xterm']);
-    expect(select.value).toBe('vte-experimental');
+    expect(options).toEqual(['xterm-webgl', 'vte-experimental', 'xterm']);
+    expect(select.value).toBe('xterm-webgl');
   });
 
   test('persists the renderer preference from Settings and migrates legacy Ghostty to xterm', async () => {
@@ -133,16 +154,20 @@ describe('Settings appearance page terminal renderer', () => {
 
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const select = rendered.container.querySelector('[data-testid="settings-terminal-renderer-select"]');
+    const select = rendered.container.querySelector(
+      '[data-testid="settings-terminal-renderer-select"]'
+    );
     expect(select.value).toBe('xterm');
 
     flushSync(() => {
-      select.value = 'vte-experimental';
+      select.value = 'xterm-webgl';
       select.dispatchEvent(new window.Event('change', { bubbles: true }));
     });
     await flushEffects();
 
-    expect(window.localStorage.getItem('devhub_terminal_renderer_default_mode')).toBe('vte-experimental');
+    expect(window.localStorage.getItem('devhub_terminal_renderer_default_mode')).toBe(
+      'xterm-webgl'
+    );
   });
 
   test('shows morphology controls independent from theme selection', async () => {
@@ -160,7 +185,9 @@ describe('Settings appearance page terminal renderer', () => {
     expect(rendered.container.textContent).toContain('Theme sync');
     expect(rendered.container.textContent).toContain('Signal Amber');
 
-    const accentButton = rendered.container.querySelector('[data-testid="appearance-accent-option-amber"]');
+    const accentButton = rendered.container.querySelector(
+      '[data-testid="appearance-accent-option-amber"]'
+    );
     expect(accentButton).toBeTruthy();
 
     flushSync(() => {
@@ -199,8 +226,8 @@ describe('Settings appearance page terminal renderer', () => {
   test('changing morphology does not call setTheme', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const morphologyButton = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Brutalist Stage')
+    const morphologyButton = Array.from(rendered.container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Brutalist Stage')
     );
 
     expect(morphologyButton).toBeTruthy();
@@ -225,7 +252,11 @@ describe('Settings appearance page terminal restore preferences', () => {
     window.localStorage.clear();
     rendered = null;
     restorePreferencesModule = require('@/lib/terminal/restorePreferences');
-    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'auto', generic: 'auto', swarm: 'auto' });
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({
+      opencode: 'auto',
+      generic: 'auto',
+      swarm: 'auto',
+    });
     restorePreferencesModule.writeTerminalRestorePreferences.mockClear();
   });
 
@@ -248,12 +279,20 @@ describe('Settings appearance page terminal restore preferences', () => {
   });
 
   test('shows default auto policy when no saved preferences exist', async () => {
-    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'auto', generic: 'auto', swarm: 'auto' });
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({
+      opencode: 'auto',
+      generic: 'auto',
+      swarm: 'auto',
+    });
 
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
-    const genericSelect = rendered.container.querySelector('[data-testid="restore-policy-generic"]');
+    const opencodeSelect = rendered.container.querySelector(
+      '[data-testid="restore-policy-opencode"]'
+    );
+    const genericSelect = rendered.container.querySelector(
+      '[data-testid="restore-policy-generic"]'
+    );
     const swarmSelect = rendered.container.querySelector('[data-testid="restore-policy-swarm"]');
 
     expect(opencodeSelect.value).toBe('auto');
@@ -262,12 +301,20 @@ describe('Settings appearance page terminal restore preferences', () => {
   });
 
   test('reads saved preferences from localStorage on mount', async () => {
-    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'manual', generic: 'off', swarm: 'auto' });
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({
+      opencode: 'manual',
+      generic: 'off',
+      swarm: 'auto',
+    });
 
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
-    const genericSelect = rendered.container.querySelector('[data-testid="restore-policy-generic"]');
+    const opencodeSelect = rendered.container.querySelector(
+      '[data-testid="restore-policy-opencode"]'
+    );
+    const genericSelect = rendered.container.querySelector(
+      '[data-testid="restore-policy-generic"]'
+    );
     const swarmSelect = rendered.container.querySelector('[data-testid="restore-policy-swarm"]');
 
     expect(opencodeSelect.value).toBe('manual');
@@ -278,7 +325,9 @@ describe('Settings appearance page terminal restore preferences', () => {
   test('changing a policy persists to localStorage via writeTerminalRestorePreferences', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
+    const opencodeSelect = rendered.container.querySelector(
+      '[data-testid="restore-policy-opencode"]'
+    );
 
     flushSync(() => {
       opencodeSelect.value = 'manual';
@@ -293,12 +342,18 @@ describe('Settings appearance page terminal restore preferences', () => {
   });
 
   test('all three session types have independent selectors that do not affect each other', async () => {
-    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({ opencode: 'auto', generic: 'auto', swarm: 'auto' });
+    restorePreferencesModule.readTerminalRestorePreferences.mockReturnValue({
+      opencode: 'auto',
+      generic: 'auto',
+      swarm: 'auto',
+    });
 
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
     // Change only OpenCode
-    const opencodeSelect = rendered.container.querySelector('[data-testid="restore-policy-opencode"]');
+    const opencodeSelect = rendered.container.querySelector(
+      '[data-testid="restore-policy-opencode"]'
+    );
     flushSync(() => {
       opencodeSelect.value = 'manual';
       opencodeSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
@@ -312,7 +367,9 @@ describe('Settings appearance page terminal restore preferences', () => {
 
     // Change only Shell Genérico
     restorePreferencesModule.writeTerminalRestorePreferences.mockClear();
-    const genericSelect = rendered.container.querySelector('[data-testid="restore-policy-generic"]');
+    const genericSelect = rendered.container.querySelector(
+      '[data-testid="restore-policy-generic"]'
+    );
     flushSync(() => {
       genericSelect.value = 'off';
       genericSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
