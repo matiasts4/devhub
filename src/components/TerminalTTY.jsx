@@ -1802,14 +1802,105 @@ export default function TerminalTTY({
           return;
         }
 
+        const theme = getTerminalTheme();
+        cliLog(`CLIENT:${id}`, 'computed theme colors', theme);
         const terminal = new Terminal({
           cursorBlink: true,
           fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
           fontSize: fontSize,
           lineHeight: 1.4,
           allowTransparency: false,
-          theme: getTerminalTheme(),
+          theme: theme,
         });
+
+        const runWebGLDiagnostics = (label) => {
+          try {
+            const container = containerRef.current;
+            if (!container) {
+              cliLog(`CLIENT:${id}`, `WebGL-Diag [${label}]`, { error: 'no-container' });
+              return;
+            }
+
+            const rect = container.getBoundingClientRect();
+            const styles = window.getComputedStyle(container);
+            const parentStyles = container.parentElement
+              ? window.getComputedStyle(container.parentElement)
+              : null;
+            const parent2Styles = container.parentElement?.parentElement
+              ? window.getComputedStyle(container.parentElement.parentElement)
+              : null;
+
+            const xterm = container.querySelector('.xterm');
+            const xtermScreen = container.querySelector('.xterm-screen');
+            const canvases = Array.from(container.querySelectorAll('canvas'));
+
+            const canvasDiag = canvases.map((c, i) => {
+              const crect = c.getBoundingClientRect();
+              const cstyles = window.getComputedStyle(c);
+              let glSupport = 'untested';
+              try {
+                const gl = c.getContext('webgl2') || c.getContext('webgl');
+                glSupport = gl ? (gl.isContextLost() ? 'lost' : 'ok') : 'no-context';
+              } catch (e) {
+                glSupport = 'error: ' + e.message;
+              }
+              return {
+                index: i,
+                tagName: c.tagName,
+                className: c.className,
+                width: c.width,
+                height: c.height,
+                styleWidth: c.style.width,
+                styleHeight: c.style.height,
+                display: cstyles.display,
+                visibility: cstyles.visibility,
+                opacity: cstyles.opacity,
+                rect: { width: crect.width, height: crect.height },
+                glSupport,
+              };
+            });
+
+            cliLog(`CLIENT:${id}`, `WebGL-Diag [${label}]`, {
+              container: {
+                width: rect.width,
+                height: rect.height,
+                display: styles.display,
+                visibility: styles.visibility,
+                opacity: styles.opacity,
+                transform: styles.transform,
+              },
+              parent: parentStyles
+                ? {
+                    display: parentStyles.display,
+                    visibility: parentStyles.visibility,
+                    opacity: parentStyles.opacity,
+                    transform: parentStyles.transform,
+                  }
+                : null,
+              parent2: parent2Styles
+                ? {
+                    display: parent2Styles.display,
+                    visibility: parent2Styles.visibility,
+                    opacity: parent2Styles.opacity,
+                    transform: parent2Styles.transform,
+                  }
+                : null,
+              dom: {
+                hasXterm: !!xterm,
+                hasXtermScreen: !!xtermScreen,
+                canvasCount: canvases.length,
+              },
+              canvases: canvasDiag,
+              terminal: {
+                cols: terminal.cols,
+                rows: terminal.rows,
+                elementExists: !!terminal.element,
+              },
+            });
+          } catch (diagErr) {
+            cliLog(`CLIENT:${id}`, `WebGL-Diag [${label}] failed`, { error: diagErr.message });
+          }
+        };
 
         const fitAddon = new FitAddon();
         const searchAddon = new SearchAddon();
@@ -1842,6 +1933,7 @@ export default function TerminalTTY({
               terminal.loadAddon(webglAddon);
               setWebglFallback(null);
               cliLog(`CLIENT:${id}`, 'WebGL addon loaded and attached');
+              runWebGLDiagnostics('post-load');
             } catch (err) {
               console.warn(
                 `[TTY:${id}] xterm-webgl addon failed to register (WebGL context issue or WebKitGTK limitation)`,
@@ -1864,6 +1956,11 @@ export default function TerminalTTY({
 
         if (ready) {
           fitAddon.fit();
+          if (wantsWebgl) {
+            runWebGLDiagnostics('post-fit');
+            setTimeout(() => runWebGLDiagnostics('delay-500ms'), 500);
+            setTimeout(() => runWebGLDiagnostics('delay-2000ms'), 2000);
+          }
         }
 
         terminal.onData((data) => {

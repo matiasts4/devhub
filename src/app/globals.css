@@ -952,7 +952,6 @@ code {
 
 .devhub-xterm-container .xterm,
 .devhub-xterm-container .xterm-screen,
-.devhub-xterm-container .xterm-screen canvas,
 .devhub-xterm-container .xterm-viewport {
   background-color: var(--surface-app) !important;
 }

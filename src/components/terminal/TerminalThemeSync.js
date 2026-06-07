@@ -111,7 +111,20 @@ export function buildXtermTheme(getVar) {
 function makeDomCssVarResolver() {
   return (name) => {
     try {
-      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (typeof document === 'undefined') return '';
+      const rawValue = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (!rawValue) return '';
+
+      const tempEl = document.createElement('div');
+      tempEl.style.color = rawValue;
+      tempEl.style.display = 'none';
+      const parent = document.body || document.documentElement;
+      if (!parent) return rawValue;
+
+      parent.appendChild(tempEl);
+      const resolved = getComputedStyle(tempEl).color;
+      parent.removeChild(tempEl);
+      return resolved || '';
     } catch {
       return '';
     }

@@ -71,21 +71,33 @@ describe('CSS Tokens — globals.css', () => {
   });
 
   test('xterm viewport keeps native vertical scrolling enabled', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-y:\s*auto\s*!important;/);
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-x:\s*hidden\s*!important;/);
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-y:\s*auto\s*!important;/
+    );
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-x:\s*hidden\s*!important;/
+    );
   });
 
   test('xterm viewport reserves stable scrollbar gutter to avoid offset artifacts', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*scrollbar-gutter:\s*stable;/);
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*scrollbar-gutter:\s*stable;/
+    );
   });
 
   test('xterm viewport no longer uses transparent background that corrupts TUI canvas rendering', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/);
-    expect(css).not.toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*transparent\s*!important;/);
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/
+    );
+    expect(css).not.toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*transparent\s*!important;/
+    );
   });
 
   test('xterm layers inherit a solid app-surface background', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm,\s*[\s\S]*\.devhub-xterm-container \.xterm-screen,\s*[\s\S]*\.devhub-xterm-container \.xterm-screen canvas,\s*[\s\S]*\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/);
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm,\s*[\s\S]*\.devhub-xterm-container \.xterm-screen,\s*[\s\S]*\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/
+    );
   });
 
   test('blue hex accent #0969da does not appear in default :root token block', () => {
