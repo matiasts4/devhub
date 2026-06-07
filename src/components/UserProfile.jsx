@@ -36,6 +36,11 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // OTP Verification States
+  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [otpToken, setOtpToken] = useState('');
+  const [verifying, setVerifying] = useState(false);
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     if (!email) {
@@ -48,17 +53,14 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
       const { error } = await db.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo:
-            typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
           shouldCreateUser: authMode === 'signup',
         },
       });
       if (error) {
         toast.error('Error: ' + error.message);
       } else {
-        toast.success('¡Enlace de acceso enviado! Revisa tu bandeja de entrada.');
-        setShowAuthModal(false);
-        setEmail('');
+        toast.success('¡Código de verificación enviado! Revisa tu correo electrónico.');
+        setIsOtpSent(true);
       }
     } catch (err) {
       console.error(err);
@@ -66,6 +68,44 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOtpVerify = async (e) => {
+    e.preventDefault();
+    if (!otpToken) {
+      toast.error('Por favor ingresa el código de verificación');
+      return;
+    }
+    setVerifying(true);
+    try {
+      const db = createClient();
+      const { data, error } = await db.auth.verifyOtp({
+        email,
+        token: otpToken,
+        type: authMode === 'signup' ? 'signup' : 'magiclink',
+      });
+      if (error) {
+        toast.error('Código incorrecto o expirado: ' + error.message);
+      } else {
+        toast.success('¡Sesión iniciada correctamente!');
+        setShowAuthModal(false);
+        setIsOtpSent(false);
+        setOtpToken('');
+        setEmail('');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al verificar el código');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const closeAuthModal = () => {
+    setShowAuthModal(false);
+    setIsOtpSent(false);
+    setEmail('');
+    setOtpToken('');
   };
 
   // Close dropdown on click outside
@@ -284,10 +324,7 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
             <div className="w-full max-w-sm border border-borders-subtle bg-surface-card p-6 shadow-2xl rounded-lg relative">
               {/* Close button */}
               <button
-                onClick={() => {
-                  setShowAuthModal(false);
-                  setEmail('');
-                }}
+                onClick={closeAuthModal}
                 className="absolute right-4 top-4 text-text-muted hover:text-text-primary p-1 rounded-full hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -302,52 +339,101 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
                   {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
                 </h2>
                 <p className="text-xs text-text-muted mt-1 max-w-[260px]">
-                  {authMode === 'login'
-                    ? 'Accede a tus proyectos compartidos y sincronización en la nube.'
-                    : 'Regístrate para colaborar y guardar tus proyectos en la nube.'}
+                  {isOtpSent
+                    ? `Ingresa el código de 6 dígitos que te enviamos a tu correo.`
+                    : authMode === 'login'
+                      ? 'Accede a tus proyectos compartidos y sincronización en la nube.'
+                      : 'Regístrate para colaborar y guardar tus proyectos en la nube.'}
                 </p>
               </div>
 
-              <form onSubmit={handleAuthSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-[11px] font-medium text-text-muted mb-1.5">
-                    Correo electrónico
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="nombre@correo.com"
-                    className="w-full text-xs bg-[var(--surface-elevated, #0d1117)] border border-borders-subtle focus:border-[var(--accent-primary)] rounded-md px-3.5 py-2.5 text-text-primary focus:outline-none transition-colors"
-                  />
-                </div>
+              {!isOtpSent ? (
+                <form onSubmit={handleAuthSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-medium text-text-muted mb-1.5">
+                      Correo electrónico
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="nombre@correo.com"
+                      className="w-full text-xs bg-[var(--surface-elevated, #0d1117)] border border-borders-subtle focus:border-[var(--accent-primary)] rounded-md px-3.5 py-2.5 text-text-primary focus:outline-none transition-colors"
+                    />
+                  </div>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 bg-accent-primary hover:bg-accent-primary/95 text-black font-semibold text-xs py-2.5 px-4 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
-                >
-                  {loading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Mail className="w-3.5 h-3.5" />
-                  )}
-                  <span>{loading ? 'Enviando enlace...' : 'Enviar enlace mágico'}</span>
-                </button>
-
-                <div className="text-center pt-2">
                   <button
-                    type="button"
-                    onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-                    className="text-xs text-text-muted hover:text-accent-primary transition-colors focus:outline-none cursor-pointer"
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 bg-accent-primary hover:bg-accent-primary/95 text-black font-semibold text-xs py-2.5 px-4 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
                   >
-                    {authMode === 'login'
-                      ? '¿No tienes cuenta? Regístrate aquí'
-                      : '¿Ya tienes cuenta? Inicia sesión aquí'}
+                    {loading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Mail className="w-3.5 h-3.5" />
+                    )}
+                    <span>{loading ? 'Enviando código...' : 'Enviar código por correo'}</span>
                   </button>
-                </div>
-              </form>
+
+                  <div className="text-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                      className="text-xs text-text-muted hover:text-accent-primary transition-colors focus:outline-none cursor-pointer"
+                    >
+                      {authMode === 'login'
+                        ? '¿No tienes cuenta? Regístrate aquí'
+                        : '¿Ya tienes cuenta? Inicia sesión aquí'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleOtpVerify} className="space-y-4">
+                  <div className="rounded-none border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-amber-500/95 rounded-md">
+                    Código enviado a <strong className="text-text-primary">{email}</strong>. Revisa
+                    tu bandeja de entrada (y spam).
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-text-muted mb-1.5">
+                      Código de verificación
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      value={otpToken}
+                      onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                      className="w-full text-center text-lg tracking-[0.5em] font-mono bg-[var(--surface-elevated, #0d1117)] border border-borders-subtle focus:border-[var(--accent-primary)] rounded-md px-3 py-2.5 text-text-primary focus:outline-none transition-colors"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={verifying}
+                    className="w-full flex items-center justify-center gap-2 bg-accent-primary hover:bg-accent-primary/95 text-black font-semibold text-xs py-2.5 px-4 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {verifying ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>{verifying ? 'Verificando...' : 'Verificar código'}</span>
+                  </button>
+
+                  <div className="text-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsOtpSent(false)}
+                      className="text-xs text-text-muted hover:text-accent-primary transition-colors focus:outline-none cursor-pointer"
+                    >
+                      ¿No recibiste el código? Volver a intentar
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>,
           document.body
