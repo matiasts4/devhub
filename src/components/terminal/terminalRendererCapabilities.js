@@ -105,6 +105,19 @@ export function getTerminalRendererCapability(mode) {
     };
   }
 
+  // xterm-webgl is the global default in the static (no live probe) path; its
+  // readiness is reported optimistically. TerminalTTY wraps loadAddon in
+  // try/catch and falls back to the xterm DOM renderer if WebGL registration
+  // actually fails.
+  if (normalizedMode === 'xterm-webgl') {
+    return {
+      mode: 'xterm-webgl',
+      label: TERMINAL_RENDERER_LABELS['xterm-webgl'],
+      ready: true,
+      reason: null,
+    };
+  }
+
   return {
     mode: normalizedMode,
     label: TERMINAL_RENDERER_LABELS[normalizedMode],

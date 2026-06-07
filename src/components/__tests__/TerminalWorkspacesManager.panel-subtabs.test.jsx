@@ -620,13 +620,13 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     );
   });
 
-  test('uses GTK VTE as the default renderer for fresh workspaces and inherited views', async () => {
+  test('uses xterm-webgl as the default renderer for fresh workspaces and inherited views', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
     expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
-      'vte-experimental'
+      'xterm-webgl'
     );
   });
 

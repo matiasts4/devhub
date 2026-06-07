@@ -249,4 +249,38 @@ describe('terminalRendererCapabilities', () => {
       })
     );
   });
+
+  test('static xterm-webgl capability reports ready:true (TRS-DELTA-S1)', () => {
+    expect(getTerminalRendererCapability('xterm-webgl')).toEqual(
+      expect.objectContaining({
+        mode: 'xterm-webgl',
+        ready: true,
+        reason: null,
+      })
+    );
+  });
+
+  test('static resolver does not demote xterm-webgl to xterm (TRS-DELTA-S2)', () => {
+    expect(resolveRendererSelection({ requestedMode: 'xterm-webgl' })).toEqual(
+      expect.objectContaining({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        didFallback: false,
+        fallbackReason: null,
+      })
+    );
+  });
+
+  test('static xterm-webgl does not break vte-experimental opt-in (TRS-DELTA-S3)', () => {
+    // Re-affirm the term-02 contract: vte-experimental still falls back to xterm
+    // deterministically when the static capability map is the only signal.
+    expect(resolveRendererSelection({ requestedMode: 'vte-experimental' })).toEqual(
+      expect.objectContaining({
+        requestedMode: 'vte-experimental',
+        effectiveMode: 'xterm',
+        didFallback: true,
+        fallbackReason: 'not-ready',
+      })
+    );
+  });
 });

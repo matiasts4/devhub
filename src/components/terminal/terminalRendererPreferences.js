@@ -1,6 +1,6 @@
 export const TERMINAL_RENDERER_PREFERENCE_VERSION = 1;
 export const TERMINAL_RENDERER_INHERIT_MODE = 'inherit';
-export const TERMINAL_RENDERER_DEFAULT_MODE = 'vte-experimental';
+export const TERMINAL_RENDERER_DEFAULT_MODE = 'xterm-webgl';
 export const TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY = 'devhub_terminal_renderer_default_mode';
 
 const VALID_RENDERER_MODES = new Set(['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']);

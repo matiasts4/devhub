@@ -41,7 +41,7 @@ describe('terminalRendererPreferences.xterm-webgl', () => {
   test('setPanelRendererPreference(..., "xterm-webgl") round-trips through write/read (TRP-XW-1 SCEN-1)', () => {
     const storage = createStorage();
     const next = setPanelRendererPreference(
-      { version: 1, defaultMode: 'vte-experimental', workspaces: {} },
+      { version: 1, defaultMode: 'xterm-webgl', workspaces: {} },
       'ws1',
       'p1',
       'xterm-webgl'
@@ -53,7 +53,7 @@ describe('terminalRendererPreferences.xterm-webgl', () => {
       readTerminalRendererPreferences(storage, 'proj-A', [createWorkspace('ws1', ['p1'])])
     ).toEqual(
       expect.objectContaining({
-        defaultMode: 'vte-experimental',
+        defaultMode: 'xterm-webgl',
         workspaces: {
           ws1: expect.objectContaining({
             panels: { p1: 'xterm-webgl' },
@@ -65,6 +65,9 @@ describe('terminalRendererPreferences.xterm-webgl', () => {
 
   test('setWorkspaceDefaultRenderer(..., "xterm-webgl") round-trips the workspace default (TRP-XW-1 SCEN-2)', () => {
     const storage = createStorage();
+    // Start from a non-xterm-webgl baseline so the sanitizer keeps the workspace
+    // (the sanitizer drops workspaces whose defaultMode matches the global default
+    // AND have no explicit panel overrides).
     const next = setWorkspaceDefaultRenderer(
       { version: 1, defaultMode: 'vte-experimental', workspaces: {} },
       'ws1',
@@ -89,7 +92,7 @@ describe('terminalRendererPreferences.xterm-webgl', () => {
   test('a fresh read after restart preserves the xterm-webgl panel override (TRP-XW-2 SCEN-1)', () => {
     const storage = createStorage();
     const next = setPanelRendererPreference(
-      { version: 1, defaultMode: 'vte-experimental', workspaces: {} },
+      { version: 1, defaultMode: 'xterm-webgl', workspaces: {} },
       'ws1',
       'p1',
       'xterm-webgl'
@@ -108,7 +111,7 @@ describe('terminalRendererPreferences.xterm-webgl', () => {
   test('a panel override survives a workspace default change (TRP-XW-3 SCEN-1)', () => {
     const storage = createStorage();
     const seed = setPanelRendererPreference(
-      { version: 1, defaultMode: 'vte-experimental', workspaces: {} },
+      { version: 1, defaultMode: 'xterm-webgl', workspaces: {} },
       'ws1',
       'p1',
       'xterm-webgl'
