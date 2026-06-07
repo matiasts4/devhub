@@ -20,8 +20,6 @@ import {
   Cpu,
   Plus,
   Sparkles,
-  LogIn,
-  Cloud,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -474,9 +472,8 @@ export default function WorkspaceSidebar({
 
         {/* Bottom bar: user indicator + collapse toggle */}
         <div className="border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
-          {/* User row — only show content when relevant */}
-          {user ? (
-            /* Logged in: compact avatar + info row */
+          {/* User row — only visible when logged in */}
+          {user && (
             <div
               className={`flex items-center min-w-0 ${
                 collapsed ? 'justify-center px-1.5 py-2' : 'gap-2 px-2.5 py-2'
@@ -513,29 +510,6 @@ export default function WorkspaceSidebar({
                 </div>
               )}
             </div>
-          ) : (
-            /* Not logged in: nothing in collapsed, compact login button when expanded */
-            !collapsed && (
-              <button
-                onClick={() => {
-                  // Dispatch a custom event to open the auth modal from TitleBar UserProfile
-                  window.dispatchEvent(new CustomEvent('devhub:open-auth-modal'));
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors cursor-pointer hover:bg-white/[0.04]"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <LogIn
-                  className="w-3.5 h-3.5 shrink-0"
-                  style={{ color: 'var(--accent-primary)' }}
-                />
-                <span
-                  className="text-[11px] font-medium"
-                  style={{ color: 'var(--accent-primary)' }}
-                >
-                  Iniciar Sesión
-                </span>
-              </button>
-            )
           )}
 
           {/* Collapse toggle */}
