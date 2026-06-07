@@ -18,8 +18,17 @@ import {
   SURFACE_ENTER_ANIMATION,
   ACCENT,
 } from '@/lib/pizarra/surfaceMotion';
-import { resolveRendererSelection } from '@/components/terminal/terminalRendererCapabilities';
+// Note: we DO NOT route the requested renderer through
+// resolveRendererSelection here. That resolver consults a STATIC
+// capability map (no live WebGL probe is wired in this code path), so
+// it always reports xterm-webgl as `not-ready` and demotes the
+// requested mode to 'xterm' — which would defeat the per-shape
+// renderer switcher (user picks xterm-webgl, terminal renders plain
+// xterm). We pass the requested mode through to TerminalTTY as-is and
+// let IT run the live WebGL probe in its own mount; TerminalTTY
+// already surfaces a visible demotion warning if the probe fails.
 import PanelRendererSelect from '@/components/terminal/components/PanelRendererSelect';
+import { SHOW_RENDERER_SWITCH } from '@/components/terminal/terminalRendererPreferences';
 
 // pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
 // pointer travel that separates a click from a drag. Below this
@@ -74,9 +83,13 @@ export default function CanvasTerminal({
   // requested renderer selection. In practice pizarra only carries VTE
   // (the legacy 'vte-experimental' value), but going through the resolver
   // keeps the chrome label honest if a future shape requests xterm-webgl.
-  const effectiveRendererMode = requestedRendererMode
-    ? resolveRendererSelection({ requestedMode: requestedRendererMode })?.effectiveMode
-    : 'vte-experimental';
+  //
+  // We no longer call resolveRendererSelection here — see the import
+  // comment. The native-VTE branch checks below use `isVteExperimental`
+  // derived from the raw `requestedRendererMode`. Everything else
+  // (the chrome switcher, the TerminalTTY prop) sees the requested
+  // mode directly.
+  const isVteExperimental = requestedRendererMode === 'vte-experimental';
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = useMemo(
     () =>
@@ -97,7 +110,7 @@ export default function CanvasTerminal({
       onActivatePanel?.(terminalId);
       // Raise the native VTE so this pizarra terminal card's content is above other
       // native surfaces (e.g. browsers) when the card is top in pizarra stacking.
-      if (effectiveRendererMode === 'vte-experimental') {
+      if (isVteExperimental) {
         raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
       }
     },
@@ -114,7 +127,7 @@ export default function CanvasTerminal({
   // content rect of the card). Raise it so this terminal is above other natives when
   // its pizarra surface is top in the stacking order.
   useEffect(() => {
-    if (effectiveRendererMode === 'vte-experimental') {
+    if (isVteExperimental) {
       raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
     }
   }, []); // run once on mount
@@ -124,8 +137,7 @@ export default function CanvasTerminal({
   // widget is created and can be positioned/raised over the card content rect.
   const nativeOpenedRef = useRef(false);
   useEffect(() => {
-    if (effectiveRendererMode !== 'vte-experimental' || !terminalId || nativeOpenedRef.current)
-      return;
+    if (!isVteExperimental || !terminalId || nativeOpenedRef.current) return;
     const b = resolvedBounds;
     const contentW = Math.max(10, (b.width || 800) - 20);
     const contentH = Math.max(10, (b.height || 600) - 20 - 28);
@@ -144,7 +156,7 @@ export default function CanvasTerminal({
     }).catch(() => {
       nativeOpenedRef.current = false; // allow retry
     });
-  }, [effectiveRendererMode, terminalId, resolvedBounds, cwd, initialCommand]);
+  }, [isVteExperimental, terminalId, resolvedBounds, cwd, initialCommand]);
 
   // pizarra-motion: hover state drives the idle border/shadow highlight.
   const [isHovered, setIsHovered] = useState(false);
@@ -154,7 +166,7 @@ export default function CanvasTerminal({
   useEffect(() => {
     // Para pizarra terminales: siempre native VTE. Posicionamos el widget exactamente
     // sobre el área de contenido de la card (inset por el header web del frame).
-    if (effectiveRendererMode === 'vte-experimental' && resolvedBounds) {
+    if (isVteExperimental && resolvedBounds) {
       const inset = 10;
       const headerH = 28;
       resizeNativeVtePanel({
@@ -167,7 +179,7 @@ export default function CanvasTerminal({
         },
       }).catch(() => {});
     }
-  }, [resolvedBounds, terminalId, effectiveRendererMode]);
+  }, [resolvedBounds, terminalId, isVteExperimental]);
 
   // Usamos la terminal nativa VTE widget también para las cards de terminal en pizarra.
   // No parqueamos ni usamos canvas "externo" para el contenido (el usuario pidió utilizar
@@ -226,11 +238,7 @@ export default function CanvasTerminal({
   // repaint that caused the post-drag flicker. See design §6.2.
   const wasLiveDraggingRef = useRef(false);
   useEffect(() => {
-    if (
-      wasLiveDraggingRef.current &&
-      !isLiveDragging &&
-      effectiveRendererMode === 'vte-experimental'
-    ) {
+    if (wasLiveDraggingRef.current && !isLiveDragging && isVteExperimental) {
       // Just exited a real drag. Reattach the native panel right now,
       // synchronously. The effect runs in the same React commit tick
       // that processed the state flip.
@@ -366,7 +374,7 @@ export default function CanvasTerminal({
         // This keeps the terminal content area perfectly matched to the header chrome at all times, even mid-drag.
         // Prevents the prompt/path text from "leaking" or duplicating into the header area after repeated resizes,
         // wrong section colors (bg leaking), or cut-off text. The React effect will reconcile on commit.
-        if (effectiveRendererMode === 'vte-experimental' && terminalId) {
+        if (isVteExperimental && terminalId) {
           const inset = 10;
           const headerH = 28;
           const contentW = Math.max(1, screenW - inset * 2);
@@ -426,7 +434,7 @@ export default function CanvasTerminal({
       // Ensure raised at drag start (select may have done it, but for
       // direct header drags we guarantee the native is topmost so its
       // content wins over other natives while moving).
-      if (effectiveRendererMode === 'vte-experimental') {
+      if (isVteExperimental) {
         raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
       }
     },
@@ -454,7 +462,7 @@ export default function CanvasTerminal({
       setPointerDown(false);
       setIsLiveDragging(false);
       // Re-raise on drop so the final position respects the surface being topmost.
-      if (effectiveRendererMode === 'vte-experimental') {
+      if (isVteExperimental) {
         raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
       }
       onDragEnd?.(args);
@@ -554,12 +562,14 @@ export default function CanvasTerminal({
         >
           <span>{resolvedShape.label || 'Terminal'}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <PanelRendererSelect
-              panelId={terminalId}
-              currentMode={requestedRendererMode}
-              availableModes={['xterm-webgl', 'vte-experimental']}
-              onChange={onUpdateRendererMode}
-            />
+            {SHOW_RENDERER_SWITCH ? (
+              <PanelRendererSelect
+                panelId={terminalId}
+                currentMode={requestedRendererMode}
+                availableModes={['xterm-webgl', 'xterm']}
+                onChange={onUpdateRendererMode}
+              />
+            ) : null}
             <button
               type="button"
               data-testid="canvas-terminal-close"
@@ -593,7 +603,7 @@ export default function CanvasTerminal({
         <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>
           <TerminalTTY
             id={terminalId}
-            requestedRendererMode={effectiveRendererMode}
+            requestedRendererMode={requestedRendererMode}
             hideTitleBar
             onClose={onClose}
             onResize={onResize}

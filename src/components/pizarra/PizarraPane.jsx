@@ -107,9 +107,7 @@ export default function PizarraPane({
       // CanvasTerminal header.
       updateSurface: (id, patch) => {
         if (!patch || typeof patch !== 'object') return;
-        setLocalSurfaces((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, ...patch } : s))
-        );
+        setLocalSurfaces((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
       },
       resetSurfaces: (nextSurfaces) => {
         setLocalSurfaces(nextSurfaces || []);
@@ -288,7 +286,9 @@ export default function PizarraPane({
           const pid = surface.panelId || id;
           // Explicitly close the native webview for this browser surface when the
           // pizarra "ventana"/card is removed. This releases the instance.
-          closeNativeBrowser({ panelId: pid, reason: 'pizarra-browser-surface-removed' }).catch(() => {});
+          closeNativeBrowser({ panelId: pid, reason: 'pizarra-browser-surface-removed' }).catch(
+            () => {}
+          );
           // If main ws browser, also close in ws state (so normal view doesn't re-open it by default).
           if (pid && (pid.includes(`browser-${workspaceId}`) || pid.startsWith('browser-'))) {
             onBrowserWindowStateChange?.(workspaceId, {
@@ -451,6 +451,12 @@ function PizarraInner({
   // Track if we applied default structure (preset-based pos) to carried surfaces on first pizarra entry.
   const didAutoStructureRef = useRef(false);
 
+  // pizarra-divider-fluid: last committed values captured during rAF-batched
+  // divider drag so that on mouseup we can force a final model update even
+  // if the last rAF was cancelled.
+  const lastDividerVRef = useRef(null);
+  const lastDividerHRef = useRef(null);
+
   // ── Viewport-aware visible region ────────────────────────────────────────
   // Returns the canvas-space bounding box of what is currently visible on screen.
   // Used to spawn elements inside the visible region and to compute snap zones.
@@ -504,7 +510,9 @@ function PizarraInner({
     const bNeeds = needs.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
     const tNeeds = needs.filter((s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL);
 
-    const vis = getVisibleCanvasRegion ? getVisibleCanvasRegion() : { width: canvasSize.width || 900, height: canvasSize.height || 600, x: 0, y: 0 };
+    const vis = getVisibleCanvasRegion
+      ? getVisibleCanvasRegion()
+      : { width: canvasSize.width || 900, height: canvasSize.height || 600, x: 0, y: 0 };
     const cx = vis.x + vis.width / 2;
     const cy = vis.y + vis.height / 2;
 
@@ -569,7 +577,14 @@ function PizarraInner({
         laidOutRegistryRef.current.add(s.id);
       });
     }
-  }, [registry, registry.surfaces, registry.updatePizarraLayout, canvasSize, SHAPE_TYPES, getVisibleCanvasRegion]);
+  }, [
+    registry,
+    registry.surfaces,
+    registry.updatePizarraLayout,
+    canvasSize,
+    SHAPE_TYPES,
+    getVisibleCanvasRegion,
+  ]);
 
   // ── handleAddElement — spawns at current visible viewport center ─────────
   const handleAddElement = useCallback(
@@ -643,9 +658,22 @@ function PizarraInner({
           // the renderer of surfaces it creates.
           requestedRendererMode: 'xterm-webgl',
         };
+        const existingLive = (mergedElements || []).filter(
+          (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
+        );
+        const hadExistingCards = existingLive.length > 0;
         const addedSurface = registry.addSurface(surfaceData);
         if (addedSurface && addedSurface.id) {
           selectElement(addedSurface.id);
+          // Auto-refit: if there were already cards on the canvas, re-fit all
+          // after a short delay so the new card appears first, then everything
+          // snaps into a clean layout.
+          if (hadExistingCards) {
+            setTimeout(() => {
+              // handleApplyLayout is not yet in scope here; dispatch via event
+              window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+            }, 350);
+          }
         }
         return addedSurface || surfaceData;
       } else {
@@ -821,7 +849,7 @@ function PizarraInner({
     const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
     return {
       browser: { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
-      terminals: [{ x: cx + 12, y: cy - h / 2, width: tw, height: h }]
+      terminals: [{ x: cx + 12, y: cy - h / 2, width: tw, height: h }],
     };
   };
 
@@ -834,8 +862,8 @@ function PizarraInner({
       browser: { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
       terminals: [
         { x: cx + 12, y: cy - h / 2, width: tw, height: th },
-        { x: cx + 12, y: cy - h / 2 + th + 14, width: tw, height: th }
-      ]
+        { x: cx + 12, y: cy - h / 2 + th + 14, width: tw, height: th },
+      ],
     };
   };
 
@@ -845,9 +873,114 @@ function PizarraInner({
     return {
       browsers: [
         { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
-        { x: cx + 12, y: cy - h / 2, width: bw, height: h }
-      ]
+        { x: cx + 12, y: cy - h / 2, width: bw, height: h },
+      ],
     };
+  };
+
+  // ── computeAutoFitSlots — smart adaptive layout based on surface count/type ──
+  // Picks the best layout strategy given the current set of live surfaces and
+  // the visible canvas region. This is the heart of "Fit All" / auto-refit.
+  // Returns an array of { id, x, y, width, height } updates to apply.
+  const computeAutoFitSlots = (vis, surfaces) => {
+    const cx = vis.x + vis.width / 2;
+    const cy = vis.y + vis.height / 2;
+    const PAD = 20;
+    const GAP = 16;
+    const maxH = Math.max(200, Math.round(vis.height * 0.88));
+
+    const browsers = surfaces.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
+    const terminals = surfaces.filter(
+      (s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL
+    );
+    const n = surfaces.length;
+
+    // 1 surface: center and fill
+    if (n === 1) {
+      const s = surfaces[0];
+      const isBrowser = s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER;
+      const w = Math.max(400, Math.round(vis.width * 0.86));
+      const h = Math.max(300, Math.min(Math.round(vis.height * 0.86), isBrowser ? 800 : 600));
+      return [
+        { id: s.id, x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), width: w, height: h },
+      ];
+    }
+
+    // 1 browser + 1 terminal → dev-split (62/38 split)
+    if (browsers.length === 1 && terminals.length === 1) {
+      const slots = computeDevSplitSlots(vis, cx, cy);
+      return [
+        { id: browsers[0].id, ...slots.browser },
+        { id: terminals[0].id, ...slots.terminals[0] },
+      ];
+    }
+
+    // 1 browser + 2 terminals → trio
+    if (browsers.length === 1 && terminals.length === 2) {
+      const slots = computeDevTrioSlots(vis, cx, cy);
+      return [
+        { id: browsers[0].id, ...slots.browser },
+        { id: terminals[0].id, ...slots.terminals[0] },
+        { id: terminals[1].id, ...slots.terminals[1] },
+      ];
+    }
+
+    // 2 browsers + 0 terminals → dual column
+    if (browsers.length === 2 && terminals.length === 0) {
+      const slots = computeDualBrowserSlots(vis, cx, cy);
+      return [
+        { id: browsers[0].id, ...slots.browsers[0] },
+        { id: browsers[1].id, ...slots.browsers[1] },
+      ];
+    }
+
+    // 0 browsers + N terminals → stack vertically or horizontal depending on count
+    if (browsers.length === 0 && terminals.length > 0) {
+      if (terminals.length <= 3) {
+        // Side by side
+        const tw = Math.max(
+          200,
+          Math.round((vis.width - PAD * 2 - GAP * (terminals.length - 1)) / terminals.length)
+        );
+        const th = Math.max(240, Math.min(maxH, Math.round(vis.height * 0.82)));
+        const totalW = tw * terminals.length + GAP * (terminals.length - 1);
+        const startX = Math.round(cx - totalW / 2);
+        const startY = Math.round(cy - th / 2);
+        return terminals.map((t, i) => ({
+          id: t.id,
+          x: startX + i * (tw + GAP),
+          y: startY,
+          width: tw,
+          height: th,
+        }));
+      }
+    }
+
+    // Generic: 2-column responsive grid centered in viewport
+    const cols = n <= 2 ? n : Math.min(2, Math.ceil(Math.sqrt(n)));
+    const rows = Math.ceil(n / cols);
+    const usableW = vis.width - PAD * 2 - GAP * (cols - 1);
+    const usableH = vis.height - PAD * 2 - GAP * (rows - 1);
+    const cellW = Math.max(200, Math.round(usableW / cols));
+    const cellH = Math.max(160, Math.round(usableH / rows));
+    const totalGridW = cols * cellW + GAP * (cols - 1);
+    const totalGridH = rows * cellH + GAP * (rows - 1);
+    const startX = Math.round(vis.x + (vis.width - totalGridW) / 2);
+    const startY = Math.round(vis.y + (vis.height - totalGridH) / 2);
+
+    // Sort: browsers first, then terminals
+    const sorted = [...browsers, ...terminals];
+    return sorted.map((s, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      return {
+        id: s.id,
+        x: startX + col * (cellW + GAP),
+        y: startY + row * (cellH + GAP),
+        width: cellW,
+        height: cellH,
+      };
+    });
   };
 
   // ── Apply layout preset (or arrange action) ──────────────────────────────
@@ -864,7 +997,7 @@ function PizarraInner({
 
       // Arrange actions (non-destructive, operate on live surfaces)
       if (presetType.startsWith('arrange-')) {
-        const mode = presetType.slice('arrange-'.length); // h | v | equal | grid
+        const mode = presetType.slice('arrange-'.length); // fit | h | v | equal | grid
         const live = (mergedElements || []).filter(
           (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
         );
@@ -877,7 +1010,18 @@ function PizarraInner({
         const n = targets.length;
         if (n === 0) return;
 
-        // Compute a sensible container from current selection bbox or visible
+        const gap = 16;
+        const updates = [];
+
+        // ── arrange-fit: smart adaptive layout centered in current viewport ──
+        if (mode === 'fit') {
+          const fitUpdates = computeAutoFitSlots(vis, targets);
+          fitUpdates.forEach((u) => onUpdateElement?.(u.id, u));
+          if (fitUpdates.length) onSelect?.(fitUpdates[0].id, true);
+          return;
+        }
+
+        // Compute a sensible container from current selection bbox
         const minX = Math.min(...targets.map((t) => t.x || 0));
         const minY = Math.min(...targets.map((t) => t.y || 0));
         const maxX = Math.max(...targets.map((t) => (t.x || 0) + (t.width || 400)));
@@ -885,44 +1029,50 @@ function PizarraInner({
         const bboxW = Math.max(200, maxX - minX);
         const bboxH = Math.max(160, maxY - minY);
 
-        const gap = 16;
-        const updates = [];
-
         if (mode === 'h' || mode === 'horizontal') {
-          // Equal widths, keep individual or average heights, abut left-to-right
+          // Equal widths, abut left-to-right, then CENTER result in viewport
           const totalGap = gap * (n - 1);
-          const w = Math.max(160, Math.round((bboxW - totalGap) / n));
-          let x = minX;
+          // Use viewport width to compute the distributed width (fills ~90% of vis)
+          const availW = Math.max(bboxW, Math.round(vis.width * 0.9));
+          const w = Math.max(160, Math.round((availW - totalGap) / n));
           const avgH = Math.max(
-            120,
+            160,
             Math.round(targets.reduce((s, t) => s + (t.height || 300), 0) / n)
           );
+          const totalResultW = w * n + gap * (n - 1);
+          // Center the whole row in the viewport
+          let x = Math.round(vis.x + (vis.width - totalResultW) / 2);
+          const rowY = Math.round(cy - avgH / 2);
           targets
             .slice()
             .sort((a, b) => (a.x || 0) - (b.x || 0))
-            .forEach((t, i) => {
+            .forEach((t) => {
               const h = Math.max(120, t.height || avgH);
-              updates.push({ id: t.id, x, y: minY, width: w, height: h });
+              updates.push({ id: t.id, x, y: rowY, width: w, height: h });
               x += w + gap;
             });
         } else if (mode === 'v' || mode === 'vertical') {
+          // Equal heights, stack top-to-bottom, CENTER result in viewport
           const totalGap = gap * (n - 1);
-          const h = Math.max(120, Math.round((bboxH - totalGap) / n));
-          let y = minY;
+          const availH = Math.max(bboxH, Math.round(vis.height * 0.88));
+          const h = Math.max(120, Math.round((availH - totalGap) / n));
           const avgW = Math.max(
-            160,
+            200,
             Math.round(targets.reduce((s, t) => s + (t.width || 400), 0) / n)
           );
+          const totalResultH = h * n + gap * (n - 1);
+          const colX = Math.round(cx - avgW / 2);
+          let y = Math.round(vis.y + (vis.height - totalResultH) / 2);
           targets
             .slice()
             .sort((a, b) => (a.y || 0) - (b.y || 0))
-            .forEach((t, i) => {
+            .forEach((t) => {
               const w = Math.max(160, t.width || avgW);
-              updates.push({ id: t.id, x: minX, y, width: w, height: h });
+              updates.push({ id: t.id, x: colX, y, width: w, height: h });
               y += h + gap;
             });
         } else if (mode === 'equal') {
-          // Same size for all (use median-ish or first clamped), keep positions
+          // Same size for all (average), keep positions
           const refW = Math.max(
             200,
             Math.round(targets.reduce((s, t) => s + (t.width || 400), 0) / n)
@@ -935,32 +1085,34 @@ function PizarraInner({
             updates.push({ id: t.id, width: refW, height: refH });
           });
         } else if (mode === 'grid' || mode === 'grid-2') {
-          // Simple 2-col grid (or 1-col if n<2), equal cell size, fill bbox-ish
+          // 2-col grid centered in viewport
           const cols = Math.min(2, n);
           const rows = Math.ceil(n / cols);
-          const cellW = Math.max(160, Math.round((bboxW - gap * (cols - 1)) / cols));
-          const cellH = Math.max(120, Math.round((bboxH - gap * (rows - 1)) / rows));
+          const cellW = Math.max(200, Math.round((vis.width * 0.9 - gap * (cols - 1)) / cols));
+          const cellH = Math.max(160, Math.round((vis.height * 0.88 - gap * (rows - 1)) / rows));
+          const totalGridW = cols * cellW + gap * (cols - 1);
+          const totalGridH = rows * cellH + gap * (rows - 1);
+          const gridStartX = Math.round(vis.x + (vis.width - totalGridW) / 2);
+          const gridStartY = Math.round(vis.y + (vis.height - totalGridH) / 2);
           targets
             .slice()
             .sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0))
             .forEach((t, i) => {
               const col = i % cols;
               const row = Math.floor(i / cols);
-              const x = minX + col * (cellW + gap);
-              const y = minY + row * (cellH + gap);
-              updates.push({ id: t.id, x, y, width: cellW, height: cellH });
+              updates.push({
+                id: t.id,
+                x: gridStartX + col * (cellW + gap),
+                y: gridStartY + row * (cellH + gap),
+                width: cellW,
+                height: cellH,
+              });
             });
         }
 
         // Apply (handleUpdateElement will grid-snap + route to registry/reducer)
         updates.forEach((u) => onUpdateElement?.(u.id, u));
-        // Keep selection on the group
-        if (updates.length) {
-          // re-select to keep handles
-          const ids = updates.map((u) => u.id);
-          // best-effort: the onSelect in parent may support multi; fall back to first
-          onSelect?.(ids[0], true);
-        }
+        if (updates.length) onSelect?.(updates[0].id, true);
         return;
       }
 
@@ -1215,10 +1367,13 @@ function PizarraInner({
             x: rightStart.x + delta,
             width: Math.max(160, rightStart.width - delta),
           };
-          scheduleUpdate(() => {
-            onUpdateElement?.(divider.leftId, leftUpdate);
-            onUpdateElement?.(divider.rightId, rightUpdate);
-          }, { left: leftUpdate, right: rightUpdate });
+          scheduleUpdate(
+            () => {
+              onUpdateElement?.(divider.leftId, leftUpdate);
+              onUpdateElement?.(divider.rightId, rightUpdate);
+            },
+            { left: leftUpdate, right: rightUpdate }
+          );
         } else {
           const newTopH = Math.max(120, leftStart.height + dy);
           const delta = newTopH - leftStart.height;
@@ -1227,10 +1382,13 @@ function PizarraInner({
             y: rightStart.y + delta,
             height: Math.max(120, rightStart.height - delta),
           };
-          scheduleUpdate(() => {
-            onUpdateElement?.(divider.topId, topUpdate);
-            onUpdateElement?.(divider.bottomId, bottomUpdate);
-          }, { top: topUpdate, bottom: bottomUpdate });
+          scheduleUpdate(
+            () => {
+              onUpdateElement?.(divider.topId, topUpdate);
+              onUpdateElement?.(divider.bottomId, bottomUpdate);
+            },
+            { top: topUpdate, bottom: bottomUpdate }
+          );
         }
       };
 
@@ -1281,6 +1439,14 @@ function PizarraInner({
       handleApplyLayout('dev-split');
     }
   }, [canvasSize, mergedElements, handleApplyLayout]);
+
+  // Listen for deferred auto-refit events dispatched by handleAddElement
+  // when a new card is added while others already exist.
+  React.useEffect(() => {
+    const handler = () => handleApplyLayout('arrange-fit');
+    window.addEventListener('pizarra:arrange-fit', handler);
+    return () => window.removeEventListener('pizarra:arrange-fit', handler);
+  }, [handleApplyLayout]);
 
   return (
     <>

@@ -484,6 +484,32 @@ const localAuth = {
     };
   },
 
+  async verifyOtp({ email, token, type }) {
+    return {
+      data: {
+        session: {
+          access_token: 'local',
+          user: {
+            id: 'local-user',
+            email: email || 'local@devhub.local',
+          },
+        },
+        user: {
+          id: 'local-user',
+          email: email || 'local@devhub.local',
+        },
+      },
+      error: null,
+    };
+  },
+
+  async setSession(session) {
+    return {
+      data: { session },
+      error: null,
+    };
+  },
+
   async signOut() {
     return { error: null };
   },

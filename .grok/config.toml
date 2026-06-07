@@ -1,0 +1,16 @@
+# Project-scoped MCP config for DevHub workspace (higher priority than ~/.grok/config.toml)
+# Registers the DevHub MCP (the core "Antigravity" planning & execution layer per AGENTS.md)
+# + any workspace-specific extras.
+
+[mcp_servers.devhub]
+command = "node"
+args = ["D:/devhub/devhub-mcp/server.js"]
+enabled = true
+env = { DEVHUB_AUTH_PROVIDER = "local", DEVHUB_MCP_DB_DRIVER = "sqlite" }
+
+# The other MCPs (engram, stitch, supabase, context7) come from the user global config.
+
+
+# You can also override or add workspace-specific servers here.
+# The devhub MCP provides: list_projects, get_execution_queue, update_task,
+# bulk_create_tasks, get_project_context, etc. — core for agentic planning.

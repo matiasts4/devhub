@@ -7,6 +7,7 @@ import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } f
 import TerminalTTY from '../../TerminalTTY';
 import { derivePanelCommandMetadata } from '../utils/semanticMetadata';
 import PanelRendererSelect from './PanelRendererSelect';
+import { SHOW_RENDERER_SWITCH } from './terminalRendererPreferences';
 
 function renderWorkspacePanel(
   panel,
@@ -130,12 +131,14 @@ function renderWorkspacePanel(
             data-testid={`panel-header-actions-${panel.id}`}
             title={`Panel ${panelLabel || panel.id} actions`}
           >
-            <PanelRendererSelect
-              panelId={panel.id}
-              currentMode={requestedRendererMode}
-              availableModes={['xterm-webgl', 'vte-experimental']}
-              onChange={(mode) => onSetPanelRenderer?.(mode)}
-            />
+            {SHOW_RENDERER_SWITCH ? (
+              <PanelRendererSelect
+                panelId={panel.id}
+                currentMode={requestedRendererMode}
+                availableModes={['xterm-webgl', 'xterm']}
+                onChange={(mode) => onSetPanelRenderer?.(mode)}
+              />
+            ) : null}
             <button
               type="button"
               data-testid={`panel-split-right-${panel.id}`}

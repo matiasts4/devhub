@@ -359,7 +359,7 @@ export function resolveTerminalRendererViewModel({
     capabilities: rendererCapabilities,
   });
 
-  if (requestedRendererMode === 'vte-experimental' && nativeVteReady) {
+  if (ENABLE_NATIVE_VTE && requestedRendererMode === 'vte-experimental' && nativeVteReady) {
     return {
       ...selection,
       effectiveMode: 'vte-experimental',
@@ -404,6 +404,13 @@ export const TERMINAL_NATIVE_CONTENT_BODY_STYLE = Object.freeze({
 
 const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
 
+// Master switch for the legacy native VTE (GTK) backend.
+// We keep the entire implementation (nativeVteBridge, probes, lease logic, etc.)
+// in the tree exactly as-is so it can be re-enabled later if needed.
+// When false we never enter any VTE code paths, never start native listeners,
+// and never pull the extra terminal surface at runtime.
+const ENABLE_NATIVE_VTE = false;
+
 export default function TerminalTTY({
   id,
   onClose,
@@ -413,7 +420,10 @@ export default function TerminalTTY({
   hideTitleBar,
   initialCommand,
   restored,
-  requestedRendererMode = 'vte-experimental',
+  // Enforced: we only ever activate xterm-webgl (with plain xterm fallback on webgl failure).
+  // Legacy 'vte-experimental' requests are normalized upstream; we still accept the prop
+  // for compatibility but force the webgl path and skip all native VTE mounting.
+  requestedRendererMode = 'xterm-webgl',
   onResetRendererToXterm,
   isActivePanel = autoFocus,
   isVisibleInLayout = true,
@@ -473,6 +483,13 @@ export default function TerminalTTY({
   const webglAddonRef = useRef(null);
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
+  // Force the only supported active renderer. Any vte request (from stored
+  // prefs or old callers) is redirected here so we never boot the native VTE surface.
+  const effectiveRequestedMode =
+    !ENABLE_NATIVE_VTE && requestedRendererMode === 'vte-experimental'
+      ? 'xterm-webgl'
+      : requestedRendererMode;
+
   const rendererCapabilities = getTerminalRendererRuntimeCapabilities({
     platform: resolvedRuntimePlatform,
     tauriAvailable,
@@ -481,9 +498,10 @@ export default function TerminalTTY({
     webglProbe: webglProbeResult,
   });
   const rendererViewModel = resolveTerminalRendererViewModel({
-    requestedRendererMode,
+    requestedRendererMode: effectiveRequestedMode,
     rendererCapabilities,
-    nativeVteReady: requestedRendererMode === 'vte-experimental' && nativeVteOpened,
+    nativeVteReady:
+      ENABLE_NATIVE_VTE && effectiveRequestedMode === 'vte-experimental' && nativeVteOpened,
   });
   const hasSentInitialCommand = useRef(false);
   const processExitedRef = useRef(false);
@@ -588,6 +606,7 @@ export default function TerminalTTY({
   }, []);
 
   const shouldRetryNativeVteProbe =
+    ENABLE_NATIVE_VTE &&
     isActivePanel &&
     requestedRendererMode === 'vte-experimental' &&
     !nativeVteOpened &&
@@ -893,6 +912,8 @@ export default function TerminalTTY({
   }, [autoFocus, logViewportDiagnostic, scrollTerminalToBottom, sendResize]);
 
   useEffect(() => {
+    if (!ENABLE_NATIVE_VTE) return undefined;
+
     let cancelled = false;
 
     Promise.resolve(subscribeNativeVteEvents())
@@ -911,7 +932,7 @@ export default function TerminalTTY({
   useEffect(() => {
     let cancelled = false;
 
-    if (requestedRendererMode !== 'vte-experimental') {
+    if (!ENABLE_NATIVE_VTE || requestedRendererMode !== 'vte-experimental') {
       setNativeVteProbeResult(null);
       setNativeVteOpenFailure(null);
       setNativeVteOpened(false);

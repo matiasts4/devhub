@@ -7,6 +7,7 @@ import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } f
 import TerminalTTY from '../../TerminalTTY';
 import { derivePanelSemanticMetadata } from '../utils/semanticMetadata';
 import PanelRendererSelect from './PanelRendererSelect';
+import { SHOW_RENDERER_SWITCH } from '../terminalRendererPreferences';
 
 function WorkspaceTerminalSurface({
   workspace,
@@ -46,6 +47,20 @@ function WorkspaceTerminalSurface({
     const isActive = panel.id === activePanelId && activeWsId === workspace.id;
     const semanticMetadata = derivePanelSemanticMetadata(panel, agentRunsByPanel?.[panel.id]);
     const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
+
+    // Verification aid for "xterm-webgl is always the one used, including on Windows + swarm".
+    // When you launch a swarm, the panels created here will have swarmRole and will have
+    // resolved to xterm-webgl (or the plain xterm internal fallback only if webgl probe fails at runtime).
+    if (swarmRole && typeof console !== 'undefined') {
+      // One-time per panel for easy confirmation in devtools while testing on Windows.
+      // You should see this for every agent role terminal (director, coder, etc.).
+      console.debug('[swarm-terminal-renderer]', {
+        panelId: panel.id,
+        role: swarmRole?.roleKey || swarmRole,
+        resolvedRenderer: resolvedRendererMode,
+        note: 'Should be xterm-webgl (or xterm only on webgl failure). VTE paths are disabled.',
+      });
+    }
     const panelChromeSafeZoneMinTop = 34;
     // Resolve the per-panel renderer once so the chrome switcher and the
     // TerminalTTY below stay in lockstep. See
@@ -149,12 +164,14 @@ function WorkspaceTerminalSurface({
               data-testid={`panel-header-actions-${panel.id}`}
               title={`Panel ${getPanelDisplayLabel(workspace, panel.id) || panel.id} actions`}
             >
-              <PanelRendererSelect
-                panelId={panel.id}
-                currentMode={resolvedRendererMode}
-                availableModes={['xterm-webgl', 'vte-experimental']}
-                onChange={(mode) => handleSetPanelRenderer?.(workspace.id, panel.id, mode)}
-              />
+              {SHOW_RENDERER_SWITCH ? (
+                <PanelRendererSelect
+                  panelId={panel.id}
+                  currentMode={resolvedRendererMode}
+                  availableModes={['xterm-webgl', 'xterm']}
+                  onChange={(mode) => handleSetPanelRenderer?.(workspace.id, panel.id, mode)}
+                />
+              ) : null}
               <button
                 type="button"
                 data-testid={`panel-split-right-${panel.id}`}

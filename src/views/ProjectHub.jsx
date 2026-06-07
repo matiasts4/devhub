@@ -687,7 +687,7 @@ export default function ProjectHub() {
                             key={value}
                             type="button"
                             onClick={() => setNewProject((p) => ({ ...p, project_type: value }))}
-                            className="flex items-center gap-2 border px-2.5 py-2 text-left transition-all"
+                            className="flex items-center gap-2 border px-2.5 py-2 text-left transition-all cursor-pointer"
                             style={
                               sel
                                 ? {
@@ -732,7 +732,7 @@ export default function ProjectHub() {
                             onClick={() =>
                               setNewProject((p) => ({ ...p, documentation_policy: value }))
                             }
-                            className="rounded-none border-2 px-3 py-2.5 text-left transition-all"
+                            className="rounded-none border-2 px-3 py-2.5 text-left transition-all cursor-pointer"
                             style={
                               sel
                                 ? {

@@ -712,9 +712,9 @@ export default function AppearancePage() {
                 Terminal renderer
               </h2>
               <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                xterm-webgl is the default — WebGL-accelerated and works everywhere.
-                vte-experimental stays as an opt-in for Linux/Tauri operators; xterm remains the
-                stable fallback.
+                xterm-webgl is the only active renderer (WebGL-accelerated, works on all platforms
+                including Windows). Plain xterm is the internal fallback if WebGL encounters an
+                issue. Legacy VTE/GTK code is present but disabled and not selectable.
               </p>
             </div>
             <div
@@ -724,12 +724,7 @@ export default function AppearancePage() {
               }}
             >
               <Monitor size={12} style={{ color: 'var(--accent-primary)' }} />
-              Active:{' '}
-              {terminalRendererMode === 'vte-experimental'
-                ? 'GTK VTE'
-                : terminalRendererMode === 'xterm-webgl'
-                  ? 'xterm-webgl'
-                  : 'xterm'}
+              Active: {terminalRendererMode === 'xterm-webgl' ? 'xterm-webgl' : 'xterm (fallback)'}
             </div>
           </div>
 
@@ -747,8 +742,7 @@ export default function AppearancePage() {
                 color: 'var(--text-primary)',
               }}
             >
-              <option value="xterm-webgl">xterm-webgl</option>
-              <option value="vte-experimental">vte-experimental (GTK VTE)</option>
+              <option value="xterm-webgl">xterm-webgl (always active)</option>
               <option value="xterm">xterm (DOM fallback)</option>
             </select>
           </label>

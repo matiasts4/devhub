@@ -1,4 +1,11 @@
-export const TERMINAL_RENDERER_MODES = ['vte-experimental', 'xterm', 'xterm-webgl', 'canvas'];
+// VTE (vte-experimental) is disabled for normal use (no selectable option,
+// no loading of native VTE paths). The entry and supporting functions are
+// kept so the code remains in the tree and can be re-enabled by flipping
+// LEGACY_VTE_ENABLED in terminalRendererPreferences if needed in the future.
+// Note: the legacy 'vte-experimental' entry was removed from the active list
+// to enforce xterm-webgl as the sole renderer. Supporting code for VTE
+// (nativeVteBridge, resolveNativeVteCapability, etc.) is untouched.
+export const TERMINAL_RENDERER_MODES = ['xterm', 'xterm-webgl', 'canvas'];
 
 export const TERMINAL_WEBGL_FALLBACK_REASONS = Object.freeze({
   WEBGL_UNSUPPORTED_IN_WEBVIEW: 'webgl-unsupported-in-webview',
@@ -105,10 +112,8 @@ export function getTerminalRendererCapability(mode) {
     };
   }
 
-  // xterm-webgl is the global default in the static (no live probe) path; its
-  // readiness is reported optimistically. TerminalTTY wraps loadAddon in
-  // try/catch and falls back to the xterm DOM renderer if WebGL registration
-  // actually fails.
+  // xterm-webgl is the *only* active renderer. Readiness is optimistic;
+  // TerminalTTY does the real try/catch loadAddon and falls back to plain xterm.
   if (normalizedMode === 'xterm-webgl') {
     return {
       mode: 'xterm-webgl',
@@ -118,13 +123,13 @@ export function getTerminalRendererCapability(mode) {
     };
   }
 
+  // Legacy VTE (and canvas) are not active. Code stays but is not offered
+  // or loaded in normal flows.
   return {
     mode: normalizedMode,
-    label: TERMINAL_RENDERER_LABELS[normalizedMode],
-    // TERM-02 exposes native candidates as selectable intent only — readiness stays false
-    // until a real TERM-03/04 runtime proves itself in-process.
+    label: TERMINAL_RENDERER_LABELS[normalizedMode] || normalizedMode,
     ready: false,
-    reason: TERMINAL_VTE_FALLBACK_REASONS.NOT_READY,
+    reason: TERMINAL_VTE_FALLBACK_REASONS.UNSUPPORTED_PLATFORM,
   };
 }
 
@@ -138,23 +143,6 @@ export function getTerminalRendererRuntimeCapabilities({
   const normalizedPlatform = normalizeTerminalRendererPlatform(platform);
 
   return TERMINAL_RENDERER_MODES.reduce((accumulator, mode) => {
-    if (mode === 'vte-experimental') {
-      const nativeCapability = resolveNativeVteCapability({
-        platform: normalizedPlatform,
-        tauriAvailable,
-        nativeVteProbe,
-        nativeVteOpenFailure,
-      });
-
-      accumulator[mode] = {
-        mode,
-        label: TERMINAL_RENDERER_LABELS[mode],
-        ready: nativeCapability.ready,
-        reason: nativeCapability.reason,
-      };
-      return accumulator;
-    }
-
     if (mode === 'xterm-webgl') {
       const webglCapability = resolveWebglCapability({ webglProbe });
       accumulator[mode] = {
@@ -166,6 +154,9 @@ export function getTerminalRendererRuntimeCapabilities({
       return accumulator;
     }
 
+    // All other modes (including any legacy vte references that slipped in)
+    // are treated as inactive. The real enforcement happens in the resolver
+    // and UI lists (we never offer or mount VTE when LEGACY_VTE_ENABLED=false).
     accumulator[mode] = getTerminalRendererCapability(mode);
     return accumulator;
   }, {});

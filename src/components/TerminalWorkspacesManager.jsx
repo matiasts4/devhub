@@ -82,6 +82,7 @@ import {
   writeTerminalRendererPreferences,
 } from './terminal/terminalRendererPreferences';
 import PanelRendererSelect from './terminal/components/PanelRendererSelect';
+import { SHOW_RENDERER_SWITCH } from './terminal/terminalRendererPreferences';
 import {
   createSwarmLaunchDraft,
   deriveSwarmLaunchPreview,
@@ -785,12 +786,14 @@ function renderWorkspacePanel(
             title={`Panel ${panelLabel || panel.id} actions`}
             style={getTerminalFloatingControlStyle({ active: isActive })}
           >
-            <PanelRendererSelect
-              panelId={panel.id}
-              currentMode={requestedRendererMode}
-              availableModes={['xterm-webgl', 'vte-experimental']}
-              onChange={(mode) => onSetPanelRenderer?.(mode)}
-            />
+            {SHOW_RENDERER_SWITCH ? (
+              <PanelRendererSelect
+                panelId={panel.id}
+                currentMode={requestedRendererMode}
+                availableModes={['xterm-webgl', 'xterm']}
+                onChange={(mode) => onSetPanelRenderer?.(mode)}
+              />
+            ) : null}
             <button
               type="button"
               data-testid={`panel-split-right-${panel.id}`}
@@ -3967,6 +3970,22 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ]
   );
 
+  const registryUpdateSurface = useCallback(
+    (id, patch) => {
+      if (!patch || typeof patch !== 'object') return;
+
+      if (patch.requestedRendererMode && activeWorkspace) {
+        const surface = registry.surfaces.find((s) => s.id === id);
+        if (surface && surface.type === 'terminal' && surface.panelId) {
+          handleSetPanelRenderer(activeWorkspace.id, surface.panelId, patch.requestedRendererMode);
+        }
+      }
+
+      registry.updateSurface(id, patch);
+    },
+    [activeWorkspace, registry.surfaces, registry.updateSurface, handleSetPanelRenderer]
+  );
+
   const registryValue = useMemo(
     () => ({
       surfaces: registry.surfaces,
@@ -3974,6 +3993,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       addSurface: registryAddSurface,
       removeSurface: registryRemoveSurface,
       updatePizarraLayout: registry.updatePizarraLayout,
+      updateSurface: registryUpdateSurface,
       resetSurfaces: registry.resetSurfaces,
     }),
     [
@@ -3982,6 +4002,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       registryAddSurface,
       registryRemoveSurface,
       registry.updatePizarraLayout,
+      registryUpdateSurface,
       registry.resetSurfaces,
     ]
   );
@@ -4002,7 +4023,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             label: p.initialCommand || `Terminal ${p.id}`,
             cwd: p.cwd || null,
             initialCommand: p.initialCommand || null,
-            requestedRendererMode: p.requestedRendererMode || 'vte-experimental',
+            requestedRendererMode: resolveRequestedRenderer({
+              workspaceId: activeWorkspace.id,
+              panelId: p.id,
+              prefs: terminalRendererPreferences,
+            }),
             pizarra: {
               x: null, // Let PizarraPane place it if not already placed
               y: null,
@@ -4056,11 +4081,23 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         nextSurfaces.push(as);
         changed = true;
       } else {
-        if (existing.label !== as.label || (as.type === 'browser' && existing.url !== as.url)) {
+        let itemChanged = false;
+        if (existing.label !== as.label) {
           existing.label = as.label;
-          if (as.type === 'browser') {
-            existing.url = as.url;
-          }
+          itemChanged = true;
+        }
+        if (as.type === 'browser' && existing.url !== as.url) {
+          existing.url = as.url;
+          itemChanged = true;
+        }
+        if (
+          as.requestedRendererMode &&
+          existing.requestedRendererMode !== as.requestedRendererMode
+        ) {
+          existing.requestedRendererMode = as.requestedRendererMode;
+          itemChanged = true;
+        }
+        if (itemChanged) {
           changed = true;
         }
       }
@@ -4094,6 +4131,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     registry.surfaces,
     registry.resetSurfaces,
     isDedicatedBrowserSurface,
+    terminalRendererPreferences,
   ]);
 
   const failPendingReopen = useCallback(

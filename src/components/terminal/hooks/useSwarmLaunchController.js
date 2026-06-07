@@ -364,12 +364,10 @@ export default function useSwarmLaunchController({
       setTerminalRendererPreferences((prev) =>
         panelAssignments.reduce(
           (acc, assignment) =>
-            setPanelRendererPreference(
-              acc,
-              newWsId,
-              assignment.panelId,
-              TERMINAL_RENDERER_INHERIT_MODE
-            ),
+            // Explicit webgl pin for swarm agent terminals (in addition to INHERIT).
+            // Guarantees xterm-webgl even if legacy stored defaults existed.
+            // VTE is disabled globally; this path will never resolve to it.
+            setPanelRendererPreference(acc, newWsId, assignment.panelId, 'xterm-webgl'),
           prev
         )
       );

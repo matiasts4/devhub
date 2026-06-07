@@ -1,5 +1,4 @@
 /* eslint-env node */
- 
 
 /**
  * AgentWorkspaceManager — DevHub's own worktree manager.
@@ -150,7 +149,9 @@ function gitExec(args, repoRoot, options = {}) {
   if (result.status !== 0) {
     const stderr = String(result.stderr || '').trim();
     const stdout = String(result.stdout || '').trim();
-    throw new Error(stderr || stdout || `git ${args.join(' ')} failed with status ${result.status}`);
+    throw new Error(
+      stderr || stdout || `git ${args.join(' ')} failed with status ${result.status}`
+    );
   }
 
   return String(result.stdout || '').trim();
@@ -219,13 +220,32 @@ function prepareAgentWorktree({ repoRoot, launchId, roleKey, baseRef = 'HEAD' })
   // Add the worktree
   gitExec(['worktree', 'add', worktreePath, branchName], repoRoot);
 
-  // Copy opencode.json and swarm prompts so OpenCode can find profiles
-  // when launched from the worktree directory
+  // === Inyección de perfiles OpenCode para swarm agents ===
+  // Copiamos opencode.json + los prompts swarm para que `opencode --agent swarm-xxx`
+  // lanzado desde el worktree encuentre la configuración y los perfiles de rol correctos.
+  // Esto es crítico para que los agentes se comporten según su rol (director, coder, auditor...).
+  //
+  // Mejoras aplicadas:
+  // - Logging claro de lo que se inyecta (útil para debug en Windows y en launches reales).
+  // - Manejo robusto: warnings si falta opencode.json (no falla el launch).
+  // - Siempre aseguramos que exista la carpeta de prompts destino.
+  // - Copia recursiva más segura (ignora subdirectorios por ahora, pero fácil de extender).
+  // - Funciona en Windows (path.join + fs nativo).
+  console.log(
+    `[AgentWorkspaceManager] Inyectando perfiles OpenCode para rol=${roleKey} en ${worktreePath}`
+  );
+
   const opencodeJsonSrc = path.join(repoRoot, 'opencode.json');
   const opencodeJsonDst = path.join(worktreePath, 'opencode.json');
   if (fs.existsSync(opencodeJsonSrc)) {
     fs.copyFileSync(opencodeJsonSrc, opencodeJsonDst);
+    console.log(`[AgentWorkspaceManager]   ✓ Copiado opencode.json → worktree`);
+  } else {
+    console.warn(
+      `[AgentWorkspaceManager]   ⚠ No se encontró opencode.json en repo root. Los agentes pueden no resolver perfiles correctamente.`
+    );
   }
+
   const promptsSrc = path.join(repoRoot, 'docs', 'prompts', 'swarm');
   const promptsDst = path.join(worktreePath, 'docs', 'prompts', 'swarm');
   if (fs.existsSync(promptsSrc)) {
@@ -233,21 +253,30 @@ function prepareAgentWorktree({ repoRoot, launchId, roleKey, baseRef = 'HEAD' })
       fs.mkdirSync(promptsDst, { recursive: true });
     }
     const promptFiles = fs.readdirSync(promptsSrc);
+    let copied = 0;
     for (const file of promptFiles) {
       const srcFile = path.join(promptsSrc, file);
-      const dstFile = path.join(promptsDst, file);
-      if (fs.statSync(srcFile).isFile()) {
-        fs.copyFileSync(srcFile, dstFile);
+      try {
+        if (fs.statSync(srcFile).isFile()) {
+          const dstFile = path.join(promptsDst, file);
+          fs.copyFileSync(srcFile, dstFile);
+          copied++;
+        }
+      } catch (e) {
+        console.warn(`[AgentWorkspaceManager]   ⚠ Error copiando prompt ${file}: ${e.message}`);
       }
     }
+    console.log(`[AgentWorkspaceManager]   ✓ Copiados ${copied} prompts swarm → ${promptsDst}`);
+  } else {
+    console.warn(
+      `[AgentWorkspaceManager]   ⚠ No se encontró carpeta de prompts swarm en ${promptsSrc}. Los agentes tendrán prompts genéricos.`
+    );
   }
 
   // Validate
   const validation = validateWorktreePath(worktreePath);
   if (!validation.valid) {
-    throw new Error(
-      `Worktree validation failed for ${worktreePath}: ${validation.error}`
-    );
+    throw new Error(`Worktree validation failed for ${worktreePath}: ${validation.error}`);
   }
 
   const observedHead = gitExec(['rev-parse', 'HEAD'], worktreePath);
@@ -288,9 +317,7 @@ function removeAgentWorktree({ repoRoot, launchId, roleKey }, options = {}) {
     gitExec(args, repoRoot);
     return { removed: true, worktreePath };
   } catch (e) {
-    throw new Error(
-      `Failed to remove worktree ${worktreePath}: ${e.message}`
-    );
+    throw new Error(`Failed to remove worktree ${worktreePath}: ${e.message}`);
   }
 }
 

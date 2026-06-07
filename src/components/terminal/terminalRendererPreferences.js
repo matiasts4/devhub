@@ -3,11 +3,30 @@ export const TERMINAL_RENDERER_INHERIT_MODE = 'inherit';
 export const TERMINAL_RENDERER_DEFAULT_MODE = 'xterm-webgl';
 export const TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY = 'devhub_terminal_renderer_default_mode';
 
-const VALID_RENDERER_MODES = new Set(['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']);
-const VALID_PANEL_MODES = new Set([TERMINAL_RENDERER_INHERIT_MODE, ...VALID_RENDERER_MODES]);
+// VTE (vte-experimental / GTK) is disabled as a selectable/usable renderer.
+// Code and packages remain in place for reference / future re-enable, but
+// no UI surfaces offer it and resolution never activates the VTE paths.
+export const LEGACY_VTE_ENABLED = false;
+
+// Renderer switcher (the per-panel header control that lets users pick
+// xterm-webgl vs xterm etc.) is hidden/disabled per request.
+// The full component, logic, preferences, and resolution remain in the
+// codebase. We simply do not render the UI element.
+export const SHOW_RENDERER_SWITCH = false;
+
+const ACTIVE_RENDERER_MODES = LEGACY_VTE_ENABLED
+  ? ['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']
+  : ['xterm', 'xterm-webgl', 'canvas'];
+
+const VALID_RENDERER_MODES = new Set(ACTIVE_RENDERER_MODES);
+const VALID_PANEL_MODES = new Set([TERMINAL_RENDERER_INHERIT_MODE, ...ACTIVE_RENDERER_MODES]);
 
 function normalizeRendererMode(mode, fallback = TERMINAL_RENDERER_DEFAULT_MODE) {
   if (mode === 'ghostty-experimental') return 'xterm';
+  if (!LEGACY_VTE_ENABLED && mode === 'vte-experimental') {
+    // Disabled: map any legacy VTE request to the enforced webgl default.
+    return TERMINAL_RENDERER_DEFAULT_MODE;
+  }
   return VALID_RENDERER_MODES.has(mode) ? mode : fallback;
 }
 
@@ -128,18 +147,30 @@ export function writeTerminalRendererPreferences(storage, projectId, prefs, work
 
 export function resolveRequestedRenderer({ workspaceId, panelId, prefs }) {
   const workspacePreference = prefs?.workspaces?.[workspaceId];
-  if (!workspacePreference) return normalizeRendererMode(prefs?.defaultMode);
-
-  const panelMode = workspacePreference.panels?.[panelId];
-  // Panel override wins unless it explicitly inherits the workspace baseline.
-  if (panelMode && panelMode !== TERMINAL_RENDERER_INHERIT_MODE) {
-    return normalizeRendererMode(panelMode);
+  if (!workspacePreference) {
+    return normalizeRendererMode(prefs?.defaultMode);
   }
 
-  return normalizeRendererMode(
-    workspacePreference.defaultMode,
-    normalizeRendererMode(prefs?.defaultMode)
-  );
+  const panelMode = workspacePreference.panels?.[panelId];
+
+  // When VTE is disabled we never surface or activate it. Any stored
+  // 'vte-experimental' (panel or workspace) is mapped to the enforced default.
+  let effectivePanel = panelMode;
+  if (!LEGACY_VTE_ENABLED && effectivePanel === 'vte-experimental') {
+    effectivePanel = TERMINAL_RENDERER_INHERIT_MODE;
+  }
+
+  // Panel override wins unless it explicitly inherits the workspace baseline.
+  if (effectivePanel && effectivePanel !== TERMINAL_RENDERER_INHERIT_MODE) {
+    return normalizeRendererMode(effectivePanel);
+  }
+
+  let effectiveDefault = workspacePreference.defaultMode;
+  if (!LEGACY_VTE_ENABLED && effectiveDefault === 'vte-experimental') {
+    effectiveDefault = TERMINAL_RENDERER_DEFAULT_MODE;
+  }
+
+  return normalizeRendererMode(effectiveDefault, normalizeRendererMode(prefs?.defaultMode));
 }
 
 export function getPanelRendererPreferenceMode({ workspaceId, panelId, prefs }) {

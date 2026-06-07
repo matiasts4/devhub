@@ -16,6 +16,10 @@ export default function PizarraLiveSurfaceLayer({
   onActivateTerminal,
   onUpdateElement,
   onRemoveElement,
+  // pizarra-renderer-switcher: per-shape renderer update.
+  // Called by CanvasTerminal when the user picks a new mode from
+  // the <PanelRendererSelect> in the surface header.
+  onUpdateRendererMode,
   projectId,
   workspaceId,
   dockState,
@@ -98,6 +102,7 @@ export default function PizarraLiveSurfaceLayer({
             onActivateTerminal={onActivateTerminal}
             onUpdateElement={onUpdateElement}
             onRemoveElement={onRemoveElement}
+            onUpdateRendererMode={onUpdateRendererMode}
             projectId={projectId}
             workspaceId={workspaceId}
             dockState={dockState}
@@ -143,6 +148,7 @@ function LiveSurfaceItem({
   onActivateTerminal,
   onUpdateElement,
   onRemoveElement,
+  onUpdateRendererMode,
   projectId,
   workspaceId,
   dockState,
@@ -405,6 +411,7 @@ function LiveSurfaceItem({
           initialCommand={shape.initialCommand}
           isActivePanel={activeTerminalId === shape.id}
           requestedRendererMode={shape.requestedRendererMode || 'xterm-webgl'}
+          onUpdateRendererMode={(mode) => onUpdateRendererMode?.(shape.id, mode)}
           onClose={() => onRemoveElement?.(shape.id)}
         />
       </div>

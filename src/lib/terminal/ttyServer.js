@@ -600,6 +600,15 @@ function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
     spawnArgs = ['-lc', attachCommand];
   } else if (path.basename(resolvedShell) === 'zsh') {
     spawnArgs = ['-lic', 'exec zsh -i', 'devhub-shell', '--no-use'];
+  } else if (os.platform() === 'win32') {
+    const shellBase = path.basename(resolvedShell).toLowerCase();
+    if (shellBase.includes('powershell') || shellBase.includes('pwsh')) {
+      // Suppress the standard Windows PowerShell copyright / "Instale la versión más reciente..." banner.
+      // This gives a much cleaner initial view (just the prompt + any command output).
+      // -NoLogo is the official way; we keep it minimal so user profiles can still run if present.
+      // Applies to both regular terminals and swarm agent worktree shells.
+      spawnArgs = ['-NoLogo'];
+    }
   }
 
   return { env, spawnArgs, tmuxEnabled };

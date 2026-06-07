@@ -8,7 +8,9 @@ const {
 
 describe('terminalRendererCapabilities', () => {
   test('keeps xterm permanently ready as the baseline capability', () => {
-    expect(TERMINAL_RENDERER_MODES).toEqual(['vte-experimental', 'xterm', 'xterm-webgl', 'canvas']);
+    // VTE is disabled (LEGACY_VTE_ENABLED=false). The array reflects only active renderers.
+    // The full legacy list and all VTE functions remain in the source for future re-enable.
+    expect(TERMINAL_RENDERER_MODES).toEqual(['xterm', 'xterm-webgl', 'canvas']);
     expect(getTerminalRendererCapability('xterm')).toEqual(
       expect.objectContaining({
         mode: 'xterm',

@@ -44,8 +44,11 @@ import { Monitor, ChevronDown } from 'lucide-react';
 
 export const RENDERER_SELECT_OPTIONS = Object.freeze([
   { value: 'inherit', label: 'Inherit (use workspace default)', selectable: true },
-  { value: 'xterm-webgl', label: 'xterm + WebGL', selectable: true },
-  { value: 'vte-experimental', label: 'GTK VTE', selectable: true },
+  { value: 'xterm-webgl', label: 'xterm + WebGL (active)', selectable: true },
+  // vte-experimental (GTK VTE) is disabled. Code remains in the repo but is
+  // not offered in any UI and never activated at runtime. The row is kept
+  // (selectable:false) purely for discoverability / future re-enable.
+  { value: 'vte-experimental', label: 'GTK VTE (disabled)', selectable: false },
   { value: 'canvas', label: 'canvas (Coming soon)', selectable: false },
 ]);
 

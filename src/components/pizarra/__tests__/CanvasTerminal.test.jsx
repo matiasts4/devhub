@@ -137,7 +137,7 @@ describe('CanvasTerminal', () => {
       );
 
       expect(mockTerminalTTY).toHaveBeenCalledTimes(1);
-      expect(capturedProps.requestedRendererMode).toBe('xterm');
+      expect(capturedProps.requestedRendererMode).toBe('xterm-webgl');
       expect(capturedProps.hideTitleBar).toBe(true);
       expect(capturedProps.id).toBe('my-session-1');
       expect(capturedProps.cwd).toBe('/home/user');

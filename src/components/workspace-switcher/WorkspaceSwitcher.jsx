@@ -27,7 +27,12 @@ export default function WorkspaceSwitcher() {
         <select
           value={currentWorkspaceId}
           onChange={handleChange}
-          disabled={loading || activeWorkspaces.length <= 1}
+          disabled={loading}
+          title={
+            activeWorkspaces.length <= 1
+              ? 'Espacio de trabajo (actualmente solo Espacio Local disponible)'
+              : 'Cambiar espacio de trabajo'
+          }
           style={{
             ...selectStyle(),
             paddingTop: '0.35rem',

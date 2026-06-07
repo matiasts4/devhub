@@ -127,6 +127,23 @@ export function useLiveSurfaceRegistry(projectId, workspaceId) {
     [saveSurfaces]
   );
 
+  // updateSurface — partial merge of arbitrary surface-level fields
+  // (e.g. `requestedRendererMode`) at the root of the surface record.
+  // Distinct from `updatePizarraLayout`, which routes layout fields
+  // (x/y/width/height/visible) into the `pizarra` sub-object. Used by
+  // the per-shape renderer switcher in pizarra mode.
+  const updateSurface = useCallback(
+    (id, patch) => {
+      if (!patch || typeof patch !== 'object') return;
+      setSurfaces((prev) => {
+        const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        saveSurfaces(next);
+        return next;
+      });
+    },
+    [saveSurfaces]
+  );
+
   const resetSurfaces = useCallback(
     (nextSurfaces) => {
       setSurfaces(nextSurfaces);
@@ -141,6 +158,7 @@ export function useLiveSurfaceRegistry(projectId, workspaceId) {
     addSurface,
     removeSurface,
     updatePizarraLayout,
+    updateSurface,
     resetSurfaces,
   };
 }

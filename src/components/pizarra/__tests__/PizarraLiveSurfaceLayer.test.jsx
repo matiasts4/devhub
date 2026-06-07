@@ -152,4 +152,49 @@ describe('PizarraLiveSurfaceLayer', () => {
     expect(onMoveElement).toHaveBeenNthCalledWith(1, 'terminal-1', { x: 40, y: 40 });
     expect(onMoveElement).toHaveBeenNthCalledWith(2, 'browser-1', { x: 55, y: 55 });
   });
+
+  // pizarra-renderer-switcher: the per-shape terminal renderer
+  // switcher in CanvasTerminal's header calls onUpdateRendererMode
+  // with the new mode. PizarraLiveSurfaceLayer must forward that
+  // up to the parent (PizarraPane) along with the surface id, so
+  // the registry can be patched and the shape re-renders with the
+  // new requestedRendererMode.
+  test('forwards CanvasTerminal renderer change up as (surfaceId, mode) on the parent callback', () => {
+    const { default: PizarraLiveSurfaceLayer } = require('../PizarraLiveSurfaceLayer');
+    const onUpdateRendererMode = jest.fn();
+    const elements = [
+      {
+        id: 'terminal-1',
+        type: 'terminal',
+        x: 20,
+        y: 30,
+        width: 300,
+        height: 200,
+        label: 'Ops',
+        requestedRendererMode: 'xterm-webgl',
+      },
+    ];
+
+    flushSync(() => {
+      root.render(
+        React.createElement(PizarraLiveSurfaceLayer, {
+          elements,
+          selectedElementIds: [],
+          activeTerminalId: null,
+          onUpdateRendererMode,
+        })
+      );
+    });
+
+    expect(terminalCalls).toHaveLength(1);
+    expect(typeof terminalCalls[0].onUpdateRendererMode).toBe('function');
+
+    // The user picks 'vte-experimental' from the header switcher.
+    flushSync(() => {
+      terminalCalls[0].onUpdateRendererMode('vte-experimental');
+    });
+
+    expect(onUpdateRendererMode).toHaveBeenCalledTimes(1);
+    expect(onUpdateRendererMode).toHaveBeenCalledWith('terminal-1', 'vte-experimental');
+  });
 });
