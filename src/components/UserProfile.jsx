@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
+import { createPortal } from 'react-dom';
 
 export default function UserProfile({ align = 'right', direction = 'down' }) {
   const { user, workspaces, activeWorkspaceId, setActiveWorkspaceId, signOut } = useAuth();
@@ -273,88 +274,84 @@ export default function UserProfile({ align = 'right', direction = 'down' }) {
         </div>
       )}
 
-      {showAuthModal && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          <div className="fade-in-up w-full max-w-md rounded-none border-2 border-[var(--border-strong, #30363d)] bg-[var(--surface-card, #161b22)] p-6 shadow-[8px_8px_0_0_var(--border-strong, #30363d)]">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-none border-2 border-[var(--accent-primary, #58a6ff)]/30 bg-[var(--surface-elevated)] shadow-[3px_3px_0_0_var(--border-strong)]">
-                  <Brain
-                    className="w-4 h-4 text-[var(--accent-primary, #58a6ff)]"
-                    strokeWidth={1.5}
-                  />
-                </div>
-                <h2 className="font-mono font-bold text-text-primary">
-                  {authMode === 'login' ? 'Iniciar Sesión' : 'Registrarse'}
-                </h2>
-              </div>
-              <Button
-                type="button"
+      {showAuthModal &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            style={{ WebkitAppRegion: 'no-drag' }}
+          >
+            <div className="w-full max-w-sm border border-borders-subtle bg-surface-card p-6 shadow-2xl rounded-lg relative">
+              {/* Close button */}
+              <button
                 onClick={() => {
                   setShowAuthModal(false);
                   setEmail('');
                 }}
-                variant="devhubGhost"
-                size="icon"
-                className="h-8 w-8 rounded-none border-2 border-[var(--border-strong, #30363d)]"
+                className="absolute right-4 top-4 text-text-muted hover:text-text-primary p-1 rounded-full hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
-                <X className="w-5 h-5" />
-              </Button>
-            </div>
+                <X className="w-4 h-4" />
+              </button>
 
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
-              <div className="rounded-none border-2 border-[var(--border-strong, #30363d)] bg-[var(--surface-elevated, #0d1117)] p-4 text-[11px] leading-relaxed text-text-muted">
-                {authMode === 'login'
-                  ? 'Te enviaremos un correo con un enlace mágico para iniciar sesión al instante sin contraseña.'
-                  : 'Crea tu cuenta de DevHub compartida. Recibirás un enlace para confirmar y configurar tu perfil.'}
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-[11px] font-medium text-text-muted">
-                  Correo electrónico *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ejemplo@correo.com"
-                  className="w-full text-sm placeholder:text-text-muted bg-[var(--surface-elevated, #0d1117)] border border-[var(--border-subtle, #21262d)] focus:border-[var(--accent-primary)] px-3 py-2 text-text-primary focus:outline-none transition-colors"
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={loading}
-                variant="devhubPrimary"
-                className="w-full h-10 rounded-none text-sm font-semibold border-2 border-[var(--accent-primary)]"
-              >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                ) : (
-                  <Mail className="w-4 h-4 mr-2" />
-                )}
-                {loading ? 'Enviando...' : 'Enviar enlace mágico'}
-              </Button>
-
-              <div className="text-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-                  className="text-xs text-[var(--accent-primary)] hover:underline focus:outline-none cursor-pointer"
-                >
+              {/* Header */}
+              <div className="flex flex-col items-center text-center mb-6 mt-2">
+                <div className="w-10 h-10 rounded-full bg-accent-primary/10 flex items-center justify-center mb-3">
+                  <Brain className="w-5 h-5 text-accent-primary" />
+                </div>
+                <h2 className="text-lg font-semibold text-text-primary">
+                  {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
+                </h2>
+                <p className="text-xs text-text-muted mt-1 max-w-[260px]">
                   {authMode === 'login'
-                    ? '¿No tienes cuenta? Regístrate aquí'
-                    : '¿Ya tienes cuenta? Inicia sesión aquí'}
-                </button>
+                    ? 'Accede a tus proyectos compartidos y sincronización en la nube.'
+                    : 'Regístrate para colaborar y guardar tus proyectos en la nube.'}
+                </p>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              <form onSubmit={handleAuthSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-medium text-text-muted mb-1.5">
+                    Correo electrónico
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="nombre@correo.com"
+                    className="w-full text-xs bg-[var(--surface-elevated, #0d1117)] border border-borders-subtle focus:border-[var(--accent-primary)] rounded-md px-3.5 py-2.5 text-text-primary focus:outline-none transition-colors"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 bg-accent-primary hover:bg-accent-primary/95 text-black font-semibold text-xs py-2.5 px-4 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Mail className="w-3.5 h-3.5" />
+                  )}
+                  <span>{loading ? 'Enviando enlace...' : 'Enviar enlace mágico'}</span>
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                    className="text-xs text-text-muted hover:text-accent-primary transition-colors focus:outline-none cursor-pointer"
+                  >
+                    {authMode === 'login'
+                      ? '¿No tienes cuenta? Regístrate aquí'
+                      : '¿Ya tienes cuenta? Inicia sesión aquí'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
