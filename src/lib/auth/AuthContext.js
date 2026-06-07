@@ -52,6 +52,16 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (user && user.id !== 'local-user') {
+        window.__devhub_authenticated = true;
+      } else {
+        window.__devhub_authenticated = false;
+      }
+    }
+  }, [user]);
+
   // Fetch workspaces when user changes
   useEffect(() => {
     if (!db) return;

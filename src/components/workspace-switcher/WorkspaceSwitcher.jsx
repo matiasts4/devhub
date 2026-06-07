@@ -8,9 +8,11 @@ import { Layers } from 'lucide-react';
 export default function WorkspaceSwitcher() {
   const { workspaces, activeWorkspaceId, setActiveWorkspaceId, loading } = useAuth();
 
-  // If not logged in (local-dev mode), show local-ws singleton
-  const activeWorkspaces =
-    workspaces.length > 0 ? workspaces : [{ id: 'local-ws', name: 'Espacio Local' }];
+  // Always include Espacio Local, and filter out any duplicates from workspaces list
+  const activeWorkspaces = [
+    { id: 'local-ws', name: 'Espacio Local' },
+    ...workspaces.filter((ws) => ws.id !== 'local-ws'),
+  ];
 
   const currentWorkspaceId = activeWorkspaceId || 'local-ws';
 

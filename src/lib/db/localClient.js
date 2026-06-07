@@ -10,6 +10,30 @@ const isCloud =
 
 let supabaseInstance = null;
 
+function _shouldQuerySupabase(table) {
+  if (typeof window === 'undefined') return false;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return false;
+
+  // Check if authenticated
+  if (!window.__devhub_authenticated) return false;
+
+  // Global tenant tables are always synced/queried from Supabase if authenticated
+  if (table === 'workspaces' || table === 'workspace_members') {
+    return true;
+  }
+
+  // Active workspace must be non-local
+  const activeWorkspaceId = localStorage.getItem('devhub:active-workspace-id');
+  if (activeWorkspaceId && activeWorkspaceId !== 'local-ws') {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * DevHub Local DB Client (CLIENT-SIDE ONLY)
  *
@@ -179,17 +203,19 @@ class LocalQueryClient {
   }
 
   async execute() {
-    const supabase = getSupabaseInstance();
-    if (supabase) {
-      try {
-        const { data, error } = await this._buildSupabaseQuery(supabase);
-        if (!error) {
-          this._cacheLocally(data);
-          return { data, error: null };
+    if (_shouldQuerySupabase(this.table)) {
+      const supabase = getSupabaseInstance();
+      if (supabase) {
+        try {
+          const { data, error } = await this._buildSupabaseQuery(supabase);
+          if (!error) {
+            this._cacheLocally(data);
+            return { data, error: null };
+          }
+          console.warn('Supabase query failed, falling back to local SQLite:', error);
+        } catch (err) {
+          console.warn('Supabase exception, falling back to local SQLite:', err);
         }
-        console.warn('Supabase query failed, falling back to local SQLite:', error);
-      } catch (err) {
-        console.warn('Supabase exception, falling back to local SQLite:', err);
       }
     }
     return this._executeLocalQuery();
@@ -330,15 +356,17 @@ class LocalQueryClient {
   async _executeMutation() {
     const localResult = await this._executeLocalMutation();
 
-    const supabase = getSupabaseInstance();
-    if (supabase && localResult.error === null) {
-      try {
-        const { error } = await this._buildSupabaseQuery(supabase);
-        if (error) {
-          console.error('Supabase sync mutation error:', error);
+    if (_shouldQuerySupabase(this.table) && localResult.error === null) {
+      const supabase = getSupabaseInstance();
+      if (supabase) {
+        try {
+          const { error } = await this._buildSupabaseQuery(supabase);
+          if (error) {
+            console.error('Supabase sync mutation error:', error);
+          }
+        } catch (err) {
+          console.warn('Supabase sync mutation exception (offline):', err);
         }
-      } catch (err) {
-        console.warn('Supabase sync mutation exception (offline):', err);
       }
     }
 
