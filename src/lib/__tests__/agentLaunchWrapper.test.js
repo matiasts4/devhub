@@ -558,6 +558,25 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
     });
 
+    test('wrapper with chunked bootstrap passes bash -n syntax check', () => {
+      const { spawnSync } = require('child_process');
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        bootstrapPrompt:
+          'Rol: Coder\nMisión: validar launch\n\n=== Worker: identidad y reporte ===\n- Reporta al Director.',
+      });
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-wrapper-syntax-'));
+      const tmp = path.join(tmpDir, 'wrapper.sh');
+      fs.writeFileSync(tmp, result, { mode: 0o644 });
+      const check = spawnSync('bash', ['-n', tmp], { encoding: 'utf-8' });
+      expect(check.status).toBe(0);
+      expect(check.stderr).toBe('');
+    });
+
     test('tuiReadyGraceMs=5000 produces `sleep 5` in the emitted bash (configurable)', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,

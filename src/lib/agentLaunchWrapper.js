@@ -448,11 +448,20 @@ export function readLegacyBootstrapLock({ lockDir, missionId, role }) {
   return { found: true, pid, deprecated: true, path: file };
 }
 
+const BOOTSTRAP_HEREDOC_DELIMITER_RE = /^DEVHUB_BOOTSTRAP_CHUNK_\d+$/;
+
 function indentBashBlock(block = '', spaces = 4) {
   const pad = ' '.repeat(spaces);
   return String(block || '')
     .split('\n')
-    .map((line) => (line.length > 0 ? `${pad}${line}` : line))
+    .map((line) => {
+      if (line.length === 0) return line;
+      // Bash heredoc closers must start at column 0 (unless <<- with tabs).
+      // buildChunkedBootstrapPromptBlock emits bare delimiter tags; keep them
+      // unindented so `bash -n` accepts the generated launch wrapper.
+      if (BOOTSTRAP_HEREDOC_DELIMITER_RE.test(line)) return line;
+      return `${pad}${line}`;
+    })
     .join('\n');
 }
 
