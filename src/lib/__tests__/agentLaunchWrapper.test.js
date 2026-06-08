@@ -558,6 +558,21 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
     });
 
+    test('bare inner command defers bootstrap until after the agent starts', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        innerCommand:
+          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M2.7',
+        bootstrapPrompt: 'Rol: Coder\nMisión: validar launch',
+      });
+
+      expect(result).not.toMatch(/^sleep 10$/m);
+      expect(result).not.toContain('(_devhub_bootstrap_prompt) &');
+      expect(result).toContain('_devhub_agent_pid=$!');
+      expect(result).toMatch(/wait \$_devhub_agent_pid/);
+      expect(result).toMatch(/_devhub_bootstrap_prompt/);
+    });
+
     test('wrapper with chunked bootstrap passes bash -n syntax check', () => {
       const { spawnSync } = require('child_process');
       const fs = require('fs');
@@ -566,6 +581,8 @@ describe('agentLaunchWrapper', () => {
 
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
+        innerCommand:
+          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M2.7',
         bootstrapPrompt:
           'Rol: Coder\nMisión: validar launch\n\n=== Worker: identidad y reporte ===\n- Reporta al Director.',
       });

@@ -241,6 +241,9 @@ export function buildLaunchCommand(
     opencodeAgent: agentProfile,
     modelId,
     tmuxSessionName,
+    // Visible swarm panels are already tmux-backed (ttyServer spawn). A second
+    // tmux new-session/attach from the wrapper fails with exit 1 inside TMUX.
+    disableTmuxWrap: true,
     // `opencode --prompt` is non-interactive in current CLI builds. Start the
     // TUI first and inject the mission prompt into the already-running panel.
     interactiveBootstrapPrompt: effectiveProgramId === 'opencode',

@@ -465,7 +465,10 @@ function indentBashBlock(block = '', spaces = 4) {
     .join('\n');
 }
 
-function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
+function buildBootstrapPromptBlock(
+  prompt = '',
+  { preSleepSeconds = 0, invokeInBackground = true } = {}
+) {
   if (!String(prompt || '').trim()) {
     return '';
   }
@@ -533,8 +536,10 @@ function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
     chunkedInjection,
     '  } >> "$DEVHUB_LOG_FILE" 2>&1',
     '}',
-    '(_devhub_bootstrap_prompt) &',
-  ].join('\n');
+    invokeInBackground ? '(_devhub_bootstrap_prompt) &' : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -850,7 +855,23 @@ export function buildDirectorTmuxInjection(directorTmuxSession) {
  * @param {object} params
  * @returns {string} Shell auto-restart loop
  */
-export function buildAutoRestartLoopCommand({ innerCommand }) {
+export function buildAutoRestartLoopCommand({
+  innerCommand,
+  deferBootstrap = false,
+  tuiGraceSeconds = 10,
+} = {}) {
+  const runInnerBody = deferBootstrap
+    ? [
+        `(${innerCommand}) &`,
+        '_devhub_agent_pid=$!',
+        `sleep ${Math.max(0, Math.floor(tuiGraceSeconds))}`,
+        'if declare -F _devhub_bootstrap_prompt >/dev/null 2>&1; then',
+        '  _devhub_bootstrap_prompt',
+        'fi',
+        'wait $_devhub_agent_pid',
+      ].join('\n  ')
+    : innerCommand;
+
   return `MAX_RESTARTS=3
 RESTART_DELAY=5
 _devhub_RESTART_COUNT=\${_devhub_RESTART_COUNT:-0}
@@ -863,7 +884,7 @@ _devhub_restart_if_needed() {
   _devhub_RESTART_COUNT=\$((_devhub_RESTART_COUNT + 1))
 }
 _devhub_run_inner() {
-  ${innerCommand}
+  ${runInnerBody}
 }
 while true; do
   _devhub_run_inner 2>&1
@@ -1043,6 +1064,12 @@ export function buildAgentLaunchWrapper({
   // director needs the extra time so the consumer can attach to the tmux
   // pane before the bootstrap prompt is injected.
   const preBootstrapSleepSeconds = isDirectorRole ? 2 : 0;
+  const panelTmuxBacked =
+    Boolean(String(innerCommand || '').trim()) &&
+    !String(innerCommand).includes('tmux attach-session');
+  const deferBootstrapUntilAgentStart =
+    panelTmuxBacked && Boolean(String(bootstrapPrompt || '').trim());
+  const tuiGraceSeconds = Math.max(0, Math.floor(tuiReadyGraceMs / 1000));
 
   const parts = [
     '#!/usr/bin/env bash',
@@ -1087,17 +1114,24 @@ export function buildAgentLaunchWrapper({
     // arrives. Only emitted when a tmux session is configured.
     // T-019.2: timeouts are configurable from buildAgentLaunchWrapper
     // params (default 2s grace, 10s wait-for timeout).
-    ...(tmuxSessionName
+    ...(tmuxSessionName && !deferBootstrapUntilAgentStart
       ? [
           buildTuiWaitForBlock({
             sessionName: tmuxSessionName,
-            graceSeconds: Math.max(0, Math.floor(tuiReadyGraceMs / 1000)),
+            graceSeconds: tuiGraceSeconds,
             timeoutSeconds: Math.max(1, Math.floor(tuiWaitTimeoutMs / 1000)),
           }),
         ]
       : []),
     '',
-    buildBootstrapPromptBlock(bootstrapPrompt, { preSleepSeconds: preBootstrapSleepSeconds }),
+    buildBootstrapPromptBlock(bootstrapPrompt, {
+      preSleepSeconds: deferBootstrapUntilAgentStart
+        ? isDirectorRole
+          ? preBootstrapSleepSeconds
+          : 0
+        : preBootstrapSleepSeconds,
+      invokeInBackground: !deferBootstrapUntilAgentStart,
+    }),
     '',
     // T-016.4 — attach the transcript pipe-pane after the bootstrap
     // prompt is queued. Detach happens in the exit trap below.
@@ -1149,7 +1183,11 @@ export function buildAgentLaunchWrapper({
     '',
     '# Execute the actual agent via auto-restart loop',
     '# Captures both stdout and stderr to log; restarts on non-zero exit (max 3)',
-    buildAutoRestartLoopCommand({ innerCommand }),
+    buildAutoRestartLoopCommand({
+      innerCommand,
+      deferBootstrap: deferBootstrapUntilAgentStart,
+      tuiGraceSeconds,
+    }),
   ];
 
   return parts.join('\n');

@@ -18,7 +18,7 @@ describe('swarm launch inner command', () => {
       interactiveBootstrapPrompt: true,
     });
 
-    expect(inner).toContain('/home/matias/.opencode/bin/opencode --pure --agent swarm-director');
+    expect(inner).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
     expect(inner).toContain('--model minimax-coding-plan/MiniMax-M2.7');
     expect(inner).not.toContain('--prompt');
     expect(inner).not.toContain('tmux new-session');

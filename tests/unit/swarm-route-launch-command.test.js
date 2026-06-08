@@ -34,7 +34,10 @@ describe('route buildLaunchCommand (visible swarm)', () => {
 
     expect(launch.command).toBe('bash /tmp/devhub-launch-launch-test1234-director.sh');
     expect(launch.wrapper).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+    expect(launch.wrapper).not.toContain('tmux attach-session');
     expect(launch.wrapper).not.toContain('--prompt');
+    expect(launch.wrapper).toContain('_devhub_agent_pid=$!');
+    expect(launch.wrapper).toContain('_devhub_bootstrap_prompt');
 
     const script = fs.readFileSync(launch.wrapperScriptPath, 'utf8');
     expect(script).toBe(launch.wrapper);
