@@ -92,6 +92,14 @@ function tryClearPtyIdentity(session) {
 // Safe for concurrent calls — appendFileSync is atomic per call.
 const TTY_LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log');
 const CRASH_DUMP_DIR = path.resolve(process.cwd(), 'data', 'logs', 'crash-dumps');
+const DEFAULT_AUTO_KILL_GRACE_MS = 15_000;
+const SWARM_AUTO_KILL_GRACE_MS = 120_000;
+
+function resolveAutoKillGraceMs(session) {
+  if (session?.swarmId) return SWARM_AUTO_KILL_GRACE_MS;
+  if (session?.mode === 'tui') return SWARM_AUTO_KILL_GRACE_MS;
+  return DEFAULT_AUTO_KILL_GRACE_MS;
+}
 
 function ttyLog(tag, msg, extra = {}) {
   try {
@@ -1481,9 +1489,12 @@ export async function ensureTTYServer() {
         // AUTO-KILL: If this was the last socket, start a grace timer
         // If no one reconnects within 15s, kill the PTY to prevent zombies
         if (remainingSockets <= 0 && session.pty) {
+          const autoKillGraceMs = resolveAutoKillGraceMs(session);
           ttyLog('WS_CLOSE', `last socket disconnected, starting auto-kill grace timer`, {
             terminalId,
-            gracePeriodSeconds: 15,
+            gracePeriodMs: autoKillGraceMs,
+            swarmId: session.swarmId || null,
+            mode: session.mode || 'shell',
           });
 
           // Clear any existing timer (reconnect scenario)
@@ -1529,7 +1540,7 @@ export async function ensureTTYServer() {
               });
             }
             session._autoKillTimer = null;
-          }, 15000); // 15 second grace period
+          }, autoKillGraceMs);
         }
 
         // If client reconnected and cancelled the auto-kill timer, log it
