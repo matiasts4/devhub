@@ -47,6 +47,7 @@ import { registerProjectTools } from './tools/projects.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerWorkspaceTools } from './tools/workspaces.js';
 import { registerInboxTools } from './tools/inbox.js';
+import { registerOperateTools } from './tools/operate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../.env.local') });
@@ -413,6 +414,7 @@ try {
   registerTaskTools(server, deps);
   registerWorkspaceTools(server, deps);
   registerInboxTools(server, deps);
+  registerOperateTools(server, deps);
 
   const keepAlive = setInterval(() => {}, 2_147_483_647);
   const stopKeepAlive = () => clearInterval(keepAlive);
