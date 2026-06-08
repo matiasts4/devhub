@@ -123,10 +123,10 @@ export function refreshTerminalViewport(term) {
   return true;
 }
 
-export function stabilizeTerminalRenderer(term) {
+export function stabilizeTerminalRenderer(term, { clearAtlas = true } = {}) {
   if (!term) return false;
 
-  if (typeof term.clearTextureAtlas === 'function') {
+  if (clearAtlas && typeof term.clearTextureAtlas === 'function') {
     term.clearTextureAtlas();
   }
 
@@ -185,6 +185,7 @@ export function fitTerminalViewport({
   term,
   socket,
   websocketOpenState = WebSocket.OPEN,
+  clearAtlas = true,
 }) {
   if (!container || !fitAddon || !term) return false;
   if (!isTerminalRendererReady(term)) return false;
@@ -198,7 +199,7 @@ export function fitTerminalViewport({
     if (isStaleXtermRendererError(error)) return false;
     throw error;
   }
-  stabilizeTerminalRenderer(term);
+  stabilizeTerminalRenderer(term, { clearAtlas });
 
   if (socket?.readyState === websocketOpenState) {
     socket.send(
@@ -1052,16 +1053,25 @@ export default function TerminalTTY({
     return Boolean(rect && rect.width > 0 && rect.height > 0);
   }, []);
 
-  const fitAndResize = useCallback(() => {
-    const fitWorked = fitTerminalViewport({
-      container: containerRef.current,
-      fitAddon: fitRef.current,
-      term: termRef.current,
-      socket: wsRef.current,
-    });
+  const repaintInactiveTerminal = useCallback(() => {
+    refreshTerminalViewport(termRef.current);
+  }, []);
 
-    logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
-  }, [logViewportDiagnostic]);
+  const fitAndResize = useCallback(
+    (options = {}) => {
+      const clearAtlas = options.clearAtlas ?? isActivePanelRef.current;
+      const fitWorked = fitTerminalViewport({
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+        term: termRef.current,
+        socket: wsRef.current,
+        clearAtlas,
+      });
+
+      logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
+    },
+    [logViewportDiagnostic]
+  );
 
   const scrollTerminalToBottom = useCallback((force = false) => {
     if (!termRef.current) return;
@@ -1085,24 +1095,32 @@ export default function TerminalTTY({
     if (!termRef.current || !fitRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
-    fitAndResize();
-    if (isActivePanel) scrollTerminalToBottom();
+
+    // Inactive split siblings stay visible — never clear their WebGL atlas on
+    // border/layout churn when the user clicks another panel.
+    if (!isActivePanelRef.current) {
+      repaintInactiveTerminal();
+      return;
+    }
+
+    fitAndResize({ clearAtlas: true });
+    scrollTerminalToBottom();
     clearTimers();
     rafRef.current = requestAnimationFrame(() => {
-      fitAndResize();
-      if (isActivePanel) scrollTerminalToBottom();
+      fitAndResize({ clearAtlas: true });
+      scrollTerminalToBottom();
     });
     timeoutRef.current = setTimeout(() => {
-      fitAndResize();
-      if (isActivePanel) scrollTerminalToBottom();
+      fitAndResize({ clearAtlas: true });
+      scrollTerminalToBottom();
     }, 120);
-  }, [isActivePanel, fitAndResize, clearTimers, scrollTerminalToBottom]);
+  }, [clearTimers, fitAndResize, repaintInactiveTerminal, scrollTerminalToBottom]);
 
   const reactivateTerminalViewport = useCallback(() => {
     logViewportDiagnostic('reactivate-start');
     const repaint = () => {
-      stabilizeTerminalRenderer(termRef.current);
-      scrollTerminalToBottom();
+      stabilizeTerminalRenderer(termRef.current, { clearAtlas: isActivePanelRef.current });
+      if (isActivePanelRef.current) scrollTerminalToBottom();
     };
 
     sendResize();
@@ -2005,6 +2023,9 @@ export default function TerminalTTY({
       } catch {
         // intentional: terminal may already be disposed during unmount
       }
+      requestAnimationFrame(() => {
+        refreshTerminalViewport(termRef.current);
+      });
       return;
     }
 
@@ -2269,6 +2290,10 @@ export default function TerminalTTY({
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
+          if (!isActivePanelRef.current) {
+            refreshTerminalViewport(termRef.current);
+            return;
+          }
           sendResizeRef.current?.();
         });
         resizeObserverRef.current.observe(containerRef.current);
@@ -2448,7 +2473,11 @@ export default function TerminalTTY({
 
     const handleWindowResize = () => {
       logViewportDiagnostic('window-resize');
-      sendResize();
+      if (isActivePanel) {
+        sendResize();
+      } else {
+        fitAndResize({ clearAtlas: false });
+      }
       queueNativeVteProbeRetry();
     };
     const handleWindowFocus = () => {
@@ -2484,6 +2513,7 @@ export default function TerminalTTY({
     isVisibleInLayout,
     logViewportDiagnostic,
     queueNativeVteProbeRetry,
+    fitAndResize,
     reactivateTerminalViewport,
     sendResize,
   ]);

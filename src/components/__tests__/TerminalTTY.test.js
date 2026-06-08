@@ -390,6 +390,18 @@ describe('stabilizeTerminalRenderer()', () => {
     expect(stabilizeTerminalRenderer(term)).toBe(true);
     expect(term.refresh).toHaveBeenCalledWith(0, 11);
   });
+
+  test('can repaint inactive split siblings without clearing the WebGL atlas', () => {
+    const term = {
+      rows: 24,
+      clearTextureAtlas: jest.fn(),
+      refresh: jest.fn(),
+    };
+
+    expect(stabilizeTerminalRenderer(term, { clearAtlas: false })).toBe(true);
+    expect(term.clearTextureAtlas).not.toHaveBeenCalled();
+    expect(term.refresh).toHaveBeenCalledWith(0, 23);
+  });
 });
 
 describe('isTerminalViewportNearBottom()', () => {
