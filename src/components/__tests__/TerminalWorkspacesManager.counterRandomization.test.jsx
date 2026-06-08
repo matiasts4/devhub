@@ -149,21 +149,29 @@ jest.mock('date-fns', () => ({
   formatDistanceToNow: () => 'just now',
 }));
 
-jest.mock('../workspace/FileExplorerEditorPane', () => ({
-  __esModule: true,
-  default: () => {
-    const React = require('react');
-    return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/FileExplorerEditorPane',
+  () => ({
+    __esModule: true,
+    default: () => {
+      const React = require('react');
+      return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
+    },
+  }),
+  { virtual: true }
+);
 
-jest.mock('../workspace/WorkspaceBridgePane', () => ({
-  __esModule: true,
-  default: () => {
-    const React = require('react');
-    return React.createElement('div', { 'data-testid': 'shared-bridge-pane' });
-  },
-}), { virtual: true });
+jest.mock(
+  '../workspace/WorkspaceBridgePane',
+  () => ({
+    __esModule: true,
+    default: () => {
+      const React = require('react');
+      return React.createElement('div', { 'data-testid': 'shared-bridge-pane' });
+    },
+  }),
+  { virtual: true }
+);
 
 const mockCatalogState = {
   status: 'empty',
@@ -233,6 +241,29 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    // Pre-populate saved terminal state so the counter randomization hook (which requires savedState) triggers
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [
+                  {
+                    id: 'p1',
+                    initialCommand: null,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    );
     global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
     delete globalThis['__DEVHUB_TTY_SESSIONS__'];
     mockCatalogState.status = 'empty';
@@ -272,7 +303,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     expect(panelIds.length).toBeGreaterThanOrEqual(1);
 
     // New panel (non-p1) should be in high range [1000, 10000]
-    const newPanelId = panelIds.find(id => id !== 'p1');
+    const newPanelId = panelIds.find((id) => id !== 'p1');
     expect(newPanelId).toBeDefined();
     const panelNum = parseInt(newPanelId.replace('p', ''), 10);
     expect(panelNum).toBeGreaterThanOrEqual(1000);
@@ -289,7 +320,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
 
     // After first add: panels are p1 (default) + p8001 (high)
     const panelIdsAfterFirst = getActiveWorkspacePanelIds(view.container);
-    const existingHighPanel = panelIdsAfterFirst.find(id => id !== 'p1');
+    const existingHighPanel = panelIdsAfterFirst.find((id) => id !== 'p1');
     expect(existingHighPanel).toBeDefined();
     const existingHighNum = parseInt(existingHighPanel.replace('p', ''), 10);
     expect(existingHighNum).toBeGreaterThanOrEqual(1000);
@@ -300,7 +331,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     await flushEffects();
 
     const panelIdsAfterSecond = getActiveWorkspacePanelIds(view.container);
-    const newIds = panelIdsAfterSecond.filter(id => !panelIdsAfterFirst.includes(id));
+    const newIds = panelIdsAfterSecond.filter((id) => !panelIdsAfterFirst.includes(id));
 
     // If re-randomization happened, we would get IDs in low range
     // Since counterRandomizedRef is already true, we expect continuation from high
@@ -329,7 +360,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
 
     const panelIdsAfterAdd = getActiveWorkspacePanelIds(view.container);
     // Only check NEW panels (those added by this addWorkspace operation)
-    const newIds = panelIdsAfterAdd.filter(id => !panelIdsBeforeAdd.includes(id));
+    const newIds = panelIdsAfterAdd.filter((id) => !panelIdsBeforeAdd.includes(id));
 
     // NEW panels should not have low IDs matching stale entries
     newIds.forEach((panelId) => {
@@ -355,7 +386,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     await flushEffects();
 
     const panelIdsAfterFirst = getActiveWorkspacePanelIds(view.container);
-    const afterFirstHighPanel = panelIdsAfterFirst.find(id => !panelIdsBeforeFirst.includes(id));
+    const afterFirstHighPanel = panelIdsAfterFirst.find((id) => !panelIdsBeforeFirst.includes(id));
     expect(afterFirstHighPanel).toBeDefined();
     const afterFirstHighNum = parseInt(afterFirstHighPanel.replace('p', ''), 10);
     expect(afterFirstHighNum).toBeGreaterThanOrEqual(1000);
@@ -377,7 +408,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     await flushEffects();
 
     const panelIdsAfterSecond = getActiveWorkspacePanelIds(view.container);
-    const newIds = panelIdsAfterSecond.filter(id => !panelIdsBeforeSecond.includes(id));
+    const newIds = panelIdsAfterSecond.filter((id) => !panelIdsBeforeSecond.includes(id));
 
     // NEW panels should be in high range
     newIds.forEach((panelId) => {

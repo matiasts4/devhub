@@ -265,7 +265,9 @@ function getSplitDownButton(container) {
 function getVisibleWorkspaceShell(container) {
   return (
     Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-      (node) => !String(node.className || '').includes('pointer-events-none')
+      (node) =>
+        !String(node.className || '').includes('hidden') &&
+        !String(node.className || '').includes('pointer-events-none')
     ) || null
   );
 }

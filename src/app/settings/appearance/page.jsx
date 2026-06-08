@@ -32,6 +32,15 @@ import {
   writeTerminalRendererDefaultModeSetting,
 } from '@/components/terminal/terminalRendererPreferences';
 import {
+  applyTerminalTypographyToDocument,
+  getStoredTerminalTypography,
+  resetTerminalTypography,
+  resolveTerminalTypography,
+  setTerminalTypography,
+  TERMINAL_FONT_FAMILY_PRESETS,
+  findPresetByValue,
+} from '@/components/terminal/terminalTypographyPreferences';
+import {
   RESTORE_POLICY,
   readTerminalRestorePreferences,
   writeTerminalRestorePreferences,
@@ -150,6 +159,11 @@ export default function AppearancePage() {
   );
   const [terminalAccentBarVisible, setTerminalAccentBarVisible] = useState(true);
 
+  // Terminal typography (font, weight, line height, etc.) — independent of app theme.
+  const [terminalTypography, setTerminalTypographyState] = useState(() =>
+    resolveTerminalTypography()
+  );
+
   useEffect(() => {
     setActiveTheme(getStoredTheme());
     setActiveMorphology(getStoredMorphology());
@@ -162,6 +176,10 @@ export default function AppearancePage() {
       setRestorePrefs(saved);
       setActiveTerminalHeaderStyle(getStoredTerminalHeaderStyle());
       setTerminalAccentBarVisible(getStoredTerminalAccentBarVisible());
+
+      const storedTypo = getStoredTerminalTypography(window.localStorage);
+      setTerminalTypographyState(storedTypo);
+      applyTerminalTypographyToDocument(storedTypo);
     }
   }, []);
 
@@ -243,6 +261,46 @@ export default function AppearancePage() {
         container.setAttribute('data-terminal-accent-bar', String(nextVisible));
       }
     }
+  };
+
+  // --- Terminal Typography handlers (font, grosor, lineHeight, letterSpacing) ---
+  const commitTypography = (partial) => {
+    if (typeof window === 'undefined') return;
+    const next = setTerminalTypography(window.localStorage, partial);
+    setTerminalTypographyState(next);
+    applyTerminalTypographyToDocument(next);
+    // Notify any open TerminalTTY instances so they can live-update or re-init cleanly.
+    window.dispatchEvent(new CustomEvent('devhub:terminal-typography-changed', { detail: next }));
+  };
+
+  const handleSelectTerminalFontFamily = (value) => {
+    // When the user explicitly picks the Kali/Linux terminal preset, also give it
+    // the thicker weights so it doesn't look "delgada" like JetBrains at 400.
+    const isKaliStyle =
+      value.includes('Noto Sans Mono') ||
+      value.includes('DejaVu Sans Mono') ||
+      value.includes('Liberation Mono') ||
+      value === TERMINAL_FONT_FAMILY_PRESETS[0]?.value; // first one is Kali
+
+    const extra = isKaliStyle ? { fontWeight: '500', fontWeightBold: '800' } : {};
+
+    commitTypography({ fontFamily: value, ...extra });
+  };
+
+  const handleTerminalTypographyChange = (key) => (event) => {
+    let val = event?.target?.value;
+    if (key === 'fontSize' || key === 'lineHeight' || key === 'letterSpacing') {
+      val = parseFloat(val);
+    }
+    commitTypography({ [key]: val });
+  };
+
+  const handleResetTerminalTypography = () => {
+    if (typeof window === 'undefined') return;
+    const next = resetTerminalTypography(window.localStorage);
+    setTerminalTypographyState(next);
+    applyTerminalTypographyToDocument(next);
+    window.dispatchEvent(new CustomEvent('devhub:terminal-typography-changed', { detail: next }));
   };
 
   return (
@@ -492,6 +550,162 @@ export default function AppearancePage() {
                 }}
               />
             </button>
+          </div>
+
+          {/* Tipografía de la terminal (fuente, grosor, interlineado, espaciado) */}
+          <div className="mt-6 pt-5 border-t border-[var(--border-subtle)]">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  Tipografía
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Fuente mono, grosor, interlineado y espaciado de letra para todas las terminales
+                  xterm-webgl.
+                  <br />
+                  <span style={{ color: 'var(--accent-primary)' }}>Recomendado:</span> "Kali Linux
+                  (Terminal por defecto)" + peso 500/800 para que no se vea delgada.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetTerminalTypography}
+                className="text-[10px] px-2 py-1 rounded border hover:bg-white/5"
+                style={getAppearanceControlStyle()}
+                title="Restablecer tipografía de terminal"
+              >
+                Restablecer
+              </button>
+            </div>
+
+            {/* Font family */}
+            <div className="mb-4">
+              <label
+                className="text-xs font-medium block mb-1.5"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Familia de fuente
+              </label>
+              <select
+                value={terminalTypography.fontFamily}
+                onChange={(e) => handleSelectTerminalFontFamily(e.target.value)}
+                className="w-full h-10 rounded-xl border px-3 text-sm"
+                style={getAppearanceControlStyle()}
+              >
+                {TERMINAL_FONT_FAMILY_PRESETS.map((p) => (
+                  <option key={p.id} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+                {/* Allow current custom value if it doesn't match a preset */}
+                {!findPresetByValue(terminalTypography.fontFamily) && (
+                  <option value={terminalTypography.fontFamily}>Personalizada (actual)</option>
+                )}
+              </select>
+              <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                Cambios de familia o grosor reinician limpiamente las terminales abiertas para el
+                atlas WebGL.
+              </p>
+            </div>
+
+            {/* Size + Weights row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div>
+                <label
+                  className="text-xs font-medium block mb-1"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Tamaño ({terminalTypography.fontSize}px)
+                </label>
+                <input
+                  type="range"
+                  min={8}
+                  max={24}
+                  step={1}
+                  value={terminalTypography.fontSize}
+                  onChange={handleTerminalTypographyChange('fontSize')}
+                  className="w-full accent-[var(--accent-primary)]"
+                />
+              </div>
+              <div>
+                <label
+                  className="text-xs font-medium block mb-1"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Grosor normal
+                </label>
+                <select
+                  value={String(terminalTypography.fontWeight)}
+                  onChange={handleTerminalTypographyChange('fontWeight')}
+                  className="w-full h-9 rounded-lg border px-2 text-sm"
+                  style={getAppearanceControlStyle()}
+                >
+                  {[300, 400, 500, 600, 700].map((w) => (
+                    <option key={w} value={w}>
+                      {w}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
+                  className="text-xs font-medium block mb-1"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Grosor negrita
+                </label>
+                <select
+                  value={String(terminalTypography.fontWeightBold)}
+                  onChange={handleTerminalTypographyChange('fontWeightBold')}
+                  className="w-full h-9 rounded-lg border px-2 text-sm"
+                  style={getAppearanceControlStyle()}
+                >
+                  {[500, 600, 700, 800, 900].map((w) => (
+                    <option key={w} value={w}>
+                      {w}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Line height + letter spacing */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label
+                  className="text-xs font-medium block mb-1"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Interlineado (line height): {terminalTypography.lineHeight}
+                </label>
+                <input
+                  type="range"
+                  min={1.0}
+                  max={1.9}
+                  step={0.05}
+                  value={terminalTypography.lineHeight}
+                  onChange={handleTerminalTypographyChange('lineHeight')}
+                  className="w-full accent-[var(--accent-primary)]"
+                />
+              </div>
+              <div>
+                <label
+                  className="text-xs font-medium block mb-1"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Espaciado de letras: {terminalTypography.letterSpacing}
+                </label>
+                <input
+                  type="range"
+                  min={-1.5}
+                  max={3}
+                  step={0.1}
+                  value={terminalTypography.letterSpacing}
+                  onChange={handleTerminalTypographyChange('letterSpacing')}
+                  className="w-full accent-[var(--accent-primary)]"
+                />
+              </div>
+            </div>
           </div>
         </section>
       </ChromeSurface>

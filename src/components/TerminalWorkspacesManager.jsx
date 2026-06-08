@@ -1035,6 +1035,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const workspaceGridAreaRef = useRef(null);
   const rightDockPlaceholderRef = useRef(null);
   const nudgeBrowserNativeLiveRef = useRef(null);
+  const syncRightDockMeasuredBoundsRef = useRef(null);
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
   const agentRunsByPanel = readAgentRunsByPanel(storage);
   const terminalStateStorageKey = projectId
@@ -1832,7 +1833,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
           nudgeBrowserNativeLiveRef.current?.();
           // Also keep the measured in sync (for the web layer style).
-          syncRightDockMeasuredBounds();
+          syncRightDockMeasuredBoundsRef.current?.();
         }
       });
     };
@@ -1849,7 +1850,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       window.removeEventListener('pointermove', onMove);
       if (raf != null) cancelAnimationFrame(raf);
     };
-  }, [isDraggingDock, syncRightDockMeasuredBounds]);
+  }, [isDraggingDock]);
 
   useEffect(() => {
     if (!isDraggingInternalSplit) return undefined;
@@ -2263,6 +2264,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     isDraggingDock,
     isFullscreenBrowser,
   ]);
+  syncRightDockMeasuredBoundsRef.current = syncRightDockMeasuredBounds;
 
   useLayoutEffect(() => {
     syncRightDockMeasuredBounds();
@@ -5253,10 +5255,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                     <div
                       key={workspaceGridKey}
                       data-testid={`workspace-shell-${ws.id}`}
-                      className={`absolute inset-0 p-1.5 ${isFullscreenBrowser ? 'hidden' : activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                      className={`absolute inset-0 p-1.5 ${isFullscreenBrowser || activeWsId !== ws.id || !isVisible ? 'hidden' : ''}`}
                       style={{
                         zIndex: activeWsId === ws.id ? 10 : 0,
-                        visibility: isFullscreenBrowser ? 'hidden' : undefined,
                       }}
                     >
                       <PanelGroup
@@ -5267,7 +5268,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         <Panel
                           key={`${ws.id}-terminal-grid`}
                           minSize={18}
-                          className="flex flex-col bg-[#0c1018] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
+                          className="flex flex-col bg-[var(--surface-app)] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
                         >
                           {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
 

@@ -21,6 +21,7 @@ jest.mock('framer-motion', () => ({
       return React.createElement('div', props, children);
     },
   },
+  AnimatePresence: ({ children }) => children,
 }));
 
 jest.mock('lucide-react', () => {
@@ -270,7 +271,9 @@ function installDom() {
 function getVisibleWorkspaceShell(container) {
   return (
     Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-      (node) => !String(node.className || '').includes('pointer-events-none')
+      (node) =>
+        !String(node.className || '').includes('hidden') &&
+        !String(node.className || '').includes('pointer-events-none')
     ) || null
   );
 }
@@ -331,7 +334,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     dom = installDom();
     window.localStorage.clear();
     delete window.__TAURI_INTERNALS__;
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    consoleErrorSpy = jest.spyOn(console, 'error');
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     sharedEditorPaneMountCount = 0;
     sharedEditorPaneUnmountCount = 0;
@@ -449,36 +452,36 @@ describe('TerminalWorkspacesManager right dock', () => {
         })
       );
 
-    expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
-      'visible'
-    );
-    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
-      'live'
-    );
+      expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+        'visible'
+      );
+      expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+        'live'
+      );
 
-    await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+      await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
 
-    // pizarra visibility: after toggle to pizarra mode the pane (with its tool palette buttons)
-    // must be present in the DOM. The host wrapper provides relative + size for the absolute
-    // canvas + palette inside PizarraPane. Prevents the "submarino blank, no buttons" UX.
-    expect(view.container.querySelector('[data-testid="pizarra-pane"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="pizarra-host"]')).not.toBeNull();
+      // pizarra visibility: after toggle to pizarra mode the pane (with its tool palette buttons)
+      // must be present in the DOM. The host wrapper provides relative + size for the absolute
+      // canvas + palette inside PizarraPane. Prevents the "submarino blank, no buttons" UX.
+      expect(view.container.querySelector('[data-testid="pizarra-pane"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-testid="pizarra-host"]')).not.toBeNull();
 
-    expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
-      'hidden'
-    );
-    expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
-      'live'
-    );
-    expect(
-      view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
-    ).toBe('live');
+      expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+        'hidden'
+      );
+      expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+        'live'
+      );
+      expect(
+        view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+      ).toBe('live');
 
-    await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+      await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
 
-    expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
-      'visible'
-    );
+      expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+        'visible'
+      );
     } finally {
       if (prev === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
       else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prev;
@@ -506,11 +509,11 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="workspace-swarm-launch-button"]'));
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
-      'suspended'
+      'live'
     );
     expect(
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
-    ).toBe('transient-overlay');
+    ).toBe('live');
     expect(document.body.textContent).toContain('Asistente de lanzamiento');
   });
 
@@ -1018,13 +1021,14 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
     await flushEffects();
 
-    expect(mockInvoke).toHaveBeenCalledWith('native_browser_close', {
+    expect(mockInvoke).toHaveBeenCalledWith('native_browser_set_visibility', {
       request: expect.objectContaining({
         panelId: 'browser-project-1-ws1',
-        reason: 'component-unmount',
+        visible: false,
       }),
     });
-    expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).toBeNull();
+    const activeShell = getVisibleWorkspaceShell(view.container);
+    expect(activeShell.querySelector('[data-testid="workspace-browser-pane"]')).toBeNull();
   });
 
   test('keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1', async () => {

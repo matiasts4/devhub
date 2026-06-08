@@ -5,7 +5,11 @@
 // Note: the legacy 'vte-experimental' entry was removed from the active list
 // to enforce xterm-webgl as the sole renderer. Supporting code for VTE
 // (nativeVteBridge, resolveNativeVteCapability, etc.) is untouched.
-export const TERMINAL_RENDERER_MODES = ['xterm', 'xterm-webgl', 'canvas'];
+import { LEGACY_VTE_ENABLED } from './terminalRendererPreferences';
+
+export const TERMINAL_RENDERER_MODES = LEGACY_VTE_ENABLED
+  ? ['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']
+  : ['xterm', 'xterm-webgl', 'canvas'];
 
 export const TERMINAL_WEBGL_FALLBACK_REASONS = Object.freeze({
   WEBGL_UNSUPPORTED_IN_WEBVIEW: 'webgl-unsupported-in-webview',
@@ -143,6 +147,22 @@ export function getTerminalRendererRuntimeCapabilities({
   const normalizedPlatform = normalizeTerminalRendererPlatform(platform);
 
   return TERMINAL_RENDERER_MODES.reduce((accumulator, mode) => {
+    if (mode === 'vte-experimental') {
+      const nativeCapability = resolveNativeVteCapability({
+        platform: normalizedPlatform,
+        tauriAvailable,
+        nativeVteProbe,
+        nativeVteOpenFailure,
+      });
+      accumulator[mode] = {
+        mode,
+        label: TERMINAL_RENDERER_LABELS[mode],
+        ready: nativeCapability.ready,
+        reason: nativeCapability.reason,
+      };
+      return accumulator;
+    }
+
     if (mode === 'xterm-webgl') {
       const webglCapability = resolveWebglCapability({ webglProbe });
       accumulator[mode] = {

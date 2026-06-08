@@ -30,6 +30,12 @@ import {
   TERMINAL_WEBGL_FALLBACK_REASONS,
   WEBGL_FALLBACK_WARNING_TEXT,
 } from '@/components/terminal/terminalRendererCapabilities';
+import {
+  applyTerminalTypographyToDocument,
+  resolveTerminalTypography,
+  setTerminalTypography,
+} from '@/components/terminal/terminalTypographyPreferences';
+import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -67,6 +73,7 @@ export function shouldShowTerminalViewport(isInitializing, initError) {
 }
 
 export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
+  if (connectionState === 'suspended') return true;
   if (isInitializing) return false;
 
   return Boolean(
@@ -284,6 +291,48 @@ export function getTerminalRuntimePlatform(explicitPlatform) {
   return 'unknown';
 }
 
+export function getTerminalViewportScrollOffset(term) {
+  const activeBuffer = term?.buffer?.active;
+  const viewportY = activeBuffer?.viewportY ?? activeBuffer?.ydisp;
+  return Number.isInteger(viewportY) ? viewportY : null;
+}
+
+export function isTerminalViewportNearBottom(term, threshold = 2) {
+  const activeBuffer = term?.buffer?.active;
+  const baseY = activeBuffer?.baseY;
+  const viewportY = activeBuffer?.viewportY ?? activeBuffer?.ydisp;
+  if (!Number.isInteger(baseY) || !Number.isInteger(viewportY)) return false;
+  return baseY - viewportY <= threshold;
+}
+
+export function restoreTerminalViewportScroll(term, targetViewportY) {
+  if (!term || typeof term.scrollToLine !== 'function') return false;
+  if (!Number.isInteger(targetViewportY)) return false;
+
+  const buffer = term?.buffer?.active;
+  if (!buffer) return false;
+
+  const totalLines = buffer.length;
+  const rows = term.rows;
+  let clampedY = targetViewportY;
+  if (
+    typeof totalLines === 'number' &&
+    typeof rows === 'number' &&
+    !Number.isNaN(totalLines) &&
+    !Number.isNaN(rows)
+  ) {
+    const maxY = Math.max(0, totalLines - rows);
+    clampedY = Math.max(0, Math.min(targetViewportY, maxY));
+  }
+
+  try {
+    term.scrollToLine(clampedY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getNativeTerminalBounds(element) {
   const rect = element?.getBoundingClientRect?.();
   if (!rect) return null;
@@ -310,12 +359,22 @@ export function getNativeTerminalBounds(element) {
     }
   }
 
+  const INSET = 1;
   return {
-    x: Number(rect.left || 0),
-    y: Number(rect.top || 0),
-    width,
-    height,
+    x: Number(rect.left || 0) + INSET,
+    y: Number(rect.top || 0) + INSET,
+    width: Math.max(0, width - INSET * 2),
+    height: Math.max(0, height - INSET * 2),
   };
+}
+
+export function shouldRunTerminalViewportReactivation({
+  isActivePanel,
+  isVisibleInLayout = true,
+  documentVisibilityState,
+}) {
+  if (documentVisibilityState === 'hidden') return false;
+  return isActivePanel && isVisibleInLayout;
 }
 
 export function shouldOpenNativeVtePanel({
@@ -432,9 +491,23 @@ const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
 // Master switch for the legacy native VTE (GTK) backend.
 // We keep the entire implementation (nativeVteBridge, probes, lease logic, etc.)
 // in the tree exactly as-is so it can be re-enabled later if needed.
-// When false we never enter any VTE code paths, never start native listeners,
-// and never pull the extra terminal surface at runtime.
-const ENABLE_NATIVE_VTE = false;
+const DEFAULT_TERMINAL_FONT_FAMILY =
+  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+
+export function resolveTerminalFontFamily() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
+    return DEFAULT_TERMINAL_FONT_FAMILY;
+  }
+
+  const cssMonoStack = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue('--font-family-mono')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cssMonoStack || DEFAULT_TERMINAL_FONT_FAMILY;
+}
+const ENABLE_NATIVE_VTE = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
 
 export default function TerminalTTY({
   id,
@@ -479,13 +552,24 @@ export default function TerminalTTY({
   const nativeVteProbeRetryDelayRef = useRef(null);
   const shouldRetryNativeVteProbeRef = useRef(false);
   const hideTimerRef = useRef(null);
+  const lastViewportYRef = useRef(null);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
     try {
+      // Prefer the new unified typography store (global default for terminals).
+      const typo = resolveTerminalTypography(
+        typeof window !== 'undefined' ? window.localStorage : null
+      );
+      if (typo && Number.isFinite(typo.fontSize)) {
+        const s = Math.round(typo.fontSize);
+        if (s >= 8 && s <= 24) return s;
+      }
+      // Legacy per-device size (still honored for migration / per-panel fine tune)
       const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
       const parsed = stored ? parseInt(stored, 10) : NaN;
-      return Number.isFinite(parsed) && parsed >= 8 && parsed <= 24 ? parsed : 13;
+      if (Number.isFinite(parsed) && parsed >= 8 && parsed <= 24) return parsed;
+      return 13;
     } catch {
       return 13;
     }
@@ -549,18 +633,19 @@ export default function TerminalTTY({
   });
   const shouldUseNativeRenderer =
     rendererViewModel.effectiveMode === 'vte-experimental' && runtimePhase !== 'fallback-xterm';
-  const shouldBootXterm = shouldBootXtermRuntime({
-    isActivePanel,
-    isVisibleInLayout,
-    suspendNativeSurface,
-    nativeSurfacePolicy,
-    nativeVteOpenFailure,
-    nativeVteOpened,
-    nativeVteProbe: nativeVteProbeResult,
-    requestedRendererMode,
-    runtimePlatform: resolvedRuntimePlatform,
-    tauriAvailable,
-  });
+  const shouldBootXterm =
+    shouldBootXtermRuntime({
+      isActivePanel,
+      isVisibleInLayout,
+      suspendNativeSurface,
+      nativeSurfacePolicy,
+      nativeVteOpenFailure,
+      nativeVteOpened,
+      nativeVteProbe: nativeVteProbeResult,
+      requestedRendererMode,
+      runtimePlatform: resolvedRuntimePlatform,
+      tauriAvailable,
+    }) && connectionState !== 'suspended';
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -828,9 +913,9 @@ export default function TerminalTTY({
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
-      hideNativeLease('unmount');
+      closeNativeLease('unmount');
     };
-  }, [hideNativeLease]);
+  }, [closeNativeLease]);
 
   const handleNativeLeaseCommandError = useCallback(
     (error) => {
@@ -917,8 +1002,9 @@ export default function TerminalTTY({
     logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
   }, [logViewportDiagnostic]);
 
-  const scrollTerminalToBottom = useCallback(() => {
+  const scrollTerminalToBottom = useCallback((force = false) => {
     if (!termRef.current) return;
+    if (!force && !isTerminalViewportNearBottom(termRef.current)) return;
 
     if (autoScrollRafRef.current) {
       cancelAnimationFrame(autoScrollRafRef.current);
@@ -935,17 +1021,17 @@ export default function TerminalTTY({
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
     fitAndResize();
-    scrollTerminalToBottom();
+    if (isActivePanel) scrollTerminalToBottom();
     clearTimers();
     rafRef.current = requestAnimationFrame(() => {
       fitAndResize();
-      scrollTerminalToBottom();
+      if (isActivePanel) scrollTerminalToBottom();
     });
     timeoutRef.current = setTimeout(() => {
       fitAndResize();
-      scrollTerminalToBottom();
+      if (isActivePanel) scrollTerminalToBottom();
     }, 120);
-  }, [fitAndResize, clearTimers, scrollTerminalToBottom]);
+  }, [isActivePanel, fitAndResize, clearTimers, scrollTerminalToBottom]);
 
   const reactivateTerminalViewport = useCallback(() => {
     logViewportDiagnostic('reactivate-start');
@@ -1187,6 +1273,73 @@ export default function TerminalTTY({
     requestedRendererMode,
     resolvedRuntimePlatform,
     showNativeLease,
+    suspendNativeSurface,
+    tauriAvailable,
+  ]);
+
+  useEffect(() => {
+    if (
+      nativeVteOpened ||
+      !shouldOpenNativeVtePanel({
+        isActivePanel,
+        isVisibleInLayout,
+        suspendNativeSurface,
+        nativeVteOpenFailure,
+        nativeVteProbe: nativeVteProbeResult,
+        requestedRendererMode,
+        runtimePlatform: resolvedRuntimePlatform,
+        tauriAvailable,
+      })
+    ) {
+      return undefined;
+    }
+
+    if (getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current)) {
+      return undefined;
+    }
+
+    let retryQueued = false;
+    let rafId = null;
+
+    const retryNativeOpenWhenBoundsRecover = () => {
+      if (retryQueued) return;
+
+      const recoveredBounds = getNativeTerminalBounds(
+        containerRef.current || nativePlaceholderRef.current
+      );
+      if (!recoveredBounds) return;
+
+      retryQueued = true;
+      cliLog(`CLIENT:${id}`, 'native VTE bounds recovered — retry open', {
+        bounds: recoveredBounds,
+      });
+      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
+    };
+
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      retryNativeOpenWhenBoundsRecover();
+    });
+
+    const intervalId = setInterval(retryNativeOpenWhenBoundsRecover, 250);
+    window.addEventListener('resize', retryNativeOpenWhenBoundsRecover);
+
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      clearInterval(intervalId);
+      window.removeEventListener('resize', retryNativeOpenWhenBoundsRecover);
+    };
+  }, [
+    id,
+    isActivePanel,
+    isVisibleInLayout,
+    nativeVteOpenFailure,
+    nativeVteOpened,
+    nativeVteProbeResult,
+    requestedRendererMode,
+    resolvedRuntimePlatform,
     suspendNativeSurface,
     tauriAvailable,
   ]);
@@ -1715,6 +1868,9 @@ export default function TerminalTTY({
       const next = Math.min(24, Math.max(8, prev + delta));
       try {
         window.localStorage.setItem(FONT_SIZE_KEY, String(next));
+        // Also persist into the unified typography store so Appearance reflects the
+        // user's preferred base size, and new terminals start with it.
+        setTerminalTypography(window.localStorage, { fontSize: next });
       } catch {
         /* ignore */
       }
@@ -1722,6 +1878,11 @@ export default function TerminalTTY({
         termRef.current.options.fontSize = next;
         try {
           fitRef.current?.fit();
+          // Keep WebGL atlas happy when metrics change.
+          if (typeof termRef.current.clearTextureAtlas === 'function') {
+            termRef.current.clearTextureAtlas();
+          }
+          termRef.current.refresh(0, termRef.current.rows - 1);
         } catch (err) {
           // Same teardown race as the ResizeObserver path: a font-size click
           // landing during dispose can hit the WebGL addon's stale renderer.
@@ -1731,6 +1892,72 @@ export default function TerminalTTY({
       return next;
     });
   }, []);
+
+  // React to typography changes coming from Appearance / Terminal Zone while this
+  // terminal is already mounted. Numeric values (size, line, letter) can be applied live.
+  // Family / weight changes are more structural for the glyph atlas → we force a clean
+  // re-initialization of this xterm instance using the existing nonce mechanism.
+  const lastAppliedTypographyRef = useRef(null);
+  useEffect(() => {
+    const handleTypographyChange = (ev) => {
+      const next = ev?.detail || resolveTerminalTypography(window.localStorage);
+      if (!next) return;
+
+      const prev = lastAppliedTypographyRef.current || {};
+      const familyChanged = (next.fontFamily || '') !== (prev.fontFamily || '');
+      const weightChanged =
+        String(next.fontWeight || '') !== String(prev.fontWeight || '') ||
+        String(next.fontWeightBold || '') !== String(prev.fontWeightBold || '');
+
+      // Always keep the CSS var fresh.
+      applyTerminalTypographyToDocument(next);
+
+      if (termRef.current) {
+        const t = termRef.current;
+        let didLiveUpdate = false;
+
+        try {
+          if (Number.isFinite(next.fontSize) && next.fontSize !== fontSize) {
+            setFontSize(next.fontSize);
+            t.options.fontSize = next.fontSize;
+            didLiveUpdate = true;
+          }
+          if (Number.isFinite(next.lineHeight) && next.lineHeight !== t.options.lineHeight) {
+            t.options.lineHeight = next.lineHeight;
+            didLiveUpdate = true;
+          }
+          if (
+            Number.isFinite(next.letterSpacing) &&
+            next.letterSpacing !== t.options.letterSpacing
+          ) {
+            t.options.letterSpacing = next.letterSpacing;
+            didLiveUpdate = true;
+          }
+
+          if (didLiveUpdate) {
+            fitRef.current?.fit?.();
+            if (typeof t.clearTextureAtlas === 'function') t.clearTextureAtlas();
+            t.refresh?.(0, t.rows - 1);
+          }
+        } catch (e) {
+          if (!isStaleXtermRendererError(e)) {
+            // fall through to re-init path
+          }
+        }
+      }
+
+      lastAppliedTypographyRef.current = next;
+
+      // Structural font changes → clean re-boot of this terminal instance (perfect atlas, metrics, etc.)
+      if (familyChanged || weightChanged) {
+        setXtermBootNonce((n) => n + 1);
+      }
+    };
+
+    window.addEventListener('devhub:terminal-typography-changed', handleTypographyChange);
+    return () =>
+      window.removeEventListener('devhub:terminal-typography-changed', handleTypographyChange);
+  }, [fontSize]);
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
@@ -1875,28 +2102,27 @@ export default function TerminalTTY({
           return;
         }
 
-        const ready = await waitForVisibleDimensions();
-        cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
-          ready,
-          width: containerRef.current?.getBoundingClientRect().width,
-          height: containerRef.current?.getBoundingClientRect().height,
-        });
-        if (!mounted || !containerRef.current) {
-          cliLog(
-            `CLIENT:${id}`,
-            'initializeTerminal() aborted — unmounted after waitForVisibleDimensions'
-          );
-          setIsInitializing(false);
-          return;
-        }
-
         const theme = getTerminalTheme();
         cliLog(`CLIENT:${id}`, 'computed theme colors', theme);
+
+        // Typography is the single source for terminal text appearance.
+        // We resolve at creation time so new panels pick up Appearance settings immediately.
+        const typo = resolveTerminalTypography(
+          typeof window !== 'undefined' ? window.localStorage : null
+        );
+        // Also ensure the CSS var is in sync (so resolveTerminalFontFamily and other mono usage see it).
+        applyTerminalTypographyToDocument(typo);
+
         const terminal = new Terminal({
           cursorBlink: true,
-          fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+          cursorStyle: 'bar',
+          cursorWidth: 2,
+          fontFamily: typo.fontFamily || resolveTerminalFontFamily(),
           fontSize: fontSize,
-          lineHeight: 1.4,
+          fontWeight: typo.fontWeight,
+          fontWeightBold: typo.fontWeightBold,
+          letterSpacing: typo.letterSpacing,
+          lineHeight: typo.lineHeight,
           allowTransparency: false,
           theme: theme,
         });
@@ -2040,17 +2266,6 @@ export default function TerminalTTY({
           }
         }
 
-        logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
-
-        if (ready) {
-          fitAddon.fit();
-          if (wantsWebgl) {
-            runWebGLDiagnostics('post-fit');
-            setTimeout(() => runWebGLDiagnostics('delay-500ms'), 500);
-            setTimeout(() => runWebGLDiagnostics('delay-2000ms'), 2000);
-          }
-        }
-
         terminal.onData((data) => {
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             if (transportRef.current === 'raw') {
@@ -2077,7 +2292,37 @@ export default function TerminalTTY({
         setIsInitializing(false);
         connect();
 
-        sendResize();
+        void waitForVisibleDimensions()
+          .then((ready) => {
+            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
+              ready,
+              width: containerRef.current?.getBoundingClientRect().width,
+              height: containerRef.current?.getBoundingClientRect().height,
+            });
+
+            if (!mounted || !containerRef.current || !termRef.current || !fitRef.current) {
+              return;
+            }
+
+            logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
+
+            if (ready) {
+              fitAddon.fit();
+              if (wantsWebgl) {
+                runWebGLDiagnostics('post-fit');
+                setTimeout(() => runWebGLDiagnostics('delay-500ms'), 500);
+                setTimeout(() => runWebGLDiagnostics('delay-2000ms'), 2000);
+              }
+              sendResize();
+            } else {
+              logViewportDiagnostic('terminal-open-timeout');
+            }
+          })
+          .catch((error) => {
+            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions failed', {
+              error: error?.message,
+            });
+          });
       } catch (error) {
         console.error(`[TTY:${id}] initializeTerminal() failed:`, error);
         cliLog(`CLIENT:${id}`, 'initializeTerminal() failed', { error: error?.message });
@@ -2206,7 +2451,14 @@ export default function TerminalTTY({
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
+      if (
+        document.visibilityState === 'visible' &&
+        shouldRunTerminalViewportReactivation({
+          isActivePanel,
+          isVisibleInLayout,
+          documentVisibilityState: document.visibilityState,
+        })
+      ) {
         logViewportDiagnostic('visibility-visible');
         reactivateTerminalViewport();
         queueNativeVteProbeRetry(0);
@@ -2219,11 +2471,17 @@ export default function TerminalTTY({
       queueNativeVteProbeRetry();
     };
     const handleWindowFocus = () => {
+      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
+        return;
+      }
       logViewportDiagnostic('window-focus');
       reactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
     };
     const handlePageShow = () => {
+      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
+        return;
+      }
       logViewportDiagnostic('pageshow');
       reactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
@@ -2240,7 +2498,31 @@ export default function TerminalTTY({
       window.removeEventListener('pageshow', handlePageShow);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [logViewportDiagnostic, queueNativeVteProbeRetry, reactivateTerminalViewport, sendResize]);
+  }, [
+    isActivePanel,
+    isVisibleInLayout,
+    logViewportDiagnostic,
+    queueNativeVteProbeRetry,
+    reactivateTerminalViewport,
+    sendResize,
+  ]);
+
+  // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
+  useEffect(() => {
+    if (!termRef.current) return;
+    if (isVisibleInLayout) {
+      // Panel just became visible - restore scroll position
+      const saved = lastViewportYRef.current;
+      if (saved != null) {
+        restoreTerminalViewportScroll(termRef.current, saved);
+      } else if (isActivePanel) {
+        scrollTerminalToBottom(true);
+      }
+    } else {
+      // Panel becoming invisible - save current scroll position
+      lastViewportYRef.current = getTerminalViewportScrollOffset(termRef.current);
+    }
+  }, [isVisibleInLayout, isActivePanel]);
 
   // ── Custom context menu for terminal ────────────────────────────────────────
   const handleContextMenu = useCallback((e) => {
@@ -2339,13 +2621,6 @@ export default function TerminalTTY({
         if (norm === 'v') action = 'paste';
       }
 
-      // If we use the native VTE renderer, copy is handled natively by VTE/GTK, not JavaScript.
-      if (action === 'copy' && shouldUseNativeRenderer) {
-        action = null;
-      }
-
-      if (!action) return;
-
       // Check if event belongs to terminal
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
@@ -2356,6 +2631,17 @@ export default function TerminalTTY({
           (eventTarget && rootElement.contains(eventTarget)) ||
           isActivePanel)
       );
+
+      // If we use the native VTE renderer, copy is handled natively by VTE/GTK, not JavaScript.
+      if (action === 'copy' && shouldUseNativeRenderer) {
+        if (belongsToTerminal) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
+      if (!action) return;
 
       cliLog('[keydown]', `action=${action} belongs=${belongsToTerminal}`);
 
@@ -2386,11 +2672,13 @@ export default function TerminalTTY({
   );
   const statusLabel = isConnected
     ? 'Conectado'
-    : connectionState === 'connecting'
-      ? 'Conectando...'
-      : connectionState === 'terminated'
-        ? 'Finalizada'
-        : 'Desconectado';
+    : connectionState === 'suspended'
+      ? 'Suspendida'
+      : connectionState === 'connecting'
+        ? 'Conectando...'
+        : connectionState === 'terminated'
+          ? 'Finalizada'
+          : 'Desconectado';
 
   return (
     <div
@@ -2457,6 +2745,31 @@ export default function TerminalTTY({
             >
               <RotateCcw className="w-3 h-3 text-gray-400 group-hover:text-white" strokeWidth={2} />
             </button>
+            {connectionState === 'suspended' && (
+              <button
+                data-testid="terminal-settings-gear-btn"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent('devhub:terminal-settings-modal-requested', {
+                      detail: { panelId: id },
+                    })
+                  )
+                }
+                className="w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer"
+                title="Configuración"
+              >
+                <svg
+                  className="w-3.5 h-3.5 text-yellow-500 group-hover:text-yellow-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+            )}
             {onClose && (
               <button
                 onClick={onClose}
@@ -2547,7 +2860,7 @@ export default function TerminalTTY({
           )}
 
           {/* Error/Disconnected overlay */}
-          {showTerminalStatusOverlay && (
+          {showTerminalStatusOverlay && connectionState !== 'suspended' && (
             <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
               <WifiOff className="w-8 h-8 text-red-400" />
               <span className="text-red-400 font-semibold">
@@ -2573,6 +2886,50 @@ export default function TerminalTTY({
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Reconectar
+              </button>
+            </div>
+          )}
+
+          {/* Suspended state overlay */}
+          {showTerminalStatusOverlay && connectionState === 'suspended' && (
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto"
+              style={{ background: 'var(--surface-app)' }}
+              data-testid="terminal-suspended-overlay"
+            >
+              <svg
+                className="w-8 h-8 text-yellow-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span className="text-yellow-500 font-semibold">Sesión suspendida</span>
+              <span className="text-gray-500 text-center max-w-xs">
+                {extractOpenCodeSessionId(initialCommand)
+                  ? `OpenCode en pausa${cwd ? ` — ${cwd}` : ''}`
+                  : cwd
+                    ? `Shell en pausa — ${cwd}`
+                    : 'Panel en pausa — pulsá Continuar para reconectar'}
+              </span>
+              <button
+                data-testid="terminal-suspended-continue-btn"
+                onClick={() => {
+                  const sessionId = extractOpenCodeSessionId(initialCommand) || id;
+                  window.dispatchEvent(
+                    new CustomEvent('devhub:manual-revive-requested', {
+                      detail: { panelId: id, sessionId },
+                    })
+                  );
+                }}
+                className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Continuar
               </button>
             </div>
           )}

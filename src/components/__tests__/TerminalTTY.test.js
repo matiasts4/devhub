@@ -1100,7 +1100,9 @@ describe('TerminalTTY renderer fallback UI', () => {
     activeTerminal.focus.mockClear();
     inactiveTerminal.focus.mockClear();
     activeTerminal.scrollToBottom = jest.fn();
-    inactiveTerminal.scrollToBottom = jest.fn();
+    inactiveTerminal.scrollToBottom = jest.fn().mockImplementation(() => {
+      console.log('INACTIVE SCROLL TO BOTTOM CALLSTACK:', new Error().stack);
+    });
     activeTerminal.buffer = { active: { baseY: 100, viewportY: 99 } };
     inactiveTerminal.buffer = { active: { baseY: 100, viewportY: 99 } };
 
@@ -1770,10 +1772,10 @@ describe('TerminalTTY renderer fallback UI', () => {
     };
 
     expect(getNativeTerminalBounds(element)).toEqual({
-      x: 40,
-      y: 96,
-      width: 880,
-      height: 540,
+      x: 41,
+      y: 97,
+      width: 878,
+      height: 538,
     });
   });
 

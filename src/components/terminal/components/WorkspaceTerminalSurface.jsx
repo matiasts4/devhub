@@ -274,7 +274,7 @@ function WorkspaceTerminalSurface({
     <div
       key={workspace.id}
       data-testid={`workspace-shell-${workspace.id}`}
-      className={`absolute inset-0 p-1.5 ${activeWsId === workspace.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      className={`absolute inset-0 p-1.5 ${activeWsId !== workspace.id || !isVisible ? 'hidden' : ''}`}
       style={{
         zIndex: activeWsId === workspace.id ? 10 : 0,
       }}
@@ -287,7 +287,7 @@ function WorkspaceTerminalSurface({
         <Panel
           key={`${workspace.id}-terminal-grid`}
           minSize={18}
-          className="flex flex-col bg-[#0c1018] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
+          className="flex flex-col bg-[var(--surface-app)] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
         >
           {/* Terminal bodies — preserve real split geometry */}
           <div className="flex-1 relative overflow-hidden min-h-0">
