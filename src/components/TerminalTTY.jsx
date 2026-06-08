@@ -63,14 +63,25 @@ function cliLog(tag, msg, extra = {}) {
  */
 export function getXtermContainerAnimProps(visible) {
   return {
-    initial: { opacity: 0 },
+    // Avoid re-fading on every panel switch/reconnect — only animate the target state.
+    initial: false,
     animate: { opacity: visible ? 1 : 0 },
-    transition: { duration: 0.15, ease: 'easeOut' },
+    transition: { duration: 0.1, ease: 'easeOut' },
   };
 }
 
 export function shouldShowTerminalViewport(isInitializing, initError) {
   return !isInitializing && !initError;
+}
+
+/** Full-screen blocking loader — only on first boot, never on panel-switch reconnects. */
+export function shouldShowTerminalLoadingOverlay(
+  isInitializing,
+  connectionState,
+  hasConnectedOnce
+) {
+  if (isInitializing) return true;
+  return connectionState === 'connecting' && !hasConnectedOnce;
 }
 
 export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
@@ -631,6 +642,10 @@ export default function TerminalTTY({
       ENABLE_NATIVE_VTE && effectiveRequestedMode === 'vte-experimental' && nativeVteOpened,
   });
   const hasSentInitialCommand = useRef(false);
+  const hasConnectedOnceRef = useRef(false);
+  const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
+  const connectRef = useRef(null);
+  const sendResizeRef = useRef(null);
   const isActivePanelRef = useRef(isActivePanel);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
@@ -1728,8 +1743,18 @@ export default function TerminalTTY({
   }, [clearNativeVteProbeRetryTimer, id, onActivatePanel, shouldUseNativeRenderer]);
 
   const connect = useCallback(async () => {
-    setConnectionState('connecting');
     processExitedRef.current = false;
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      cliLog(`CLIENT:${id}`, 'connect() skipped — socket already open');
+      setConnectionState('connected');
+      sendResize();
+      return;
+    }
+
+    if (!hasConnectedOnceRef.current) {
+      setConnectionState('connecting');
+    }
 
     cliLog(`CLIENT:${id}`, 'connect() called', { cwd, autoFocus });
 
@@ -1808,6 +1833,8 @@ export default function TerminalTTY({
         clearTimeout(connectionTimeout);
         console.log(`[TTY:${id}] WebSocket connected`);
         cliLog(`CLIENT:${id}`, 'WS onopen — connected');
+        hasConnectedOnceRef.current = true;
+        setHasConnectedOnce(true);
         setConnectionState('connected');
         sendResize();
 
@@ -1921,6 +1948,14 @@ export default function TerminalTTY({
     }
   }, [scrollIfActivePanel, scrollTerminalToBottom, sendResize, cwd, initialCommand, id]);
 
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  useEffect(() => {
+    sendResizeRef.current = sendResize;
+  }, [sendResize]);
+
   const adjustFontSize = useCallback((delta) => {
     setFontSize((prev) => {
       const next = Math.min(24, Math.max(8, prev + delta));
@@ -1978,11 +2013,20 @@ export default function TerminalTTY({
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      cliLog(`CLIENT:${id}`, 'reconnect() skipped — socket already open');
+      setConnectionState('connected');
+      sendResize();
+      if (autoFocus) {
+        disableTerminalFocusReporting(termRef.current);
+        termRef.current?.focus?.();
+      }
+      return;
+    }
     cliLog(`CLIENT:${id}`, 'reconnect() called');
     termRef.current?.clear();
-    // connect() already silences and closes the stale socket — just call it directly.
     connect();
-  }, [connect]);
+  }, [autoFocus, connect, sendResize]);
 
   const copyTextToClipboard = useCallback(async (text) => {
     if (!text) return false;
@@ -2225,7 +2269,7 @@ export default function TerminalTTY({
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
-          sendResize();
+          sendResizeRef.current?.();
         });
         resizeObserverRef.current.observe(containerRef.current);
 
@@ -2235,7 +2279,7 @@ export default function TerminalTTY({
 
         setInitError(null);
         setIsInitializing(false);
-        connect();
+        connectRef.current?.();
 
         void waitForVisibleDimensions()
           .then((ready) => {
@@ -2254,7 +2298,7 @@ export default function TerminalTTY({
             if (ready) {
               fitAddon.fit();
               stabilizeTerminalRenderer(termRef.current);
-              sendResize();
+              sendResizeRef.current?.();
             } else {
               logViewportDiagnostic('terminal-open-timeout');
             }
@@ -2306,12 +2350,10 @@ export default function TerminalTTY({
     };
   }, [
     clearTimers,
-    connect,
     disposeXtermRuntime,
     logViewportDiagnostic,
     requestedRendererMode,
     runtimePhase,
-    sendResize,
     shouldBootXterm,
     waitForVisibleDimensions,
     xtermBootNonce,
@@ -2338,18 +2380,16 @@ export default function TerminalTTY({
     return () => window.removeEventListener('devhub:terminal-search', handleSearch);
   }, [id]);
 
-  // Handle focus when tab becomes active
-  useEffect(() => {
-    if (!autoFocus || !termRef.current) return undefined;
-
-    const focusTimer = setTimeout(() => {
-      termRef.current?.focus?.();
-      scrollTerminalToBottom();
-      reactivateTerminalViewport();
-    }, 50);
-
-    return () => clearTimeout(focusTimer);
-  }, [autoFocus, reactivateTerminalViewport, scrollTerminalToBottom]);
+  // Instant focus when this panel becomes active — no delay, no reconnect side-effects.
+  useLayoutEffect(() => {
+    if (!autoFocus || !isActivePanel || shouldUseNativeRenderer) return;
+    const term = termRef.current;
+    if (!term) return;
+    disableTerminalFocusReporting(term);
+    term.focus?.();
+    scrollTerminalToBottom(true);
+    sendResizeRef.current?.();
+  }, [autoFocus, isActivePanel, scrollTerminalToBottom, shouldUseNativeRenderer]);
 
   // Auto-reconnect when disconnected or error, with exponential backoff.
   // No hard attempt limit — the EBADF server fix prevents infinite hammering.
@@ -2614,6 +2654,11 @@ export default function TerminalTTY({
   const isConnected = connectionState === 'connected';
   const showTerminalViewport =
     shouldShowTerminalViewport(isInitializing, initError) && !shouldUseNativeRenderer;
+  const showTerminalLoadingOverlay = shouldShowTerminalLoadingOverlay(
+    isInitializing,
+    connectionState,
+    hasConnectedOnce
+  );
   const showTerminalStatusOverlay = shouldShowTerminalStatusOverlay(
     isInitializing,
     initError,
@@ -2797,9 +2842,9 @@ export default function TerminalTTY({
             </div>
           )}
 
-          {/* Loading overlay — only during init or connecting */}
-          {(isInitializing || connectionState === 'connecting') && (
-            <div className="absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
+          {/* Loading overlay — first boot only; panel switches keep the live terminal interactive */}
+          {showTerminalLoadingOverlay && (
+            <div className="pointer-events-none absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
               <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
               {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
             </div>

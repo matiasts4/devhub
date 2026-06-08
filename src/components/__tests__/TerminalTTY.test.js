@@ -122,6 +122,7 @@ const {
   shouldLogTerminalViewportDiagnostic,
   shouldOpenNativeVtePanel,
   shouldRunTerminalViewportReactivation,
+  shouldShowTerminalLoadingOverlay,
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
   shouldReinitializeTerminalForRenderer,
@@ -261,25 +262,34 @@ function installTerminalRuntimeMocks() {
 }
 
 describe('getXtermContainerAnimProps()', () => {
-  test('returns opacity 0 as initial when connected=false', () => {
-    const props = getXtermContainerAnimProps(false);
-    expect(props.initial.opacity).toBe(0);
+  test('does not re-fade from opacity 0 on every visibility toggle', () => {
+    expect(getXtermContainerAnimProps(true).initial).toBe(false);
+    expect(getXtermContainerAnimProps(false).initial).toBe(false);
   });
 
-  test('returns opacity 1 as animate when connected=true', () => {
+  test('returns opacity 1 as animate when visible=true', () => {
     const props = getXtermContainerAnimProps(true);
     expect(props.animate.opacity).toBe(1);
   });
 
-  test('transition duration is 0.15s (150ms ease-out)', () => {
+  test('transition duration is 0.1s (ease-out)', () => {
     const props = getXtermContainerAnimProps(true);
-    expect(props.transition.duration).toBe(0.15);
+    expect(props.transition.duration).toBe(0.1);
     expect(props.transition.ease).toBe('easeOut');
   });
 
-  test('when connected=false, animate keeps opacity 0 (still loading)', () => {
+  test('when visible=false, animate keeps opacity 0', () => {
     const props = getXtermContainerAnimProps(false);
     expect(props.animate.opacity).toBe(0);
+  });
+});
+
+describe('shouldShowTerminalLoadingOverlay()', () => {
+  test('blocks only during first init or first connect', () => {
+    expect(shouldShowTerminalLoadingOverlay(true, 'idle', false)).toBe(true);
+    expect(shouldShowTerminalLoadingOverlay(false, 'connecting', false)).toBe(true);
+    expect(shouldShowTerminalLoadingOverlay(false, 'connecting', true)).toBe(false);
+    expect(shouldShowTerminalLoadingOverlay(false, 'connected', true)).toBe(false);
   });
 });
 
