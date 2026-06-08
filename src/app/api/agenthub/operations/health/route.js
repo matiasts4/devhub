@@ -49,6 +49,10 @@ import {
 } from '@/lib/operations/swarmControl';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
 import { buildLaunchWrapperForRole, resolveBusHelperPaths } from '@/lib/bus/launchPaths.js';
+import {
+  buildMaterializedLaunchCommand,
+  resolveLaunchWrapperScriptPath,
+} from '@/lib/operations/materializeLaunchWrapper.js';
 import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
 import { prepareAgentWorktree } from '@/lib/swarm/agentWorkspaceManager';
 import { terminateSwarmLaunch } from '@/lib/swarm/terminateLaunch';
@@ -61,11 +65,6 @@ const LOCAL_MISSION_DELIVERY_CHANNEL = 'local_snapshot';
 const LOCAL_MISSION_MESSAGE_KIND = 'directive';
 const LOCAL_SWARM_RUNTIME_SURFACE = 'swarm-control-launch';
 const DIRECTOR_TASK_LEASE_TTL_MS = 120_000;
-// NOTE: kept for backward compat. The 4s delay is no longer applied at
-// the worker fan-out (T1.2) — workers fire in parallel with the director
-// (startAfterMs: 0). The director emits 'director.ready' independently
-// on first prompt visible to xterm.
-const DIRECTOR_FIRST_FANOUT_DELAY_MS = 4000;
 const SWARM_LAUNCH_TRACE_TYPE = 'swarm_launch';
 const SWARM_LAUNCH_TRACE_TOOL_NAME = 'launch_swarm_local';
 const NON_ACTIVE_AGENT_SUPERVISOR_STATES = new Set([
@@ -209,7 +208,7 @@ export function buildLaunchPrompt({
   ].join('\n');
 }
 
-function buildLaunchCommand(
+export function buildLaunchCommand(
   programId,
   prompt,
   roleKey = '',
@@ -292,7 +291,16 @@ function buildLaunchCommand(
     `[SWARM_LAUNCH_CMD] Has DEVHUB_TMUX_SESSION export: ${wrapper.includes('DEVHUB_TMUX_SESSION')}`
   );
 
-  return wrapper;
+  // The PTY receives initialCommand as a single pasted line over WebSocket input.
+  // Pasting a multi-line bash wrapper (heredocs, functions) does not execute it;
+  // materialize to disk and expose only a one-line launcher to the terminal.
+  const wrapperScriptPath = resolveLaunchWrapperScriptPath(launchId, roleKey);
+  const command = buildMaterializedLaunchCommand(wrapper, launchId, roleKey);
+
+  console.log(`[SWARM_LAUNCH_CMD] Materialized wrapper: ${wrapperScriptPath}`);
+  console.log(`[SWARM_LAUNCH_CMD] Runtime command: ${command}`);
+
+  return { command, wrapper, wrapperScriptPath };
 }
 
 function summarizeLaunchPrompt(prompt = '', maxLength = 240) {
@@ -1163,7 +1171,7 @@ function configureLaunchRole({
 
   const roleModel = resolvedDraft.roleModels?.[roleKey] || null;
   const evidenceRef = `evidence://launch/${launchId}/${roleKey}`;
-  const command = buildLaunchCommand(
+  const launchCommand = buildLaunchCommand(
     roleEntry.program_id,
     prompt,
     roleKey,
@@ -1177,8 +1185,9 @@ function configureLaunchRole({
     runtimeRequest: {
       taskId,
       selectedAgent: roleEntry.program_id,
-      command,
-      commandPreview: redactLaunchCommand(command),
+      command: launchCommand.command,
+      commandPreview: redactLaunchCommand(launchCommand.wrapper),
+      wrapperScriptPath: launchCommand.wrapperScriptPath,
       launchOrigin: 'swarm-control-launch',
       launchPhase,
       startAfterMs,
@@ -1297,7 +1306,6 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
 
       const launchStrategy = resolvedDraft.launchStrategy || 'director_first';
       const bootstrapMode = resolvedDraft.bootstrapMode || 'engram_first';
-      const shouldDelayWorkerFanout = launchStrategy === 'director_first';
       const phaseEvents = [];
       const memorySnapshots = [];
       let parentSessionId = null;

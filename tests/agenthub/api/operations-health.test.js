@@ -2021,10 +2021,11 @@ describe('GET /api/agenthub/operations/health', () => {
             taskId: expect.stringContaining('director'),
             launchPhase: 'bootstrap',
             startAfterMs: 0,
-            command: expect.stringContaining(
+            command: expect.stringMatching(/^bash \/tmp\/devhub-launch-.*-director\.sh$/),
+            commandPreview: expect.stringContaining(
               '/home/matias/.nvm/versions/node/v24.14.0/bin/codex exec --sandbox workspace-write'
             ),
-            commandPreview: expect.any(String),
+            wrapperScriptPath: expect.stringMatching(/^\/tmp\/devhub-launch-.*-director\.sh$/),
             sessionId: expect.stringContaining('director-session'),
             workspaceId: expect.any(String),
             runId: expect.any(String),
@@ -2035,29 +2036,33 @@ describe('GET /api/agenthub/operations/health', () => {
             selectedAgent: 'hermes',
             taskId: expect.stringContaining('coder'),
             launchPhase: 'fanout',
-            startAfterMs: 4000,
-            command: expect.stringContaining('/home/matias/.local/bin/hermes chat -q'),
+            startAfterMs: 0,
+            command: expect.stringMatching(/^bash \/tmp\/devhub-launch-.*-coder\.sh$/),
+            commandPreview: expect.stringContaining('/home/matias/.local/bin/hermes chat -q'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('auditor'),
             launchPhase: 'fanout',
-            startAfterMs: 4000,
-            command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
+            startAfterMs: 0,
+            command: expect.stringMatching(/^bash \/tmp\/devhub-launch-.*-auditor\.sh$/),
+            commandPreview: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('devops'),
             launchPhase: 'fanout',
-            startAfterMs: 4000,
-            command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
+            startAfterMs: 0,
+            command: expect.stringMatching(/^bash \/tmp\/devhub-launch-.*-devops\.sh$/),
+            commandPreview: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
           expect.objectContaining({
             selectedAgent: 'opencode',
             taskId: expect.stringContaining('architect'),
             launchPhase: 'fanout',
-            startAfterMs: 4000,
-            command: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
+            startAfterMs: 0,
+            command: expect.stringMatching(/^bash \/tmp\/devhub-launch-.*-architect\.sh$/),
+            commandPreview: expect.stringContaining('/home/matias/.opencode/bin/opencode --agent'),
           }),
         ]),
       })
@@ -2172,7 +2177,7 @@ describe('GET /api/agenthub/operations/health', () => {
           sessionId: directorSession.id,
           commandPreview: expect.any(String),
         }),
-        expect.objectContaining({ roleKey: 'coder', launchPhase: 'fanout', startAfterMs: 4000 }),
+        expect.objectContaining({ roleKey: 'coder', launchPhase: 'fanout', startAfterMs: 0 }),
       ])
     );
     expect(traceMetadata.runtimeRequests[0].commandPreview).not.toContain('DEVHUB_AGENT_TOKEN=');

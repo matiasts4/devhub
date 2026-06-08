@@ -1,13 +1,27 @@
 /**
- * Route-level regression: visible swarm launch must not double-wrap tmux
- * and must pass --pure for OpenCode workers.
+ * Route-level regression: visible swarm launch must materialize wrapper scripts
+ * and expose only a one-line bash launcher to the terminal PTY.
  */
+
+const fs = require('fs');
 
 const { buildLaunchCommand } = require('../../src/app/api/agenthub/operations/health/route');
 
 describe('route buildLaunchCommand (visible swarm)', () => {
-  test('opencode roles use --pure without nested tmux attach', () => {
-    const inner = buildLaunchCommand(
+  const createdPaths = [];
+
+  afterEach(() => {
+    for (const scriptPath of createdPaths.splice(0)) {
+      try {
+        fs.unlinkSync(scriptPath);
+      } catch {
+        // Best-effort cleanup.
+      }
+    }
+  });
+
+  test('materializes wrapper and returns one-line bash launcher for opencode director', () => {
+    const launch = buildLaunchCommand(
       'opencode',
       'mission prompt',
       'director',
@@ -16,14 +30,18 @@ describe('route buildLaunchCommand (visible swarm)', () => {
       '/tmp/worktree/director'
     );
 
-    expect(inner).toContain('/home/matias/.opencode/bin/opencode --pure --agent');
-    expect(inner).not.toContain('tmux new-session');
-    expect(inner).not.toContain('tmux attach-session');
-    expect(inner).not.toContain('--prompt');
+    createdPaths.push(launch.wrapperScriptPath);
+
+    expect(launch.command).toBe('bash /tmp/devhub-launch-launch-test1234-director.sh');
+    expect(launch.wrapper).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+    expect(launch.wrapper).not.toContain('--prompt');
+
+    const script = fs.readFileSync(launch.wrapperScriptPath, 'utf8');
+    expect(script).toBe(launch.wrapper);
   });
 
-  test('wrapper path includes inner b64 logging marker', () => {
-    const wrapper = buildLaunchCommand(
+  test('wrapper includes agent identity markers for workers', () => {
+    const launch = buildLaunchCommand(
       'opencode',
       'mission prompt',
       'coder',
@@ -32,7 +50,10 @@ describe('route buildLaunchCommand (visible swarm)', () => {
       '/tmp/worktree/coder'
     );
 
-    expect(wrapper).toContain('[AGENT] Inner command (b64):');
-    expect(wrapper).toContain('DEVHUB_AGENT_ID="launch-test5678-coder"');
+    createdPaths.push(launch.wrapperScriptPath);
+
+    expect(launch.command).toBe('bash /tmp/devhub-launch-launch-test5678-coder.sh');
+    expect(launch.wrapper).toContain('DEVHUB_AGENT_ID="launch-test5678-coder"');
+    expect(launch.wrapper).toContain('/home/matias/.opencode/bin/opencode --agent swarm-coder');
   });
 });
