@@ -10,6 +10,7 @@ import {
   stripShellTerminalResponseNoise,
   containsTerminalResponseNoise,
   filterTerminalInputForSession,
+  filterTerminalOutputForSession,
 } from './terminalNoiseFilter.js';
 
 describe('SHELL_TERMINAL_RESPONSE_RE', () => {
@@ -75,7 +76,9 @@ describe('containsTerminalResponseNoise', () => {
 
   it('returns false for SGR color escapes (styling, not responses)', () => {
     expect(containsTerminalResponseNoise('\u001b[32mOK\u001b[0m')).toBe(false);
-    expect(containsTerminalResponseNoise('\u001b[31mERROR\u001b[0m: deploy failed at 1;2')).toBe(false);
+    expect(containsTerminalResponseNoise('\u001b[31mERROR\u001b[0m: deploy failed at 1;2')).toBe(
+      false
+    );
   });
 
   it('returns false for progress-bar style output', () => {
@@ -136,7 +139,9 @@ describe('filterTerminalInputForSession', () => {
   });
 
   it('does not strip SGR color escapes from input', () => {
-    expect(filterTerminalInputForSession(null, '\u001b[32mOK\u001b[0m')).toBe('\u001b[32mOK\u001b[0m');
+    expect(filterTerminalInputForSession(null, '\u001b[32mOK\u001b[0m')).toBe(
+      '\u001b[32mOK\u001b[0m'
+    );
   });
 
   it('is symmetric with the output filter: same regex, same stripping', () => {
@@ -151,6 +156,25 @@ describe('filterTerminalInputForSession', () => {
     expect(filterTerminalInputForSession({ mode: 'tui' }, '\u001b[?1;2c')).toBeNull();
     expect(filterTerminalInputForSession({ mode: 'shell' }, '\u001b[?1;2c')).toBeNull();
   });
+
+  it('drops pure focus-in/out reporting chunks and returns null', () => {
+    expect(filterTerminalInputForSession(null, '\u001b[I\u001b[O')).toBeNull();
+    expect(filterTerminalInputForSession(null, '\u001b[I')).toBeNull();
+    expect(filterTerminalInputForSession(null, '\u001b[O')).toBeNull();
+  });
+
+  it('strips focus reporting from mixed input and forwards the rest', () => {
+    expect(filterTerminalInputForSession(null, '\u001b[Il')).toBe('l');
+    expect(filterTerminalInputForSession(null, '\u001b[O\r')).toBe('\r');
+  });
+});
+
+describe('filterTerminalOutputForSession', () => {
+  it('strips DA noise from PTY output in all session modes', () => {
+    const chunk = 'prompt\u001b[?1;2c\u001b[>0;276;0c ok';
+    expect(filterTerminalOutputForSession({ mode: 'tui' }, chunk)).toBe('prompt ok');
+    expect(filterTerminalOutputForSession({ mode: 'shell' }, chunk)).toBe('prompt ok');
+  });
 });
 
 // T2.1 — DECRQM / DECRPM (CSI ? Pd M and CSI $ Pd p) terminators.
@@ -163,9 +187,7 @@ describe('T2.1 — DECRQM / DECRPM terminators (swarm-launch-hardening)', () => 
     // The user-visible leak in the bug report: `[[35;60;4M^...` would
     // surface in sibling panes when the OpenCode TUI emitted DECRQM on
     // focus. After the fix, the full CSI ? 35 ; 60 ; 4 M must be removed.
-    expect(stripShellTerminalResponseNoise('prompt\u001b[?35;60;4M after')).toBe(
-      'prompt after'
-    );
+    expect(stripShellTerminalResponseNoise('prompt\u001b[?35;60;4M after')).toBe('prompt after');
   });
 
   it('T2.1 strips DECRPM (CSI $ 1 ; 2 p) from a chunk', () => {

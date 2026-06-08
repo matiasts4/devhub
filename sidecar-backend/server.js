@@ -1,6 +1,6 @@
 /**
  * DevHub Sidecar Backend
- * 
+ *
  * Responsabilidades:
  * 1. Gestionar sesiones PTY persistentes (sobreviven al cierre de ventana)
  * 2. Escribir PID en $DEVHUB_HOME/sidecar.pid (o ~/.devhub) para que Tauri detecte si ya corre
@@ -21,6 +21,7 @@ const {
   buildHistoryReplay,
   buildServerMessage,
   detectOpenCodeSessionId,
+  filterTerminalInputForSession,
   filterTerminalOutputForSession,
   getTransportMode,
   parseClientMessage,
@@ -32,9 +33,9 @@ const {
 // temporal y consistencia con la lógica de extracción del wrapper). Fallback al
 // default para compatibilidad.
 const DEVHUB_DIR = process.env.DEVHUB_HOME || path.join(os.homedir(), '.devhub');
-const PID_FILE   = path.join(DEVHUB_DIR, 'sidecar.pid');
-const PORT_FILE  = path.join(DEVHUB_DIR, 'sidecar-port.txt');
-const PORT       = parseInt(process.env.SIDECAR_PORT || '4000', 10);
+const PID_FILE = path.join(DEVHUB_DIR, 'sidecar.pid');
+const PORT_FILE = path.join(DEVHUB_DIR, 'sidecar-port.txt');
+const PORT = parseInt(process.env.SIDECAR_PORT || '4000', 10);
 
 // Crear directorio de estado si no existe
 if (!fs.existsSync(DEVHUB_DIR)) {
@@ -54,8 +55,12 @@ function writeRuntimeFiles() {
 function cleanup(exitCode = 0) {
   if (isCleaningUp) return;
   isCleaningUp = true;
-  try { fs.unlinkSync(PID_FILE); } catch (_) {}
-  try { fs.unlinkSync(PORT_FILE); } catch (_) {}
+  try {
+    fs.unlinkSync(PID_FILE);
+  } catch (_) {}
+  try {
+    fs.unlinkSync(PORT_FILE);
+  } catch (_) {}
   console.log('[Sidecar] Archivos PID/port eliminados. Bye.');
   process.exit(exitCode);
 }
@@ -87,7 +92,7 @@ function getOrCreateSession(sessionId, cwd) {
 
   const cwdResolution = resolveSidecarSessionCwd(cwd || os.homedir());
   const effectiveCwd = cwdResolution.effectiveCwd;
-  const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || 'bash');
+  const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-256color',
     cols: 120,
@@ -98,7 +103,7 @@ function getOrCreateSession(sessionId, cwd) {
 
   const session = {
     ptyProcess,
-    history: [],     // Buffer de los últimos 5000 chars para replay al reconectar
+    history: [], // Buffer de los últimos 5000 chars para replay al reconectar
     clients: new Set(),
     cwd: effectiveCwd,
     createdAt: Date.now(),
@@ -226,12 +231,14 @@ app.delete('/sessions/:sessionId', (req, res) => {
 app.post('/shutdown', (_req, res) => {
   console.log('[Sidecar] Recibida señal de shutdown graceful...');
   res.json({ ok: true, message: 'Shutting down...' });
-  
+
   // Dar tiempo a que la respuesta HTTP llegue
   setTimeout(() => {
     // Matar todos los PTY activos
     for (const [id, session] of sessions) {
-      try { session.ptyProcess.kill(); } catch (_) {}
+      try {
+        session.ptyProcess.kill();
+      } catch (_) {}
       console.log(`[Sidecar] PTY ${id} terminado.`);
     }
     cleanup();
@@ -247,13 +254,15 @@ wss.on('connection', (ws, req) => {
   // Extraer parámetros de la URL: ?sessionId=xxx&cwd=/path
   const urlParams = new URL(req.url || '/', `http://localhost:${PORT}`).searchParams;
   const sessionId = urlParams.get('sessionId') || 'default';
-  const cwd       = urlParams.get('cwd') || os.homedir();
+  const cwd = urlParams.get('cwd') || os.homedir();
   ws.__devhubTransport = getTransportMode(req.url || '/');
 
   const session = getOrCreateSession(sessionId, cwd);
   session.clients.add(ws);
 
-  console.log(`[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport})`);
+  console.log(
+    `[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport})`
+  );
 
   // Replay del historial al reconectar
   if (session.history.length > 0) {
@@ -282,9 +291,12 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    updateSessionModeFromInput(session, payload.data);
+    const filteredInput = filterTerminalInputForSession(session, payload.data);
+    if (filteredInput === null) return;
 
-    const detectedSessionId = detectOpenCodeSessionId(payload.data);
+    updateSessionModeFromInput(session, filteredInput);
+
+    const detectedSessionId = detectOpenCodeSessionId(filteredInput);
     if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
       session.opencodeSessionId = detectedSessionId;
       broadcastSessionPayload(session, {
@@ -294,12 +306,16 @@ wss.on('connection', (ws, req) => {
     }
 
     // Input de teclado al PTY
-    try { session.ptyProcess.write(payload.data); } catch (_) {}
+    try {
+      session.ptyProcess.write(filteredInput);
+    } catch (_) {}
   });
 
   ws.on('close', () => {
     session.clients.delete(ws);
-    console.log(`[Sidecar] WS desconectado de sesión ${sessionId} (${session.clients.size} clientes restantes)`);
+    console.log(
+      `[Sidecar] WS desconectado de sesión ${sessionId} (${session.clients.size} clientes restantes)`
+    );
     // IMPORTANTE: NO matamos el PTY aquí — persiste aunque no haya clientes
   });
 

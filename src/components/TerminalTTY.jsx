@@ -33,6 +33,10 @@ import {
 } from '@/components/terminal/terminalRendererCapabilities';
 import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
 import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
+import {
+  filterTerminalInputForSession,
+  filterTerminalOutputForSession,
+} from '@/lib/terminal/terminalNoiseFilter';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -1828,11 +1832,17 @@ export default function TerminalTTY({
         // Initial focus handled by the other useEffect
       };
 
+      const writeTerminalOutput = (chunk) => {
+        const filtered = filterTerminalOutputForSession(null, chunk);
+        if (typeof filtered !== 'string' || filtered.length === 0) return;
+        termRef.current?.write(filtered);
+        scrollIfActivePanel();
+      };
+
       socket.onmessage = (event) => {
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
-            termRef.current?.write(event.data);
-            scrollIfActivePanel();
+            writeTerminalOutput(event.data);
           }
           return;
         }
@@ -1841,8 +1851,7 @@ export default function TerminalTTY({
           const payload = JSON.parse(event.data);
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
-            termRef.current?.write(payload.data);
-            scrollIfActivePanel();
+            writeTerminalOutput(payload.data);
             return;
           }
 
@@ -1881,8 +1890,7 @@ export default function TerminalTTY({
           }
         } catch {
           if (typeof event.data === 'string' && event.data.length > 0) {
-            termRef.current?.write(event.data);
-            scrollIfActivePanel();
+            writeTerminalOutput(event.data);
           }
         }
       };
@@ -2202,11 +2210,13 @@ export default function TerminalTTY({
         }
 
         terminal.onData((data) => {
+          const filtered = filterTerminalInputForSession(null, data);
+          if (filtered === null) return;
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             if (transportRef.current === 'raw') {
-              wsRef.current.send(data);
+              wsRef.current.send(filtered);
             } else {
-              wsRef.current.send(JSON.stringify({ type: 'input', data }));
+              wsRef.current.send(JSON.stringify({ type: 'input', data: filtered }));
             }
           }
         });

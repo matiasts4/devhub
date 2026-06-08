@@ -20,7 +20,9 @@
  *   - src/lib/terminal/terminalNoiseFilter.js (ESM source of truth)
  *   - sidecar-backend/sessionTransport.js     (this CJS mirror)
  */
-const SHELL_TERMINAL_RESPONSE_RE = /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+const SHELL_TERMINAL_RESPONSE_RE =
+  /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
 
 function getTransportMode(requestUrl = '/') {
   const pathname = new URL(requestUrl, 'http://localhost').pathname;
@@ -75,9 +77,19 @@ function detectOpenCodeSessionId(text) {
   return outputMatch?.[0] || null;
 }
 
+function stripTerminalFocusReporting(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(TERMINAL_FOCUS_REPORTING_RE, '');
+}
+
 function stripShellTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
+}
+
+function stripTerminalInputNoise(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return stripTerminalFocusReporting(stripShellTerminalResponseNoise(chunk));
 }
 
 function filterTerminalOutputForSession(session, chunk) {
@@ -109,8 +121,11 @@ function filterTerminalOutputForSession(session, chunk) {
 function filterTerminalInputForSession(session, chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   SHELL_TERMINAL_RESPONSE_RE.lastIndex = 0;
-  if (!SHELL_TERMINAL_RESPONSE_RE.test(chunk)) return chunk;
-  const stripped = stripShellTerminalResponseNoise(chunk);
+  TERMINAL_FOCUS_REPORTING_RE.lastIndex = 0;
+  if (!SHELL_TERMINAL_RESPONSE_RE.test(chunk) && !TERMINAL_FOCUS_REPORTING_RE.test(chunk)) {
+    return chunk;
+  }
+  const stripped = stripTerminalInputNoise(chunk);
   return stripped.length === 0 ? null : stripped;
 }
 

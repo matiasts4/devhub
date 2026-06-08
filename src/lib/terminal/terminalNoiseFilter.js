@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex -- terminal escape sequences require ESC in regex */
 /**
  * terminalNoiseFilter.js — single source of truth for filtering terminal
  * capability/status response sequences (DA1/DA2/DSR/CPR).
@@ -32,17 +33,32 @@
  *                                              the top of that file.)
  */
 
-export const SHELL_TERMINAL_RESPONSE_RE = /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+export const SHELL_TERMINAL_RESPONSE_RE =
+  /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
+
+/** DEC mode 1004 focus-in/out events xterm emits via onData when focus changes. */
+export const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
+
+export function stripTerminalFocusReporting(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(TERMINAL_FOCUS_REPORTING_RE, '');
+}
 
 export function stripShellTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
 }
 
+export function stripTerminalInputNoise(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return stripTerminalFocusReporting(stripShellTerminalResponseNoise(chunk));
+}
+
 export function containsTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return false;
   SHELL_TERMINAL_RESPONSE_RE.lastIndex = 0;
-  return SHELL_TERMINAL_RESPONSE_RE.test(chunk);
+  TERMINAL_FOCUS_REPORTING_RE.lastIndex = 0;
+  return SHELL_TERMINAL_RESPONSE_RE.test(chunk) || TERMINAL_FOCUS_REPORTING_RE.test(chunk);
 }
 
 /**
@@ -60,10 +76,16 @@ export function containsTerminalResponseNoise(chunk) {
  * symmetry with the output filter; future gating by session.mode can be
  * added here without changing call sites.
  */
-// eslint-disable-next-line no-unused-vars
+
 export function filterTerminalInputForSession(_session, chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   if (!containsTerminalResponseNoise(chunk)) return chunk;
-  const stripped = stripShellTerminalResponseNoise(chunk);
+  const stripped = stripTerminalInputNoise(chunk);
   return stripped.length === 0 ? null : stripped;
+}
+
+/** Client→display: strip capability noise before rendering (belt-and-suspenders). */
+export function filterTerminalOutputForSession(_session, chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return stripShellTerminalResponseNoise(chunk);
 }

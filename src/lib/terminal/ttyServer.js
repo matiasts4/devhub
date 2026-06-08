@@ -5,6 +5,10 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import cwdGuard from './cwdGuard.js';
 import { saveSessions, loadSessions, classifySession } from './sessionStore.js';
+import {
+  filterTerminalInputForSession,
+  filterTerminalOutputForSession,
+} from './terminalNoiseFilter.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -796,24 +800,10 @@ function _debouncedSave(sessions, session) {
 
 const OPENCODE_OUTPUT_SESSION_RE =
   /(?:session[ _]id|sesión[ _]id|session_id|opencode_session_id)[:\s]+([\w-]+)|\b(ses_[\w-]+)\b|\b(oc_[\w-]+)\b/i;
-const SHELL_TERMINAL_RESPONSE_RE = new RegExp(
-  [
-    String.raw`\u001b\[\?(?:\d+;)*\d+[cnR]`,
-    String.raw`\u001b\[>(?:\d+;)*\d+c`,
-    String.raw`\u001b\[(?:\d+;)*\d+n`,
-    String.raw`\u001b\[(?:\d+;)*\d+R`,
-  ].join('|'),
-  'g'
-);
 const SHELL_NVM_ENV_WARNING_RE =
   /nvm is not compatible with the "[^"]+" environment variable:[^\n]*\nRun `unset [^`]+` to unset it\.\n?/g;
 const SHELL_NVM_NPMRC_WARNING_RE =
   /Your user.?s \.npmrc file \(\$\{HOME\}\/\.npmrc\)\nhas a `globalconfig` and\/or a `prefix` setting, which are incompatible with nvm\.\nRun `nvm use --delete-prefix [^`]+` to unset it\.\n?/g;
-
-function stripShellTerminalResponseNoise(chunk) {
-  if (typeof chunk !== 'string' || !chunk) return chunk;
-  return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
-}
 
 function stripShellStartupNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
@@ -823,7 +813,7 @@ function stripShellStartupNoise(chunk) {
 
 function sanitizeHistoryReplay(session, history) {
   if (!session?.historyEnabled || session?.mode !== 'shell') return history;
-  return stripShellTerminalResponseNoise(history);
+  return filterTerminalOutputForSession(session, history);
 }
 
 function handleSessionOutput(sessions, session, chunk) {
@@ -840,9 +830,7 @@ function handleSessionOutput(sessions, session, chunk) {
     filtered = filtered.replace(/zsh: corrupt history file[^\n]*\n?/g, '');
     filtered = stripShellStartupNoise(filtered);
 
-    if (session.mode === 'shell') {
-      filtered = stripShellTerminalResponseNoise(filtered);
-    }
+    filtered = filterTerminalOutputForSession(session, filtered);
 
     if (!session.opencodeSessionId && session.mode === 'tui') {
       const outputMatch = filtered.match(OPENCODE_OUTPUT_SESSION_RE);
@@ -1436,10 +1424,12 @@ export async function ensureTTYServer() {
       if (!message?.type) return;
 
       if (message.type === 'input' && typeof message.data === 'string') {
-        detectSessionModeFromInput(session, message.data);
+        const filteredInput = filterTerminalInputForSession(session, message.data);
+        if (filteredInput === null) return;
+        detectSessionModeFromInput(session, filteredInput);
         session.lastActivityAt = Date.now();
         try {
-          session.pty.write(message.data);
+          session.pty.write(filteredInput);
         } catch (err) {
           // PTY file descriptor already closed (EBADF) — ignore silently
           ttyLog('EBADF', `pty.write failed`, { id: session.id, error: err?.message });

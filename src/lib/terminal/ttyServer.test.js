@@ -547,6 +547,59 @@ describe('ttyServer — shell history hygiene', () => {
     );
   });
 
+  it('filters terminal response noise from tui-mode broadcast', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    createSession({ id: 'tui-noise', cwd: '/home/user', shell: '/bin/zsh' });
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('tui-noise');
+    session.mode = 'tui';
+    session.historyEnabled = false;
+    const socket = createMockSocket();
+    session.sockets.add(socket);
+
+    const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
+    onDataHandler('prompt$ ');
+    onDataHandler('\u001b[?1;2c\u001b[>0;276;0c');
+    onDataHandler('opencode ready\r\n');
+
+    expect(socket.send).toHaveBeenNthCalledWith(
+      1,
+      JSON.stringify({ type: 'output', data: 'prompt$ ' })
+    );
+    expect(socket.send).toHaveBeenNthCalledWith(
+      2,
+      JSON.stringify({ type: 'output', data: 'opencode ready\r\n' })
+    );
+    expect(socket.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops pure terminal response noise from websocket input before pty.write', async () => {
+    const { ensureTTYServer } = await import('./ttyServer.js');
+
+    await ensureTTYServer();
+
+    const connectionHandler = mockWssOn.mock.calls.find(
+      ([eventName]) => eventName === 'connection'
+    )?.[1];
+
+    const socket = createMockSocket();
+    socket.on = jest.fn((event, handler) => {
+      socket[`__${event}`] = handler;
+    });
+
+    connectionHandler(socket, { url: '/terminal?id=input-filter&cwd=%2Fhome%2Fuser' });
+
+    mockPtyProcess.write.mockClear();
+    socket.__message(JSON.stringify({ type: 'input', data: '\u001b[?1;2c\u001b[>0;276;0c' }));
+
+    expect(mockPtyProcess.write).not.toHaveBeenCalled();
+
+    socket.__message(JSON.stringify({ type: 'input', data: '\u001b[Il' }));
+    expect(mockPtyProcess.write).toHaveBeenCalledTimes(1);
+    expect(mockPtyProcess.write).toHaveBeenCalledWith('l');
+  });
+
   it('filters terminal response noise from shell-mode broadcast and history', async () => {
     const { createSession } = await import('./ttyServer.js');
 

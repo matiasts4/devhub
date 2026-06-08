@@ -598,4 +598,31 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     const terminal = mockTerminalInstances[0];
     expect(terminal.dispose).toHaveBeenCalled();
   });
+
+  test('onData drops xterm focus/DA answerback before sending to the PTY websocket', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-input-filter',
+        requestedRendererMode: 'xterm',
+        autoFocus: false,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    const terminal = mockTerminalInstances[0];
+    const onDataHandler = terminal.onData.mock.calls[0]?.[0];
+    expect(onDataHandler).toBeInstanceOf(Function);
+
+    const socket = mockWebSocketInstances[0];
+    socket.send.mockClear();
+
+    onDataHandler('\u001b[?1;2c\u001b[>0;276;0c');
+    expect(socket.send).not.toHaveBeenCalled();
+
+    onDataHandler('\u001b[Il');
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'input', data: 'l' }));
+  });
 });
