@@ -13,6 +13,7 @@
 import { generateAgentSecret, hashToken } from './swarm/auth.js';
 import { provisionAuthToken, getDb } from '@/lib/db/localDb.js';
 import { getLlmProviderConfigSync } from './llmProviderConfig.js';
+import { buildWrapperWithCache } from './operations/wrapperBashCache.js';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -1140,4 +1141,55 @@ export function buildAgentLaunchWrapper({
   ];
 
   return parts.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// T1.5 / R-PERF-5 — cached wrapper bash.
+//
+// The WIP `buildAgentLaunchWrapper` re-emits a 6-10KB bash script for every
+// agent role on every launch. Most of the bytes are STATIC across all
+// launches of a given agent version: bus helpers, identity, heartbeat
+// loop, exit trap. Only the per-launch variable block changes between
+// roles/launches.
+//
+// This module exposes a SHA1-keyed disk cache for the static portion
+// of the wrapper. The cache is content-addressed; a new wrapper
+// version invalidates it automatically via SHA1 mismatch. The cache
+// is co-located with this file at `__dirname/.cache/`.
+//
+// The integration contract: callers can keep invoking
+// `buildAgentLaunchWrapper` directly. New callers that want to
+// compose a cached static prefix + a per-launch variable block
+// should call `getCachedWrappedBash(staticParts)` and concatenate
+// the per-launch block on top. This module does NOT replace the
+// WIP builder — it adds a complementary cache layer for callers
+// that want the 5-role × ~150ms win without changing existing call
+// sites.
+// ---------------------------------------------------------------------------
+
+/** Bump this constant when the static-parts contract changes. */
+export const WAPPER_BASH_CACHE_VERSION = 1;
+
+/**
+ * Get the cached static wrapper prefix, or build + cache it on
+ * first call. Returns `{ wrapper, fromCache, cacheFile, sha1 }`.
+ *
+ * @param {string} staticParts - the static portion of the wrapper
+ *   (bus-helpers, identity, heartbeat, exit-trap prologue).
+ * @param {object} [options]
+ * @param {string} [options.variableBlock=''] - per-launch variable
+ *   block appended after the static prefix.
+ * @param {string} [options.cacheDir] - override the cache directory
+ *   (defaults to `__dirname/.cache`).
+ * @returns {{ wrapper: string, fromCache: boolean, cacheFile: string, sha1: string }}
+ */
+export function getCachedWrappedBash(staticParts, options = {}) {
+  if (typeof staticParts !== 'string') {
+    throw new TypeError('getCachedWrappedBash: staticParts must be a string');
+  }
+  return buildWrapperWithCache({
+    staticTemplate: staticParts,
+    variableBlock: options.variableBlock || '',
+    cacheDir: options.cacheDir,
+  });
 }
