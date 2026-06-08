@@ -2097,6 +2097,14 @@ export default function TerminalTTY({
           letterSpacing: fontOpts.letterSpacing,
           lineHeight: fontOpts.lineHeight,
           allowTransparency: false,
+          // T2.3 — per-pane scrollback buffer (R-BUF-3). The default
+          // xterm scrollback is 1000 lines, which is too shallow for
+          // director + 4 workers during a swarm launch: the user loses
+          // the prompt injection context as soon as the TUI scrolls.
+          // 5000 lines per pane × 5 panes = 25K total per launch, well
+          // under the xterm memory budget. Per-pane (not global) so
+          // single-pane users don't pay the extra memory.
+          scrollback: 5000,
           theme: theme,
         });
 
