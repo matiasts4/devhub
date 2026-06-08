@@ -140,3 +140,35 @@ export function getTerminalTheme() {
 export function getCachedTheme() {
   return cachedTheme || getTerminalTheme();
 }
+
+/**
+ * Reads terminal typography options from CSS custom properties.
+ * Safe to spread into `new Terminal({ ...fontOptions })`.
+ */
+export function getTerminalFontOptions() {
+  const getRawVar = (name) => {
+    if (typeof document === 'undefined') return '';
+    try {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    } catch {
+      return '';
+    }
+  };
+
+  const fontFamily =
+    getRawVar('--font-family-mono') ||
+    "'Noto Sans Mono', 'DejaVu Sans Mono', 'Liberation Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace";
+
+  const rawWeight = getRawVar('--terminal-font-weight');
+  const rawWeightBold = getRawVar('--terminal-font-weight-bold');
+  const rawLine = getRawVar('--terminal-line-height');
+  const rawLetter = getRawVar('--terminal-letter-spacing');
+
+  return {
+    fontFamily: fontFamily.replace(/\s+/g, ' ').trim(),
+    fontWeight: rawWeight || 'bold',
+    fontWeightBold: rawWeightBold || 'bold',
+    lineHeight: parseFloat(rawLine) || 1.1,
+    letterSpacing: parseFloat(rawLetter) || -0.5,
+  };
+}

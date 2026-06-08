@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardPaste, Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
 import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
@@ -79,6 +79,19 @@ export function shouldShowTerminalStatusOverlay(isInitializing, initError, conne
     connectionState === 'disconnected' ||
     connectionState === 'terminated'
   );
+}
+
+/** Disables xterm focus/mouse reporting so blur/focus does not leak DA garbage to the PTY. */
+export const TERMINAL_DISABLE_FOCUS_REPORTING_SEQ =
+  '\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l';
+
+export function disableTerminalFocusReporting(term) {
+  if (!term || typeof term.write !== 'function') return;
+  try {
+    term.write(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+  } catch {
+    // terminal may be mid-dispose
+  }
 }
 
 export function refreshTerminalViewport(term) {
@@ -613,6 +626,7 @@ export default function TerminalTTY({
       ENABLE_NATIVE_VTE && effectiveRequestedMode === 'vte-experimental' && nativeVteOpened,
   });
   const hasSentInitialCommand = useRef(false);
+  const isActivePanelRef = useRef(isActivePanel);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -798,6 +812,10 @@ export default function TerminalTTY({
     },
     [clearNativeVteProbeRetryTimer]
   );
+
+  useEffect(() => {
+    isActivePanelRef.current = isActivePanel;
+  }, [isActivePanel]);
 
   useEffect(() => {
     connectionStateRef.current = connectionState;
@@ -1030,6 +1048,10 @@ export default function TerminalTTY({
     });
   }, []);
 
+  const scrollIfActivePanel = useCallback(() => {
+    if (isActivePanelRef.current) scrollTerminalToBottom();
+  }, [scrollTerminalToBottom]);
+
   const sendResize = useCallback(() => {
     if (!termRef.current || !fitRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
@@ -1064,7 +1086,7 @@ export default function TerminalTTY({
         // Same protection as in handleViewportMouseDown: ensure focus reporting
         // is off before we focus, so our activation doesn't inject a focus-in
         // event that triggers DA queries whose responses leak as visible text.
-        termRef.current?.write?.('\x1b[?1004l');
+        disableTerminalFocusReporting(termRef.current);
         termRef.current?.focus?.();
       }
 
@@ -1800,7 +1822,7 @@ export default function TerminalTTY({
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
             termRef.current?.write(event.data);
-            scrollTerminalToBottom();
+            scrollIfActivePanel();
           }
           return;
         }
@@ -1810,7 +1832,7 @@ export default function TerminalTTY({
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
             termRef.current?.write(payload.data);
-            scrollTerminalToBottom();
+            scrollIfActivePanel();
             return;
           }
 
@@ -1850,7 +1872,7 @@ export default function TerminalTTY({
         } catch {
           if (typeof event.data === 'string' && event.data.length > 0) {
             termRef.current?.write(event.data);
-            scrollTerminalToBottom();
+            scrollIfActivePanel();
           }
         }
       };
@@ -1879,7 +1901,7 @@ export default function TerminalTTY({
       cliLog(`CLIENT:${id}`, 'connect() catch', { error: error?.message });
       setConnectionState('error');
     }
-  }, [scrollTerminalToBottom, sendResize, cwd, initialCommand, id]);
+  }, [scrollIfActivePanel, scrollTerminalToBottom, sendResize, cwd, initialCommand, id]);
 
   const adjustFontSize = useCallback((delta) => {
     setFontSize((prev) => {
@@ -1916,23 +1938,24 @@ export default function TerminalTTY({
   // If those queries happen in a background panel while the user is clicking other panels,
   // their responses can leak as visible text (the "1;2c0;276;0c..." garbage) and accumulate
   // in the prompt of the panels.
-  // By turning reporting off in non-active panels, background TUIs stop reacting to browser
-  // focus changes, preventing the leak. The foreground TUI will re-enable the modes it needs.
-  useEffect(() => {
+  // useLayoutEffect runs before paint so blur/focus churn cannot beat us to the PTY.
+  useLayoutEffect(() => {
     const term = termRef.current;
     if (!term) return;
 
     if (!isActivePanel) {
+      disableTerminalFocusReporting(term);
       try {
-        // Disable focus reporting (the main trigger for "I gained focus, re-probe with DA")
-        // and the common mouse reporting modes.
-        term.write('\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l');
+        if (term.element?.contains(document.activeElement)) {
+          term.blur?.();
+        }
       } catch {
         // intentional: terminal may already be disposed during unmount
       }
+      return;
     }
-    // When becoming active again we intentionally do *not* force-enable here.
-    // Let the actual application (shell/TUI) enable what it wants when it receives input or focus.
+
+    disableTerminalFocusReporting(term);
   }, [isActivePanel]);
 
   const reconnect = useCallback(() => {
@@ -2108,101 +2131,16 @@ export default function TerminalTTY({
           theme: theme,
         });
 
-        const runWebGLDiagnostics = (label) => {
-          try {
-            const container = containerRef.current;
-            if (!container) {
-              cliLog(`CLIENT:${id}`, `WebGL-Diag [${label}]`, { error: 'no-container' });
-              return;
-            }
-
-            const rect = container.getBoundingClientRect();
-            const styles = window.getComputedStyle(container);
-            const parentStyles = container.parentElement
-              ? window.getComputedStyle(container.parentElement)
-              : null;
-            const parent2Styles = container.parentElement?.parentElement
-              ? window.getComputedStyle(container.parentElement.parentElement)
-              : null;
-
-            const xterm = container.querySelector('.xterm');
-            const xtermScreen = container.querySelector('.xterm-screen');
-            const canvases = Array.from(container.querySelectorAll('canvas'));
-
-            const canvasDiag = canvases.map((c, i) => {
-              const crect = c.getBoundingClientRect();
-              const cstyles = window.getComputedStyle(c);
-              let glSupport = 'untested';
-              try {
-                const gl = c.getContext('webgl2') || c.getContext('webgl');
-                glSupport = gl ? (gl.isContextLost() ? 'lost' : 'ok') : 'no-context';
-              } catch (e) {
-                glSupport = 'error: ' + e.message;
-              }
-              return {
-                index: i,
-                tagName: c.tagName,
-                className: c.className,
-                width: c.width,
-                height: c.height,
-                styleWidth: c.style.width,
-                styleHeight: c.style.height,
-                display: cstyles.display,
-                visibility: cstyles.visibility,
-                opacity: cstyles.opacity,
-                rect: { width: crect.width, height: crect.height },
-                glSupport,
-              };
-            });
-
-            cliLog(`CLIENT:${id}`, `WebGL-Diag [${label}]`, {
-              container: {
-                width: rect.width,
-                height: rect.height,
-                display: styles.display,
-                visibility: styles.visibility,
-                opacity: styles.opacity,
-                transform: styles.transform,
-              },
-              parent: parentStyles
-                ? {
-                    display: parentStyles.display,
-                    visibility: parentStyles.visibility,
-                    opacity: parentStyles.opacity,
-                    transform: parentStyles.transform,
-                  }
-                : null,
-              parent2: parent2Styles
-                ? {
-                    display: parent2Styles.display,
-                    visibility: parent2Styles.visibility,
-                    opacity: parent2Styles.opacity,
-                    transform: parent2Styles.transform,
-                  }
-                : null,
-              dom: {
-                hasXterm: !!xterm,
-                hasXtermScreen: !!xtermScreen,
-                canvasCount: canvases.length,
-              },
-              canvases: canvasDiag,
-              terminal: {
-                cols: terminal.cols,
-                rows: terminal.rows,
-                elementExists: !!terminal.element,
-              },
-            });
-          } catch (diagErr) {
-            cliLog(`CLIENT:${id}`, `WebGL-Diag [${label}] failed`, { error: diagErr.message });
-          }
-        };
-
         const fitAddon = new FitAddon();
         const searchAddon = new SearchAddon();
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(searchAddon);
 
         terminal.open(containerRef.current);
+        disableTerminalFocusReporting(terminal);
+        terminal.onBlur(() => {
+          disableTerminalFocusReporting(terminal);
+        });
 
         if (wantsWebgl) {
           if (WebglAddonCtor) {
@@ -2228,7 +2166,6 @@ export default function TerminalTTY({
               terminal.loadAddon(webglAddon);
               setWebglFallback(null);
               cliLog(`CLIENT:${id}`, 'WebGL addon loaded and attached');
-              runWebGLDiagnostics('post-load');
             } catch (err) {
               console.warn(
                 `[TTY:${id}] xterm-webgl addon failed to register (WebGL context issue or WebKitGTK limitation)`,
@@ -2289,10 +2226,21 @@ export default function TerminalTTY({
 
             if (ready) {
               fitAddon.fit();
-              if (wantsWebgl) {
-                runWebGLDiagnostics('post-fit');
-                setTimeout(() => runWebGLDiagnostics('delay-500ms'), 500);
-                setTimeout(() => runWebGLDiagnostics('delay-2000ms'), 2000);
+              stabilizeTerminalRenderer(termRef.current);
+              if (wantsWebgl && webglAddonRef.current) {
+                const canvas = containerRef.current?.querySelector('canvas');
+                const canvasOk =
+                  canvas &&
+                  canvas.width > 0 &&
+                  canvas.height > 0 &&
+                  isTerminalRendererReady(termRef.current);
+                if (!canvasOk) {
+                  cliLog(`CLIENT:${id}`, 'WebGL post-fit verification failed — DOM fallback');
+                  setWebglFallback({
+                    active: true,
+                    reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED,
+                  });
+                }
               }
               sendResize();
             } else {
@@ -2528,7 +2476,7 @@ export default function TerminalTTY({
     // often responds by sending DA queries. The DA response bytes then get
     // delivered as input and appear as the repeating "1;2c0;276;0c..." garbage
     // pasted into the prompt (and it accumulates on every panel switch).
-    termRef.current?.write?.('\x1b[?1004l');
+    disableTerminalFocusReporting(termRef.current);
     termRef.current?.focus?.();
   }, [
     handleNativeLeaseCommandError,

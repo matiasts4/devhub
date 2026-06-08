@@ -11,11 +11,14 @@
 
 'use client';
 
-import React, { useRef, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import PizarraToolPalette from './PizarraToolPalette';
 import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
 import PizarraMinimap from './PizarraMinimap';
+import PizarraZoneGuides from './PizarraZoneGuides';
+import PizarraViewStrip from './PizarraViewStrip';
+import PizarraZoomControls from './PizarraZoomControls';
 import CommandBar from '@/components/commandBar/CommandBar';
 import { PIZARRA_ACTIONS, usePizarraState } from '@/lib/pizarra/pizarraReducer';
 import { CanvasViewportProvider, useCanvasViewport } from '@/lib/pizarra/canvasViewport';
@@ -26,6 +29,17 @@ import { LiveSurfaceRegistryContext } from '@/lib/pizarra/useLiveSurfaceRegistry
 import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 import { closeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
+import { computeViewportFitToBounds, resolveZoneSnap } from '@/lib/pizarra/canvasBounds';
+import {
+  computeAdaptiveSnapZones,
+  computeAdaptiveViewLayout,
+  computeViewZones,
+  getCameraPanForView,
+  getViewIndex,
+  getViewWorldOrigin,
+  surfaceBelongsToView,
+} from '@/lib/pizarra/pizarraViewLayout';
+import { animatePanTransition, prefersReducedMotion } from '@/lib/pizarra/pizarraViewTransition';
 
 // SSR-safe canvas import
 const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
@@ -443,7 +457,133 @@ function PizarraInner({
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
 }) {
-  const { zoom, pan, viewportToCanvas } = useCanvasViewport();
+  const { zoom, pan, setZoom, setPan, viewportToCanvas } = useCanvasViewport();
+
+  const views = workspaceWindows || [];
+  const fallbackViewId = activeWorkspaceWindowId || views[0]?.id || null;
+  const viewIndex = getViewIndex(activeWorkspaceWindowId || views[0]?.id, views);
+  const viewOrigin = useMemo(() => getViewWorldOrigin(viewIndex), [viewIndex]);
+
+  const [highlightZone, setHighlightZone] = useState(null);
+  const [stripHovered, setStripHovered] = useState(false);
+  const stripVisible = stripHovered || views.length >= 2;
+
+  const liveSurfacesForZones = useMemo(() => {
+    return (mergedElements || []).filter((el) => {
+      if (el.type !== SHAPE_TYPES.TERMINAL && el.type !== SHAPE_TYPES.BROWSER) return false;
+      if (el.pizarra?.visible === false) return false;
+      return surfaceBelongsToView(el, activeWorkspaceWindowId || fallbackViewId, views, fallbackViewId);
+    });
+  }, [mergedElements, activeWorkspaceWindowId, views, fallbackViewId]);
+
+  const activeSnapZones = useMemo(() => {
+    if (liveSurfacesForZones.length === 0) return null;
+    return computeAdaptiveSnapZones(viewOrigin, liveSurfacesForZones);
+  }, [viewOrigin, liveSurfacesForZones]);
+
+  const centerActiveView = useCallback(
+    (nextZoom = 1) => {
+      const targetPan = getCameraPanForView(viewOrigin, canvasSize.width, canvasSize.height, nextZoom);
+      setZoom(nextZoom);
+      setPan(targetPan);
+    },
+    [viewOrigin, canvasSize.width, canvasSize.height, setZoom, setPan]
+  );
+
+  const handleSelectView = useCallback(
+    (viewId) => {
+      if (!viewId) return;
+      onWorkspaceWindowSelect?.(viewId);
+      const idx = getViewIndex(viewId, views);
+      const origin = getViewWorldOrigin(idx);
+      const toPan = getCameraPanForView(origin, canvasSize.width, canvasSize.height, zoom);
+      if (prefersReducedMotion()) {
+        setPan(toPan);
+        return;
+      }
+      animatePanTransition({
+        fromPan: pan,
+        toPan,
+        duration: 220,
+        onFrame: setPan,
+      });
+    },
+    [
+      onWorkspaceWindowSelect,
+      views,
+      canvasSize.width,
+      canvasSize.height,
+      zoom,
+      pan,
+      setPan,
+    ]
+  );
+
+  const applyAdaptiveViewLayout = useCallback(
+    (surfaces = liveSurfacesForZones) => {
+      if (!surfaces.length) return;
+      const { layouts, hiddenBrowserIds } = computeAdaptiveViewLayout(viewOrigin, surfaces);
+      layouts.forEach(({ id, x, y, width, height }) => {
+        onUpdateElement?.(id, { x, y, width, height, visible: true });
+      });
+      hiddenBrowserIds.forEach((id) => {
+        registry.updatePizarraLayout?.(id, { visible: false });
+      });
+    },
+    [viewOrigin, liveSurfacesForZones, onUpdateElement, registry]
+  );
+
+  const handleFitAllView = useCallback(() => {
+    if (liveSurfacesForZones.length === 0) {
+      centerActiveView(1);
+      return;
+    }
+    applyAdaptiveViewLayout(liveSurfacesForZones);
+    const fitBounds =
+      activeSnapZones?.bounds || computeViewZones(viewOrigin).bounds;
+    const { zoom: fitZoom, pan: fitPan } = computeViewportFitToBounds(
+      fitBounds,
+      canvasSize.width,
+      canvasSize.height
+    );
+    setZoom(fitZoom);
+    setPan(fitPan);
+  }, [
+    liveSurfacesForZones,
+    centerActiveView,
+    applyAdaptiveViewLayout,
+    activeSnapZones,
+    viewOrigin,
+    canvasSize.width,
+    canvasSize.height,
+    setZoom,
+    setPan,
+  ]);
+
+  const prevViewIdRef = useRef(null);
+  useEffect(() => {
+    if (canvasSize.width < 200 || canvasSize.height < 200) return;
+    if (prevViewIdRef.current === activeWorkspaceWindowId && prevViewIdRef.current != null) {
+      return;
+    }
+    prevViewIdRef.current = activeWorkspaceWindowId;
+    centerActiveView(zoom);
+  }, [activeWorkspaceWindowId, canvasSize.width, canvasSize.height, centerActiveView, zoom]);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (!event.altKey || views.length < 2) return;
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const idx = getViewIndex(activeWorkspaceWindowId || views[0]?.id, views);
+      const nextIdx =
+        event.key === 'ArrowLeft' ? Math.max(0, idx - 1) : Math.min(views.length - 1, idx + 1);
+      const nextView = views[nextIdx];
+      if (nextView?.id) handleSelectView(nextView.id);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [views, activeWorkspaceWindowId, handleSelectView]);
 
   // pizarra-empty-state: track if we auto-initialized on first access to avoid
   // showing completely blank dark "submarino" canvas with nothing visible.
@@ -648,6 +788,7 @@ function PizarraInner({
             width: w,
             height: h,
             visible: true,
+            viewId: fallbackViewId || undefined,
           },
           url: cleanedExtraProps.url || (type === 'browser' ? 'http://localhost:3000/' : undefined),
           initialCommand: cleanedExtraProps.initialCommand,
@@ -693,10 +834,11 @@ function PizarraInner({
       getVisibleCanvasRegion,
       setActiveTerminalId,
       registry.addSurface,
+      fallbackViewId,
     ]
   );
 
-  // ── handleMoveElement — free placement (WYSIWYG drop) ────────────────────
+  // ── handleMoveElement — zone snap on drop (adaptive layout slots) ────────
   // pizarra-free-placement: the surface lands exactly where the user dropped
   // it. The previous 2×3 magnetic snap-zone grid yanked cards to fixed slots,
   // which felt like the card was being "thrown" away from the drop point and
@@ -707,117 +849,53 @@ function PizarraInner({
   const handleMoveElement = useCallback(
     (id, position) => {
       const shape = mergedElements.find((el) => el.id === id);
-      if (!shape) {
-        const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
-        if (isRegistrySurface) {
-          registry.updatePizarraLayout(id, {
-            x: Math.round(position.x),
-            y: Math.round(position.y),
-          });
-        } else {
-          updateElement(id, {
-            x: Math.round(position.x),
-            y: Math.round(position.y),
-          });
-        }
-        return;
-      }
-
-      const shapeWidth = shape.width || 640;
-      const shapeHeight = shape.height || 400;
-
-      const vis = getVisibleCanvasRegion();
-      const zoom = vis.z || 1;
-      const threshold = 150 / zoom; // 150px snapping threshold in screen space
-
-      // Define potential viewport-relative snap targets in canvas space:
-      const targets = [
-        // Left split slot
-        {
-          name: 'left',
-          x: vis.x + 20,
-          y: vis.y + (vis.height - shapeHeight) / 2,
-        },
-        // Right split slot
-        {
-          name: 'right',
-          x: vis.x + vis.width - shapeWidth - 20,
-          y: vis.y + (vis.height - shapeHeight) / 2,
-        },
-        // Center slot
-        {
-          name: 'center',
-          x: vis.x + (vis.width - shapeWidth) / 2,
-          y: vis.y + (vis.height - shapeHeight) / 2,
-        },
-        // Dev split left
-        {
-          name: 'dev-left',
-          x: vis.x + vis.width / 2 - shapeWidth - 10,
-          y: vis.y + (vis.height - shapeHeight) / 2,
-        },
-        // Dev split right
-        {
-          name: 'dev-right',
-          x: vis.x + vis.width / 2 + 10,
-          y: vis.y + (vis.height - shapeHeight) / 2,
-        },
-      ];
-
-      // pizarra-adapt: also consider edges of other live elements for alignment snap
-      // (post-drag only; keeps it simple and non-surprising).
-      (mergedElements || []).forEach((el) => {
-        if (el.id === id) return;
-        const ew = el.width || shapeWidth;
-        const eh = el.height || shapeHeight;
-        targets.push(
-          { name: 'align-l', x: el.x || 0, y: position.y },
-          { name: 'align-r', x: (el.x || 0) + ew - shapeWidth, y: position.y },
-          { name: 'align-t', x: position.x, y: el.y || 0 },
-          { name: 'align-b', x: position.x, y: (el.y || 0) + eh - shapeHeight }
-        );
-      });
-
-      // Find the closest target within threshold
-      let closestTarget = null;
-      let minDistance = Infinity;
-
-      for (const target of targets) {
-        const dx = position.x - target.x;
-        const dy = position.y - target.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < threshold && distance < minDistance) {
-          minDistance = distance;
-          closestTarget = target;
-        }
-      }
+      const shapeWidth = shape?.width || 640;
+      const shapeHeight = shape?.height || 400;
 
       let finalX = Math.round(position.x);
       let finalY = Math.round(position.y);
+      let finalW = shapeWidth;
+      let finalH = shapeHeight;
 
-      if (closestTarget) {
-        finalX = Math.round(closestTarget.x);
-        finalY = Math.round(closestTarget.y);
+      const snapped = activeSnapZones
+        ? resolveZoneSnap(
+            { x: position.x, y: position.y, width: shapeWidth, height: shapeHeight },
+            activeSnapZones
+          )
+        : null;
+
+      if (snapped) {
+        finalX = snapped.x;
+        finalY = snapped.y;
+        finalW = snapped.width;
+        finalH = snapped.height;
+        setHighlightZone(snapped.zone);
+      } else {
+        setHighlightZone(null);
       }
+
+      const layoutPatch = {
+        x: finalX,
+        y: finalY,
+        ...(snapped ? { width: finalW, height: finalH } : {}),
+        userPlaced: true,
+      };
 
       const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
       if (isRegistrySurface) {
-        registry.updatePizarraLayout(id, {
-          x: finalX,
-          y: finalY,
-        });
+        registry.updatePizarraLayout(id, layoutPatch);
+      } else if (shape) {
+        updateElement(id, layoutPatch);
       } else {
-        updateElement(id, {
-          x: finalX,
-          y: finalY,
-        });
+        registry.updatePizarraLayout(id, layoutPatch);
       }
+
+      requestAnimationFrame(() => setHighlightZone(null));
     },
     [
       updateElement,
       mergedElements,
-      getVisibleCanvasRegion,
+      activeSnapZones,
       registry.surfaces,
       registry.updatePizarraLayout,
     ]
@@ -1443,10 +1521,10 @@ function PizarraInner({
   // Listen for deferred auto-refit events dispatched by handleAddElement
   // when a new card is added while others already exist.
   React.useEffect(() => {
-    const handler = () => handleApplyLayout('arrange-fit');
+    const handler = () => handleFitAllView();
     window.addEventListener('pizarra:arrange-fit', handler);
     return () => window.removeEventListener('pizarra:arrange-fit', handler);
-  }, [handleApplyLayout]);
+  }, [handleFitAllView]);
 
   return (
     <>
@@ -1471,6 +1549,14 @@ function PizarraInner({
           height: '100%',
         }}
       >
+        <PizarraZoneGuides
+          canvasWidth={canvasSize.width}
+          canvasHeight={canvasSize.height}
+          visible={liveSurfacesForZones.length > 0}
+          highlightZone={highlightZone}
+          snapZones={activeSnapZones}
+        />
+
         <PizarraCanvas
           elements={mergedElements}
           selectedElementIds={state.selectedElementIds}
@@ -1509,6 +1595,48 @@ function PizarraInner({
           // Draggable zonas / dividers
           layoutDividers={layoutDividers}
           onDividerMouseDown={handleDividerMouseDown}
+        />
+      </div>
+
+      <div
+        data-testid="pizarra-hud-layer"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 10000,
+        }}
+      >
+        <PizarraZoomControls
+          canvasWidth={canvasSize.width}
+          canvasHeight={canvasSize.height}
+          onFitAll={handleFitAllView}
+          onResetView={() => centerActiveView(1)}
+        />
+
+        <div
+          data-testid="pizarra-view-strip-hover-zone"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 52,
+            pointerEvents: 'auto',
+          }}
+          onMouseEnter={() => setStripHovered(true)}
+          onMouseLeave={() => setStripHovered(false)}
+        />
+
+        <PizarraViewStrip
+          views={views}
+          activeViewId={activeWorkspaceWindowId || fallbackViewId}
+          visible={stripVisible}
+          onSelectView={handleSelectView}
+          onAddView={() => onWorkspaceWindowAdd?.()}
+          onRemoveView={(viewId) => onWorkspaceWindowRemove?.(viewId)}
+          onMouseEnter={() => setStripHovered(true)}
+          onMouseLeave={() => setStripHovered(false)}
         />
       </div>
 

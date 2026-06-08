@@ -157,6 +157,7 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
   const [layoutsCollapsed, setLayoutsCollapsed] = useState(true);
   const [shapeCollapsed, setShapeCollapsed] = useState(true);
   const [tooltip, setTooltip] = useState(null);
+  const [revealed, setRevealed] = useState(false);
 
   const getCanvasCenter = () => {
     if (!canvasRect) return { x: 0, y: 0 };
@@ -177,24 +178,67 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
 
   return (
     <div
-      className="pizarra-tool-palette"
+      data-testid="pizarra-tool-palette-shell"
+      onMouseEnter={() => setRevealed(true)}
+      onMouseLeave={() => setRevealed(false)}
       style={{
         position: 'absolute',
-        top: 12,
-        left: 12,
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: revealed ? 80 : 24,
         zIndex: 100,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
         pointerEvents: 'auto',
-        background: 'rgba(10, 15, 28, 0.82)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(88, 166, 255, 0.15)',
-        borderRadius: 10,
-        padding: 6,
-        boxShadow: '0 6px 24px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset',
       }}
     >
+      <div
+        data-testid="pizarra-tool-palette-hover-zone"
+        aria-hidden={revealed ? 'true' : 'false'}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 24,
+          display: revealed ? 'none' : 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          style={{
+            width: 3,
+            height: 56,
+            borderRadius: 4,
+            background:
+              'linear-gradient(180deg, transparent, rgba(88,166,255,0.35) 20%, rgba(88,166,255,0.35) 80%, transparent)',
+            opacity: 0.7,
+          }}
+        />
+      </div>
+
+      <div
+        className="pizarra-tool-palette"
+        data-expanded={revealed ? 'true' : 'false'}
+        style={{
+          position: 'absolute',
+          top: 12,
+          left: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          background: 'rgba(10, 15, 28, 0.82)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(88, 166, 255, 0.15)',
+          borderRadius: 10,
+          padding: 6,
+          boxShadow: '0 6px 24px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset',
+          opacity: revealed ? 1 : 0,
+          transform: revealed ? 'translateX(0)' : 'translateX(-10px)',
+          pointerEvents: revealed ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease-out, transform 0.2s ease-out',
+        }}
+      >
       {/* Tooltip overlay */}
       {tooltip && (
         <div
@@ -376,6 +420,7 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
           </ToggleGroup.Root>
         )}
       </ToolSection>
+      </div>
     </div>
   );
 }

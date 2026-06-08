@@ -1,6 +1,7 @@
 import {
   canvasToViewport,
   viewportToCanvas,
+  zoomAtPoint,
 } from '../canvasViewport';
 
 // Minimal DOMRect-like object for test factories
@@ -140,5 +141,49 @@ describe('viewportToCanvas', () => {
     // Guard in viewportToCanvas: if z===0 return {x:0, y:0} to avoid Infinity/NaN
     expect(result.x).toBe(0);
     expect(result.y).toBe(0);
+  });
+});
+
+describe('zoomAtPoint', () => {
+  it('keeps the focal canvas point fixed when zooming in', () => {
+    const before = { zoom: 1, pan: { x: 0, y: 0 } };
+    const focalX = 400;
+    const focalY = 300;
+    const result = zoomAtPoint({
+      currentZoom: before.zoom,
+      currentPan: before.pan,
+      deltaY: -80,
+      focalX,
+      focalY,
+    });
+
+    const canvasX = (focalX - before.pan.x) / before.zoom;
+    const canvasY = (focalY - before.pan.y) / before.zoom;
+    const projectedX = result.pan.x + canvasX * result.zoom;
+    const projectedY = result.pan.y + canvasY * result.zoom;
+
+    expect(result.zoom).toBeCloseTo(1.08, 5);
+    expect(projectedX).toBeCloseTo(focalX, 5);
+    expect(projectedY).toBeCloseTo(focalY, 5);
+  });
+
+  it('clamps zoom to configured bounds', () => {
+    const zoomedOut = zoomAtPoint({
+      currentZoom: 0.11,
+      currentPan: { x: 0, y: 0 },
+      deltaY: 200,
+      focalX: 100,
+      focalY: 100,
+    });
+    expect(zoomedOut.zoom).toBe(0.1);
+
+    const zoomedIn = zoomAtPoint({
+      currentZoom: 4.95,
+      currentPan: { x: 0, y: 0 },
+      deltaY: -200,
+      focalX: 100,
+      focalY: 100,
+    });
+    expect(zoomedIn.zoom).toBe(5);
   });
 });

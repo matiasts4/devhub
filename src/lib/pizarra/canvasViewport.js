@@ -88,6 +88,44 @@ export function projectCanvasRect(rect = {}, { zoom, pan, canvasRect } = {}) {
   };
 }
 
+export const MIN_CANVAS_ZOOM = 0.1;
+export const MAX_CANVAS_ZOOM = 5;
+export const ZOOM_WHEEL_SCALE = 0.001;
+
+/**
+ * Zoom toward a container-local focal point while keeping that canvas
+ * coordinate pinned under the cursor (or viewport center for buttons).
+ */
+export function zoomAtPoint({
+  currentZoom = 1,
+  currentPan = { x: 0, y: 0 },
+  deltaY = 0,
+  focalX = 0,
+  focalY = 0,
+  minZoom = MIN_CANVAS_ZOOM,
+  maxZoom = MAX_CANVAS_ZOOM,
+} = {}) {
+  const z = currentZoom > 0 ? currentZoom : 1;
+  const panX = currentPan?.x ?? 0;
+  const panY = currentPan?.y ?? 0;
+  const nextZoom = Math.min(maxZoom, Math.max(minZoom, z - deltaY * ZOOM_WHEEL_SCALE));
+
+  if (nextZoom === z) {
+    return { zoom: z, pan: { x: panX, y: panY } };
+  }
+
+  const canvasX = (focalX - panX) / z;
+  const canvasY = (focalY - panY) / z;
+
+  return {
+    zoom: nextZoom,
+    pan: {
+      x: focalX - canvasX * nextZoom,
+      y: focalY - canvasY * nextZoom,
+    },
+  };
+}
+
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 const CanvasViewportContext = createContext(null);

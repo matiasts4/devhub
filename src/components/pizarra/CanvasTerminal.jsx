@@ -610,7 +610,7 @@ export default function CanvasTerminal({
             onActivatePanel={onActivatePanel}
             cwd={cwd}
             initialCommand={initialCommand}
-            autoFocus={autoFocus}
+            autoFocus={autoFocus || isActivePanel}
             isVisibleInLayout
             isActivePanel={isActivePanel}
             showQuickCopyButton={false}

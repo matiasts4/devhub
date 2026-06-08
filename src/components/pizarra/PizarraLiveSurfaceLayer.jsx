@@ -409,6 +409,7 @@ function LiveSurfaceItem({
           onActivatePanel={() => onActivateTerminal?.(shape.id)}
           cwd={shape.cwd}
           initialCommand={shape.initialCommand}
+          autoFocus={activeTerminalId === shape.id}
           isActivePanel={activeTerminalId === shape.id}
           requestedRendererMode={shape.requestedRendererMode || 'xterm-webgl'}
           onUpdateRendererMode={(mode) => onUpdateRendererMode?.(shape.id, mode)}
