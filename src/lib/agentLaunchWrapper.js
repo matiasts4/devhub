@@ -616,6 +616,8 @@ export function buildHeartbeatLoopCommand({
     else
       _backoff=$((_backoff * 2))
       [ $_backoff -gt $_max_backoff ] && _backoff=$_max_backoff
+      _hb_body=$(printf '%s' "$_resp" | sed '$d' | tr -d '\\n' | head -c 200)
+      echo "WARN: devhub heartbeat returned \${_http_code}: \${_hb_body}" >&2
     fi
   done
 }
