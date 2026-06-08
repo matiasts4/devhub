@@ -603,6 +603,7 @@ export default function TerminalTTY({
   const [webglFallback, setWebglFallback] = useState(null);
   const [xtermBootNonce, setXtermBootNonce] = useState(0);
   const webglAddonRef = useRef(null);
+  const terminalBlurCleanupRef = useRef(null);
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
   // Force the only supported active renderer. Any vte request (from stored
@@ -717,6 +718,15 @@ export default function TerminalTTY({
         // ignore
       }
       wsRef.current = null;
+    }
+
+    if (terminalBlurCleanupRef.current) {
+      try {
+        terminalBlurCleanupRef.current();
+      } catch {
+        // ignore
+      }
+      terminalBlurCleanupRef.current = null;
     }
 
     // 4. Snapshot refs and null them out IMMEDIATELY. Any concurrent code
@@ -2138,9 +2148,16 @@ export default function TerminalTTY({
 
         terminal.open(containerRef.current);
         disableTerminalFocusReporting(terminal);
-        terminal.onBlur(() => {
-          disableTerminalFocusReporting(terminal);
-        });
+        if (terminalBlurCleanupRef.current) {
+          terminalBlurCleanupRef.current();
+          terminalBlurCleanupRef.current = null;
+        }
+        const blurTarget = terminal.element || containerRef.current;
+        const handleTerminalBlur = () => disableTerminalFocusReporting(terminal);
+        blurTarget?.addEventListener('focusout', handleTerminalBlur);
+        terminalBlurCleanupRef.current = () => {
+          blurTarget?.removeEventListener('focusout', handleTerminalBlur);
+        };
 
         if (wantsWebgl) {
           if (WebglAddonCtor) {
@@ -2227,21 +2244,6 @@ export default function TerminalTTY({
             if (ready) {
               fitAddon.fit();
               stabilizeTerminalRenderer(termRef.current);
-              if (wantsWebgl && webglAddonRef.current) {
-                const canvas = containerRef.current?.querySelector('canvas');
-                const canvasOk =
-                  canvas &&
-                  canvas.width > 0 &&
-                  canvas.height > 0 &&
-                  isTerminalRendererReady(termRef.current);
-                if (!canvasOk) {
-                  cliLog(`CLIENT:${id}`, 'WebGL post-fit verification failed — DOM fallback');
-                  setWebglFallback({
-                    active: true,
-                    reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_RENDER_FAILED,
-                  });
-                }
-              }
               sendResize();
             } else {
               logViewportDiagnostic('terminal-open-timeout');
