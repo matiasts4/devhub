@@ -122,6 +122,7 @@ const {
   shouldLogTerminalViewportDiagnostic,
   shouldOpenNativeVtePanel,
   shouldRunTerminalViewportReactivation,
+  shouldSyncTerminalViewportOnLayoutShow,
   shouldShowTerminalLoadingOverlay,
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
@@ -419,6 +420,15 @@ describe('isTerminalViewportNearBottom()', () => {
         buffer: { active: { baseY: 120, viewportY: 80 } },
       })
     ).toBe(false);
+  });
+});
+
+describe('shouldSyncTerminalViewportOnLayoutShow()', () => {
+  test('only triggers a full viewport sync when a workspace shell becomes visible', () => {
+    expect(shouldSyncTerminalViewportOnLayoutShow(false, true)).toBe(true);
+    expect(shouldSyncTerminalViewportOnLayoutShow(true, true)).toBe(false);
+    expect(shouldSyncTerminalViewportOnLayoutShow(false, false)).toBe(false);
+    expect(shouldSyncTerminalViewportOnLayoutShow(true, false)).toBe(false);
   });
 });
 
@@ -889,6 +899,12 @@ describe('shouldAutoReconnectTerminal()', () => {
   test('does not reconnect terminated sessions or background tabs', () => {
     expect(shouldAutoReconnectTerminal('terminated', true)).toBe(false);
     expect(shouldAutoReconnectTerminal('disconnected', false)).toBe(false);
+  });
+
+  test('does not reconnect when xterm init failed', () => {
+    expect(shouldAutoReconnectTerminal('error', true, 'No se pudo inicializar la terminal')).toBe(
+      false
+    );
   });
 });
 

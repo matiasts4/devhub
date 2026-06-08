@@ -277,8 +277,9 @@ export function resolveTerminalConnectionCloseState(previousState, didReceivePro
   return previousState === 'error' ? 'error' : 'disconnected';
 }
 
-export function shouldAutoReconnectTerminal(connectionState, autoFocus) {
+export function shouldAutoReconnectTerminal(connectionState, autoFocus, initError = null) {
   if (!autoFocus) return false;
+  if (initError) return false;
   return connectionState === 'disconnected' || connectionState === 'error';
 }
 
@@ -401,6 +402,11 @@ export function shouldRunTerminalViewportReactivation({
 }) {
   if (documentVisibilityState === 'hidden') return false;
   return isActivePanel && isVisibleInLayout;
+}
+
+/** Full viewport sync when a workspace shell becomes visible again after being hidden. */
+export function shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible) {
+  return !prevVisible && nextVisible;
 }
 
 export function shouldOpenNativeVtePanel({
@@ -648,6 +654,10 @@ export default function TerminalTTY({
   const connectRef = useRef(null);
   const sendResizeRef = useRef(null);
   const isActivePanelRef = useRef(isActivePanel);
+  const isVisibleInLayoutRef = useRef(isVisibleInLayout);
+  const prevVisibleInLayoutRef = useRef(isVisibleInLayout);
+  const needsViewportSyncOnShowRef = useRef(false);
+  const workspaceShowSyncTimerRef = useRef(null);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -846,6 +856,10 @@ export default function TerminalTTY({
   useEffect(() => {
     isActivePanelRef.current = isActivePanel;
   }, [isActivePanel]);
+
+  useEffect(() => {
+    isVisibleInLayoutRef.current = isVisibleInLayout;
+  }, [isVisibleInLayout]);
 
   useEffect(() => {
     connectionStateRef.current = connectionState;
@@ -1091,10 +1105,44 @@ export default function TerminalTTY({
     if (isActivePanelRef.current) scrollTerminalToBottom();
   }, [scrollTerminalToBottom]);
 
+  const syncTerminalViewportOnWorkspaceShow = useCallback(
+    (reason = 'workspace-show') => {
+      if (!termRef.current || !fitRef.current || !containerRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        logViewportDiagnostic(`${reason}-skipped-zero-size`);
+        needsViewportSyncOnShowRef.current = true;
+        return;
+      }
+
+      needsViewportSyncOnShowRef.current = false;
+      logViewportDiagnostic(reason);
+
+      const fitWorked = fitTerminalViewport({
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+        term: termRef.current,
+        socket: wsRef.current,
+        clearAtlas: true,
+      });
+
+      if (fitWorked && isActivePanelRef.current) {
+        scrollTerminalToBottom(true);
+      }
+    },
+    [logViewportDiagnostic, scrollTerminalToBottom]
+  );
+
   const sendResize = useCallback(() => {
     if (!termRef.current || !fitRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
+
+    if (!isVisibleInLayoutRef.current) {
+      needsViewportSyncOnShowRef.current = true;
+      return;
+    }
 
     // Inactive split siblings stay visible — never clear their WebGL atlas on
     // border/layout churn when the user clicks another panel.
@@ -1117,6 +1165,17 @@ export default function TerminalTTY({
   }, [clearTimers, fitAndResize, repaintInactiveTerminal, scrollTerminalToBottom]);
 
   const reactivateTerminalViewport = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const zeroSized = !rect || rect.width <= 0 || rect.height <= 0;
+    if (zeroSized) {
+      logViewportDiagnostic('reactivate-skipped-zero-size');
+      if (autoFocus && isActivePanelRef.current) {
+        disableTerminalFocusReporting(termRef.current);
+        termRef.current?.focus?.();
+      }
+      return;
+    }
+
     logViewportDiagnostic('reactivate-start');
     const repaint = () => {
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: isActivePanelRef.current });
@@ -2032,6 +2091,39 @@ export default function TerminalTTY({
     disableTerminalFocusReporting(term);
   }, [isActivePanel]);
 
+  useLayoutEffect(() => {
+    const prevVisible = prevVisibleInLayoutRef.current;
+
+    if (workspaceShowSyncTimerRef.current) {
+      clearTimeout(workspaceShowSyncTimerRef.current);
+      workspaceShowSyncTimerRef.current = null;
+    }
+
+    if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
+      syncTerminalViewportOnWorkspaceShow('workspace-show-layout');
+      workspaceShowSyncTimerRef.current = setTimeout(() => {
+        workspaceShowSyncTimerRef.current = null;
+        syncTerminalViewportOnWorkspaceShow('workspace-show-settled');
+      }, 160);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          syncTerminalViewportOnWorkspaceShow('workspace-show-raf');
+        });
+      });
+    } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
+      syncTerminalViewportOnWorkspaceShow('workspace-show-pending');
+    }
+
+    prevVisibleInLayoutRef.current = isVisibleInLayout;
+
+    return () => {
+      if (workspaceShowSyncTimerRef.current) {
+        clearTimeout(workspaceShowSyncTimerRef.current);
+        workspaceShowSyncTimerRef.current = null;
+      }
+    };
+  }, [isVisibleInLayout, syncTerminalViewportOnWorkspaceShow]);
+
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -2287,6 +2379,10 @@ export default function TerminalTTY({
         });
 
         resizeObserverRef.current = new ResizeObserver(() => {
+          if (!isVisibleInLayoutRef.current) {
+            needsViewportSyncOnShowRef.current = true;
+            return;
+          }
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
@@ -2431,7 +2527,7 @@ export default function TerminalTTY({
   }, [autoFocus]);
 
   useEffect(() => {
-    if (shouldAutoReconnectTerminal(connectionState, autoFocus)) {
+    if (shouldAutoReconnectTerminal(connectionState, autoFocus, initError)) {
       if (!autoFocus) {
         cliLog(`CLIENT:${id}`, 'auto-reconnect SKIPPED (not autoFocus)', { connectionState });
         return;
@@ -2453,7 +2549,7 @@ export default function TerminalTTY({
       cliLog(`CLIENT:${id}`, 'connected — resetting reconnect counter');
       reconnectAttemptsRef.current = 0;
     }
-  }, [autoFocus, connectionState, reconnect]);
+  }, [autoFocus, connectionState, initError, reconnect]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -2472,6 +2568,10 @@ export default function TerminalTTY({
     };
 
     const handleWindowResize = () => {
+      if (!isVisibleInLayoutRef.current) {
+        needsViewportSyncOnShowRef.current = true;
+        return;
+      }
       logViewportDiagnostic('window-resize');
       if (isActivePanel) {
         sendResize();
