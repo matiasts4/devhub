@@ -21,20 +21,17 @@ import {
   setNativeVtePanelVisibility,
   subscribeNativeVteEvents,
 } from '@/lib/terminal/nativeVteBridge';
+import WebglErrorSection from './terminal/components/WebglErrorSection';
 import {
   getTerminalRendererFallbackCopy,
   getTerminalRendererOptionLabel,
   getTerminalRendererRuntimeCapabilities,
+  getTerminalRendererWebglFallbackCopy,
   probeWebglSupport,
   resolveRendererSelection,
   TERMINAL_WEBGL_FALLBACK_REASONS,
-  WEBGL_FALLBACK_WARNING_TEXT,
 } from '@/components/terminal/terminalRendererCapabilities';
-import {
-  applyTerminalTypographyToDocument,
-  resolveTerminalTypography,
-  setTerminalTypography,
-} from '@/components/terminal/terminalTypographyPreferences';
+import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
 import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
 
 /**
@@ -530,9 +527,14 @@ export default function TerminalTTY({
   runtimePlatform,
   showQuickCopyButton = true,
   swarmContext = null,
+  connectionState: externalConnectionState,
 }) {
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
+
+  // We keep the root bg in sync with the terminal theme so there are no
+  // "letterbox" flashes or thin frames when the TUI draws full-bleed boxes.
+  // The real content (xterm canvas) now starts closer to the panel edges.
   const nativePlaceholderRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -557,27 +559,25 @@ export default function TerminalTTY({
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
     try {
-      // Prefer the new unified typography store (global default for terminals).
-      const typo = resolveTerminalTypography(
-        typeof window !== 'undefined' ? window.localStorage : null
-      );
-      if (typo && Number.isFinite(typo.fontSize)) {
-        const s = Math.round(typo.fontSize);
-        if (s >= 8 && s <= 24) return s;
-      }
-      // Legacy per-device size (still honored for migration / per-panel fine tune)
+      // Simple local per-device size (persisted via the +/- buttons).
+      // Base default is larger (15) + the CSS --terminal-font-weight (now 800)
+      // so the letter feels thicker and "más grande" like a comfortable native terminal by default.
       const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
       const parsed = stored ? parseInt(stored, 10) : NaN;
       if (Number.isFinite(parsed) && parsed >= 8 && parsed <= 24) return parsed;
-      return 13;
+      return 15;
     } catch {
-      return 13;
+      return 15;
     }
   });
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
-  const [connectionState, setConnectionState] = useState('idle');
+  const [internalConnectionState, setInternalConnectionState] = useState('idle');
+  const connectionState =
+    externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
+  const setConnectionState =
+    externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
   const [copied, setCopied] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [restoredToast, setRestoredToast] = useState(false);
@@ -860,6 +860,20 @@ export default function TerminalTTY({
     }
   }, [requestedRendererMode, rendererViewModel.effectiveMode, webglProbeResult]);
 
+  const handleSwitchToXterm = useCallback(() => {
+    if (typeof onResetRendererToXterm === 'function') {
+      onResetRendererToXterm();
+      return;
+    }
+    setWebglFallback(null);
+    setWebglProbeResult(probeWebglSupport());
+  }, [onResetRendererToXterm]);
+
+  const handleRetryProbe = useCallback(() => {
+    setWebglProbeResult(probeWebglSupport());
+    setXtermBootNonce((n) => n + 1);
+  }, []);
+
   const logViewportDiagnostic = useCallback(
     createTerminalViewportDiagnosticLogger({
       id,
@@ -1047,6 +1061,10 @@ export default function TerminalTTY({
       repaint();
 
       if (autoFocus) {
+        // Same protection as in handleViewportMouseDown: ensure focus reporting
+        // is off before we focus, so our activation doesn't inject a focus-in
+        // event that triggers DA queries whose responses leak as visible text.
+        termRef.current?.write?.('\x1b[?1004l');
         termRef.current?.focus?.();
       }
 
@@ -1868,9 +1886,8 @@ export default function TerminalTTY({
       const next = Math.min(24, Math.max(8, prev + delta));
       try {
         window.localStorage.setItem(FONT_SIZE_KEY, String(next));
-        // Also persist into the unified typography store so Appearance reflects the
-        // user's preferred base size, and new terminals start with it.
-        setTerminalTypography(window.localStorage, { fontSize: next });
+        // Size fine-tuning stays local per panel (the A-/A+ buttons).
+        // The base font family + weight + line/letter come from CSS vars (see getTerminalFontOptions).
       } catch {
         /* ignore */
       }
@@ -1893,71 +1910,30 @@ export default function TerminalTTY({
     });
   }, []);
 
-  // React to typography changes coming from Appearance / Terminal Zone while this
-  // terminal is already mounted. Numeric values (size, line, letter) can be applied live.
-  // Family / weight changes are more structural for the glyph atlas → we force a clean
-  // re-initialization of this xterm instance using the existing nonce mechanism.
-  const lastAppliedTypographyRef = useRef(null);
+  // When the user switches away from this panel (isActivePanel becomes false),
+  // disable "reporting" modes (focus events, mouse tracking) that many TUIs (like opencode)
+  // use to "wake up" and re-query the terminal (sending DA1/DA2 queries like ^[[c ^[[>c).
+  // If those queries happen in a background panel while the user is clicking other panels,
+  // their responses can leak as visible text (the "1;2c0;276;0c..." garbage) and accumulate
+  // in the prompt of the panels.
+  // By turning reporting off in non-active panels, background TUIs stop reacting to browser
+  // focus changes, preventing the leak. The foreground TUI will re-enable the modes it needs.
   useEffect(() => {
-    const handleTypographyChange = (ev) => {
-      const next = ev?.detail || resolveTerminalTypography(window.localStorage);
-      if (!next) return;
+    const term = termRef.current;
+    if (!term) return;
 
-      const prev = lastAppliedTypographyRef.current || {};
-      const familyChanged = (next.fontFamily || '') !== (prev.fontFamily || '');
-      const weightChanged =
-        String(next.fontWeight || '') !== String(prev.fontWeight || '') ||
-        String(next.fontWeightBold || '') !== String(prev.fontWeightBold || '');
-
-      // Always keep the CSS var fresh.
-      applyTerminalTypographyToDocument(next);
-
-      if (termRef.current) {
-        const t = termRef.current;
-        let didLiveUpdate = false;
-
-        try {
-          if (Number.isFinite(next.fontSize) && next.fontSize !== fontSize) {
-            setFontSize(next.fontSize);
-            t.options.fontSize = next.fontSize;
-            didLiveUpdate = true;
-          }
-          if (Number.isFinite(next.lineHeight) && next.lineHeight !== t.options.lineHeight) {
-            t.options.lineHeight = next.lineHeight;
-            didLiveUpdate = true;
-          }
-          if (
-            Number.isFinite(next.letterSpacing) &&
-            next.letterSpacing !== t.options.letterSpacing
-          ) {
-            t.options.letterSpacing = next.letterSpacing;
-            didLiveUpdate = true;
-          }
-
-          if (didLiveUpdate) {
-            fitRef.current?.fit?.();
-            if (typeof t.clearTextureAtlas === 'function') t.clearTextureAtlas();
-            t.refresh?.(0, t.rows - 1);
-          }
-        } catch (e) {
-          if (!isStaleXtermRendererError(e)) {
-            // fall through to re-init path
-          }
-        }
+    if (!isActivePanel) {
+      try {
+        // Disable focus reporting (the main trigger for "I gained focus, re-probe with DA")
+        // and the common mouse reporting modes.
+        term.write('\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l');
+      } catch {
+        // intentional: terminal may already be disposed during unmount
       }
-
-      lastAppliedTypographyRef.current = next;
-
-      // Structural font changes → clean re-boot of this terminal instance (perfect atlas, metrics, etc.)
-      if (familyChanged || weightChanged) {
-        setXtermBootNonce((n) => n + 1);
-      }
-    };
-
-    window.addEventListener('devhub:terminal-typography-changed', handleTypographyChange);
-    return () =>
-      window.removeEventListener('devhub:terminal-typography-changed', handleTypographyChange);
-  }, [fontSize]);
+    }
+    // When becoming active again we intentionally do *not* force-enable here.
+    // Let the actual application (shell/TUI) enable what it wants when it receives input or focus.
+  }, [isActivePanel]);
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
@@ -2105,24 +2081,21 @@ export default function TerminalTTY({
         const theme = getTerminalTheme();
         cliLog(`CLIENT:${id}`, 'computed theme colors', theme);
 
-        // Typography is the single source for terminal text appearance.
-        // We resolve at creation time so new panels pick up Appearance settings immediately.
-        const typo = resolveTerminalTypography(
-          typeof window !== 'undefined' ? window.localStorage : null
-        );
-        // Also ensure the CSS var is in sync (so resolveTerminalFontFamily and other mono usage see it).
-        applyTerminalTypographyToDocument(typo);
+        // Font configuration comes from CSS variables via the central TerminalThemeSync
+        // (opencode-vars.css / globals.css). This keeps the defaults (Kali thick style)
+        // in a general CSS layer instead of inside the terminal component.
+        const fontOpts = getTerminalFontOptions();
 
         const terminal = new Terminal({
           cursorBlink: true,
           cursorStyle: 'bar',
           cursorWidth: 2,
-          fontFamily: typo.fontFamily || resolveTerminalFontFamily(),
+          fontFamily: fontOpts.fontFamily || resolveTerminalFontFamily(),
           fontSize: fontSize,
-          fontWeight: typo.fontWeight,
-          fontWeightBold: typo.fontWeightBold,
-          letterSpacing: typo.letterSpacing,
-          lineHeight: typo.lineHeight,
+          fontWeight: fontOpts.fontWeight,
+          fontWeightBold: fontOpts.fontWeightBold,
+          letterSpacing: fontOpts.letterSpacing,
+          lineHeight: fontOpts.lineHeight,
           allowTransparency: false,
           theme: theme,
         });
@@ -2540,6 +2513,14 @@ export default function TerminalTTY({
       }
       return;
     }
+    // When the user explicitly clicks this panel to activate it, first turn off
+    // focus reporting (1004). This stops xterm from emitting a focus-in escape
+    // sequence to the pty just because we are giving it DOM focus.
+    // Without this, the TUI/shell receives a "terminal gained focus" event and
+    // often responds by sending DA queries. The DA response bytes then get
+    // delivered as input and appear as the repeating "1;2c0;276;0c..." garbage
+    // pasted into the prompt (and it accumulates on every panel switch).
+    termRef.current?.write?.('\x1b[?1004l');
     termRef.current?.focus?.();
   }, [
     handleNativeLeaseCommandError,
@@ -2814,11 +2795,24 @@ export default function TerminalTTY({
               </div>
             )}
 
-            <motion.div
-              ref={containerRef}
-              className="devhub-xterm-container h-full w-full p-2.5"
-              {...getXtermContainerAnimProps(showTerminalViewport)}
-            />
+            {webglFallback?.active && requestedRendererMode === 'xterm-webgl' ? (
+              <WebglErrorSection
+                id={id}
+                reason={webglFallback.reason}
+                onSwitchToXterm={handleSwitchToXterm}
+                onRetry={handleRetryProbe}
+              />
+            ) : (
+              <motion.div
+                ref={containerRef}
+                className="devhub-xterm-container h-full w-full p-1"
+                /* Reduced padding (was p-2.5) so TUI-drawn boxes, the bottom "Build" bar,
+                   side warnings, ASCII banners and overall layout have widths, heights and
+                   internal spacing much closer to a native Kali terminal.
+                   Extra padding was making "las cajas de texto" and art look off. */
+                {...getXtermContainerAnimProps(showTerminalViewport)}
+              />
+            )}
           </div>
           {/* Restored session toast */}
           {restoredToast && (
@@ -2832,22 +2826,6 @@ export default function TerminalTTY({
               }}
             >
               ↺ Restored shell at {cwd}
-            </div>
-          )}
-
-          {/* xterm-webgl demotion / fallback warning (visible, does not unmount the xterm) */}
-          {webglFallback?.active && (
-            <div
-              className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1 rounded-md border text-[10px] font-mono"
-              style={{
-                background: 'color-mix(in oklch, #fbbf24 12%, var(--surface-elevated))',
-                borderColor: '#fbbf24',
-                color: '#fef08c',
-              }}
-              data-testid={`terminal-renderer-fallback-${id}`}
-              title="El renderer WebGL no estuvo disponible en esta sesión. Se usa el fallback DOM de xterm (puede mostrar rayas en TUIs complejas)."
-            >
-              {WEBGL_FALLBACK_WARNING_TEXT}
             </div>
           )}
 

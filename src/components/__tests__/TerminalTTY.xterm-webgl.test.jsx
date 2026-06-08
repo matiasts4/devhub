@@ -7,9 +7,9 @@
  *   WebglAddon is constructed once and terminal.loadAddon(addon) is called
  *   exactly once inside try/catch.
  * - XW-05-SCEN-1: when the addon loadAddon throws, the panel body stays in
- *   the DOM AND a status line containing
- *   'Renderer fallback: xterm DOM (WebGL unavailable)' is rendered AND
- *   setPanelRendererPreference is NOT called.
+ *   the DOM AND the WebglErrorSection is rendered (testid
+ *   `terminal-webgl-error-section`) AND setPanelRendererPreference is NOT
+ *   called.
  * - Capability-unready branch: no WebglAddon is constructed.
  * - Unmount cleanup: webglAddonRef.current.dispose() is invoked.
  *
@@ -347,12 +347,11 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     const body = view.container.querySelector('[data-testid="terminal-root-body"]');
     expect(body).not.toBeNull();
 
-    // The fallback warning line is rendered.
-    const warning = view.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-term-xw-05"]'
+    // The WebglErrorSection is rendered in place of the xterm mount.
+    const errorSection = view.container.querySelector(
+      '[data-testid="terminal-webgl-error-section"]'
     );
-    expect(warning).not.toBeNull();
-    expect(warning?.textContent).toContain('Renderer fallback: xterm DOM (WebGL unavailable)');
+    expect(errorSection).not.toBeNull();
 
     // setPanelRendererPreference MUST NOT be called as a side-effect of the fallback.
     expect(mockSetPanelRendererPreference).not.toHaveBeenCalled();
@@ -395,15 +394,11 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     // No addon constructed (resolver demoted to xterm).
     expect(WebglAddon.instances).toHaveLength(0);
 
-    // The warning line IS rendered.
-    const warning = view.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-term-xw-demote"]'
+    // The WebglErrorSection is rendered in place of the xterm mount.
+    const errorSection = view.container.querySelector(
+      '[data-testid="terminal-webgl-error-section"]'
     );
-    expect(warning).not.toBeNull();
-    // The standard copy used by the warning line is the same English
-    // 'Renderer fallback: xterm DOM (WebGL unavailable)' text — the
-    // Spanish detailed copy is in getTerminalRendererWebglFallbackCopy.
-    expect(warning?.textContent).toContain('Renderer fallback: xterm DOM (WebGL unavailable)');
+    expect(errorSection).not.toBeNull();
   });
 
   // XW-07: once the user moves AWAY from xterm-webgl, the demotion warning
@@ -420,10 +415,10 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     );
 
     await flushTerminalEffects();
-    let warning = harness.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-term-xw-demote-clear"]'
+    let errorSection = harness.container.querySelector(
+      '[data-testid="terminal-webgl-error-section"]'
     );
-    expect(warning).not.toBeNull();
+    expect(errorSection).not.toBeNull();
 
     // Re-render with a different requested mode (e.g. user picks 'xterm').
     const otherModeElement = React.createElement(TerminalTTY, {
@@ -436,10 +431,8 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     });
     await flushTerminalEffects();
 
-    warning = harness.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-term-xw-demote-clear"]'
-    );
-    expect(warning).toBeNull();
+    errorSection = harness.container.querySelector('[data-testid="terminal-webgl-error-section"]');
+    expect(errorSection).toBeNull();
   });
 
   test('on unmount, the registered WebglAddon instance is disposed', async () => {
@@ -539,22 +532,19 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     expect(WebglAddon.instances).toHaveLength(1);
     const addon = WebglAddon.instances[0];
 
-    // No fallback warning yet.
-    let warning = harness.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-term-xw-context-loss"]'
+    // No WebglErrorSection yet.
+    let errorSection = harness.container.querySelector(
+      '[data-testid="terminal-webgl-error-section"]'
     );
-    expect(warning).toBeNull();
+    expect(errorSection).toBeNull();
 
     // Fire the context loss event.
     addon.__triggerContextLoss();
     await flushTerminalEffects();
 
-    // Fallback warning now visible.
-    warning = harness.container.querySelector(
-      '[data-testid="terminal-renderer-fallback-term-xw-context-loss"]'
-    );
-    expect(warning).not.toBeNull();
-    expect(warning?.textContent).toContain('Renderer fallback: xterm DOM (WebGL unavailable)');
+    // WebglErrorSection now visible.
+    errorSection = harness.container.querySelector('[data-testid="terminal-webgl-error-section"]');
+    expect(errorSection).not.toBeNull();
   });
 
   // Regression — Linux/WebKitGTK xterm-addon-webgl@0.16.0 teardown race.
