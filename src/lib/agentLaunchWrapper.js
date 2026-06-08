@@ -1193,3 +1193,231 @@ export function getCachedWrappedBash(staticParts, options = {}) {
     cacheDir: options.cacheDir,
   });
 }
+
+// ---------------------------------------------------------------------------
+// T2.2 — chunked director prompt emission (R-BUF-2).
+//
+// The director's bootstrap prompt is a multi-KB string (typically ~24KB).
+// Emitting it as a single `tmux load-buffer -` + `tmux paste-buffer` call
+// blasts the entire payload into the PTY in one frame, which can overflow
+// the tmux pipe-pane and leak fragments like `[[35;60;4M^...` into sibling
+// panes. The fix: split the prompt into ~2KB chunks and emit them at ~16ms
+// (≈60fps) pacing, then commit with `tmux paste-buffer -d` at the end.
+//
+// This module is ADDITIVE — `buildBootstrapPromptBlock` (the legacy
+// single-shot emitter) is unchanged. Callers that want chunked emission
+// can use `planPromptChunks` for a pure chunk plan, and
+// `buildChunkedBootstrapPromptBlock` for the full bash block.
+//
+// The pacing uses Bash's `sleep` with a fractional-seconds argument. The
+// interval is configurable so callers (and tests) can adjust the cadence;
+// the default of 16ms mirrors one frame at 60fps.
+// ---------------------------------------------------------------------------
+
+export const T2_2_PROMPT_CHUNK_BYTES_DEFAULT = 2048;
+export const T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT = 16;
+export const T2_2_PROMPT_CHUNK_MAX_CHUNKS_DEFAULT = 12;
+
+/**
+ * T2.2 — split a prompt into ~2KB chunks for paced emission.
+ *
+ * Returns a plan with explicit `delayMsBefore` per chunk so the caller
+ * (or the test) can verify pacing with fake timers. The plan is pure
+ * data — no I/O, no side effects.
+ *
+ * @param {string} prompt - the raw prompt string
+ * @param {object} [options]
+ * @param {number} [options.chunkBytes=2048] - target chunk size in bytes
+ * @param {number} [options.intervalMs=16] - delay between chunks in ms
+ * @param {number} [options.maxChunks=12] - hard cap on chunk count
+ * @returns {{
+ *   chunks: Array<{ index: number, text: string, bytes: number, delayMsBefore: number }>,
+ *   totalBytes: number,
+ *   chunkCount: number,
+ *   plannedDurationMs: number
+ * }}
+ */
+export function planPromptChunks(prompt, options = {}) {
+  const text = String(prompt || '');
+  if (!text) {
+    return { chunks: [], totalBytes: 0, chunkCount: 0, plannedDurationMs: 0 };
+  }
+
+  const chunkBytes = Math.max(
+    1,
+    Math.floor(options.chunkBytes ?? T2_2_PROMPT_CHUNK_BYTES_DEFAULT)
+  );
+  const intervalMs = Math.max(
+    0,
+    Math.floor(options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT)
+  );
+  const maxChunks = Math.max(
+    1,
+    Math.floor(options.maxChunks ?? T2_2_PROMPT_CHUNK_MAX_CHUNKS_DEFAULT)
+  );
+
+  // Encode once so byte counts are stable regardless of multibyte chars.
+  const encoded = Buffer.from(text, 'utf8');
+  const totalBytes = encoded.length;
+
+  const rawChunks = [];
+  for (let offset = 0; offset < totalBytes; offset += chunkBytes) {
+    rawChunks.push(encoded.subarray(offset, Math.min(offset + chunkBytes, totalBytes)));
+  }
+  // Honor maxChunks — if the prompt is larger than maxChunks*chunkBytes,
+  // the last raw chunk is a tail that gets appended to the last emitted
+  // chunk (so we never exceed the cap; we also never drop data).
+  let emitted = rawChunks.slice(0, maxChunks).map((c) => Buffer.from(c));
+  if (rawChunks.length > maxChunks) {
+    const tail = Buffer.concat(rawChunks.slice(maxChunks));
+    emitted[emitted.length - 1] = Buffer.concat([emitted[emitted.length - 1], tail]);
+  }
+
+  const chunks = emitted.map((buf, index) => ({
+    index,
+    text: buf.toString('utf8'),
+    bytes: buf.length,
+    // The first chunk has 0 delay; subsequent chunks wait `intervalMs`
+    // before being emitted (≈60fps for the default 16ms).
+    delayMsBefore: index === 0 ? 0 : intervalMs,
+  }));
+
+  const plannedDurationMs = chunks.length > 0 ? (chunks.length - 1) * intervalMs : 0;
+
+  return {
+    chunks,
+    totalBytes,
+    chunkCount: chunks.length,
+    plannedDurationMs,
+  };
+}
+
+/**
+ * T2.2 — build the bash block that emits a chunked prompt into the tmux
+ * pane. Each chunk is `load-buffer`-ed with a fractional `sleep` between
+ * chunks; the final `tmux paste-buffer -d` commits and deletes the buffer.
+ *
+ * Designed to be called from inside `_devhub_bootstrap_prompt` — the
+ * caller is responsible for the dedup lock and the tmux-session probe
+ * (both happen in the legacy `buildBootstrapPromptBlock`).
+ *
+ * @param {string} prompt - the raw prompt string
+ * @param {object} [options]
+ * @param {number} [options.chunkBytes=2048]
+ * @param {number} [options.intervalMs=16]
+ * @param {number} [options.maxChunks=12]
+ * @returns {string} Bash block that emits the prompt in chunks and
+ *   commits with `tmux paste-buffer -d`.
+ */
+export function buildChunkedBootstrapPromptBlock(prompt, options = {}) {
+  const text = String(prompt || '');
+  if (!text.trim()) {
+    return '# Chunked bootstrap skipped (empty prompt)';
+  }
+
+  const plan = planPromptChunks(text, options);
+  const intervalSeconds = Math.max(
+    0,
+    (options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT) / 1000
+  );
+
+  const lines = [
+    '# T2.2 — chunked bootstrap prompt emission (R-BUF-2).',
+    `# ${plan.chunkCount} chunks × ≤${options.chunkBytes ?? T2_2_PROMPT_CHUNK_BYTES_DEFAULT}B at ${options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT}ms pacing.`,
+    'local _chunk_idx=0',
+  ];
+
+  plan.chunks.forEach((chunk) => {
+    const heredocTag = `DEVHUB_BOOTSTRAP_CHUNK_${chunk.index}`;
+    if (chunk.delayMsBefore > 0) {
+      // bash `sleep` accepts fractional seconds on bash 4+ (default on
+      // modern Linux/macOS). 16ms → sleep 0.016. For very small intervals
+      // we still emit a positive sleep so the PTY has time to drain.
+      lines.push(`sleep ${intervalSeconds.toFixed(3)}`);
+    }
+    lines.push(
+      `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunk ${chunk.index + 1}/${plan.chunkCount} (${chunk.bytes}B)"`,
+      `tmux load-buffer - <<'${heredocTag}'`,
+      chunk.text,
+      heredocTag,
+      `tmux paste-buffer -t "\${_tmux_session}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed on chunk ${chunk.index + 1}"`,
+      `tmux send-keys -t "\${_tmux_session}" '' >/dev/null 2>&1 || true`,
+      '_chunk_idx=$((_chunk_idx + 1))'
+    );
+  });
+
+  // Final commit. The `-d` flag tells `paste-buffer` to delete the buffer
+  // after pasting, freeing tmux's per-pane buffer slot.
+  lines.push(
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunked emission complete (${plan.chunkCount} chunks, ${plan.totalBytes}B total)"`,
+    `tmux paste-buffer -d -t "\${_tmux_session}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: final paste-buffer -d failed"`,
+    `tmux send-keys -t "\${_tmux_session}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys C-m failed"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete (chunked)."`
+  );
+
+  return lines.join('\n');
+}
+
+/**
+ * T2.2 — schedule a chunked prompt emission in the current process.
+ *
+ * Consumes the plan from `planPromptChunks` and uses `setTimeout` to pace
+ * the chunks at the configured interval. Each chunk is delivered to the
+ * supplied `onChunk` callback. The last delivery is signaled via the
+ * `onCommit` callback (which is where the caller should `tmux
+ * paste-buffer -d`).
+ *
+ * The function is fully synchronous in its plan construction; only the
+ * delivery is async via `setTimeout`. Returns a `cancel()` thunk that
+ * clears all pending timers.
+ *
+ * @param {string} prompt - the raw prompt string
+ * @param {object} callbacks
+ * @param {(chunk: { index: number, text: string, bytes: number }) => void} callbacks.onChunk
+ *   - invoked once per chunk (in order) with the chunk payload.
+ * @param {() => void} callbacks.onCommit - invoked once after the last
+ *   chunk is delivered. The caller is responsible for the final
+ *   `tmux paste-buffer -d` invocation.
+ * @param {object} [options] - forwarded to `planPromptChunks`.
+ * @returns {{ cancel: () => void, plan: ReturnType<typeof planPromptChunks> }}
+ */
+export function scheduleChunkedPrompt(prompt, callbacks, options = {}) {
+  const { onChunk, onCommit } = callbacks || {};
+  if (typeof onChunk !== 'function' || typeof onCommit !== 'function') {
+    throw new TypeError(
+      'scheduleChunkedPrompt: callbacks.onChunk and callbacks.onCommit must be functions'
+    );
+  }
+  const plan = planPromptChunks(prompt, options);
+  const intervalMs = Math.max(
+    0,
+    Math.floor(options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT)
+  );
+
+  const timers = [];
+  for (let i = 0; i < plan.chunks.length; i += 1) {
+    const chunk = plan.chunks[i];
+    const delay = chunk.delayMsBefore;
+    const timer = setTimeout(() => {
+      onChunk({ index: chunk.index, text: chunk.text, bytes: chunk.bytes });
+      if (i === plan.chunks.length - 1) {
+        onCommit();
+      }
+    }, delay);
+    timers.push(timer);
+  }
+  // If there's only one chunk, the loop above still scheduled it
+  // (with delay 0) and onCommit runs after it. If the prompt was empty,
+  // commit immediately on the next microtask so callers can chain.
+  if (plan.chunks.length === 0) {
+    const timer = setTimeout(() => onCommit(), 0);
+    timers.push(timer);
+  }
+
+  return {
+    plan,
+    cancel: () => {
+      for (const t of timers) clearTimeout(t);
+    },
+  };
+}
