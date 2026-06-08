@@ -15,6 +15,7 @@ import { provisionAuthToken, getDb } from '@/lib/db/localDb.js';
 import { getLlmProviderConfigSync } from './llmProviderConfig.js';
 import { buildWrapperWithCache } from './operations/wrapperBashCache.js';
 
+import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -447,6 +448,14 @@ export function readLegacyBootstrapLock({ lockDir, missionId, role }) {
   return { found: true, pid, deprecated: true, path: file };
 }
 
+function indentBashBlock(block = '', spaces = 4) {
+  const pad = ' '.repeat(spaces);
+  return String(block || '')
+    .split('\n')
+    .map((line) => (line.length > 0 ? `${pad}${line}` : line))
+    .join('\n');
+}
+
 function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
   if (!String(prompt || '').trim()) {
     return '';
@@ -460,6 +469,10 @@ function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
           `sleep ${preSleepSeconds}`,
         ].join('\n')
       : '';
+
+  // T2.2 — chunked emission replaces the legacy single-shot paste that
+  // overflowed tmux pipe-pane buffers and leaked escape noise into sibling panes.
+  const chunkedInjection = indentBashBlock(buildChunkedBootstrapPromptBlock(prompt), 4);
 
   return [
     preSleep,
@@ -498,15 +511,7 @@ function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
     '      return 1',
     '    fi',
     `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Detected tmux session: \${_tmux_session}"`,
-    '    # T-021: simple grace sleep. The previous event-driven sentinel',
-    '    # wait (T-019.1) was reverted because it leaked sentinel text into',
-    '    # agent TUIs when send-keys landed on the active prompt.',
-    '    # Configurable via tuiReadyGraceMs in buildAgentLaunchWrapper.',
-    '    sleep 2',
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Loading prompt into tmux session \${_tmux_session}..."`,
-    "    tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'",
-    prompt,
-    'DEVHUB_BOOTSTRAP_PROMPT',
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Loading prompt into tmux session \${_tmux_session} (chunked)..."`,
     // T-016.4 — also write the bootstrap prompt into the transcript file
     // (with a header marker) so the user can see what the agent was given.
     `    {`,
@@ -516,9 +521,7 @@ function buildBootstrapPromptBlock(prompt = '', { preSleepSeconds = 0 } = {}) {
     `DEVHUB_BOOTSTRAP_TRANSCRIPT`,
     `      echo "----"`,
     `    } >> "$DEVHUB_TRANSCRIPT_FILE" 2>/dev/null || true`,
-    `    tmux paste-buffer -t "\${_tmux_session}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed"`,
-    `    tmux send-keys -t "\${_tmux_session}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys failed"`,
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete."`,
+    chunkedInjection,
     '  } >> "$DEVHUB_LOG_FILE" 2>&1',
     '}',
     '(_devhub_bootstrap_prompt) &',
@@ -1204,10 +1207,9 @@ export function getCachedWrappedBash(staticParts, options = {}) {
 // panes. The fix: split the prompt into ~2KB chunks and emit them at ~16ms
 // (≈60fps) pacing, then commit with `tmux paste-buffer -d` at the end.
 //
-// This module is ADDITIVE — `buildBootstrapPromptBlock` (the legacy
-// single-shot emitter) is unchanged. Callers that want chunked emission
-// can use `planPromptChunks` for a pure chunk plan, and
-// `buildChunkedBootstrapPromptBlock` for the full bash block.
+// `buildBootstrapPromptBlock` now delegates prompt emission to
+// `buildChunkedBootstrapPromptBlock`. Callers can still use
+// `planPromptChunks` for a pure chunk plan in tests/tooling.
 //
 // The pacing uses Bash's `sleep` with a fractional-seconds argument. The
 // interval is configurable so callers (and tests) can adjust the cadence;
@@ -1243,10 +1245,7 @@ export function planPromptChunks(prompt, options = {}) {
     return { chunks: [], totalBytes: 0, chunkCount: 0, plannedDurationMs: 0 };
   }
 
-  const chunkBytes = Math.max(
-    1,
-    Math.floor(options.chunkBytes ?? T2_2_PROMPT_CHUNK_BYTES_DEFAULT)
-  );
+  const chunkBytes = Math.max(1, Math.floor(options.chunkBytes ?? T2_2_PROMPT_CHUNK_BYTES_DEFAULT));
   const intervalMs = Math.max(
     0,
     Math.floor(options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT)
@@ -1267,7 +1266,7 @@ export function planPromptChunks(prompt, options = {}) {
   // Honor maxChunks — if the prompt is larger than maxChunks*chunkBytes,
   // the last raw chunk is a tail that gets appended to the last emitted
   // chunk (so we never exceed the cap; we also never drop data).
-  let emitted = rawChunks.slice(0, maxChunks).map((c) => Buffer.from(c));
+  const emitted = rawChunks.slice(0, maxChunks).map((c) => Buffer.from(c));
   if (rawChunks.length > maxChunks) {
     const tail = Buffer.concat(rawChunks.slice(maxChunks));
     emitted[emitted.length - 1] = Buffer.concat([emitted[emitted.length - 1], tail]);

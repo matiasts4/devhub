@@ -543,10 +543,19 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toMatch(/tmux send-keys.*SENTINEL/);
     });
 
-    test('wrapper emits a sleep N block (default 2s) as the only TUI wait', () => {
+    test('wrapper emits a sleep N block (default 10s from tuiReadyGraceMs) before bootstrap', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
-      // The T-021 block should have a `sleep 2` for grace
-      expect(result).toMatch(/sleep 2/);
+      // buildTuiWaitForBlock: default tuiReadyGraceMs=10000 → sleep 10
+      expect(result).toMatch(/sleep 10/);
+      // Inner bootstrap no longer adds a redundant fixed sleep.
+      expect(result).not.toMatch(/sleep 2/);
+    });
+
+    test('wrapper uses chunked bootstrap emission (T2.2)', () => {
+      const result = buildAgentLaunchWrapper(tmuxParams);
+      expect(result).toContain('DEVHUB_BOOTSTRAP_CHUNK_0');
+      expect(result).toMatch(/tmux paste-buffer -d -t "\$\{_tmux_session\}"/);
+      expect(result).not.toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
     });
 
     test('tuiReadyGraceMs=5000 produces `sleep 5` in the emitted bash (configurable)', () => {

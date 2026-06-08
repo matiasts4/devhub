@@ -7,8 +7,8 @@
  *   - `buildChunkedBootstrapPromptBlock` — bash block that emits chunks
  *     with sleep pacing and a final `tmux paste-buffer -d` commit.
  *
- * The legacy `buildBootstrapPromptBlock` (single-shot emitter) is
- * intentionally NOT touched — these tests cover the new helper only.
+ * `buildBootstrapPromptBlock` now wires in `buildChunkedBootstrapPromptBlock`.
+ * These tests cover the chunking helpers directly.
  */
 
 'use strict';
