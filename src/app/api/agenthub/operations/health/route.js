@@ -61,6 +61,10 @@ const LOCAL_MISSION_DELIVERY_CHANNEL = 'local_snapshot';
 const LOCAL_MISSION_MESSAGE_KIND = 'directive';
 const LOCAL_SWARM_RUNTIME_SURFACE = 'swarm-control-launch';
 const DIRECTOR_TASK_LEASE_TTL_MS = 120_000;
+// NOTE: kept for backward compat. The 4s delay is no longer applied at
+// the worker fan-out (T1.2) — workers fire in parallel with the director
+// (startAfterMs: 0). The director emits 'director.ready' independently
+// on first prompt visible to xterm.
 const DIRECTOR_FIRST_FANOUT_DELAY_MS = 4000;
 const SWARM_LAUNCH_TRACE_TYPE = 'swarm_launch';
 const SWARM_LAUNCH_TRACE_TOOL_NAME = 'launch_swarm_local';
@@ -1376,7 +1380,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           missionId: mission.mission_id,
           detail: {
             workerCount: workerRoleEntries.length,
-            startAfterMs: shouldDelayWorkerFanout ? DIRECTOR_FIRST_FANOUT_DELAY_MS : 0,
+            startAfterMs: 0,
           },
         })
       );
@@ -1401,7 +1405,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           parentSessionId,
           now,
           launchPhase: 'fanout',
-          startAfterMs: shouldDelayWorkerFanout ? DIRECTOR_FIRST_FANOUT_DELAY_MS : 0,
+          startAfterMs: 0,
           precomputedWorktree: precomputedWorktrees.get(roleEntry.role_key) ?? null,
         });
 
