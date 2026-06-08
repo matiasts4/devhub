@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { getWorkspaceAnimProps } from './terminal/workspaceAnimProps';
 import {
   getTerminalFloatingControlStyle,
@@ -4764,11 +4764,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         setDraggedWsId(null);
                         setDragOverWsId(null);
                       }}
-                      className={`group flex items-center justify-between h-full px-4 rounded-xl transition-all cursor-grab active:cursor-grabbing select-none border ${
+                      className={`group relative flex items-center justify-between h-full px-4 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none border ${
                         draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
                       } ${
                         activeWsId === ws.id
-                          ? 'text-[var(--text-primary)] border-[var(--border-subtle)]'
+                          ? 'text-[var(--text-primary)] border-transparent'
                           : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
                       }`}
                       title={workspaceTabLabel}
@@ -4780,6 +4780,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         }),
                       }}
                     >
+                      {activeWsId === ws.id && (
+                        <motion.span
+                          layoutId="workspace-active-tab-indicator"
+                          className="absolute inset-0 rounded-xl border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.07)]"
+                          transition={{ type: 'spring', stiffness: 500, damping: 42, mass: 0.7 }}
+                          style={{ zIndex: 0, willChange: 'transform' }}
+                        />
+                      )}
                       <div className="flex items-center gap-2">
                         <LayoutGrid
                           className="w-3.5 h-3.5 shrink-0"
@@ -5255,9 +5263,24 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                     <div
                       key={workspaceGridKey}
                       data-testid={`workspace-shell-${ws.id}`}
-                      className={`absolute inset-0 p-1.5 ${isFullscreenBrowser || activeWsId !== ws.id || !isVisible ? 'hidden' : ''}`}
+                      data-ws-active={
+                        !isFullscreenBrowser && activeWsId === ws.id && isVisible ? 'true' : 'false'
+                      }
+                      aria-hidden={activeWsId !== ws.id || !isVisible}
+                      className="absolute inset-0 p-1.5"
                       style={{
                         zIndex: activeWsId === ws.id ? 10 : 0,
+                        // GPU-composited transition: stays in DOM (preserves
+                        // terminal processes), but visually crossfades.
+                        // Using opacity + pointerEvents instead of display:none
+                        // so we never trigger a layout recalculation on switch.
+                        opacity: isFullscreenBrowser || activeWsId !== ws.id || !isVisible ? 0 : 1,
+                        pointerEvents:
+                          activeWsId === ws.id && !isFullscreenBrowser && isVisible
+                            ? 'auto'
+                            : 'none',
+                        transition: 'opacity 160ms cubic-bezier(0.4, 0, 0.2, 1)',
+                        willChange: 'opacity',
                       }}
                     >
                       <PanelGroup

@@ -1,14 +1,25 @@
 const React = require('react');
 const { cleanupMountedRoots, installDom, renderIntoDom } = require('@/test-support/domHarness');
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -747,7 +758,9 @@ describe('TerminalWorkspacesManager split layout', () => {
 
     const workspaceTopBar = view.container.querySelector('[data-testid="workspace-top-tab-bar"]');
     const panelSafeZone = view.container.querySelector('[data-testid="panel-safe-zone-p1"]');
-    const panelChromeOverlay = view.container.querySelector('[data-testid="panel-chrome-overlay-p1"]');
+    const panelChromeOverlay = view.container.querySelector(
+      '[data-testid="panel-chrome-overlay-p1"]'
+    );
     const splitRightButton = view.container.querySelector('[data-testid="panel-split-right-p1"]');
     const closeButton = view.container.querySelector('[data-testid="panel-close-p1"]');
 
@@ -1040,9 +1053,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     await Promise.resolve();
 
     window.removeEventListener('devhub:terminal-layout-settled', onLayoutSettled);
-    expect(
-      settledDetails.some((detail) => detail.reason === 'internal-split-drag-end')
-    ).toBe(true);
+    expect(settledDetails.some((detail) => detail.reason === 'internal-split-drag-end')).toBe(true);
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
       'live'
@@ -1188,5 +1199,4 @@ describe('TerminalWorkspacesManager split layout', () => {
 
     sync.cleanup();
   });
-
 });

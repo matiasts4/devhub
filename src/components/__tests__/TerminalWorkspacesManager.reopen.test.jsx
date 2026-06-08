@@ -20,14 +20,25 @@ const mockCatalogState = {
   retry: jest.fn(),
 };
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {

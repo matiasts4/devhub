@@ -53,7 +53,11 @@ const REDUCED_MOTION_TOTAL_MS = 50;
 // Default durations match the spec: 110ms leaving + 220ms entering.
 const DEFAULT_LEAVE_MS = 110;
 const DEFAULT_ENTER_MS = 220;
-const DEFAULT_DEBOUNCE_MS = 200;
+// Debounce intentionally set to 0: any non-zero value introduces
+// perceptible lag between the user's click and the start of the
+// animation. The phase machine (leaving → entering) already
+// provides the visual rhythm without an additional dead zone.
+const DEFAULT_DEBOUNCE_MS = 0;
 
 const PROGRESS_TICK_MS = 16; // ~60Hz
 

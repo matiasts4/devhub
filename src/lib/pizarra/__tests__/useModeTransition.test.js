@@ -13,7 +13,7 @@
  *   2. At steady state (maximizedView unchanged), phase is 'idle'
  *      and progress is 0.
  *   3. On maximizedView change:
- *      a. After a `debounceMs` window (default 200 ms), the hook
+ *      a. After a `debounceMs` window (default 0 ms), the hook
  *         flips to `phase: 'leaving'`.
  *      b. `progress` animates from 0 to 1 over `leaveMs`
  *         (default 110 ms).
@@ -23,7 +23,7 @@
  *      e. On entering completion, `phase` returns to 'idle' and
  *         `progress` returns to 0.
  *   4. Total transition time is debounce + leave + enter
- *      (200 + 110 + 220 = 530 ms by default).
+ *      (0 + 110 + 220 = 330 ms by default).
  *   5. Rapid toggles within the debounce window collapse to a
  *      single coherent transition (only the latest maximizedView
  *      value is applied). Toggles DURING leaving/entering cancel
@@ -146,7 +146,7 @@ describe('useModeTransition — debounce + phase machine', () => {
     try {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
-        ({ view }) => useModeTransition({ maximizedView: view }),
+        ({ view }) => useModeTransition({ maximizedView: view, debounceMs: 200 }),
         { initialProps: { view: 'workspace' } }
       );
       expect(result.current.phase).toBe('idle');
@@ -169,11 +169,11 @@ describe('useModeTransition — debounce + phase machine', () => {
     try {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
-        ({ view }) => useModeTransition({ maximizedView: view }),
+        ({ view }) => useModeTransition({ maximizedView: view, debounceMs: 0 }),
         { initialProps: { view: 'workspace' } }
       );
       rerender({ view: 'pizarra' });
-      advance(200); // debounce
+      advance(5); // past debounce=0
       expect(result.current.phase).toBe('leaving');
 
       advance(55); // halfway through 110ms leaving
@@ -193,12 +193,12 @@ describe('useModeTransition — debounce + phase machine', () => {
     try {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
-        ({ view }) => useModeTransition({ maximizedView: view }),
+        ({ view }) => useModeTransition({ maximizedView: view, debounceMs: 0 }),
         { initialProps: { view: 'workspace' } }
       );
       rerender({ view: 'pizarra' });
-      // 200 debounce + 110 leaving + 220 entering
-      advance(200 + 110 + 220 + 5);
+      // 0 debounce + 110 leaving + 220 entering
+      advance(5 + 110 + 220 + 5);
       expect(result.current.phase).toBe('idle');
       expect(result.current.progress).toBe(0);
       expect(result.current.isAnimating).toBe(false);
@@ -212,11 +212,11 @@ describe('useModeTransition — debounce + phase machine', () => {
     try {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
-        ({ view }) => useModeTransition({ maximizedView: view }),
+        ({ view }) => useModeTransition({ maximizedView: view, debounceMs: 0 }),
         { initialProps: { view: 'workspace' } }
       );
       rerender({ view: 'pizarra' });
-      advance(200);
+      advance(5);
       expect(result.current.phase).toBe('leaving');
       advance(110);
       expect(result.current.phase).toBe('entering');
@@ -234,7 +234,7 @@ describe('useModeTransition — rapid toggle / cancellation', () => {
     try {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
-        ({ view }) => useModeTransition({ maximizedView: view }),
+        ({ view }) => useModeTransition({ maximizedView: view, debounceMs: 200 }),
         { initialProps: { view: 'workspace' } }
       );
       rerender({ view: 'pizarra' });
@@ -258,7 +258,7 @@ describe('useModeTransition — rapid toggle / cancellation', () => {
     try {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
-        ({ view }) => useModeTransition({ maximizedView: view }),
+        ({ view }) => useModeTransition({ maximizedView: view, debounceMs: 200 }),
         { initialProps: { view: 'workspace' } }
       );
       rerender({ view: 'pizarra' });
@@ -289,12 +289,12 @@ describe('useModeTransition — reduced motion', () => {
     try {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
-        ({ view }) => useModeTransition({ maximizedView: view }),
+        ({ view }) => useModeTransition({ maximizedView: view, debounceMs: 0 }),
         { initialProps: { view: 'workspace' } }
       );
       rerender({ view: 'pizarra' });
-      // After debounce + <=50ms, phase should be idle again.
-      advance(200); // debounce
+      // After debounce=0 + <=50ms, phase should be idle again.
+      advance(5);
       advance(60);
       expect(result.current.phase).toBe('idle');
     } finally {
@@ -353,11 +353,11 @@ describe('useModeTransition — animProps shape', () => {
       const { useModeTransition } = getHook();
       const { result, rerender } = renderHook(
         ({ view, leaveMs, enterMs }) =>
-          useModeTransition({ maximizedView: view, leaveMs, enterMs }),
+          useModeTransition({ maximizedView: view, leaveMs, enterMs, debounceMs: 0 }),
         { initialProps: { view: 'workspace', leaveMs: 50, enterMs: 100 } }
       );
       rerender({ view: 'pizarra', leaveMs: 50, enterMs: 100 });
-      advance(200);
+      advance(5); // past debounce=0
       expect(result.current.phase).toBe('leaving');
       advance(55);
       expect(result.current.phase).toBe('entering');

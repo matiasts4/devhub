@@ -14,15 +14,25 @@ const {
 const mockInvoke = jest.fn();
 const mockListen = jest.fn();
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-  AnimatePresence: ({ children }) => children,
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -271,9 +281,7 @@ function installDom() {
 function getVisibleWorkspaceShell(container) {
   return (
     Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-      (node) =>
-        !String(node.className || '').includes('hidden') &&
-        !String(node.className || '').includes('pointer-events-none')
+      (node) => node.getAttribute('data-ws-active') === 'true'
     ) || null
   );
 }

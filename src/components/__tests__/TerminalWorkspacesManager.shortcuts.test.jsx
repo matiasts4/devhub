@@ -8,16 +8,25 @@ const {
   renderIntoDom,
 } = require('@/test-support/domHarness');
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: (() => {
-      const React = require('react');
-      return React.forwardRef(({ children, ...props }, ref) =>
-        React.createElement('div', { ...props, ref }, children)
-      );
-    })(),
-  },
-}));
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl = (tag) =>
+    React.forwardRef(({ children, ...props }, ref) =>
+      React.createElement(tag, { ...props, ref }, children)
+    );
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
+    },
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -184,9 +193,7 @@ function renderManager(props = {}) {
 function getVisibleWorkspaceShell(container) {
   return (
     Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-      (node) =>
-        !String(node.className || '').includes('hidden') &&
-        !String(node.className || '').includes('pointer-events-none')
+      (node) => node.getAttribute('data-ws-active') === 'true'
     ) || null
   );
 }

@@ -25,14 +25,25 @@ async function flushStartupRestore() {
   await flushEffects();
 }
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -720,9 +731,21 @@ describe('TerminalWorkspacesManager startup restore — restorePolicy wiring', (
                 {
                   id: 'c1',
                   panels: [
-                    { id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode --session oc-auto' },
-                    { id: 'p2', cwd: '/workspace/devhub', initialCommand: 'opencode --session oc-manual' },
-                    { id: 'p3', cwd: '/workspace/devhub', initialCommand: 'opencode --session oc-off' },
+                    {
+                      id: 'p1',
+                      cwd: '/workspace/devhub',
+                      initialCommand: 'opencode --session oc-auto',
+                    },
+                    {
+                      id: 'p2',
+                      cwd: '/workspace/devhub',
+                      initialCommand: 'opencode --session oc-manual',
+                    },
+                    {
+                      id: 'p3',
+                      cwd: '/workspace/devhub',
+                      initialCommand: 'opencode --session oc-off',
+                    },
                   ],
                 },
               ],
@@ -734,16 +757,28 @@ describe('TerminalWorkspacesManager startup restore — restorePolicy wiring', (
       );
       const runs = {};
       runs['oc-auto'] = {
-        panelId: 'p1', opencodeSessionId: 'oc-auto', runId: 'oc-auto', launchId: 'launch-auto',
-        restorePolicy: 'auto', launchedAt: Date.now(),
+        panelId: 'p1',
+        opencodeSessionId: 'oc-auto',
+        runId: 'oc-auto',
+        launchId: 'launch-auto',
+        restorePolicy: 'auto',
+        launchedAt: Date.now(),
       };
       runs['oc-manual'] = {
-        panelId: 'p2', opencodeSessionId: 'oc-manual', runId: 'oc-manual', launchId: 'launch-manual',
-        restorePolicy: 'manual', launchedAt: Date.now(),
+        panelId: 'p2',
+        opencodeSessionId: 'oc-manual',
+        runId: 'oc-manual',
+        launchId: 'launch-manual',
+        restorePolicy: 'manual',
+        launchedAt: Date.now(),
       };
       runs['oc-off'] = {
-        panelId: 'p3', opencodeSessionId: 'oc-off', runId: 'oc-off', launchId: 'launch-off',
-        restorePolicy: 'off', launchedAt: Date.now(),
+        panelId: 'p3',
+        opencodeSessionId: 'oc-off',
+        runId: 'oc-off',
+        launchId: 'launch-off',
+        restorePolicy: 'off',
+        launchedAt: Date.now(),
       };
       window.localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
 
