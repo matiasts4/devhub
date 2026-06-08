@@ -127,6 +127,7 @@ const {
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
   shouldReinitializeTerminalForRenderer,
+  shouldBlockTerminalViewportForWebglFallback,
   resolveTerminalFontFamily,
   isTerminalViewportNearBottom,
   getTerminalViewportScrollOffset,
@@ -601,6 +602,11 @@ describe('buildTerminalViewportDiagnosticPayload()', () => {
       zeroSized: false,
       requestedRendererMode: 'xterm',
       effectiveRendererMode: 'xterm',
+      isActivePanel: false,
+      isVisibleInLayout: true,
+      webglAttached: false,
+      webglFallbackReason: null,
+      pendingWebglRecovery: false,
     });
   });
 
@@ -858,6 +864,27 @@ describe('resolveTerminalRuntimePhase()', () => {
 describe('getTerminalRendererRecoveryActionLabel()', () => {
   test('always exposes a deterministic one-click recovery label back to xterm', () => {
     expect(getTerminalRendererRecoveryActionLabel()).toBe('Volver a xterm');
+  });
+});
+
+describe('shouldBlockTerminalViewportForWebglFallback()', () => {
+  test('keeps the viewport visible for recoverable WebGL context loss', () => {
+    expect(
+      shouldBlockTerminalViewportForWebglFallback({
+        active: true,
+        reason: 'webgl-context-lost',
+      })
+    ).toBe(false);
+  });
+
+  test('blocks the viewport for permanent WebGL failures', () => {
+    expect(
+      shouldBlockTerminalViewportForWebglFallback({
+        active: true,
+        reason: 'webgl-addon-register-failed',
+      })
+    ).toBe(true);
+    expect(shouldBlockTerminalViewportForWebglFallback(null)).toBe(false);
   });
 });
 

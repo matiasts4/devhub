@@ -12,8 +12,10 @@ const LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log
  * diagnostics) and renderer-fallback lines; the full stream still goes
  * to the file for post-mortem. Keeps the host terminal readable.
  */
-function shouldEchoToStdout(msg, extra) {
+function shouldEchoToStdout(tag, msg, extra) {
+  if (typeof tag === 'string' && tag.startsWith('RENDER:')) return true;
   if (typeof msg !== 'string') return false;
+  if (msg.includes('viewport diagnostic')) return true;
   if (msg.includes('xterm-webgl')) return true;
   if (msg.includes('xterm-addon-webgl')) return true;
   if (msg.includes('initializeTerminal')) return true;
@@ -25,6 +27,8 @@ function shouldEchoToStdout(msg, extra) {
   if (extra && extra.requestedRendererMode) return true;
   if (extra && extra.effectiveRendererMode) return true;
   if (extra && extra.webglProbe) return true;
+  if (extra && extra.webglAttached !== undefined) return true;
+  if (extra && extra.pendingWebglRecovery !== undefined) return true;
   return false;
 }
 
@@ -48,7 +52,7 @@ export async function POST(request) {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
     fs.appendFileSync(LOG_FILE, line);
 
-    if (shouldEchoToStdout(msg, extra)) {
+    if (shouldEchoToStdout(tag, msg, extra)) {
       const extraOut = Object.keys(extra).length ? ' ' + JSON.stringify(extra) : '';
 
       console.log(`[devhub-log] [${tag}] ${msg}${extraOut}`);

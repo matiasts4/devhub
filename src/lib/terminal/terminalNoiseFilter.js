@@ -36,6 +36,9 @@
 export const SHELL_TERMINAL_RESPONSE_RE =
   /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
 
+/** Window-size / manipulation replies (CSI Ps ; Ps ; Ps t), e.g. ESC[4;1024;1920t. */
+export const TERMINAL_WINDOW_REPORT_RE = /\x1b\[(?:\d+;)*\d+t/g;
+
 /** DEC mode 1004 focus-in/out events xterm emits via onData when focus changes. */
 export const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
 
@@ -46,7 +49,7 @@ export function stripTerminalFocusReporting(chunk) {
 
 export function stripShellTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
+  return chunk.replace(TERMINAL_WINDOW_REPORT_RE, '').replace(SHELL_TERMINAL_RESPONSE_RE, '');
 }
 
 export function stripTerminalInputNoise(chunk) {
@@ -58,7 +61,12 @@ export function containsTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return false;
   SHELL_TERMINAL_RESPONSE_RE.lastIndex = 0;
   TERMINAL_FOCUS_REPORTING_RE.lastIndex = 0;
-  return SHELL_TERMINAL_RESPONSE_RE.test(chunk) || TERMINAL_FOCUS_REPORTING_RE.test(chunk);
+  TERMINAL_WINDOW_REPORT_RE.lastIndex = 0;
+  return (
+    SHELL_TERMINAL_RESPONSE_RE.test(chunk) ||
+    TERMINAL_FOCUS_REPORTING_RE.test(chunk) ||
+    TERMINAL_WINDOW_REPORT_RE.test(chunk)
+  );
 }
 
 /**

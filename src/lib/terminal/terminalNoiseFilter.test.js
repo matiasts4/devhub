@@ -42,6 +42,11 @@ describe('stripShellTerminalResponseNoise', () => {
     expect(stripShellTerminalResponseNoise('row 1\u001b[1;1R row 2')).toBe('row 1 row 2');
   });
 
+  it('strips window-size report (CSI 4 ; height ; width t) responses', () => {
+    expect(stripShellTerminalResponseNoise('size\u001b[4;1024;1920t ok')).toBe('size ok');
+    expect(stripShellTerminalResponseNoise('\u001b[4;576;1024t')).toBe('');
+  });
+
   it('strips repeated DA cycles from TUI re-probes', () => {
     const triple = '\u001b[?1;2c\u001b[>0;276;0c'.repeat(3);
     expect(stripShellTerminalResponseNoise(triple)).toBe('');
