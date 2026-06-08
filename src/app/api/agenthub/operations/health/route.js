@@ -1031,6 +1031,7 @@ function configureLaunchRole({
   now,
   launchPhase = 'fanout',
   startAfterMs = 0,
+  precomputedWorktree = null,
 }) {
   const roleKey = roleEntry.role_key;
   const agentId = `${launchId}-${roleKey}`;
@@ -1039,23 +1040,31 @@ function configureLaunchRole({
 
   console.log(`[SWARM_LAUNCH] Setting up role: ${roleEntry.role} (${roleKey})`);
 
+  // T1.1: skip the (slow, 3× spawnSync) inner prepare when the caller
+  // has already pre-computed the worktree for this role in parallel.
+  // The precompute happens in launchSwarmLocal before the write queue
+  // opens, so no concurrency hazard.
   let worktreeResult;
-  try {
-    worktreeResult = prepareAgentWorktree({
-      repoRoot: resolvedDraft.workspacePath,
-      launchId,
-      roleKey,
-      baseRef: 'HEAD',
-    });
-  } catch (err) {
-    console.error(`[SWARM_LAUNCH] FAILED to prepare worktree for ${roleKey}: ${err.message}`);
-    return {
-      failure: {
+  if (precomputedWorktree) {
+    worktreeResult = precomputedWorktree;
+  } else {
+    try {
+      worktreeResult = prepareAgentWorktree({
+        repoRoot: resolvedDraft.workspacePath,
+        launchId,
         roleKey,
-        roleLabel: roleEntry.role,
-        error: err?.message || 'No se pudo preparar worktree.',
-      },
-    };
+        baseRef: 'HEAD',
+      });
+    } catch (err) {
+      console.error(`[SWARM_LAUNCH] FAILED to prepare worktree for ${roleKey}: ${err.message}`);
+      return {
+        failure: {
+          roleKey,
+          roleLabel: roleEntry.role,
+          error: err?.message || 'No se pudo preparar worktree.',
+        },
+      };
+    }
   }
 
   const { worktreePath, branchName, observedHead } = worktreeResult;
@@ -1240,6 +1249,33 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
     `[SWARM_LAUNCH] Roles: ${preview.rolePrograms?.map((r) => r.role).join(', ') || 'none'}`
   );
 
+  // T1.1: pre-compute all role worktrees in parallel BEFORE the write
+  // queue opens. The WIP code path called prepareAgentWorktree serially
+  // inside each configureLaunchRole call (5 × 1.3s ≈ 6.5s of git work).
+  // Fanning out under a single Promise.all caps the wall-clock at the
+  // slowest role (~1.3s). The precomputed map is then injected back into
+  // each configureLaunchRole call so it can skip its inner prepare.
+  // The repoRoot comes from the resolved draft; we fall back to cwd to
+  // preserve the prior semantics when the draft didn't set a workspace.
+  const roleEntriesForPrecompute = Array.isArray(preview.rolePrograms) ? preview.rolePrograms : [];
+  const repoRootForPrecompute = resolvedDraft.workspacePath ?? process.cwd();
+  const precomputedWorktrees = new Map(
+    await Promise.all(
+      roleEntriesForPrecompute.map(async (entry) => {
+        if (!entry || !entry.role_key) return null;
+        const result = await Promise.resolve().then(() =>
+          prepareAgentWorktree({
+            repoRoot: repoRootForPrecompute,
+            launchId,
+            roleKey: entry.role_key,
+            baseRef: 'HEAD',
+          })
+        );
+        return [entry.role_key, result];
+      })
+    ).then((entries) => entries.filter(Boolean))
+  );
+
   // Writes: use write queue to serialize all critical DB mutations
   const result = await withDbWriteQueue(
     (writeDb) => {
@@ -1301,6 +1337,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           now,
           launchPhase: 'bootstrap',
           startAfterMs: 0,
+          precomputedWorktree: precomputedWorktrees.get(directorRoleEntry.role_key) ?? null,
         });
 
         if (directorSetup?.failure) {
@@ -1365,6 +1402,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           now,
           launchPhase: 'fanout',
           startAfterMs: shouldDelayWorkerFanout ? DIRECTOR_FIRST_FANOUT_DELAY_MS : 0,
+          precomputedWorktree: precomputedWorktrees.get(roleEntry.role_key) ?? null,
         });
 
         if (workerSetup?.failure) {
