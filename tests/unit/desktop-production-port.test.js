@@ -61,5 +61,7 @@ describe('desktop production port configuration', () => {
     expect(wrapperSource).toContain(
       'standalone/node_modules/@swc/helpers/cjs/_interop_require_default.cjs'
     );
+    expect(wrapperSource).toContain('standalone/.next/node_modules');
+    expect(wrapperSource).toContain('better-sqlite3-*/build/Release/better_sqlite3.node');
   });
 });
