@@ -6,7 +6,7 @@ export const TERMINAL_WORKSPACE_SHORTCUTS = {
   nextWorkspace: 'Ctrl+Alt+ArrowRight',
 };
 
-function isEditableElement(element) {
+export function isEditableElement(element) {
   if (!element || typeof element !== 'object') return false;
 
   const tagName = String(element.tagName || '').toLowerCase();

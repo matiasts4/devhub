@@ -23,6 +23,10 @@ import {
 } from '@/lib/terminal/nativeVteBridge';
 import WebglErrorSection from './terminal/components/WebglErrorSection';
 import {
+  readClipboardText,
+  terminalClipboardEventBelongsToPanel,
+} from '@/lib/terminal/terminalClipboard';
+import {
   getTerminalRendererFallbackCopy,
   getTerminalRendererOptionLabel,
   getTerminalRendererRuntimeCapabilities,
@@ -2924,50 +2928,41 @@ export default function TerminalTTY({
     return copyTextToClipboard(text);
   }, [contextMenu?.text, copyTextToClipboard]);
 
-  const handlePasteIntoTerminal = useCallback(async () => {
-    cliLog('[paste]', 'handlePasteIntoTerminal called');
-    if (shouldUseNativeRenderer) {
-      // Read clipboard content in JS (not GTK) and send it directly to VTE via paste_text.
-      // This bypasses GTK clipboard semantics entirely, ensuring Ctrl+Shift+V and
-      // Shift+Insert paste the exact same content as Ctrl+C/Ctrl+V.
-      const clipboardApi = getClipboardApi();
-      const text = clipboardApi?.readText ? await clipboardApi.readText() : null;
-      cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text?.length ?? 0}`);
-      await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-        handleNativeLeaseCommandError
-      );
-      const pastePayload = { panelId: id };
-      if (text) {
-        pastePayload.text = text;
+  const handlePasteIntoTerminal = useCallback(
+    async ({ clipboardEvent } = {}) => {
+      cliLog('[paste]', 'handlePasteIntoTerminal called');
+      const text = await readClipboardText({ clipboardEvent });
+      if (!text) return false;
+
+      if (shouldUseNativeRenderer) {
+        cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text.length}`);
+        await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
+          handleNativeLeaseCommandError
+        );
+        const result = await pasteNativeVtePanel({ panelId: id, text });
+        cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
+        return Boolean(result?.supported);
       }
-      const result = await pasteNativeVtePanel(pastePayload);
-      cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
-      return Boolean(result?.supported);
-    }
 
-    const clipboardApi = getClipboardApi();
-    if (!clipboardApi?.readText) return false;
+      if (
+        sendTerminalPasteInput({
+          socket: wsRef.current,
+          transport: transportRef.current,
+          text,
+        })
+      ) {
+        return true;
+      }
 
-    const text = await clipboardApi.readText();
-    if (!text) return false;
+      if (typeof termRef.current?.paste === 'function') {
+        termRef.current.paste(text);
+        return true;
+      }
 
-    if (
-      sendTerminalPasteInput({
-        socket: wsRef.current,
-        transport: transportRef.current,
-        text,
-      })
-    ) {
-      return true;
-    }
-
-    if (typeof termRef.current?.paste === 'function') {
-      termRef.current.paste(text);
-      return true;
-    }
-
-    return false;
-  }, [handleNativeLeaseCommandError, id, shouldUseNativeRenderer]);
+      return false;
+    },
+    [handleNativeLeaseCommandError, id, shouldUseNativeRenderer]
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -3556,7 +3551,7 @@ export default function TerminalTTY({
     (e) => {
       e.preventDefault();
       e.stopPropagation();
-      void handlePasteIntoTerminal().catch(() => false);
+      void handlePasteIntoTerminal({ clipboardEvent: e }).catch(() => false);
     },
     [handlePasteIntoTerminal]
   );
@@ -3566,17 +3561,17 @@ export default function TerminalTTY({
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
-      const belongsToTerminal = Boolean(
-        rootElement &&
-        ((activeElement && rootElement.contains(activeElement)) ||
-          (eventTarget && rootElement.contains(eventTarget)) ||
-          isActivePanel)
-      );
+      const belongsToTerminal = terminalClipboardEventBelongsToPanel({
+        rootElement,
+        activeElement,
+        eventTarget,
+        isActivePanel,
+      });
       if (!belongsToTerminal) return;
 
       e.preventDefault();
       e.stopPropagation();
-      void handlePasteIntoTerminal().catch(() => false);
+      void handlePasteIntoTerminal({ clipboardEvent: e }).catch(() => false);
     };
 
     document.addEventListener('paste', handler, true);
@@ -3668,12 +3663,12 @@ export default function TerminalTTY({
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
-      const belongsToTerminal = Boolean(
-        rootElement &&
-        ((activeElement && rootElement.contains(activeElement)) ||
-          (eventTarget && rootElement.contains(eventTarget)) ||
-          isActivePanel)
-      );
+      const belongsToTerminal = terminalClipboardEventBelongsToPanel({
+        rootElement,
+        activeElement,
+        eventTarget,
+        isActivePanel,
+      });
 
       // If we use the native VTE renderer, copy is handled natively by VTE/GTK, not JavaScript.
       if (action === 'copy' && shouldUseNativeRenderer) {

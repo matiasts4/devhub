@@ -14,6 +14,7 @@ mod native_browser;
 mod native_vte;
 mod native_window_host;
 mod alacritty_terminal_host;
+mod system_clipboard;
 
 use native_browser::{
     native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
@@ -25,6 +26,7 @@ use native_vte::{
     native_vte_close, native_vte_focus, native_vte_open, native_vte_paste, native_vte_probe,
     native_vte_raise, native_vte_resize, native_vte_set_visibility, NativeVteState,
 };
+use system_clipboard::read_system_clipboard_text;
 
 const NEXTJS_READY_POLL_MS: u64 = 500;
 const NEXTJS_READY_STARTUP_ATTEMPTS: usize = 240;
@@ -856,6 +858,7 @@ pub fn run() {
             native_vte_resize,
             native_vte_set_visibility,
             native_vte_close,
+            read_system_clipboard_text,
             dh_dispatch_action,
         ])
         .setup(|app| {
