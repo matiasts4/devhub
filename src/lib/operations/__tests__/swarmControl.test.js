@@ -1669,11 +1669,11 @@ describe('composeControlRoomSnapshot', () => {
         architect: 'opencode',
       },
       roleModels: {
-        director: 'minimax-coding-plan/MiniMax-M2.7',
-        coder: 'minimax-coding-plan/MiniMax-M2.7',
-        auditor: 'minimax-coding-plan/MiniMax-M2.7',
-        devops: 'minimax-coding-plan/MiniMax-M2.7',
-        architect: 'minimax-coding-plan/MiniMax-M2.7',
+        director: 'minimax-coding-plan/MiniMax-M3',
+        coder: 'minimax-coding-plan/MiniMax-M3',
+        auditor: 'minimax-coding-plan/MiniMax-M3',
+        devops: 'minimax-coding-plan/MiniMax-M3',
+        architect: 'minimax-coding-plan/MiniMax-M3',
       },
       sddEnabled: true,
       sddOptions: {
@@ -1802,7 +1802,8 @@ describe('buildRoleAgentProfile', () => {
 describe('buildSwarmLaunchModels', () => {
   test('returns model catalog with expected models', () => {
     const models = buildSwarmLaunchModels();
-    expect(models).toHaveLength(5);
+    expect(models).toHaveLength(6);
+    expect(models.map((m) => m.id)).toContain('minimax-coding-plan/MiniMax-M3');
     expect(models.map((m) => m.id)).toContain('minimax-coding-plan/MiniMax-M2.7');
     expect(models.map((m) => m.id)).toContain('opencode-go/deepseek-v4-flash');
     expect(models.map((m) => m.id)).toContain('opencode-go/qwen3.6-plus');
@@ -1824,6 +1825,6 @@ describe('buildSwarmLaunchModels', () => {
   test('catalog includes models', () => {
     const catalog = selectSwarmLaunchCatalog({});
     expect(catalog.models).toBeDefined();
-    expect(catalog.models).toHaveLength(5);
+    expect(catalog.models).toHaveLength(6);
   });
 });

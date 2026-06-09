@@ -984,7 +984,8 @@ code {
   overflow-y: auto !important;
   overflow-x: hidden !important;
   background-color: var(--surface-app) !important;
-  scrollbar-gutter: stable;
+  /* auto avoids reserving an empty gutter band when the scrollbar is not visible */
+  scrollbar-gutter: auto;
 }
 
 .devhub-xterm-container {

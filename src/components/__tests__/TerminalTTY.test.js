@@ -111,6 +111,7 @@ const {
   getNativeTerminalBounds,
   createTerminalViewportDiagnosticLogger,
   fitTerminalViewport,
+  proposeTerminalViewportDimensions,
   getTerminalRendererRecoveryActionLabel,
   getTerminalRendererStatusCopy,
   getXtermContainerAnimProps,
@@ -384,6 +385,48 @@ describe('refreshTerminalViewport()', () => {
 
     expect(refreshTerminalViewport(term)).toBe(false);
     expect(term.refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('proposeTerminalViewportDimensions()', () => {
+  function makeTerm(cell = { width: 10, height: 20 }) {
+    return {
+      _core: {
+        viewport: { scrollBarWidth: 0 },
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell } },
+        },
+      },
+    };
+  }
+
+  test('adds one extra row when vertical slack is between ~28% and one cell', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 509 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 80, rows: 26 });
+  });
+
+  test('keeps floor rows when slack is smaller than the extra-row threshold', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 504 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 80, rows: 25 });
   });
 });
 

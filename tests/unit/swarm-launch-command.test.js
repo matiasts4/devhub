@@ -11,7 +11,7 @@ describe('swarm launch inner command', () => {
   test('uses bare opencode when disableTmuxWrap is true (no nested tmux attach)', () => {
     const inner = buildAgentLaunchCommand('opencode', 'mission prompt', {
       opencodeAgent: 'swarm-director',
-      modelId: 'minimax-coding-plan/MiniMax-M2.7',
+      modelId: 'minimax-coding-plan/MiniMax-M3',
       tmuxSessionName: 'devhub-swarm-launch-abc-director',
       disableTmuxWrap: true,
       opencodePure: true,
@@ -19,7 +19,7 @@ describe('swarm launch inner command', () => {
     });
 
     expect(inner).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
-    expect(inner).toContain('--model minimax-coding-plan/MiniMax-M2.7');
+    expect(inner).toContain('--model minimax-coding-plan/MiniMax-M3');
     expect(inner).not.toContain('--prompt');
     expect(inner).not.toContain('tmux new-session');
     expect(inner).not.toContain('tmux attach-session');
@@ -28,7 +28,7 @@ describe('swarm launch inner command', () => {
   test('without disableTmuxWrap still wraps in tmux (legacy path)', () => {
     const inner = buildAgentLaunchCommand('opencode', 'mission prompt', {
       opencodeAgent: 'swarm-coder',
-      modelId: 'minimax-coding-plan/MiniMax-M2.7',
+      modelId: 'minimax-coding-plan/MiniMax-M3',
       tmuxSessionName: 'devhub-swarm-launch-abc-coder',
       interactiveBootstrapPrompt: true,
     });

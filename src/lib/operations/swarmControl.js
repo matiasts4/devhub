@@ -1705,21 +1705,21 @@ export function createSwarmLaunchDraft({
     (draft.sddEnabled === undefined && process.env.SDD_ENABLED !== 'false');
   const sddPhase = draft.phase || null;
 
-  const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M2.7';
+  const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M3';
   const SWARM_ROLE_DEFAULT_MODELS = Object.freeze({
-    director: 'minimax-coding-plan/MiniMax-M2.7',
-    coder: 'minimax-coding-plan/MiniMax-M2.7',
-    builder: 'minimax-coding-plan/MiniMax-M2.7',
-    qa: 'minimax-coding-plan/MiniMax-M2.7',
-    auditor: 'minimax-coding-plan/MiniMax-M2.7',
-    reviewer: 'minimax-coding-plan/MiniMax-M2.7',
-    devops: 'minimax-coding-plan/MiniMax-M2.7',
-    recovery_ops: 'minimax-coding-plan/MiniMax-M2.7',
-    architect: 'minimax-coding-plan/MiniMax-M2.7',
-    scout: 'minimax-coding-plan/MiniMax-M2.7',
-    analyst: 'minimax-coding-plan/MiniMax-M2.7',
-    evidence: 'minimax-coding-plan/MiniMax-M2.7',
-    zed: 'minimax-coding-plan/MiniMax-M2.7',
+    director: 'minimax-coding-plan/MiniMax-M3',
+    coder: 'minimax-coding-plan/MiniMax-M3',
+    builder: 'minimax-coding-plan/MiniMax-M3',
+    qa: 'minimax-coding-plan/MiniMax-M3',
+    auditor: 'minimax-coding-plan/MiniMax-M3',
+    reviewer: 'minimax-coding-plan/MiniMax-M3',
+    devops: 'minimax-coding-plan/MiniMax-M3',
+    recovery_ops: 'minimax-coding-plan/MiniMax-M3',
+    architect: 'minimax-coding-plan/MiniMax-M3',
+    scout: 'minimax-coding-plan/MiniMax-M3',
+    analyst: 'minimax-coding-plan/MiniMax-M3',
+    evidence: 'minimax-coding-plan/MiniMax-M3',
+    zed: 'minimax-coding-plan/MiniMax-M3',
   });
   const defaultRoleModels = topology?.roles
     ? topology.roles.reduce((acc, role) => {
@@ -1880,9 +1880,9 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
 export function buildSwarmLaunchModels() {
   return [
     {
-      id: 'minimax-coding-plan/MiniMax-M2.7',
-      label: 'MiniMax M2.7',
-      summary: 'Modelo por token plan — óptimo para swarm roles con contratos SDD.',
+      id: 'minimax-coding-plan/MiniMax-M3',
+      label: 'MiniMax M3',
+      summary: 'Modelo por token plan — mismo stack que SDD/asistente; recomendado para swarm.',
       recommended_for: [
         'director',
         'coder',
@@ -1897,6 +1897,12 @@ export function buildSwarmLaunchModels() {
         'analyst',
         'evidence',
       ],
+    },
+    {
+      id: 'minimax-coding-plan/MiniMax-M2.7',
+      label: 'MiniMax M2.7',
+      summary: 'Alternativa M2.7 — útil si M3 no está disponible en el plan.',
+      recommended_for: [],
     },
     {
       id: 'opencode-go/deepseek-v4-flash',

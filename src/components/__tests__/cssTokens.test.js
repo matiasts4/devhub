@@ -79,9 +79,9 @@ describe('CSS Tokens — globals.css', () => {
     );
   });
 
-  test('xterm viewport reserves stable scrollbar gutter to avoid offset artifacts', () => {
+  test('xterm viewport uses auto scrollbar gutter to avoid empty lateral bands', () => {
     expect(css).toMatch(
-      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*scrollbar-gutter:\s*stable;/
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*scrollbar-gutter:\s*auto;/
     );
   });
 

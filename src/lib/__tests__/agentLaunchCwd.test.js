@@ -98,13 +98,13 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     test('buildAgentLaunchCommand can skip tmux wrapping when the terminal is already tmux-backed', () => {
       const result = buildAgentLaunchCommand('opencode', 'do work', {
         opencodeAgent: 'swarm-director',
-        modelId: 'minimax-coding-plan/MiniMax-M2.7',
+        modelId: 'minimax-coding-plan/MiniMax-M3',
         tmuxSessionName: 'sess-test',
         disableTmuxWrap: true,
       });
 
       expect(result).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
-      expect(result).toContain('--model minimax-coding-plan/MiniMax-M2.7');
+      expect(result).toContain('--model minimax-coding-plan/MiniMax-M3');
       expect(result).not.toContain('tmux new-session');
       expect(result).not.toContain('tmux attach-session');
     });
@@ -112,12 +112,12 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     test('buildAgentLaunchCommand can start interactive OpenCode without --prompt for post-launch bootstrap', () => {
       const result = buildAgentLaunchCommand('opencode', 'do work', {
         opencodeAgent: 'swarm-director',
-        modelId: 'minimax-coding-plan/MiniMax-M2.7',
+        modelId: 'minimax-coding-plan/MiniMax-M3',
         interactiveBootstrapPrompt: true,
       });
 
       expect(result).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
-      expect(result).toContain('--model minimax-coding-plan/MiniMax-M2.7');
+      expect(result).toContain('--model minimax-coding-plan/MiniMax-M3');
       expect(result).not.toContain('--prompt');
     });
 
@@ -228,7 +228,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
       const result = buildAgentLaunchWrapper({
         ...baseParams,
         innerCommand:
-          '/home/matias/.opencode/bin/opencode --agent swarm-director --model minimax-coding-plan/MiniMax-M2.7',
+          '/home/matias/.opencode/bin/opencode --agent swarm-director --model minimax-coding-plan/MiniMax-M3',
         bootstrapPrompt: 'Rol: Director\nMisión: prueba',
       });
 

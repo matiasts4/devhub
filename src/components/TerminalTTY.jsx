@@ -183,6 +183,46 @@ function neutralizeWebglAddonForDisposal(addon) {
   }
 }
 
+const TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MIN = 0.28;
+const TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MAX = 0.98;
+
+export function proposeTerminalViewportDimensions({ container, fitAddon, term }) {
+  if (!container || !fitAddon || !term) return null;
+  if (!isTerminalRendererReady(term)) return null;
+
+  const rect = container.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const cell = term?._core?._renderService?.dimensions?.css?.cell;
+  const cellH = Number(cell?.height ?? 0);
+  const cellW = Number(cell?.width ?? 0);
+  if (cellH <= 0 || cellW <= 0) {
+    const fallback =
+      typeof fitAddon.proposeDimensions === 'function' ? fitAddon.proposeDimensions() : null;
+    if (!fallback || !Number.isFinite(fallback.cols) || !Number.isFinite(fallback.rows)) {
+      return null;
+    }
+    return {
+      cols: Math.max(2, Math.floor(fallback.cols)),
+      rows: Math.max(1, Math.floor(fallback.rows)),
+    };
+  }
+
+  const scrollBarW = Number(term?._core?.viewport?.scrollBarWidth ?? 0);
+  const availW = Math.max(0, rect.width - scrollBarW);
+  const availH = rect.height;
+  const cols = Math.max(2, Math.floor(availW / cellW));
+  const baseRows = Math.max(1, Math.floor(availH / cellH));
+  const slackH = availH - baseRows * cellH;
+  const rows =
+    slackH >= cellH * TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MIN &&
+    slackH < cellH * TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MAX
+      ? baseRows + 1
+      : baseRows;
+
+  return { cols, rows };
+}
+
 export function fitTerminalViewport({
   container,
   fitAddon,
@@ -199,7 +239,17 @@ export function fitTerminalViewport({
   if (rect.width <= 0 || rect.height <= 0) return false;
 
   try {
-    fitAddon.fit();
+    const dims = proposeTerminalViewportDimensions({ container, fitAddon, term });
+    if (dims && typeof term.resize === 'function') {
+      if (term.cols !== dims.cols || term.rows !== dims.rows) {
+        term._core?._renderService?.clear?.();
+        term.resize(dims.cols, dims.rows);
+      }
+    } else if (dims) {
+      fitAddon.fit();
+    } else {
+      fitAddon.fit();
+    }
   } catch (error) {
     if (isStaleXtermRendererError(error)) return false;
     throw error;
@@ -1430,6 +1480,12 @@ export default function TerminalTTY({
     if (!viewportFitConfirmedRef.current) return;
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
+    // Swarm panels attach to tmux on PTY spawn (ttyServer). The materialized launch
+    // wrapper runs only on a fresh swarm launch, not when reopening the workspace.
+    if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper !== true) {
+      return;
+    }
+
     const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
     console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
     if (transportRef.current === 'raw') {
@@ -1438,7 +1494,12 @@ export default function TerminalTTY({
       wsRef.current.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
     }
     hasSentInitialCommand.current = true;
-  }, [id, initialCommand]);
+    if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper === true) {
+      window.dispatchEvent(
+        new CustomEvent('devhub:swarm-launch-wrapper-sent', { detail: { panelId: id } })
+      );
+    }
+  }, [id, initialCommand, swarmContext]);
 
   const confirmViewportFit = useCallback(
     (cols, rows) => {

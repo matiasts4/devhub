@@ -579,7 +579,7 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         innerCommand:
-          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M2.7',
+          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M3',
         bootstrapPrompt: 'Rol: Coder\nMisión: validar launch',
       });
 
@@ -603,7 +603,7 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         innerCommand:
-          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M2.7',
+          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M3',
         bootstrapPrompt:
           'Rol: Coder\nMisión: validar launch\n\n=== Worker: identidad y reporte ===\n- Reporta al Director.',
       });
