@@ -188,37 +188,31 @@ describe('T2.2 — planPromptChunks (swarm-launch-hardening)', () => {
 });
 
 describe('T2.2 — buildChunkedBootstrapPromptBlock', () => {
-  it('T2.2 emits N heredoc chunks for a 24KB prompt (one per chunk)', () => {
+  it('T2.2 emits a single heredoc for large prompts (one load-buffer)', () => {
     const block = buildChunkedBootstrapPromptBlock(makePrompt(24));
 
-    // 12 chunks → 12 distinct heredoc tags.
-    for (let i = 0; i < 12; i += 1) {
-      expect(block).toContain(`DEVHUB_BOOTSTRAP_CHUNK_${i}`);
-    }
-    // And the load-buffer invocation per chunk.
+    expect(block).toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
+    expect(block).not.toContain('DEVHUB_BOOTSTRAP_CHUNK_0');
     const loadBufferCount = (block.match(/tmux load-buffer -/g) || []).length;
-    expect(loadBufferCount).toBe(12);
+    expect(loadBufferCount).toBe(1);
+    expect(block).toContain('12 planned chunk(s)');
   });
 
-  it('T2.2 final chunk commits the paste-buffer (tmux paste-buffer -d)', () => {
+  it('T2.2 commits with a single paste-buffer -d and Enter', () => {
     const block = buildChunkedBootstrapPromptBlock(makePrompt(24));
 
-    // The final-commit line must be present and use the `-d` flag
-    // (delete-buffer-after-paste) — that's the contract.
     expect(block).toMatch(/tmux paste-buffer -d -t "\$\{_tmux_target\}"/);
-    // And the post-paste C-m Enter.
     expect(block).toMatch(/tmux send-keys -t "\$\{_tmux_target\}" C-m/);
+    // One commit line (primary + inline TMUX= fallback), not per-chunk pastes.
+    const pasteCount = (block.match(/^tmux paste-buffer -d/gm) || []).length;
+    expect(pasteCount).toBe(1);
   });
 
-  it('T2.2 emits fractional-second `sleep` between chunks for 60fps pacing', () => {
+  it('T2.2 does not pace with fractional sleeps (single-shot paste)', () => {
     const block = buildChunkedBootstrapPromptBlock(makePrompt(24), { intervalMs: 16 });
 
-    // 11 sleeps between 12 chunks (no sleep before the first).
     const sleepCount = (block.match(/^sleep /gm) || []).length;
-    expect(sleepCount).toBe(11);
-
-    // The default 16ms → 0.016s, formatted to 3 decimals.
-    expect(block).toContain('sleep 0.016');
+    expect(sleepCount).toBe(0);
   });
 
   it('T2.2 emits an empty-prompt skip comment for empty input (no tmux calls)', () => {

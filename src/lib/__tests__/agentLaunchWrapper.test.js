@@ -162,6 +162,19 @@ describe('agentLaunchWrapper', () => {
       const result = buildAutoRestartLoopCommand({ innerCommand: 'opencode' });
       expect(result).toContain('_devhub_RESTART_COUNT=$((_devhub_RESTART_COUNT + 1))');
     });
+
+    test('deferBootstrap runs bootstrap in background while agent owns foreground PTY', () => {
+      const result = buildAutoRestartLoopCommand({
+        innerCommand: 'opencode --agent swarm-coder',
+        deferBootstrap: true,
+        tuiGraceSeconds: 10,
+      });
+      expect(result).toMatch(/\(\s*\n\s*sleep 10[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) &/);
+      expect(result).toMatch(
+        /_devhub_run_inner\(\) \{[\s\S]*\) &[\s\S]*opencode --agent swarm-coder/
+      );
+      expect(result).not.toContain('_devhub_agent_pid=$!');
+    });
   });
 
   describe('buildDirectorTmuxInjection (T-006 shim — HMAC removed)', () => {
@@ -551,19 +564,21 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toMatch(/sleep 2/);
     });
 
-    test('wrapper uses chunked bootstrap emission (T2.2)', () => {
+    test('wrapper uses single-shot bootstrap paste (T2.2)', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
-      expect(result).toContain('DEVHUB_BOOTSTRAP_CHUNK_0');
+      expect(result).toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
       expect(result).toMatch(/tmux has-session -t "\$\{_tmux_session\}"/);
       expect(result).toMatch(/tmux paste-buffer -d -t "\$\{_tmux_target\}"/);
-      expect(result).not.toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
+      expect(result).not.toContain('DEVHUB_BOOTSTRAP_CHUNK_0');
     });
 
-    test('wrapper waits for viewport-ready marker before chunked bootstrap paste', () => {
+    test('wrapper waits for viewport-ready marker before bootstrap paste', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
       expect(result).toContain('_devhub_wait_viewport_ready');
       expect(result).toContain('/tmp/devhub-viewport-ready-${_tmux_session}');
-      expect(result).toMatch(/_devhub_wait_viewport_ready[\s\S]*DEVHUB_BOOTSTRAP_CHUNK_0/);
+      expect(result).toContain('_min_cols=80');
+      expect(result).toContain('_min_rows=20');
+      expect(result).toMatch(/_devhub_wait_viewport_ready[\s\S]*DEVHUB_BOOTSTRAP_PROMPT/);
     });
 
     test('bare inner command defers bootstrap until after the agent starts', () => {
@@ -576,8 +591,10 @@ describe('agentLaunchWrapper', () => {
 
       expect(result).not.toMatch(/^sleep 10$/m);
       expect(result).not.toContain('(_devhub_bootstrap_prompt) &');
-      expect(result).toContain('_devhub_agent_pid=$!');
-      expect(result).toMatch(/wait \$_devhub_agent_pid/);
+      expect(result).toMatch(/\(\s*\n\s*sleep 10[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) &/);
+      expect(result).toMatch(
+        /_devhub_run_inner\(\) \{[\s\S]*\) &[\s\S]*opencode --agent swarm-coder/
+      );
       expect(result).toMatch(/_devhub_bootstrap_prompt/);
     });
 

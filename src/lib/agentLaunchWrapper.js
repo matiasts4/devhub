@@ -448,25 +448,32 @@ export function readLegacyBootstrapLock({ lockDir, missionId, role }) {
   return { found: true, pid, deprecated: true, path: file };
 }
 
-const BOOTSTRAP_HEREDOC_DELIMITER_RE = /^DEVHUB_BOOTSTRAP_CHUNK_\d+$/;
+const BOOTSTRAP_HEREDOC_DELIMITER_RE = /^DEVHUB_BOOTSTRAP_(?:PROMPT|TRANSCRIPT|CHUNK_\d+)$/;
 
 /**
  * Wait until the DevHub terminal client writes /tmp/devhub-viewport-ready-<tmux>.
  * Bootstrap prompt injection must not run while the PTY still has the spawn
  * default size (120×32) or tmux paste-buffer fragments escape noise into the TUI.
  */
+export const BOOTSTRAP_MIN_VIEWPORT_COLS = 80;
+export const BOOTSTRAP_MIN_VIEWPORT_ROWS = 20;
+
 export function buildViewportReadyWaitBlock({
   pollIntervalSeconds = 0.5,
   maxWaitSeconds = 45,
+  minCols = BOOTSTRAP_MIN_VIEWPORT_COLS,
+  minRows = BOOTSTRAP_MIN_VIEWPORT_ROWS,
 } = {}) {
   const maxAttempts = Math.max(1, Math.ceil(maxWaitSeconds / pollIntervalSeconds));
   const sleepArg = Number(pollIntervalSeconds).toFixed(1);
   return [
-    '# Wait for DevHub UI to fit the tmux pane before chunked prompt injection.',
+    '# Wait for DevHub UI to fit the tmux pane before prompt injection.',
     '_devhub_wait_viewport_ready() {',
     '  local _ready_file="/tmp/devhub-viewport-ready-${_tmux_session}"',
     `  local _attempt=0`,
     `  local _max_attempts=${maxAttempts}`,
+    `  local _min_cols=${Math.max(1, Math.floor(minCols))}`,
+    `  local _min_rows=${Math.max(1, Math.floor(minRows))}`,
     '  while [ $_attempt -lt $_max_attempts ]; do',
     '    if [ -f "$_ready_file" ]; then',
     `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Viewport ready marker found: $_ready_file"`,
@@ -474,15 +481,16 @@ export function buildViewportReadyWaitBlock({
     '      local _cols _rows',
     '      _cols=$(sed -n \'s/.*"cols":\\([0-9][0-9]*\\).*/\\1/p\' "$_ready_file" 2>/dev/null | head -1)',
     '      _rows=$(sed -n \'s/.*"rows":\\([0-9][0-9]*\\).*/\\1/p\' "$_ready_file" 2>/dev/null | head -1)',
-    '      if [ -n "${_cols:-}" ] && [ -n "${_rows:-}" ] && [ "$_cols" -gt 0 ] && [ "$_rows" -gt 0 ]; then',
+    '      if [ -n "${_cols:-}" ] && [ -n "${_rows:-}" ] && [ "$_cols" -ge "$_min_cols" ] && [ "$_rows" -ge "$_min_rows" ]; then',
     `        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Syncing tmux pane to client viewport \${_cols}x\${_rows}"`,
     '        tmux resize-pane -t "${_tmux_session}:0" -x "$_cols" -y "$_rows" 2>/dev/null || \\',
     '          tmux resize-pane -t "${_tmux_session}" -x "$_cols" -y "$_rows" 2>/dev/null || true',
     '        sleep 0.15',
+    '        tmux refresh-client -t "${_tmux_session}" 2>/dev/null || true',
+    '        sleep 0.2',
+    '        return 0',
     '      fi',
-    '      tmux refresh-client -t "${_tmux_session}" 2>/dev/null || true',
-    '      sleep 0.2',
-    '      return 0',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Viewport marker present but too small (\${_cols:-0}x\${_rows:-0}); waiting for >= \${_min_cols}x\${_min_rows}"`,
     '    fi',
     `    sleep ${sleepArg}`,
     '    _attempt=$((_attempt + 1))',
@@ -911,13 +919,13 @@ export function buildAutoRestartLoopCommand({
 } = {}) {
   const runInnerBody = deferBootstrap
     ? [
-        `(${innerCommand}) &`,
-        '_devhub_agent_pid=$!',
-        `sleep ${Math.max(0, Math.floor(tuiGraceSeconds))}`,
-        'if declare -F _devhub_bootstrap_prompt >/dev/null 2>&1; then',
-        '  _devhub_bootstrap_prompt',
-        'fi',
-        'wait $_devhub_agent_pid',
+        '(',
+        `  sleep ${Math.max(0, Math.floor(tuiGraceSeconds))}`,
+        '  if declare -F _devhub_bootstrap_prompt >/dev/null 2>&1; then',
+        '    _devhub_bootstrap_prompt',
+        '  fi',
+        ') &',
+        innerCommand,
       ].join('\n  ')
     : innerCommand;
 
@@ -1411,46 +1419,22 @@ export function buildChunkedBootstrapPromptBlock(prompt, options = {}) {
   }
 
   const plan = planPromptChunks(text, options);
-  const intervalSeconds = Math.max(
-    0,
-    (options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT) / 1000
-  );
+  const heredocTag = 'DEVHUB_BOOTSTRAP_PROMPT';
 
-  const lines = [
-    '# T2.2 — chunked bootstrap prompt emission (R-BUF-2).',
-    `# ${plan.chunkCount} chunks × ≤${options.chunkBytes ?? T2_2_PROMPT_CHUNK_BYTES_DEFAULT}B at ${options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT}ms pacing.`,
-    'local _chunk_idx=0',
-  ];
-
-  plan.chunks.forEach((chunk) => {
-    const heredocTag = `DEVHUB_BOOTSTRAP_CHUNK_${chunk.index}`;
-    if (chunk.delayMsBefore > 0) {
-      // bash `sleep` accepts fractional seconds on bash 4+ (default on
-      // modern Linux/macOS). 16ms → sleep 0.016. For very small intervals
-      // we still emit a positive sleep so the PTY has time to drain.
-      lines.push(`sleep ${intervalSeconds.toFixed(3)}`);
-    }
-    lines.push(
-      `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunk ${chunk.index + 1}/${plan.chunkCount} (${chunk.bytes}B)"`,
-      `tmux load-buffer - <<'${heredocTag}'`,
-      chunk.text,
-      heredocTag,
-      `tmux paste-buffer -t "\${_tmux_target}" >/dev/null 2>&1 || TMUX= tmux paste-buffer -t "\${_tmux_target}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed on chunk ${chunk.index + 1}"`,
-      `tmux send-keys -t "\${_tmux_target}" '' >/dev/null 2>&1 || true`,
-      '_chunk_idx=$((_chunk_idx + 1))'
-    );
-  });
-
-  // Final commit. The `-d` flag tells `paste-buffer` to delete the buffer
-  // after pasting, freeing tmux's per-pane buffer slot.
-  lines.push(
-    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunked emission complete (${plan.chunkCount} chunks, ${plan.totalBytes}B total)"`,
-    `tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || TMUX= tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: final paste-buffer -d failed"`,
+  return [
+    '# T2.2 — single-shot bootstrap prompt paste into the OpenCode TUI.',
+    `# ${plan.chunkCount} planned chunk(s), ${plan.totalBytes}B total.`,
+    '# Load the full prompt once, paste once, then submit. Avoids duplicate',
+    '# paste-buffer calls and keeps keyboard input on the foreground TUI.',
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunk 1/${plan.chunkCount} (${plan.totalBytes}B)"`,
+    `tmux load-buffer - <<'${heredocTag}'`,
+    text,
+    heredocTag,
+    `tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || TMUX= tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed"`,
     `tmux send-keys -t "\${_tmux_target}" C-m >/dev/null 2>&1 || TMUX= tmux send-keys -t "\${_tmux_target}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys C-m failed"`,
-    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete (chunked)."`
-  );
-
-  return lines.join('\n');
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunked emission complete (${plan.chunkCount} chunks, ${plan.totalBytes}B total)"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete (chunked)."`,
+  ].join('\n');
 }
 
 /**
