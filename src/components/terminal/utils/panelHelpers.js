@@ -317,15 +317,20 @@ function buildWorkspaceColumnsForTerminalCount({
   const panelsByIndex = Array.from({ length: safeCount }, () => nextPanel());
 
   if (safeCount === 5) {
+    // Swarm-style 2+2+1: even workers left, odd workers center, fifth panel right.
     return {
       columns: [
         {
           id: allocateColumnId(),
-          panels: [panelsByIndex[0], panelsByIndex[2], panelsByIndex[4]],
+          panels: [panelsByIndex[0], panelsByIndex[2]],
         },
         {
           id: allocateColumnId(),
           panels: [panelsByIndex[1], panelsByIndex[3]],
+        },
+        {
+          id: allocateColumnId(),
+          panels: [panelsByIndex[4]],
         },
       ],
       firstPanelId,

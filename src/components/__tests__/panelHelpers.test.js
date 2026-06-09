@@ -265,11 +265,12 @@ describe('buildWorkspaceColumnsForTerminalCount', () => {
     expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p4']);
   });
 
-  test('places five terminals as 2x2 plus a fifth stacked below on the left', () => {
+  test('places five terminals in swarm-style 2+2+1 columns', () => {
     const { columns } = buildLayout(5);
-    expect(columns).toHaveLength(2);
-    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p3', 'p5']);
+    expect(columns).toHaveLength(3);
+    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p3']);
     expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p4']);
+    expect(columns[2].panels.map((panel) => panel.id)).toEqual(['p5']);
   });
 
   test('places six terminals in a 3x2 grid', () => {
