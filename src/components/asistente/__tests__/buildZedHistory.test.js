@@ -1,13 +1,7 @@
 // T-033: the client-side `buildZedHistory` helper flattens the rendered
 // `messages` state into the wire protocol the assistant route expects.
 //
-// The ChatPanel module is a 'use client' JSX file. Importing it under JSDOM
-// + jest-environment-jsdom pulls in React + the panel itself. We only need
-// the named export `buildZedHistory`, which is a pure function — so we
-// require the module but only exercise the export (the panel itself is not
-// rendered here; the existing ChatPanel.test.jsx covers that surface).
-
-const { buildZedHistory } = require('../ChatPanel.jsx');
+const { buildZedHistory } = require('@/lib/asistente/buildZedHistory');
 
 describe('buildZedHistory (T-033)', () => {
   test('flattens user + assistant + tool_results into the wire protocol', () => {

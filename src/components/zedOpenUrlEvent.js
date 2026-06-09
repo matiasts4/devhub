@@ -1,7 +1,7 @@
 /**
  * Helper for the `devhub:zed-open-url` CustomEvent contract (ZEB-003, ZEB-004).
  *
- * Producer: `src/components/asistente/ChatPanel.jsx` dispatches after an
+ * Producer: `useZedChat` dispatches after an
  *   `open_url` tool result (server-side tool only returns the URL; no
  *   xdg-open / system browser). In-app native GTK browser only.
  *
@@ -17,6 +17,7 @@
  */
 
 import { isSafeHttpUrl } from '@/lib/asistente/tools/urlSafety';
+import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 
 /**
  * @typedef {object} ZedOpenUrlEventDetail
@@ -132,5 +133,6 @@ export function dispatchZedOpenUrl(detail) {
     label: detail && typeof detail.label === 'string' ? detail.label : null,
     focus: coerceZedOpenUrlFocus(detail && detail.focus, true),
   };
+  logPizarraBrowser('dispatch-zed-open-url', payload);
   window.dispatchEvent(new CustomEvent('devhub:zed-open-url', { detail: payload }));
 }

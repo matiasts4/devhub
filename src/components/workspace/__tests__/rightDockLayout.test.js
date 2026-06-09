@@ -1,45 +1,36 @@
 const {
   applyRightDockTabSelect,
   applyZedOpenUrlDockFocus,
-  isRightDockSplitLayout,
   isRightDockWorkspacePaneVisible,
-  isRightDockZedPaneVisible,
 } = require('../rightDockLayout');
 const { sanitizeRightDockState } = require('../rightDockState');
 
 describe('rightDockLayout', () => {
-  test('browser + zed split when zed was open and user opens browser tab', () => {
-    const next = applyRightDockTabSelect(
-      { visible: true, activeTab: 'zed', zedVisible: true },
-      'browser'
-    );
+  test('selecting browser opens browser tab', () => {
+    const next = applyRightDockTabSelect({ visible: false, activeTab: 'editor' }, 'browser');
     expect(next.activeTab).toBe('browser');
-    expect(next.zedVisible).toBe(true);
-    expect(isRightDockSplitLayout(next)).toBe(true);
-  });
-
-  test('open_url focus keeps zed visible with browser', () => {
-    const next = applyZedOpenUrlDockFocus(
-      { visible: true, activeTab: 'zed', zedVisible: true },
-      { focus: true }
-    );
-    expect(next.activeTab).toBe('browser');
-    expect(next.zedVisible).toBe(true);
     expect(next.visible).toBe(true);
-    expect(next.maximized).toBe(false);
-    expect(isRightDockSplitLayout(next)).toBe(true);
+    expect(isRightDockWorkspacePaneVisible(next)).toBe(true);
   });
 
-  test('applyZedOpenUrlDockUpdate opens dock from zed-only state', () => {
+  test('open_url focus enters pizarra canvas', () => {
+    const next = applyZedOpenUrlDockFocus({ visible: false, activeTab: 'editor' }, { focus: true });
+    expect(next.activeTab).toBe('pizarra');
+    expect(next.visible).toBe(true);
+    expect(next.maximized).toBe(true);
+    expect(next.maximizedView).toBe('pizarra');
+  });
+
+  test('applyZedOpenUrlDockUpdate opens dock and sets url', () => {
     const { applyZedOpenUrlDockUpdate } = require('../rightDockLayout');
     const next = applyZedOpenUrlDockUpdate(
-      { visible: true, activeTab: 'zed', zedVisible: true, browserHistory: [], browserHistoryIndex: 0 },
+      { visible: false, activeTab: 'editor', browserHistory: [], browserHistoryIndex: 0 },
       { url: 'https://github.com', focus: true }
     );
     expect(next.browserUrl).toBe('https://github.com');
-    expect(next.activeTab).toBe('browser');
+    expect(next.activeTab).toBe('pizarra');
     expect(next.visible).toBe(true);
-    expect(isRightDockSplitLayout(next)).toBe(true);
+    expect(next.maximizedView).toBe('pizarra');
   });
 
   test('workspace tabs are mutually exclusive', () => {
@@ -48,17 +39,19 @@ describe('rightDockLayout', () => {
     expect(isRightDockWorkspacePaneVisible(withBrowser)).toBe(true);
   });
 
-  test('toggling browser off while zed open leaves zed only', () => {
-    const split = { visible: true, activeTab: 'browser', zedVisible: true };
-    const next = applyRightDockTabSelect(split, 'browser');
-    expect(next.activeTab).toBe('zed');
-    expect(isRightDockZedPaneVisible(next)).toBe(true);
-    expect(isRightDockWorkspacePaneVisible(next)).toBe(false);
+  test('toggling the same workspace tab hides the dock', () => {
+    const next = applyRightDockTabSelect({ visible: true, activeTab: 'browser' }, 'browser');
+    expect(next.visible).toBe(false);
   });
 
-  test('sanitize migrates legacy activeTab zed to zedVisible', () => {
+  test('legacy zed tab select is a no-op', () => {
+    const state = { visible: true, activeTab: 'browser' };
+    expect(applyRightDockTabSelect(state, 'zed')).toEqual(state);
+  });
+
+  test('sanitize migrates legacy activeTab zed to browser', () => {
     const state = sanitizeRightDockState({ activeTab: 'zed', visible: true });
-    expect(state.zedVisible).toBe(true);
-    expect(state.activeTab).toBe('zed');
+    expect(state.activeTab).toBe('browser');
+    expect(state.zedVisible).toBeUndefined();
   });
 });

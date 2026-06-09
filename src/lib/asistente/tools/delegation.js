@@ -1,4 +1,6 @@
-import { buildAgentLaunchCommand } from '../../agentLaunchCommand'
+import { execSync } from 'node:child_process';
+import { buildAgentLaunchCommand } from '../../agentLaunchCommand';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { zedLog } from '../utils/zed-logger'
 
 export const delegationTool = {
@@ -6,11 +8,11 @@ export const delegationTool = {
   description: 'Delegate a task to OpenCode. Creates a tmux session with OpenCode and injects the task.',
   parameters: {
     task: { type: 'string', required: true, description: 'Task description to delegate' },
-    agent: { type: 'string', default: 'sdd-orchestrator', description: 'Agent profile to use' },
+    agent: { type: 'string', default: 'gentle-orchestrator', description: 'Agent profile to use' },
     cwd: { type: 'string', description: 'Working directory' }
   },
   async execute(params, context) {
-    const { task, agent = 'sdd-orchestrator', cwd = process.cwd() } = params
+    const { task, agent = DEFAULT_OPENCODE_AGENT, cwd = process.cwd() } = params;
     const sessionId = `zed-delegation-${Date.now()}`
 
     zedLog.info('TOOL', 'delegate_to_opencode', { task, agent, cwd, sessionId })
@@ -25,8 +27,10 @@ export const delegationTool = {
     const tmuxCmd = `tmux new-session -d -s ${tmuxSession} "cd ${cwd} && ${command}"`
 
     try {
-      require('child_process').execSync(tmuxCmd, { stdio: 'ignore' })
-    } catch {}
+      execSync(tmuxCmd, { stdio: 'ignore' })
+    } catch (_err) {
+      // tmux may be unavailable; delegation metadata is still returned.
+    }
 
     return {
       session_id: sessionId,

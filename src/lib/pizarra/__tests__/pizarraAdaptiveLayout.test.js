@@ -88,6 +88,24 @@ describe('pizarra adaptive layout', () => {
     expect(browsers).toHaveLength(1);
   });
 
+  test('layoutPriority carried browser stays in layout with two terminals (Zed open_url)', () => {
+    const surfaces = [
+      {
+        id: 'b1',
+        type: 'browser',
+        panelId: 'browser-ws1',
+        pizarra: { layoutPriority: true, visible: true },
+      },
+      { id: 't1', type: 'terminal' },
+      { id: 't2', type: 'terminal' },
+    ];
+    const { browsers, hiddenBrowsers } = partitionSurfacesForAutoLayout(surfaces);
+    expect(browsers).toHaveLength(1);
+    expect(hiddenBrowsers).toHaveLength(0);
+    const { layouts } = computeAdaptiveViewLayout({ x: 0, y: 0 }, surfaces);
+    expect(layouts.some((l) => l.id === 'b1')).toBe(true);
+  });
+
   test('auto-positioned carried browser is excluded with two terminals', () => {
     const surfaces = [
       { id: 'b1', type: 'browser', panelId: 'browser-ws1', pizarra: { x: 40, y: 20 } },

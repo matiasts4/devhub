@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bot, LayoutGrid, Minus, Plus, Sparkles, Terminal } from 'lucide-react';
 
@@ -11,6 +11,19 @@ import {
   btnPrimaryStyle,
   pillStyle,
 } from '@/chrome/morphology';
+import {
+  clampTerminalCount,
+  getAdjacentCircularIndex,
+  getAdjacentWorkspaceSetupSection,
+  resolveCommandPresetArrowDelta,
+  resolveSectionNavigationDelta,
+  resolveTerminalCountDelta,
+  resolveWorkspaceSetupSection,
+  shouldAdjustTerminalCountFromKeyboard,
+  shouldConfirmWorkspaceTerminalSetup,
+  shouldNavigateCommandPresetsFromKeyboard,
+  shouldNavigateWorkspaceSetupSections,
+} from '@/components/terminal/workspaceTerminalSetupModalKeyboard';
 
 const MIN_TERMINALS = 0;
 const MAX_TERMINALS = 6;
@@ -64,6 +77,13 @@ export default function WorkspaceTerminalSetupModal({
   const [terminalCount, setTerminalCount] = useState(1);
   const [initialCommand, setInitialCommand] = useState(defaultInitialCommand);
   const [activePresetId, setActivePresetId] = useState('opencode');
+  const [activeSection, setActiveSection] = useState('terminals');
+
+  const modalPanelRef = useRef(null);
+  const countFocusRef = useRef(null);
+  const commandInputRef = useRef(null);
+  const confirmButtonRef = useRef(null);
+  const presetButtonRefs = useRef([]);
 
   const commandApplies = terminalCount > 0;
   const resolvedPresetId = useMemo(() => resolvePresetId(initialCommand), [initialCommand]);
@@ -74,28 +94,73 @@ export default function WorkspaceTerminalSetupModal({
     setTerminalCount(1);
     setInitialCommand(nextCommand);
     setActivePresetId(resolvePresetId(nextCommand));
+    setActiveSection('terminals');
+    presetButtonRefs.current = [];
   }, [open, defaultInitialCommand]);
 
+  const focusWorkspaceSection = useCallback(
+    (section) => {
+      if (section === 'terminals') {
+        countFocusRef.current?.focus();
+        return;
+      }
+
+      if (section === 'commandPresets') {
+        if (!commandApplies) {
+          countFocusRef.current?.focus();
+          return;
+        }
+        const currentIndex = Math.max(
+          0,
+          COMMAND_PRESETS.findIndex(
+            (preset) => preset.id === activePresetId || preset.id === resolvedPresetId
+          )
+        );
+        const presetButton =
+          presetButtonRefs.current[currentIndex] ||
+          modalPanelRef.current?.querySelector(
+            `[data-testid="workspace-terminal-command-preset-${COMMAND_PRESETS[currentIndex]?.id}"]`
+          );
+        presetButton?.focus();
+        return;
+      }
+
+      if (section === 'customCommand') {
+        if (!commandApplies) {
+          countFocusRef.current?.focus();
+          return;
+        }
+        commandInputRef.current?.focus();
+      }
+    },
+    [activePresetId, commandApplies, resolvedPresetId]
+  );
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    focusWorkspaceSection('terminals');
+  }, [focusWorkspaceSection, open]);
+
   useEffect(() => {
-    if (!open) return undefined;
+    if (!commandApplies && activeSection !== 'terminals') {
+      setActiveSection('terminals');
+      focusWorkspaceSection('terminals');
+    }
+  }, [activeSection, commandApplies, focusWorkspaceSection]);
 
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') onClose?.();
-    };
+  const decrement = useCallback(
+    () => setTerminalCount((value) => clampTerminalCount(value - 1, MIN_TERMINALS, MAX_TERMINALS)),
+    []
+  );
+  const increment = useCallback(
+    () => setTerminalCount((value) => clampTerminalCount(value + 1, MIN_TERMINALS, MAX_TERMINALS)),
+    []
+  );
 
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  const decrement = () => setTerminalCount((value) => Math.max(MIN_TERMINALS, value - 1));
-  const increment = () => setTerminalCount((value) => Math.min(MAX_TERMINALS, value + 1));
-
-  const handlePresetSelect = (preset) => {
+  const handlePresetSelect = useCallback((preset) => {
     setActivePresetId(preset.id);
     setInitialCommand(preset.command);
-  };
+  }, []);
 
   const handleCommandInputChange = (event) => {
     const nextValue = event.target.value;
@@ -103,14 +168,142 @@ export default function WorkspaceTerminalSetupModal({
     setActivePresetId(resolvePresetId(nextValue));
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = useCallback(() => {
     const trimmedCommand = normalizeInitialCommand(initialCommand);
     onConfirm?.({
       terminalCount,
       initialCommand: commandApplies && trimmedCommand ? trimmedCommand : null,
     });
     onClose?.();
-  };
+  }, [commandApplies, initialCommand, onClose, onConfirm, terminalCount]);
+
+  const focusCommandPresetAt = useCallback(
+    (index) => {
+      if (!commandApplies) return;
+      const preset = COMMAND_PRESETS[index];
+      if (!preset) return;
+      handlePresetSelect(preset);
+      const presetButton =
+        presetButtonRefs.current[index] ||
+        modalPanelRef.current?.querySelector(
+          `[data-testid="workspace-terminal-command-preset-${preset.id}"]`
+        );
+      presetButton?.focus();
+    },
+    [commandApplies, handlePresetSelect]
+  );
+
+  const handleModalKeyDown = useCallback(
+    (event) => {
+      const modalRoot = modalPanelRef.current;
+      const activeElement = document.activeElement;
+      const resolvedSection =
+        activeSection || resolveWorkspaceSetupSection(activeElement, modalRoot) || 'terminals';
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose?.();
+        return;
+      }
+
+      if (shouldNavigateWorkspaceSetupSections(event, { activeElement, modalRoot })) {
+        const delta = resolveSectionNavigationDelta(event);
+        const nextSection = getAdjacentWorkspaceSetupSection(resolvedSection, delta, {
+          commandApplies,
+        });
+        if (nextSection !== resolvedSection) {
+          event.preventDefault();
+          event.stopPropagation();
+          setActiveSection(nextSection);
+          focusWorkspaceSection(nextSection);
+        }
+        return;
+      }
+
+      if (
+        shouldAdjustTerminalCountFromKeyboard(event, {
+          activeSection: resolvedSection,
+          activeElement,
+          modalRoot,
+        })
+      ) {
+        const delta = resolveTerminalCountDelta(event);
+        if (delta !== 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          setTerminalCount((value) => clampTerminalCount(value + delta, MIN_TERMINALS, MAX_TERMINALS));
+        }
+        return;
+      }
+
+      if (
+        shouldNavigateCommandPresetsFromKeyboard(event, {
+          activeSection: resolvedSection,
+          activeElement,
+          modalRoot,
+        })
+      ) {
+        const delta = resolveCommandPresetArrowDelta(event);
+        if (delta === 0 || !commandApplies) return;
+
+        const currentIndex = COMMAND_PRESETS.findIndex(
+          (preset) => preset.id === activePresetId || preset.id === resolvedPresetId
+        );
+        const nextIndex = getAdjacentCircularIndex(
+          currentIndex === -1 ? 0 : currentIndex,
+          delta,
+          COMMAND_PRESETS.length
+        );
+
+        event.preventDefault();
+        event.stopPropagation();
+        setActiveSection('commandPresets');
+        focusCommandPresetAt(nextIndex);
+        return;
+      }
+
+      if (shouldConfirmWorkspaceTerminalSetup(event, { activeElement, modalRoot })) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleConfirm();
+      }
+    },
+    [
+      activePresetId,
+      activeSection,
+      commandApplies,
+      focusCommandPresetAt,
+      focusWorkspaceSection,
+      handleConfirm,
+      onClose,
+      resolvedPresetId,
+    ]
+  );
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handleDocumentKeyDown = (event) => {
+      const modalRoot = modalPanelRef.current;
+      if (!modalRoot) return;
+
+      const eventTarget =
+        event.target && typeof event.target === 'object' ? event.target : null;
+      const activeElement = document.activeElement;
+      const targetInsideModal = Boolean(eventTarget && modalRoot.contains(eventTarget));
+      const focusInsideModal = Boolean(activeElement && modalRoot.contains(activeElement));
+
+      if (!targetInsideModal && !focusInsideModal) return;
+
+      handleModalKeyDown(event);
+    };
+
+    document.addEventListener('keydown', handleDocumentKeyDown, true);
+    return () => document.removeEventListener('keydown', handleDocumentKeyDown, true);
+  }, [handleModalKeyDown, open]);
+
+  if (!open) return null;
 
   const sectionLabelStyle = {
     color: 'var(--text-muted)',
@@ -133,8 +326,10 @@ export default function WorkspaceTerminalSetupModal({
       }}
     >
       <div
+        ref={modalPanelRef}
         className="flex w-full max-w-lg flex-col overflow-hidden"
         style={panelStyle({ emphasized: true })}
+        onKeyDown={handleModalKeyDown}
       >
         <div
           className="flex items-start justify-between gap-4 border-b px-6 py-5"
@@ -158,13 +353,14 @@ export default function WorkspaceTerminalSetupModal({
             onClick={() => onClose?.()}
             className="text-sm"
             style={btnSecondaryStyle()}
+            data-workspace-terminal-setup-cancel="true"
           >
             Cancelar
           </button>
         </div>
 
         <div className="space-y-5 px-6 py-5">
-          <section className="space-y-3">
+          <section className="space-y-3" data-testid="workspace-terminal-count-section">
             <p style={sectionLabelStyle}>Terminales</p>
 
             <div
@@ -190,7 +386,18 @@ export default function WorkspaceTerminalSetupModal({
                 <Minus size={16} />
               </button>
 
-              <div className="min-w-[88px] text-center">
+              <div
+                ref={countFocusRef}
+                tabIndex={0}
+                onFocus={() => setActiveSection('terminals')}
+                role="spinbutton"
+                aria-valuemin={MIN_TERMINALS}
+                aria-valuemax={MAX_TERMINALS}
+                aria-valuenow={terminalCount}
+                aria-label="Cantidad de terminales"
+                data-testid="workspace-terminal-count-focus"
+                className="min-w-[88px] rounded-lg text-center outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/35"
+              >
                 <p
                   className="text-4xl font-semibold tabular-nums"
                   style={{ color: 'var(--text-primary)' }}
@@ -250,7 +457,10 @@ export default function WorkspaceTerminalSetupModal({
 
           <div className="h-px" style={{ background: 'var(--border-subtle)' }} />
 
-          <section className={`space-y-3 ${commandApplies ? '' : 'opacity-55'}`}>
+          <section
+            className={`space-y-3 ${commandApplies ? '' : 'opacity-55'}`}
+            data-testid="workspace-terminal-command-section"
+          >
             <div className="flex items-center justify-between gap-3">
               <p style={sectionLabelStyle}>Comando inicial</p>
               {!commandApplies ? (
@@ -260,16 +470,23 @@ export default function WorkspaceTerminalSetupModal({
               ) : null}
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {COMMAND_PRESETS.map(({ id, label, command, description, Icon }) => {
+            <div
+              className="grid grid-cols-3 gap-2"
+              data-testid="workspace-terminal-command-presets"
+            >
+              {COMMAND_PRESETS.map(({ id, label, command, description, Icon }, index) => {
                 const isActive =
                   commandApplies && (activePresetId === id || resolvedPresetId === id);
                 return (
                   <button
                     key={id}
+                    ref={(node) => {
+                      presetButtonRefs.current[index] = node;
+                    }}
                     type="button"
                     data-testid={`workspace-terminal-command-preset-${id}`}
                     disabled={!commandApplies}
+                    onFocus={() => setActiveSection('commandPresets')}
                     onClick={() => handlePresetSelect({ id, command })}
                     className="flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed"
                     style={{
@@ -305,7 +522,7 @@ export default function WorkspaceTerminalSetupModal({
               })}
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" data-testid="workspace-terminal-custom-command-section">
               <label
                 htmlFor="workspace-terminal-initial-command"
                 className="block text-[11px] font-semibold uppercase tracking-wide"
@@ -314,10 +531,12 @@ export default function WorkspaceTerminalSetupModal({
                 Comando personalizado
               </label>
               <input
+                ref={commandInputRef}
                 id="workspace-terminal-initial-command"
                 type="text"
                 value={initialCommand}
                 onChange={handleCommandInputChange}
+                onFocus={() => setActiveSection('customCommand')}
                 disabled={!commandApplies}
                 placeholder="ej. opencode, groc, npm run dev"
                 data-testid="workspace-terminal-initial-command-input"
@@ -337,18 +556,29 @@ export default function WorkspaceTerminalSetupModal({
           </section>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t px-6 py-4">
-          <button type="button" onClick={() => onClose?.()} style={btnSecondaryStyle()}>
-            Cancelar
-          </button>
-          <button
-            type="button"
-            data-testid="workspace-terminal-setup-confirm"
-            onClick={handleConfirm}
-            style={btnPrimaryStyle()}
-          >
-            Crear workspace
-          </button>
+        <div className="flex items-center justify-between gap-3 border-t px-6 py-4">
+          <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
+            ↑↓ secciones · ←→ ajustar · Enter crear
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onClose?.()}
+              style={btnSecondaryStyle()}
+              data-workspace-terminal-setup-cancel="true"
+            >
+              Cancelar
+            </button>
+            <button
+              ref={confirmButtonRef}
+              type="button"
+              data-testid="workspace-terminal-setup-confirm"
+              onClick={handleConfirm}
+              style={btnPrimaryStyle()}
+            >
+              Crear workspace
+            </button>
+          </div>
         </div>
       </div>
     </div>

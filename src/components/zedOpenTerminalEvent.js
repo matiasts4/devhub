@@ -1,7 +1,7 @@
 /**
  * Helper for the `devhub:zed-open-terminal` CustomEvent contract.
  *
- * Producer: `ChatPanel.jsx` dispatches after `open_terminal` with
+ * Producer: `useZedChat` dispatches after `open_terminal` with
  *   `{ command, cwd, workspace: true, focus }`. Workspace opens use the
  *   same panel flow as Split right (`p1`, `p2`, …) — not orphan `term-*`
  *   ids from a headless POST PTY.
@@ -56,7 +56,7 @@ export function resolveZedOpenTerminalPanelId(detail, fallback) {
  * Dispatches `devhub:zed-open-terminal` on `window`. SSR-safe (no-op
  * when `window` is undefined). This is the ONLY allowed site for an
  * inline `new CustomEvent('devhub:zed-…', …)` for this event name
- * (ZEB-005). The producer (ChatPanel) calls this; the consumer
+ * (ZEB-005). The producer (useZedChat) calls this; the consumer
  * (TerminalWorkspacesManager) registers a `window.addEventListener` for
  * the same name.
  *

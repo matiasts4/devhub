@@ -15,12 +15,12 @@ describe('repo opencode config', () => {
 
     const expectedAgents = {
       'swarm-director': 'docs/prompts/swarm/swarm-director-v2.md',
-      'swarm-coder': 'docs/prompts/swarm/swarm-coder-v2.md',
+      'swarm-coder': 'docs/prompts/swarm/swarm-coder-v3.md',
       'swarm-devops': 'docs/prompts/swarm/swarm-devops-v2.md',
-      'swarm-architect': 'docs/prompts/swarm/swarm-architect-v2.md',
+      'swarm-architect': 'docs/prompts/swarm/swarm-architect-v3.md',
       'swarm-auditor': 'docs/prompts/swarm/swarm-auditor-v2.md',
       'swarm-reviewer': 'docs/prompts/swarm/swarm-reviewer-v2.md',
-      'swarm-explorer': 'docs/prompts/swarm/swarm-explorer-v2.md',
+      'swarm-explorer': 'docs/prompts/swarm/swarm-explorer-v3.md',
       'swarm-qa': 'docs/prompts/swarm/swarm-qa-v2.md',
     };
 
@@ -30,7 +30,7 @@ describe('repo opencode config', () => {
         expect.objectContaining({
           hidden: false,
           mode: 'primary',
-          model: 'minimax-coding-plan/MiniMax-M2.7',
+          model: 'minimax-coding-plan/MiniMax-M3',
         })
       );
 

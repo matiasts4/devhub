@@ -161,14 +161,6 @@ jest.mock('@/components/workspace/WorkspaceOperatorObserverPane', () => {
   };
 });
 
-jest.mock('@/components/asistente/ChatPanel', () => {
-  const ReactLocal = require('react');
-  return {
-    __esModule: true,
-    default: () => ReactLocal.createElement('div', { 'data-testid': 'chat-panel-mock' }),
-  };
-});
-
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function makeRoot() {

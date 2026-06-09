@@ -38,6 +38,7 @@ describe('open_terminal (terminalTool)', () => {
     expect(result.workspace).toBe(true);
     // Should have computed a launch command (contains "opencode" or "--agent")
     expect(result.command_sent || result.command || '').toMatch(/opencode|--agent/i);
+    expect(result.command_sent || result.command || '').toMatch(/--agent\s+gentle-orchestrator/i);
     expect(result.program).toBe('opencode');
   });
 
@@ -52,6 +53,43 @@ describe('open_terminal (terminalTool)', () => {
     const result = await terminalTool.execute({}, {});
     expect(result.note).toMatch(/empty/i);
     expect(result.opened).toBe(true);
+  });
+
+  test('open_terminal rejects when workspace panel limit is reached', async () => {
+    const context = { terminal_panel_count: 6, max_terminal_panels: 6 };
+    const result = await terminalTool.execute({ program: 'opencode' }, context);
+    expect(result.error).toBe('terminal_panel_limit_reached');
+    expect(result.opened).toBe(false);
+    expect(context._terminal_opens_this_request).toBeUndefined();
+  });
+
+  test('open_terminal blocks destructive commands', async () => {
+    const result = await terminalTool.execute({ command: 'rm -rf dist' }, {});
+    expect(result.error).toBe('command_blocked');
+    expect(result.opened).toBeUndefined();
+  });
+
+  test('open_terminal requires approval for non-allowlisted commands', async () => {
+    const result = await terminalTool.execute({ command: 'npm install left-pad' }, {});
+    expect(result.error).toBe('command_requires_approval');
+    expect(result.action).toBe('would_execute');
+  });
+
+  test('open_terminal allows npm run dev without confirm', async () => {
+    const result = await terminalTool.execute({ command: 'npm run dev' }, {});
+    expect(result.opened).toBe(true);
+    expect(result.command_sent).toBe('npm run dev');
+  });
+
+  test('open_terminal tracks opens within a single API request', async () => {
+    const context = { terminal_panel_count: 4, max_terminal_panels: 6 };
+    const first = await terminalTool.execute({ command: 'ls' }, context);
+    const second = await terminalTool.execute({ command: 'pwd' }, context);
+    const third = await terminalTool.execute({ command: 'whoami' }, context);
+    expect(first.opened).toBe(true);
+    expect(second.opened).toBe(true);
+    expect(third.error).toBe('terminal_panel_limit_reached');
+    expect(context._terminal_opens_this_request).toBe(2);
   });
 });
 

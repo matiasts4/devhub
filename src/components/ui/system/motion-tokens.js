@@ -98,3 +98,10 @@ export const VARIANTS_SLIDE_RIGHT = {
   visible: { opacity: 1, x: 0 },
   exit: { opacity: 0, x: -12 },
 };
+
+/** Right dock layer — enters from off-screen right into its anchored slot. */
+export const VARIANTS_DOCK_SLIDE_FROM_RIGHT = {
+  hidden: { opacity: 0, x: '100%' },
+  visible: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: '100%' },
+};

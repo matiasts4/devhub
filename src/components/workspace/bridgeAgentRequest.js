@@ -2,6 +2,7 @@
 
 import { ATTRS } from '@emergentbase/visual-edits';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand.shared';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 
 export const BRIDGE_AGENT_OPTIONS = [
   {
@@ -106,7 +107,7 @@ export function buildBridgePrompt({ browserUrl, selectedElement, changeRequest }
 }
 
 function buildAgentCommand(agentId, prompt) {
-  return buildAgentLaunchCommand(agentId, prompt, { opencodeAgent: 'sdd-orchestrator' });
+  return buildAgentLaunchCommand(agentId, prompt, { opencodeAgent: DEFAULT_OPENCODE_AGENT });
 }
 
 export function buildBridgeAgentRequest({

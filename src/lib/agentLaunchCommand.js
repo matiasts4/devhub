@@ -1,15 +1,18 @@
+import { createRequire } from 'node:module';
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
 import { persistSession } from './sdd/SessionPersistence';
 import { resolveAgentProgramExecutable, buildTmuxWrappedCommand } from './agentLaunchCommand.shared';
+
+const require = createRequire(import.meta.url);
 
 // Server-only minimax config reader (fs is safe here — this module is never bundled for browser)
 let _serverMinimaxConfig = null;
 function getServerMinimaxConfig() {
   if (_serverMinimaxConfig) return _serverMinimaxConfig;
   try {
-    // eslint-disable-next-line n/shebang
     const fs = require('fs');
     const path = require('path');
     const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
@@ -82,7 +85,7 @@ function shellQuote(value = '') {
 
 export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const executable = resolveAgentProgramExecutable(programId);
-  const opencodeAgent = options.opencodeAgent || 'sdd-orchestrator';
+  const opencodeAgent = options.opencodeAgent || DEFAULT_OPENCODE_AGENT;
   const modelId = options.modelId || null;
   const tmuxSessionNameOption = options.tmuxSessionName || null;
   const disableTmuxWrap = options.disableTmuxWrap === true;

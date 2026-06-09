@@ -46,6 +46,7 @@ import { reloadBrowserRuntime } from './browserRuntimeReload';
 // pre-Phase-3 UX exactly.
 import { useBrowserTabs } from './hooks/useBrowserTabs';
 import BrowserTabStrip from './BrowserTabStrip';
+import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
@@ -78,6 +79,7 @@ function WorkspaceBrowserPane({
   suspendNativeSurface = false,
   tabsMode = 'single',
   isPizarraContext = false,
+  nativePanelId: nativePanelIdProp = null,
 }) {
   const viewportShellRef = useRef(null);
   const measureNativeBounds = useCallback(() => {
@@ -93,8 +95,8 @@ function WorkspaceBrowserPane({
   const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK;
 
   const nativePanelId = useMemo(
-    () => `browser-${projectId}-${workspaceId}`,
-    [projectId, workspaceId]
+    () => nativePanelIdProp || `browser-${projectId}-${workspaceId}`,
+    [nativePanelIdProp, projectId, workspaceId]
   );
   const nativeCapability = useNativeBrowserCapability({
     panelId: nativePanelId,
@@ -113,16 +115,25 @@ function WorkspaceBrowserPane({
   const nativeRuntimeActive =
     browserRuntimeSelection.effectiveRuntime === BROWSER_RUNTIME.NATIVE_GTK;
   const nativeRuntimeVisibleInLayout = useMemo(() => {
+    if (isPizarraContext) {
+      return nativeRuntimeActive && !suspendNativeSurface;
+    }
+
     const activeTab = dockState.activeTab || 'browser';
     const dockVisible = dockState.visible !== false;
-    const browserOwnsMaximizedLayout =
-      !dockState.maximized || dockState.maximizedView === 'browser';
+    const maximizedView = dockState.maximizedView || 'browser';
+    const takeoverBlocksWorkspaceBrowser =
+      dockState.maximized === true &&
+      maximizedView !== 'browser' &&
+      maximizedView !== 'window';
+    const browserOwnsLayout = !dockState.maximized || maximizedView === 'browser';
 
     return (
       nativeRuntimeActive &&
       dockVisible &&
       activeTab === 'browser' &&
-      browserOwnsMaximizedLayout &&
+      browserOwnsLayout &&
+      !takeoverBlocksWorkspaceBrowser &&
       !suspendNativeSurface
     );
   }, [
@@ -130,9 +141,31 @@ function WorkspaceBrowserPane({
     dockState.maximized,
     dockState.maximizedView,
     dockState.visible,
+    isPizarraContext,
     nativeRuntimeActive,
     suspendNativeSurface,
   ]);
+
+  useEffect(() => {
+    if (!isPizarraContext) return;
+    logPizarraBrowser('pane-native-visibility', {
+      nativePanelId,
+      nativeRuntimeActive,
+      nativeRuntimeVisibleInLayout,
+      suspendNativeSurface,
+      browserUrl: dockState.browserUrl,
+      activeTab: dockState.activeTab,
+    });
+  }, [
+    isPizarraContext,
+    nativePanelId,
+    nativeRuntimeActive,
+    nativeRuntimeVisibleInLayout,
+    suspendNativeSurface,
+    dockState.browserUrl,
+    dockState.activeTab,
+  ]);
+
   const canUseNativeEditMode = nativeRuntimeActive && nativeSelectorReady;
   const {
     browserError,
@@ -786,7 +819,7 @@ function WorkspaceBrowserPane({
                 aria-hidden="true"
               />
 
-              {(isLoading || !nativeRuntimeReady) && !isPizarraContext ? (
+              {(!nativeRuntimeReady || nativeError) && !isPizarraContext ? (
                 nativeError ? (
                   <div
                     className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#050814]/90 px-6 text-center"

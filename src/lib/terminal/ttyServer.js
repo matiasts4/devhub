@@ -12,6 +12,7 @@ import {
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
 import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
 import { writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
+import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -680,7 +681,7 @@ function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
     }
   }
 
-  return { env, spawnArgs, tmuxEnabled };
+  return { env, spawnArgs, tmuxEnabled, tmuxSession: tmuxEnabled ? tmuxSession : null };
 }
 
 /**
@@ -733,7 +734,11 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
     }
   }
 
-  const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(resolvedCwd, id, swarmContext);
+  const { env, spawnArgs, tmuxEnabled, tmuxSession } = buildSessionSpawnConfig(
+    resolvedCwd,
+    id,
+    swarmContext
+  );
 
   ttyLog('createSession', `spawning PTY`, {
     id,
@@ -780,6 +785,8 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
     id,
     swarmRole: swarmContext?.roleKey ? { roleKey: swarmContext.roleKey } : null,
     swarmId: swarmContext?.launchId || null,
+    tmuxSession: tmuxSession || null,
+    tmuxEnabled: Boolean(tmuxEnabled),
     _saveDebounceTimer: null,
     _lastDiagnosticSnapshot: null,
   };
@@ -812,6 +819,8 @@ export function closeSession(id) {
   if (session) {
     // PTY-4: Clear workspace PTY identity on session termination
     tryClearPtyIdentity(session);
+
+    teardownPanelSessionProcesses(session, { hasTmux });
 
     try {
       session.pty?.kill?.();

@@ -39,34 +39,126 @@ fn handle_ctrl_shift_v_paste_from_clipboard(panel_id: String) {
     }
 }
 
-// Key press event handler installed on the VTE terminal to intercept Ctrl+Shift+V.
-// Returns Propagation::Stop to inhibit event propagation and prevent WebKit from processing the shortcut.
+#[cfg(target_os = "linux")]
+fn panel_id_from_terminal_widget_name(terminal: &Terminal) -> Option<String> {
+    let widget_name = terminal.widget_name();
+    widget_name
+        .as_str()
+        .strip_prefix("devhub-native-vte-terminal-")
+        .map(str::to_string)
+}
+
+#[cfg(target_os = "linux")]
+fn resolve_native_vte_navigation_action(
+    modifiers: gtk::gdk::ModifierType,
+    keyval: gtk::gdk::keys::Key,
+) -> Option<&'static str> {
+    use gtk::gdk::keys::constants as keys;
+    use gtk::gdk::ModifierType;
+
+    let ctrl = modifiers.contains(ModifierType::CONTROL_MASK);
+    let shift = modifiers.contains(ModifierType::SHIFT_MASK);
+    let alt = modifiers.contains(ModifierType::MOD1_MASK);
+
+    if !ctrl || alt {
+        return None;
+    }
+
+    if !shift {
+        if keyval == keys::Page_Up || keyval == keys::Up {
+            return Some("previousWorkspace");
+        }
+        if keyval == keys::Page_Down || keyval == keys::Down {
+            return Some("nextWorkspace");
+        }
+        return None;
+    }
+
+    if keyval == keys::Page_Up {
+        return Some("previousWorkspace");
+    }
+    if keyval == keys::Page_Down {
+        return Some("nextWorkspace");
+    }
+    if keyval == keys::B {
+        return Some("openBrowserDock");
+    }
+    if keyval == keys::E {
+        return Some("openEditorDock");
+    }
+    if keyval == keys::N {
+        return Some("newWorkspace");
+    }
+    if keyval == keys::W {
+        return Some("closePanel");
+    }
+    if keyval == keys::period {
+        return Some("closeRightDock");
+    }
+    if keyval == keys::F {
+        return Some("togglePanelFocus");
+    }
+    if keyval == keys::Left {
+        return Some("panelLeft");
+    }
+    if keyval == keys::Right {
+        return Some("panelRight");
+    }
+    if keyval == keys::Up {
+        return Some("panelUp");
+    }
+    if keyval == keys::Down {
+        return Some("panelDown");
+    }
+
+    None
+}
+
+fn build_navigation_shortcut_event_payload(panel_id: &str, action: &str) -> NativeVteEventPayload {
+    NativeVteEventPayload {
+        panel_id: panel_id.to_string(),
+        r#type: "navigation-shortcut".to_string(),
+        action: Some(action.to_string()),
+        reason: None,
+        session_id: None,
+        initial_command: None,
+    }
+}
+
+fn emit_navigation_shortcut_runtime_event(app: &AppHandle, panel_id: &str, action: &str) {
+    emit_runtime_event(app, build_navigation_shortcut_event_payload(panel_id, action));
+}
+
+// Key press handler on native VTE intercepts DevHub shortcuts before GTK/WebKit consume them.
 #[cfg(target_os = "linux")]
 fn on_terminal_key_press_event(
+    app: &AppHandle,
     terminal: &Terminal,
     event: &gtk::gdk::EventKey,
 ) -> gtk::glib::Propagation {
     use gtk::gdk::ModifierType;
+
     let modifiers = event.state();
     let keyval = event.keyval();
-    // V keyval = 86, v keyval = 118
     let is_v = keyval == 86u32.into() || keyval == 118u32.into();
     let is_ctrl_shift_v = modifiers.contains(ModifierType::CONTROL_MASK)
         && modifiers.contains(ModifierType::SHIFT_MASK)
         && is_v;
 
     if is_ctrl_shift_v {
-        // Get the panel ID from the terminal's widget name
-        let widget_name = terminal.widget_name();
-        // Extract panel_id from "devhub-native-vte-terminal-{panel_id}"
-        if let Some(panel_id) = widget_name
-            .as_str()
-            .strip_prefix("devhub-native-vte-terminal-")
-        {
-            handle_ctrl_shift_v_paste_from_clipboard(panel_id.to_string());
+        if let Some(panel_id) = panel_id_from_terminal_widget_name(terminal) {
+            handle_ctrl_shift_v_paste_from_clipboard(panel_id);
             return gtk::glib::Propagation::Stop;
         }
     }
+
+    if let Some(action) = resolve_native_vte_navigation_action(modifiers, keyval) {
+        if let Some(panel_id) = panel_id_from_terminal_widget_name(terminal) {
+            emit_navigation_shortcut_runtime_event(app, panel_id.as_str(), action);
+            return gtk::glib::Propagation::Stop;
+        }
+    }
+
     gtk::glib::Propagation::Proceed
 }
 
@@ -181,6 +273,7 @@ pub struct NativeVteBounds {
 pub struct NativeVteEventPayload {
     pub panel_id: String,
     pub r#type: String,
+    pub action: Option<String>,
     pub reason: Option<String>,
     pub session_id: Option<String>,
     pub initial_command: Option<String>,
@@ -263,6 +356,7 @@ fn emit_runtime_error(
         NativeVteEventPayload {
             panel_id,
             r#type: "runtime-error".to_string(),
+            action: None,
             reason: Some(reason.into()),
             session_id,
             initial_command: None,
@@ -361,6 +455,7 @@ fn detect_native_session_event(
         return Some(NativeVteEventPayload {
             panel_id: panel_id.to_string(),
             r#type: "opencode-session-detected".to_string(),
+            action: None,
             reason: None,
             session_id: Some(session_id),
             initial_command: initial_command.map(str::to_string),
@@ -371,6 +466,7 @@ fn detect_native_session_event(
         return Some(NativeVteEventPayload {
             panel_id: panel_id.to_string(),
             r#type: "hermes-session-detected".to_string(),
+            action: None,
             reason: None,
             session_id: Some(derive_native_hermes_session_id(
                 panel_id,
@@ -392,6 +488,7 @@ fn build_terminal_exit_event_payload(
     NativeVteEventPayload {
         panel_id: panel_id.to_string(),
         r#type: "terminal-exit".to_string(),
+        action: None,
         reason: Some(format!("child-exited:{}", status)),
         session_id: session_id.map(str::to_string),
         initial_command: initial_command.map(str::to_string),
@@ -405,6 +502,7 @@ fn build_panel_activated_event_payload(
     NativeVteEventPayload {
         panel_id: panel_id.to_string(),
         r#type: "panel-activated".to_string(),
+        action: None,
         reason: None,
         session_id: session_id.map(str::to_string),
         initial_command: None,
@@ -1206,7 +1304,10 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
 
         // Install Ctrl+Shift+V key event interceptor on the VTE terminal.
         // This catches the shortcut BEFORE WebKit can consume it, routing paste to VTE.
-        terminal.connect_key_press_event(on_terminal_key_press_event);
+        let app_for_keypress = app.clone();
+        terminal.connect_key_press_event(move |terminal, event| {
+            on_terminal_key_press_event(&app_for_keypress, terminal, event)
+        });
 
         let wrapper = gtk::Frame::new(None);
         wrapper.set_widget_name(&format!("devhub-native-vte-host-{}", request.panel_id));
@@ -1214,7 +1315,23 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
         wrapper.set_shadow_type(gtk::ShadowType::None);
         wrapper.set_halign(gtk::Align::Fill);
         wrapper.set_valign(gtk::Align::Fill);
+        wrapper.set_can_focus(true);
+        wrapper.add_events(gtk::gdk::EventMask::KEY_PRESS_MASK);
         wrapper.add(&terminal);
+
+        let app_for_wrapper_keypress = app.clone();
+        let wrapper_panel_id = request.panel_id.clone();
+        wrapper.connect_key_press_event(move |_wrapper, event| {
+            if let Some(action) = resolve_native_vte_navigation_action(event.state(), event.keyval()) {
+                emit_navigation_shortcut_runtime_event(
+                    &app_for_wrapper_keypress,
+                    wrapper_panel_id.as_str(),
+                    action,
+                );
+                return gtk::glib::Propagation::Stop;
+            }
+            gtk::glib::Propagation::Proceed
+        });
 
         let activated_app = app.clone();
         let activated_panel_id = request.panel_id.clone();
@@ -2082,6 +2199,7 @@ mod tests {
             super::NativeVteEventPayload {
                 panel_id: "panel-3".to_string(),
                 r#type: "terminal-exit".to_string(),
+                action: None,
                 reason: Some("child-exited:0".to_string()),
                 session_id: Some("panel-3".to_string()),
                 initial_command: Some("opencode --session ses_panel3".to_string()),
@@ -2096,8 +2214,74 @@ mod tests {
             super::NativeVteEventPayload {
                 panel_id: "panel-left".to_string(),
                 r#type: "panel-activated".to_string(),
+                action: None,
                 reason: None,
                 session_id: Some("ses_left".to_string()),
+                initial_command: None,
+            }
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_vte_navigation_action_resolver_maps_linux_safe_shortcuts() {
+        use gtk::gdk::keys::constants as keys;
+        use gtk::gdk::ModifierType;
+
+        let ctrl = ModifierType::CONTROL_MASK;
+        let ctrl_shift = ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK;
+
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Page_Down),
+            Some("nextWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Up),
+            Some("previousWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Down),
+            Some("nextWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Page_Up),
+            Some("previousWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::Right),
+            Some("panelRight")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::Page_Up),
+            Some("previousWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::Page_Down),
+            Some("nextWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::F),
+            Some("togglePanelFocus")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(
+                ModifierType::CONTROL_MASK | ModifierType::MOD1_MASK,
+                keys::Left
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn native_vte_navigation_shortcut_payload_carries_action() {
+        assert_eq!(
+            build_navigation_shortcut_event_payload("p42", "panelLeft"),
+            super::NativeVteEventPayload {
+                panel_id: "p42".to_string(),
+                r#type: "navigation-shortcut".to_string(),
+                action: Some("panelLeft".to_string()),
+                reason: None,
+                session_id: None,
                 initial_command: None,
             }
         );
@@ -2335,6 +2519,7 @@ mod tests {
             super::NativeVteEventPayload {
                 panel_id: "panel-left".to_string(),
                 r#type: "panel-activated".to_string(),
+                action: None,
                 reason: None,
                 session_id: Some("ses_left".to_string()),
                 initial_command: None,

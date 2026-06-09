@@ -1,7 +1,26 @@
 // Terminal tools for the ZED workspace assistant. Visible terminals are opened
 // by the UI (same panel type as Split right / +), not via a headless POST PTY.
 
+import {
+  MAX_ZED_TERMINAL_PANELS,
+  buildTerminalPanelLimitError,
+  isWorkspaceTerminalPanelLimitReached,
+  resolveEffectiveTerminalPanelCount,
+} from '@/lib/terminal/workspaceTerminalLimits';
+import { evaluateZedCommandExecution } from '../zedCommandPolicy';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { zedLog } from '../utils/zed-logger';
+
+function guardZedTerminalCommand(command, confirm, context, sourceTool) {
+  const decision = evaluateZedCommandExecution({ command, confirm, context });
+  if (decision.allowed) return null;
+  zedLog.info('TOOL', `${sourceTool} blocked by command policy`, {
+    error: decision.error,
+    command: decision.command,
+    reason: decision.reason,
+  });
+  return decision;
+}
 
 function getBaseUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3100';
@@ -20,7 +39,7 @@ const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes']);
 export const terminalTool = {
   name: 'open_terminal',
   description:
-    'Open a new workspace terminal panel (same shell as manual split) and optionally run a command visibly. Pass program=opencode (or codex/hermes) only when the user explicitly asks to launch that agent TUI in the new visible terminal; the tool will build the proper launch command.',
+    'Open a new workspace terminal panel (same shell as manual split) and optionally run a command visibly. Maximum 6 terminal panels per workspace (OpenCode, Codex, Hermes, shells, etc.). If the limit is reached, returns terminal_panel_limit_reached — use list_terminals and close_terminal instead of opening more. Pass program=opencode (or codex/hermes) only when the user explicitly asks to launch that agent TUI in the new visible terminal; the tool will build the proper launch command.',
   parameters: {
     program: {
       type: 'string',
@@ -31,10 +50,28 @@ export const terminalTool = {
       type: 'string',
       description: 'Command to execute immediately after opening the terminal (for normal shells). When program=agent is used, this is usually omitted and the tool provides the launch command.',
     },
+    confirm: {
+      type: 'boolean',
+      description:
+        'Required true to run commands that are not on the auto-allowlist (e.g. npm install). Destructive commands (rm, git reset --hard, sudo, etc.) are always blocked.',
+    },
   },
-  async execute(params /* , context */) {
-    const { program, cwd, command } = params || {};
+  async execute(params, context = {}) {
+    const { program, cwd, command, confirm } = params || {};
     const normalizedProgram = typeof program === 'string' ? program.trim().toLowerCase() : '';
+    const maxPanels = Number(context?.max_terminal_panels) || MAX_ZED_TERMINAL_PANELS;
+    const effectivePanelCount = resolveEffectiveTerminalPanelCount(context);
+
+    if (isWorkspaceTerminalPanelLimitReached(effectivePanelCount, maxPanels)) {
+      const limitError = buildTerminalPanelLimitError(effectivePanelCount, maxPanels);
+      zedLog.info('TOOL', 'open_terminal blocked (panel limit)', limitError);
+      return limitError;
+    }
+
+    if (context && typeof context === 'object') {
+      context._terminal_opens_this_request =
+        (Number(context._terminal_opens_this_request) || 0) + 1;
+    }
 
     let effectiveCommand = command;
 
@@ -44,7 +81,7 @@ export const terminalTool = {
       try {
         const { buildAgentLaunchCommand } = await import('../../agentLaunchCommand.shared.js');
         effectiveCommand = buildAgentLaunchCommand(normalizedProgram, '', {
-          opencodeAgent: 'sdd-orchestrator',
+          opencodeAgent: DEFAULT_OPENCODE_AGENT,
           cwd: cwd || process.cwd(),
           disableTmuxWrap: true,
           interactiveBootstrapPrompt: true,
@@ -58,7 +95,14 @@ export const terminalTool = {
       }
     }
 
-    zedLog.info('TOOL', 'open_terminal (workspace UI)', { cwd, command: effectiveCommand || command });
+    const cmdToRun = effectiveCommand || command;
+    const skipPolicyForAgentTui = Boolean(normalizedProgram && AGENT_PROGRAMS.has(normalizedProgram));
+    if (cmdToRun && !skipPolicyForAgentTui) {
+      const policyBlock = guardZedTerminalCommand(cmdToRun, confirm, context, 'open_terminal');
+      if (policyBlock) return policyBlock;
+    }
+
+    zedLog.info('TOOL', 'open_terminal (workspace UI)', { cwd, command: cmdToRun });
 
     const result = {
       opened: true,
@@ -66,7 +110,7 @@ export const terminalTool = {
       cwd: cwd || null,
       hint: 'Terminal opens in the workspace UI. Call list_terminals afterward to get terminalId for execute_in_terminal.',
     };
-    const cmdToReport = effectiveCommand || command;
+    const cmdToReport = cmdToRun;
     if (cmdToReport) {
       result.command_sent = cmdToReport;
       result.command = cmdToReport;
@@ -166,18 +210,26 @@ export const reviewTerminalTool = {
 export const executeInTerminalTool = {
   name: 'execute_in_terminal',
   description:
-    'Send input (keystrokes) to a running terminal session. session_id is the terminalId from list_terminals (e.g. p2), not a term-* orphan id.',
+    'Send input (keystrokes) to a running terminal session. session_id is the terminalId from list_terminals (e.g. p2), not a term-* orphan id. Destructive commands are blocked; uncommon commands need confirm: true after user approval.',
   parameters: {
     session_id: { type: 'string', required: true },
     input: { type: 'string', required: true },
+    confirm: {
+      type: 'boolean',
+      description:
+        'Required true for commands outside the auto-allowlist. Destructive commands are always blocked.',
+    },
   },
-  async execute(params /* , context */) {
+  async execute(params, context = {}) {
     const guardSession = requireParam(params, 'session_id');
     if (guardSession) return guardSession;
     const guardInput = requireParam(params, 'input');
     if (guardInput) return guardInput;
 
-    const { session_id, input } = params;
+    const { session_id, input, confirm } = params;
+    const policyBlock = guardZedTerminalCommand(input, confirm, context, 'execute_in_terminal');
+    if (policyBlock) return policyBlock;
+
     zedLog.info('TOOL', 'execute_in_terminal', {
       session_id,
       inputLen: String(input).length,

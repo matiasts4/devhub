@@ -3,8 +3,6 @@
 /** Workspace tools that share one pane (mutually exclusive). */
 const WORKSPACE_DOCK_TABS = ['browser', 'editor', 'swarm', 'operator'];
 
-const DEFAULT_ZED_SPLIT_PERCENT = 42;
-
 function isWorkspaceDockTab(tab) {
   return WORKSPACE_DOCK_TABS.includes(tab);
 }
@@ -15,19 +13,8 @@ function isRightDockWorkspacePaneVisible(dockState = {}) {
   return isWorkspaceDockTab(dockState.activeTab);
 }
 
-function isRightDockZedPaneVisible(dockState = {}) {
-  if (dockState.visible !== true) return false;
-  if (dockState.maximized === true && dockState.maximizedView === 'pizarra') return false;
-  return dockState.zedVisible === true || dockState.activeTab === 'zed';
-}
-
-function isRightDockSplitLayout(dockState = {}) {
-  return isRightDockWorkspacePaneVisible(dockState) && isRightDockZedPaneVisible(dockState);
-}
-
 /**
- * Apply a right-dock tab click. Zed stacks with browser/editor/swarm; workspace
- * tabs replace each other but do not hide Zed unless the user toggles Z off.
+ * Apply a right-dock tab click. Workspace tabs replace each other.
  *
  * @param {object} currentState
  * @param {string} tab
@@ -40,10 +27,6 @@ function applyRightDockTabSelect(currentState, tab) {
     const isCurrentlyPizarra = state.maximized && state.maximizedView === 'pizarra';
     const nextEpoch = (Number(state.browserLayoutEpoch) || 0) + 1;
     if (isCurrentlyPizarra) {
-      // switching *off* pizarra → normal view becomes the host for the browser.
-      // bump epoch so the dock's WorkspaceBrowserPane (and its iframe/native content)
-      // re-syncs the latest tabs/url from the shared state (the one the pizarra card was using).
-      // Helps "no se cargó la vida" on switch.
       return {
         ...state,
         visible: false,
@@ -63,49 +46,21 @@ function applyRightDockTabSelect(currentState, tab) {
   }
 
   if (tab === 'zed') {
-    const zedOn = isRightDockZedPaneVisible(state);
-    const workspaceOn = isRightDockWorkspacePaneVisible(state);
-
-    if (zedOn && workspaceOn) {
-      return { ...state, zedVisible: false, activeTab: state.activeTab };
-    }
-    if (zedOn && !workspaceOn) {
-      return {
-        ...state,
-        visible: false,
-        zedVisible: false,
-        activeTab: 'browser',
-      };
-    }
-    return {
-      ...state,
-      visible: true,
-      zedVisible: true,
-      activeTab: workspaceOn ? state.activeTab : 'zed',
-    };
+    return state;
   }
 
   if (isWorkspaceDockTab(tab)) {
-    const sameWorkspaceTab = state.activeTab === tab && state.visible && isRightDockWorkspacePaneVisible(state);
-    if (sameWorkspaceTab && isRightDockZedPaneVisible(state)) {
-      return {
-        ...state,
-        activeTab: 'zed',
-        maximized: false,
-        maximizedView: 'zed',
-      };
-    }
+    const sameWorkspaceTab =
+      state.activeTab === tab && state.visible && isRightDockWorkspacePaneVisible(state);
     if (sameWorkspaceTab) {
       return { ...state, visible: false };
     }
-    const keepZed = state.zedVisible === true || state.activeTab === 'zed';
     return {
       ...state,
       visible: true,
       activeTab: tab,
       maximized: false,
       maximizedView: tab,
-      zedVisible: keepZed,
     };
   }
 
@@ -113,7 +68,8 @@ function applyRightDockTabSelect(currentState, tab) {
 }
 
 /**
- * Merge open_url focus navigation: show browser, keep Zed visible when it was open.
+ * Merge open_url focus navigation: enter pizarra canvas and surface the browser
+ * there (auto-layout picks up terminals + browser card).
  *
  * @param {object} currentState
  * @param {object} [options]
@@ -123,20 +79,28 @@ function applyRightDockTabSelect(currentState, tab) {
 function applyZedOpenUrlDockFocus(currentState, { focus = false } = {}) {
   if (focus !== true) return currentState;
   const state = currentState || {};
+  const nextEpoch = (Number(state.browserLayoutEpoch) || 0) + 1;
+  if (state.maximized && state.maximizedView === 'pizarra') {
+    return {
+      ...state,
+      visible: true,
+      activeTab: 'pizarra',
+      browserLayoutEpoch: nextEpoch,
+    };
+  }
   return {
     ...state,
     visible: true,
-    activeTab: 'browser',
-    zedVisible: true,
-    maximized: false,
-    maximizedView: 'browser',
-    browserLayoutEpoch: (Number(state.browserLayoutEpoch) || 0) + 1,
+    activeTab: 'pizarra',
+    maximized: true,
+    maximizedView: 'pizarra',
+    browserLayoutEpoch: nextEpoch,
   };
 }
 
 /**
- * Apply URL navigation from `devhub:zed-open-url`. When focus is true, opens the
- * browser dock automatically (even if only Zed was visible).
+ * Apply URL navigation from `devhub:zed-open-url`. When focus is true, enters
+ * pizarra mode and registers the URL for the workspace browser surface.
  *
  * @param {object} currentState
  * @param {{ url: string, focus?: boolean }} detail
@@ -156,13 +120,10 @@ function applyZedOpenUrlDockUpdate(currentState, { url, focus = false } = {}) {
 }
 
 module.exports = {
-  DEFAULT_ZED_SPLIT_PERCENT,
   WORKSPACE_DOCK_TABS,
   applyRightDockTabSelect,
   applyZedOpenUrlDockFocus,
   applyZedOpenUrlDockUpdate,
-  isRightDockSplitLayout,
   isRightDockWorkspacePaneVisible,
-  isRightDockZedPaneVisible,
   isWorkspaceDockTab,
 };

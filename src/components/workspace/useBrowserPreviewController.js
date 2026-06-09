@@ -948,8 +948,14 @@ export default function useBrowserPreviewController({
   }
 
   useEffect(() => {
+    // Native GTK paints via Tauri/WebKit overlay — iframe onLoad never fires, so
+    // tying isLoading to iframeSrc leaves the loading veil stuck forever.
+    if (nativeRuntimeActive) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(Boolean(iframeSrc));
-  }, [iframeSrc, reloadKey]);
+  }, [iframeSrc, reloadKey, nativeRuntimeActive]);
 
   useEffect(() => {
     const targetUrl = String(dockState.browserUrl || '').trim();

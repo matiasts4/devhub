@@ -6,6 +6,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { createSwarmLaunchDraft, deriveSwarmLaunchPreview } from '@/lib/operations/swarmControl';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import {
   buildSwarmRoleMetadata,
   getSwarmRoleOrder,
@@ -275,7 +276,7 @@ export default function useSwarmLaunchController({
       const launchRequests = requests
         .map((request) => {
           const commandToRun = enforceDocOpsGateOnLaunchCommand(
-            request.command || `opencode --agent ${request.selectedAgent || 'sdd-orchestrator'}`
+            request.command || `opencode --agent ${request.selectedAgent || DEFAULT_OPENCODE_AGENT}`
           );
           const swarmRole = buildSwarmRoleMetadata(request);
           return { ...request, commandToRun, swarmRole };

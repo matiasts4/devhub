@@ -102,6 +102,8 @@ export function partitionSurfacesForAutoLayout(surfaces = []) {
     if (!isCarriedWorkspaceBrowser(browser)) return true;
     const userPlaced = browser.pizarra?.userPlaced === true;
     if (userPlaced) return true;
+    // Zed open_url (and similar explicit opens) must stay visible even with 2+ terminals.
+    if (browser.pizarra?.layoutPriority === true) return true;
     if (terminalCount >= 2) return false;
     return true;
   });

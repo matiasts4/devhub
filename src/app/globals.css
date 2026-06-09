@@ -286,6 +286,38 @@ code {
   background: var(--border-strong);
 }
 
+/* Kanban column bodies — wider, tinted scrollbar so overflow is obvious */
+.kanban-column-scrollbar {
+  --kanban-scroll-accent: var(--kanban-column-accent, var(--accent-primary));
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--kanban-scroll-accent) 68%, var(--border-strong))
+    color-mix(in srgb, var(--surface-elevated) 72%, transparent);
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar-track {
+  margin-block: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-elevated) 78%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-subtle) 65%, transparent);
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background: color-mix(in srgb, var(--kanban-scroll-accent) 76%, var(--border-strong));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--kanban-scroll-accent) 28%, transparent);
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--kanban-scroll-accent) 90%, white 6%);
+}
+
 @layer base {
   :root,
   [data-theme='deep-sea'] {
@@ -959,8 +991,23 @@ code {
 .devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-screen canvas,
 .devhub-xterm-container[data-operational-renderer='xterm-webgl'] .xterm-screen canvas {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+}
+
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm .xterm-screen,
+.devhub-xterm-container[data-operational-renderer='xterm-webgl'] .xterm .xterm-screen {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* DOM/canvas paths: stretch the cell grid to the panel width to kill lateral bands. */
+.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows,
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-rows {
+  width: 100% !important;
+  min-width: 100% !important;
 }
 
 /* When Canvas/WebGL is active, hide the DOM cell grid underneath (prevents seam curtains). */
@@ -977,12 +1024,15 @@ code {
 /* Fix for TUI Apps (like OpenCode, Vim, Nano) in xterm.js */
 .devhub-xterm-container .xterm {
   height: 100% !important;
+  width: 100% !important;
   padding: 0 !important;
 }
 
 .devhub-xterm-container .xterm-viewport {
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  width: 100% !important;
+  height: 100% !important;
   background-color: var(--surface-app) !important;
   /* auto avoids reserving an empty gutter band when the scrollbar is not visible */
   scrollbar-gutter: auto;
@@ -1006,11 +1056,8 @@ code {
 .devhub-xterm-container .xterm .xterm-viewport {
   top: 0 !important;
   left: 0 !important;
-}
-
-.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm .xterm-screen,
-.devhub-xterm-container[data-operational-renderer='xterm-webgl'] .xterm .xterm-screen {
-  height: 100% !important;
+  right: 0 !important;
+  bottom: 0 !important;
 }
 
 /* Allow text selection in xterm.js */
@@ -1477,5 +1524,93 @@ code {
 
   .filesystem-markdown-preview h2 {
     font-size: 1.4rem;
+  }
+}
+
+@keyframes terminal-panel-nav-pulse {
+  0% {
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--accent-rgb, 88, 166, 255), 0.18),
+      0 0 0 0 rgba(var(--accent-rgb, 88, 166, 255), 0);
+  }
+
+  45% {
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--accent-rgb, 88, 166, 255), 0.62),
+      0 0 22px 1px rgba(var(--accent-rgb, 88, 166, 255), 0.28);
+  }
+
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--accent-rgb, 88, 166, 255), 0.18),
+      0 0 0 0 rgba(var(--accent-rgb, 88, 166, 255), 0);
+  }
+}
+
+.terminal-panel-nav-pulse {
+  animation: terminal-panel-nav-pulse 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes zed-dot-pulse {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0) scale(0.7);
+    opacity: 0.35;
+  }
+
+  40% {
+    transform: translateY(-1px) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes zed-aura-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+.zed-aura-pulse {
+  animation: zed-aura-breathe 3s ease-in-out infinite;
+}
+
+@keyframes zed-status-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.zed-status-line {
+  display: block;
+  animation: zed-status-in 0.24s ease-out;
+}
+
+.zed-pill-exit {
+  animation: zed-pill-exit 0.32s ease-in forwards;
+}
+
+@keyframes zed-pill-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(4px);
   }
 }

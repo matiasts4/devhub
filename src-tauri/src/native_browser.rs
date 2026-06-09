@@ -558,11 +558,37 @@ fn derive_hidden_native_browser_bounds() -> NativeBrowserBounds {
 }
 
 #[cfg(target_os = "linux")]
+fn wrapper_is_attached_to_layout(layout: &gtk::Fixed, wrapper: &gtk::Frame) -> bool {
+    wrapper
+        .parent()
+        .and_then(|parent| parent.downcast::<gtk::Fixed>().ok())
+        .map(|parent_layout| parent_layout == *layout)
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn ensure_panel_wrapper_in_layout(layout: &gtk::Fixed, wrapper: &gtk::Frame) {
+    if wrapper_is_attached_to_layout(layout, wrapper) {
+        return;
+    }
+
+    if let Some(parent) = wrapper.parent() {
+        if let Ok(container) = parent.downcast::<gtk::Container>() {
+            container.remove(wrapper);
+        }
+    }
+
+    layout.put(wrapper, 0, 0);
+}
+
+#[cfg(target_os = "linux")]
 fn apply_browser_bounds(layout: &gtk::Fixed, wrapper: &gtk::Frame, bounds: &NativeBrowserBounds) {
     let x = bounds.x.round().max(0.0) as i32;
     let y = bounds.y.round().max(0.0) as i32;
     let width = bounds.width.round().max(1.0) as i32;
     let height = bounds.height.round().max(1.0) as i32;
+
+    ensure_panel_wrapper_in_layout(layout, wrapper);
 
     layout.set_halign(gtk::Align::Fill);
     layout.set_valign(gtk::Align::Fill);
@@ -835,6 +861,13 @@ fn registry_open_panel(_app: &AppHandle, request: &NativeBrowserOpenRequest) -> 
     with_native_browser_registry(|registry| {
         registry._overlay = Some(overlay);
         registry.layout = Some(layout.clone());
+
+        // Re-parent any live panels when the shared overlay/layout was rebuilt
+        // (e.g. dev-mode WebView wrap). Stale wrappers orphan otherwise and JS
+        // sees panel-not-found on resize/visibility even after a successful open.
+        for panel in registry.panels.values() {
+            ensure_panel_wrapper_in_layout(&layout, &panel.wrapper);
+        }
 
         if let Some(panel) = registry.panels.get_mut(request.panel_id.as_str()) {
             panel.webview.load_uri(request.url.as_str());

@@ -4,7 +4,28 @@
  * Tests the pure function `getWorkspaceAnimProps(isMaximized)`.
  */
 
-const { getWorkspaceAnimProps } = require('../terminal/workspaceAnimProps.js');
+const {
+  getRightDockAnimProps,
+  getWorkspaceAnimProps,
+} = require('../terminal/workspaceAnimProps.js');
+
+describe('getRightDockAnimProps()', () => {
+  test('slides in from the right edge of the dock slot', () => {
+    const props = getRightDockAnimProps({ isVisible: true });
+    expect(props.initial).toEqual({ opacity: 0, x: '100%' });
+    expect(props.animate).toEqual({ opacity: 1, x: 0 });
+  });
+
+  test('slides out to the right when hidden', () => {
+    const props = getRightDockAnimProps({ isVisible: false });
+    expect(props.animate).toEqual({ opacity: 0, x: '100%' });
+  });
+
+  test('disables motion while the dock is being resized', () => {
+    const props = getRightDockAnimProps({ isVisible: true, isDragging: true });
+    expect(props.transition).toEqual({ duration: 0 });
+  });
+});
 
 describe('getWorkspaceAnimProps()', () => {
   test('returns full opacity when maximized', () => {

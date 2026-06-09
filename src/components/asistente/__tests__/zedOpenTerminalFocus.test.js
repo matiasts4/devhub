@@ -10,7 +10,7 @@
  *
  * Test plan (per tasks.md 1.1):
  *   (a) `focus: true` + `maximizedView: 'pizarra'` →
- *       activated:true, focused:true, demaximized:true
+ *       activated:true, focused:true, demaximized:false (stay in pizarra)
  *   (b) `focus: true` + `maximizedView: 'browser'` →
  *       activated:true, focused:true, demaximized:false
  *   (c) `focus: undefined` →
@@ -32,29 +32,22 @@ function makeDeps(overrides = {}) {
 }
 
 describe('applyZedOpenTerminalFocus (T-WSR-zed-001)', () => {
-  test('case (a) focus:true + maximizedView:"pizarra" → activates, focuses, and de-maximizes', () => {
+  test('case (a) focus:true + maximizedView:"pizarra" → activates, focuses, stays in pizarra', () => {
     const deps = makeDeps({ maximizedView: 'pizarra' });
 
     const result = applyZedOpenTerminalFocus('ws-1', 'p-new', { focus: true }, deps);
 
-    expect(result).toEqual({ activated: true, focused: true, demaximized: true });
+    expect(result).toEqual({ activated: true, focused: true, demaximized: false });
 
     expect(deps.activateWorkspacePanel).toHaveBeenCalledTimes(1);
     expect(deps.activateWorkspacePanel).toHaveBeenCalledWith('ws-1', 'p-new');
 
     expect(deps.setFocusedPanelByWorkspace).toHaveBeenCalledTimes(1);
-    // The updater function must set [ws-1] to p-new
     const updater = deps.setFocusedPanelByWorkspace.mock.calls[0][0];
     expect(typeof updater).toBe('function');
     expect(updater({ 'ws-0': 'p-0' })).toEqual({ 'ws-0': 'p-0', 'ws-1': 'p-new' });
 
-    expect(deps.updateRightDockState).toHaveBeenCalledTimes(1);
-    const demaxUpdater = deps.updateRightDockState.mock.calls[0][0];
-    expect(typeof demaxUpdater).toBe('function');
-    expect(demaxUpdater({ maximized: true, maximizedView: 'pizarra' })).toEqual({
-      maximized: false,
-      maximizedView: 'browser',
-    });
+    expect(deps.updateRightDockState).not.toHaveBeenCalled();
   });
 
   test('case (b) focus:true + maximizedView:"browser" → activates, focuses, NO de-max', () => {

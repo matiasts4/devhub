@@ -3,7 +3,7 @@
  * and T-029a (propagate `session_id`).
  *
  * Spec requirement (T-025, session-workspace-restore):
- * - The producer (ChatPanel) only dispatches `devhub:zed-open-terminal`
+ * - The producer (useZedChat) only dispatches `devhub:zed-open-terminal`
  *   when an `open_terminal` tool result has a `session_id`.
  * - The consumer (TerminalWorkspacesManager) must accept the event
  *   whether `command` is null (open empty shell) OR a string (open + run).

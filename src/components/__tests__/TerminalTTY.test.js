@@ -132,6 +132,8 @@ const {
   sendTerminalPasteInput,
   scheduleTerminalViewportSyncBurst,
   shouldSyncTerminalViewportOnLayoutShow,
+  shouldClearGpuAtlasOnWorkspaceShow,
+  shouldReleaseCanvasRendererOnLayoutHide,
   shouldShowTerminalLoadingOverlay,
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
@@ -401,7 +403,7 @@ describe('proposeTerminalViewportDimensions()', () => {
     };
   }
 
-  test('adds one extra row when vertical slack is between ~28% and one cell', () => {
+  test('keeps floored rows when clipping one extra row would waste more space than the slack band', () => {
     const container = {
       getBoundingClientRect: () => ({ width: 800, height: 509 }),
     };
@@ -412,10 +414,10 @@ describe('proposeTerminalViewportDimensions()', () => {
         fitAddon: { proposeDimensions: jest.fn() },
         term: makeTerm(),
       })
-    ).toEqual({ cols: 80, rows: 26 });
+    ).toEqual({ cols: 80, rows: 25 });
   });
 
-  test('keeps floor rows when slack is smaller than the extra-row threshold', () => {
+  test('keeps floored rows when slack is smaller than half a cell', () => {
     const container = {
       getBoundingClientRect: () => ({ width: 800, height: 504 }),
     };
@@ -427,6 +429,34 @@ describe('proposeTerminalViewportDimensions()', () => {
         term: makeTerm(),
       })
     ).toEqual({ cols: 80, rows: 25 });
+  });
+
+  test('adds one extra row when slack is larger than the clip cost of an extra cell', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 511 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 80, rows: 26 });
+  });
+
+  test('adds one extra column when horizontal slack is larger than the clip cost', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 809, height: 400 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 81, rows: 20 });
   });
 });
 
@@ -529,6 +559,70 @@ describe('shouldAttachCanvasRenderer()', () => {
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-canvas' })).toBe(true);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-webgl' })).toBe(false);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm' })).toBe(false);
+  });
+});
+
+describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
+  test('limits canvas atlas clears to pending catch-up syncs only', () => {
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'workspace-show-settled',
+      })
+    ).toBe(false);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'workspace-show-pending',
+      })
+    ).toBe(true);
+  });
+
+  test('keeps webgl atlas clears on settled/recover bursts but not layout-settled immediates', () => {
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'workspace-show-recover',
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'layout-settled-workspace-switch-immediate',
+      })
+    ).toBe(false);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'layout-settled-swarm-launch-delay-1000',
+      })
+    ).toBe(true);
+  });
+});
+
+describe('shouldReleaseCanvasRendererOnLayoutHide()', () => {
+  test('releases canvas only on visible→hidden edges in canvas mode', () => {
+    expect(
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-canvas',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-webgl',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-canvas',
+        isVisibleInLayout: true,
+        prevVisibleInLayout: false,
+      })
+    ).toBe(false);
   });
 });
 

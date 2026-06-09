@@ -22,6 +22,8 @@ import { browserTool } from '@/lib/asistente/tools/browser';
 import { fileTool, reviewLogFileTool } from '@/lib/asistente/tools/files';
 import { swarmTool } from '@/lib/asistente/tools/swarm';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
+import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
+import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
 
 export const MODEL = 'minimax-coding-plan/MiniMax-M3';
 export const BASE_URL = 'https://api.minimax.io/anthropic/v1/messages';
@@ -132,7 +134,14 @@ export async function POST(request) {
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'malformed body' }, { status: 400 });
     }
-    const { message, context = {}, history } = body;
+    const { message, context: clientContext = {}, history } = body;
+    const requestContext = {
+      ...clientContext,
+      max_terminal_panels:
+        Number(clientContext?.max_terminal_panels) || MAX_ZED_TERMINAL_PANELS,
+      terminal_panel_count: Number(clientContext?.terminal_panel_count) || 0,
+      _terminal_opens_this_request: 0,
+    };
 
     // T-033: optional history array from the client. Allows the assistant to
     // remember recent turns. The server still owns the per-turn tool loop
@@ -157,11 +166,20 @@ export async function POST(request) {
 
     zedLog.sessionStart(msgId, message);
 
-    const apiKey = process.env.MINIMAX_API_KEY || process.env.ANTHROPIC_API_KEY;
+    const { apiKey, source: apiKeySource } = resolveZedApiKey();
     if (!apiKey) {
-      zedLog.error('CONFIG', 'No API key configured');
-      return NextResponse.json({ error: 'No API key configured' }, { status: 500 });
+      zedLog.error('CONFIG', 'No usable MiniMax API key configured', {
+        hint: 'Set MINIMAX_API_KEY in .env.local (not a placeholder) or data/llm-providers-config.json providers.minimax.MINIMAX_API_KEY',
+      });
+      return NextResponse.json(
+        {
+          error:
+            'No hay API key de MiniMax configurada. Revisá MINIMAX_API_KEY en .env.local o data/llm-providers-config.json.',
+        },
+        { status: 500 }
+      );
     }
+    zedLog.info('CONFIG', 'MiniMax API key resolved', { source: apiKeySource });
 
     let systemPrompt;
     try {
@@ -288,7 +306,7 @@ export async function POST(request) {
 
           let result;
           try {
-            result = await registry.execute(name, effectiveInput, context);
+            result = await registry.execute(name, effectiveInput, requestContext);
           } catch (err) {
             result = { error: err.message };
           }

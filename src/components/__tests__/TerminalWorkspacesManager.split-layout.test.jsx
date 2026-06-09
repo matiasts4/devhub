@@ -729,8 +729,8 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(subtabsBar?.className).toContain('h-10');
     expect(subtabsBar?.className).not.toContain('h-11');
     expect(workspaceShell).not.toBeNull();
-    expect(workspaceShell?.className).toContain('p-1.5');
-    expect(workspaceShell?.className).not.toContain('p-2');
+    expect(workspaceShell?.className).toContain('p-0');
+    expect(workspaceShell?.className).not.toContain('p-1.5');
     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
     expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
   });

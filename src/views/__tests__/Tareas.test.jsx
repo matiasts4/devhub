@@ -246,6 +246,23 @@ describe('Tareas brutalist morphology chrome', () => {
     expect(serialized).not.toContain('#161b26');
   });
 
+  test('kanban columns expose a bounded scroll body for long task lists', async () => {
+    const view = await renderIntoDom(React.createElement(Tareas), mountedRoots);
+    await flushAsyncWork();
+
+    const board = view.container.querySelector('[data-testid="kanban-board"]');
+    const pendingBody = view.container.querySelector('[data-testid="kanban-column-body-pending"]');
+
+    expect(board).not.toBeNull();
+    expect(board.className).toContain('min-h-0');
+    expect(board.className).toContain('flex-1');
+    expect(pendingBody).not.toBeNull();
+    expect(pendingBody.className).toContain('overflow-y-auto');
+    expect(pendingBody.className).toContain('min-h-0');
+    expect(pendingBody.className).toContain('kanban-column-scrollbar');
+    expect(pendingBody.style.getPropertyValue('--kanban-column-accent')).toBeTruthy();
+  });
+
   test('keeps modal and agent queue behavior stable while applying brutalist chrome to live surfaces', async () => {
     const view = await renderIntoDom(React.createElement(Tareas), mountedRoots);
     await flushAsyncWork();

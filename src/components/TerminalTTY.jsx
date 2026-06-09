@@ -187,8 +187,41 @@ function neutralizeWebglAddonForDisposal(addon) {
   }
 }
 
-const TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MIN = 0.28;
-const TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MAX = 0.98;
+// Horizontal: always add one more column when slack remains so lateral bands disappear
+// (overflow:hidden clips the partial edge). Vertical: keep the cheaper clip/slack tradeoff.
+function proposeTerminalAxisDimension({ available, cellSize, minValue, fillSlack = false }) {
+  const avail = Number(available);
+  const cell = Number(cellSize);
+  if (!Number.isFinite(avail) || avail <= 0 || !Number.isFinite(cell) || cell <= 0) {
+    return minValue;
+  }
+
+  const base = Math.max(minValue, Math.floor(avail / cell));
+  const slack = avail - base * cell;
+  if (slack <= 0) return base;
+  if (fillSlack) return base + 1;
+
+  const expanded = base + 1;
+  const clip = expanded * cell - avail;
+  return clip < slack ? expanded : base;
+}
+
+export function resolveTerminalHorizontalAvailWidth(rect, term) {
+  const width = Number(rect?.width ?? 0);
+  if (width <= 0) return 0;
+
+  const viewport = term?._core?.viewport;
+  const scrollBarW = Number(viewport?.scrollBarWidth ?? 0);
+  if (scrollBarW <= 0) return width;
+
+  const scrollBarVisible =
+    viewport?.scrollBarVisible?.value ??
+    viewport?.scrollBarVisible ??
+    viewport?.scrollBarHasVisible ??
+    false;
+
+  return scrollBarVisible ? Math.max(0, width - scrollBarW) : width;
+}
 
 export function proposeTerminalViewportDimensions({ container, fitAddon, term }) {
   if (!container || !fitAddon || !term) return null;
@@ -212,17 +245,20 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
     };
   }
 
-  const scrollBarW = Number(term?._core?.viewport?.scrollBarWidth ?? 0);
-  const availW = Math.max(0, rect.width - scrollBarW);
+  const availW = resolveTerminalHorizontalAvailWidth(rect, term);
   const availH = rect.height;
-  const cols = Math.max(2, Math.floor(availW / cellW));
-  const baseRows = Math.max(1, Math.floor(availH / cellH));
-  const slackH = availH - baseRows * cellH;
-  const rows =
-    slackH >= cellH * TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MIN &&
-    slackH < cellH * TERMINAL_VIEWPORT_EXTRA_ROW_SLACK_MAX
-      ? baseRows + 1
-      : baseRows;
+  const cols = proposeTerminalAxisDimension({
+    available: availW,
+    cellSize: cellW,
+    minValue: 2,
+    fillSlack: true,
+  });
+  const rows = proposeTerminalAxisDimension({
+    available: availH,
+    cellSize: cellH,
+    minValue: 1,
+    fillSlack: false,
+  });
 
   return { cols, rows };
 }
@@ -646,6 +682,35 @@ export function shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)
   return !prevVisible && nextVisible;
 }
 
+/** Canvas uses release-on-hide + reattach-on-show; avoid repeated atlas clears on delayed bursts. */
+export function shouldClearGpuAtlasOnWorkspaceShow({
+  operationalRendererMode,
+  reason = '',
+  explicitClearAtlas,
+} = {}) {
+  if (typeof explicitClearAtlas === 'boolean') return explicitClearAtlas;
+  if (operationalRendererMode === 'xterm-canvas') {
+    return reason === 'workspace-show-pending';
+  }
+  if (reason.startsWith('layout-settled-')) {
+    return reason.includes('delay-1000') || reason.includes('recover');
+  }
+  return reason.includes('settled') || reason.includes('recover');
+}
+
+/** Release Canvas while a panel is layout-hidden so PTY output cannot corrupt glyph atlases. */
+export function shouldReleaseCanvasRendererOnLayoutHide({
+  operationalRendererMode,
+  isVisibleInLayout,
+  prevVisibleInLayout,
+} = {}) {
+  return (
+    prevVisibleInLayout &&
+    !isVisibleInLayout &&
+    shouldAttachCanvasRenderer({ operationalRendererMode })
+  );
+}
+
 export function shouldOpenNativeVtePanel({
   isActivePanel,
   isVisibleInLayout = true,
@@ -823,6 +888,7 @@ export default function TerminalTTY({
   const nativeResizeRafRef = useRef(null);
   const nativeResizeSettleTimersRef = useRef([]);
   const wsRef = useRef(null);
+  const sessionClosingRef = useRef(false);
   const searchRef = useRef(null);
   const transportRef = useRef('json');
   const lastViewportDiagnosticRef = useRef(null);
@@ -921,6 +987,7 @@ export default function TerminalTTY({
   const handleWebglContextLossRef = useRef(null);
   const prevIsActivePanelRef = useRef(false);
   const reactivateTerminalViewportRef = useRef(null);
+  const reactivateCoalesceTimerRef = useRef(null);
   const tryReattachWebglAddonRef = useRef(null);
   const tryReattachCanvasAddonRef = useRef(null);
   const processExitedRef = useRef(false);
@@ -1305,6 +1372,26 @@ export default function TerminalTTY({
       await Promise.resolve(closeNativeVtePanel({ panelId: id, reason })).catch(() => {});
     },
     [id]
+  );
+
+  const tearDownClientSession = useCallback(
+    (reason = 'session-close') => {
+      sessionClosingRef.current = true;
+      clearTimers();
+      if (wsRef.current) {
+        const stale = wsRef.current;
+        stale.onopen = null;
+        stale.onmessage = null;
+        stale.onerror = null;
+        stale.onclose = null;
+        stale.close();
+        wsRef.current = null;
+      }
+      disposeXtermRuntime();
+      closeNativeLease(reason);
+      setConnectionState('terminated');
+    },
+    [clearTimers, closeNativeLease, disposeXtermRuntime]
   );
 
   const hideNativeLease = useCallback(
@@ -1779,7 +1866,11 @@ export default function TerminalTTY({
       logViewportDiagnostic(reason);
 
       const shouldClearAtlas =
-        clearAtlas ?? (reason.includes('recover') && Boolean(webglAddonRef.current));
+        clearAtlas ??
+        shouldClearGpuAtlasOnWorkspaceShow({
+          operationalRendererMode: operationalRendererModeRef.current,
+          reason,
+        });
 
       const fitWorked = fitTerminalViewport({
         container: containerRef.current,
@@ -1852,6 +1943,17 @@ export default function TerminalTTY({
     });
   }, [clearTimers, fitAndResize, scheduleInactiveViewportRepaint, scrollTerminalToBottom]);
 
+  const scheduleReactivateTerminalViewport = useCallback((options = {}) => {
+    if (reactivateCoalesceTimerRef.current) {
+      clearTimeout(reactivateCoalesceTimerRef.current);
+    }
+    const coalesceMs = process.env.NODE_ENV === 'test' ? 0 : 48;
+    reactivateCoalesceTimerRef.current = setTimeout(() => {
+      reactivateCoalesceTimerRef.current = null;
+      reactivateTerminalViewportRef.current?.(options);
+    }, coalesceMs);
+  }, []);
+
   const reactivateTerminalViewport = useCallback(
     (options = {}) => {
       const rect = containerRef.current?.getBoundingClientRect();
@@ -1888,7 +1990,7 @@ export default function TerminalTTY({
   );
 
   useEffect(() => {
-    if (!ENABLE_NATIVE_VTE) return undefined;
+    if (!isNativeVteRuntimeAvailable()) return undefined;
 
     let cancelled = false;
 
@@ -2513,14 +2615,14 @@ export default function TerminalTTY({
   useEffect(() => {
     const handleSessionClosing = (event) => {
       if (event.detail?.panelId !== id) return;
-      closeNativeLease('session-close');
+      tearDownClientSession('session-close');
     };
 
     window.addEventListener('devhub:terminal-session-closing', handleSessionClosing);
     return () => {
       window.removeEventListener('devhub:terminal-session-closing', handleSessionClosing);
     };
-  }, [closeNativeLease, id]);
+  }, [id, tearDownClientSession]);
 
   useEffect(() => {
     if (!shouldUseNativeRenderer) return undefined;
@@ -2549,6 +2651,11 @@ export default function TerminalTTY({
   }, [clearNativeVteProbeRetryTimer, id, onActivatePanel, shouldUseNativeRenderer]);
 
   const connect = useCallback(async () => {
+    if (sessionClosingRef.current) {
+      cliLog(`CLIENT:${id}`, 'connect() skipped — session is closing');
+      return;
+    }
+
     processExitedRef.current = false;
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -2848,15 +2955,27 @@ export default function TerminalTTY({
       workspaceShowRecoverTimerRef.current = null;
     }
 
+    if (
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode,
+        isVisibleInLayout,
+        prevVisibleInLayout: prevVisible,
+      }) &&
+      !shouldUseNativeRenderer &&
+      canvasAddonRef.current
+    ) {
+      releaseCanvasAddon('layout-hidden-canvas');
+    }
+
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
       syncTerminalViewportOnWorkspaceShow('workspace-show-layout', { clearAtlas: false });
       workspaceShowSyncTimerRef.current = setTimeout(() => {
         workspaceShowSyncTimerRef.current = null;
-        syncTerminalViewportOnWorkspaceShow('workspace-show-settled', { clearAtlas: true });
+        syncTerminalViewportOnWorkspaceShow('workspace-show-settled', { clearAtlas: false });
       }, 180);
       workspaceShowRecoverTimerRef.current = setTimeout(() => {
         workspaceShowRecoverTimerRef.current = null;
-        syncTerminalViewportOnWorkspaceShow('workspace-show-recover', { clearAtlas: true });
+        syncTerminalViewportOnWorkspaceShow('workspace-show-recover', { clearAtlas: false });
       }, 340);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -2881,7 +3000,13 @@ export default function TerminalTTY({
         workspaceShowRecoverTimerRef.current = null;
       }
     };
-  }, [isVisibleInLayout, syncTerminalViewportOnWorkspaceShow]);
+  }, [
+    isVisibleInLayout,
+    operationalRendererMode,
+    releaseCanvasAddon,
+    shouldUseNativeRenderer,
+    syncTerminalViewportOnWorkspaceShow,
+  ]);
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
@@ -3193,7 +3318,14 @@ export default function TerminalTTY({
             logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
 
             if (ready) {
-              fitAddon.fit();
+              fitTerminalViewport({
+                container: containerRef.current,
+                fitAddon,
+                term: termRef.current,
+                socket: wsRef.current,
+                clearAtlas: true,
+                lastPtySizeRef: lastPtySizeRef.current,
+              });
               stabilizeTerminalRenderer(termRef.current);
             } else {
               logViewportDiagnostic('terminal-open-timeout');
@@ -3340,6 +3472,8 @@ export default function TerminalTTY({
   }, [autoFocus]);
 
   useEffect(() => {
+    if (sessionClosingRef.current) return undefined;
+
     if (shouldAutoReconnectTerminal(connectionState, autoFocus, initError)) {
       if (!autoFocus) {
         cliLog(`CLIENT:${id}`, 'auto-reconnect SKIPPED (not autoFocus)', { connectionState });
@@ -3375,7 +3509,7 @@ export default function TerminalTTY({
         })
       ) {
         logViewportDiagnostic('visibility-visible');
-        reactivateTerminalViewport();
+        scheduleReactivateTerminalViewport();
         queueNativeVteProbeRetry(0);
       }
     };
@@ -3398,7 +3532,7 @@ export default function TerminalTTY({
         return;
       }
       logViewportDiagnostic('window-focus');
-      reactivateTerminalViewport();
+      scheduleReactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
     };
     const handlePageShow = () => {
@@ -3406,7 +3540,7 @@ export default function TerminalTTY({
         return;
       }
       logViewportDiagnostic('pageshow');
-      reactivateTerminalViewport();
+      scheduleReactivateTerminalViewport();
       queueNativeVteProbeRetry(0);
     };
 
@@ -3416,6 +3550,10 @@ export default function TerminalTTY({
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
+      if (reactivateCoalesceTimerRef.current) {
+        clearTimeout(reactivateCoalesceTimerRef.current);
+        reactivateCoalesceTimerRef.current = null;
+      }
       window.removeEventListener('resize', handleWindowResize);
       window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('pageshow', handlePageShow);
@@ -3427,7 +3565,7 @@ export default function TerminalTTY({
     logViewportDiagnostic,
     queueNativeVteProbeRetry,
     fitAndResize,
-    reactivateTerminalViewport,
+    scheduleReactivateTerminalViewport,
     sendResize,
   ]);
 
@@ -3454,7 +3592,10 @@ export default function TerminalTTY({
             return;
           }
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-${phase}`, {
-            clearAtlas: phase.includes('delay-1000') || phase.includes('recover'),
+            clearAtlas: shouldClearGpuAtlasOnWorkspaceShow({
+              operationalRendererMode: operationalRendererModeRef.current,
+              reason: `layout-settled-${reason}-${phase}`,
+            }),
           });
         },
         { extraDelaysMs }
@@ -3832,7 +3973,11 @@ export default function TerminalTTY({
           onMouseDown={handleViewportMouseDown}
           onPaste={handleViewportPaste}
           data-testid="terminal-viewport-shell"
-          style={{ ...TERMINAL_VIEWPORT_SHELL_STYLE, ...getTerminalViewportFrameStyle() }}
+          style={{
+            ...TERMINAL_VIEWPORT_SHELL_STYLE,
+            ...getTerminalViewportFrameStyle(),
+            ...(hideTitleBar ? { borderWidth: 0 } : {}),
+          }}
         >
           <div
             ref={nativePlaceholderRef}

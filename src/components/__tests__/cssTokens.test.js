@@ -85,6 +85,13 @@ describe('CSS Tokens — globals.css', () => {
     );
   });
 
+  test('kanban column scrollbar is wider and tinted for visible overflow cues', () => {
+    expect(css).toMatch(/\.kanban-column-scrollbar\s*\{[\s\S]*scrollbar-gutter:\s*stable;/);
+    expect(css).toMatch(
+      /\.kanban-column-scrollbar::-webkit-scrollbar\s*\{[\s\S]*width:\s*10px;/
+    );
+  });
+
   test('xterm viewport no longer uses transparent background that corrupts TUI canvas rendering', () => {
     expect(css).toMatch(
       /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/

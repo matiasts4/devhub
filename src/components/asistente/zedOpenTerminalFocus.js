@@ -7,9 +7,9 @@
  * Contract (T-WSR-zed-001, design §3.1):
  *   - When `targetWsId && newPanelId`: always call `activateWorkspacePanel`.
  *   - When `detail.focus === true`: call `setFocusedPanelByWorkspace`
- *     (functional update) AND, only if `maximizedView === 'pizarra'`,
- *     call `updateRightDockState` (functional update) with
- *     `{ maximized:false, maximizedView:'browser' }`.
+ *     (functional update). While pizarra canvas is active, stay in pizarra
+ *     (do not de-maximize to the side-dock browser — surfaces render on
+ *     the canvas via the shared registry).
  *   - Otherwise return the all-false shape.
  *
  * SSR-safety: this module never references `window` or any browser
@@ -47,16 +47,6 @@ export function applyZedOpenTerminalFocus(
     // visible in its workspace (the user is asking us to "focus on this").
     setFocusedPanelByWorkspace((prev) => ({ ...prev, [targetWsId]: newPanelId }));
     focused = true;
-
-    // Opt-in pizarra de-maximize. The user opted in by setting focus=true.
-    if (maximizedView === 'pizarra') {
-      updateRightDockState((current) => ({
-        ...current,
-        maximized: false,
-        maximizedView: 'browser',
-      }));
-      demaximized = true;
-    }
   }
 
   return { activated: true, focused, demaximized };

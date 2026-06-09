@@ -24,6 +24,7 @@ function renderWorkspacePanel(
     onSplitDown,
     onToggleFocus,
     isFocusedPanel,
+    navigationPulseActive,
     requestedRendererMode,
     onResetRendererToXterm,
     onSetPanelRenderer,
@@ -32,6 +33,8 @@ function renderWorkspacePanel(
     panelSemanticMetadata,
     suspendNativeSurface,
     nativeSurfacePolicy,
+    /** When pizarra canvas owns live surfaces, skip mounting a second TTY here. */
+    deferLiveSurfaceToPizarra = false,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
@@ -48,7 +51,7 @@ function renderWorkspacePanel(
         isActive
           ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
           : 'border-transparent'
-      }`}
+      } ${navigationPulseActive ? 'terminal-panel-nav-pulse' : ''}`}
       style={swarmRole ? { '--swarm-role-rgb': swarmRole.rgb } : undefined}
       onMouseDown={() => {
         if (onActivatePanel) {
@@ -203,26 +206,34 @@ function renderWorkspacePanel(
         </div>
       </div>
       <div
-        className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+        className="min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
         data-testid={`panel-body-${panel.id}`}
       >
-        <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
-          <TerminalTTY
-            id={panel.id}
-            cwd={panel.cwd || cwd}
-            swarmContext={panel.swarmContext || null}
-            hideTitleBar={true}
-            showQuickCopyButton={false}
-            autoFocus={isActive}
-            isActivePanel={Boolean(isActivePanel ?? isActive)}
-            isVisibleInLayout={Boolean(isVisibleInLayout)}
-            initialCommand={panel.initialCommand}
-            requestedRendererMode={requestedRendererMode}
-            onResetRendererToXterm={onResetRendererToXterm}
-            onActivatePanel={onActivatePanel}
-            suspendNativeSurface={Boolean(suspendNativeSurface)}
-            nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
-          />
+        <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
+          {deferLiveSurfaceToPizarra ? (
+            <div
+              data-testid={`panel-body-deferred-pizarra-${panel.id}`}
+              className="h-full w-full"
+              aria-hidden="true"
+            />
+          ) : (
+            <TerminalTTY
+              id={panel.id}
+              cwd={panel.cwd || cwd}
+              swarmContext={panel.swarmContext || null}
+              hideTitleBar={true}
+              showQuickCopyButton={false}
+              autoFocus={isActive}
+              isActivePanel={Boolean(isActivePanel ?? isActive)}
+              isVisibleInLayout={Boolean(isVisibleInLayout)}
+              initialCommand={panel.initialCommand}
+              requestedRendererMode={requestedRendererMode}
+              onResetRendererToXterm={onResetRendererToXterm}
+              onActivatePanel={onActivatePanel}
+              suspendNativeSurface={Boolean(suspendNativeSurface)}
+              nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+            />
+          )}
         </div>
       </div>
     </div>

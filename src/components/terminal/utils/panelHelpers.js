@@ -358,6 +358,25 @@ function buildWorkspaceColumnsForTerminalCount({
   return { columns: builtColumns, firstPanelId };
 }
 
+/** First terminal panel when workspace has zero panels (split/add from empty). */
+function spawnFirstTerminalPanelColumns({
+  allocateColumnId,
+  allocatePanelId,
+  initialCommand = null,
+  panelCwd = null,
+  explicitPanelId = null,
+}) {
+  const panelId =
+    typeof explicitPanelId === 'string' && explicitPanelId.length > 0
+      ? explicitPanelId
+      : allocatePanelId();
+  const colId = allocateColumnId();
+  return {
+    columns: [createColumn(colId, panelId, initialCommand, panelCwd)],
+    panelId,
+  };
+}
+
 export {
   createPanel,
   createColumn,
@@ -369,4 +388,5 @@ export {
   getWorkspaceTabStyle,
   resolveWorkspaceGridShape,
   buildWorkspaceColumnsForTerminalCount,
+  spawnFirstTerminalPanelColumns,
 };

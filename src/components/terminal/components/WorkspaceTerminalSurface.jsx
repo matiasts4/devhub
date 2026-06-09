@@ -236,10 +236,10 @@ function WorkspaceTerminalSurface({
           </div>
         </div>
         <div
-          className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+          className="min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
           data-testid={`panel-body-${panel.id}`}
         >
-          <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
+          <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
             <TerminalTTY
               id={panel.id}
               cwd={panel.cwd || cwd}
@@ -274,7 +274,7 @@ function WorkspaceTerminalSurface({
     <div
       key={workspace.id}
       data-testid={`workspace-shell-${workspace.id}`}
-      className={`absolute inset-0 p-1.5 ${activeWsId !== workspace.id || !isVisible ? 'hidden' : ''}`}
+      className={`absolute inset-0 p-0 ${activeWsId !== workspace.id || !isVisible ? 'hidden' : ''}`}
       style={{
         zIndex: activeWsId === workspace.id ? 10 : 0,
       }}
@@ -287,7 +287,7 @@ function WorkspaceTerminalSurface({
         <Panel
           key={`${workspace.id}-terminal-grid`}
           minSize={18}
-          className="flex flex-col bg-[var(--surface-app)] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
+          className="flex flex-col bg-[var(--surface-app)] rounded-none overflow-hidden border-0"
         >
           {/* Terminal bodies — preserve real split geometry */}
           <div className="flex-1 relative overflow-hidden min-h-0">

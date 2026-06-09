@@ -14,7 +14,7 @@ describe('open_url (browserTool)', () => {
       url: 'https://github.com/foo',
       label: 'repo',
       focus: true,
-      message: 'Navegador integrado del workspace abierto → https://github.com/foo',
+      message: 'Navegador en pizarra → https://github.com/foo',
     });
   });
 

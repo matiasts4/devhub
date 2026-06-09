@@ -979,8 +979,10 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(
-      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.className
-    ).toContain('hidden');
+      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.getAttribute(
+        'data-dock-layer-visible'
+      )
+    ).toBe('false');
 
     await click(view.container.querySelector('[title="Workspace 1"]'));
     await flushEffects();

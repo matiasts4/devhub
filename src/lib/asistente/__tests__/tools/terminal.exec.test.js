@@ -63,6 +63,17 @@ describe('execute_in_terminal (executeInTerminalTool)', () => {
     expect(result.error).toBe('missing required parameter: input');
   });
 
+  test('blocks destructive execute_in_terminal input', async () => {
+    const calls = [];
+    mockFetch(async (...args) => {
+      calls.push(args);
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    const result = await executeInTerminalTool.execute({ session_id: 'sess-1', input: 'rm -rf .\n' }, {});
+    expect(calls).toHaveLength(0);
+    expect(result.error).toBe('command_blocked');
+  });
+
   test('returns missing-parameter error when session_id is missing', async () => {
     const calls = [];
     mockFetch(async (...args) => {

@@ -6,6 +6,7 @@
  */
 
 import fs from 'fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'path';
 
 const CONFIG_PATH = path.join(process.cwd(), 'data', 'llm-providers-config.json');
@@ -62,7 +63,7 @@ export function getLlmProviderConfigSync(providerKey) {
   }
   // Fallback: direct sync read (for sync callers at module startup)
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+    const raw = readFileSync(CONFIG_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     const provider = parsed?.providers?.[providerKey];
     if (!provider) return null;

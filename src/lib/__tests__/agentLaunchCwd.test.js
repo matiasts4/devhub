@@ -11,7 +11,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     workspaceId: 'ws-123',
     runId: 'run-456',
     supervisorUrl: 'http://localhost:3000',
-    innerCommand: 'opencode --agent sdd-orchestrator --prompt "do work"',
+    innerCommand: 'opencode --agent gentle-orchestrator --prompt "do work"',
   };
 
   describe('REQ-CWD-3: Fail-fast on missing worktree', () => {

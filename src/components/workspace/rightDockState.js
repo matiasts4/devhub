@@ -7,8 +7,6 @@ const MAX_RIGHT_DOCK_SIZE = 82;
 const DEFAULT_RIGHT_DOCK_STATE = {
   visible: false,
   activeTab: 'browser',
-  /** When true, Zed assistant stacks above workspace tools (browser/editor/swarm). */
-  zedVisible: false,
   /** Bumped when the in-app browser dock opens/resizes so native GTK re-measures bounds. */
   browserLayoutEpoch: 0,
   browserRuntime: 'native-gtk',
@@ -130,43 +128,31 @@ function normalizeBrowserUrl(rawValue) {
 function sanitizeRightDockState(rawState = {}) {
   const visible = rawState.visible === true;
   const isLegacyBridgeTab = rawState.activeTab === 'bridge';
-  const activeTab = ['browser', 'editor', 'swarm', 'operator', 'zed', 'pizarra'].includes(
-    rawState.activeTab
-  )
-    ? rawState.activeTab
-    : 'browser';
+  const rawActiveTab = rawState.activeTab;
+  const activeTab = ['browser', 'editor', 'swarm', 'operator', 'pizarra'].includes(rawActiveTab)
+    ? rawActiveTab
+    : rawActiveTab === 'zed'
+      ? 'browser'
+      : 'browser';
   const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
-  const zedVisible =
-    rawState.zedVisible === true || (activeTab === 'zed' && rawState.zedVisible !== false);
-  const normalizedActiveTab =
-    activeTab === 'zed' &&
-    zedVisible &&
-    ['browser', 'editor', 'swarm', 'operator'].includes(rawState.workspaceTab)
-      ? rawState.workspaceTab
-      : activeTab;
-  const maximizedView = [
-    'browser',
-    'editor',
-    'swarm',
-    'operator',
-    'zed',
-    'pizarra',
-    'window',
-  ].includes(rawState.maximizedView)
-    ? rawState.maximizedView
+  const normalizedActiveTab = activeTab;
+  const maximizedView = ['browser', 'editor', 'swarm', 'operator', 'pizarra', 'window'].includes(
+    rawState.maximizedView
+  )
+    ? rawState.maximizedView === 'zed'
+      ? 'browser'
+      : rawState.maximizedView
     : normalizedActiveTab === 'editor'
       ? 'editor'
       : normalizedActiveTab === 'swarm'
         ? 'swarm'
         : normalizedActiveTab === 'operator'
           ? 'operator'
-          : normalizedActiveTab === 'zed'
-            ? 'zed'
-            : normalizedActiveTab === 'pizarra'
-              ? 'pizarra'
-              : 'browser';
+          : normalizedActiveTab === 'pizarra'
+            ? 'pizarra'
+            : 'browser';
   const rawSize = Number(rawState.size);
   const size = Number.isFinite(rawSize)
     ? clamp(rawSize, MIN_RIGHT_DOCK_SIZE, MAX_RIGHT_DOCK_SIZE)
@@ -207,7 +193,6 @@ function sanitizeRightDockState(rawState = {}) {
   return {
     visible,
     activeTab: normalizedActiveTab,
-    zedVisible,
     browserLayoutEpoch,
     browserRuntime,
     editMode,

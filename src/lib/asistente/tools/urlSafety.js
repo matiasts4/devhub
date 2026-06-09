@@ -5,9 +5,15 @@
 // rejection. The caller is responsible for actually invoking the browser.
 
 export function isSafeHttpUrl(p) {
+  let candidate = String(p ?? '').trim();
+  if (!candidate) return { error: 'invalid url' };
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = `https://${candidate}`;
+  }
+
   let parsed;
   try {
-    parsed = new URL(String(p ?? ''));
+    parsed = new URL(candidate);
   } catch {
     return { error: 'invalid url' };
   }

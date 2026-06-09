@@ -6,6 +6,11 @@ describe('isSafeHttpUrl', () => {
     expect(r.url).toBe('https://github.com/foo');
   });
 
+  test('normalizes bare domains to https', () => {
+    const r = isSafeHttpUrl('github.com');
+    expect(r.url).toBe('https://github.com/');
+  });
+
   test('accepts an http URL', () => {
     const r = isSafeHttpUrl('http://example.com');
     expect(r.url).toBe('http://example.com/');

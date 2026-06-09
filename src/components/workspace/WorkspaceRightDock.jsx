@@ -6,7 +6,6 @@ import OperatorActionCard from '@/components/workspace/OperatorActionCard';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 import WorkspaceOperatorObserverPane from './WorkspaceOperatorObserverPane';
-import ChatPanel from '@/components/asistente/ChatPanel';
 import PizarraPane from '@/components/pizarra/PizarraPane';
 import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
@@ -35,7 +34,6 @@ export default function WorkspaceRightDock({
   const isBrowserActive = dockState.activeTab === 'browser';
   const isEditorActive = dockState.activeTab === 'editor';
   const isSwarmActive = dockState.activeTab === 'swarm';
-  const isZedActive = dockState.activeTab === 'zed';
   const isPizarraActive = dockState.activeTab === 'pizarra';
 
   // ── ModeTransitionShell wiring (pizarra-shared-view-state §7) ──────────────
@@ -88,12 +86,6 @@ export default function WorkspaceRightDock({
             onDockStateChange={onDockStateChange}
           />
         </div>
-
-        {isZedActive && (
-          <div className="h-full min-h-0">
-            <ChatPanel />
-          </div>
-        )}
 
         {isPizarraActive && (
           <div className="h-full min-h-0 relative" data-testid="pizarra-host">

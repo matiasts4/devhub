@@ -21,6 +21,24 @@ function normalizeNativeCapability(result) {
 }
 
 const MIN_NATIVE_BROWSER_BOUNDS_HEIGHT = 24;
+const MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS = 12;
+
+function isPanelNotFoundReason(reason) {
+  return String(reason || '') === 'panel-not-found';
+}
+
+function isRecoverableNativeOpenReason(reason) {
+  const normalized = String(reason || '');
+  return (
+    isPanelNotFoundReason(normalized) ||
+    normalized === 'missing-bounds' ||
+    normalized === 'open-failed'
+  );
+}
+
+function hasRecoverableNativeBridgeReason(result) {
+  return isRecoverableNativeOpenReason(result?.reason);
+}
 
 export function useNativeBrowserCapability({ panelId, requested = false }) {
   const [nativeCapability, setNativeCapability] = useState(null);
@@ -62,6 +80,7 @@ export function useNativeBrowserSurface({
 }) {
   const nativeLeaseRef = useRef({ opened: false, lastUrl: '' });
   const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
+  const [nativeError, setNativeError] = useState(null);
   const [openRecoveryAttempt, setOpenRecoveryAttempt] = useState(0);
   const openRecoveryTimerRef = useRef(null);
   const rafRef = useRef(null);
@@ -113,6 +132,7 @@ export function useNativeBrowserSurface({
           openInFlightRef.current = false;
           if (!cancelled) {
             setNativeRuntimeReady(false);
+            setNativeError(null);
           }
           return;
         }
@@ -120,84 +140,84 @@ export function useNativeBrowserSurface({
         if (!visibleInLayout) {
           await hideActiveNativeLease();
           openInFlightRef.current = false;
+          if (!cancelled) setNativeRuntimeReady(false);
           return;
         }
+
+        if (!cancelled) setNativeError(null);
 
         const bounds = measureBounds?.();
         const hasGoodBounds = !!(bounds && bounds.height >= MIN_NATIVE_BROWSER_BOUNDS_HEIGHT);
         if (!hasGoodBounds) {
           if (!cancelled) setNativeRuntimeReady(false);
-          // Schedule recovery as safety; the post-open correction below will also
-          // fix up the size shortly after we attempt with whatever (possibly early)
-          // bounds we have here. This keeps tests (which may see small rects in jsdom)
-          // passing while still self-correcting in real browser layout races.
-          if (bounds) {
-            scheduleOpenRecovery(80);
-          }
+          scheduleOpenRecovery(bounds ? 80 : 160);
+          return;
         }
 
         if (!nativeLeaseRef.current.opened) {
-          // On view switch (e.g. normal -> pizarra for carried browser pid), the previous
-          // controlling pane may have left the webview "opened" (we hide instead of close in cleanup).
-          // Probe first: if already live for this pid, just claim the lease (no re-open, which
-          // would re-init and cause load delay/blank). Then fall to resize/visible.
-          let claimed = false;
+          // Always call open: probe.ready only means the GTK host exists, NOT that this
+          // panel_id is registered. Skipping open caused panel-not-found on load/resize.
+          // registry_open_panel reuses an existing panel when the pid is already live.
+          if (openInFlightRef.current) {
+            return;
+          }
+          openInFlightRef.current = true;
+          let result;
           try {
-            const probe = await probeNativeBrowser({ panelId, requestedMode: 'native-gtk', tauriAvailable: true }).catch(() => null);
-            if (probe && (probe.ready || probe.opened || probe.persistentProfile)) {
-              nativeLeaseRef.current = { opened: true, lastUrl: url || '' };
-              claimed = true;
-            }
-          } catch { /* probe failed, will try open */ }
+            result = await openNativeBrowser({ panelId, url, bounds });
+          } finally {
+            openInFlightRef.current = false;
+          }
 
-          if (!claimed) {
-            if (openInFlightRef.current) {
-              // Another recovery bumped while a previous open is still pending.
-              // Do not spawn duplicate opens; the pending one will resolve and
-              // its closure will handle stale/cancel if the world changed.
-              return;
+          if (cancelled || !visibleInLayout) {
+            if (result?.opened === true) {
+              await closeNativeBrowser({ panelId, reason: 'stale-open-cancelled' }).catch(() => {});
             }
-            openInFlightRef.current = true;
-            let result;
-            try {
-              result = await openNativeBrowser({ panelId, url, bounds });
-            } finally {
-              openInFlightRef.current = false;
-            }
+            return;
+          }
 
-            if (cancelled || !visibleInLayout) {
-              if (result?.opened === true) {
-                await closeNativeBrowser({ panelId, reason: 'stale-open-cancelled' }).catch(() => {});
+          if (result?.opened !== true) {
+            if (
+              hasRecoverableNativeBridgeReason(result) &&
+              openRecoveryAttempt < MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS
+            ) {
+              await closeNativeBrowser({ panelId, reason: 'open-recovery' }).catch(() => {});
+              nativeLeaseRef.current = { opened: false, lastUrl: '' };
+              if (!cancelled) {
+                setNativeRuntimeReady(false);
+                setNativeError(null);
+                scheduleOpenRecovery(result?.reason === 'missing-bounds' ? 120 : 0);
               }
               return;
             }
-
-            if (result?.opened !== true) {
-              if (!cancelled) setNativeRuntimeReady(false);
-              return;
-            }
-
-            nativeLeaseRef.current = { opened: true, lastUrl: url };
-          }
-
-          // If claimed or just opened, and url changed, ensure loaded (for carry of exact page).
-          if (nativeLeaseRef.current.lastUrl !== url) {
-            const result = await loadNativeBrowserUrl({ panelId, url });
-            if (cancelled) return;
-
-            if (result?.loaded === false) {
+            if (!cancelled) {
               setNativeRuntimeReady(false);
-              return;
+              setNativeError(result?.reason || 'open-failed');
             }
-
-            nativeLeaseRef.current.lastUrl = url;
+            return;
           }
+
+          nativeLeaseRef.current = { opened: true, lastUrl: url };
         } else if (nativeLeaseRef.current.lastUrl !== url) {
           const result = await loadNativeBrowserUrl({ panelId, url });
           if (cancelled) return;
 
           if (result?.loaded === false) {
+            if (
+              isPanelNotFoundReason(result?.reason) &&
+              openRecoveryAttempt < MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS
+            ) {
+              await closeNativeBrowser({ panelId, reason: 'load-recovery' }).catch(() => {});
+              nativeLeaseRef.current = { opened: false, lastUrl: '' };
+              if (!cancelled) {
+                setNativeRuntimeReady(false);
+                setNativeError(null);
+                scheduleOpenRecovery(0);
+              }
+              return;
+            }
             setNativeRuntimeReady(false);
+            setNativeError(result?.reason || 'load-failed');
             return;
           }
 
@@ -212,14 +232,62 @@ export function useNativeBrowserSurface({
             ? postOpenBounds
             : bounds;
 
-        await resizeNativeBrowser({ panelId, bounds: finalBounds }).catch(() => {});
-        await setNativeBrowserVisibility({ panelId, visible: true, bounds: finalBounds }).catch(() => {});
+        const resizeResult = await resizeNativeBrowser({ panelId, bounds: finalBounds }).catch(
+          (error) => ({ reason: error?.message || 'resize-failed' })
+        );
+        if (
+          hasRecoverableNativeBridgeReason(resizeResult) &&
+          openRecoveryAttempt < MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS
+        ) {
+          await closeNativeBrowser({ panelId, reason: 'resize-recovery' }).catch(() => {});
+          nativeLeaseRef.current = { opened: false, lastUrl: '' };
+          if (!cancelled) {
+            setNativeRuntimeReady(false);
+            setNativeError(null);
+            scheduleOpenRecovery(0);
+          }
+          return;
+        }
+        if (hasRecoverableNativeBridgeReason(resizeResult)) {
+          if (!cancelled) {
+            setNativeRuntimeReady(false);
+            setNativeError(resizeResult?.reason || 'resize-failed');
+          }
+          return;
+        }
+
+        const visibilityResult = await setNativeBrowserVisibility({
+          panelId,
+          visible: true,
+          bounds: finalBounds,
+        }).catch((error) => ({ reason: error?.message || 'visibility-failed' }));
+        if (
+          hasRecoverableNativeBridgeReason(visibilityResult) &&
+          openRecoveryAttempt < MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS
+        ) {
+          await closeNativeBrowser({ panelId, reason: 'visibility-recovery' }).catch(() => {});
+          nativeLeaseRef.current = { opened: false, lastUrl: '' };
+          if (!cancelled) {
+            setNativeRuntimeReady(false);
+            setNativeError(null);
+            scheduleOpenRecovery(0);
+          }
+          return;
+        }
+        if (hasRecoverableNativeBridgeReason(visibilityResult)) {
+          if (!cancelled) {
+            setNativeRuntimeReady(false);
+            setNativeError(visibilityResult?.reason || 'visibility-failed');
+          }
+          return;
+        }
 
         if (focusOnShow) {
           await focusNativeBrowser({ panelId }).catch(() => {});
         }
 
         if (!cancelled) {
+          setNativeError(null);
           setNativeRuntimeReady(true);
           // rAF correction after ready: guarantees the native surface matches the
           // finally laid out web rect even if all previous measures were early.
@@ -243,7 +311,10 @@ export function useNativeBrowserSurface({
 
         console.error('[useNativeBrowserSurface] syncNativeSurface failed:', err);
         openInFlightRef.current = false;
-        if (!cancelled) setNativeRuntimeReady(false);
+        if (!cancelled) {
+          setNativeRuntimeReady(false);
+          setNativeError(err?.message || 'native-browser-sync-failed');
+        }
       }
     }
 
@@ -333,5 +404,11 @@ export function useNativeBrowserSurface({
     };
   }, [active, measureBounds, nativeRuntimeReady, observeNode, panelId, visibleInLayout]);
 
-  return { nativeRuntimeReady };
+  const retryNative = useCallback(() => {
+    setNativeError(null);
+    setNativeRuntimeReady(false);
+    setOpenRecoveryAttempt((attempt) => attempt + 1);
+  }, []);
+
+  return { nativeRuntimeReady, nativeError, retryNative };
 }

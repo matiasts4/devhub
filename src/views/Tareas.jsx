@@ -951,7 +951,7 @@ export default function Tareas() {
     <div className="h-full flex flex-col" style={getWorkspacePageShellStyle()}>
       {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col gap-5 min-h-0" style={getWorkspacePageContentStyle()}>
-        <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
+        <div className="shrink-0 grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
           <div className="border px-5 py-4" style={getQueueHeroStyle()}>
             <div className="mb-2 flex items-center gap-2">
               <span className="h-2.5 w-2.5 animate-pulse border" style={getWorkspaceStatusPillStyle({ tone: 'accent' })} />
@@ -1065,7 +1065,7 @@ export default function Tareas() {
         {/* Filter bar */}
         {viewMode === 'kanban' && (
           <div
-            className="border p-4 flex flex-wrap items-center gap-3"
+            className="shrink-0 border p-4 flex flex-wrap items-center gap-3"
             style={getWorkspaceFilterBarStyle()}
             data-testid="tareas-filter-bar"
           >
@@ -1160,13 +1160,18 @@ export default function Tareas() {
             navigate={navigate}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-4">
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:overflow-hidden"
+            data-testid="kanban-board"
+          >
+            <div className="grid min-h-0 grid-cols-1 gap-5 xl:h-full xl:grid-cols-4">
             {COLUMNS.map((col) => {
               const colTasks = visibleTasks.filter((t) => t.status === col.id);
               return (
                 <div
                   key={col.id}
-                  className="overflow-hidden flex h-full max-h-full flex-col"
+                  data-testid={`kanban-column-${col.id}`}
+                  className="flex min-h-0 flex-col overflow-hidden xl:h-full"
                   style={getKanbanColumnShellStyle({ accent: col.color })}
                 >
                   {/* Column header */}
@@ -1200,7 +1205,11 @@ export default function Tareas() {
                   </div>
 
                   {/* Tasks */}
-                  <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                  <div
+                    className="kanban-column-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3 pr-2"
+                    data-testid={`kanban-column-body-${col.id}`}
+                    style={{ '--kanban-column-accent': col.color }}
+                  >
                     {colTasks.map((task) => {
                       const prio = PRIORITY[task.priority] || PRIORITY.medium;
                       const nextCols = COLUMNS.filter((c) => c.id !== col.id);
@@ -1339,6 +1348,7 @@ export default function Tareas() {
                 </div>
               );
             })}
+            </div>
           </div>
         )}
 

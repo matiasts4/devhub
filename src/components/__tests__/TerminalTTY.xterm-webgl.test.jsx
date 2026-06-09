@@ -687,6 +687,42 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     webglDisposeSpy.mockRestore();
   });
 
+  test('hiding a canvas panel releases the Canvas addon to avoid atlas corruption while hidden', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-canvas-hide',
+        requestedRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 2,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    expect(CanvasAddon.instances).toHaveLength(1);
+    const canvasAddon = CanvasAddon.instances[0];
+    const disposeSpy = jest.spyOn(canvasAddon, 'dispose');
+
+    flushSync(() => {
+      view.root.render(
+        React.createElement(TerminalTTY, {
+          id: 'term-canvas-hide',
+          requestedRendererMode: 'xterm-webgl',
+          visibleTerminalPanelCount: 2,
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: false,
+          showQuickCopyButton: false,
+        })
+      );
+    });
+    await flushTerminalEffects();
+
+    expect(disposeSpy).toHaveBeenCalled();
+    disposeSpy.mockRestore();
+  });
+
   test('onData drops xterm focus/DA answerback before sending to the PTY websocket', async () => {
     await renderIntoDom(
       React.createElement(TerminalTTY, {

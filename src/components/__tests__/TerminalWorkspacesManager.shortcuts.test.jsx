@@ -61,8 +61,16 @@ jest.mock('../TerminalTTY', () => ({
     const React = require('react');
     return React.createElement(
       'div',
-      { 'data-testid': `terminal-${id}`, 'data-autofocus': autoFocus ? 'true' : 'false' },
-      id
+      { 'data-testid': 'terminal-viewport-shell' },
+      React.createElement(
+        'div',
+        {
+          'data-testid': `terminal-${id}`,
+          'data-autofocus': autoFocus ? 'true' : 'false',
+          tabIndex: -1,
+        },
+        id
+      )
     );
   },
 }));
@@ -231,7 +239,9 @@ function getVisibleWorkspaceColumns(container) {
 
 function getVisiblePanelSlots(container) {
   return (
-    getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"]') || []
+    getVisibleWorkspaceShell(container)?.querySelectorAll(
+      '[data-testid^="panel-slot-"].group'
+    ) || []
   );
 }
 
@@ -242,7 +252,7 @@ async function dispatchShortcut(init) {
     ...init,
   });
   flushSync(() => {
-    window.dispatchEvent(event);
+    document.dispatchEvent(event);
   });
   await flushEffects();
   return event;
@@ -275,7 +285,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     jest.clearAllMocks();
   });
 
-  test('Ctrl+Alt+ArrowRight wraps to the first workspace in reordered state order', async () => {
+  test('Ctrl+PageDown wraps to the first workspace in reordered state order', async () => {
     persistWorkspaceState({
       workspaces: [
         { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
@@ -289,7 +299,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     const view = await renderManager();
     focusPanelTab(view.container);
 
-    const event = await dispatchShortcut({ key: 'ArrowRight', ctrlKey: true, altKey: true });
+    const event = await dispatchShortcut({ key: 'PageDown', ctrlKey: true });
 
     expect(getVisibleWorkspaceId(view.container)).toBe('ws2');
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
@@ -297,7 +307,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  test('Ctrl+Alt+ArrowLeft wraps to the previous workspace in reordered state order', async () => {
+  test('Ctrl+PageUp wraps to the previous workspace in reordered state order', async () => {
     persistWorkspaceState({
       workspaces: [
         { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
@@ -311,7 +321,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     const view = await renderManager();
     focusPanelTab(view.container);
 
-    const event = await dispatchShortcut({ key: 'ArrowLeft', ctrlKey: true, altKey: true });
+    const event = await dispatchShortcut({ key: 'PageUp', ctrlKey: true });
 
     expect(getVisibleWorkspaceId(view.container)).toBe('ws3');
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p3');
@@ -319,7 +329,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  test('Ctrl+Alt+ArrowRight activates the next adjacent workspace and preserves workspace order in storage', async () => {
+  test('Ctrl+PageDown activates the next adjacent workspace and preserves workspace order in storage', async () => {
     persistWorkspaceState({
       workspaces: [
         { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
@@ -333,7 +343,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     const view = await renderManager();
     focusPanelTab(view.container);
 
-    await dispatchShortcut({ key: 'ArrowRight', ctrlKey: true, altKey: true });
+    await dispatchShortcut({ key: 'PageDown', ctrlKey: true });
 
     expect(getVisibleWorkspaceId(view.container)).toBe('ws3');
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p3');
@@ -345,7 +355,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     expect(getPersistedWorkspaceState().activeWsId).toBe('ws3');
   });
 
-  test('Ctrl+Alt+ArrowLeft activates the previous adjacent workspace and falls back to the first live panel when saved panel is missing', async () => {
+  test('Ctrl+PageUp activates the previous adjacent workspace and falls back to the first live panel when saved panel is missing', async () => {
     persistWorkspaceState({
       workspaces: [
         { id: 'ws1', name: 'Workspace 1', columns: [{ id: 'c1', panels: [{ id: 'p1' }] }] },
@@ -363,7 +373,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     const view = await renderManager();
     focusPanelTab(view.container);
 
-    await dispatchShortcut({ key: 'ArrowLeft', ctrlKey: true, altKey: true });
+    await dispatchShortcut({ key: 'PageUp', ctrlKey: true });
 
     expect(getVisibleWorkspaceId(view.container)).toBe('ws2');
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
@@ -383,7 +393,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     const view = await renderManager({ isVisible: false });
     focusPanelTab(view.container);
 
-    const event = await dispatchShortcut({ key: 'ArrowRight', ctrlKey: true, altKey: true });
+    const event = await dispatchShortcut({ key: 'PageDown', ctrlKey: true });
 
     expect(getVisibleWorkspaceShell(view.container)).toBeNull();
     expect(event.defaultPrevented).toBe(false);
@@ -403,7 +413,7 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     const gridInput = view.container.querySelector('input[type="text"]');
     gridInput?.focus();
 
-    const event = await dispatchShortcut({ key: 'ArrowRight', ctrlKey: true, altKey: true });
+    const event = await dispatchShortcut({ key: 'PageDown', ctrlKey: true });
 
     expect(document.activeElement).toBe(gridInput);
     expect(getVisibleWorkspaceId(view.container)).toBe('ws1');
@@ -442,17 +452,274 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  test('Ctrl+Shift+W preserves close-panel behavior', async () => {
+  test('Ctrl+Shift+W twice closes the active terminal panel', async () => {
     const view = await renderManager();
     focusPanelTab(view.container);
     await dispatchShortcut({ key: 'R', ctrlKey: true, shiftKey: true });
 
-    const event = await dispatchShortcut({ key: 'W', ctrlKey: true, shiftKey: true });
+    const firstPress = await dispatchShortcut({ key: 'W', ctrlKey: true, shiftKey: true });
+    expect(view.container.querySelector('[data-testid="terminal-shortcut-hint"]')?.textContent).toMatch(
+      /Ctrl\+Shift\+W/
+    );
+    expect(getVisibleWorkspaceColumns(view.container)).toHaveLength(2);
+
+    const secondPress = await dispatchShortcut({ key: 'W', ctrlKey: true, shiftKey: true });
 
     expect(getVisibleWorkspaceColumns(view.container)).toHaveLength(1);
     expect(view.container.querySelector('[data-testid="terminal-p2"]')).toBeNull();
     expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p1');
+    expect(firstPress.defaultPrevented).toBe(true);
+    expect(secondPress.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+Shift+B opens the browser dock from terminal focus', async () => {
+    const view = await renderManager();
+    const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    terminal.focus();
+
+    const event = await dispatchShortcut({ key: 'B', ctrlKey: true, shiftKey: true });
+
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="right-dock-tab-browser"]')?.getAttribute(
+        'data-pizarra-active-tab'
+      )
+    ).toBe('true');
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+Shift+E opens the editor dock from terminal focus', async () => {
+    const view = await renderManager();
+    const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    terminal.focus();
+
+    const event = await dispatchShortcut({ key: 'E', ctrlKey: true, shiftKey: true });
+
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="right-dock-tab-editor"]')?.getAttribute(
+        'data-pizarra-active-tab'
+      )
+    ).toBe('true');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+Shift+. closes the right dock', async () => {
+    const view = await renderManager();
+    await dispatchShortcut({ key: 'B', ctrlKey: true, shiftKey: true });
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
+
+    const event = await dispatchShortcut({ key: '.', ctrlKey: true, shiftKey: true, code: 'Period' });
+
+    expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+Shift+N opens the new workspace setup modal', async () => {
+    const view = await renderManager();
+    const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    terminal.focus();
+
+    const event = await dispatchShortcut({ key: 'N', ctrlKey: true, shiftKey: true });
+
+    expect(document.querySelector('[data-testid="workspace-terminal-setup-modal"]')).not.toBeNull();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+ArrowDown switches workspace when no vertical split exists', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        { id: 'ws1', name: 'Workspace 1', columns: [{ id: 'c1', panels: [{ id: 'p1' }] }] },
+        { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1', ws2: 'p2' },
+    });
+
+    const view = await renderManager();
+    const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    terminal.focus();
+
+    const event = await dispatchShortcut({ key: 'ArrowDown', ctrlKey: true });
+
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws2');
+    expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+Shift+ArrowDown switches workspace when no vertical split exists', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        { id: 'ws1', name: 'Workspace 1', columns: [{ id: 'c1', panels: [{ id: 'p1' }] }] },
+        { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1', ws2: 'p2' },
+    });
+
+    const view = await renderManager();
+    const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    terminal.focus();
+
+    const event = await dispatchShortcut({ key: 'ArrowDown', ctrlKey: true, shiftKey: true });
+
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws2');
+    expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+PageDown from xterm-like textarea focus switches workspace', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        { id: 'ws1', name: 'Workspace 1', columns: [{ id: 'c1', panels: [{ id: 'p1' }] }] },
+        { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1', ws2: 'p2' },
+    });
+
+    const view = await renderManager();
+    const terminalViewport = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    const textarea = document.createElement('textarea');
+    textarea.className = 'xterm-helper-textarea';
+    terminalViewport?.appendChild(textarea);
+    textarea.focus();
+
+    const event = await dispatchShortcut({ key: 'PageDown', ctrlKey: true });
+
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws2');
+    expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+Shift+ArrowRight inside the terminal viewport moves to the adjacent panel', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            { id: 'c1', panels: [{ id: 'p1' }] },
+            { id: 'c2', panels: [{ id: 'p2' }] },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1' },
+    });
+
+    const view = await renderManager();
+    const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    terminal.focus();
+
+    const event = new window.KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    flushSync(() => {
+      document.dispatchEvent(event);
+    });
+    await flushEffects();
+
+    expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl+PageDown and Ctrl+PageUp navigate workspaces from chrome focus', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        { id: 'ws1', name: 'Workspace 1', columns: [{ id: 'c1', panels: [{ id: 'p1' }] }] },
+        { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1', ws2: 'p2' },
+    });
+
+    const view = await renderManager();
+    focusPanelTab(view.container);
+
+    await dispatchShortcut({ key: 'PageDown', ctrlKey: true });
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws2');
+
+    await dispatchShortcut({ key: 'PageUp', ctrlKey: true });
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws1');
+  });
+
+  test('native VTE navigation-shortcut events move between adjacent panels', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            { id: 'c1', panels: [{ id: 'p1' }] },
+            { id: 'c2', panels: [{ id: 'p2' }] },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1' },
+    });
+
+    const view = await renderManager();
+
+    flushSync(() => {
+      window.dispatchEvent(
+        new window.CustomEvent('devhub:terminal-native-vte-event', {
+          detail: { type: 'navigation-shortcut', action: 'panelRight', panelId: 'p1' },
+        })
+      );
+    });
+    await flushEffects();
+
+    expect(getAutoFocusedTerminal(view.container)?.textContent).toBe('p2');
+  });
+
+  test('workspace setup modal adjusts terminal count with arrows and confirms with Enter', async () => {
+    const view = await renderManager();
+    const tabsBefore = view.container.querySelectorAll('[title^="Workspace "]').length;
+
+    await dispatchShortcut({ key: 'N', ctrlKey: true, shiftKey: true });
+
+    const countValue = document.querySelector('[data-testid="workspace-terminal-count-value"]');
+    expect(countValue).not.toBeNull();
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(
+      'workspace-terminal-count-focus'
+    );
+
+    await dispatchShortcut({ key: 'ArrowRight' });
+    expect(countValue.textContent).toBe('2');
+
+    await dispatchShortcut({ key: 'ArrowDown' });
+    await dispatchShortcut({ key: 'ArrowDown' });
+    await dispatchShortcut({ key: 'Enter' });
+    await flushEffects();
+
+    expect(document.querySelector('[data-testid="workspace-terminal-setup-modal"]')).toBeNull();
+    expect(view.container.querySelectorAll('[title^="Workspace "]').length).toBe(tabsBefore + 1);
+  });
+
+  test('terminal workspace shortcuts are suspended while the setup modal is open', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        { id: 'ws1', name: 'Workspace 1', columns: [{ id: 'c1', panels: [{ id: 'p1' }] }] },
+        { id: 'ws2', name: 'Workspace 2', columns: [{ id: 'c2', panels: [{ id: 'p2' }] }] },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1', ws2: 'p2' },
+    });
+
+    const view = await renderManager();
+    await dispatchShortcut({ key: 'N', ctrlKey: true, shiftKey: true });
+    expect(document.querySelector('[data-testid="workspace-terminal-setup-modal"]')).not.toBeNull();
+
+    await dispatchShortcut({ key: 'ArrowDown', ctrlKey: true });
+
+    expect(getVisibleWorkspaceId(view.container)).toBe('ws1');
+    expect(document.querySelector('[data-testid="workspace-terminal-setup-modal"]')).not.toBeNull();
   });
 
   test('Ctrl+Shift+V inside the terminal viewport does not trigger workspace shortcuts', async () => {

@@ -4,7 +4,7 @@ import { isSafeHttpUrl } from './urlSafety';
 export const browserTool = {
   name: 'open_url',
   description:
-    'Navigate the in-app workspace browser (native GTK pane in the right dock). Does NOT open the system browser. Only http: and https: are allowed.',
+    'Navigate the in-app workspace browser. With focus (default true), enters pizarra canvas mode and places the browser card alongside existing terminal cards (auto-layout). Does NOT open the system browser. Only http: and https: are allowed; bare domains like github.com are normalized to https://.',
   parameters: {
     url: { type: 'string', required: true, description: 'URL to open' },
     label: { type: 'string', description: 'Optional label for the browser pane' },
@@ -29,7 +29,7 @@ export const browserTool = {
 
     zedLog.info('TOOL', 'open_url (workspace in-app)', { url, label, focus });
 
-    // Navigation is applied in the client: ChatPanel dispatches
+    // Navigation is applied in the client: useZedChat dispatches
     // devhub:zed-open-url when this result arrives (server has no window).
     return {
       opened: true,
@@ -39,7 +39,7 @@ export const browserTool = {
       url: safety.url,
       label: label ?? null,
       focus,
-      message: `Navegador integrado del workspace abierto → ${safety.url}`,
+      message: `Navegador en pizarra → ${safety.url}`,
     };
   },
 };

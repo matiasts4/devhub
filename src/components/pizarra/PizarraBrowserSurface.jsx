@@ -668,6 +668,7 @@ export default function PizarraBrowserSurface({
           <WorkspaceBrowserPane
             projectId={projectId || 'pizarra'}
             workspaceId={workspaceId || shape.id}
+            nativePanelId={nativePanelId}
             dockState={resolvedDockState}
             onDockStateChange={handleDockStateChange}
             browserWindowState={browserWindowState}

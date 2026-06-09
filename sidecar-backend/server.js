@@ -13,6 +13,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const pty = require('node-pty');
 const os = require('os');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
@@ -74,6 +75,24 @@ process.on('SIGINT', () => cleanup(0));
 // ─── Sesiones PTY persistentes ────────────────────────────────────────────────
 // Clave: sessionId → { ptyProcess, history: string[], clients: Set<WebSocket> }
 const sessions = new Map();
+
+function killTmuxSessionBestEffort(sessionName) {
+  const normalized = String(sessionName || '').trim();
+  if (!normalized || os.platform() === 'win32') return;
+  try {
+    spawnSync('tmux', ['kill-session', '-t', normalized], { stdio: 'ignore', timeout: 5000 });
+  } catch (_) {}
+}
+
+function abortOpenCodeSessionBestEffort(opencodeSessionId) {
+  const normalized = String(opencodeSessionId || '').trim();
+  if (!normalized) return;
+  const port = Number(process.env.OPENCODE_PORT || 4154);
+  const url = `http://127.0.0.1:${port}/session/${encodeURIComponent(normalized)}/abort`;
+  try {
+    void fetch(url, { method: 'POST' }).catch(() => {});
+  } catch (_) {}
+}
 
 function sendToClient(ws, payload) {
   if (ws.readyState !== WebSocket.OPEN) return;
@@ -246,6 +265,9 @@ app.delete('/sessions/:sessionId', (req, res) => {
       client.close();
     } catch (_) {}
   }
+
+  abortOpenCodeSessionBestEffort(session.opencodeSessionId);
+  killTmuxSessionBestEffort(session.tmuxSession);
 
   try {
     session.ptyProcess.kill();

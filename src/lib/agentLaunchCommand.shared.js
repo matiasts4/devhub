@@ -6,6 +6,7 @@
  */
 
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
 
@@ -121,7 +122,7 @@ function buildSddPromptShared(prompt, options = {}) {
  */
 export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const executable = resolveAgentProgramExecutable(programId);
-  const opencodeAgent = options.opencodeAgent || 'sdd-orchestrator';
+  const opencodeAgent = options.opencodeAgent || DEFAULT_OPENCODE_AGENT;
   const modelId = options.modelId || null;
   const tmuxSessionNameOption = options.tmuxSessionName || null;
   const disableTmuxWrap = options.disableTmuxWrap === true;

@@ -1,3 +1,5 @@
+import { TRANSITION } from '@/components/ui/system/motion-tokens';
+
 /**
  * Pure animation helpers for TerminalWorkspacesManager.
  * Extracted for testability — no React/DOM dependencies.
@@ -6,6 +8,22 @@
  * Scaling the workspace shell desyncs GTK overlays from React chrome during
  * maximize/restore, so we only animate opacity here — never transform/scale.
  */
+
+/**
+ * GPU slide for the shared right dock layer (browser, editor, swarm, etc.).
+ * Position (left/width) is applied instantly; only transform + opacity animate
+ * so the panel enters from the right without sweeping across the workspace.
+ *
+ * @param {{ isVisible: boolean, isDragging?: boolean }} options
+ * @returns {{ initial, animate, transition }}
+ */
+export function getRightDockAnimProps({ isVisible, isDragging = false }) {
+  return {
+    initial: { opacity: 0, x: '100%' },
+    animate: isVisible ? { opacity: 1, x: 0 } : { opacity: 0, x: '100%' },
+    transition: isDragging ? { duration: 0 } : TRANSITION.enter,
+  };
+}
 
 /**
  * Returns Framer Motion props for the workspace container.
@@ -24,5 +42,47 @@ export function getWorkspaceAnimProps(isMaximized) {
     // Slightly longer enter duration (220ms) with a snappy ease-out curve
     // for a smooth, polished mount feel. Opacity-only stays on the GPU.
     transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+  };
+}
+
+/**
+ * Workspace shell visibility — instant hide (no crossfade) so inactive
+ * xterm-canvas panels cannot bleed corrupted glyphs while opacity animates.
+ * Fullscreen browser/pizarra/swarm suppresses the terminal grid entirely.
+ */
+export function resolveWorkspaceShellVisibilityStyle({
+  isActiveWorkspace,
+  isManagerVisible,
+  isFullscreenTakeover = false,
+} = {}) {
+  const shouldShow = Boolean(isManagerVisible && isActiveWorkspace && !isFullscreenTakeover);
+
+  if (!shouldShow) {
+    return {
+      opacity: 0,
+      visibility: 'hidden',
+      pointerEvents: 'none',
+      contain: 'strict',
+      transition: 'none',
+      willChange: 'auto',
+    };
+  }
+
+  return {
+    opacity: 1,
+    visibility: 'visible',
+    pointerEvents: 'auto',
+    contain: 'layout paint',
+    transition: 'opacity 120ms cubic-bezier(0.4, 0, 0.2, 1)',
+    willChange: 'opacity',
+  };
+}
+
+/** Opaque chrome for fullscreen dock takeover so terminals cannot show through. */
+export function resolveRightDockTakeoverChromeStyle(isFullscreenTakeover = false) {
+  if (!isFullscreenTakeover) return {};
+  return {
+    backgroundColor: 'var(--surface-app)',
+    isolation: 'isolate',
   };
 }
