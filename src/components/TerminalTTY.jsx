@@ -491,7 +491,7 @@ export function shouldAttachWebglRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-webgl';
 }
 
-/** Canvas 2D on every visible split sibling — avoids DOM grid seams in swarm grids. */
+/** Canvas 2D attach/reattach is used for visible split siblings (all panels). */
 export function shouldAttachCanvasRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-canvas';
 }
@@ -771,7 +771,6 @@ export default function TerminalTTY({
   const hasSentInitialCommand = useRef(false);
   const viewportFitConfirmedRef = useRef(false);
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
-  const pendingOutputEscapeRef = useRef('');
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const connectRef = useRef(null);
@@ -1248,27 +1247,13 @@ export default function TerminalTTY({
   }, [resizeNativeLease, showNativeLease]);
 
   const waitForVisibleDimensions = useCallback(async () => {
-    let lastWidth = 0;
-    let lastHeight = 0;
-    let stableReads = 0;
-
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const container = containerRef.current;
       if (!container) return false;
 
       const rect = container.getBoundingClientRect();
-      const width = Math.floor(rect.width);
-      const height = Math.floor(rect.height);
-
-      if (width > 0 && height >= 72 && document.visibilityState !== 'hidden') {
-        if (width === lastWidth && height === lastHeight) {
-          stableReads += 1;
-          if (stableReads >= 2) return true;
-        } else {
-          stableReads = 0;
-        }
-        lastWidth = width;
-        lastHeight = height;
+      if (rect.width > 0 && rect.height > 0 && document.visibilityState !== 'hidden') {
+        return true;
       }
 
       await new Promise((resolve) => {
@@ -1279,7 +1264,7 @@ export default function TerminalTTY({
     }
 
     const rect = containerRef.current?.getBoundingClientRect();
-    return Boolean(rect && rect.width > 0 && rect.height >= 72);
+    return Boolean(rect && rect.width > 0 && rect.height > 0);
   }, []);
 
   const resolveSwarmTmuxSessionName = useCallback(() => {
@@ -2404,19 +2389,9 @@ export default function TerminalTTY({
 
       console.log(`[TTY:${id}] Connecting to /api/terminal/session${queryStr}`);
       cliLog(`CLIENT:${id}`, 'fetching session API', { queryStr });
-      const sessionFetchController = new AbortController();
-      const sessionFetchTimeout = setTimeout(() => {
-        sessionFetchController.abort();
-      }, 15000);
-      let sessionResponse;
-      try {
-        sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
-          cache: 'no-store',
-          signal: sessionFetchController.signal,
-        });
-      } finally {
-        clearTimeout(sessionFetchTimeout);
-      }
+      const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
+        cache: 'no-store',
+      });
       if (!sessionResponse.ok) {
         const errText = await sessionResponse.text().catch(() => '');
         console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
@@ -2473,7 +2448,7 @@ export default function TerminalTTY({
             webglAttached: Boolean(webglAddonRef.current),
           });
         }
-        const filtered = filterTerminalOutputForSession(null, chunk, pendingOutputEscapeRef);
+        const filtered = filterTerminalOutputForSession(null, chunk);
         if (typeof filtered !== 'string' || filtered.length === 0) return;
         termRef.current?.write(filtered);
         scrollIfActivePanel();
@@ -3258,7 +3233,9 @@ export default function TerminalTTY({
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
 
       layoutSettleBurstCleanupRef.current?.();
-      const extraDelaysMs = String(reason).includes('swarm-launch') ? [180, 340] : [180, 340];
+      const extraDelaysMs = String(reason).includes('swarm-launch')
+        ? [180, 340, 500, 1000]
+        : [180, 340];
       layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
         (phase) => {
           if (!isVisibleInLayoutRef.current) {
@@ -3569,11 +3546,11 @@ export default function TerminalTTY({
 
       {/* Terminal View */}
       <div
-        className={`flex min-h-0 flex-1 flex-col bg-[var(--surface-app)] ${hideTitleBar ? 'min-h-0' : ''}`}
+        className="flex min-h-0 flex-1 flex-col bg-[var(--surface-app)]"
         data-testid="terminal-root-body"
       >
         <div
-          className={`relative min-h-0 bg-[var(--surface-app)] ${hideTitleBar ? 'h-full flex-1' : 'flex-1'}`}
+          className="relative flex-1 bg-[var(--surface-app)]"
           onContextMenu={handleContextMenu}
           onMouseDown={handleViewportMouseDown}
           onPaste={handleViewportPaste}
@@ -3582,7 +3559,7 @@ export default function TerminalTTY({
         >
           <div
             ref={nativePlaceholderRef}
-            className="absolute inset-0 overflow-hidden"
+            className="relative h-full w-full overflow-hidden"
             data-testid="terminal-content-body"
             style={TERMINAL_NATIVE_CONTENT_BODY_STYLE}
           >
@@ -3608,7 +3585,7 @@ export default function TerminalTTY({
             ) : (
               <motion.div
                 ref={containerRef}
-                className={`devhub-xterm-container p-0 ${hideTitleBar ? 'absolute inset-0' : 'h-full w-full'}`}
+                className="devhub-xterm-container h-full w-full p-0"
                 data-operational-renderer={operationalRendererMode}
                 /* Reduced padding (was p-2.5) so TUI-drawn boxes, the bottom "Build" bar,
                    side warnings, ASCII banners and overall layout have widths, heights and

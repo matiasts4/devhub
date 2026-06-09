@@ -758,7 +758,7 @@ function renderWorkspacePanel(
       data-testid={
         isFocusedPanel ? `workspace-focused-panel-${panel.id}` : `panel-slot-${panel.id}`
       }
-      className={`group relative h-full w-full min-h-0 min-w-0 overflow-hidden rounded-lg border ${
+      className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-lg border ${
         isActive
           ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
           : 'border-transparent'
@@ -775,47 +775,15 @@ function renderWorkspacePanel(
       {swarmRole ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-2 left-0 z-30 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
+          className="pointer-events-none absolute inset-y-2 left-0 z-20 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
         />
       ) : null}
-      <div
-        data-testid={`panel-body-${panel.id}`}
-        className="absolute inset-0 min-h-0 min-w-0 bg-[var(--surface-app)]"
-        style={{
-          ...getWorkspaceShellChromeStyle({ withBackground: false }),
-          paddingTop: `${panelChromeSafeZoneMinTop}px`,
-        }}
-      >
-        <div className="h-full w-full overflow-hidden rounded-b-[10px] bg-[var(--surface-app)]">
-          <TerminalTTY
-            id={panel.id}
-            cwd={panel.cwd || cwd}
-            swarmContext={panel.swarmContext || null}
-            hideTitleBar={true}
-            showQuickCopyButton={false}
-            autoFocus={isActive}
-            isActivePanel={Boolean(isActivePanel ?? isActive)}
-            isVisibleInLayout={Boolean(isVisibleInLayout)}
-            visibleTerminalPanelCount={visibleTerminalPanelCount}
-            initialCommand={panel.initialCommand}
-            connectionState={connectionState}
-            requestedRendererMode={requestedRendererMode}
-            onResetRendererToXterm={onResetRendererToXterm}
-            onActivatePanel={onActivatePanel}
-            suspendNativeSurface={Boolean(suspendNativeSurface)}
-            nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
-          />
-        </div>
-      </div>
       <div
         data-testid={`panel-safe-zone-${panel.id}`}
         data-native-safe-zone="floating-chrome"
         data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 overflow-visible px-2 pt-1"
-        style={{
-          height: `${panelChromeSafeZoneMinTop}px`,
-          minHeight: `${panelChromeSafeZoneMinTop}px`,
-        }}
+        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-2 pt-1"
+        style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
       >
         {/* Agent info bar — kept above the native terminal surface so VTE cannot cover it. */}
         <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-3 pr-[120px] pt-[6px]">
@@ -856,8 +824,8 @@ function renderWorkspacePanel(
         </div>
         <div
           aria-hidden="true"
-          className={`absolute inset-0 rounded-t-[14px] border-b border-[rgba(148,163,184,0.14)] bg-[linear-gradient(180deg,rgba(13,19,32,0.97),rgba(13,19,32,0.9))] transition-opacity ${
-            isActive ? 'opacity-100' : 'opacity-85'
+          className={`absolute inset-x-0 top-0 h-[calc(100%-0.125rem)] rounded-t-[14px] border-b border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.22),rgba(15,23,36,0.02))] transition-opacity ${
+            isActive ? 'opacity-100' : 'opacity-70'
           }`}
         />
         {/* Panel controls — top-right, outside the native terminal body. */}
@@ -942,6 +910,32 @@ function renderWorkspacePanel(
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
+        </div>
+      </div>
+      <div
+        className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+        data-testid={`panel-body-${panel.id}`}
+        style={getWorkspaceShellChromeStyle({ withBackground: false })}
+      >
+        <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
+          <TerminalTTY
+            id={panel.id}
+            cwd={panel.cwd || cwd}
+            swarmContext={panel.swarmContext || null}
+            hideTitleBar={true}
+            showQuickCopyButton={false}
+            autoFocus={isActive}
+            isActivePanel={Boolean(isActivePanel ?? isActive)}
+            isVisibleInLayout={Boolean(isVisibleInLayout)}
+            visibleTerminalPanelCount={visibleTerminalPanelCount}
+            initialCommand={panel.initialCommand}
+            connectionState={connectionState}
+            requestedRendererMode={requestedRendererMode}
+            onResetRendererToXterm={onResetRendererToXterm}
+            onActivatePanel={onActivatePanel}
+            suspendNativeSurface={Boolean(suspendNativeSurface)}
+            nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+          />
         </div>
       </div>
     </div>

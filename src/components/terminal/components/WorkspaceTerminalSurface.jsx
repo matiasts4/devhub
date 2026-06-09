@@ -9,10 +9,6 @@ import { derivePanelSemanticMetadata } from '../utils/semanticMetadata';
 import PanelRendererSelect from './PanelRendererSelect';
 import { SHOW_RENDERER_SWITCH } from '../terminalRendererPreferences';
 
-function countWorkspaceTerminalPanels(workspace) {
-  return (workspace?.columns || []).reduce((sum, column) => sum + (column?.panels?.length || 0), 0);
-}
-
 function WorkspaceTerminalSurface({
   workspace,
   activeWsId,
@@ -43,7 +39,6 @@ function WorkspaceTerminalSurface({
   const focusedPanel = focusedPanelId
     ? workspace.columns?.flatMap((col) => col.panels || []).find((p) => p.id === focusedPanelId)
     : null;
-  const visibleTerminalPanelCount = focusedPanel ? 1 : countWorkspaceTerminalPanels(workspace);
 
   const isBrowserFullscreen =
     wsDockState?.maximized === true && wsDockState?.maximizedView === 'browser';
@@ -82,7 +77,7 @@ function WorkspaceTerminalSurface({
       <div
         key={panel.id}
         data-testid={`panel-slot-${panel.id}`}
-        className={`group relative h-full w-full min-h-0 min-w-0 overflow-hidden rounded-lg border ${
+        className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-lg border ${
           isActive
             ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
             : 'border-transparent'
@@ -99,47 +94,15 @@ function WorkspaceTerminalSurface({
         {swarmRole ? (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-y-2 left-0 z-30 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
+            className="pointer-events-none absolute inset-y-2 left-0 z-20 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
           />
         ) : null}
-        <div
-          data-testid={`panel-body-${panel.id}`}
-          className="absolute inset-0 min-h-0 min-w-0 bg-[var(--surface-app)]"
-          style={{ paddingTop: `${panelChromeSafeZoneMinTop}px` }}
-        >
-          <div className="h-full w-full overflow-hidden rounded-b-[10px] bg-[var(--surface-app)]">
-            <TerminalTTY
-              id={panel.id}
-              cwd={panel.cwd || cwd}
-              swarmContext={panel.swarmContext || null}
-              hideTitleBar={true}
-              showQuickCopyButton={false}
-              autoFocus={isActive}
-              isActivePanel={Boolean(isActive)}
-              isVisibleInLayout={Boolean(activeWsId === workspace.id && isVisible)}
-              visibleTerminalPanelCount={visibleTerminalPanelCount}
-              initialCommand={panel.initialCommand}
-              requestedRendererMode={resolvedRendererMode}
-              onResetRendererToXterm={() =>
-                handleResetPanelRendererToXterm?.(workspace.id, panel.id)
-              }
-              onActivatePanel={(panelId) => activateWorkspacePanel?.(workspace.id, panelId)}
-              suspendNativeSurface={Boolean(
-                activeWsId === workspace.id && isVisible && shouldSuspendNativeSurfaces
-              )}
-              nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
-            />
-          </div>
-        </div>
         <div
           data-testid={`panel-safe-zone-${panel.id}`}
           data-native-safe-zone="floating-chrome"
           data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
-          className="pointer-events-none absolute inset-x-0 top-0 z-20 overflow-visible px-2 pt-1"
-          style={{
-            height: `${panelChromeSafeZoneMinTop}px`,
-            minHeight: `${panelChromeSafeZoneMinTop}px`,
-          }}
+          className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-2 pt-1"
+          style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
         >
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-center px-4">
             <div
@@ -182,8 +145,8 @@ function WorkspaceTerminalSurface({
           </div>
           <div
             aria-hidden="true"
-            className={`absolute inset-0 rounded-t-[14px] border-b border-[rgba(148,163,184,0.14)] bg-[linear-gradient(180deg,rgba(13,19,32,0.97),rgba(13,19,32,0.9))] transition-opacity ${
-              isActive ? 'opacity-100' : 'opacity-85'
+            className={`absolute inset-x-0 top-0 h-[calc(100%-0.125rem)] rounded-t-[14px] border-b border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.22),rgba(15,23,36,0.02))] transition-opacity ${
+              isActive ? 'opacity-100' : 'opacity-70'
             }`}
           />
           <div
@@ -270,6 +233,33 @@ function WorkspaceTerminalSurface({
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
+          </div>
+        </div>
+        <div
+          className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+          data-testid={`panel-body-${panel.id}`}
+        >
+          <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
+            <TerminalTTY
+              id={panel.id}
+              cwd={panel.cwd || cwd}
+              swarmContext={panel.swarmContext || null}
+              hideTitleBar={true}
+              showQuickCopyButton={false}
+              autoFocus={isActive}
+              isActivePanel={Boolean(isActive)}
+              isVisibleInLayout={Boolean(activeWsId === workspace.id && isVisible)}
+              initialCommand={panel.initialCommand}
+              requestedRendererMode={resolvedRendererMode}
+              onResetRendererToXterm={() =>
+                handleResetPanelRendererToXterm?.(workspace.id, panel.id)
+              }
+              onActivatePanel={(panelId) => activateWorkspacePanel?.(workspace.id, panelId)}
+              suspendNativeSurface={Boolean(
+                activeWsId === workspace.id && isVisible && shouldSuspendNativeSurfaces
+              )}
+              nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+            />
           </div>
         </div>
       </div>
