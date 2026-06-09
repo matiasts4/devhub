@@ -399,6 +399,82 @@ export function isTerminalViewportNearBottom(term, threshold = 2) {
   return baseY - viewportY <= threshold;
 }
 
+export const TERMINAL_PAGE_UP_SEQ = '\x1b[5~';
+export const TERMINAL_PAGE_DOWN_SEQ = '\x1b[6~';
+
+/** Shift+wheel uses xterm scrollback; plain wheel scrolls the TUI transcript. */
+export function shouldUseTerminalScrollbackWheel(event) {
+  return Boolean(event?.shiftKey);
+}
+
+export function resolveTerminalWheelScrollDirection(deltaY) {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return null;
+  return deltaY < 0 ? 'up' : 'down';
+}
+
+export function resolveTerminalWheelPageSteps(deltaY, { lineHeight = 40 } = {}) {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return 0;
+  return Math.max(1, Math.round(Math.abs(deltaY) / lineHeight));
+}
+
+export function buildTerminalWheelPageSequence(direction, steps = 1) {
+  const normalizedSteps = Math.max(1, Math.floor(steps));
+  const sequence = direction === 'up' ? TERMINAL_PAGE_UP_SEQ : TERMINAL_PAGE_DOWN_SEQ;
+  return sequence.repeat(normalizedSteps);
+}
+
+export const TERMINAL_DEFAULT_INPUT_ZONE_ROWS = 4;
+
+export function resolveTerminalCellFromPointer(term, element, clientX, clientY) {
+  if (!term || !element) return null;
+  const rect = element.getBoundingClientRect?.();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+  const cols = term.cols;
+  const rows = term.rows;
+  if (!Number.isInteger(cols) || cols <= 0 || !Number.isInteger(rows) || rows <= 0) {
+    return null;
+  }
+  const col = Math.min(
+    cols - 1,
+    Math.max(0, Math.floor(((clientX - rect.left) / rect.width) * cols))
+  );
+  const row = Math.min(
+    rows - 1,
+    Math.max(0, Math.floor(((clientY - rect.top) / rect.height) * rows))
+  );
+  return { col, row };
+}
+
+export function isTerminalTranscriptCell(
+  row,
+  rows,
+  inputZoneRows = TERMINAL_DEFAULT_INPUT_ZONE_ROWS
+) {
+  if (!Number.isInteger(row) || !Number.isInteger(rows) || rows <= 0) return true;
+  const reserved = Math.max(1, Math.min(rows - 1, Math.floor(inputZoneRows)));
+  return row < rows - reserved;
+}
+
+export function buildTerminalMousePressSequence(col, row) {
+  const x = Math.max(1, Math.floor(col) + 1);
+  const y = Math.max(1, Math.floor(row) + 1);
+  return `\x1b[?1006h\x1b[?1000h\x1b[<0;${x};${y}M\x1b[?1000l\x1b[?1006l`;
+}
+
+export function shouldRouteWheelToTranscript({
+  shiftKey = false,
+  cell,
+  rows,
+  lastPointerZone,
+  inputZoneRows = TERMINAL_DEFAULT_INPUT_ZONE_ROWS,
+} = {}) {
+  if (shiftKey) return false;
+  if (cell && Number.isInteger(rows)) {
+    return isTerminalTranscriptCell(cell.row, rows, inputZoneRows);
+  }
+  return lastPointerZone === 'transcript';
+}
+
 export function restoreTerminalViewportScroll(term, targetViewportY) {
   if (!term || typeof term.scrollToLine !== 'function') return false;
   if (!Number.isInteger(targetViewportY)) return false;
@@ -680,6 +756,7 @@ export default function TerminalTTY({
 }) {
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
+  const viewportShellRef = useRef(null);
 
   // We keep the root bg in sync with the terminal theme so there are no
   // "letterbox" flashes or thin frames when the TUI draws full-bleed boxes.
@@ -704,19 +781,19 @@ export default function TerminalTTY({
   const shouldRetryNativeVteProbeRef = useRef(false);
   const hideTimerRef = useRef(null);
   const lastViewportYRef = useRef(null);
+  const lastPointerZoneRef = useRef('transcript');
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
     try {
       // Simple local per-device size (persisted via the +/- buttons).
-      // Base default is larger (15) + the CSS --terminal-font-weight (now 800)
-      // so the letter feels thicker and "más grande" like a comfortable native terminal by default.
+      // Base default (14) balances density in multi-panel grids with legibility.
       const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
       const parsed = stored ? parseInt(stored, 10) : NaN;
       if (Number.isFinite(parsed) && parsed >= 8 && parsed <= 24) return parsed;
-      return 15;
+      return 14;
     } catch {
-      return 15;
+      return 14;
     }
   });
 
@@ -770,6 +847,9 @@ export default function TerminalTTY({
   });
   const hasSentInitialCommand = useRef(false);
   const viewportFitConfirmedRef = useRef(false);
+  const opencodeReadyNotifiedRef = useRef(false);
+  const lastViewportReadyPostedRef = useRef({ cols: 0, rows: 0 });
+  const viewportReadyNotifyTimerRef = useRef(null);
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
@@ -841,6 +921,11 @@ export default function TerminalTTY({
       clearTimeout(nativeVteProbeRetryTimerRef.current);
       nativeVteProbeRetryTimerRef.current = null;
       nativeVteProbeRetryDelayRef.current = null;
+    }
+
+    if (viewportReadyNotifyTimerRef.current) {
+      clearTimeout(viewportReadyNotifyTimerRef.current);
+      viewportReadyNotifyTimerRef.current = null;
     }
 
     if (autoScrollRafRef.current) {
@@ -1273,24 +1358,68 @@ export default function TerminalTTY({
   }, [swarmContext]);
 
   const notifyViewportReady = useCallback(
-    async (cols, rows) => {
+    (cols, rows) => {
       const tmuxSession = resolveSwarmTmuxSessionName();
       if (!tmuxSession) return;
 
+      const lastPosted = lastViewportReadyPostedRef.current;
+      if (lastPosted.cols === cols && lastPosted.rows === rows) return;
+
+      if (viewportReadyNotifyTimerRef.current) {
+        clearTimeout(viewportReadyNotifyTimerRef.current);
+      }
+
+      viewportReadyNotifyTimerRef.current = setTimeout(() => {
+        viewportReadyNotifyTimerRef.current = null;
+        lastViewportReadyPostedRef.current = { cols, rows };
+
+        void (async () => {
+          try {
+            await fetch('/api/terminal/viewport-ready', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: id,
+                tmuxSession,
+                cols,
+                rows,
+              }),
+            });
+            cliLog(`CLIENT:${id}`, 'viewport-ready-notified', { tmuxSession, cols, rows });
+          } catch (error) {
+            cliLog(`CLIENT:${id}`, 'viewport-ready-failed', { error: error?.message });
+          }
+        })();
+      }, 200);
+    },
+    [id, resolveSwarmTmuxSessionName]
+  );
+
+  const notifyOpencodeReady = useCallback(
+    async (opencodeSessionId, reason = 'client-tui-footer') => {
+      if (opencodeReadyNotifiedRef.current) return;
+      const tmuxSession = resolveSwarmTmuxSessionName();
+      if (!tmuxSession) return;
+
+      opencodeReadyNotifiedRef.current = true;
       try {
-        await fetch('/api/terminal/viewport-ready', {
+        await fetch('/api/terminal/opencode-ready', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: id,
             tmuxSession,
-            cols,
-            rows,
+            opencodeSessionId: opencodeSessionId || null,
+            reason,
           }),
         });
-        cliLog(`CLIENT:${id}`, 'viewport-ready-notified', { tmuxSession, cols, rows });
+        cliLog(`CLIENT:${id}`, 'opencode-ready-notified', {
+          tmuxSession,
+          opencodeSessionId,
+          reason,
+        });
       } catch (error) {
-        cliLog(`CLIENT:${id}`, 'viewport-ready-failed', { error: error?.message });
+        cliLog(`CLIENT:${id}`, 'opencode-ready-failed', { error: error?.message });
       }
     },
     [id, resolveSwarmTmuxSessionName]
@@ -1315,7 +1444,13 @@ export default function TerminalTTY({
     (cols, rows) => {
       if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) return;
       viewportFitConfirmedRef.current = true;
-      void notifyViewportReady(cols, rows);
+
+      const lastPosted = lastViewportReadyPostedRef.current;
+      const sizeChanged = lastPosted.cols !== cols || lastPosted.rows !== rows;
+      if (sizeChanged) {
+        notifyViewportReady(cols, rows);
+      }
+
       sendInitialCommandIfReady();
     },
     [notifyViewportReady, sendInitialCommandIfReady]
@@ -1608,6 +1743,15 @@ export default function TerminalTTY({
         (pendingWebglRecoveryRef.current || !webglAddonRef.current)
       ) {
         scheduleWebglRecovery(120);
+      }
+
+      if (
+        shouldAttachCanvasRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        }) &&
+        !canvasAddonRef.current
+      ) {
+        void tryReattachCanvasAddonRef.current?.();
       }
     },
     [confirmViewportFit, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
@@ -2094,6 +2238,10 @@ export default function TerminalTTY({
     }
 
     if (wantsCanvas) {
+      // Focus mode hides sibling panels via CSS — do not tear down their GPU
+      // renderer while hidden or they come back as a black viewport (path header only).
+      if (!isVisibleInLayoutRef.current) return;
+
       if (webglAddonRef.current) {
         releaseWebglAddonForInactivePanel('split-open-canvas');
       }
@@ -2470,6 +2618,11 @@ export default function TerminalTTY({
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
             writeTerminalOutput(payload.data);
+            const footerReady =
+              /ctrl\+p\s+commands/i.test(payload.data) || /esc\s+interrupt/i.test(payload.data);
+            if (footerReady) {
+              void notifyOpencodeReady(null, 'client-tui-footer');
+            }
             return;
           }
 
@@ -3285,28 +3438,48 @@ export default function TerminalTTY({
     setContextMenu({ x: e.clientX, y: e.clientY, text, canCopy: Boolean(text) });
   }, []);
 
-  const handleViewportMouseDown = useCallback(() => {
-    if (shouldUseNativeRenderer) {
-      onActivatePanel?.(id);
-      if (nativeVteOpened) {
-        Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
+  const handleViewportMouseDown = useCallback(
+    (event) => {
+      if (shouldUseNativeRenderer) {
+        onActivatePanel?.(id);
+        if (nativeVteOpened) {
+          Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
+            handleNativeLeaseCommandError
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    // Activation is handled by the parent panel shell (onMouseDown bubbles up).
-    // Heavy viewport/WebGL recovery runs once in the panel-activated layout effect
-    // when isActivePanel flips true — not on every click, which was clearing atlases
-    // on inactive split siblings and evicting their WebGL contexts.
-    disableTerminalFocusReporting(termRef.current);
-    termRef.current?.focus?.();
-  }, [
-    handleNativeLeaseCommandError,
-    id,
-    nativeVteOpened,
-    onActivatePanel,
-    shouldUseNativeRenderer,
-  ]);
+      const term = termRef.current;
+      const shell = viewportShellRef.current;
+      const cell =
+        event && shell && term
+          ? resolveTerminalCellFromPointer(term, shell, event.clientX, event.clientY)
+          : null;
+      const inTranscript = cell
+        ? isTerminalTranscriptCell(cell.row, term.rows)
+        : lastPointerZoneRef.current !== 'input';
+
+      if (inTranscript) {
+        lastPointerZoneRef.current = 'transcript';
+        if (cell) {
+          const mousePayload = buildTerminalMousePressSequence(cell.col, cell.row);
+          sendTerminalPasteInput({
+            socket: wsRef.current,
+            transport: transportRef.current,
+            text: mousePayload,
+          });
+        }
+      } else {
+        lastPointerZoneRef.current = 'input';
+      }
+
+      // Activation is handled by the parent panel shell (onMouseDown bubbles up).
+      disableTerminalFocusReporting(term);
+      term?.focus?.();
+    },
+    [handleNativeLeaseCommandError, id, nativeVteOpened, onActivatePanel, shouldUseNativeRenderer]
+  );
 
   const handleCopyFromMenu = useCallback(async () => {
     await handleCopySelection();
@@ -3356,6 +3529,59 @@ export default function TerminalTTY({
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
+
+  // Wheel: scroll the OpenCode transcript (Page Up/Down) instead of cycling input history.
+  useEffect(() => {
+    if (shouldUseNativeRenderer) return undefined;
+
+    const shell = viewportShellRef.current;
+    if (!shell) return undefined;
+
+    const handleWheel = (event) => {
+      const term = termRef.current;
+      if (!term) return;
+
+      if (shouldUseTerminalScrollbackWheel(event)) {
+        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
+        if (!direction) return;
+        const lines = resolveTerminalWheelPageSteps(event.deltaY) * 3;
+        term.scrollLines(direction === 'up' ? -lines : lines);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      const cell = resolveTerminalCellFromPointer(term, shell, event.clientX, event.clientY);
+      if (
+        !shouldRouteWheelToTranscript({
+          shiftKey: event.shiftKey,
+          cell,
+          rows: term.rows,
+          lastPointerZone: lastPointerZoneRef.current,
+        })
+      ) {
+        return;
+      }
+
+      const direction = resolveTerminalWheelScrollDirection(event.deltaY);
+      if (!direction) return;
+
+      const steps = resolveTerminalWheelPageSteps(event.deltaY);
+      const payload = buildTerminalWheelPageSequence(direction, steps);
+      const sent = sendTerminalPasteInput({
+        socket: wsRef.current,
+        transport: transportRef.current,
+        text: payload,
+      });
+      if (!sent) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    shell.addEventListener('wheel', handleWheel, { passive: false });
+    return () => shell.removeEventListener('wheel', handleWheel);
+  }, [shouldUseNativeRenderer]);
 
   // ── Keyboard shortcuts: copy/paste ───────────────────────────────────────────
   useEffect(() => {
@@ -3552,6 +3778,7 @@ export default function TerminalTTY({
         data-testid="terminal-root-body"
       >
         <div
+          ref={viewportShellRef}
           className="relative flex-1 bg-[var(--surface-app)]"
           onContextMenu={handleContextMenu}
           onMouseDown={handleViewportMouseDown}
@@ -3567,7 +3794,7 @@ export default function TerminalTTY({
           >
             {shouldUseNativeRenderer && (
               <div
-                className="absolute inset-0 z-10 rounded-md border bg-[var(--surface-app)]"
+                className="absolute inset-0 z-10 rounded-md bg-[var(--surface-app)]"
                 data-testid="terminal-native-placeholder"
                 style={getTerminalViewportFrameStyle()}
               >

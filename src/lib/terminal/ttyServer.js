@@ -9,6 +9,9 @@ import {
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
 } from './terminalNoiseFilter.js';
+import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
+import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
+import { writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -404,6 +407,27 @@ function maybeLogTTYSessionDiagnostic(session, previousSnapshot, nextSnapshot) {
   ttyLog('TTY_DIAG', 'session diagnostic', nextSnapshot);
   session._lastDiagnosticSnapshot = nextSnapshot;
   return nextSnapshot;
+}
+
+function resolveSessionTmuxName(session) {
+  if (session?.swarmId && session?.swarmRole?.roleKey) {
+    return buildSwarmTmuxSessionName(session.swarmId, session.swarmRole.roleKey);
+  }
+  return null;
+}
+
+function maybeWriteOpencodeReadyMarker(session, payload = {}) {
+  const tmuxSession = resolveSessionTmuxName(session);
+  if (!tmuxSession) return;
+  try {
+    writeOpencodeReadyMarker(tmuxSession, {
+      sessionId: session.id,
+      opencodeSessionId: session.opencodeSessionId || null,
+      ...payload,
+    });
+  } catch {
+    // Best-effort marker for bootstrap polling in swarm wrappers.
+  }
 }
 
 function broadcastOpenCodeSessionDetected(session, sessionId) {
@@ -872,6 +896,16 @@ function handleSessionOutput(sessions, session, chunk) {
           broadcastOpenCodeSessionDetected(session, detectedId);
         }
       }
+    }
+
+    // Swarm agents start OpenCode inside tmux before the DevHub client attaches,
+    // so session.mode may still be 'shell' when the TUI footer first appears.
+    if (detectOpenCodeTuiReady(filtered)) {
+      if (session.mode !== 'tui') {
+        session.mode = 'tui';
+        session.historyEnabled = false;
+      }
+      maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
     }
   }
 

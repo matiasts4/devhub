@@ -1,20 +1,18 @@
 import { NextResponse } from 'next/server';
+import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
 import { getSessionOutput } from '@/lib/terminal/ttyServer';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 
 export const dynamic = 'force-dynamic';
 
 async function trySidecarCapture(sessionId) {
   try {
-    const portFile = path.join(os.homedir(), '.devhub', 'sidecar-port.txt');
-    if (!fs.existsSync(portFile)) return null;
+    const port = await readProductionSidecarPort();
+    if (!port) return null;
 
-    const port = Number(fs.readFileSync(portFile, 'utf8').trim());
-    if (!Number.isInteger(port) || port <= 0) return null;
-
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/${encodeURIComponent(sessionId)}/output`, { cache: 'no-store' });
+    const res = await fetch(
+      `http://127.0.0.1:${port}/sessions/${encodeURIComponent(sessionId)}/output`,
+      { cache: 'no-store' }
+    );
     if (!res.ok) return null;
 
     const data = await res.json();

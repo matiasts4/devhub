@@ -313,6 +313,21 @@ async function click(element) {
   await flushEffects();
 }
 
+async function confirmNewWorkspaceSetup(count = 1) {
+  const modal = document.querySelector('[data-testid="workspace-terminal-setup-modal"]');
+  expect(modal).not.toBeNull();
+  if (count !== 1) {
+    const preset = document.querySelector(
+      `[data-testid="workspace-terminal-count-preset-${count}"]`
+    );
+    expect(preset).not.toBeNull();
+    await click(preset);
+  }
+  const confirm = document.querySelector('[data-testid="workspace-terminal-setup-confirm"]');
+  expect(confirm).not.toBeNull();
+  await click(confirm);
+}
+
 async function changeInput(element, value) {
   const valueSetter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -960,7 +975,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(
@@ -1027,7 +1042,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     mockInvoke.mockClear();
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     expect(mockInvoke).toHaveBeenCalledWith('native_browser_set_visibility', {
       request: expect.objectContaining({
@@ -1060,7 +1075,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     ).toHaveLength(1);
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const editorPaneAfterAdd = view.container.querySelector('[data-testid="shared-editor-pane"]');
     expect(editorPaneAfterAdd).toBe(editorPane);
@@ -1672,7 +1687,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(dockLayer.style.width).toBe('380px');
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));

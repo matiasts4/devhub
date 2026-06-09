@@ -77,6 +77,12 @@ function detectOpenCodeSessionId(text) {
   return outputMatch?.[0] || null;
 }
 
+/** OpenCode interactive TUI footer — input area is ready for paste. */
+function detectOpenCodeTuiReady(text) {
+  if (!text || typeof text !== 'string') return false;
+  return /ctrl\+p\s+commands/i.test(text) || /esc\s+interrupt/i.test(text);
+}
+
 function stripTerminalFocusReporting(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(TERMINAL_FOCUS_REPORTING_RE, '');
@@ -176,6 +182,7 @@ module.exports = {
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
   detectOpenCodeSessionId,
+  detectOpenCodeTuiReady,
   getTransportMode,
   parseClientMessage,
   stripShellTerminalResponseNoise,

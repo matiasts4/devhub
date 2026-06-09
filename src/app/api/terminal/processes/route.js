@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
 
 export const dynamic = 'force-dynamic';
 
 async function readSidecarSessions() {
   try {
-    const portFile = path.join(os.homedir(), '.devhub', 'sidecar-port.txt');
-    if (!fs.existsSync(portFile)) return null;
-
-    const port = Number(fs.readFileSync(portFile, 'utf8').trim());
-    if (!Number.isInteger(port) || port <= 0) return null;
+    const port = await readProductionSidecarPort();
+    if (!port) return null;
 
     const res = await fetch(`http://127.0.0.1:${port}/sessions`, { cache: 'no-store' });
     if (!res.ok) return null;
@@ -42,7 +37,9 @@ export async function GET() {
     if (sidecarOnes && sidecarOnes.length > 0) {
       processes.push(...sidecarOnes);
     }
-  } catch {}
+  } catch {
+    // Sidecar may be offline in dev; fall through to local ttyServer.
+  }
 
   // 2. Local ttyServer (dev / Zed-specific PTYs)
   try {

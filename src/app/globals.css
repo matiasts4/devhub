@@ -33,6 +33,14 @@
   --chrome-control-fill: color-mix(in srgb, var(--surface-card) 84%, transparent);
   --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
   --chrome-press-offset: 0px;
+  --terminal-header-divider-width: 1px;
+  --terminal-header-divider-color: color-mix(
+    in srgb,
+    var(--border-strong) 34%,
+    var(--border-subtle)
+  );
+  --terminal-workspace-bar-border-width: 1px;
+  --terminal-workspace-bar-border-color: var(--border-subtle);
 }
 
 [data-morphology='brutalist-stage'] {
@@ -47,6 +55,23 @@
   --chrome-control-fill: var(--surface-muted);
   --chrome-control-fill-hover: var(--surface-hover);
   --chrome-press-offset: 1px;
+  /* Terminals: light 1px frame — avoids harsh 2px brutalist panels without going borderless. */
+  --terminal-chrome-border-width: 1px;
+  --terminal-chrome-border-color: color-mix(in srgb, var(--border-subtle) 72%, transparent);
+  --terminal-chrome-shadow-panel: none;
+  --terminal-grid-border-width: 1px;
+  --terminal-header-divider-width: 1px;
+  --terminal-header-divider-color: color-mix(
+    in srgb,
+    var(--border-strong) 38%,
+    var(--border-subtle)
+  );
+  --terminal-workspace-bar-border-width: 1px;
+  --terminal-workspace-bar-border-color: color-mix(
+    in srgb,
+    var(--border-strong) 32%,
+    var(--border-subtle)
+  );
 }
 
 [data-morphology='aura'] {

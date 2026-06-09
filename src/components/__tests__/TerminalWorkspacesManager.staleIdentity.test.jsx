@@ -201,6 +201,33 @@ jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
 
 const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').default;
 
+const originalMathRandom = Math.random;
+
+function mockMathRandomTo(highValue) {
+  const x = (highValue - 1000) / 9001;
+  Math.random = () => x;
+}
+
+function seedDefaultTerminalState() {
+  window.localStorage.setItem(
+    'devhub_terminal_state',
+    JSON.stringify({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [{ id: 'p1', initialCommand: null }],
+            },
+          ],
+        },
+      ],
+    })
+  );
+}
+
 // Mock localStorage for devhub_agent_runs
 function setAgentRuns(runs) {
   window.localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
@@ -232,6 +259,22 @@ function findWorkspaceCloseButtons(container) {
 // Helper to find the workspace add button
 function findAddWorkspaceButton(container) {
   return container.querySelector('[data-testid="workspace-add-button"]');
+}
+
+async function confirmNewWorkspaceSetup(count = 1) {
+  const modal = document.querySelector('[data-testid="workspace-terminal-setup-modal"]');
+  expect(modal).not.toBeNull();
+  if (count !== 1) {
+    const preset = document.querySelector(
+      `[data-testid="workspace-terminal-count-preset-${count}"]`
+    );
+    expect(preset).not.toBeNull();
+    await click(preset);
+  }
+  const confirm = document.querySelector('[data-testid="workspace-terminal-setup-confirm"]');
+  expect(confirm).not.toBeNull();
+  await click(confirm);
+  await flushEffects();
 }
 
 // Helper to find active workspace panel IDs from mock TerminalTTY elements.
@@ -317,7 +360,7 @@ describe('TIC-1: Workspace close unbinds terminal identity state', () => {
     const addButton = findAddWorkspaceButton(view.container);
     expect(addButton).not.toBeNull();
     await click(addButton);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     // Now there should be close buttons (ws1 and ws2)
     const closeButtons = findWorkspaceCloseButtons(view.container);
@@ -398,7 +441,7 @@ describe('TIC-1: Workspace close unbinds terminal identity state', () => {
     const addButton = findAddWorkspaceButton(view.container);
     expect(addButton).not.toBeNull();
     await click(addButton);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     // Get the ACTUAL panel IDs so we can seed ws2's run with the correct ID
     const allPanelIds = getActiveWorkspacePanelIds(view.container);
@@ -450,6 +493,8 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    seedDefaultTerminalState();
+    mockMathRandomTo(8000);
     global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
 
     // CRITICAL: Clear ttyServer session global so each test starts fresh
@@ -463,6 +508,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
   });
 
   afterEach(() => {
+    Math.random = originalMathRandom;
     cleanupMountedRoots(mountedRoots);
     dom.window.close();
     delete global.localStorage;
@@ -494,7 +540,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     const addButton1 = findAddWorkspaceButton(view.container);
     expect(addButton1).not.toBeNull();
     await click(addButton1);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     // Verify we now have 2 workspaces and close buttons for both
     const closeButtons = findWorkspaceCloseButtons(view.container);
@@ -516,7 +562,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     const addButton2 = findAddWorkspaceButton(view.container);
     expect(addButton2).not.toBeNull();
     await click(addButton2);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     // Get the panel ID(s) from the NEWLY CREATED workspace ws3 specifically.
     // Find the ws3 close button's panel container — ws3 is the 3rd workspace.
@@ -573,6 +619,8 @@ describe('TIC-S1 / TIC-S4 regression: no stale identity in new workspaces', () =
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    seedDefaultTerminalState();
+    mockMathRandomTo(8000);
     global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
 
     // CRITICAL: Clear ttyServer session global
@@ -586,6 +634,7 @@ describe('TIC-S1 / TIC-S4 regression: no stale identity in new workspaces', () =
   });
 
   afterEach(() => {
+    Math.random = originalMathRandom;
     cleanupMountedRoots(mountedRoots);
     dom.window.close();
     delete global.localStorage;
@@ -622,7 +671,7 @@ describe('TIC-S1 / TIC-S4 regression: no stale identity in new workspaces', () =
     const addButton1 = findAddWorkspaceButton(view.container);
     expect(addButton1).not.toBeNull();
     await click(addButton1);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const ws1CloseBtn = view.container.querySelector('[data-testid="workspace-close-ws1"]');
     expect(ws1CloseBtn).not.toBeNull();
@@ -634,7 +683,7 @@ describe('TIC-S1 / TIC-S4 regression: no stale identity in new workspaces', () =
     const addButton2 = findAddWorkspaceButton(view.container);
     expect(addButton2).not.toBeNull();
     await click(addButton2);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const livePanelIds = getActiveWorkspacePanelIds(view.container);
 

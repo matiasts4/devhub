@@ -1,9 +1,12 @@
+const TERMINAL_BORDER_WIDTH = 'var(--terminal-chrome-border-width, var(--chrome-border-width))';
+const TERMINAL_BORDER_COLOR = 'var(--terminal-chrome-border-color, var(--chrome-border-color))';
+const TERMINAL_SHADOW_PANEL = 'var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel))';
 export function getTerminalAppShellStyle() {
   return {
     background: 'var(--chrome-panel-fill)',
-    borderColor: 'var(--chrome-border-color)',
-    borderWidth: 'var(--chrome-border-width)',
-    boxShadow: 'var(--chrome-shadow-panel)',
+    borderColor: TERMINAL_BORDER_COLOR,
+    borderWidth: TERMINAL_BORDER_WIDTH,
+    boxShadow: TERMINAL_SHADOW_PANEL,
   };
 }
 
@@ -20,17 +23,17 @@ export function getTerminalTitleBarStyle({ headerStyle } = {}) {
   if (headerStyle === 'dragon' || headerStyle === 'gradient') {
     return {
       background: 'var(--terminal-header-gradient)',
-      borderBottomColor: 'var(--chrome-border-color)',
-      borderBottomWidth: 'var(--chrome-border-width)',
-      boxShadow: 'var(--chrome-shadow-panel)',
+      borderBottomColor: TERMINAL_BORDER_COLOR,
+      borderBottomWidth: TERMINAL_BORDER_WIDTH,
+      boxShadow: TERMINAL_SHADOW_PANEL,
     };
   }
   // minimal and plain both use flat solid background
   return {
     background: 'var(--terminal-header-bg)',
-    borderBottomColor: 'var(--chrome-border-color)',
-    borderBottomWidth: 'var(--chrome-border-width)',
-    boxShadow: 'var(--chrome-shadow-panel)',
+    borderBottomColor: TERMINAL_BORDER_COLOR,
+    borderBottomWidth: TERMINAL_BORDER_WIDTH,
+    boxShadow: TERMINAL_SHADOW_PANEL,
   };
 }
 
@@ -64,11 +67,44 @@ export function getTerminalFloatingControlStyle({ active = false } = {}) {
   };
 }
 
+export function getTerminalPanelHeaderStyle() {
+  return {
+    borderBottomColor: 'var(--terminal-header-divider-color, var(--border-subtle))',
+    borderBottomWidth: 'var(--terminal-header-divider-width, 1px)',
+    borderBottomStyle: 'solid',
+  };
+}
+
+export function getWorkspaceTopBarStyle() {
+  return {
+    borderBottomColor: 'var(--terminal-workspace-bar-border-color, var(--border-subtle))',
+    borderBottomWidth: 'var(--terminal-workspace-bar-border-width, 1px)',
+    borderBottomStyle: 'solid',
+  };
+}
+
 export function getTerminalViewportFrameStyle() {
   return {
     background: 'var(--chrome-panel-fill)',
-    borderColor: 'var(--chrome-border-color)',
-    borderWidth: 'var(--chrome-border-width)',
+    borderColor: TERMINAL_BORDER_COLOR,
+    borderWidth: TERMINAL_BORDER_WIDTH,
+  };
+}
+
+export function getTerminalPanelBodyStyle({ withBackground = true } = {}) {
+  return {
+    ...(withBackground ? { background: 'var(--chrome-panel-fill)' } : {}),
+    borderColor: TERMINAL_BORDER_COLOR,
+    borderWidth: TERMINAL_BORDER_WIDTH,
+    boxShadow: TERMINAL_SHADOW_PANEL,
+  };
+}
+
+export function getTerminalGridShellStyle() {
+  return {
+    borderColor: 'var(--terminal-chrome-border-color, var(--border-subtle))',
+    borderWidth: 'var(--terminal-grid-border-width, 1px)',
+    borderStyle: 'solid',
   };
 }
 

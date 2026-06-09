@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
 import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 import { createSession, ensureTTYServer } from '@/lib/terminal/ttyServer';
 
@@ -124,41 +125,6 @@ async function recoverProductionSidecar() {
   }
 
   return { port: sidecarPort, wsPath: '/tty' };
-}
-
-async function readProductionSidecarPort() {
-  const fs = require('fs');
-  const os = require('os');
-  const path = require('path');
-
-  const portFile = path.join(os.homedir(), '.devhub', 'sidecar-port.txt');
-  if (!fs.existsSync(portFile)) {
-    return null;
-  }
-
-  const port = Number(fs.readFileSync(portFile, 'utf8').trim());
-  if (!Number.isInteger(port) || port <= 0) {
-    return null;
-  }
-
-  try {
-    const healthResponse = await fetch(`http://127.0.0.1:${port}/health`, {
-      cache: 'no-store',
-    });
-    // Consume body to fully close the underlying undici connection
-    try {
-      await healthResponse.text();
-    } catch {
-      /* ignore */
-    }
-    if (healthResponse.ok) {
-      return port;
-    }
-  } catch (error) {
-    console.error('Error checking sidecar health:', error);
-  }
-
-  return null;
 }
 
 export async function GET(request) {

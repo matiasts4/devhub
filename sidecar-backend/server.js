@@ -22,12 +22,14 @@ const {
   buildHistoryReplay,
   buildServerMessage,
   detectOpenCodeSessionId,
+  detectOpenCodeTuiReady,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
   getTransportMode,
   parseClientMessage,
   updateSessionModeFromInput,
 } = require('./sessionTransport');
+const { writeOpencodeReadyMarker } = require('./opencodeReadyMarker');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
 // Respeta DEVHUB_HOME cuando el wrapper / Tauri lo pasan (permite tests con home
@@ -153,6 +155,14 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
       broadcastSessionPayload(session, {
         type: 'opencode-session-detected',
         sessionId: detectedSessionId,
+      });
+    }
+
+    if (session.tmuxSession && detectOpenCodeTuiReady(filteredData)) {
+      writeOpencodeReadyMarker(session.tmuxSession, {
+        sessionId,
+        opencodeSessionId: session.opencodeSessionId || null,
+        reason: 'sidecar-tui-footer',
       });
     }
 

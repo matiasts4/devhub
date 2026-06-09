@@ -667,7 +667,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(panelBody).not.toBeNull();
     expect(panelSafeZone).not.toBeNull();
     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
-    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
+    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
     expect(panelSemanticHeader).not.toBeNull();
     expect(panelSafeZone?.contains(panelSemanticHeader)).toBe(true);
     expect(panelChromeOverlay).not.toBeNull();
@@ -721,7 +721,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     const panelSafeZone = view.container.querySelector('[data-testid="panel-safe-zone-p1"]');
 
     expect(workspaceTopBar).not.toBeNull();
-    expect(workspaceTopBar?.className).toContain('min-h-[44px]');
+    expect(workspaceTopBar?.className).toContain('min-h-[42px]');
     expect(workspaceTopBar?.className).not.toContain('min-h-[52px]');
     expect(subtabsBar).not.toBeNull();
     expect(subtabsBar?.className).toContain('hidden');
@@ -732,7 +732,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(workspaceShell?.className).toContain('p-1.5');
     expect(workspaceShell?.className).not.toContain('p-2');
     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
-    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
+    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
   });
 
   test('keeps floating panel chrome invariants under brutalist-stage morphology', async () => {
@@ -766,7 +766,7 @@ describe('TerminalWorkspacesManager split layout', () => {
 
     expect(workspaceTopBar?.getAttribute('data-testid')).toBe('workspace-top-tab-bar');
     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
-    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
+    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
     expect(panelSafeZone?.contains(panelChromeOverlay)).toBe(true);
     expect(panelChromeOverlay?.querySelector('[data-testid="panel-split-right-p1"]')).toBe(
       splitRightButton

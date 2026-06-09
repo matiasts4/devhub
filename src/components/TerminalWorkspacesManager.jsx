@@ -3,7 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getWorkspaceAnimProps } from './terminal/workspaceAnimProps';
 import {
   getTerminalFloatingControlStyle,
+  getTerminalGridShellStyle,
+  getTerminalPanelBodyStyle,
+  getTerminalPanelHeaderStyle,
   getWorkspaceShellChromeStyle,
+  getWorkspaceTopBarStyle,
   getWorkspaceTabChromeStyle,
 } from './terminal/terminalChromeStyles';
 import {
@@ -760,7 +764,7 @@ function renderWorkspacePanel(
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
-  const panelChromeSafeZoneMinTop = 34;
+  const panelChromeSafeZoneMinTop = 30;
   const semanticMetadata =
     panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand);
   const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
@@ -771,7 +775,7 @@ function renderWorkspacePanel(
       data-testid={
         isFocusedPanel ? `workspace-focused-panel-${panel.id}` : `panel-slot-${panel.id}`
       }
-      className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-lg border ${
+      className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border ${
         isActive
           ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
           : 'border-transparent'
@@ -788,18 +792,21 @@ function renderWorkspacePanel(
       {swarmRole ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-2 left-0 z-20 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
+          className="pointer-events-none absolute inset-y-1 left-0 z-20 w-0.5 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_12px_rgba(var(--swarm-role-rgb),0.32)]"
         />
       ) : null}
       <div
         data-testid={`panel-safe-zone-${panel.id}`}
         data-native-safe-zone="floating-chrome"
         data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
-        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-2 pt-1"
-        style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
+        className="pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5"
+        style={{
+          minHeight: `${panelChromeSafeZoneMinTop}px`,
+          ...getTerminalPanelHeaderStyle(),
+        }}
       >
         {/* Agent info bar — kept above the native terminal surface so VTE cannot cover it. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-3 pr-[120px] pt-[6px]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1">
           <div
             data-testid={`panel-semantic-header-${panel.id}`}
             data-panel-metadata-source={semanticMetadata.source}
@@ -809,7 +816,7 @@ function renderWorkspacePanel(
             {swarmRole ? (
               <span
                 data-testid={`panel-role-badge-${panel.id}`}
-                className="inline-flex h-5 shrink-0 items-center rounded-md border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-2 text-[9px] font-black tracking-[0.08em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_16px_rgba(var(--swarm-role-rgb),0.12)]"
+                className="inline-flex h-[18px] shrink-0 items-center rounded border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-1.5 text-[9px] font-black tracking-[0.06em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_10px_rgba(var(--swarm-role-rgb),0.1)]"
               >
                 {swarmRole.abbrev}
               </span>
@@ -837,19 +844,19 @@ function renderWorkspacePanel(
         </div>
         <div
           aria-hidden="true"
-          className={`absolute inset-x-0 top-0 h-[calc(100%-0.125rem)] rounded-t-[14px] border-b border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.22),rgba(15,23,36,0.02))] transition-opacity ${
+          className={`absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity ${
             isActive ? 'opacity-100' : 'opacity-70'
           }`}
         />
         {/* Panel controls — top-right, outside the native terminal body. */}
         <div
-          className="pointer-events-none absolute right-1.5 top-1 z-10"
+          className="pointer-events-none absolute right-1 top-0.5 z-10"
           data-testid={`panel-chrome-overlay-${panel.id}`}
           data-floating-placement="inside-top-right"
           aria-label={`Panel ${panelLabel || panel.id} controls`}
         >
           <div
-            className="pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors"
+            className="pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors"
             data-testid={`panel-header-actions-${panel.id}`}
             title={`Panel ${panelLabel || panel.id} actions`}
             style={getTerminalFloatingControlStyle({ active: isActive })}
@@ -866,7 +873,7 @@ function renderWorkspacePanel(
               type="button"
               data-testid={`panel-split-right-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
               title="Dividir a la derecha"
               aria-label="Dividir a la derecha"
               onClick={(e) => {
@@ -880,7 +887,7 @@ function renderWorkspacePanel(
               type="button"
               data-testid={`panel-split-down-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
               title="Dividir hacia abajo"
               aria-label="Dividir hacia abajo"
               onClick={(e) => {
@@ -894,7 +901,7 @@ function renderWorkspacePanel(
               type="button"
               data-testid={`panel-focus-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
               title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
               aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
               onClick={(e) => {
@@ -912,7 +919,7 @@ function renderWorkspacePanel(
               type="button"
               data-testid={`panel-close-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
               title="Cerrar terminal"
               aria-label="Cerrar terminal"
               onClick={(e) => {
@@ -926,11 +933,11 @@ function renderWorkspacePanel(
         </div>
       </div>
       <div
-        className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+        className="min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
         data-testid={`panel-body-${panel.id}`}
-        style={getWorkspaceShellChromeStyle({ withBackground: false })}
+        style={getTerminalPanelBodyStyle({ withBackground: false })}
       >
-        <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
+        <div className="h-full w-full overflow-hidden rounded-[4px] bg-[var(--surface-app)]">
           <TerminalTTY
             id={panel.id}
             cwd={panel.cwd || cwd}
@@ -4875,8 +4882,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <div
               key="workspace-top-tab-bar"
               data-testid="workspace-top-tab-bar"
-              className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
-              style={getWorkspaceShellChromeStyle()}
+              className="flex items-center min-h-[42px] bg-[var(--surface-app)] select-none shrink-0 px-2 gap-1.5"
+              style={{
+                ...getWorkspaceShellChromeStyle(),
+                ...getWorkspaceTopBarStyle(),
+              }}
             >
               <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
                 {workspaces.map((ws, wsIndex) => {
@@ -4913,7 +4923,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         setDraggedWsId(null);
                         setDragOverWsId(null);
                       }}
-                      className={`group relative flex items-center justify-between h-full px-4 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none border ${
+                      className={`group relative flex h-[34px] min-h-[34px] items-center justify-between px-3.5 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none border ${
                         draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
                       } ${
                         activeWsId === ws.id
@@ -4989,13 +4999,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                           onClick={(e) => removeWorkspace(e, ws.id)}
                           aria-label={`Cerrar ${workspaceTabLabel}`}
                           title={`Cerrar ${workspaceTabLabel}`}
-                          className={`relative z-[1] ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
+                          className={`relative z-[1] ml-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
                             activeWsId === ws.id
                               ? 'border-white/10 bg-white/[0.05] text-[var(--text-secondary)] opacity-90 hover:border-red-400/35 hover:bg-red-500/14 hover:text-red-300'
                               : 'border-transparent text-[var(--text-muted)] opacity-0 hover:border-white/12 hover:bg-white/10 hover:text-[var(--text-primary)] group-hover:opacity-85'
                           }`}
                         >
-                          <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                          <X className="h-3 w-3" strokeWidth={2.25} />
                         </button>
                       )}
                     </div>
@@ -5489,7 +5499,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         <Panel
                           key={`${ws.id}-terminal-grid`}
                           minSize={18}
-                          className="flex flex-col bg-[var(--surface-app)] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
+                          className="flex flex-col bg-[var(--surface-app)] rounded-lg overflow-hidden"
+                          style={getTerminalGridShellStyle()}
                         >
                           {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
 
@@ -5551,7 +5562,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                               {!focusedPanelId &&
                                               panelIndex < column.panels.length - 1 ? (
                                                 <PanelResizeHandle
-                                                  className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
+                                                  className="relative z-30 h-1.5 shrink-0 flex items-center justify-center bg-[var(--surface-app)] border-t border-b border-[rgba(var(--accent-rgb,88,166,255),0.1)] hover:bg-[#142036] transition-colors"
                                                   data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
                                                   onDragging={handleInternalSplitDragging}
                                                 >
@@ -5588,7 +5599,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                     </Panel>
                                     {!focusedPanelId && columnIndex < ws.columns.length - 1 ? (
                                       <PanelResizeHandle
-                                        className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
+                                        className="relative z-30 w-1.5 shrink-0 flex items-center justify-center bg-[var(--surface-app)] border-l border-r border-[rgba(var(--accent-rgb,88,166,255),0.1)] hover:bg-[#142036] transition-colors"
                                         data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
                                         onDragging={handleInternalSplitDragging}
                                       >

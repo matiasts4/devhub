@@ -76,7 +76,7 @@ function WorkspaceWindowTabBar({
                 WebkitAppRegion: 'no-drag',
               }}
             >
-              <div className="flex items-center gap-2">
+              <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
                 <LayoutGrid
                   className="w-3.5 h-3.5 shrink-0"
                   style={{
@@ -86,9 +86,11 @@ function WorkspaceWindowTabBar({
                         : 'currentColor',
                   }}
                 />
-                <span className="text-[12px] font-semibold truncate">{workspaceTabLabel}</span>
+                <span className="min-w-0 truncate text-[12px] font-semibold">
+                  {workspaceTabLabel}
+                </span>
                 {hasOpenBrowserWindow ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
                     <span
                       className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
                       data-testid={`workspace-browser-indicator-${ws.id}`}
@@ -101,16 +103,16 @@ function WorkspaceWindowTabBar({
                         event.stopPropagation();
                         onCloseWorkspaceBrowser(ws.id);
                       }}
-                      className="inline-flex items-center justify-center rounded text-emerald-100/80 transition-colors hover:text-white"
+                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-emerald-100/80 transition-colors hover:bg-emerald-400/15 hover:text-white"
                       title="Cerrar browser dedicado de este workspace"
                       aria-label="Cerrar browser dedicado de este workspace"
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-3.5 w-3.5" strokeWidth={2.5} />
                     </button>
                   </span>
                 ) : null}
                 <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
+                  className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
                   style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)' }}
                 >
                   {totalPanels}
@@ -118,12 +120,18 @@ function WorkspaceWindowTabBar({
               </div>
               {workspaces.length > 1 && (
                 <button
+                  type="button"
                   onClick={(e) => onRemoveWorkspace(e, ws.id)}
                   data-testid={`workspace-close-${ws.id}`}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded ml-1.5 transition-opacity"
-                  aria-label={`Close ${ws.name}`}
+                  aria-label={`Cerrar ${workspaceTabLabel}`}
+                  title={`Cerrar ${workspaceTabLabel}`}
+                  className={`relative z-[1] ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
+                    activeWsId === ws.id
+                      ? 'border-white/10 bg-white/[0.05] text-[var(--text-secondary)] opacity-90 hover:border-red-400/35 hover:bg-red-500/14 hover:text-red-300'
+                      : 'border-transparent text-[var(--text-muted)] opacity-0 hover:border-white/12 hover:bg-white/10 hover:text-[var(--text-primary)] group-hover:opacity-85'
+                  }`}
                 >
-                  <X className="w-3 h-3" />
+                  <X className="h-3.5 w-3.5" strokeWidth={2.5} />
                 </button>
               )}
             </div>

@@ -140,6 +140,15 @@ const {
   isTerminalViewportNearBottom,
   getTerminalViewportScrollOffset,
   restoreTerminalViewportScroll,
+  shouldUseTerminalScrollbackWheel,
+  resolveTerminalWheelScrollDirection,
+  resolveTerminalWheelPageSteps,
+  buildTerminalWheelPageSequence,
+  isTerminalTranscriptCell,
+  resolveTerminalCellFromPointer,
+  shouldRouteWheelToTranscript,
+  TERMINAL_PAGE_UP_SEQ,
+  TERMINAL_PAGE_DOWN_SEQ,
   stabilizeTerminalRenderer,
   TERMINAL_NATIVE_CONTENT_BODY_STYLE,
   TERMINAL_VIEWPORT_SHELL_STYLE,
@@ -1417,6 +1426,59 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(terminal.scrollToLine).toHaveBeenCalledWith(80);
+  });
+
+  describe('terminal wheel scroll helpers', () => {
+    test('shift+wheel routes to xterm scrollback', () => {
+      expect(shouldUseTerminalScrollbackWheel({ shiftKey: true })).toBe(true);
+      expect(shouldUseTerminalScrollbackWheel({ shiftKey: false })).toBe(false);
+    });
+
+    test('buildTerminalWheelPageSequence emits Page Up/Down sequences', () => {
+      expect(buildTerminalWheelPageSequence('up', 2)).toBe(
+        TERMINAL_PAGE_UP_SEQ + TERMINAL_PAGE_UP_SEQ
+      );
+      expect(buildTerminalWheelPageSequence('down', 1)).toBe(TERMINAL_PAGE_DOWN_SEQ);
+    });
+
+    test('resolveTerminalWheelPageSteps scales with wheel delta', () => {
+      expect(resolveTerminalWheelScrollDirection(-120)).toBe('up');
+      expect(resolveTerminalWheelScrollDirection(80)).toBe('down');
+      expect(resolveTerminalWheelPageSteps(120)).toBe(3);
+    });
+
+    test('transcript vs input zones gate wheel routing', () => {
+      expect(isTerminalTranscriptCell(10, 20, 4)).toBe(true);
+      expect(isTerminalTranscriptCell(17, 20, 4)).toBe(false);
+      expect(
+        shouldRouteWheelToTranscript({
+          cell: { col: 4, row: 10 },
+          rows: 20,
+          lastPointerZone: 'input',
+        })
+      ).toBe(true);
+      expect(
+        shouldRouteWheelToTranscript({
+          cell: { col: 4, row: 18 },
+          rows: 20,
+          lastPointerZone: 'transcript',
+        })
+      ).toBe(false);
+      expect(
+        shouldRouteWheelToTranscript({
+          lastPointerZone: 'transcript',
+          rows: 20,
+        })
+      ).toBe(true);
+    });
+
+    test('resolveTerminalCellFromPointer maps viewport coordinates to cells', () => {
+      const term = { cols: 80, rows: 24 };
+      const element = {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 480 }),
+      };
+      expect(resolveTerminalCellFromPointer(term, element, 400, 240)).toEqual({ col: 40, row: 12 });
+    });
   });
 
   test('probes and opens native GTK VTE only for the active experimental panel', async () => {

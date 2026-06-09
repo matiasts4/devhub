@@ -1,8 +1,8 @@
 const {
   buildSwarmTmuxSessionName,
   resolveViewportReadyMarkerPath,
-  writeViewportReadyMarker,
 } = require('../viewportReadyMarker.js');
+const { writeViewportReadyMarker } = require('../viewportReadyMarker.node.js');
 
 describe('viewportReadyMarker', () => {
   test('buildSwarmTmuxSessionName composes launch and role', () => {

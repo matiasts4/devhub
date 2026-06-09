@@ -236,6 +236,22 @@ function findAddWorkspaceButton(container) {
   return container.querySelector('[data-testid="workspace-add-button"]');
 }
 
+async function confirmNewWorkspaceSetup(count = 1) {
+  const modal = document.querySelector('[data-testid="workspace-terminal-setup-modal"]');
+  expect(modal).not.toBeNull();
+  if (count !== 1) {
+    const preset = document.querySelector(
+      `[data-testid="workspace-terminal-count-preset-${count}"]`
+    );
+    expect(preset).not.toBeNull();
+    await click(preset);
+  }
+  const confirm = document.querySelector('[data-testid="workspace-terminal-setup-confirm"]');
+  expect(confirm).not.toBeNull();
+  await click(confirm);
+  await flushEffects();
+}
+
 function getActiveWorkspacePanelIds(container) {
   // Filter to actual panel IDs (p<number>) — there are non-panel elements
   // like terminal-restore-settings-btn that also match the terminal- prefix
@@ -308,7 +324,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     const addButton = findAddWorkspaceButton(view.container);
     expect(addButton).not.toBeNull();
     await click(addButton);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const panelIds = getActiveWorkspacePanelIds(view.container);
     expect(panelIds.length).toBeGreaterThanOrEqual(1);
@@ -327,7 +343,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
 
     const addButton1 = findAddWorkspaceButton(view.container);
     await click(addButton1);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     // After first add: panels are p1 (default) + p8001 (high)
     const panelIdsAfterFirst = getActiveWorkspacePanelIds(view.container);
@@ -339,7 +355,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     // Add second workspace — should continue from p8002, NOT re-randomize to p1001
     const addButton2 = findAddWorkspaceButton(view.container);
     await click(addButton2);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const panelIdsAfterSecond = getActiveWorkspacePanelIds(view.container);
     const newIds = panelIdsAfterSecond.filter((id) => !panelIdsAfterFirst.includes(id));
@@ -367,7 +383,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
 
     const addButton = findAddWorkspaceButton(view.container);
     await click(addButton);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const panelIdsAfterAdd = getActiveWorkspacePanelIds(view.container);
     // Only check NEW panels (those added by this addWorkspace operation)
@@ -394,7 +410,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
 
     const addButton1 = findAddWorkspaceButton(view.container);
     await click(addButton1);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const panelIdsAfterFirst = getActiveWorkspacePanelIds(view.container);
     const afterFirstHighPanel = panelIdsAfterFirst.find((id) => !panelIdsBeforeFirst.includes(id));
@@ -416,7 +432,7 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     // Add another workspace — counterRandomizedRef should stay true (ref)
     const addButton2 = findAddWorkspaceButton(view.container);
     await click(addButton2);
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const panelIdsAfterSecond = getActiveWorkspacePanelIds(view.container);
     const newIds = panelIdsAfterSecond.filter((id) => !panelIdsBeforeSecond.includes(id));
