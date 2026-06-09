@@ -28,7 +28,9 @@ import {
   getTerminalRendererRuntimeCapabilities,
   getTerminalRendererWebglFallbackCopy,
   probeWebglSupport,
+  resolveOperationalRendererMode,
   resolveRendererSelection,
+  TERMINAL_OPERATIONAL_CANVAS_MODE,
   TERMINAL_WEBGL_FALLBACK_REASONS,
 } from '@/components/terminal/terminalRendererCapabilities';
 import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
@@ -415,6 +417,46 @@ export function shouldRunTerminalViewportReactivation({
   return isActivePanel && isVisibleInLayout;
 }
 
+/** Panel clicks should not rerun full WebGL/viewport recovery when already active. */
+export function shouldRunPanelClickViewportRecovery(isAlreadyActivePanel) {
+  return !isAlreadyActivePanel;
+}
+
+/** Heavy viewport/WebGL recovery runs only on false→true panel activation edges. */
+export function shouldRecoverPanelOnActivation(previousActive, nextActive) {
+  return Boolean(nextActive) && !previousActive;
+}
+
+/** Keep WebGL atlases on split siblings; only clear when attaching WebGL for the first time. */
+export function shouldClearWebglAtlasOnPanelActivation(hasWebglAttached) {
+  return !hasWebglAttached;
+}
+
+/** WebGL attach/reattach is only allowed when the operational renderer is xterm-webgl. */
+export function shouldAttachWebglRenderer({ operationalRendererMode }) {
+  return operationalRendererMode === 'xterm-webgl';
+}
+
+/** Canvas 2D attach/reattach is used for visible split siblings (all panels). */
+export function shouldAttachCanvasRenderer({ operationalRendererMode }) {
+  return operationalRendererMode === 'xterm-canvas';
+}
+
+export function shouldUseGpuTerminalRenderer({ operationalRendererMode }) {
+  return (
+    shouldAttachWebglRenderer({ operationalRendererMode }) ||
+    shouldAttachCanvasRenderer({ operationalRendererMode })
+  );
+}
+
+/** Visible split siblings that are not focused still need fit+resize on layout churn. */
+export function shouldRefitVisibleInactiveSplitPanel({
+  isActivePanel,
+  isVisibleInLayout = true,
+} = {}) {
+  return Boolean(isVisibleInLayout && !isActivePanel);
+}
+
 /** Full viewport sync when a workspace shell becomes visible again after being hidden. */
 export function shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible) {
   return !prevVisible && nextVisible;
@@ -572,6 +614,7 @@ export default function TerminalTTY({
   // for compatibility but force the webgl path and skip all native VTE mounting.
   requestedRendererMode = 'xterm-webgl',
   onResetRendererToXterm,
+  visibleTerminalPanelCount = 1,
   isActivePanel = autoFocus,
   isVisibleInLayout = true,
   suspendNativeSurface = false,
@@ -642,6 +685,7 @@ export default function TerminalTTY({
   const [webglFallback, setWebglFallback] = useState(null);
   const [xtermBootNonce, setXtermBootNonce] = useState(0);
   const webglAddonRef = useRef(null);
+  const canvasAddonRef = useRef(null);
   const terminalBlurCleanupRef = useRef(null);
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
@@ -665,6 +709,11 @@ export default function TerminalTTY({
     nativeVteReady:
       ENABLE_NATIVE_VTE && effectiveRequestedMode === 'vte-experimental' && nativeVteOpened,
   });
+  const operationalRendererMode = resolveOperationalRendererMode({
+    requestedMode: effectiveRequestedMode,
+    effectiveMode: rendererViewModel.effectiveMode,
+    visibleTerminalPanelCount,
+  });
   const hasSentInitialCommand = useRef(false);
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
@@ -680,12 +729,19 @@ export default function TerminalTTY({
   const pendingWebglRecoveryRef = useRef(false);
   const webglRecoveryTimerRef = useRef(null);
   const handleWebglContextLossRef = useRef(null);
+  const prevIsActivePanelRef = useRef(false);
+  const reactivateTerminalViewportRef = useRef(null);
+  const tryReattachWebglAddonRef = useRef(null);
+  const tryReattachCanvasAddonRef = useRef(null);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
   const initTimeoutRef = useRef(null);
   const autoScrollRafRef = useRef(null);
-  const effectiveRendererModeRef = useRef(rendererViewModel.effectiveMode);
+  const effectiveRendererModeRef = useRef(operationalRendererMode);
+  const operationalRendererModeRef = useRef(operationalRendererMode);
+  const visibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);
+  const prevVisibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
     isVisibleInLayout,
@@ -801,8 +857,10 @@ export default function TerminalTTY({
     //    refs now sees null and bails out before we start tearing things
     //    down. This is the key ordering change for the Linux/WebKitGTK race.
     const webglAddon = webglAddonRef.current;
+    const canvasAddon = canvasAddonRef.current;
     const term = termRef.current;
     webglAddonRef.current = null;
+    canvasAddonRef.current = null;
     termRef.current = null;
     fitRef.current = null;
     searchRef.current = null;
@@ -837,6 +895,16 @@ export default function TerminalTTY({
       } catch (err) {
         if (!isStaleXtermRendererError(err)) {
           console.warn('Error disposing WebglAddon:', err);
+        }
+      }
+    }
+
+    if (canvasAddon) {
+      try {
+        canvasAddon.dispose?.();
+      } catch (err) {
+        if (!isStaleXtermRendererError(err)) {
+          console.warn('Error disposing CanvasAddon:', err);
         }
       }
     }
@@ -891,10 +959,6 @@ export default function TerminalTTY({
   );
 
   useEffect(() => {
-    isActivePanelRef.current = isActivePanel;
-  }, [isActivePanel]);
-
-  useEffect(() => {
     isVisibleInLayoutRef.current = isVisibleInLayout;
   }, [isVisibleInLayout]);
 
@@ -906,9 +970,14 @@ export default function TerminalTTY({
     requestedRendererModeRef.current = requestedRendererMode;
   }, [requestedRendererMode]);
 
-  useEffect(() => {
-    effectiveRendererModeRef.current = rendererViewModel.effectiveMode;
-  }, [rendererViewModel.effectiveMode]);
+  useLayoutEffect(() => {
+    effectiveRendererModeRef.current = operationalRendererMode;
+    operationalRendererModeRef.current = operationalRendererMode;
+  }, [operationalRendererMode]);
+
+  useLayoutEffect(() => {
+    visibleTerminalPanelCountRef.current = visibleTerminalPanelCount;
+  }, [visibleTerminalPanelCount]);
 
   // Real WebGL capability probe (runs once per mount, cheap detached canvas test).
   // Populates webglProbeResult so the runtime capabilities and switcher labels are honest.
@@ -939,6 +1008,18 @@ export default function TerminalTTY({
   // but the resolver (or probe) forced fallback to plain xterm. Clears only demotion-shaped
   // reasons when the user picks a different renderer.
   useEffect(() => {
+    if (operationalRendererMode === TERMINAL_OPERATIONAL_CANVAS_MODE) {
+      if (
+        webglFallback &&
+        (webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW ||
+          webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED ||
+          webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED)
+      ) {
+        setWebglFallback(null);
+      }
+      return;
+    }
+
     if (
       requestedRendererMode === 'xterm-webgl' &&
       rendererViewModel.effectiveMode !== 'xterm-webgl'
@@ -957,7 +1038,13 @@ export default function TerminalTTY({
       // user moved away from the demoted choice — clear the demotion banner
       setWebglFallback(null);
     }
-  }, [requestedRendererMode, rendererViewModel.effectiveMode, webglProbeResult]);
+  }, [
+    operationalRendererMode,
+    requestedRendererMode,
+    rendererViewModel.effectiveMode,
+    webglProbeResult,
+    webglFallback,
+  ]);
 
   const handleSwitchToXterm = useCallback(() => {
     if (typeof onResetRendererToXterm === 'function') {
@@ -1124,10 +1211,6 @@ export default function TerminalTTY({
     return Boolean(rect && rect.width > 0 && rect.height > 0);
   }, []);
 
-  const repaintInactiveTerminal = useCallback(() => {
-    refreshTerminalViewport(termRef.current);
-  }, []);
-
   const fitAndResize = useCallback(
     (options = {}) => {
       const clearAtlas = options.clearAtlas ?? isActivePanelRef.current;
@@ -1187,10 +1270,96 @@ export default function TerminalTTY({
     });
   }, []);
 
+  const releaseCanvasAddon = useCallback(
+    (reason = 'canvas-released') => {
+      const addon = canvasAddonRef.current;
+      if (!addon) return false;
+
+      cliLog(`RENDER:${id}`, 'canvas-released', buildViewportSnapshot(reason));
+
+      try {
+        addon.dispose?.();
+      } catch {
+        // ignore double dispose
+      }
+      canvasAddonRef.current = null;
+      stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+      return true;
+    },
+    [buildViewportSnapshot, id]
+  );
+
+  const releaseWebglAddonForInactivePanel = useCallback(
+    (reason = 'panel-inactive-dom-fallback') => {
+      const addon = webglAddonRef.current;
+      if (!addon) return false;
+
+      if (webglRecoveryTimerRef.current) {
+        clearTimeout(webglRecoveryTimerRef.current);
+        webglRecoveryTimerRef.current = null;
+      }
+
+      cliLog(`RENDER:${id}`, 'webgl-released-inactive-panel', buildViewportSnapshot(reason));
+
+      neutralizeWebglAddonForDisposal(addon);
+      try {
+        addon.dispose?.();
+      } catch {
+        // ignore double dispose
+      }
+      webglAddonRef.current = null;
+      pendingWebglRecoveryRef.current = true;
+
+      stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+      return true;
+    },
+    [buildViewportSnapshot, id]
+  );
+
+  const tryReattachCanvasAddon = useCallback(async () => {
+    const term = termRef.current;
+    if (!term || canvasAddonRef.current) return false;
+    if (
+      !shouldAttachCanvasRenderer({ operationalRendererMode: effectiveRendererModeRef.current })
+    ) {
+      return false;
+    }
+    if (!isVisibleInLayoutRef.current) return false;
+    if (!isTerminalRendererReady(term)) return false;
+
+    try {
+      const { CanvasAddon: CanvasAddonCtor } = await import('xterm-addon-canvas');
+      if (!termRef.current || canvasAddonRef.current) return false;
+
+      const canvasAddon = new CanvasAddonCtor();
+      canvasAddonRef.current = canvasAddon;
+      termRef.current.loadAddon(canvasAddon);
+
+      fitTerminalViewport({
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+        term: termRef.current,
+        socket: wsRef.current,
+        clearAtlas: true,
+      });
+      stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+      cliLog(`RENDER:${id}`, 'canvas-attached', buildViewportSnapshot('canvas-reattach'));
+      return true;
+    } catch (error) {
+      console.warn(
+        `[TTY:${id}] Canvas reattach failed, staying on DOM renderer`,
+        error?.message || error
+      );
+      return false;
+    }
+  }, [buildViewportSnapshot, id]);
+
   const tryReattachWebglAddon = useCallback(async () => {
     const term = termRef.current;
     if (!term || webglAddonRef.current) return false;
-    if (effectiveRendererModeRef.current !== 'xterm-webgl') return false;
+    if (!shouldAttachWebglRenderer({ operationalRendererMode: effectiveRendererModeRef.current })) {
+      return false;
+    }
     if (!isVisibleInLayoutRef.current) {
       pendingWebglRecoveryRef.current = true;
       return false;
@@ -1265,7 +1434,7 @@ export default function TerminalTTY({
 
     stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
 
-    if (isVisibleInLayoutRef.current) {
+    if (isVisibleInLayoutRef.current && isActivePanelRef.current) {
       scheduleWebglRecovery();
     }
   }, [id, scheduleWebglRecovery]);
@@ -1305,7 +1474,13 @@ export default function TerminalTTY({
         scrollTerminalToBottom(true);
       }
 
-      if (pendingWebglRecoveryRef.current || !webglAddonRef.current) {
+      if (
+        isActivePanelRef.current &&
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        }) &&
+        (pendingWebglRecoveryRef.current || !webglAddonRef.current)
+      ) {
         scheduleWebglRecovery(120);
       }
     },
@@ -1322,10 +1497,14 @@ export default function TerminalTTY({
       return;
     }
 
-    // Inactive split siblings stay visible — never clear their WebGL atlas on
-    // border/layout churn when the user clicks another panel.
-    if (!isActivePanelRef.current) {
-      repaintInactiveTerminal();
+    // Visible inactive siblings still need fit+PTY resize when split geometry changes.
+    if (
+      shouldRefitVisibleInactiveSplitPanel({
+        isActivePanel: isActivePanelRef.current,
+        isVisibleInLayout: isVisibleInLayoutRef.current,
+      })
+    ) {
+      scheduleInactiveViewportRepaint();
       return;
     }
 
@@ -1340,47 +1519,63 @@ export default function TerminalTTY({
       fitAndResize({ clearAtlas: true });
       scrollTerminalToBottom();
     }, 120);
-  }, [clearTimers, fitAndResize, repaintInactiveTerminal, scrollTerminalToBottom]);
+  }, [clearTimers, fitAndResize, scheduleInactiveViewportRepaint, scrollTerminalToBottom]);
 
-  const reactivateTerminalViewport = useCallback(() => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    const zeroSized = !rect || rect.width <= 0 || rect.height <= 0;
-    if (zeroSized) {
-      logViewportDiagnostic('reactivate-skipped-zero-size');
-      if (autoFocus && isActivePanelRef.current) {
-        disableTerminalFocusReporting(termRef.current);
-        termRef.current?.focus?.();
+  const reactivateTerminalViewport = useCallback(
+    (options = {}) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      const zeroSized = !rect || rect.width <= 0 || rect.height <= 0;
+      if (zeroSized) {
+        logViewportDiagnostic('reactivate-skipped-zero-size');
+        if (autoFocus && isActivePanelRef.current) {
+          disableTerminalFocusReporting(termRef.current);
+          termRef.current?.focus?.();
+        }
+        return;
       }
-      return;
-    }
 
-    logViewportDiagnostic('reactivate-start');
-    const repaint = () => {
-      stabilizeTerminalRenderer(termRef.current, { clearAtlas: isActivePanelRef.current });
-      if (isActivePanelRef.current) scrollTerminalToBottom();
-    };
+      const clearAtlas =
+        options.clearAtlas ??
+        shouldClearWebglAtlasOnPanelActivation(Boolean(webglAddonRef.current));
 
-    sendResize();
-    repaint();
+      logViewportDiagnostic('reactivate-start');
+      const repaint = () => {
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas });
+        if (isActivePanelRef.current) scrollTerminalToBottom();
+      };
 
-    rafRef.current = requestAnimationFrame(() => {
+      const applyResize = () => {
+        if (clearAtlas) {
+          sendResize();
+          return;
+        }
+        fitAndResize({ clearAtlas: false });
+        scrollTerminalToBottom();
+      };
+
+      applyResize();
       repaint();
 
-      if (autoFocus) {
-        // Same protection as in handleViewportMouseDown: ensure focus reporting
-        // is off before we focus, so our activation doesn't inject a focus-in
-        // event that triggers DA queries whose responses leak as visible text.
-        disableTerminalFocusReporting(termRef.current);
-        termRef.current?.focus?.();
-      }
-
-      timeoutRef.current = setTimeout(() => {
-        sendResize();
+      rafRef.current = requestAnimationFrame(() => {
         repaint();
-        logViewportDiagnostic('reactivate-settled');
-      }, 120);
-    });
-  }, [autoFocus, logViewportDiagnostic, scrollTerminalToBottom, sendResize]);
+
+        if (autoFocus) {
+          // Same protection as in handleViewportMouseDown: ensure focus reporting
+          // is off before we focus, so our activation doesn't inject a focus-in
+          // event that triggers DA queries whose responses leak as visible text.
+          disableTerminalFocusReporting(termRef.current);
+          termRef.current?.focus?.();
+        }
+
+        timeoutRef.current = setTimeout(() => {
+          applyResize();
+          repaint();
+          logViewportDiagnostic('reactivate-settled');
+        }, 120);
+      });
+    },
+    [autoFocus, fitAndResize, logViewportDiagnostic, scrollTerminalToBottom, sendResize]
+  );
 
   useEffect(() => {
     if (!ENABLE_NATIVE_VTE) return undefined;
@@ -1752,18 +1947,12 @@ export default function TerminalTTY({
   // That forces the main effect body to re-execute and call its local initializeTerminal()
   // (which contains the full xterm + webgl dynamic import + banner logic).
   const lastRequestedModeRef = useRef(requestedRendererMode);
-  const lastEffectiveModeRef = useRef(rendererViewModel.effectiveMode);
   const lastIdRef = useRef(id);
   useEffect(() => {
-    if (
-      lastRequestedModeRef.current === requestedRendererMode &&
-      lastEffectiveModeRef.current === rendererViewModel.effectiveMode &&
-      lastIdRef.current === id
-    ) {
+    if (lastRequestedModeRef.current === requestedRendererMode && lastIdRef.current === id) {
       return undefined;
     }
     lastRequestedModeRef.current = requestedRendererMode;
-    lastEffectiveModeRef.current = rendererViewModel.effectiveMode;
     lastIdRef.current = id;
 
     if (requestedRendererMode === 'vte-experimental') {
@@ -1778,7 +1967,55 @@ export default function TerminalTTY({
     setXtermBootNonce((n) => n + 1);
 
     return undefined;
-  }, [requestedRendererMode, rendererViewModel.effectiveMode, disposeXtermRuntime, id]);
+  }, [requestedRendererMode, disposeXtermRuntime, id]);
+
+  // Migrate WebGL ↔ Canvas when split geometry changes, without remounting PTYs.
+  useLayoutEffect(() => {
+    if (shouldUseNativeRenderer || !termRef.current) return;
+
+    const prevCount = prevVisibleTerminalPanelCountRef.current;
+    prevVisibleTerminalPanelCountRef.current = visibleTerminalPanelCount;
+
+    const wantsWebgl = shouldAttachWebglRenderer({ operationalRendererMode });
+    const wantsCanvas = shouldAttachCanvasRenderer({ operationalRendererMode });
+
+    if (wantsWebgl) {
+      if (canvasAddonRef.current) {
+        releaseCanvasAddon('split-collapse-webgl');
+      }
+      if (!webglAddonRef.current) {
+        if (prevCount > visibleTerminalPanelCount) {
+          cliLog(`RENDER:${id}`, 'webgl-reattach-after-split-collapse');
+        }
+        void tryReattachWebglAddonRef.current?.();
+      }
+      return;
+    }
+
+    if (wantsCanvas) {
+      if (webglAddonRef.current) {
+        releaseWebglAddonForInactivePanel('split-open-canvas');
+      }
+      if (!canvasAddonRef.current) {
+        void tryReattachCanvasAddonRef.current?.();
+      }
+      return;
+    }
+
+    if (webglAddonRef.current) {
+      releaseWebglAddonForInactivePanel('operational-dom-fallback');
+    }
+    if (canvasAddonRef.current) {
+      releaseCanvasAddon('operational-dom-fallback');
+    }
+  }, [
+    id,
+    operationalRendererMode,
+    releaseCanvasAddon,
+    releaseWebglAddonForInactivePanel,
+    shouldUseNativeRenderer,
+    visibleTerminalPanelCount,
+  ]);
 
   useEffect(() => {
     if (requestedRendererMode !== 'vte-experimental') return undefined;
@@ -2266,10 +2503,15 @@ export default function TerminalTTY({
   // in the prompt of the panels.
   // useLayoutEffect runs before paint so blur/focus churn cannot beat us to the PTY.
   useLayoutEffect(() => {
+    isActivePanelRef.current = isActivePanel;
+
     const term = termRef.current;
     if (!term) return;
 
     if (!isActivePanel) {
+      // Cancel active-panel resize debounces so a stale RAF cannot clear GPU atlases
+      // after the user switched away. Still refit if the container geometry changed.
+      clearTimers();
       disableTerminalFocusReporting(term);
       try {
         if (term.element?.contains(document.activeElement)) {
@@ -2278,14 +2520,14 @@ export default function TerminalTTY({
       } catch {
         // intentional: terminal may already be disposed during unmount
       }
-      requestAnimationFrame(() => {
-        refreshTerminalViewport(termRef.current);
-      });
+      if (isVisibleInLayoutRef.current) {
+        scheduleInactiveViewportRepaint();
+      }
       return;
     }
 
     disableTerminalFocusReporting(term);
-  }, [isActivePanel]);
+  }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);
 
   useLayoutEffect(() => {
     const prevVisible = prevVisibleInLayoutRef.current;
@@ -2461,7 +2703,12 @@ export default function TerminalTTY({
         // Attempt WebGL addon on explicit user choice (requested) even if the snapshot effective
         // was still 'xterm' because the async probe had not arrived yet. The probe only informs
         // the switcher labels and initial resolver; the actual load decides.
-        const wantsWebgl = rendererViewModel.effectiveMode === 'xterm-webgl';
+        const wantsWebgl = shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        });
+        const wantsCanvas = shouldAttachCanvasRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        });
         if (wantsWebgl) {
           importList.push(
             import('xterm-addon-webgl').catch((err) => {
@@ -2469,13 +2716,25 @@ export default function TerminalTTY({
               return { failed: true };
             })
           );
+        } else if (wantsCanvas) {
+          importList.push(
+            import('xterm-addon-canvas').catch((err) => {
+              console.warn(`[TTY:${id}] Failed to import xterm-addon-canvas:`, err?.message || err);
+              return { failed: true };
+            })
+          );
         }
         const importResults = await Promise.all(importList);
 
         const [{ Terminal }, { FitAddon }, { SearchAddon }] = importResults;
+        const optionalAddonImport = importResults[3];
         const WebglAddonCtor =
-          wantsWebgl && importResults[3] && !importResults[3].failed
-            ? importResults[3].WebglAddon
+          wantsWebgl && optionalAddonImport && !optionalAddonImport.failed
+            ? optionalAddonImport.WebglAddon
+            : null;
+        const CanvasAddonCtor =
+          wantsCanvas && optionalAddonImport && !optionalAddonImport.failed
+            ? optionalAddonImport.CanvasAddon
             : null;
 
         if (!mounted || !containerRef.current) {
@@ -2534,15 +2793,8 @@ export default function TerminalTTY({
           blurTarget?.removeEventListener('focusout', handleTerminalBlur);
         };
 
-        const deferWebglUntilActive = wantsWebgl && !isActivePanelRef.current;
         if (wantsWebgl) {
-          if (deferWebglUntilActive) {
-            pendingWebglRecoveryRef.current = true;
-            cliLog(`RENDER:${id}`, 'webgl-deferred-inactive-panel', {
-              isActivePanel: isActivePanelRef.current,
-              isVisibleInLayout: isVisibleInLayoutRef.current,
-            });
-          } else if (WebglAddonCtor) {
+          if (WebglAddonCtor) {
             try {
               const webglAddon = new WebglAddonCtor();
               webglAddonRef.current = webglAddon;
@@ -2573,6 +2825,18 @@ export default function TerminalTTY({
               reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
             });
           }
+        } else if (wantsCanvas && CanvasAddonCtor) {
+          try {
+            const canvasAddon = new CanvasAddonCtor();
+            canvasAddonRef.current = canvasAddon;
+            terminal.loadAddon(canvasAddon);
+            cliLog(`RENDER:${id}`, 'canvas-attached-on-init', {
+              isActivePanel: isActivePanelRef.current,
+              visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+            });
+          } catch (err) {
+            console.warn(`[TTY:${id}] xterm-addon-canvas failed to register`, err?.message || err);
+          }
         }
 
         terminal.onData((data) => {
@@ -2595,8 +2859,13 @@ export default function TerminalTTY({
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || rect.height <= 0) return;
           logViewportDiagnostic('resize-observer');
-          if (!isActivePanelRef.current) {
-            refreshTerminalViewport(termRef.current);
+          if (
+            shouldRefitVisibleInactiveSplitPanel({
+              isActivePanel: isActivePanelRef.current,
+              isVisibleInLayout: isVisibleInLayoutRef.current,
+            })
+          ) {
+            scheduleInactiveViewportRepaint();
             return;
           }
           sendResizeRef.current?.();
@@ -2710,27 +2979,48 @@ export default function TerminalTTY({
     return () => window.removeEventListener('devhub:terminal-search', handleSearch);
   }, [id]);
 
-  // Recover viewport/WebGL when this panel becomes active (swarm grid clicks).
+  useEffect(() => {
+    reactivateTerminalViewportRef.current = reactivateTerminalViewport;
+  }, [reactivateTerminalViewport]);
+
+  useEffect(() => {
+    tryReattachWebglAddonRef.current = tryReattachWebglAddon;
+  }, [tryReattachWebglAddon]);
+
+  useEffect(() => {
+    tryReattachCanvasAddonRef.current = tryReattachCanvasAddon;
+  }, [tryReattachCanvasAddon]);
+
+  // Recover viewport/WebGL only when this panel becomes active (false→true edge).
   useLayoutEffect(() => {
-    if (!isActivePanel || shouldUseNativeRenderer) return;
+    const becameActive = shouldRecoverPanelOnActivation(
+      prevIsActivePanelRef.current,
+      isActivePanel
+    );
+    prevIsActivePanelRef.current = isActivePanel;
+
+    if (!becameActive || shouldUseNativeRenderer) return;
     const term = termRef.current;
     if (!term) return;
 
+    const hadGpuRenderer = Boolean(webglAddonRef.current || canvasAddonRef.current);
+    const canUseWebgl = shouldAttachWebglRenderer({ operationalRendererMode });
+    const canUseCanvas = shouldAttachCanvasRenderer({ operationalRendererMode });
     logRenderHealth('panel-activated-recover');
-    void tryReattachWebglAddon();
-    reactivateTerminalViewport();
+    if (canUseWebgl) {
+      void tryReattachWebglAddonRef.current?.();
+    } else if (canUseCanvas) {
+      void tryReattachCanvasAddonRef.current?.();
+    }
+    reactivateTerminalViewportRef.current?.({
+      clearAtlas:
+        (canUseWebgl || canUseCanvas) && shouldClearWebglAtlasOnPanelActivation(hadGpuRenderer),
+    });
 
     if (!autoFocus) return;
     disableTerminalFocusReporting(term);
     term.focus?.();
-  }, [
-    autoFocus,
-    isActivePanel,
-    logRenderHealth,
-    reactivateTerminalViewport,
-    shouldUseNativeRenderer,
-    tryReattachWebglAddon,
-  ]);
+  }, [autoFocus, isActivePanel, logRenderHealth, operationalRendererMode, shouldUseNativeRenderer]);
 
   // Auto-reconnect when disconnected or error, with exponential backoff.
   // No hard attempt limit — the EBADF server fix prevents infinite hammering.
@@ -2864,34 +3154,26 @@ export default function TerminalTTY({
   }, []);
 
   const handleViewportMouseDown = useCallback(() => {
-    onActivatePanel?.(id);
     if (shouldUseNativeRenderer) {
+      onActivatePanel?.(id);
       if (nativeVteOpened) {
         Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
       }
       return;
     }
-    logRenderHealth('panel-click-recover');
-    void tryReattachWebglAddon();
-    reactivateTerminalViewport();
-    // When the user explicitly clicks this panel to activate it, first turn off
-    // focus reporting (1004). This stops xterm from emitting a focus-in escape
-    // sequence to the pty just because we are giving it DOM focus.
-    // Without this, the TUI/shell receives a "terminal gained focus" event and
-    // often responds by sending DA queries. The DA response bytes then get
-    // delivered as input and appear as the repeating "1;2c0;276;0c..." garbage
-    // pasted into the prompt (and it accumulates on every panel switch).
+
+    // Activation is handled by the parent panel shell (onMouseDown bubbles up).
+    // Heavy viewport/WebGL recovery runs once in the panel-activated layout effect
+    // when isActivePanel flips true — not on every click, which was clearing atlases
+    // on inactive split siblings and evicting their WebGL contexts.
     disableTerminalFocusReporting(termRef.current);
     termRef.current?.focus?.();
   }, [
     handleNativeLeaseCommandError,
     id,
-    logRenderHealth,
     nativeVteOpened,
     onActivatePanel,
-    reactivateTerminalViewport,
     shouldUseNativeRenderer,
-    tryReattachWebglAddon,
   ]);
 
   const handleCopyFromMenu = useCallback(async () => {
@@ -3165,7 +3447,8 @@ export default function TerminalTTY({
             )}
 
             {shouldBlockTerminalViewportForWebglFallback(webglFallback) &&
-            requestedRendererMode === 'xterm-webgl' ? (
+            requestedRendererMode === 'xterm-webgl' &&
+            operationalRendererMode === 'xterm-webgl' ? (
               <WebglErrorSection
                 id={id}
                 reason={webglFallback.reason}
@@ -3175,7 +3458,8 @@ export default function TerminalTTY({
             ) : (
               <motion.div
                 ref={containerRef}
-                className="devhub-xterm-container h-full w-full p-1"
+                className="devhub-xterm-container h-full w-full p-0"
+                data-operational-renderer={operationalRendererMode}
                 /* Reduced padding (was p-2.5) so TUI-drawn boxes, the bottom "Build" bar,
                    side warnings, ASCII banners and overall layout have widths, heights and
                    internal spacing much closer to a native Kali terminal.

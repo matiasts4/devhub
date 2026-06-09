@@ -2,8 +2,11 @@ const {
   getTerminalRendererCapability,
   getTerminalRendererFallbackCopy,
   getTerminalRendererRuntimeCapabilities,
+  resolveOperationalRendererMode,
   resolveRendererSelection,
   TERMINAL_RENDERER_MODES,
+  TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
+  TERMINAL_OPERATIONAL_CANVAS_MODE,
 } = require('../terminal/terminalRendererCapabilities');
 
 describe('terminalRendererCapabilities', () => {
@@ -284,5 +287,37 @@ describe('terminalRendererCapabilities', () => {
         fallbackReason: 'not-ready',
       })
     );
+  });
+
+  test('resolveOperationalRendererMode keeps WebGL for a single visible panel', () => {
+    expect(TERMINAL_SPLIT_WEBGL_PANEL_LIMIT).toBe(1);
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe('xterm-webgl');
+  });
+
+  test('resolveOperationalRendererMode routes visible splits to canvas for every panel', () => {
+    expect(TERMINAL_OPERATIONAL_CANVAS_MODE).toBe('xterm-canvas');
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 3,
+      })
+    ).toBe('xterm-canvas');
+  });
+
+  test('resolveOperationalRendererMode keeps canvas for multi-panel splits when WebGL probe demotes', () => {
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm',
+        visibleTerminalPanelCount: 5,
+      })
+    ).toBe('xterm-canvas');
   });
 });

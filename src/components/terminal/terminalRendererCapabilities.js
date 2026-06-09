@@ -338,6 +338,35 @@ export function getTerminalRendererCapabilities() {
   }, {});
 }
 
+/**
+ * WebGL tolerates one live context; splits use Canvas 2D (xterm-addon-canvas) so
+ * every visible sibling stays on a seamless bitmap renderer without DOM seams.
+ */
+export const TERMINAL_SPLIT_WEBGL_PANEL_LIMIT = 1;
+export const TERMINAL_OPERATIONAL_CANVAS_MODE = 'xterm-canvas';
+
+export function resolveOperationalRendererMode({
+  requestedMode,
+  effectiveMode,
+  visibleTerminalPanelCount = 1,
+} = {}) {
+  const requested = normalizeRendererMode(requestedMode || 'xterm');
+  const effective = normalizeRendererMode(effectiveMode || requested);
+  const panelCount = Math.max(1, Number(visibleTerminalPanelCount) || 1);
+
+  // Multi-panel splits (swarm grid, focus collapse, etc.) stay on canvas whenever
+  // the user asked for the GPU path — even if the WebGL probe demoted effectiveMode.
+  if (panelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) {
+    if (requested === 'xterm-webgl' || effective === 'xterm-webgl') {
+      return TERMINAL_OPERATIONAL_CANVAS_MODE;
+    }
+  }
+
+  if (effective !== 'xterm-webgl') return effective;
+  if (panelCount <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) return 'xterm-webgl';
+  return TERMINAL_OPERATIONAL_CANVAS_MODE;
+}
+
 export function resolveRendererSelection({ requestedMode, capabilities } = {}) {
   const normalizedMode = normalizeRendererMode(requestedMode);
   const resolvedCapabilities = capabilities || getTerminalRendererCapabilities();
