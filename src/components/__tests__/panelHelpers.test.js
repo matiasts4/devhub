@@ -12,6 +12,8 @@ const {
   normalizeWorkspaceWindows,
   resolveWorkspacePanelId,
   getWorkspaceTabStyle,
+  resolveWorkspaceGridShape,
+  buildWorkspaceColumnsForTerminalCount,
 } = require('../terminal/utils/panelHelpers');
 
 describe('createPanel', () => {
@@ -214,5 +216,67 @@ describe('getWorkspaceTabStyle', () => {
     const style = getWorkspaceTabStyle(10);
     expect(style.flex).toBe('0 1 138px');
     expect(style.minWidth).toBe('138px');
+  });
+});
+
+describe('resolveWorkspaceGridShape', () => {
+  test('maps common terminal counts to side-by-side or grid layouts', () => {
+    expect(resolveWorkspaceGridShape(2)).toEqual({ columns: 2, rows: 1 });
+    expect(resolveWorkspaceGridShape(3)).toEqual({ columns: 3, rows: 1 });
+    expect(resolveWorkspaceGridShape(4)).toEqual({ columns: 2, rows: 2 });
+    expect(resolveWorkspaceGridShape(6)).toEqual({ columns: 3, rows: 2 });
+  });
+});
+
+describe('buildWorkspaceColumnsForTerminalCount', () => {
+  function buildLayout(count) {
+    let panelCounter = 0;
+    let columnCounter = 0;
+    return buildWorkspaceColumnsForTerminalCount({
+      terminalCount: count,
+      createPanel: (id, initialCommand, cwd) => createPanel(id, initialCommand, cwd),
+      allocateColumnId: () => `c${++columnCounter}`,
+      allocatePanelId: () => `p${++panelCounter}`,
+      initialCommand: 'opencode',
+      panelCwd: '/workspace/devhub',
+    });
+  }
+
+  test('places two terminals in separate horizontal columns', () => {
+    const { columns, firstPanelId } = buildLayout(2);
+    expect(firstPanelId).toBe('p1');
+    expect(columns).toHaveLength(2);
+    expect(columns[0].panels).toHaveLength(1);
+    expect(columns[1].panels).toHaveLength(1);
+    expect(columns[0].panels[0].id).toBe('p1');
+    expect(columns[1].panels[0].id).toBe('p2');
+  });
+
+  test('places three terminals in one horizontal row', () => {
+    const { columns } = buildLayout(3);
+    expect(columns).toHaveLength(3);
+    expect(columns.map((column) => column.panels[0].id)).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  test('places four terminals in a 2x2 grid', () => {
+    const { columns } = buildLayout(4);
+    expect(columns).toHaveLength(2);
+    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p3']);
+    expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p4']);
+  });
+
+  test('places five terminals as 2x2 plus a fifth stacked below on the left', () => {
+    const { columns } = buildLayout(5);
+    expect(columns).toHaveLength(2);
+    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p3', 'p5']);
+    expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p4']);
+  });
+
+  test('places six terminals in a 3x2 grid', () => {
+    const { columns } = buildLayout(6);
+    expect(columns).toHaveLength(3);
+    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p4']);
+    expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p5']);
+    expect(columns[2].panels.map((panel) => panel.id)).toEqual(['p3', 'p6']);
   });
 });

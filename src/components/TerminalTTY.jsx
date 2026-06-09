@@ -3518,14 +3518,6 @@ export default function TerminalTTY({
 
       if (inTranscript) {
         lastPointerZoneRef.current = 'transcript';
-        if (cell) {
-          const mousePayload = buildTerminalMousePressSequence(cell.col, cell.row);
-          sendTerminalPasteInput({
-            socket: wsRef.current,
-            transport: transportRef.current,
-            text: mousePayload,
-          });
-        }
       } else {
         lastPointerZoneRef.current = 'input';
       }

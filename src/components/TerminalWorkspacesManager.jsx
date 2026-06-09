@@ -39,6 +39,7 @@ import {
   closeTerminalSessions,
   syncWorkspaceCountersMonotonic,
 } from './terminal/workspaceStateHelpers';
+import { buildWorkspaceColumnsForTerminalCount } from './terminal/utils/panelHelpers';
 import NotificationCenter from './NotificationCenter';
 import TerminalSettingsModal from './TerminalSettingsModal';
 import TerminalRestoreSettingsModal from './TerminalRestoreSettingsModal';
@@ -3183,18 +3184,22 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       let firstPanelId = null;
 
       if (safeCount > 0) {
-        colCounterRef.current += 1;
-        const newColId = `c${colCounterRef.current}`;
-        const panels = [];
-
-        for (let index = 0; index < safeCount; index += 1) {
-          panelCounterRef.current += 1;
-          const newPanelId = `p${panelCounterRef.current}`;
-          if (!firstPanelId) firstPanelId = newPanelId;
-          panels.push(createPanel(newPanelId, initialCommand, cwd));
-        }
-
-        newColumns = [{ id: newColId, panels }];
+        const built = buildWorkspaceColumnsForTerminalCount({
+          terminalCount: safeCount,
+          createPanel,
+          allocateColumnId: () => {
+            colCounterRef.current += 1;
+            return `c${colCounterRef.current}`;
+          },
+          allocatePanelId: () => {
+            panelCounterRef.current += 1;
+            return `p${panelCounterRef.current}`;
+          },
+          initialCommand,
+          panelCwd: cwd,
+        });
+        newColumns = built.columns;
+        firstPanelId = built.firstPanelId;
       }
 
       setWorkspaces((prev) => [
