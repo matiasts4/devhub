@@ -12,7 +12,9 @@ const {
 
 describe('startupRestoreRunner', () => {
   beforeEach(() => {
-    const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://devhub.test' });
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+      url: 'https://devhub.test',
+    });
     global.window = dom.window;
     global.localStorage = dom.window.localStorage;
     global.sessionStorage = dom.window.sessionStorage;
@@ -35,9 +37,9 @@ describe('startupRestoreRunner', () => {
   });
 
   test('shouldBumpRelaunchCommand is false when command already matches', () => {
-    expect(
-      shouldBumpRelaunchCommand('opencode --session abc', 'opencode --session abc')
-    ).toBe(false);
+    expect(shouldBumpRelaunchCommand('opencode --session abc', 'opencode --session abc')).toBe(
+      false
+    );
   });
 
   test('buildOpenCodeResumeCommand prefers panel command', () => {
@@ -47,6 +49,18 @@ describe('startupRestoreRunner', () => {
         { opencodeSessionId: 'fallback' }
       )
     ).toBe('opencode --session panel-1');
+  });
+
+  test('buildOpenCodeResumeCommand returns null for swarm panels', () => {
+    expect(
+      buildOpenCodeResumeCommand(
+        {
+          initialCommand: 'bash /tmp/devhub-launch-launch-abc-coder.sh',
+          swarmContext: { isSwarmRole: true, launchId: 'launch-abc', roleKey: 'coder' },
+        },
+        { sessionKind: 'swarm' }
+      )
+    ).toBeNull();
   });
 
   test('dispatchStartupRestoreQueue runs relaunches with bounded concurrency', async () => {

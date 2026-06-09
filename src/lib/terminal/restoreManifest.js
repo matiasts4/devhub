@@ -57,6 +57,8 @@ function normalizeTerminalSessionRecord(record = null) {
     missionId: asString(record.missionId),
     lastDisconnectReason: asString(record.lastDisconnectReason),
     restorePolicy: asString(record.restorePolicy),
+    sessionKind: asString(record.sessionKind),
+    roleKey: asString(record.roleKey),
   };
 }
 

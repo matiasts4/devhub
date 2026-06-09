@@ -1,14 +1,12 @@
 import { RESTORE_ACTION } from './startupRestoreCoordinator';
+import { inferPanelSessionKind } from './restorePolicyResolver';
 
 export const STARTUP_RESTORE_MAX_CONCURRENCY = 2;
 export const STARTUP_RESTORE_DELAY_MS = 350;
 export const STARTUP_RESTORE_MUTEX_POLL_MS = 120;
 export const STARTUP_RESTORE_MUTEX_TIMEOUT_MS = 45000;
 
-const GENERIC_MUTEX_KEYS = [
-  'devhub_generic_restore_in_progress',
-  'devhub_restore_in_progress',
-];
+const GENERIC_MUTEX_KEYS = ['devhub_generic_restore_in_progress', 'devhub_restore_in_progress'];
 
 const OPENCODE_MUTEX_KEYS = ['devhub_opencode_restore_in_progress'];
 
@@ -69,7 +67,11 @@ function isMutexHeld(storage, keys) {
 
 export async function waitForRestoreMutexClear(
   storage,
-  { keys = GENERIC_MUTEX_KEYS, timeoutMs = STARTUP_RESTORE_MUTEX_TIMEOUT_MS, pollMs = STARTUP_RESTORE_MUTEX_POLL_MS } = {}
+  {
+    keys = GENERIC_MUTEX_KEYS,
+    timeoutMs = STARTUP_RESTORE_MUTEX_TIMEOUT_MS,
+    pollMs = STARTUP_RESTORE_MUTEX_POLL_MS,
+  } = {}
 ) {
   const deadline = Date.now() + timeoutMs;
 
@@ -84,6 +86,17 @@ export async function waitForRestoreMutexClear(
 }
 
 export function buildOpenCodeResumeCommand(panel, action) {
+  const sessionKind =
+    action?.sessionKind ||
+    inferPanelSessionKind({
+      initialCommand: panel?.initialCommand,
+      panel,
+    });
+
+  if (sessionKind === 'swarm') {
+    return null;
+  }
+
   const fromPanel = String(panel?.initialCommand || '')
     .replace(/\s*#recovery-\d+\s*$/i, '')
     .trim();
@@ -122,8 +135,7 @@ export async function dispatchStartupRestoreQueue({
     actions
       .filter(
         (action) =>
-          action.action === RESTORE_ACTION.TERMINATED &&
-          action.reason === 'restore-policy-manual'
+          action.action === RESTORE_ACTION.TERMINATED && action.reason === 'restore-policy-manual'
       )
       .map((action) => action.terminalId)
       .filter(Boolean)

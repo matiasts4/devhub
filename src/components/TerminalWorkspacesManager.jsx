@@ -3451,6 +3451,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 isSwarmRole: Boolean(request.isSwarmRole),
                 roleKey: request.roleKey || request.swarmRole?.roleKey || null,
                 launchId: request.launchId || null,
+                needsLaunchWrapper: true,
               },
             });
           });
@@ -4599,6 +4600,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const sessionKind = inferPanelSessionKind({
         initialCommand: panel?.initialCommand,
         agentRun,
+        panel,
       });
 
       const clearSuspended = () => {
@@ -4637,7 +4639,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         return;
       }
 
-      // Shell genérico / swarm: reconectar en cwd (sin opencode --session).
+      // Swarm: tmux reattach happens in ttyServer on connect — no launch wrapper replay.
+      if (sessionKind === 'swarm') {
+        clearSuspended();
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-resume-requested', { detail: { panelId } })
+        );
+        return;
+      }
+
+      // Shell genérico: reconectar en cwd (sin opencode --session).
       clearSuspended();
       const shellCommand = String(panel?.initialCommand || '')
         .replace(/\s*#recovery-\d+\s*$/i, '')
@@ -4655,8 +4666,58 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       );
     };
 
+    const handleSwarmLaunchWrapperSent = (e) => {
+      const { panelId } = e.detail || {};
+      if (!panelId) return;
+
+      setWorkspaces((prev) =>
+        prev.map((ws) => ({
+          ...ws,
+          columns: ws.columns.map((col) => ({
+            ...col,
+            panels: col.panels.map((p) => {
+              if (p.id !== panelId || !p.swarmContext?.needsLaunchWrapper) return p;
+              return {
+                ...p,
+                swarmContext: {
+                  ...p.swarmContext,
+                  needsLaunchWrapper: false,
+                },
+              };
+            }),
+          })),
+        }))
+      );
+
+      try {
+        const savedState = JSON.parse(storage?.getItem(terminalStateStorageKey) || '{}');
+        if (savedState.workspaces) {
+          savedState.workspaces = savedState.workspaces.map((ws) => ({
+            ...ws,
+            columns: ws.columns.map((col) => ({
+              ...col,
+              panels: col.panels.map((p) => {
+                if (p.id !== panelId || !p.swarmContext?.needsLaunchWrapper) return p;
+                return {
+                  ...p,
+                  swarmContext: {
+                    ...p.swarmContext,
+                    needsLaunchWrapper: false,
+                  },
+                };
+              }),
+            })),
+          }));
+          storage?.setItem(terminalStateStorageKey, JSON.stringify(savedState));
+        }
+      } catch {
+        // Best-effort persistence only.
+      }
+    };
+
     window.addEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
     window.addEventListener('devhub:terminal-exit', handleTerminalExit);
+    window.addEventListener('devhub:swarm-launch-wrapper-sent', handleSwarmLaunchWrapperSent);
 
     // Session recovery: relaunch orphaned opencode sessions
     const handleRelaunchPanel = (e) => {
@@ -4669,6 +4730,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       // Startup restore already persisted the bumped command; avoid double-apply.
       if (reason === 'panel-relaunch') return;
+
+      const panel = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+      const agentRun = readAgentRunsByPanel(storage)[panelId] || null;
+      if (
+        inferPanelSessionKind({
+          initialCommand: command,
+          agentRun,
+          panel,
+        }) === 'swarm'
+      ) {
+        return;
+      }
 
       // Update the panel's initialCommand to force TerminalTTY to reconnect
       // We append a timestamp to ensure the command is "new" and triggers reconnection
@@ -4780,6 +4856,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return () => {
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
+      window.removeEventListener('devhub:swarm-launch-wrapper-sent', handleSwarmLaunchWrapperSent);
       window.removeEventListener('devhub:relaunch-panel', handleRelaunchPanel);
       window.removeEventListener(
         'devhub:terminal-settings-modal-requested',

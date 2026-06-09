@@ -1,12 +1,20 @@
 import { RESTORE_POLICY, readTerminalRestorePreferences } from './restorePreferences';
 
-const VALID_POLICIES = new Set([
-  RESTORE_POLICY.AUTO,
-  RESTORE_POLICY.MANUAL,
-  RESTORE_POLICY.OFF,
-]);
+const VALID_POLICIES = new Set([RESTORE_POLICY.AUTO, RESTORE_POLICY.MANUAL, RESTORE_POLICY.OFF]);
 
 const OPENCODE_SESSION_RE = /opencode\s+--session\s+([\w-]+)/i;
+const SWARM_LAUNCH_WRAPPER_RE = /devhub-launch-[\w-]+\.sh/i;
+
+export function isSwarmLaunchWrapperCommand(initialCommand) {
+  return SWARM_LAUNCH_WRAPPER_RE.test(String(initialCommand || ''));
+}
+
+export function buildSwarmTmuxAttachCommand(launchId, roleKey) {
+  const safeLaunch = String(launchId || '').trim();
+  const safeRole = String(roleKey || '').trim();
+  if (!safeLaunch || !safeRole) return null;
+  return `tmux attach-session -t devhub-swarm-${safeLaunch}-${safeRole}`;
+}
 
 export function extractOpenCodeSessionId(initialCommand) {
   const command = String(initialCommand || '').trim();
@@ -19,14 +27,20 @@ export function extractOpenCodeSessionId(initialCommand) {
  * Classifies a panel for global restore preference lookup.
  * @returns {'opencode'|'generic'|'swarm'}
  */
-export function inferPanelSessionKind({ initialCommand = null, agentRun = null } = {}) {
+export function inferPanelSessionKind({
+  initialCommand = null,
+  agentRun = null,
+  panel = null,
+} = {}) {
   if (agentRun?.opencodeSessionId || extractOpenCodeSessionId(initialCommand)) {
     return 'opencode';
   }
   if (
+    panel?.swarmContext?.isSwarmRole ||
     agentRun?.swarmRole ||
     agentRun?.launchOrigin === 'swarm-control-launch' ||
-    agentRun?.roleKey
+    agentRun?.roleKey ||
+    isSwarmLaunchWrapperCommand(initialCommand)
   ) {
     return 'swarm';
   }
@@ -105,10 +119,12 @@ export function normalizeWorkspacesOpenCodeCommands(workspaces = [], agentRunsBy
 }
 
 export function isOpenCodePanel(panel, agentRun = null) {
-  return inferPanelSessionKind({
-    initialCommand: panel?.initialCommand,
-    agentRun,
-  }) === 'opencode';
+  return (
+    inferPanelSessionKind({
+      initialCommand: panel?.initialCommand,
+      agentRun,
+    }) === 'opencode'
+  );
 }
 
 /**

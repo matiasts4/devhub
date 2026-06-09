@@ -203,6 +203,41 @@ describe('buildStartupRestorePlan emits RESTORE_SHELL_EMERGENT for shell-ephemer
   });
 });
 
+describe('swarm restore never re-runs launch wrapper', () => {
+  it('emits REATTACH_LIVE_TERMINAL for swarm sessions instead of RESTORE_SHELL_EMERGENT', () => {
+    const manifest = normalizeRestoreManifest({
+      workspaces: [{ workspaceId: 'ws1', name: 'Swarm S1', tabs: [], layout: {} }],
+      terminalSessions: [
+        {
+          terminalId: 'p1',
+          panelId: 'p1',
+          workspaceId: 'ws1',
+          cwd: '/home/user/.devhub/worktrees/launch-abc/coder',
+          sessionKind: 'swarm',
+          launchId: 'launch-abc',
+          roleKey: 'coder',
+          opencodeSessionId: null,
+          runId: 'run-1',
+          missionId: 'launch-abc',
+        },
+      ],
+      swarmRuns: [],
+    });
+
+    const plan = buildStartupRestorePlan({
+      manifest,
+      runtimeSnapshot: { terminals: [], processes: [], anomalies: {} },
+    });
+
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0].action).toBe(RESTORE_ACTION.REATTACH_LIVE_TERMINAL);
+    expect(plan.actions[0].reason).toBe('swarm-tmux-reattach');
+    expect(
+      plan.actions.some((action) => action.action === RESTORE_ACTION.RESTORE_SHELL_EMERGENT)
+    ).toBe(false);
+  });
+});
+
 describe('TIC-3: agent runs with panel IDs not in current workspace manifest are excluded', () => {
   it('excludes agent runs whose panelId is not in current workspace terminalSessions', () => {
     // Note: manifest structure validated by other tests; this test focuses on TIC-3 filtering
