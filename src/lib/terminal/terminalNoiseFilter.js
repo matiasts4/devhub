@@ -107,8 +107,30 @@ export function filterTerminalInputForSession(_session, chunk) {
   return stripped.length === 0 ? null : stripped;
 }
 
-/** Client→display: strip capability noise before rendering (belt-and-suspenders). */
-export function filterTerminalOutputForSession(_session, chunk) {
+const INCOMPLETE_TERMINAL_ESCAPE_SUFFIX_RE = /\x1b(?:\[[\d;?$<>]*|\][\d;]*)?$/;
+
+/**
+ * Hold a trailing partial ESC/CSI across WS chunks so strip regexes cannot
+ * leave visible fragments like `p)` or `M` when sequences span messages.
+ */
+export function stripTerminalOutputWithPending(pendingRef, chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
+  const pending = pendingRef?.value || '';
+  const combined = pending + chunk;
+  const incomplete = combined.match(INCOMPLETE_TERMINAL_ESCAPE_SUFFIX_RE);
+  if (incomplete) {
+    if (pendingRef) pendingRef.value = incomplete[0];
+    return stripShellTerminalResponseNoise(
+      combined.slice(0, combined.length - incomplete[0].length)
+    );
+  }
+  if (pendingRef) pendingRef.value = '';
+  return stripShellTerminalResponseNoise(combined);
+}
+
+/** Client→display: strip capability noise before rendering (belt-and-suspenders). */
+export function filterTerminalOutputForSession(_session, chunk, pendingRef = null) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  if (pendingRef) return stripTerminalOutputWithPending(pendingRef, chunk);
   return stripShellTerminalResponseNoise(chunk);
 }

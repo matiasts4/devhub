@@ -491,9 +491,16 @@ export function shouldAttachWebglRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-webgl';
 }
 
-/** Canvas 2D attach/reattach is used for visible split siblings (all panels). */
-export function shouldAttachCanvasRenderer({ operationalRendererMode }) {
-  return operationalRendererMode === 'xterm-canvas';
+/** Canvas 2D on the active split panel only; inactive siblings stay on DOM for perf. */
+export function shouldAttachCanvasRenderer({
+  operationalRendererMode,
+  isActivePanel = true,
+  visibleTerminalPanelCount = 1,
+} = {}) {
+  if (operationalRendererMode !== 'xterm-canvas') return false;
+  const panelCount = Math.max(1, Number(visibleTerminalPanelCount) || 1);
+  if (panelCount <= 1) return true;
+  return Boolean(isActivePanel);
 }
 
 export function shouldUseGpuTerminalRenderer({ operationalRendererMode }) {
@@ -771,6 +778,7 @@ export default function TerminalTTY({
   const hasSentInitialCommand = useRef(false);
   const viewportFitConfirmedRef = useRef(false);
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
+  const pendingOutputEscapeRef = useRef('');
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const connectRef = useRef(null);
@@ -1453,7 +1461,11 @@ export default function TerminalTTY({
     const term = termRef.current;
     if (!term || canvasAddonRef.current) return false;
     if (
-      !shouldAttachCanvasRenderer({ operationalRendererMode: effectiveRendererModeRef.current })
+      !shouldAttachCanvasRenderer({
+        operationalRendererMode: effectiveRendererModeRef.current,
+        isActivePanel: isActivePanelRef.current,
+        visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+      })
     ) {
       return false;
     }
@@ -2092,7 +2104,11 @@ export default function TerminalTTY({
     prevVisibleTerminalPanelCountRef.current = visibleTerminalPanelCount;
 
     const wantsWebgl = shouldAttachWebglRenderer({ operationalRendererMode });
-    const wantsCanvas = shouldAttachCanvasRenderer({ operationalRendererMode });
+    const wantsCanvas = shouldAttachCanvasRenderer({
+      operationalRendererMode,
+      isActivePanel,
+      visibleTerminalPanelCount,
+    });
 
     if (wantsWebgl) {
       if (canvasAddonRef.current) {
@@ -2125,6 +2141,7 @@ export default function TerminalTTY({
     }
   }, [
     id,
+    isActivePanel,
     operationalRendererMode,
     releaseCanvasAddon,
     releaseWebglAddonForInactivePanel,
@@ -2462,7 +2479,7 @@ export default function TerminalTTY({
             webglAttached: Boolean(webglAddonRef.current),
           });
         }
-        const filtered = filterTerminalOutputForSession(null, chunk);
+        const filtered = filterTerminalOutputForSession(null, chunk, pendingOutputEscapeRef);
         if (typeof filtered !== 'string' || filtered.length === 0) return;
         termRef.current?.write(filtered);
         scrollIfActivePanel();
@@ -2615,6 +2632,9 @@ export default function TerminalTTY({
       // Cancel active-panel resize debounces so a stale RAF cannot clear GPU atlases
       // after the user switched away. Still refit if the container geometry changed.
       clearTimers();
+      if (canvasAddonRef.current && visibleTerminalPanelCountRef.current > 1) {
+        releaseCanvasAddon('panel-inactive-dom-fallback');
+      }
       disableTerminalFocusReporting(term);
       try {
         if (term.element?.contains(document.activeElement)) {
@@ -2630,7 +2650,7 @@ export default function TerminalTTY({
     }
 
     disableTerminalFocusReporting(term);
-  }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);
+  }, [clearTimers, isActivePanel, releaseCanvasAddon, scheduleInactiveViewportRepaint]);
 
   useLayoutEffect(() => {
     const prevVisible = prevVisibleInLayoutRef.current;
@@ -2812,6 +2832,8 @@ export default function TerminalTTY({
         });
         const wantsCanvas = shouldAttachCanvasRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
+          isActivePanel: isActivePanelRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
         });
         if (wantsWebgl) {
           importList.push(
@@ -3113,7 +3135,11 @@ export default function TerminalTTY({
 
     const hadGpuRenderer = Boolean(webglAddonRef.current || canvasAddonRef.current);
     const canUseWebgl = shouldAttachWebglRenderer({ operationalRendererMode });
-    const canUseCanvas = shouldAttachCanvasRenderer({ operationalRendererMode });
+    const canUseCanvas = shouldAttachCanvasRenderer({
+      operationalRendererMode,
+      isActivePanel,
+      visibleTerminalPanelCount,
+    });
     logRenderHealth('panel-activated-recover');
     if (canUseWebgl) {
       void tryReattachWebglAddonRef.current?.();
@@ -3247,9 +3273,7 @@ export default function TerminalTTY({
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
 
       layoutSettleBurstCleanupRef.current?.();
-      const extraDelaysMs = String(reason).includes('swarm-launch')
-        ? [180, 340, 500, 1000]
-        : [180, 340];
+      const extraDelaysMs = String(reason).includes('swarm-launch') ? [180, 340] : [180, 340];
       layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
         (phase) => {
           if (!isVisibleInLayoutRef.current) {
