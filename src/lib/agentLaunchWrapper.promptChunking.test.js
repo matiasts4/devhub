@@ -205,9 +205,9 @@ describe('T2.2 — buildChunkedBootstrapPromptBlock', () => {
 
     // The final-commit line must be present and use the `-d` flag
     // (delete-buffer-after-paste) — that's the contract.
-    expect(block).toMatch(/tmux paste-buffer -d -t "\$\{_tmux_session\}"/);
+    expect(block).toMatch(/tmux paste-buffer -d -t "\$\{_tmux_target\}"/);
     // And the post-paste C-m Enter.
-    expect(block).toMatch(/tmux send-keys -t "\$\{_tmux_session\}" C-m/);
+    expect(block).toMatch(/tmux send-keys -t "\$\{_tmux_target\}" C-m/);
   });
 
   it('T2.2 emits fractional-second `sleep` between chunks for 60fps pacing', () => {

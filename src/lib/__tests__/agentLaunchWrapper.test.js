@@ -554,7 +554,8 @@ describe('agentLaunchWrapper', () => {
     test('wrapper uses chunked bootstrap emission (T2.2)', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
       expect(result).toContain('DEVHUB_BOOTSTRAP_CHUNK_0');
-      expect(result).toMatch(/tmux paste-buffer -d -t "\$\{_tmux_session\}"/);
+      expect(result).toMatch(/tmux has-session -t "\$\{_tmux_session\}"/);
+      expect(result).toMatch(/tmux paste-buffer -d -t "\$\{_tmux_target\}"/);
       expect(result).not.toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
     });
 

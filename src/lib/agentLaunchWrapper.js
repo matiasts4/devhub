@@ -566,7 +566,12 @@ function buildBootstrapPromptBlock(
     '      return 1',
     '    fi',
     `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Detected tmux session: \${_tmux_session}"`,
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Loading prompt into tmux session \${_tmux_session} (chunked)..."`,
+    '    local _tmux_target="${_tmux_session}:0.0"',
+    '    if ! tmux has-session -t "${_tmux_session}" 2>/dev/null; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: tmux session not found: \${_tmux_session}"`,
+    '      return 1',
+    '    fi',
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Loading prompt into tmux pane \${_tmux_target} (chunked)..."`,
     // T-016.4 — also write the bootstrap prompt into the transcript file
     // (with a header marker) so the user can see what the agent was given.
     `    {`,
@@ -1430,8 +1435,8 @@ export function buildChunkedBootstrapPromptBlock(prompt, options = {}) {
       `tmux load-buffer - <<'${heredocTag}'`,
       chunk.text,
       heredocTag,
-      `tmux paste-buffer -t "\${_tmux_session}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed on chunk ${chunk.index + 1}"`,
-      `tmux send-keys -t "\${_tmux_session}" '' >/dev/null 2>&1 || true`,
+      `tmux paste-buffer -t "\${_tmux_target}" >/dev/null 2>&1 || TMUX= tmux paste-buffer -t "\${_tmux_target}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed on chunk ${chunk.index + 1}"`,
+      `tmux send-keys -t "\${_tmux_target}" '' >/dev/null 2>&1 || true`,
       '_chunk_idx=$((_chunk_idx + 1))'
     );
   });
@@ -1440,8 +1445,8 @@ export function buildChunkedBootstrapPromptBlock(prompt, options = {}) {
   // after pasting, freeing tmux's per-pane buffer slot.
   lines.push(
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunked emission complete (${plan.chunkCount} chunks, ${plan.totalBytes}B total)"`,
-    `tmux paste-buffer -d -t "\${_tmux_session}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: final paste-buffer -d failed"`,
-    `tmux send-keys -t "\${_tmux_session}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys C-m failed"`,
+    `tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || TMUX= tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: final paste-buffer -d failed"`,
+    `tmux send-keys -t "\${_tmux_target}" C-m >/dev/null 2>&1 || TMUX= tmux send-keys -t "\${_tmux_target}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys C-m failed"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete (chunked)."`
   );
 

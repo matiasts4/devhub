@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const { resolveSidecarSessionCwd } = require('./sessionCwd');
+const { buildSidecarSpawnConfig, parseBooleanQueryFlag } = require('./sessionSpawn');
 const {
   buildHistoryReplay,
   buildServerMessage,
@@ -85,20 +86,29 @@ function broadcastSessionPayload(session, payload) {
   }
 }
 
-function getOrCreateSession(sessionId, cwd) {
+function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
   if (sessions.has(sessionId)) {
     return sessions.get(sessionId);
   }
 
   const cwdResolution = resolveSidecarSessionCwd(cwd || os.homedir());
   const effectiveCwd = cwdResolution.effectiveCwd;
-  const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
-  const ptyProcess = pty.spawn(shell, [], {
+  const spawnConfig = buildSidecarSpawnConfig({
+    sessionId,
+    cwd: effectiveCwd,
+    isSwarmRole: Boolean(swarmContext.isSwarmRole),
+    launchId: swarmContext.launchId || null,
+    roleKey: swarmContext.roleKey || null,
+    env: process.env,
+  });
+  const shell =
+    os.platform() === 'win32' ? 'powershell.exe' : spawnConfig.shell || process.env.SHELL || 'bash';
+  const ptyProcess = pty.spawn(shell, spawnConfig.args, {
     name: 'xterm-256color',
     cols: 120,
     rows: 36,
     cwd: effectiveCwd,
-    env: { ...process.env, TERM: 'xterm-256color' },
+    env: spawnConfig.env,
   });
 
   const session = {
@@ -111,6 +121,12 @@ function getOrCreateSession(sessionId, cwd) {
     historyEnabled: true,
     opencodeSessionId: null,
     pendingInput: '',
+    tmuxSession: spawnConfig.tmuxSession || null,
+    swarmContext: {
+      isSwarmRole: Boolean(swarmContext.isSwarmRole),
+      launchId: swarmContext.launchId || null,
+      roleKey: swarmContext.roleKey || null,
+    },
   };
 
   // Capturar output del PTY y enviarlo a todos los clientes conectados
@@ -161,6 +177,9 @@ function getOrCreateSession(sessionId, cwd) {
     requestedCwd: cwdResolution.requestedCwd,
     effectiveCwd,
     usedFallback: cwdResolution.usedFallback,
+    tmuxSession: spawnConfig.tmuxSession || null,
+    tmuxEnabled: spawnConfig.tmuxEnabled,
+    isSwarmRole: Boolean(swarmContext.isSwarmRole),
   });
   return session;
 }
@@ -255,9 +274,14 @@ wss.on('connection', (ws, req) => {
   const urlParams = new URL(req.url || '/', `http://localhost:${PORT}`).searchParams;
   const sessionId = urlParams.get('sessionId') || 'default';
   const cwd = urlParams.get('cwd') || os.homedir();
+  const swarmContext = {
+    isSwarmRole: parseBooleanQueryFlag(urlParams.get('isSwarmRole')),
+    roleKey: urlParams.get('roleKey') || null,
+    launchId: urlParams.get('launchId') || null,
+  };
   ws.__devhubTransport = getTransportMode(req.url || '/');
 
-  const session = getOrCreateSession(sessionId, cwd);
+  const session = getOrCreateSession(sessionId, cwd, swarmContext);
   session.clients.add(ws);
 
   console.log(
