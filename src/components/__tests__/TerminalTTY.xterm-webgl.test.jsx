@@ -46,6 +46,7 @@ const mockNativeVteBridge = {
 };
 
 const { WebglAddon } = require('xterm-addon-webgl');
+const { CanvasAddon } = require('xterm-addon-canvas');
 const { Terminal: xtermTerminalMock } = require('xterm');
 
 jest.mock('framer-motion', () => ({
@@ -129,6 +130,21 @@ jest.mock(
   }),
   { virtual: true }
 );
+
+jest.mock('xterm-addon-canvas', () => {
+  class CanvasAddon {
+    constructor() {
+      CanvasAddon.instances.push(this);
+    }
+    dispose() {}
+    clearTextureAtlas() {}
+  }
+  CanvasAddon.instances = [];
+  CanvasAddon.__reset = () => {
+    CanvasAddon.instances = [];
+  };
+  return { CanvasAddon };
+});
 
 jest.mock('@/lib/terminal/nativeVteBridge', () => mockNativeVteBridge, { virtual: true });
 
@@ -283,6 +299,7 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     mockWebSocketInstances.length = 0;
     mockResizeObserverInstances.length = 0;
     WebglAddon.__reset();
+    CanvasAddon.__reset();
     mockProbeReady = true;
     mockProbeReason = null;
     mockProbeSpy.mockClear();
@@ -297,6 +314,7 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     mockTerminalInstances.length = 0;
     mockWebSocketInstances.length = 0;
     WebglAddon.__reset();
+    CanvasAddon.__reset();
     mockProbeReady = true;
     mockProbeReason = null;
     jest.clearAllMocks();
@@ -517,7 +535,7 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     expect(rerenderDelta).toBe(0);
   });
 
-  test('WebglAddon.onContextLoss sets the WebGL fallback state (XW-CONTEXT-LOSS)', async () => {
+  test('WebglAddon.onContextLoss keeps the terminal visible on DOM fallback (XW-CONTEXT-LOSS)', async () => {
     const harness = await renderIntoDom(
       React.createElement(TerminalTTY, {
         id: 'term-xw-context-loss',
@@ -532,19 +550,17 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     expect(WebglAddon.instances).toHaveLength(1);
     const addon = WebglAddon.instances[0];
 
-    // No WebglErrorSection yet.
     let errorSection = harness.container.querySelector(
       '[data-testid="terminal-webgl-error-section"]'
     );
     expect(errorSection).toBeNull();
 
-    // Fire the context loss event.
     addon.__triggerContextLoss();
     await flushTerminalEffects();
 
-    // WebglErrorSection now visible.
     errorSection = harness.container.querySelector('[data-testid="terminal-webgl-error-section"]');
-    expect(errorSection).not.toBeNull();
+    expect(errorSection).toBeNull();
+    expect(harness.container.querySelector('.devhub-xterm-container')).not.toBeNull();
   });
 
   // Regression — Linux/WebKitGTK xterm-addon-webgl@0.16.0 teardown race.
@@ -597,6 +613,78 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     // safely) and then defensively disposes the addon ref.
     const terminal = mockTerminalInstances[0];
     expect(terminal.dispose).toHaveBeenCalled();
+  });
+
+  test('visible split panels attach Canvas 2D on every visible sibling', async () => {
+    await renderIntoDom(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(TerminalTTY, {
+          id: 'term-split-active',
+          requestedRendererMode: 'xterm-webgl',
+          visibleTerminalPanelCount: 2,
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        }),
+        React.createElement(TerminalTTY, {
+          id: 'term-split-idle',
+          requestedRendererMode: 'xterm-webgl',
+          visibleTerminalPanelCount: 2,
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      )
+    );
+
+    expect(WebglAddon.instances).toHaveLength(0);
+    expect(CanvasAddon.instances).toHaveLength(2);
+  });
+
+  test('opening a split migrates WebGL to Canvas without disposing the xterm runtime', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-split-transition',
+        requestedRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    expect(WebglAddon.instances).toHaveLength(1);
+    const terminal = mockTerminalInstances[0];
+    const webglAddon = WebglAddon.instances[0];
+    const webglDisposeSpy = jest.spyOn(webglAddon, 'dispose');
+    expect(terminal.dispose).not.toHaveBeenCalled();
+
+    flushSync(() => {
+      view.root.render(
+        React.createElement(TerminalTTY, {
+          id: 'term-split-transition',
+          requestedRendererMode: 'xterm-webgl',
+          visibleTerminalPanelCount: 2,
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+    });
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await flushTerminalEffects();
+
+    expect(terminal.dispose).not.toHaveBeenCalled();
+    expect(webglDisposeSpy).toHaveBeenCalled();
+    expect(CanvasAddon.instances).toHaveLength(1);
+    webglDisposeSpy.mockRestore();
   });
 
   test('onData drops xterm focus/DA answerback before sending to the PTY websocket', async () => {

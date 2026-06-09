@@ -938,6 +938,17 @@ code {
   height: 100%;
 }
 
+/* When Canvas/WebGL is active, hide the DOM cell grid underneath (prevents seam curtains). */
+.devhub-xterm-container[data-operational-renderer='xterm-canvas']
+  .xterm-screen:has(canvas)
+  .xterm-rows,
+.devhub-xterm-container[data-operational-renderer='xterm-webgl']
+  .xterm-screen:has(canvas)
+  .xterm-rows {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* Fix for TUI Apps (like OpenCode, Vim, Nano) in xterm.js */
 .devhub-xterm-container .xterm {
   height: 100% !important;
@@ -996,13 +1007,16 @@ code {
   text-rendering: geometricPrecision !important;
 }
 
-/* DOM fallback (inactive split siblings): tighten cell layout to hide grid seams. */
-.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows .xterm-row {
+/* DOM fallback (plain xterm + inactive split siblings on xterm-canvas policy):
+   tighten cell layout to hide grid seams when the Canvas addon is not attached. */
+.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows .xterm-row,
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-rows .xterm-row {
   overflow: hidden;
   white-space: pre;
 }
 
-.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows .xterm-row > span {
+.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows .xterm-row > span,
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-rows .xterm-row > span {
   display: inline-block;
   vertical-align: top;
   line-height: inherit;
