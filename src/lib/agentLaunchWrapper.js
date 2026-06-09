@@ -450,6 +450,39 @@ export function readLegacyBootstrapLock({ lockDir, missionId, role }) {
 
 const BOOTSTRAP_HEREDOC_DELIMITER_RE = /^DEVHUB_BOOTSTRAP_CHUNK_\d+$/;
 
+/**
+ * Wait until the DevHub terminal client writes /tmp/devhub-viewport-ready-<tmux>.
+ * Bootstrap prompt injection must not run while the PTY still has the spawn
+ * default size (120×32) or tmux paste-buffer fragments escape noise into the TUI.
+ */
+export function buildViewportReadyWaitBlock({
+  pollIntervalSeconds = 0.5,
+  maxWaitSeconds = 45,
+} = {}) {
+  const maxAttempts = Math.max(1, Math.ceil(maxWaitSeconds / pollIntervalSeconds));
+  const sleepArg = Number(pollIntervalSeconds).toFixed(1);
+  return [
+    '# Wait for DevHub UI to fit the tmux pane before chunked prompt injection.',
+    '_devhub_wait_viewport_ready() {',
+    '  local _ready_file="/tmp/devhub-viewport-ready-${_tmux_session}"',
+    `  local _attempt=0`,
+    `  local _max_attempts=${maxAttempts}`,
+    '  while [ $_attempt -lt $_max_attempts ]; do',
+    '    if [ -f "$_ready_file" ]; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Viewport ready marker found: $_ready_file"`,
+    '      cat "$_ready_file" 2>/dev/null || true',
+    '      sleep 0.3',
+    '      return 0',
+    '    fi',
+    `    sleep ${sleepArg}`,
+    '    _attempt=$((_attempt + 1))',
+    '  done',
+    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: viewport ready timeout; injecting anyway"`,
+    '}',
+    '_devhub_wait_viewport_ready',
+  ].join('\n');
+}
+
 function indentBashBlock(block = '', spaces = 4) {
   const pad = ' '.repeat(spaces);
   return String(block || '')
@@ -533,6 +566,7 @@ function buildBootstrapPromptBlock(
     `DEVHUB_BOOTSTRAP_TRANSCRIPT`,
     `      echo "----"`,
     `    } >> "$DEVHUB_TRANSCRIPT_FILE" 2>/dev/null || true`,
+    indentBashBlock(buildViewportReadyWaitBlock(), 4),
     chunkedInjection,
     '  } >> "$DEVHUB_LOG_FILE" 2>&1',
     '}',

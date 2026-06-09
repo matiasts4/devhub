@@ -40,6 +40,7 @@ import {
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
 } from '@/lib/terminal/terminalNoiseFilter';
+import { buildSwarmTmuxSessionName } from '@/lib/terminal/viewportReadyMarker';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -754,6 +755,7 @@ export default function TerminalTTY({
     visibleTerminalPanelCount,
   });
   const hasSentInitialCommand = useRef(false);
+  const viewportFitConfirmedRef = useRef(false);
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const connectRef = useRef(null);
@@ -1250,6 +1252,60 @@ export default function TerminalTTY({
     return Boolean(rect && rect.width > 0 && rect.height > 0);
   }, []);
 
+  const resolveSwarmTmuxSessionName = useCallback(() => {
+    if (!swarmContext?.isSwarmRole) return null;
+    return buildSwarmTmuxSessionName(swarmContext.launchId, swarmContext.roleKey);
+  }, [swarmContext]);
+
+  const notifyViewportReady = useCallback(
+    async (cols, rows) => {
+      const tmuxSession = resolveSwarmTmuxSessionName();
+      if (!tmuxSession) return;
+
+      try {
+        await fetch('/api/terminal/viewport-ready', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: id,
+            tmuxSession,
+            cols,
+            rows,
+          }),
+        });
+        cliLog(`CLIENT:${id}`, 'viewport-ready-notified', { tmuxSession, cols, rows });
+      } catch (error) {
+        cliLog(`CLIENT:${id}`, 'viewport-ready-failed', { error: error?.message });
+      }
+    },
+    [id, resolveSwarmTmuxSessionName]
+  );
+
+  const sendInitialCommandIfReady = useCallback(() => {
+    if (!initialCommand || hasSentInitialCommand.current) return;
+    if (!viewportFitConfirmedRef.current) return;
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
+    console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
+    if (transportRef.current === 'raw') {
+      wsRef.current.send(cleanCommand + '\r');
+    } else {
+      wsRef.current.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
+    }
+    hasSentInitialCommand.current = true;
+  }, [id, initialCommand]);
+
+  const confirmViewportFit = useCallback(
+    (cols, rows) => {
+      if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) return;
+      viewportFitConfirmedRef.current = true;
+      void notifyViewportReady(cols, rows);
+      sendInitialCommandIfReady();
+    },
+    [notifyViewportReady, sendInitialCommandIfReady]
+  );
+
   const fitAndResize = useCallback(
     (options = {}) => {
       const clearAtlas = options.clearAtlas ?? isActivePanelRef.current;
@@ -1261,9 +1317,13 @@ export default function TerminalTTY({
         clearAtlas,
       });
 
+      if (fitWorked && termRef.current) {
+        confirmViewportFit(termRef.current.cols, termRef.current.rows);
+      }
+
       logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
     },
-    [logViewportDiagnostic]
+    [confirmViewportFit, logViewportDiagnostic]
   );
 
   const scrollTerminalToBottom = useCallback((force = false) => {
@@ -1297,17 +1357,20 @@ export default function TerminalTTY({
       }
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect && rect.width > 0 && rect.height > 0 && fitRef.current) {
-        fitTerminalViewport({
+        const fitWorked = fitTerminalViewport({
           container: containerRef.current,
           fitAddon: fitRef.current,
           term: termRef.current,
           socket: wsRef.current,
           clearAtlas: false,
         });
+        if (fitWorked && termRef.current) {
+          confirmViewportFit(termRef.current.cols, termRef.current.rows);
+        }
       }
       refreshTerminalViewport(termRef.current);
     });
-  }, []);
+  }, [confirmViewportFit]);
 
   const releaseCanvasAddon = useCallback(
     (reason = 'canvas-released') => {
@@ -1509,6 +1572,10 @@ export default function TerminalTTY({
 
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: shouldClearAtlas });
 
+      if (fitWorked && termRef.current) {
+        confirmViewportFit(termRef.current.cols, termRef.current.rows);
+      }
+
       if (fitWorked && isActivePanelRef.current) {
         scrollTerminalToBottom(true);
       }
@@ -1523,7 +1590,7 @@ export default function TerminalTTY({
         scheduleWebglRecovery(120);
       }
     },
-    [logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
+    [confirmViewportFit, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
   );
 
   const sendResize = useCallback(() => {
@@ -2368,24 +2435,12 @@ export default function TerminalTTY({
         setHasConnectedOnce(true);
         setConnectionState('connected');
         sendResize();
+        sendInitialCommandIfReady();
 
         // Show restored toast for sessions from previous run
         if (restored && cwd) {
           setRestoredToast(true);
           setTimeout(() => setRestoredToast(false), 2000);
-        }
-
-        // Only send initial command once per component lifecycle to avoid rerunning on fast reconnects
-        if (initialCommand && !hasSentInitialCommand.current) {
-          // Strip recovery suffix if present (added by session recovery mechanism)
-          const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
-          console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
-          if (transportRef.current === 'raw') {
-            socket.send(cleanCommand + '\r');
-          } else {
-            socket.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
-          }
-          hasSentInitialCommand.current = true;
         }
         // Initial focus handled by the other useEffect
       };
@@ -2491,9 +2546,9 @@ export default function TerminalTTY({
     scheduleInactiveViewportRepaint,
     scrollIfActivePanel,
     scrollTerminalToBottom,
+    sendInitialCommandIfReady,
     sendResize,
     cwd,
-    initialCommand,
     id,
   ]);
 
@@ -3183,15 +3238,21 @@ export default function TerminalTTY({
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
 
       layoutSettleBurstCleanupRef.current?.();
-      layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst((phase) => {
-        if (!isVisibleInLayoutRef.current) {
-          needsViewportSyncOnShowRef.current = true;
-          return;
-        }
-        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-${phase}`, {
-          clearAtlas: phase.includes('delay-340') || phase.includes('recover'),
-        });
-      });
+      const extraDelaysMs = String(reason).includes('swarm-launch')
+        ? [180, 340, 500, 1000]
+        : [180, 340];
+      layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
+        (phase) => {
+          if (!isVisibleInLayoutRef.current) {
+            needsViewportSyncOnShowRef.current = true;
+            return;
+          }
+          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-${phase}`, {
+            clearAtlas: phase.includes('delay-1000') || phase.includes('recover'),
+          });
+        },
+        { extraDelaysMs }
+      );
     };
 
     window.addEventListener('devhub:terminal-layout-settled', handleLayoutSettled);

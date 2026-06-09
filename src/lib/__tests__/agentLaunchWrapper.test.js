@@ -558,6 +558,13 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
     });
 
+    test('wrapper waits for viewport-ready marker before chunked bootstrap paste', () => {
+      const result = buildAgentLaunchWrapper(tmuxParams);
+      expect(result).toContain('_devhub_wait_viewport_ready');
+      expect(result).toContain('/tmp/devhub-viewport-ready-${_tmux_session}');
+      expect(result).toMatch(/_devhub_wait_viewport_ready[\s\S]*DEVHUB_BOOTSTRAP_CHUNK_0/);
+    });
+
     test('bare inner command defers bootstrap until after the agent starts', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
