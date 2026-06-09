@@ -2296,6 +2296,10 @@ export const POST = withAuth(async function POST(request, _context, dependencies
         cleanupMissionWorktreesImpl: dependencies.cleanupMissionWorktrees,
         killTmuxSessionImpl: dependencies.killTmuxSession,
         db: dependencies.db || getDb(),
+        panelIds: Array.isArray(payload?.panel_ids) ? payload.panel_ids : [],
+        opencodeSessionIds: Array.isArray(payload?.opencode_session_ids)
+          ? payload.opencode_session_ids
+          : [],
       });
 
       const refreshedSnapshot = await gatherOperationalHealth(

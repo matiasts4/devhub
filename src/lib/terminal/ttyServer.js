@@ -43,12 +43,35 @@ function tryUpdatePtyIdentity(session) {
 
   try {
     const db = helpers.getDb();
-    // Try to find a workspace matching this session's cwd
-    const workspace = db
-      .prepare(
-        `SELECT id FROM agent_workspaces WHERE workspace_path = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
-      )
-      .get(session.cwd);
+    let workspace = null;
+
+    const swarmId = session?.swarmId ? String(session.swarmId).trim() : '';
+    const roleKey = session?.swarmRole?.roleKey ? String(session.swarmRole.roleKey).trim() : '';
+    if (swarmId && roleKey) {
+      const agentId = `${swarmId}-${roleKey}`;
+      workspace =
+        db
+          .prepare(
+            `SELECT id FROM agent_workspaces WHERE agent_id = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
+          )
+          .get(agentId) || null;
+    }
+
+    if (!workspace && session?.cwd) {
+      workspace =
+        db
+          .prepare(
+            `SELECT id FROM agent_workspaces WHERE workspace_path = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
+          )
+          .get(session.cwd) || null;
+    }
+
+    if (!workspace && session?.id) {
+      workspace =
+        db
+          .prepare(`SELECT id FROM agent_workspaces WHERE terminal_id = ? OR pane_id = ? LIMIT 1`)
+          .get(session.id, session.id) || null;
+    }
 
     if (workspace) {
       helpers.updateWorkspacePtyIdentity(db, {

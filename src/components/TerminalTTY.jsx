@@ -102,7 +102,7 @@ export function shouldShowTerminalStatusOverlay(isInitializing, initError, conne
 
 /** Disables xterm focus/mouse reporting so blur/focus does not leak DA garbage to the PTY. */
 export const TERMINAL_DISABLE_FOCUS_REPORTING_SEQ =
-  '\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l';
+  '\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1007l\x1b[?1015l';
 
 export function disableTerminalFocusReporting(term) {
   if (!term || typeof term.write !== 'function') return;
@@ -190,6 +190,7 @@ export function fitTerminalViewport({
   socket,
   websocketOpenState = WebSocket.OPEN,
   clearAtlas = true,
+  lastPtySizeRef = null,
 }) {
   if (!container || !fitAddon || !term) return false;
   if (!isTerminalRendererReady(term)) return false;
@@ -205,14 +206,27 @@ export function fitTerminalViewport({
   }
   stabilizeTerminalRenderer(term, { clearAtlas });
 
-  if (socket?.readyState === websocketOpenState) {
+  const cols = Number(term.cols ?? 0);
+  const rows = Number(term.rows ?? 0);
+  const unchanged =
+    lastPtySizeRef &&
+    Number(lastPtySizeRef.cols) === cols &&
+    Number(lastPtySizeRef.rows) === rows &&
+    cols > 0 &&
+    rows > 0;
+
+  if (!unchanged && socket?.readyState === websocketOpenState && cols > 0 && rows > 0) {
     socket.send(
       JSON.stringify({
         type: 'resize',
-        cols: term.cols,
-        rows: term.rows,
+        cols,
+        rows,
       })
     );
+    if (lastPtySizeRef) {
+      lastPtySizeRef.cols = cols;
+      lastPtySizeRef.rows = rows;
+    }
   }
 
   return true;
@@ -756,6 +770,7 @@ export default function TerminalTTY({
   });
   const hasSentInitialCommand = useRef(false);
   const viewportFitConfirmedRef = useRef(false);
+  const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const connectRef = useRef(null);
@@ -1315,6 +1330,7 @@ export default function TerminalTTY({
         term: termRef.current,
         socket: wsRef.current,
         clearAtlas,
+        lastPtySizeRef: lastPtySizeRef.current,
       });
 
       if (fitWorked && termRef.current) {
@@ -1363,6 +1379,7 @@ export default function TerminalTTY({
           term: termRef.current,
           socket: wsRef.current,
           clearAtlas: false,
+          lastPtySizeRef: lastPtySizeRef.current,
         });
         if (fitWorked && termRef.current) {
           confirmViewportFit(termRef.current.cols, termRef.current.rows);
@@ -1443,6 +1460,7 @@ export default function TerminalTTY({
         term: termRef.current,
         socket: wsRef.current,
         clearAtlas: true,
+        lastPtySizeRef: lastPtySizeRef.current,
       });
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
       cliLog(`RENDER:${id}`, 'canvas-attached', buildViewportSnapshot('canvas-reattach'));
@@ -1489,6 +1507,7 @@ export default function TerminalTTY({
         term: termRef.current,
         socket: wsRef.current,
         clearAtlas: true,
+        lastPtySizeRef: lastPtySizeRef.current,
       });
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
       cliLog(`CLIENT:${id}`, 'WebGL addon reattached after context loss');
@@ -1568,6 +1587,7 @@ export default function TerminalTTY({
         term: termRef.current,
         socket: wsRef.current,
         clearAtlas: shouldClearAtlas,
+        lastPtySizeRef: lastPtySizeRef.current,
       });
 
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: shouldClearAtlas });
@@ -1618,13 +1638,9 @@ export default function TerminalTTY({
     scrollTerminalToBottom();
     clearTimers();
     rafRef.current = requestAnimationFrame(() => {
-      fitAndResize({ clearAtlas: true });
+      fitAndResize({ clearAtlas: false });
       scrollTerminalToBottom();
     });
-    timeoutRef.current = setTimeout(() => {
-      fitAndResize({ clearAtlas: true });
-      scrollTerminalToBottom();
-    }, 120);
   }, [clearTimers, fitAndResize, scheduleInactiveViewportRepaint, scrollTerminalToBottom]);
 
   const reactivateTerminalViewport = useCallback(
@@ -1640,47 +1656,26 @@ export default function TerminalTTY({
         return;
       }
 
-      const clearAtlas =
-        options.clearAtlas ??
-        shouldClearWebglAtlasOnPanelActivation(Boolean(webglAddonRef.current));
+      const clearAtlas = options.clearAtlas ?? false;
 
       logViewportDiagnostic('reactivate-start');
-      const repaint = () => {
-        stabilizeTerminalRenderer(termRef.current, { clearAtlas });
-        if (isActivePanelRef.current) scrollTerminalToBottom();
-      };
+      disableTerminalFocusReporting(termRef.current);
+      fitAndResize({ clearAtlas });
+      stabilizeTerminalRenderer(termRef.current, { clearAtlas });
+      if (isActivePanelRef.current) scrollTerminalToBottom();
 
-      const applyResize = () => {
-        if (clearAtlas) {
-          sendResize();
-          return;
-        }
-        fitAndResize({ clearAtlas: false });
-        scrollTerminalToBottom();
-      };
-
-      applyResize();
-      repaint();
+      if (autoFocus) {
+        termRef.current?.focus?.();
+      }
 
       rafRef.current = requestAnimationFrame(() => {
-        repaint();
-
-        if (autoFocus) {
-          // Same protection as in handleViewportMouseDown: ensure focus reporting
-          // is off before we focus, so our activation doesn't inject a focus-in
-          // event that triggers DA queries whose responses leak as visible text.
-          disableTerminalFocusReporting(termRef.current);
-          termRef.current?.focus?.();
-        }
-
-        timeoutRef.current = setTimeout(() => {
-          applyResize();
-          repaint();
-          logViewportDiagnostic('reactivate-settled');
-        }, 120);
+        fitAndResize({ clearAtlas: false });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        if (isActivePanelRef.current) scrollTerminalToBottom();
+        logViewportDiagnostic('reactivate-settled');
       });
     },
-    [autoFocus, fitAndResize, logViewportDiagnostic, scrollTerminalToBottom, sendResize]
+    [autoFocus, fitAndResize, logViewportDiagnostic, scrollTerminalToBottom]
   );
 
   useEffect(() => {

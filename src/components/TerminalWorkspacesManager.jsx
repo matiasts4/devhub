@@ -203,6 +203,41 @@ function readAgentRuns(storage) {
   }
 }
 
+function collectSwarmTerminateHints(storage, launchId, workspaces = []) {
+  const normalizedLaunchId = String(launchId || '').trim();
+  if (!normalizedLaunchId) {
+    return { panel_ids: [], opencode_session_ids: [] };
+  }
+
+  const panelIds = new Set();
+  const opencodeSessionIds = new Set();
+
+  try {
+    const runs = readAgentRuns(storage);
+    Object.entries(runs).forEach(([taskId, run]) => {
+      const taskLaunchId = String(taskId || '').split(':')[0];
+      if ((run?.launchId || taskLaunchId) !== normalizedLaunchId) return;
+      if (run?.panelId) panelIds.add(String(run.panelId).trim());
+      if (run?.opencodeSessionId) opencodeSessionIds.add(String(run.opencodeSessionId).trim());
+    });
+  } catch {
+    // Ignore localStorage failures.
+  }
+
+  workspaces.forEach((workspace) => {
+    getPanelsFromColumns(workspace?.columns || []).forEach((panel) => {
+      if (panel?.swarmContext?.launchId === normalizedLaunchId && panel?.id) {
+        panelIds.add(String(panel.id).trim());
+      }
+    });
+  });
+
+  return {
+    panel_ids: [...panelIds],
+    opencode_session_ids: [...opencodeSessionIds],
+  };
+}
+
 const SWARM_LAUNCH_BATCH_DEADLINE_MS = 4500;
 
 function getPanelIdsFromColumns(columns = []) {
@@ -2509,6 +2544,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setSwarmTerminateState({ submitting: true, error: null });
 
     try {
+      const terminateHints = collectSwarmTerminateHints(
+        storage,
+        activeSwarmLaunchSummary.launchId,
+        workspaces
+      );
       const response = await fetch('/api/agenthub/operations/health', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2516,6 +2556,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           action: 'terminate_swarm_local',
           project_id: projectId,
           launch_id: activeSwarmLaunchSummary.launchId,
+          panel_ids: terminateHints.panel_ids,
+          opencode_session_ids: terminateHints.opencode_session_ids,
         }),
       });
       const payload = await response.json();
@@ -2571,7 +2613,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         error: error?.message || 'No se pudo terminar el swarm desde terminales.',
       });
     }
-  }, [activeSwarmLaunchSummary?.launchId, projectId, storage]);
+  }, [activeSwarmLaunchSummary?.launchId, projectId, storage, workspaces]);
 
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {

@@ -42,19 +42,32 @@ export const TERMINAL_WINDOW_REPORT_RE = /\x1b\[(?:\d+;)*\d+t/g;
 /** DEC mode 1004 focus-in/out events xterm emits via onData when focus changes. */
 export const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
 
+/** SGR mouse wheel/click reports (e.g. ESC[<0;3;3M) leaked on scroll/focus churn. */
+export const TERMINAL_MOUSE_REPORT_RE = /\x1b\[<[\d;]*[mM]/g;
+
 export function stripTerminalFocusReporting(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(TERMINAL_FOCUS_REPORTING_RE, '');
 }
 
+export function stripTerminalMouseReporting(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(TERMINAL_MOUSE_REPORT_RE, '');
+}
+
 export function stripShellTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  return chunk.replace(TERMINAL_WINDOW_REPORT_RE, '').replace(SHELL_TERMINAL_RESPONSE_RE, '');
+  return chunk
+    .replace(TERMINAL_WINDOW_REPORT_RE, '')
+    .replace(TERMINAL_MOUSE_REPORT_RE, '')
+    .replace(SHELL_TERMINAL_RESPONSE_RE, '');
 }
 
 export function stripTerminalInputNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  return stripTerminalFocusReporting(stripShellTerminalResponseNoise(chunk));
+  return stripTerminalMouseReporting(
+    stripTerminalFocusReporting(stripShellTerminalResponseNoise(chunk))
+  );
 }
 
 export function containsTerminalResponseNoise(chunk) {
@@ -62,10 +75,12 @@ export function containsTerminalResponseNoise(chunk) {
   SHELL_TERMINAL_RESPONSE_RE.lastIndex = 0;
   TERMINAL_FOCUS_REPORTING_RE.lastIndex = 0;
   TERMINAL_WINDOW_REPORT_RE.lastIndex = 0;
+  TERMINAL_MOUSE_REPORT_RE.lastIndex = 0;
   return (
     SHELL_TERMINAL_RESPONSE_RE.test(chunk) ||
     TERMINAL_FOCUS_REPORTING_RE.test(chunk) ||
-    TERMINAL_WINDOW_REPORT_RE.test(chunk)
+    TERMINAL_WINDOW_REPORT_RE.test(chunk) ||
+    TERMINAL_MOUSE_REPORT_RE.test(chunk)
   );
 }
 

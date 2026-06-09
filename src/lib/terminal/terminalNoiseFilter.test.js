@@ -172,6 +172,15 @@ describe('filterTerminalInputForSession', () => {
     expect(filterTerminalInputForSession(null, '\u001b[Il')).toBe('l');
     expect(filterTerminalInputForSession(null, '\u001b[O\r')).toBe('\r');
   });
+
+  it('drops pure SGR mouse wheel reports and returns null', () => {
+    expect(filterTerminalInputForSession(null, '\u001b[<0;3;3M')).toBeNull();
+    expect(filterTerminalInputForSession(null, '\u001b[<65;12;4m')).toBeNull();
+  });
+
+  it('strips SGR mouse reports from mixed input and forwards the rest', () => {
+    expect(filterTerminalInputForSession(null, '\u001b[<0;3;3Ml')).toBe('l');
+  });
 });
 
 describe('filterTerminalOutputForSession', () => {
@@ -179,6 +188,11 @@ describe('filterTerminalOutputForSession', () => {
     const chunk = 'prompt\u001b[?1;2c\u001b[>0;276;0c ok';
     expect(filterTerminalOutputForSession({ mode: 'tui' }, chunk)).toBe('prompt ok');
     expect(filterTerminalOutputForSession({ mode: 'shell' }, chunk)).toBe('prompt ok');
+  });
+
+  it('strips SGR mouse reports from PTY output', () => {
+    expect(filterTerminalOutputForSession({ mode: 'tui' }, '\u001b[<0;3;3M')).toBe('');
+    expect(filterTerminalOutputForSession({ mode: 'tui' }, 'ok\u001b[<65;12;4m')).toBe('ok');
   });
 });
 
