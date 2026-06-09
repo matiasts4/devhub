@@ -105,8 +105,9 @@ function WorkspaceTerminalSurface({
         <div
           data-testid={`panel-body-${panel.id}`}
           className="absolute inset-0 min-h-0 min-w-0 bg-[var(--surface-app)]"
+          style={{ paddingTop: `${panelChromeSafeZoneMinTop}px` }}
         >
-          <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
+          <div className="h-full w-full overflow-hidden rounded-b-[10px] bg-[var(--surface-app)]">
             <TerminalTTY
               id={panel.id}
               cwd={panel.cwd || cwd}
@@ -135,7 +136,10 @@ function WorkspaceTerminalSurface({
           data-native-safe-zone="floating-chrome"
           data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
           className="pointer-events-none absolute inset-x-0 top-0 z-20 overflow-visible px-2 pt-1"
-          style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
+          style={{
+            height: `${panelChromeSafeZoneMinTop}px`,
+            minHeight: `${panelChromeSafeZoneMinTop}px`,
+          }}
         >
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-center px-4">
             <div
@@ -178,8 +182,8 @@ function WorkspaceTerminalSurface({
           </div>
           <div
             aria-hidden="true"
-            className={`absolute inset-x-0 top-0 h-[calc(100%-0.125rem)] rounded-t-[14px] border-b border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.22),rgba(15,23,36,0.02))] transition-opacity ${
-              isActive ? 'opacity-100' : 'opacity-70'
+            className={`absolute inset-0 rounded-t-[14px] border-b border-[rgba(148,163,184,0.14)] bg-[linear-gradient(180deg,rgba(13,19,32,0.97),rgba(13,19,32,0.9))] transition-opacity ${
+              isActive ? 'opacity-100' : 'opacity-85'
             }`}
           />
           <div
