@@ -321,6 +321,45 @@ export function resolveTerminalClipboardShortcut(event) {
   return null;
 }
 
+/** Send clipboard text to the PTY as raw input (avoids xterm bracketed-paste breaking TUIs). */
+export function sendTerminalPasteInput({
+  socket,
+  transport = 'json',
+  text,
+  websocketOpenState = WebSocket.OPEN,
+}) {
+  if (!socket || socket.readyState !== websocketOpenState) return false;
+  if (typeof text !== 'string' || text.length === 0) return false;
+
+  if (transport === 'raw') {
+    socket.send(text);
+  } else {
+    socket.send(JSON.stringify({ type: 'input', data: text }));
+  }
+  return true;
+}
+
+/** Phased fit+resize burst after split/workspace layout settles. */
+export function scheduleTerminalViewportSyncBurst(runSync, { extraDelaysMs = [180, 340] } = {}) {
+  if (typeof runSync !== 'function') return () => {};
+
+  runSync('immediate');
+
+  let raf2 = null;
+  const raf1 = requestAnimationFrame(() => {
+    raf2 = requestAnimationFrame(() => runSync('raf'));
+  });
+  const timers = extraDelaysMs.map((delayMs) =>
+    setTimeout(() => runSync(`delay-${delayMs}`), delayMs)
+  );
+
+  return () => {
+    cancelAnimationFrame(raf1);
+    if (raf2 !== null) cancelAnimationFrame(raf2);
+    timers.forEach((timerId) => clearTimeout(timerId));
+  };
+}
+
 export function getTerminalRuntimePlatform(explicitPlatform) {
   if (explicitPlatform) return String(explicitPlatform).toLowerCase();
   if (typeof navigator !== 'undefined') {
@@ -2648,17 +2687,18 @@ export default function TerminalTTY({
     const text = await clipboardApi.readText();
     if (!text) return false;
 
-    if (typeof termRef.current?.paste === 'function') {
-      termRef.current.paste(text);
+    if (
+      sendTerminalPasteInput({
+        socket: wsRef.current,
+        transport: transportRef.current,
+        text,
+      })
+    ) {
       return true;
     }
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      if (transportRef.current === 'raw') {
-        wsRef.current.send(text);
-      } else {
-        wsRef.current.send(JSON.stringify({ type: 'input', data: text }));
-      }
+    if (typeof termRef.current?.paste === 'function') {
+      termRef.current.paste(text);
       return true;
     }
 
@@ -2878,7 +2918,6 @@ export default function TerminalTTY({
 
         setInitError(null);
         setIsInitializing(false);
-        connectRef.current?.();
 
         void waitForVisibleDimensions()
           .then((ready) => {
@@ -2897,9 +2936,14 @@ export default function TerminalTTY({
             if (ready) {
               fitAddon.fit();
               stabilizeTerminalRenderer(termRef.current);
-              sendResizeRef.current?.();
             } else {
               logViewportDiagnostic('terminal-open-timeout');
+            }
+
+            connectRef.current?.();
+
+            if (ready) {
+              sendResizeRef.current?.();
             }
           })
           .catch((error) => {
@@ -3128,6 +3172,36 @@ export default function TerminalTTY({
     sendResize,
   ]);
 
+  const layoutSettleBurstCleanupRef = useRef(null);
+
+  useEffect(() => {
+    const handleLayoutSettled = (event) => {
+      if (!termRef.current || !fitRef.current) return;
+
+      const reason = event?.detail?.reason || 'layout-settled';
+      const panelIds = Array.isArray(event?.detail?.panelIds) ? event.detail.panelIds : null;
+      if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
+
+      layoutSettleBurstCleanupRef.current?.();
+      layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst((phase) => {
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-${phase}`, {
+          clearAtlas: phase.includes('delay-340') || phase.includes('recover'),
+        });
+      });
+    };
+
+    window.addEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
+    return () => {
+      layoutSettleBurstCleanupRef.current?.();
+      layoutSettleBurstCleanupRef.current = null;
+      window.removeEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
+    };
+  }, [id, syncTerminalViewportOnWorkspaceShow]);
+
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
     if (!termRef.current) return;
@@ -3188,17 +3262,14 @@ export default function TerminalTTY({
 
   const handleViewportPaste = useCallback(
     (e) => {
-      if (!shouldUseNativeRenderer) return;
       e.preventDefault();
       e.stopPropagation();
       void handlePasteIntoTerminal().catch(() => false);
     },
-    [handlePasteIntoTerminal, shouldUseNativeRenderer]
+    [handlePasteIntoTerminal]
   );
 
   useEffect(() => {
-    if (!shouldUseNativeRenderer) return;
-
     const handler = (e) => {
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
@@ -3218,7 +3289,7 @@ export default function TerminalTTY({
 
     document.addEventListener('paste', handler, true);
     return () => document.removeEventListener('paste', handler, true);
-  }, [handlePasteIntoTerminal, isActivePanel, shouldUseNativeRenderer]);
+  }, [handlePasteIntoTerminal, isActivePanel]);
 
   // Close context menu on click outside
   useEffect(() => {

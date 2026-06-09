@@ -124,6 +124,7 @@ import {
 import {
   schedulePostLayoutNativeSync,
   dispatchNativeVteWorkspaceSync,
+  dispatchTerminalLayoutSettled,
   computeCarvedBounds,
 } from '@/components/terminal/nativeLayoutSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
@@ -3441,6 +3442,24 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       panelAssignments.forEach(({ request, panelId }) => {
         persistAgentRunMetadata(request, panelId, request.commandToRun);
       });
+
+      if (typeof window !== 'undefined') {
+        const swarmPanelIds = panelAssignments.map(({ panelId }) => panelId);
+        const scheduleSwarmViewportSync = (phase) => {
+          dispatchTerminalLayoutSettled({
+            reason: 'swarm-launch',
+            workspaceId: newWsId,
+            panelIds: swarmPanelIds,
+            phase,
+          });
+        };
+        scheduleSwarmViewportSync('immediate');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => scheduleSwarmViewportSync('raf'));
+        });
+        window.setTimeout(() => scheduleSwarmViewportSync('delay-120'), 120);
+        window.setTimeout(() => scheduleSwarmViewportSync('delay-340'), 340);
+      }
     },
     [cwd, persistAgentRunMetadata, syncActiveWindowSnapshot]
   );
