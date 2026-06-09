@@ -3235,7 +3235,9 @@ export default function TerminalTTY({
       layoutSettleBurstCleanupRef.current?.();
       const extraDelaysMs = String(reason).includes('swarm-launch')
         ? [180, 340, 500, 1000]
-        : [180, 340];
+        : String(reason).includes('panel-focus-toggle')
+          ? [120, 180, 340, 500]
+          : [180, 340];
       layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
         (phase) => {
           if (!isVisibleInLayoutRef.current) {

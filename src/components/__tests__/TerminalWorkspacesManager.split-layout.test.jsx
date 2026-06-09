@@ -1110,6 +1110,13 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(latest.activePanelIds).toEqual(['p1']);
     expect(latest.hiddenPanelIds).toEqual(expect.arrayContaining(['p2']));
     expect(latest.hiddenPanelIds).not.toContain('p1');
+    expect(
+      view.container.querySelector('[data-testid="workspace-focused-panel-p1"]')
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-columns-ws1"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-focused-siblings-ws1"]')
+    ).toBeNull();
 
     sync.cleanup();
   });
