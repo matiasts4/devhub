@@ -46,7 +46,10 @@ import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
 import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
-import { getWorkspaceShellChromeStyle } from './components/terminal/terminalChromeStyles';
+import {
+  getTerminalPanelBodyStyle,
+  getWorkspaceShellChromeStyle,
+} from './components/terminal/terminalChromeStyles';
 import { useAuth } from '@/lib/auth/AuthContext';
 
 const PAGE_LABELS = {
@@ -268,7 +271,7 @@ function WorkspaceLayout() {
             data-terminal-container
             data-terminal-view={isTerminalRoute ? 'true' : undefined}
             style={{
-              ...getWorkspaceShellChromeStyle(),
+              ...getTerminalPanelBodyStyle(),
               display: isTerminalRoute ? 'block' : 'none',
             }}
           >

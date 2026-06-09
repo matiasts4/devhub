@@ -121,7 +121,9 @@ describe('PizarraLiveSurfaceLayer', () => {
     expect(terminalCalls[0].selected).toBe(true);
     expect(terminalCalls[0].isActivePanel).toBe(true);
     expect(terminalCalls[0].requestedRendererMode).toBe('xterm-webgl');
+    expect(terminalCalls[0].visibleTerminalPanelCount).toBe(2);
     expect(terminalCalls[1].isActivePanel).toBe(false);
+    expect(terminalCalls[1].visibleTerminalPanelCount).toBe(2);
 
     expect(browserCalls).toHaveLength(1);
     expect(browserCalls[0].bounds).toEqual({

@@ -222,7 +222,7 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
         data-expanded={revealed ? 'true' : 'false'}
         style={{
           position: 'absolute',
-          top: 12,
+          top: '50%',
           left: 12,
           display: 'flex',
           flexDirection: 'column',
@@ -234,128 +234,63 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
           padding: 6,
           boxShadow: '0 6px 24px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset',
           opacity: revealed ? 1 : 0,
-          transform: revealed ? 'translateX(0)' : 'translateX(-10px)',
+          transform: revealed ? 'translate(0, -50%)' : 'translate(-10px, -50%)',
           pointerEvents: revealed ? 'auto' : 'none',
           transition: 'opacity 0.2s ease-out, transform 0.2s ease-out',
         }}
       >
-      {/* Tooltip overlay */}
-      {tooltip && (
-        <div
-          style={{
-            position: 'fixed',
-            left: 60,
-            top: tooltip.y,
-            zIndex: 9999,
-            background: 'rgba(10, 15, 28, 0.96)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            maxWidth: 200,
-            pointerEvents: 'none',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-          }}
-        >
-          <p
+        {/* Tooltip overlay */}
+        {tooltip && (
+          <div
             style={{
-              color: 'var(--text-primary)',
-              fontSize: 11,
-              fontWeight: 600,
-              margin: 0,
-              lineHeight: 1.3,
+              position: 'fixed',
+              left: 60,
+              top: tooltip.y,
+              zIndex: 9999,
+              background: 'rgba(10, 15, 28, 0.96)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 6,
+              padding: '6px 10px',
+              maxWidth: 200,
+              pointerEvents: 'none',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
             }}
           >
-            {tooltip.label}
-          </p>
-          {tooltip.description && (
             <p
               style={{
-                color: 'var(--text-muted)',
-                fontSize: 10,
-                margin: '3px 0 0',
-                lineHeight: 1.4,
+                color: 'var(--text-primary)',
+                fontSize: 11,
+                fontWeight: 600,
+                margin: 0,
+                lineHeight: 1.3,
               }}
             >
-              {tooltip.description}
+              {tooltip.label}
             </p>
-          )}
-        </div>
-      )}
+            {tooltip.description && (
+              <p
+                style={{
+                  color: 'var(--text-muted)',
+                  fontSize: 10,
+                  margin: '3px 0 0',
+                  lineHeight: 1.4,
+                }}
+              >
+                {tooltip.description}
+              </p>
+            )}
+          </div>
+        )}
 
-      {/* ── Element tools: Terminal + Browser (always visible, most used) ── */}
-      <ToolSection>
-        {ELEMENT_TOOLS.map(({ value: toolVal, label, Icon }) => (
-          <button
-            key={toolVal}
-            type="button"
-            data-testid={`pizarra-add-${toolVal}`}
-            aria-label={label}
-            onClick={() => handleAddElement(toolVal)}
-            onMouseEnter={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              setTooltip({ label, y: rect.top });
-            }}
-            onMouseLeave={() => setTooltip(null)}
-            style={{
-              ...TOOL_BTN,
-              color: 'var(--accent-primary)',
-              border: '1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)',
-            }}
-          >
-            <Icon size={15} strokeWidth={2.2} />
-          </button>
-        ))}
-      </ToolSection>
-
-      {/* Divider */}
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '1px 0' }} />
-
-      {/* ── Arrange: Fit All (prominent) + others ── */}
-      <ToolSection>
-        {ARRANGE_ACTIONS.map(({ value: arrangeVal, label, description, Icon, accent }) => (
-          <button
-            key={arrangeVal}
-            type="button"
-            data-testid={`pizarra-arrange-${arrangeVal}`}
-            aria-label={label}
-            onClick={() => handleApplyLayout(arrangeVal)}
-            onMouseEnter={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              setTooltip({ label, description, y: rect.top });
-            }}
-            onMouseLeave={() => setTooltip(null)}
-            style={{
-              ...TOOL_BTN,
-              ...(accent
-                ? {
-                    background: 'color-mix(in srgb, var(--accent-primary) 14%, transparent)',
-                    border: '1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent)',
-                    color: 'var(--accent-primary)',
-                  }
-                : {}),
-            }}
-          >
-            <Icon size={15} strokeWidth={2.2} />
-          </button>
-        ))}
-      </ToolSection>
-
-      {/* Divider */}
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '1px 0' }} />
-
-      {/* ── Layout presets (collapsible) ── */}
-      <ToolSection>
-        <SectionLabel collapsed={layoutsCollapsed} onToggle={() => setLayoutsCollapsed((v) => !v)}>
-          Layout
-        </SectionLabel>
-        {!layoutsCollapsed &&
-          LAYOUT_PRESETS.map(({ value: presetVal, label, Icon }) => (
+        {/* ── Element tools: Terminal + Browser (always visible, most used) ── */}
+        <ToolSection>
+          {ELEMENT_TOOLS.map(({ value: toolVal, label, Icon }) => (
             <button
-              key={presetVal}
+              key={toolVal}
               type="button"
-              data-testid={`pizarra-layout-${presetVal}`}
+              data-testid={`pizarra-add-${toolVal}`}
               aria-label={label}
-              onClick={() => handleApplyLayout(presetVal)}
+              onClick={() => handleAddElement(toolVal)}
               onMouseEnter={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 setTooltip({ label, y: rect.top });
@@ -363,11 +298,40 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
               onMouseLeave={() => setTooltip(null)}
               style={{
                 ...TOOL_BTN,
-                ...(presetVal === 'clear'
+                color: 'var(--accent-primary)',
+                border: '1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)',
+              }}
+            >
+              <Icon size={15} strokeWidth={2.2} />
+            </button>
+          ))}
+        </ToolSection>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '1px 0' }} />
+
+        {/* ── Arrange: Fit All (prominent) + others ── */}
+        <ToolSection>
+          {ARRANGE_ACTIONS.map(({ value: arrangeVal, label, description, Icon, accent }) => (
+            <button
+              key={arrangeVal}
+              type="button"
+              data-testid={`pizarra-arrange-${arrangeVal}`}
+              aria-label={label}
+              onClick={() => handleApplyLayout(arrangeVal)}
+              onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setTooltip({ label, description, y: rect.top });
+              }}
+              onMouseLeave={() => setTooltip(null)}
+              style={{
+                ...TOOL_BTN,
+                ...(accent
                   ? {
-                      background: 'rgba(239, 68, 68, 0.08)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                      background: 'color-mix(in srgb, var(--accent-primary) 14%, transparent)',
+                      border:
+                        '1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent)',
+                      color: 'var(--accent-primary)',
                     }
                   : {}),
               }}
@@ -375,29 +339,27 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
               <Icon size={15} strokeWidth={2.2} />
             </button>
           ))}
-      </ToolSection>
+        </ToolSection>
 
-      {/* Divider */}
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '1px 0' }} />
+        {/* Divider */}
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '1px 0' }} />
 
-      {/* ── Shape tools (collapsible, less used) ── */}
-      <ToolSection>
-        <SectionLabel collapsed={shapeCollapsed} onToggle={() => setShapeCollapsed((v) => !v)}>
-          Formas
-        </SectionLabel>
-        {!shapeCollapsed && (
-          <ToggleGroup.Root
-            type="single"
-            value={value}
-            onValueChange={handleShapeToolChange}
-            orientation="vertical"
-            style={{ display: 'flex', flexDirection: 'column', gap: 3 }}
+        {/* ── Layout presets (collapsible) ── */}
+        <ToolSection>
+          <SectionLabel
+            collapsed={layoutsCollapsed}
+            onToggle={() => setLayoutsCollapsed((v) => !v)}
           >
-            {SHAPE_TOOLS.map(({ value: toolVal, label, Icon }) => (
-              <ToggleGroup.Item
-                key={toolVal}
-                value={toolVal}
+            Layout
+          </SectionLabel>
+          {!layoutsCollapsed &&
+            LAYOUT_PRESETS.map(({ value: presetVal, label, Icon }) => (
+              <button
+                key={presetVal}
+                type="button"
+                data-testid={`pizarra-layout-${presetVal}`}
                 aria-label={label}
+                onClick={() => handleApplyLayout(presetVal)}
                 onMouseEnter={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   setTooltip({ label, y: rect.top });
@@ -405,21 +367,63 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
                 onMouseLeave={() => setTooltip(null)}
                 style={{
                   ...TOOL_BTN,
-                  ...(value === toolVal
+                  ...(presetVal === 'clear'
                     ? {
-                        background: 'var(--accent-primary)',
-                        color: '#0d1117',
-                        border: '1px solid var(--accent-primary)',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
                       }
                     : {}),
                 }}
               >
-                <Icon size={14} strokeWidth={2.2} />
-              </ToggleGroup.Item>
+                <Icon size={15} strokeWidth={2.2} />
+              </button>
             ))}
-          </ToggleGroup.Root>
-        )}
-      </ToolSection>
+        </ToolSection>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '1px 0' }} />
+
+        {/* ── Shape tools (collapsible, less used) ── */}
+        <ToolSection>
+          <SectionLabel collapsed={shapeCollapsed} onToggle={() => setShapeCollapsed((v) => !v)}>
+            Formas
+          </SectionLabel>
+          {!shapeCollapsed && (
+            <ToggleGroup.Root
+              type="single"
+              value={value}
+              onValueChange={handleShapeToolChange}
+              orientation="vertical"
+              style={{ display: 'flex', flexDirection: 'column', gap: 3 }}
+            >
+              {SHAPE_TOOLS.map(({ value: toolVal, label, Icon }) => (
+                <ToggleGroup.Item
+                  key={toolVal}
+                  value={toolVal}
+                  aria-label={label}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltip({ label, y: rect.top });
+                  }}
+                  onMouseLeave={() => setTooltip(null)}
+                  style={{
+                    ...TOOL_BTN,
+                    ...(value === toolVal
+                      ? {
+                          background: 'var(--accent-primary)',
+                          color: '#0d1117',
+                          border: '1px solid var(--accent-primary)',
+                        }
+                      : {}),
+                  }}
+                >
+                  <Icon size={14} strokeWidth={2.2} />
+                </ToggleGroup.Item>
+              ))}
+            </ToggleGroup.Root>
+          )}
+        </ToolSection>
       </div>
     </div>
   );

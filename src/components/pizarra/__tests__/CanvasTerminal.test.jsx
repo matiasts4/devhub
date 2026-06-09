@@ -146,6 +146,20 @@ describe('CanvasTerminal', () => {
       expect(capturedProps.showQuickCopyButton).toBe(false);
       expect(capturedProps.isVisibleInLayout).toBe(true);
       expect(capturedProps.isActivePanel).toBe(false);
+      expect(capturedProps.visibleTerminalPanelCount).toBe(1);
+    });
+
+    it('forwards visibleTerminalPanelCount to TerminalTTY for split renderer policy', () => {
+      const { default: CanvasTerminal } = require('../CanvasTerminal');
+      render(
+        React.createElement(CanvasTerminal, {
+          terminalId: 'my-session-1',
+          bounds: { x: 0, y: 0, width: 640, height: 480 },
+          visibleTerminalPanelCount: 3,
+        })
+      );
+
+      expect(capturedProps.visibleTerminalPanelCount).toBe(3);
     });
 
     it('forwards explicit active ownership to TerminalTTY', () => {

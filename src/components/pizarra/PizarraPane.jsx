@@ -465,6 +465,8 @@ function PizarraInner({
   const viewOrigin = useMemo(() => getViewWorldOrigin(viewIndex), [viewIndex]);
 
   const [highlightZone, setHighlightZone] = useState(null);
+  const [isSurfaceDragging, setIsSurfaceDragging] = useState(false);
+  const surfaceDragCountRef = useRef(0);
   const [stripHovered, setStripHovered] = useState(false);
   const stripVisible = stripHovered || views.length >= 2;
 
@@ -472,7 +474,12 @@ function PizarraInner({
     return (mergedElements || []).filter((el) => {
       if (el.type !== SHAPE_TYPES.TERMINAL && el.type !== SHAPE_TYPES.BROWSER) return false;
       if (el.pizarra?.visible === false) return false;
-      return surfaceBelongsToView(el, activeWorkspaceWindowId || fallbackViewId, views, fallbackViewId);
+      return surfaceBelongsToView(
+        el,
+        activeWorkspaceWindowId || fallbackViewId,
+        views,
+        fallbackViewId
+      );
     });
   }, [mergedElements, activeWorkspaceWindowId, views, fallbackViewId]);
 
@@ -483,7 +490,12 @@ function PizarraInner({
 
   const centerActiveView = useCallback(
     (nextZoom = 1) => {
-      const targetPan = getCameraPanForView(viewOrigin, canvasSize.width, canvasSize.height, nextZoom);
+      const targetPan = getCameraPanForView(
+        viewOrigin,
+        canvasSize.width,
+        canvasSize.height,
+        nextZoom
+      );
       setZoom(nextZoom);
       setPan(targetPan);
     },
@@ -508,15 +520,7 @@ function PizarraInner({
         onFrame: setPan,
       });
     },
-    [
-      onWorkspaceWindowSelect,
-      views,
-      canvasSize.width,
-      canvasSize.height,
-      zoom,
-      pan,
-      setPan,
-    ]
+    [onWorkspaceWindowSelect, views, canvasSize.width, canvasSize.height, zoom, pan, setPan]
   );
 
   const applyAdaptiveViewLayout = useCallback(
@@ -533,42 +537,107 @@ function PizarraInner({
     [viewOrigin, liveSurfacesForZones, onUpdateElement, registry]
   );
 
+  const fitCameraToActiveView = useCallback(
+    (options = {}) => {
+      const fitPadding = options.padding ?? 16;
+      const fitMaxZoom = options.maxZoom ?? 2;
+
+      if (liveSurfacesForZones.length === 0) {
+        centerActiveView(options.zoom ?? 1);
+        return;
+      }
+
+      const fitBounds = activeSnapZones?.bounds || computeViewZones(viewOrigin).bounds;
+      const { zoom: fitZoom, pan: fitPan } = computeViewportFitToBounds(
+        fitBounds,
+        canvasSize.width,
+        canvasSize.height,
+        { padding: fitPadding, maxZoom: fitMaxZoom }
+      );
+      setZoom(fitZoom);
+      setPan(fitPan);
+    },
+    [
+      liveSurfacesForZones,
+      centerActiveView,
+      activeSnapZones,
+      viewOrigin,
+      canvasSize.width,
+      canvasSize.height,
+      setZoom,
+      setPan,
+    ]
+  );
+
   const handleFitAllView = useCallback(() => {
     if (liveSurfacesForZones.length === 0) {
       centerActiveView(1);
       return;
     }
     applyAdaptiveViewLayout(liveSurfacesForZones);
-    const fitBounds =
-      activeSnapZones?.bounds || computeViewZones(viewOrigin).bounds;
-    const { zoom: fitZoom, pan: fitPan } = computeViewportFitToBounds(
-      fitBounds,
-      canvasSize.width,
-      canvasSize.height
-    );
-    setZoom(fitZoom);
-    setPan(fitPan);
-  }, [
-    liveSurfacesForZones,
-    centerActiveView,
-    applyAdaptiveViewLayout,
-    activeSnapZones,
-    viewOrigin,
-    canvasSize.width,
-    canvasSize.height,
-    setZoom,
-    setPan,
-  ]);
+    fitCameraToActiveView();
+  }, [liveSurfacesForZones, centerActiveView, applyAdaptiveViewLayout, fitCameraToActiveView]);
+
+  const autoFitTimerRef = useRef(null);
+  const scheduleAutoFitView = useCallback(
+    (delayMs = 120) => {
+      if (autoFitTimerRef.current) {
+        clearTimeout(autoFitTimerRef.current);
+      }
+      autoFitTimerRef.current = setTimeout(() => {
+        autoFitTimerRef.current = null;
+        handleFitAllView();
+      }, delayMs);
+    },
+    [handleFitAllView]
+  );
+
+  useEffect(
+    () => () => {
+      if (autoFitTimerRef.current) {
+        clearTimeout(autoFitTimerRef.current);
+        autoFitTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   const prevViewIdRef = useRef(null);
+  const prevSurfaceCountRef = useRef(0);
   useEffect(() => {
     if (canvasSize.width < 200 || canvasSize.height < 200) return;
     if (prevViewIdRef.current === activeWorkspaceWindowId && prevViewIdRef.current != null) {
       return;
     }
     prevViewIdRef.current = activeWorkspaceWindowId;
-    centerActiveView(zoom);
-  }, [activeWorkspaceWindowId, canvasSize.width, canvasSize.height, centerActiveView, zoom]);
+    if (liveSurfacesForZones.length > 0) {
+      scheduleAutoFitView(80);
+    } else {
+      centerActiveView(1);
+    }
+  }, [
+    activeWorkspaceWindowId,
+    canvasSize.width,
+    canvasSize.height,
+    centerActiveView,
+    liveSurfacesForZones.length,
+    scheduleAutoFitView,
+  ]);
+
+  // Surfaces often arrive after mount (carried from normal view) — run the same
+  // layout+camera fit as the manual "autoajuste" once they appear.
+  useEffect(() => {
+    const count = liveSurfacesForZones.length;
+    if (count === 0 || canvasSize.width < 200) {
+      prevSurfaceCountRef.current = count;
+      return;
+    }
+    const hadNoSurfaces = prevSurfaceCountRef.current === 0;
+    prevSurfaceCountRef.current = count;
+    if (hadNoSurfaces) {
+      scheduleAutoFitView(160);
+    }
+  }, [liveSurfacesForZones.length, canvasSize.width, scheduleAutoFitView]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -585,9 +654,6 @@ function PizarraInner({
     return () => window.removeEventListener('keydown', handler);
   }, [views, activeWorkspaceWindowId, handleSelectView]);
 
-  // pizarra-empty-state: track if we auto-initialized on first access to avoid
-  // showing completely blank dark "submarino" canvas with nothing visible.
-  const didAutoInitRef = useRef(false);
   // Track if we applied default structure (preset-based pos) to carried surfaces on first pizarra entry.
   const didAutoStructureRef = useRef(false);
 
@@ -660,7 +726,7 @@ function PizarraInner({
     if (!didAutoStructureRef.current) {
       if (bNeeds.length === 1 && tNeeds.length === 1) {
         didAutoStructureRef.current = true;
-        const slots = computeDevSplitSlots(vis, cx, cy);
+        const slots = computeDevSplitSlots(vis);
         registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
         registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
         laidOutRegistryRef.current.add(bNeeds[0].id);
@@ -668,7 +734,7 @@ function PizarraInner({
         assigned = true;
       } else if (bNeeds.length === 1 && tNeeds.length === 2) {
         didAutoStructureRef.current = true;
-        const slots = computeDevTrioSlots(vis, cx, cy);
+        const slots = computeDevTrioSlots(vis);
         registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
         registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
         registry.updatePizarraLayout(tNeeds[1].id, { ...slots.terminals[1], visible: true });
@@ -678,7 +744,7 @@ function PizarraInner({
         assigned = true;
       } else if (bNeeds.length === 2 && tNeeds.length === 0) {
         didAutoStructureRef.current = true;
-        const slots = computeDualBrowserSlots(vis, cx, cy);
+        const slots = computeDualBrowserSlots(vis);
         bNeeds.forEach((s, i) => {
           if (slots.browsers[i]) {
             registry.updatePizarraLayout(s.id, { ...slots.browsers[i], visible: true });
@@ -717,6 +783,10 @@ function PizarraInner({
         laidOutRegistryRef.current.add(s.id);
       });
     }
+
+    if (needs.length > 0) {
+      scheduleAutoFitView(120);
+    }
   }, [
     registry,
     registry.surfaces,
@@ -724,6 +794,7 @@ function PizarraInner({
     canvasSize,
     SHAPE_TYPES,
     getVisibleCanvasRegion,
+    scheduleAutoFitView,
   ]);
 
   // ── handleAddElement — spawns at current visible viewport center ─────────
@@ -810,10 +881,7 @@ function PizarraInner({
           // after a short delay so the new card appears first, then everything
           // snaps into a clean layout.
           if (hadExistingCards) {
-            setTimeout(() => {
-              // handleApplyLayout is not yet in scope here; dispatch via event
-              window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
-            }, 350);
+            scheduleAutoFitView(350);
           }
         }
         return addedSurface || surfaceData;
@@ -835,6 +903,7 @@ function PizarraInner({
       setActiveTerminalId,
       registry.addSurface,
       fallbackViewId,
+      scheduleAutoFitView,
     ]
   );
 
@@ -846,6 +915,41 @@ function PizarraInner({
   // you release is where it stays. Coordinates are rounded to whole pixels so
   // the native VTE/WebKit surfaces don't land on sub-pixel offsets (which
   // causes blurry text on those real OS windows).
+  const handleSurfaceDragStart = useCallback(() => {
+    surfaceDragCountRef.current += 1;
+    setIsSurfaceDragging(true);
+  }, []);
+
+  const handleSurfaceDragMove = useCallback(
+    (id, position) => {
+      const shape = mergedElements.find((el) => el.id === id);
+      if (!shape || !activeSnapZones) {
+        setHighlightZone(null);
+        return;
+      }
+
+      const snapped = resolveZoneSnap(
+        {
+          x: position.x,
+          y: position.y,
+          width: shape.width || 640,
+          height: shape.height || 400,
+        },
+        activeSnapZones
+      );
+      setHighlightZone(snapped?.zone ?? null);
+    },
+    [mergedElements, activeSnapZones]
+  );
+
+  const handleSurfaceDragEnd = useCallback(() => {
+    surfaceDragCountRef.current = Math.max(0, surfaceDragCountRef.current - 1);
+    if (surfaceDragCountRef.current === 0) {
+      setIsSurfaceDragging(false);
+      setHighlightZone(null);
+    }
+  }, []);
+
   const handleMoveElement = useCallback(
     (id, position) => {
       const shape = mergedElements.find((el) => el.id === id);
@@ -921,37 +1025,56 @@ function PizarraInner({
   // These define the "estructuras por defecto" (dev-split, trio, dual-browser)
   // that match common workspace setups. Used both for destructive presets (palette)
   // and for smart auto-positioning of carried surfaces on first pizarra entry.
-  const computeDevSplitSlots = (vis, cx, cy) => {
-    const bw = Math.max(360, Math.round(vis.width * 0.62));
-    const tw = Math.max(260, vis.width - bw - 24);
-    const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+  const computeDevSplitSlots = (vis) => {
+    const edgePad = 8;
+    const gap = 12;
+    const usableW = Math.max(640, vis.width - edgePad * 2);
+    const usableH = Math.max(300, vis.height - edgePad * 2);
+    const bw = Math.round(usableW * 0.58);
+    const tw = usableW - bw - gap;
+    const leftX = vis.x + edgePad;
+    const rightX = leftX + bw + gap;
+    const topY = vis.y + edgePad;
     return {
-      browser: { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
-      terminals: [{ x: cx + 12, y: cy - h / 2, width: tw, height: h }],
+      browser: { x: leftX, y: topY, width: bw, height: usableH },
+      terminals: [{ x: rightX, y: topY, width: tw, height: usableH }],
     };
   };
 
-  const computeDevTrioSlots = (vis, cx, cy) => {
-    const bw = Math.max(340, Math.round(vis.width * 0.5));
-    const tw = Math.max(240, vis.width - bw - 24);
-    const h = Math.max(280, Math.min(Math.round(vis.height * 0.8), 620));
-    const th = Math.max(140, Math.round((h - 14) / 2));
+  const computeDevTrioSlots = (vis) => {
+    const edgePad = 8;
+    const gap = 12;
+    const rowGap = 12;
+    const usableW = Math.max(640, vis.width - edgePad * 2);
+    const usableH = Math.max(300, vis.height - edgePad * 2);
+    const bw = Math.round(usableW * 0.58);
+    const tw = usableW - bw - gap;
+    const th = Math.max(140, Math.round((usableH - rowGap) / 2));
+    const leftX = vis.x + edgePad;
+    const rightX = leftX + bw + gap;
+    const topY = vis.y + edgePad;
     return {
-      browser: { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
+      browser: { x: leftX, y: topY, width: bw, height: usableH },
       terminals: [
-        { x: cx + 12, y: cy - h / 2, width: tw, height: th },
-        { x: cx + 12, y: cy - h / 2 + th + 14, width: tw, height: th },
+        { x: rightX, y: topY, width: tw, height: th },
+        { x: rightX, y: topY + th + rowGap, width: tw, height: th },
       ],
     };
   };
 
-  const computeDualBrowserSlots = (vis, cx, cy) => {
-    const bw = Math.max(300, Math.round((vis.width - 24) / 2));
-    const h = Math.max(300, Math.min(Math.round(vis.height * 0.82), 680));
+  const computeDualBrowserSlots = (vis) => {
+    const edgePad = 8;
+    const gap = 12;
+    const usableW = Math.max(640, vis.width - edgePad * 2);
+    const usableH = Math.max(300, vis.height - edgePad * 2);
+    const bw = Math.round((usableW - gap) / 2);
+    const leftX = vis.x + edgePad;
+    const rightX = leftX + bw + gap;
+    const topY = vis.y + edgePad;
     return {
       browsers: [
-        { x: cx - bw - 12, y: cy - h / 2, width: bw, height: h },
-        { x: cx + 12, y: cy - h / 2, width: bw, height: h },
+        { x: leftX, y: topY, width: bw, height: usableH },
+        { x: rightX, y: topY, width: bw, height: usableH },
       ],
     };
   };
@@ -984,9 +1107,9 @@ function PizarraInner({
       ];
     }
 
-    // 1 browser + 1 terminal → dev-split (62/38 split)
+    // 1 browser + 1 terminal → dev-split (~58/42 split)
     if (browsers.length === 1 && terminals.length === 1) {
-      const slots = computeDevSplitSlots(vis, cx, cy);
+      const slots = computeDevSplitSlots(vis);
       return [
         { id: browsers[0].id, ...slots.browser },
         { id: terminals[0].id, ...slots.terminals[0] },
@@ -995,7 +1118,7 @@ function PizarraInner({
 
     // 1 browser + 2 terminals → trio
     if (browsers.length === 1 && terminals.length === 2) {
-      const slots = computeDevTrioSlots(vis, cx, cy);
+      const slots = computeDevTrioSlots(vis);
       return [
         { id: browsers[0].id, ...slots.browser },
         { id: terminals[0].id, ...slots.terminals[0] },
@@ -1005,7 +1128,7 @@ function PizarraInner({
 
     // 2 browsers + 0 terminals → dual column
     if (browsers.length === 2 && terminals.length === 0) {
-      const slots = computeDualBrowserSlots(vis, cx, cy);
+      const slots = computeDualBrowserSlots(vis);
       return [
         { id: browsers[0].id, ...slots.browsers[0] },
         { id: browsers[1].id, ...slots.browsers[1] },
@@ -1093,9 +1216,7 @@ function PizarraInner({
 
         // ── arrange-fit: smart adaptive layout centered in current viewport ──
         if (mode === 'fit') {
-          const fitUpdates = computeAutoFitSlots(vis, targets);
-          fitUpdates.forEach((u) => onUpdateElement?.(u.id, u));
-          if (fitUpdates.length) onSelect?.(fitUpdates[0].id, true);
+          handleFitAllView();
           return;
         }
 
@@ -1207,7 +1328,7 @@ function PizarraInner({
       setActiveTerminalId(null);
 
       if (presetType === 'dev-split') {
-        const slots = computeDevSplitSlots(vis, cx, cy);
+        const slots = computeDevSplitSlots(vis);
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browser, visible: true },
@@ -1222,8 +1343,9 @@ function PizarraInner({
           requestedRendererMode: 'xterm-webgl',
         });
         if (added?.id) setActiveTerminalId(added.id);
+        scheduleAutoFitView(80);
       } else if (presetType === 'dev-trio') {
-        const slots = computeDevTrioSlots(vis, cx, cy);
+        const slots = computeDevTrioSlots(vis);
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browser, visible: true },
@@ -1244,8 +1366,9 @@ function PizarraInner({
           requestedRendererMode: 'xterm-webgl',
         });
         if (added?.id) setActiveTerminalId(added.id);
+        scheduleAutoFitView(80);
       } else if (presetType === 'dual-browser') {
-        const slots = computeDualBrowserSlots(vis, cx, cy);
+        const slots = computeDualBrowserSlots(vis);
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browsers[0], visible: true },
@@ -1260,6 +1383,7 @@ function PizarraInner({
           label: 'Browser 2',
           requestedRendererMode: 'xterm-webgl',
         });
+        scheduleAutoFitView(80);
       }
     },
     [
@@ -1271,6 +1395,8 @@ function PizarraInner({
       state.selectedElementIds,
       onUpdateElement,
       onSelect,
+      scheduleAutoFitView,
+      handleFitAllView,
     ]
   );
 
@@ -1498,25 +1624,18 @@ function PizarraInner({
     [liveSurfacesForDividers, onUpdateElement]
   );
 
-  // Auto-initialize with a starter layout (dev-split: browser + terminal side-by-side)
-  // the very first time the pizarra canvas becomes visible and is empty.
-  // This prevents the "empty dark submarine" UX where user accesses pizarra
-  // and sees absolutely nothing (solid #1a1f2e bg, no surfaces, palette hard to spot).
-  // Once initialized (or user clears/adds manually), we don't auto again in this mount.
+  // Auto-fit when surfaces already exist (carried from normal view or user-added).
+  // Empty pizarra canvas stays empty until the user adds surfaces explicitly.
   React.useEffect(() => {
-    if (didAutoInitRef.current) return;
-    if (canvasSize.width < 200 || canvasSize.height < 200) return; // wait for real size
+    if (canvasSize.width < 200 || canvasSize.height < 200) return;
 
     const liveSurfaces = (mergedElements || []).filter(
       (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
     );
-    if (liveSurfaces.length === 0) {
-      didAutoInitRef.current = true;
-      // Spawn a nice default that demonstrates the feature: one browser + one terminal,
-      // sized and positioned responsively to current view (from the improved presets).
-      handleApplyLayout('dev-split');
+    if (liveSurfaces.length > 0) {
+      scheduleAutoFitView(200);
     }
-  }, [canvasSize, mergedElements, handleApplyLayout]);
+  }, [canvasSize, mergedElements, scheduleAutoFitView]);
 
   // Listen for deferred auto-refit events dispatched by handleAddElement
   // when a new card is added while others already exist.
@@ -1552,7 +1671,7 @@ function PizarraInner({
         <PizarraZoneGuides
           canvasWidth={canvasSize.width}
           canvasHeight={canvasSize.height}
-          visible={liveSurfacesForZones.length > 0}
+          visible={isSurfaceDragging && liveSurfacesForZones.length > 0}
           highlightZone={highlightZone}
           snapZones={activeSnapZones}
         />
@@ -1577,6 +1696,9 @@ function PizarraInner({
           activeTerminalId={activeTerminalId}
           onSelect={onSelect}
           onMoveElement={handleMoveElement}
+          onSurfaceDragStart={handleSurfaceDragStart}
+          onSurfaceDragMove={handleSurfaceDragMove}
+          onSurfaceDragEnd={handleSurfaceDragEnd}
           onActivateTerminal={onActivateTerminal}
           onUpdateElement={onUpdateElement}
           onRemoveElement={onRemoveElement}

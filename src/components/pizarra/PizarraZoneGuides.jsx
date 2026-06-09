@@ -73,10 +73,7 @@ export default function PizarraZoneGuides({
 }) {
   const { zoom, pan } = useCanvasViewport();
 
-  const projectRect = useMemo(
-    () => (rect) => projectOverlayRect(rect, zoom, pan),
-    [zoom, pan]
-  );
+  const projectRect = useMemo(() => (rect) => projectOverlayRect(rect, zoom, pan), [zoom, pan]);
 
   const slots = snapZones?.slots || [];
 
@@ -108,23 +105,28 @@ export default function PizarraZoneGuides({
         const active = highlightZone === slot.id;
         return (
           <div key={slot.id}>
-            <div data-zone={slot.id} style={slotStyle(slot.id, highlightZone, palette, projected)} />
             <div
-              style={{
-                position: 'absolute',
-                left: projected.x + 12,
-                top: projected.y + 10,
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 9,
-                fontWeight: 600,
-                letterSpacing: '0.12em',
-                color: active ? palette.labelActiveColor : palette.labelColor,
-                textTransform: 'uppercase',
-                transition: 'color 0.15s ease',
-              }}
-            >
-              {slot.label} — soltar aquí
-            </div>
+              data-zone={slot.id}
+              style={slotStyle(slot.id, highlightZone, palette, projected)}
+            />
+            {active ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: projected.x + 12,
+                  top: projected.y + 10,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 9,
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  color: palette.labelActiveColor,
+                  textTransform: 'uppercase',
+                  transition: 'color 0.15s ease',
+                }}
+              >
+                {slot.label} — soltar aquí
+              </div>
+            ) : null}
           </div>
         );
       })}
@@ -137,10 +139,9 @@ export default function PizarraZoneGuides({
             top: line.top,
             width: 1,
             height: line.height,
-            background:
-              highlightZone
-                ? 'linear-gradient(180deg, transparent, rgba(148,163,184,0.5) 15%, rgba(148,163,184,0.5) 85%, transparent)'
-                : 'linear-gradient(180deg, transparent, rgba(148,163,184,0.2) 20%, rgba(148,163,184,0.2) 80%, transparent)',
+            background: highlightZone
+              ? 'linear-gradient(180deg, transparent, rgba(148,163,184,0.5) 15%, rgba(148,163,184,0.5) 85%, transparent)'
+              : 'linear-gradient(180deg, transparent, rgba(148,163,184,0.2) 20%, rgba(148,163,184,0.2) 80%, transparent)',
             transition: 'background 0.15s ease',
           }}
         />

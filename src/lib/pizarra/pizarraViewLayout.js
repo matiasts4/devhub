@@ -8,6 +8,9 @@ export const VIEW_WORLD_WIDTH = 1680;
 export const VIEW_WORLD_HEIGHT = 960;
 export const VIEW_WORLD_GAP = 120;
 export const BROWSER_ZONE_RATIO = 0.62;
+/** Browser share when auto-layout mixes browser + terminal(s) — not 50/50. */
+export const BROWSER_PRIMARY_WIDTH_RATIO = 0.58;
+export const BROWSER_PRIMARY_WIDTH_RATIO_DENSE = 0.55;
 
 export function getViewIndex(viewId, views = []) {
   if (!viewId || !views.length) return 0;
@@ -108,7 +111,7 @@ export function partitionSurfacesForAutoLayout(surfaces = []) {
   return { browsers: layoutBrowsers, terminals, hiddenBrowsers };
 }
 
-function padRect(rect, pad = 12) {
+function padRect(rect, pad = 6) {
   return {
     x: Math.round(rect.x + pad),
     y: Math.round(rect.y + pad),
@@ -172,7 +175,7 @@ function gridSlots(rect, items, { cols = 2, gap = 16 } = {}) {
  * not fixed browser-left / terminal-right roles.
  * Returns [{ id, x, y, width, height }, ...] and { hiddenBrowserIds }.
  */
-export function computeAdaptiveViewLayout(viewOrigin, surfaces = [], { gap = 16, pad = 12 } = {}) {
+export function computeAdaptiveViewLayout(viewOrigin, surfaces = [], { gap = 12, pad = 6 } = {}) {
   const zones = computeViewZones(viewOrigin, { gap });
   const inner = padRect(zones.bounds, pad);
   const { browsers, terminals, hiddenBrowsers } = partitionSurfacesForAutoLayout(surfaces);
@@ -213,46 +216,63 @@ export function computeAdaptiveViewLayout(viewOrigin, surfaces = [], { gap = 16,
 
   // Mixed: browser + terminal(s)
   if (bCount === 1 && tCount === 1) {
-    const browserW = Math.round(inner.width * 0.52);
-    const browserRect = { x: inner.x, y: inner.y, width: browserW - Math.round(gap / 2), height: inner.height };
+    const browserW = Math.round(inner.width * BROWSER_PRIMARY_WIDTH_RATIO);
+    const browserRect = {
+      x: inner.x,
+      y: inner.y,
+      width: browserW - Math.round(gap / 2),
+      height: inner.height,
+    };
     const termRect = {
       x: inner.x + browserW + Math.round(gap / 2),
       y: inner.y,
       width: inner.width - browserW - Math.round(gap / 2),
       height: inner.height,
     };
-    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 4) });
-    layouts.push({ id: terminals[0].id, ...padRect(termRect, 4) });
+    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 2) });
+    layouts.push({ id: terminals[0].id, ...padRect(termRect, 2) });
     return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
   }
 
   if (bCount === 1 && tCount === 2) {
-    const browserW = Math.round(inner.width * 0.5);
-    const browserRect = { x: inner.x, y: inner.y, width: browserW - Math.round(gap / 2), height: inner.height };
+    const browserW = Math.round(inner.width * BROWSER_PRIMARY_WIDTH_RATIO);
+    const browserRect = {
+      x: inner.x,
+      y: inner.y,
+      width: browserW - Math.round(gap / 2),
+      height: inner.height,
+    };
     const termRect = {
       x: inner.x + browserW + Math.round(gap / 2),
       y: inner.y,
       width: inner.width - browserW - Math.round(gap / 2),
       height: inner.height,
     };
-    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 4) });
-    splitVertical(padRect(termRect, 4), 2, gap).forEach((slot, i) => {
+    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 2) });
+    splitVertical(padRect(termRect, 2), 2, gap).forEach((slot, i) => {
       layouts.push({ id: terminals[i].id, ...slot });
     });
     return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
   }
 
   if (bCount === 1 && tCount >= 3) {
-    const browserW = Math.round(inner.width * 0.42);
-    const browserRect = { x: inner.x, y: inner.y, width: browserW - Math.round(gap / 2), height: inner.height };
+    const browserW = Math.round(inner.width * BROWSER_PRIMARY_WIDTH_RATIO_DENSE);
+    const browserRect = {
+      x: inner.x,
+      y: inner.y,
+      width: browserW - Math.round(gap / 2),
+      height: inner.height,
+    };
     const termRect = {
       x: inner.x + browserW + Math.round(gap / 2),
       y: inner.y,
       width: inner.width - browserW - Math.round(gap / 2),
       height: inner.height,
     };
-    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 4) });
-    gridSlots(padRect(termRect, 4), terminals, { cols: 1, gap }).forEach((slot) => layouts.push(slot));
+    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 2) });
+    gridSlots(padRect(termRect, 2), terminals, { cols: 1, gap }).forEach((slot) =>
+      layouts.push(slot)
+    );
     return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
   }
 
@@ -287,7 +307,7 @@ export function surfaceTypeLabel(type) {
  * Snap zones + background guides derived from the current surfaces in view
  * (not fixed browser-left / terminal-right).
  */
-export function computeAdaptiveSnapZones(viewOrigin, surfaces = [], { gap = 16, pad = 12 } = {}) {
+export function computeAdaptiveSnapZones(viewOrigin, surfaces = [], { gap = 12, pad = 6 } = {}) {
   const zones = computeViewZones(viewOrigin, { gap });
   const inner = padRect(zones.bounds, pad);
   const { layouts } = computeAdaptiveViewLayout(viewOrigin, surfaces, { gap, pad });
@@ -329,9 +349,7 @@ export function computeAdaptiveSnapZones(viewOrigin, surfaces = [], { gap = 16, 
 /** Resolve a snap zone id (slot-0, left, center, …) to its layout rect. */
 export function resolveSnapZoneRect(zones, zoneId) {
   if (!zones || !zoneId) return zones?.center || null;
-  const slot = Array.isArray(zones.slots)
-    ? zones.slots.find((s) => s.id === zoneId)
-    : null;
+  const slot = Array.isArray(zones.slots) ? zones.slots.find((s) => s.id === zoneId) : null;
   if (slot?.rect) return slot.rect;
   if (zones[zoneId]) return zones[zoneId];
   return zones.center || zones.left || null;

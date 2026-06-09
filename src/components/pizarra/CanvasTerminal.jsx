@@ -67,6 +67,7 @@ export default function CanvasTerminal({
   // xterm + WebGL renderer that TerminalWorkspacesManager exposes.
   requestedRendererMode = 'xterm-webgl',
   onUpdateRendererMode,
+  visibleTerminalPanelCount = 1,
 }) {
   // Siempre usamos la terminal nativa (VTE widget) para superficies de tipo terminal
   // dentro de la pizarra. Posicionamos el widget exactamente sobre el rect de
@@ -613,6 +614,7 @@ export default function CanvasTerminal({
             autoFocus={autoFocus || isActivePanel}
             isVisibleInLayout
             isActivePanel={isActivePanel}
+            visibleTerminalPanelCount={visibleTerminalPanelCount}
             showQuickCopyButton={false}
             // pizarra-shared-view-state (Phase 1 — flicker fix):
             // suspendNativeSurface is driven by isLiveDragging, not

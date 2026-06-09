@@ -21,6 +21,21 @@ describe('pizarra adaptive layout', () => {
     expect(totalWidth).toBeGreaterThan(1200);
   });
 
+  test('one browser and one terminal gives browser ~58% of combined width', () => {
+    const surfaces = [
+      { id: 'b1', type: 'browser', panelId: 'pizarra-browser-1' },
+      { id: 't1', type: 'terminal' },
+    ];
+
+    const { layouts } = computeAdaptiveViewLayout({ x: 0, y: 0 }, surfaces);
+    const browser = layouts.find((l) => l.id === 'b1');
+    const terminal = layouts.find((l) => l.id === 't1');
+    const ratio = browser.width / (browser.width + terminal.width);
+    expect(ratio).toBeGreaterThan(0.53);
+    expect(ratio).toBeLessThan(0.63);
+    expect(browser.x).toBeLessThan(terminal.x);
+  });
+
   test('one browser and two terminals uses browser left and stacked terminals right', () => {
     const surfaces = [
       { id: 'b1', type: 'browser', panelId: 'pizarra-browser-1', pizarra: { x: 100 } },

@@ -13,6 +13,9 @@ export default function PizarraLiveSurfaceLayer({
   activeTerminalId = null,
   onSelect,
   onMoveElement,
+  onSurfaceDragStart,
+  onSurfaceDragMove,
+  onSurfaceDragEnd,
   onActivateTerminal,
   onUpdateElement,
   onRemoveElement,
@@ -64,6 +67,12 @@ export default function PizarraLiveSurfaceLayer({
     return null;
   }
 
+  // Match workspace split policy: multiple live terminal cards on the pizarra canvas
+  // share the Canvas 2D renderer so every sibling stays crisp without WebGL context fights.
+  const visibleTerminalPanelCount = surfaceShapes.filter(
+    (shape) => shape.type === SHAPE_TYPES.TERMINAL
+  ).length;
+
   const resolvedZoom = zoom > 0 ? zoom : 1;
 
   return (
@@ -99,6 +108,9 @@ export default function PizarraLiveSurfaceLayer({
             activeTerminalId={activeTerminalId}
             onSelect={onSelect}
             onMoveElementRef={onMoveElementRef}
+            onSurfaceDragStart={onSurfaceDragStart}
+            onSurfaceDragMove={onSurfaceDragMove}
+            onSurfaceDragEnd={onSurfaceDragEnd}
             onActivateTerminal={onActivateTerminal}
             onUpdateElement={onUpdateElement}
             onRemoveElement={onRemoveElement}
@@ -114,6 +126,7 @@ export default function PizarraLiveSurfaceLayer({
             onWorkspaceWindowSelect={onWorkspaceWindowSelect}
             onWorkspaceWindowAdd={onWorkspaceWindowAdd}
             onWorkspaceWindowRemove={onWorkspaceWindowRemove}
+            visibleTerminalPanelCount={visibleTerminalPanelCount}
           />
         );
       })}
@@ -145,6 +158,9 @@ function LiveSurfaceItem({
   activeTerminalId,
   onSelect,
   onMoveElementRef,
+  onSurfaceDragStart,
+  onSurfaceDragMove,
+  onSurfaceDragEnd,
   onActivateTerminal,
   onUpdateElement,
   onRemoveElement,
@@ -160,6 +176,7 @@ function LiveSurfaceItem({
   onWorkspaceWindowSelect,
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
+  visibleTerminalPanelCount = 1,
 }) {
   const shapeRef = useRef(shape);
   useEffect(() => {
@@ -205,6 +222,7 @@ function LiveSurfaceItem({
   }, [bounds]);
   // Captured once at drag start (first move tick); cleared on drag end.
   const dragStartBoundsRef = useRef(null);
+  const dragStartedRef = useRef(false);
   // pizarra-multi-select: when a group drag is active, holds a Map of
   // siblingId -> { x, y } drag-start screen positions. null = single drag.
   const groupDragStartRef = useRef(null);
@@ -232,6 +250,8 @@ function LiveSurfaceItem({
       const zoom = resolvedZoomRef.current || 1;
       // Capture drag-start position + group membership on the first tick only.
       if (!dragStartBoundsRef.current) {
+        dragStartedRef.current = true;
+        onSurfaceDragStart?.();
         dragStartBoundsRef.current = { x: boundsRef.current.x, y: boundsRef.current.y };
         const selectedIds = selectedIdsRef.current || [];
         const isGroupDrag = selectedIds.length > 1 && selectedIds.includes(shapeRef.current.id);
@@ -268,12 +288,26 @@ function LiveSurfaceItem({
         wrapperRef.current.style.left = start.x + offsetX + 'px';
         wrapperRef.current.style.top = start.y + offsetY + 'px';
       }
+
+      const canvasDeltaX = deltaX;
+      const canvasDeltaY = deltaY;
+      const currentShape = shapeRef.current;
+      if (currentShape && (canvasDeltaX !== 0 || canvasDeltaY !== 0)) {
+        onSurfaceDragMove?.(currentShape.id, {
+          x: currentShape.x + dragScreenOffsetRef.current.x / zoom,
+          y: currentShape.y + dragScreenOffsetRef.current.y / zoom,
+        });
+      }
     },
-    [registryRef]
+    [onSurfaceDragMove, onSurfaceDragStart, registryRef]
   );
 
   const handleDragEnd = useCallback(
     ({ totalDeltaX = 0, totalDeltaY = 0 }) => {
+      if (dragStartedRef.current) {
+        dragStartedRef.current = false;
+        onSurfaceDragEnd?.();
+      }
       dragStartBoundsRef.current = null;
       const group = groupDragStartRef.current;
       groupDragStartRef.current = null;
@@ -333,7 +367,13 @@ function LiveSurfaceItem({
         }
       }
     },
-    [onMoveElementRef, registryRef, resizeNativeBrowser, setNativeBrowserVisibility]
+    [
+      onMoveElementRef,
+      onSurfaceDragEnd,
+      registryRef,
+      resizeNativeBrowser,
+      setNativeBrowserVisibility,
+    ]
   );
 
   // pizarra-multi-select: upgrade the surface's single-arg onSelect(id) into
@@ -414,6 +454,7 @@ function LiveSurfaceItem({
           requestedRendererMode={shape.requestedRendererMode || 'xterm-webgl'}
           onUpdateRendererMode={(mode) => onUpdateRendererMode?.(shape.id, mode)}
           onClose={() => onRemoveElement?.(shape.id)}
+          visibleTerminalPanelCount={visibleTerminalPanelCount}
         />
       </div>
     );
