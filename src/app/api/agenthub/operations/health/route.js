@@ -126,7 +126,6 @@ export function buildLaunchPrompt({
   // compatibility with the route.js caller (buildLaunchCommand) and
   // reserved for T-018 (lazy spawn) which will use it as a per-launch
   // trace tag.
-  // eslint-disable-next-line no-unused-vars
   launchId = null,
 }) {
   const normalizedRoleKey = String(roleKey || '')
@@ -135,6 +134,10 @@ export function buildLaunchPrompt({
   const isDirector = normalizedRoleKey === 'director';
   const isWorker = normalizedRoleKey !== 'director';
   const workerRoles = hierarchy.filter((entry) => entry && entry.toLowerCase() !== 'director');
+  const missionId = String(launchId || '').trim() || '${DEVHUB_MISSION_ID}';
+  const tmuxRosterHint = launchId
+    ? `devhub-swarm-${launchId}-`
+    : 'devhub-swarm-${DEVHUB_MISSION_ID}-';
 
   // Instructions específicas para que usen las APIs de DevHub, no Engram MCP
   // T-017.2: trimmed from 9 to 4 lines. Keeps the contract (bus is source
@@ -145,6 +148,11 @@ export function buildLaunchPrompt({
     '- Fuente de verdad: bus DevHub (team_chat, team_inbox, agent_presence).',
     '- Mensajes salientes: `_devhub_chat`. Mensajes entrantes: `_devhub_inbox_check`.',
     '- NO uses Engram MCP ni /api/agenthub/events — esos paths estan retired.',
+    '',
+    '=== DevHub MCP (cuando) ===',
+    '- Swarm ya en tmux; inbox vacio inicial = normal (no "no registrado").',
+    '- MCP: planning (list_projects, get_project_context, get_execution_queue, add_task_comment).',
+    `- Roster runtime: tmux ls | grep ${tmuxRosterHint} o presence-list --mission ${missionId}; NO list_agent_workspaces ni devhub agents.`,
     '',
   ];
 
@@ -159,7 +167,10 @@ export function buildLaunchPrompt({
         '- Fuente de verdad: team_chat (bus DevHub). /tmp/devhub-swarm-*.log es solo diagnostico del wrapper, NO la fuente.',
         '- Reparte foco con `_devhub_chat --to <role>`, lee respuestas con `_devhub_inbox_check`.',
         '- Workers publican heartbeats; no hagas polling manual.',
+        '- Idle en prompt NO es "waiting": verifica `tmux has-session -t devhub-swarm-<mission>-<role>` y `presence-list --mission <id>` antes de marcar waiting.',
+        '- Si un worker reporto via `_devhub_chat` o `process_exit`, no lo trates como pendiente de heartbeat.',
         '- Si un worker no responde en 2min, marcalo inactivo y reasigna foco.',
+        '- Confirma roster tmux/presence-list; MCP solo para tareas/comentarios del proyecto si hace falta.',
       ]
     : [];
 
@@ -173,6 +184,7 @@ export function buildLaunchPrompt({
         // as a DevHub agent and not invent Plyrium / Forge / warp tools.
         '- Sos un agente DevHub. NO menciones Plyrium, Forge, ni "warp". Si una herramienta no esta en tu toolbox, no la inventes.',
         '- Reporta al Director con `_devhub_chat --to director --message "..."` (helper bash, durable en team_chat).',
+        '- Si `type _devhub_chat` falla: `source "$DEVHUB_BUS_HELPERS_FILE"` o usa el shim en `$PATH`.',
         '- Lee directivas con `_devhub_inbox_check` (lee de team_inbox).',
         '- NO uses _devhub_tell_director (retired en T-006) ni busques estado en Engram MCP.',
         '- /tmp/devhub-swarm-<role>.log es solo diagnostico del wrapper — para comunicacion durable usa _devhub_chat.',

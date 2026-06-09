@@ -2215,6 +2215,27 @@ describe('GET /api/agenthub/operations/health', () => {
       expect(prompt).not.toContain('log compartido');
     });
 
+    test('director prompt documents DevHub MCP boundary (planning vs swarm runtime)', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'director',
+        roleKey: 'director',
+        mission: 'Misión de prueba',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['director', 'coder'],
+        launchId: 'launch-abc-123',
+      });
+
+      expect(prompt).toContain('=== DevHub MCP (cuando) ===');
+      expect(prompt).toContain('list_agent_workspaces');
+      expect(prompt).toMatch(/inbox vacio inicial = normal/i);
+      expect(prompt).toContain('devhub-swarm-launch-abc-123-');
+      expect(prompt).toContain('Confirma roster tmux/presence-list');
+    });
+
     test('director prompt names the _devhub_inbox_check helper (trimmed contract)', () => {
       const {
         buildLaunchPrompt,
@@ -2335,9 +2356,8 @@ describe('GET /api/agenthub/operations/health', () => {
       });
 
       const lines = countLines(prompt);
-      // T-017.2 target: 25 lines, hard cap: 30. The original was ~45.
-      // Anything over 30 means the trim didn't take.
-      expect(lines).toBeLessThanOrEqual(30);
+      // T-017.2 target: 25 lines; MCP boundary block adds ~4 lines (cap 36).
+      expect(lines).toBeLessThanOrEqual(36);
       // Sanity: the trim should have actually reduced line count, not
       // just kept the verbose prompt under 30 by accident. The director
       // prompt without trim is ~45 lines, so 30 means we cut at least
@@ -2382,8 +2402,8 @@ describe('GET /api/agenthub/operations/health', () => {
       });
 
       const lines = countLines(prompt);
-      // T-017.2 target: 25 lines, hard cap: 30.
-      expect(lines).toBeLessThanOrEqual(30);
+      // T-017.2 target: 25 lines; MCP boundary block adds ~4 lines (cap 36).
+      expect(lines).toBeLessThanOrEqual(36);
       expect(lines).toBeLessThan(50);
     });
 

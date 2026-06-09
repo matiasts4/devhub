@@ -169,9 +169,11 @@ describe('agentLaunchWrapper', () => {
         deferBootstrap: true,
         tuiGraceSeconds: 10,
       });
-      expect(result).toMatch(/\(\s*\n\s*sleep 10[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) &/);
       expect(result).toMatch(
-        /_devhub_run_inner\(\) \{[\s\S]*\) &[\s\S]*opencode --agent swarm-coder/
+        /\(\s*\n\s*_devhub_wait_opencode_ready[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &/
+      );
+      expect(result).toMatch(
+        /_devhub_run_inner\(\) \{[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &[\s\S]*opencode --agent swarm-coder/
       );
       expect(result).not.toContain('_devhub_agent_pid=$!');
     });
@@ -526,18 +528,11 @@ describe('agentLaunchWrapper', () => {
   });
 
   // =========================================================================
-  // T-021: Revert T-019 event-driven sentinel to a simple sleep.
-  //
-  // T-019.1's `tmux wait-for` mechanism typed the sentinel into the
-  // agent's prompt buffer as user input (visible garbage in the TUI)
-  // instead of just signaling readiness. This is a clean revert to a
-  // configurable sleep until a working detection mechanism exists
-  // (e.g., OpenCode hook writing a marker file).
-  //
-  // The function `buildTuiWaitForBlock` is kept (call sites unchanged)
-  // but its body is now just `sleep ${graceSeconds}`.
+  // Swarm bootstrap readiness: opencode-ready marker poll + viewport marker.
+  // deferBootstrap panels poll /tmp/devhub-opencode-ready-<tmux> (written by
+  // sidecar/client when the OpenCode TUI footer appears) instead of sleep 10.
   // =========================================================================
-  describe('T-021: simple sleep TUI wait (T-019 revert)', () => {
+  describe('swarm bootstrap readiness markers', () => {
     const tmuxParams = {
       ...baseParams,
       role: 'coder',
@@ -556,12 +551,11 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toMatch(/tmux send-keys.*SENTINEL/);
     });
 
-    test('wrapper emits a sleep N block (default 10s from tuiReadyGraceMs) before bootstrap', () => {
+    test('wrapper polls opencode-ready marker before bootstrap (deferBootstrap path)', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
-      // buildTuiWaitForBlock: default tuiReadyGraceMs=10000 → sleep 10
-      expect(result).toMatch(/sleep 10/);
-      // Inner bootstrap no longer adds a redundant fixed sleep.
-      expect(result).not.toMatch(/sleep 2/);
+      expect(result).toContain('_devhub_wait_opencode_ready');
+      expect(result).toContain('/tmp/devhub-opencode-ready-${_tmux_session}');
+      expect(result).not.toMatch(/^sleep 10$/m);
     });
 
     test('wrapper uses single-shot bootstrap paste (T2.2)', () => {
@@ -576,8 +570,8 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
       expect(result).toContain('_devhub_wait_viewport_ready');
       expect(result).toContain('/tmp/devhub-viewport-ready-${_tmux_session}');
-      expect(result).toContain('_min_cols=80');
-      expect(result).toContain('_min_rows=20');
+      expect(result).toContain('_min_cols=64');
+      expect(result).toContain('_min_rows=18');
       expect(result).toMatch(/_devhub_wait_viewport_ready[\s\S]*DEVHUB_BOOTSTRAP_PROMPT/);
     });
 
@@ -591,9 +585,11 @@ describe('agentLaunchWrapper', () => {
 
       expect(result).not.toMatch(/^sleep 10$/m);
       expect(result).not.toContain('(_devhub_bootstrap_prompt) &');
-      expect(result).toMatch(/\(\s*\n\s*sleep 10[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) &/);
       expect(result).toMatch(
-        /_devhub_run_inner\(\) \{[\s\S]*\) &[\s\S]*opencode --agent swarm-coder/
+        /\(\s*\n\s*_devhub_wait_opencode_ready[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &/
+      );
+      expect(result).toMatch(
+        /_devhub_run_inner\(\) \{[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &[\s\S]*opencode --agent swarm-coder/
       );
       expect(result).toMatch(/_devhub_bootstrap_prompt/);
     });
@@ -619,13 +615,14 @@ describe('agentLaunchWrapper', () => {
       expect(check.stderr).toBe('');
     });
 
-    test('tuiReadyGraceMs=5000 produces `sleep 5` in the emitted bash (configurable)', () => {
+    test('tuiReadyGraceMs=5000 caps opencode-ready poll at 5s (configurable)', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         tuiReadyGraceMs: 5000,
       });
-      // 5000ms = 5s
-      expect(result).toMatch(/sleep 5/);
+      // 5000ms = 5s → ceil(5/0.25) poll attempts
+      expect(result).toContain('_max_attempts=20');
+      expect(result).toContain('opencode ready timeout (5s)');
     });
 
     test('tuiWaitTimeoutMs is ignored (param kept for backward compat, not emitted)', () => {

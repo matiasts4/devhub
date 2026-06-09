@@ -199,6 +199,87 @@ describe('T-003 — wrapper bus helpers', () => {
     }
   });
 
+  test('HELPER-S14c: PATH shims make helpers callable when BASH_ENV is unset', () => {
+    const { dbPath, dir: dbDir } = makeTempDb();
+    const ws = makeTempWorkspace();
+    try {
+      const persist = wrapper.buildBusHelpersPersistBlock({
+        missionId: 'launch-path-shim',
+        busBinaryPath: BUS_BIN,
+        dbPath,
+      });
+      const shims = wrapper.buildBusHelpersShimBlock({ missionId: 'launch-path-shim' });
+      const script = path.join(ws, 'path-shim.sh');
+      fs.writeFileSync(
+        script,
+        [
+          '#!/usr/bin/env bash',
+          'set -e',
+          'export DEVHUB_MISSION_ID="launch-path-shim"',
+          'export DEVHUB_ROLE="coder"',
+          'export DEVHUB_DB_PATH="' + dbPath + '"',
+          'unset BASH_ENV',
+          persist,
+          shims,
+          '_devhub_chat "via path shim" --to director --kind chat',
+        ].join('\n'),
+        { mode: 0o755 }
+      );
+      const r = spawnSync('bash', [script], { encoding: 'utf-8' });
+      if (r.status !== 0) {
+        process.stderr.write(`STDOUT: ${r.stdout}\nSTDERR: ${r.stderr}\n`);
+      }
+      expect(r.status).toBe(0);
+      const db = new Database(dbPath, { readonly: true });
+      const row = db
+        .prepare('SELECT * FROM team_chat WHERE mission_id = ?')
+        .get('launch-path-shim');
+      expect(row?.body).toBe('via path shim');
+      db.close();
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+      fs.rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
+  test('HELPER-S14b: persisted BASH_ENV makes helpers callable from bash -c subshells', () => {
+    const { dbPath, dir: dbDir } = makeTempDb();
+    const ws = makeTempWorkspace();
+    try {
+      const persist = wrapper.buildBusHelpersPersistBlock({
+        missionId: 'launch-bash-env',
+        busBinaryPath: BUS_BIN,
+        dbPath,
+      });
+      const script = path.join(ws, 'bash-env.sh');
+      fs.writeFileSync(
+        script,
+        [
+          '#!/usr/bin/env bash',
+          'set -e',
+          'export DEVHUB_MISSION_ID="launch-bash-env"',
+          'export DEVHUB_ROLE="auditor"',
+          'export DEVHUB_DB_PATH="' + dbPath + '"',
+          persist,
+          `BASH_ENV="$DEVHUB_BUS_HELPERS_FILE" bash -c '_devhub_chat "via bash env" --to director --kind chat'`,
+        ].join('\n'),
+        { mode: 0o755 }
+      );
+      const r = spawnSync('bash', [script], { encoding: 'utf-8' });
+      if (r.status !== 0) {
+        process.stderr.write(`STDOUT: ${r.stdout}\nSTDERR: ${r.stderr}\n`);
+      }
+      expect(r.status).toBe(0);
+      const db = new Database(dbPath, { readonly: true });
+      const row = db.prepare('SELECT * FROM team_chat WHERE mission_id = ?').get('launch-bash-env');
+      expect(row?.body).toBe('via bash env');
+      db.close();
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+      fs.rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   test('DEVHUB_DB_PATH is exported in buildAgentEnvExports', () => {
     const params = {
       agentId: 'launch-abc-auditor',
@@ -215,5 +296,6 @@ describe('T-003 — wrapper bus helpers', () => {
     };
     const result = wrapper.buildAgentEnvExports(params);
     expect(result).toContain('export DEVHUB_DB_PATH="/abs/path/to/devhub.db"');
+    expect(result).toContain('export BASH_ENV="/tmp/devhub-mission-launch-abc/bus-helpers.sh"');
   });
 });

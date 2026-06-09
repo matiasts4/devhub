@@ -68,6 +68,15 @@ export function buildAgentEnvExports({
     exports.push(`export DEVHUB_DB_PATH="${dbPath}"`);
   }
 
+  // OpenCode/bash tool subprocesses are non-interactive; BASH_ENV sources persisted helpers.
+  if (missionId && dbPath) {
+    const helpersFile = `/tmp/devhub-mission-${missionId}/bus-helpers.sh`;
+    const helpersBin = `/tmp/devhub-mission-${missionId}/bin`;
+    exports.push(`export DEVHUB_BUS_HELPERS_FILE="${helpersFile}"`);
+    exports.push(`export BASH_ENV="${helpersFile}"`);
+    exports.push(`export PATH="${helpersBin}:$PATH"`);
+  }
+
   if (tmuxSessionName) {
     exports.push(`export DEVHUB_TMUX_SESSION="${tmuxSessionName}"`);
   }
@@ -294,6 +303,58 @@ export function buildBusHelpersBlock({ busBinaryPath, dbPath }) {
   ].join('\n');
 }
 
+/**
+ * Persist bus helpers to disk and wire BASH_ENV so OpenCode/bash-tool subprocesses
+ * can call `_devhub_*` even though they are not children of the wrapper shell.
+ */
+export function buildBusHelpersPersistBlock({ missionId, busBinaryPath, dbPath }) {
+  if (!missionId || !busBinaryPath || !dbPath) {
+    return '# Bus helpers persist skipped (missing missionId, busBinaryPath, or dbPath)';
+  }
+  const missionDir = `/tmp/devhub-mission-${missionId}`;
+  const helpersBody = buildBusHelpersBlock({ busBinaryPath, dbPath });
+  return [
+    '# Persist bus helpers for non-interactive shells (OpenCode bash tool, bash -c).',
+    `mkdir -p "${missionDir}"`,
+    `DEVHUB_BUS_HELPERS_FILE="${missionDir}/bus-helpers.sh"`,
+    `cat > "$DEVHUB_BUS_HELPERS_FILE" <<'DEVHUB_BUS_HELPERS_EOF'`,
+    helpersBody,
+    `DEVHUB_BUS_HELPERS_EOF`,
+    `chmod 644 "$DEVHUB_BUS_HELPERS_FILE" 2>/dev/null || true`,
+    `export DEVHUB_BUS_HELPERS_FILE`,
+    `export BASH_ENV="$DEVHUB_BUS_HELPERS_FILE"`,
+  ].join('\n');
+}
+
+/**
+ * Installs PATH shims so OpenCode tools that only search PATH still find `_devhub_*`.
+ * Must run after buildBusHelpersPersistBlock writes bus-helpers.sh.
+ */
+export function buildBusHelpersShimBlock({ missionId }) {
+  if (!missionId) {
+    return '# Bus helper shims skipped (missing missionId)';
+  }
+  const missionDir = `/tmp/devhub-mission-${missionId}`;
+  const binDir = `${missionDir}/bin`;
+  const shimNames = ['_devhub_chat', '_devhub_event', '_devhub_presence', '_devhub_inbox_check'];
+  const lines = [
+    '# PATH shims for _devhub_* helpers (OpenCode bash tool compatibility).',
+    `mkdir -p "${binDir}"`,
+  ];
+  for (const name of shimNames) {
+    lines.push(
+      `cat > "${binDir}/${name}" <<'DEVHUB_BUS_SHIM_EOF'`,
+      '#!/usr/bin/env bash',
+      `source "${missionDir}/bus-helpers.sh"`,
+      `${name} "$@"`,
+      'DEVHUB_BUS_SHIM_EOF',
+      `chmod 755 "${binDir}/${name}" 2>/dev/null || true`
+    );
+  }
+  lines.push(`export PATH="${binDir}:$PATH"`);
+  return lines.join('\n');
+}
+
 // Allowed state transitions for the injection lock state machine.
 // pending → injecting → injected (happy path)
 // injecting → failed (downstream error)
@@ -455,14 +516,17 @@ const BOOTSTRAP_HEREDOC_DELIMITER_RE = /^DEVHUB_BOOTSTRAP_(?:PROMPT|TRANSCRIPT|C
  * Bootstrap prompt injection must not run while the PTY still has the spawn
  * default size (120×32) or tmux paste-buffer fragments escape noise into the TUI.
  */
-export const BOOTSTRAP_MIN_VIEWPORT_COLS = 80;
-export const BOOTSTRAP_MIN_VIEWPORT_ROWS = 20;
+export const BOOTSTRAP_MIN_VIEWPORT_COLS = 64;
+export const BOOTSTRAP_MIN_VIEWPORT_ROWS = 18;
+export const BOOTSTRAP_VIEWPORT_MAX_WAIT_SECONDS = 20;
+export const BOOTSTRAP_VIEWPORT_UNDERSIZED_MAX_ATTEMPTS = 8;
 
 export function buildViewportReadyWaitBlock({
   pollIntervalSeconds = 0.5,
-  maxWaitSeconds = 45,
+  maxWaitSeconds = BOOTSTRAP_VIEWPORT_MAX_WAIT_SECONDS,
   minCols = BOOTSTRAP_MIN_VIEWPORT_COLS,
   minRows = BOOTSTRAP_MIN_VIEWPORT_ROWS,
+  maxUndersizedAttempts = BOOTSTRAP_VIEWPORT_UNDERSIZED_MAX_ATTEMPTS,
 } = {}) {
   const maxAttempts = Math.max(1, Math.ceil(maxWaitSeconds / pollIntervalSeconds));
   const sleepArg = Number(pollIntervalSeconds).toFixed(1);
@@ -471,7 +535,9 @@ export function buildViewportReadyWaitBlock({
     '_devhub_wait_viewport_ready() {',
     '  local _ready_file="/tmp/devhub-viewport-ready-${_tmux_session}"',
     `  local _attempt=0`,
+    `  local _undersized=0`,
     `  local _max_attempts=${maxAttempts}`,
+    `  local _max_undersized=${Math.max(1, Math.floor(maxUndersizedAttempts))}`,
     `  local _min_cols=${Math.max(1, Math.floor(minCols))}`,
     `  local _min_rows=${Math.max(1, Math.floor(minRows))}`,
     '  while [ $_attempt -lt $_max_attempts ]; do',
@@ -491,6 +557,16 @@ export function buildViewportReadyWaitBlock({
     '        return 0',
     '      fi',
     `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Viewport marker present but too small (\${_cols:-0}x\${_rows:-0}); waiting for >= \${_min_cols}x\${_min_rows}"`,
+    '      _undersized=$((_undersized + 1))',
+    '      if [ "$_undersized" -ge "$_max_undersized" ] && [ -n "${_cols:-}" ] && [ -n "${_rows:-}" ]; then',
+    `        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Using current viewport \${_cols}x\${_rows} after undersized grace"`,
+    '        tmux resize-pane -t "${_tmux_session}:0" -x "$_cols" -y "$_rows" 2>/dev/null || \\',
+    '          tmux resize-pane -t "${_tmux_session}" -x "$_cols" -y "$_rows" 2>/dev/null || true',
+    '        sleep 0.15',
+    '        tmux refresh-client -t "${_tmux_session}" 2>/dev/null || true',
+    '        sleep 0.2',
+    '        return 0',
+    '      fi',
     '    fi',
     `    sleep ${sleepArg}`,
     '    _attempt=$((_attempt + 1))',
@@ -498,6 +574,47 @@ export function buildViewportReadyWaitBlock({
     `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: viewport ready timeout; injecting anyway"`,
     '}',
     '_devhub_wait_viewport_ready',
+  ].join('\n');
+}
+
+/**
+ * Poll /tmp/devhub-opencode-ready-<tmux> instead of a fixed sleep before bootstrap.
+ * The sidecar/client writes this marker when OpenCode session/TUI footer is detected.
+ */
+export function buildOpencodeReadyWaitBlock({
+  pollIntervalSeconds = 0.25,
+  maxWaitSeconds = 12,
+} = {}) {
+  const maxAttempts = Math.max(1, Math.ceil(maxWaitSeconds / pollIntervalSeconds));
+  const sleepArg =
+    Number(pollIntervalSeconds)
+      .toFixed(2)
+      .replace(/\.?0+$/, '') || '0.25';
+  return [
+    '# Wait until OpenCode TUI is ready (marker file) before bootstrap injection.',
+    '_devhub_wait_opencode_ready() {',
+    '  local _tmux_session="${DEVHUB_TMUX_SESSION:-}"',
+    '  if [ -z "${_tmux_session:-}" ]; then',
+    '    _tmux_session=$(tmux display-message -p "#S" 2>/dev/null) || true',
+    '  fi',
+    '  if [ -z "${_tmux_session:-}" ]; then',
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: no tmux session for opencode-ready wait; skipping"`,
+    '    return 0',
+    '  fi',
+    '  local _ready_file="/tmp/devhub-opencode-ready-${_tmux_session}"',
+    `  local _attempt=0`,
+    `  local _max_attempts=${maxAttempts}`,
+    '  while [ $_attempt -lt $_max_attempts ]; do',
+    '    if [ -f "$_ready_file" ]; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] OpenCode ready marker found: $_ready_file"`,
+    '      cat "$_ready_file" 2>/dev/null || true',
+    '      return 0',
+    '    fi',
+    `    sleep ${sleepArg}`,
+    '    _attempt=$((_attempt + 1))',
+    '  done',
+    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: opencode ready timeout (${maxWaitSeconds}s); injecting anyway"`,
+    '}',
   ].join('\n');
 }
 
@@ -915,16 +1032,16 @@ export function buildDirectorTmuxInjection(directorTmuxSession) {
 export function buildAutoRestartLoopCommand({
   innerCommand,
   deferBootstrap = false,
-  tuiGraceSeconds = 10,
+  tuiGraceSeconds = 12,
 } = {}) {
   const runInnerBody = deferBootstrap
     ? [
         '(',
-        `  sleep ${Math.max(0, Math.floor(tuiGraceSeconds))}`,
+        '  _devhub_wait_opencode_ready',
         '  if declare -F _devhub_bootstrap_prompt >/dev/null 2>&1; then',
         '    _devhub_bootstrap_prompt',
         '  fi',
-        ') &',
+        ') >> "$AGENT_LOG" 2>&1 &',
         innerCommand,
       ].join('\n  ')
     : innerCommand;
@@ -1018,16 +1135,42 @@ export function buildExitTrapCommand({
     '    } >> "/tmp/devhub-swarm-${DEVHUB_ROLE:-unknown}.metrics" 2>&1',
     '  fi',
   ].join('\n');
-  return `_devhub_exit_handler() {
+  return `_devhub_invoke_helper() {
+  local _fn="$1"
+  shift
+  if declare -F "$_fn" >/dev/null 2>&1; then
+    "$_fn" "$@"
+    return $?
+  fi
+  if command -v "$_fn" >/dev/null 2>&1; then
+    "$_fn" "$@"
+    return $?
+  fi
+  if [ -n "\${DEVHUB_BUS_HELPERS_FILE:-}" ] && [ -f "\$DEVHUB_BUS_HELPERS_FILE" ]; then
+    # shellcheck source=/dev/null
+    source "\$DEVHUB_BUS_HELPERS_FILE"
+    if declare -F "$_fn" >/dev/null 2>&1; then
+      "$_fn" "$@"
+      return $?
+    fi
+  fi
+  return 127
+}
+_devhub_exit_handler() {
   local _devhub_AGENT_EXIT_CODE=$?
 ${detachBlock}
 ${directorCleanupBlock}
 ${selfMetricsBlock}
+  _devhub_invoke_helper _devhub_presence --state offline --summary "process exit code=\${_devhub_AGENT_EXIT_CODE}" --ttl 60 2>/dev/null || true
+  if [ -n "\${DEVHUB_ROLE:-}" ] && [ "\$DEVHUB_ROLE" != "director" ]; then
+    _devhub_invoke_helper _devhub_chat "Worker \${DEVHUB_ROLE} exiting (code=\${_devhub_AGENT_EXIT_CODE})" --to director --kind report 2>/dev/null || true
+  fi
   if [ -n "$DEVHUB_MISSION_ID" ] && [ -n "$DEVHUB_AGENT_ID" ]; then
     local _DEVHUB_EXIT_PAYLOAD
     _DEVHUB_EXIT_PAYLOAD=$(printf '{"agent_id":"%s","role":"%s","exit_code":%d,"ts":"%s"}' \\
       "$DEVHUB_AGENT_ID" "$DEVHUB_ROLE" "$_devhub_AGENT_EXIT_CODE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
-    "$_DEVHUB_BUS_BIN" event-write \\
+    "\$_DEVHUB_BUS_NODE" "\$_DEVHUB_BUS_BIN" event-write \\
+      --db "\$_DEVHUB_BUS_DB" \\
       --mission "$DEVHUB_MISSION_ID" \\
       --source "$DEVHUB_AGENT_ID" \\
       --kind process_exit \\
@@ -1072,15 +1215,11 @@ export function buildAgentLaunchWrapper({
   disableMinimaxMcp,
   // T-022: TUI wait timings (milliseconds).
   //   - tuiWaitTimeoutMs: UNUSED (default 10000), kept for backward compat
-  //   - tuiReadyGraceMs:  grace period before prompt injection (default 10000)
-  // T-021 reverted the event-driven sentinel (T-019.1 leaked text into
-  // agent TUIs). T-022 bumps the default grace from 2s to 10s because
-  // OpenCode TUI with 1M ctx needs 8-12s to fully initialize. 2s was
-  // too short: injection landed before the TUI was ready, TUI crashed,
-  // wrapper restarted the agent, lock prevented re-injection → silent agents.
-  // Both are converted to seconds in the emitted bash (1s granularity).
+  //   - tuiReadyGraceMs:  max wait for opencode-ready marker (default 12000)
+  // Swarm panels poll /tmp/devhub-opencode-ready-<tmux> (written by sidecar
+  // when OpenCode session/footer is detected) instead of a fixed sleep.
   tuiWaitTimeoutMs = 10000,
-  tuiReadyGraceMs = 10000,
+  tuiReadyGraceMs = 8000,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',
@@ -1151,6 +1290,10 @@ export function buildAgentLaunchWrapper({
       disableMinimaxMcp,
     }),
     '',
+    buildBusHelpersPersistBlock({ missionId, busBinaryPath, dbPath }),
+    '',
+    buildBusHelpersShimBlock({ missionId }),
+    '',
     // T-003 — bus helpers (only emitted if dbPath + busBinaryPath are provided)
     buildBusHelpersBlock({ busBinaryPath, dbPath }),
     '',
@@ -1177,6 +1320,14 @@ export function buildAgentLaunchWrapper({
             sessionName: tmuxSessionName,
             graceSeconds: tuiGraceSeconds,
             timeoutSeconds: Math.max(1, Math.floor(tuiWaitTimeoutMs / 1000)),
+          }),
+        ]
+      : []),
+    '',
+    ...(deferBootstrapUntilAgentStart
+      ? [
+          buildOpencodeReadyWaitBlock({
+            maxWaitSeconds: Math.max(3, Math.ceil(tuiReadyGraceMs / 1000)),
           }),
         ]
       : []),
