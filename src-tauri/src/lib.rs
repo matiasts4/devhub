@@ -27,7 +27,7 @@ use native_vte::{
 };
 
 const NEXTJS_READY_POLL_MS: u64 = 500;
-const NEXTJS_READY_STARTUP_ATTEMPTS: usize = 120;
+const NEXTJS_READY_STARTUP_ATTEMPTS: usize = 240;
 const NEXTJS_READY_RECOVERY_ATTEMPTS: usize = 240;
 
 /// Canonical absolute path to the server entry point inside the packaged standalone.

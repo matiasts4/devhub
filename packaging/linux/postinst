@@ -1,0 +1,44 @@
+#!/bin/sh
+set -e
+
+# Best-effort warm-up for the user who ran `sudo dpkg -i` (SUDO_USER).
+# Extracting here avoids a multi-minute first launch while the shell waits for :3400.
+ZIP_PATH="/usr/lib/DevHub/resources/standalone.zip"
+
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ] && [ -f "$ZIP_PATH" ]; then
+  user_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+  if [ -n "$user_home" ]; then
+    sudo -u "$SUDO_USER" sh -s "$ZIP_PATH" "$user_home" <<'EOF'
+set -e
+zip_path="$1"
+home_dir="$2"
+target_dir="$home_dir/.devhub/standalone"
+
+if [ -f "$target_dir/server.js" ] && [ -f "$target_dir/node_modules/ws/index.js" ]; then
+  if [ ! "$zip_path" -nt "$target_dir/server.js" ]; then
+    exit 0
+  fi
+fi
+
+mkdir -p "$home_dir/.devhub"
+rm -rf "$target_dir"
+mkdir -p "$target_dir"
+
+if command -v unzip >/dev/null 2>&1; then
+  unzip -q "$zip_path" -d "$target_dir"
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -m zipfile -e "$zip_path" "$target_dir"
+else
+  exit 0
+fi
+
+if [ -f "$target_dir/server.js" ]; then
+  touch "$target_dir/server.js"
+  build_id=$(stat -c %Y "$zip_path" 2>/dev/null || echo "0")
+  echo "$build_id" > "$home_dir/.devhub/sidecar-build-id.txt"
+fi
+EOF
+  fi
+fi
+
+exit 0

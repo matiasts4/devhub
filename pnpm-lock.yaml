@@ -242,6 +242,9 @@ importers:
       xterm:
         specifier: ^5.3.0
         version: 5.3.0
+      xterm-addon-canvas:
+        specifier: ^0.5.0
+        version: 0.5.0(xterm@5.3.0)
       xterm-addon-fit:
         specifier: ^0.8.0
         version: 0.8.0(xterm@5.3.0)
@@ -8516,6 +8519,12 @@ packages:
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
     engines: {node: '>=0.4'}
+
+  xterm-addon-canvas@0.5.0:
+    resolution: {integrity: sha512-QOo/eZCMrCleAgMimfdbaZCgmQRWOml63Ued6RwQ+UTPvQj3Av9QKx3xksmyYrDGRO/AVRXa9oNuzlYvLdmoLQ==}
+    deprecated: This package is now deprecated. Move to @xterm/addon-canvas instead.
+    peerDependencies:
+      xterm: ^5.0.0
 
   xterm-addon-fit@0.8.0:
     resolution: {integrity: sha512-yj3Np7XlvxxhYF/EJ7p3KHaMt6OdwQ+HDu573Vx1lRXsVxOcnVJs51RgjZOouIZOczTsskaS+CpXspK81/DLqw==}
@@ -18203,6 +18212,10 @@ snapshots:
 
   xtend@4.0.2:
     optional: true
+
+  xterm-addon-canvas@0.5.0(xterm@5.3.0):
+    dependencies:
+      xterm: 5.3.0
 
   xterm-addon-fit@0.8.0(xterm@5.3.0):
     dependencies:

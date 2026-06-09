@@ -182,6 +182,15 @@ function patchPackagedDesktop() {
         if (fs.existsSync(launcherPath)) {
           fs.chmodSync(launcherPath, 0o755);
         }
+        const postinstCandidates = [
+          path.join(bundleRoot, e.name, 'data', 'DEBIAN', 'postinst'),
+          path.join(bundleRoot, e.name, 'DEBIAN', 'postinst'),
+        ];
+        for (const postinstPath of postinstCandidates) {
+          if (fs.existsSync(postinstPath)) {
+            fs.chmodSync(postinstPath, 0o755);
+          }
+        }
         console.log(`[tauri-cli] Patched desktop + launcher exec for ${e.name}`);
       }
     }
