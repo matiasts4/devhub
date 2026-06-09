@@ -1247,13 +1247,27 @@ export default function TerminalTTY({
   }, [resizeNativeLease, showNativeLease]);
 
   const waitForVisibleDimensions = useCallback(async () => {
+    let lastWidth = 0;
+    let lastHeight = 0;
+    let stableReads = 0;
+
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const container = containerRef.current;
       if (!container) return false;
 
       const rect = container.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && document.visibilityState !== 'hidden') {
-        return true;
+      const width = Math.floor(rect.width);
+      const height = Math.floor(rect.height);
+
+      if (width > 0 && height >= 72 && document.visibilityState !== 'hidden') {
+        if (width === lastWidth && height === lastHeight) {
+          stableReads += 1;
+          if (stableReads >= 2) return true;
+        } else {
+          stableReads = 0;
+        }
+        lastWidth = width;
+        lastHeight = height;
       }
 
       await new Promise((resolve) => {
@@ -1264,7 +1278,7 @@ export default function TerminalTTY({
     }
 
     const rect = containerRef.current?.getBoundingClientRect();
-    return Boolean(rect && rect.width > 0 && rect.height > 0);
+    return Boolean(rect && rect.width > 0 && rect.height >= 72);
   }, []);
 
   const resolveSwarmTmuxSessionName = useCallback(() => {
@@ -3546,11 +3560,11 @@ export default function TerminalTTY({
 
       {/* Terminal View */}
       <div
-        className="flex min-h-0 flex-1 flex-col bg-[var(--surface-app)]"
+        className={`flex min-h-0 flex-1 flex-col bg-[var(--surface-app)] ${hideTitleBar ? 'min-h-0' : ''}`}
         data-testid="terminal-root-body"
       >
         <div
-          className="relative flex-1 bg-[var(--surface-app)]"
+          className={`relative min-h-0 bg-[var(--surface-app)] ${hideTitleBar ? 'h-full flex-1' : 'flex-1'}`}
           onContextMenu={handleContextMenu}
           onMouseDown={handleViewportMouseDown}
           onPaste={handleViewportPaste}
@@ -3559,7 +3573,7 @@ export default function TerminalTTY({
         >
           <div
             ref={nativePlaceholderRef}
-            className="relative h-full w-full overflow-hidden"
+            className="absolute inset-0 overflow-hidden"
             data-testid="terminal-content-body"
             style={TERMINAL_NATIVE_CONTENT_BODY_STYLE}
           >
@@ -3585,7 +3599,7 @@ export default function TerminalTTY({
             ) : (
               <motion.div
                 ref={containerRef}
-                className="devhub-xterm-container h-full w-full p-0"
+                className={`devhub-xterm-container p-0 ${hideTitleBar ? 'absolute inset-0' : 'h-full w-full'}`}
                 data-operational-renderer={operationalRendererMode}
                 /* Reduced padding (was p-2.5) so TUI-drawn boxes, the bottom "Build" bar,
                    side warnings, ASCII banners and overall layout have widths, heights and
