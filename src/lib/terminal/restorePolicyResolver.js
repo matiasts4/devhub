@@ -128,6 +128,34 @@ export function isOpenCodePanel(panel, agentRun = null) {
 }
 
 /**
+ * Whether an opencode-session-detected event should update this panel's restore command.
+ * Blocks cross-contamination into grok/hermes/swarm panels when another workspace closes.
+ */
+export function shouldPersistOpenCodeSessionForPanel(panel = null, agentRun = null) {
+  if (!panel) return false;
+
+  const command = String(panel.initialCommand || '')
+    .replace(/\s*#recovery-\d+\s*$/i, '')
+    .trim();
+
+  if (/^grok\b/i.test(command) || /^hermes\b/i.test(command)) return false;
+  if (
+    inferPanelSessionKind({
+      initialCommand: panel.initialCommand,
+      agentRun,
+      panel,
+    }) === 'swarm'
+  ) {
+    return false;
+  }
+
+  if (/^opencode\b/i.test(command) || agentRun?.opencodeSessionId) return true;
+  if (!command) return true;
+
+  return false;
+}
+
+/**
  * Best-effort OpenCode session id for manual resume (panel command → agent run → hint).
  */
 export function resolveOpenCodeSessionIdForPanel({

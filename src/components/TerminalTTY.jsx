@@ -263,6 +263,28 @@ function neutralizeWebglAddonForDisposal(addon) {
   }
 }
 
+export const TERMINAL_VIEWPORT_MAX_ROWS = 120;
+export const TERMINAL_VIEWPORT_MAX_COLS = 400;
+export const TERMINAL_VIEWPORT_MIN_CELL_HEIGHT = 6;
+export const TERMINAL_VIEWPORT_MIN_CELL_WIDTH = 4;
+
+export function isPlausibleTerminalCellSize(cellH, cellW) {
+  return (
+    Number.isFinite(cellH) &&
+    Number.isFinite(cellW) &&
+    cellH >= TERMINAL_VIEWPORT_MIN_CELL_HEIGHT &&
+    cellW >= TERMINAL_VIEWPORT_MIN_CELL_WIDTH
+  );
+}
+
+export function clampTerminalViewportDimensions(dims) {
+  if (!dims) return null;
+  return {
+    cols: Math.min(TERMINAL_VIEWPORT_MAX_COLS, Math.max(2, Math.floor(dims.cols))),
+    rows: Math.min(TERMINAL_VIEWPORT_MAX_ROWS, Math.max(1, Math.floor(dims.rows))),
+  };
+}
+
 // Horizontal: always add one more column when slack remains so lateral bands disappear
 // (overflow:hidden clips the partial edge). Vertical: keep the cheaper clip/slack tradeoff.
 function proposeTerminalAxisDimension({ available, cellSize, minValue, fillSlack = false }) {
@@ -309,16 +331,16 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
   const cell = term?._core?._renderService?.dimensions?.css?.cell;
   const cellH = Number(cell?.height ?? 0);
   const cellW = Number(cell?.width ?? 0);
-  if (cellH <= 0 || cellW <= 0) {
+  if (!isPlausibleTerminalCellSize(cellH, cellW)) {
     const fallback =
       typeof fitAddon.proposeDimensions === 'function' ? fitAddon.proposeDimensions() : null;
     if (!fallback || !Number.isFinite(fallback.cols) || !Number.isFinite(fallback.rows)) {
       return null;
     }
-    return {
+    return clampTerminalViewportDimensions({
       cols: Math.max(2, Math.floor(fallback.cols)),
       rows: Math.max(1, Math.floor(fallback.rows)),
-    };
+    });
   }
 
   const availW = resolveTerminalHorizontalAvailWidth(rect, term);
@@ -336,7 +358,7 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
     fillSlack: false,
   });
 
-  return { cols, rows };
+  return clampTerminalViewportDimensions({ cols, rows });
 }
 
 export function fitTerminalViewport({
@@ -769,9 +791,23 @@ export function shouldClearGpuAtlasOnWorkspaceShow({
     return reason === 'workspace-show-pending';
   }
   if (reason.startsWith('layout-settled-')) {
+    if (reason.includes('workspace-removed')) return false;
     return reason.includes('delay-1000') || reason.includes('recover');
   }
   return reason.includes('settled') || reason.includes('recover');
+}
+
+/** Release WebGL while a panel is layout-hidden so PTY output cannot corrupt glyph atlases. */
+export function shouldReleaseWebglRendererOnLayoutHide({
+  operationalRendererMode,
+  isVisibleInLayout,
+  prevVisibleInLayout,
+} = {}) {
+  return (
+    prevVisibleInLayout &&
+    !isVisibleInLayout &&
+    shouldAttachWebglRenderer({ operationalRendererMode })
+  );
 }
 
 /** Release Canvas while a panel is layout-hidden so PTY output cannot corrupt glyph atlases. */
@@ -1649,6 +1685,14 @@ export default function TerminalTTY({
     if (!initialCommand || hasSentInitialCommand.current) return;
     if (!viewportFitConfirmedRef.current) return;
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    const isRecoveryRelaunch = /#recovery-\d+\s*$/i.test(initialCommand);
+    // Late initialCommand updates must not inject into an already-live session
+    // (e.g. survivor grok panel after another workspace with OpenCode closes).
+    if (hasConnectedOnceRef.current && !isRecoveryRelaunch) {
+      hasSentInitialCommand.current = true;
+      return;
+    }
 
     // Swarm panels attach to tmux on PTY spawn (ttyServer). The materialized launch
     // wrapper runs only on a fresh swarm launch, not when reopening the workspace.
@@ -2832,6 +2876,9 @@ export default function TerminalTTY({
         hasConnectedOnceRef.current = true;
         setHasConnectedOnce(true);
         setConnectionState('connected');
+        if (!initialCommand) {
+          hasSentInitialCommand.current = true;
+        }
         sendResize();
         sendInitialCommandIfReady();
 
@@ -3060,19 +3107,31 @@ export default function TerminalTTY({
       releaseCanvasAddon('layout-hidden-canvas');
     }
 
+    if (
+      shouldReleaseWebglRendererOnLayoutHide({
+        operationalRendererMode,
+        isVisibleInLayout,
+        prevVisibleInLayout: prevVisible,
+      }) &&
+      !shouldUseNativeRenderer &&
+      webglAddonRef.current
+    ) {
+      releaseWebglAddonForInactivePanel('layout-hidden-webgl');
+    }
+
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
-      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', { clearAtlas: false });
+      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', { clearAtlas: true });
       workspaceShowSyncTimerRef.current = setTimeout(() => {
         workspaceShowSyncTimerRef.current = null;
-        syncTerminalViewportOnWorkspaceShow('workspace-show-settled', { clearAtlas: false });
+        syncTerminalViewportOnWorkspaceShow('workspace-show-settled');
       }, 180);
       workspaceShowRecoverTimerRef.current = setTimeout(() => {
         workspaceShowRecoverTimerRef.current = null;
-        syncTerminalViewportOnWorkspaceShow('workspace-show-recover', { clearAtlas: false });
+        syncTerminalViewportOnWorkspaceShow('workspace-show-recover');
       }, 340);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          syncTerminalViewportOnWorkspaceShow('workspace-show-raf', { clearAtlas: false });
+          syncTerminalViewportOnWorkspaceShow('workspace-show-raf');
         });
       });
     } else if (!isVisibleInLayout) {
@@ -3097,6 +3156,7 @@ export default function TerminalTTY({
     isVisibleInLayout,
     operationalRendererMode,
     releaseCanvasAddon,
+    releaseWebglAddonForInactivePanel,
     shouldUseNativeRenderer,
     syncTerminalViewportOnWorkspaceShow,
   ]);
@@ -3682,11 +3742,13 @@ export default function TerminalTTY({
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
 
       layoutSettleBurstCleanupRef.current?.();
-      const extraDelaysMs = String(reason).includes('swarm-launch')
-        ? [180, 340, 500, 1000]
-        : String(reason).includes('panel-focus-toggle')
-          ? [120, 180, 340, 500]
-          : [180, 340];
+      const extraDelaysMs = String(reason).includes('workspace-removed')
+        ? []
+        : String(reason).includes('swarm-launch')
+          ? [180, 340, 500, 1000]
+          : String(reason).includes('panel-focus-toggle')
+            ? [120, 180, 340, 500]
+            : [180, 340];
       layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
         (phase) => {
           if (!isVisibleInLayoutRef.current) {

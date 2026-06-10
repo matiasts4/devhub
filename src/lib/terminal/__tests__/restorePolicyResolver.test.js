@@ -5,6 +5,7 @@ const {
   resolveOpenCodeSessionIdForPanel,
   normalizeOpenCodePanelCommand,
   normalizeWorkspacesOpenCodeCommands,
+  shouldPersistOpenCodeSessionForPanel,
 } = require('../restorePolicyResolver');
 const { RESTORE_POLICY } = require('../restorePreferences');
 
@@ -53,6 +54,24 @@ describe('restorePolicyResolver', () => {
     );
 
     expect(workspaces[0].columns[0].panels[0].initialCommand).toBe('opencode --session oc-1');
+  });
+
+  test('shouldPersistOpenCodeSessionForPanel blocks grok/hermes panels', () => {
+    expect(shouldPersistOpenCodeSessionForPanel({ id: 'p1', initialCommand: 'grok' }, null)).toBe(
+      false
+    );
+    expect(shouldPersistOpenCodeSessionForPanel({ id: 'p2', initialCommand: 'hermes' }, null)).toBe(
+      false
+    );
+    expect(
+      shouldPersistOpenCodeSessionForPanel(
+        { id: 'p3', initialCommand: 'opencode --session oc-1' },
+        null
+      )
+    ).toBe(true);
+    expect(shouldPersistOpenCodeSessionForPanel({ id: 'p4', initialCommand: null }, null)).toBe(
+      true
+    );
   });
 
   test('inferPanelSessionKind detects swarm runs', () => {

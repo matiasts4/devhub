@@ -146,6 +146,7 @@ import {
   inferPanelSessionKind,
   resolveEffectiveRestorePolicy,
   resolveOpenCodeSessionIdForPanel,
+  shouldPersistOpenCodeSessionForPanel,
 } from '@/lib/terminal/restorePolicyResolver';
 import {
   dispatchStartupRestoreQueue,
@@ -1359,6 +1360,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const startupRestoreCompletedRef = useRef(false);
   const terminalHydrationReadyRef = useRef(false);
   const relaunchInFlightRef = useRef(new Set());
+  const panelsClosingRef = useRef(new Set());
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
@@ -3156,9 +3158,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       if (nextPanelId) {
         setActivePanelIds((prev) =>
-          prev[nextWorkspaceId] === nextPanelId
-            ? prev
-            : { ...prev, [nextWorkspaceId]: nextPanelId }
+          prev[nextWorkspaceId] === nextPanelId ? prev : { ...prev, [nextWorkspaceId]: nextPanelId }
         );
         pulsePanelNavigation(nextPanelId);
       }
@@ -3509,9 +3509,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const workspaceToRemove = workspaces.find((workspace) => workspace.id === idToRemove);
     if (!workspaceToRemove || workspaces.length <= 1) return;
 
+    const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== idToRemove);
+    const nextActiveWsId =
+      activeWsId === idToRemove
+        ? remainingWorkspaces[remainingWorkspaces.length - 1]?.id
+        : activeWsId;
+    const targetWorkspace = remainingWorkspaces.find(
+      (workspace) => workspace.id === nextActiveWsId
+    );
+    const targetPanelIds = targetWorkspace ? getAllPanelIds(targetWorkspace.columns) : [];
+
     // TIC-1: Clean devhub_agent_runs BEFORE anything else
     // This prevents stale identity bleed into new workspaces created before React state removal
     const panelIdsToClean = getAllPanelIds(workspaceToRemove.columns);
+    const activeWsWillChange = activeWsId === idToRemove;
+    panelIdsToClean.forEach((panelId) => panelsClosingRef.current.add(panelId));
     try {
       const runs = JSON.parse(storage?.getItem('devhub_agent_runs') || '{}');
       const cleanedRuns = {};
@@ -3575,6 +3587,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       delete next[idToRemove];
       return next;
     });
+
+    panelIdsToClean.forEach((panelId) => {
+      window.setTimeout(() => panelsClosingRef.current.delete(panelId), 2000);
+    });
+
+    // When the active workspace changes, activeWsId effect already emits workspace-switch.
+    // Avoid duplicate layout bursts that flash/refit survivor terminals on close.
+    if (!activeWsWillChange && typeof window !== 'undefined') {
+      notifyNativeLayoutSettled('workspace-removed');
+    }
   };
 
   const handleApplyGrid = (numCols, numRows) => {
@@ -4437,12 +4459,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       return false;
     },
-    [
-      closeRightDock,
-      handleRightDockTabSelect,
-      isVisible,
-      tryClosePanelWithDoubleShortcut,
-    ]
+    [closeRightDock, handleRightDockTabSelect, isVisible, tryClosePanelWithDoubleShortcut]
   );
 
   useEffect(() => {
@@ -4960,6 +4977,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const handleOpenCodeSessionDetected = (e) => {
       const { panelId, sessionId } = e.detail || {};
       if (!panelId || !sessionId) return;
+      if (panelsClosingRef.current.has(panelId)) return;
+
+      const panelEntry = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+
+      if (!panelEntry) return;
+
+      const panelAgentRun = readAgentRunsByPanel(storage)[panelId] || null;
+      if (!shouldPersistOpenCodeSessionForPanel(panelEntry, panelAgentRun)) return;
 
       let runMetadata = null;
       try {
@@ -5032,6 +5060,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             if (p.id !== panelId) return p;
             const newCommand = `opencode --session ${sessionId}`;
             if (p.initialCommand === newCommand) return p;
+            if (!shouldPersistOpenCodeSessionForPanel(p, panelAgentRun)) return p;
             return { ...p, initialCommand: newCommand };
           }),
         })),
@@ -6314,7 +6343,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       ...rightDockLayerChromeStyle,
                       ...resolveRightDockTakeoverChromeStyle(isFullscreenBrowser),
                       zIndex: isFullscreenBrowser ? 200 : 50,
-                      willChange: isDraggingDock ? 'left, width, transform, opacity' : 'transform, opacity',
+                      willChange: isDraggingDock
+                        ? 'left, width, transform, opacity'
+                        : 'transform, opacity',
                     }}
                   >
                     <WorkspaceRightDock

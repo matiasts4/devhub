@@ -112,6 +112,9 @@ const {
   createTerminalViewportDiagnosticLogger,
   fitTerminalViewport,
   proposeTerminalViewportDimensions,
+  clampTerminalViewportDimensions,
+  isPlausibleTerminalCellSize,
+  shouldReleaseWebglRendererOnLayoutHide,
   getTerminalRendererRecoveryActionLabel,
   getTerminalRendererStatusCopy,
   getXtermContainerAnimProps,
@@ -469,6 +472,33 @@ describe('proposeTerminalViewportDimensions()', () => {
       })
     ).toEqual({ cols: 81, rows: 20 });
   });
+
+  test('falls back to fitAddon when cell metrics are implausibly small', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 1280, height: 720 }),
+    };
+    const fitAddon = {
+      proposeDimensions: jest.fn(() => ({ cols: 120, rows: 36 })),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon,
+        term: makeTerm({ width: 2, height: 1 }),
+      })
+    ).toEqual({ cols: 120, rows: 36 });
+    expect(fitAddon.proposeDimensions).toHaveBeenCalledTimes(1);
+  });
+
+  test('clamps runaway row counts from corrupted renderer metrics', () => {
+    expect(clampTerminalViewportDimensions({ cols: 900, rows: 800 })).toEqual({
+      cols: 400,
+      rows: 120,
+    });
+    expect(isPlausibleTerminalCellSize(20, 10)).toBe(true);
+    expect(isPlausibleTerminalCellSize(1, 10)).toBe(false);
+  });
 });
 
 describe('stabilizeTerminalRenderer()', () => {
@@ -608,6 +638,31 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
         reason: 'layout-settled-swarm-launch-delay-1000',
       })
     ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'layout-settled-workspace-removed-delay-340',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldReleaseWebglRendererOnLayoutHide()', () => {
+  test('releases webgl only on visible→hidden edges in webgl mode', () => {
+    expect(
+      shouldReleaseWebglRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-webgl',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldReleaseWebglRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-canvas',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(false);
   });
 });
 

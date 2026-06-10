@@ -372,6 +372,40 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     expect(runs['oc-reopen-oc-expired']).toBeUndefined();
   });
 
+  test('does not apply OpenCode session detect to unrelated grok panels', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'grok' }],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: 'p1' },
+      })
+    );
+
+    const view = await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:opencode-session-detected', {
+        detail: { panelId: 'p1', sessionId: 'ses_closed_ws' },
+      })
+    );
+    await flushEffects();
+
+    const grokTerminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    expect(grokTerminal?.getAttribute('data-command')).toBe('grok');
+  });
+
   test('restores persisted OpenCode session command after reboot-style reload', async () => {
     window.localStorage.setItem(
       'devhub_terminal_state',
