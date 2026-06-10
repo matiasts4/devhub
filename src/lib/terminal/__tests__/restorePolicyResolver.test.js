@@ -60,6 +60,9 @@ describe('restorePolicyResolver', () => {
     expect(shouldPersistOpenCodeSessionForPanel({ id: 'p1', initialCommand: 'grok' }, null)).toBe(
       false
     );
+    expect(shouldPersistOpenCodeSessionForPanel({ id: 'p1b', initialCommand: 'groc' }, null)).toBe(
+      false
+    );
     expect(shouldPersistOpenCodeSessionForPanel({ id: 'p2', initialCommand: 'hermes' }, null)).toBe(
       false
     );

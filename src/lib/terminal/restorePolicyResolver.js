@@ -138,7 +138,7 @@ export function shouldPersistOpenCodeSessionForPanel(panel = null, agentRun = nu
     .replace(/\s*#recovery-\d+\s*$/i, '')
     .trim();
 
-  if (/^grok\b/i.test(command) || /^hermes\b/i.test(command)) return false;
+  if (/^(grok|groc)\b/i.test(command) || /^hermes\b/i.test(command)) return false;
   if (
     inferPanelSessionKind({
       initialCommand: panel.initialCommand,

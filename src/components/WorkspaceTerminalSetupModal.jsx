@@ -44,10 +44,10 @@ const COMMAND_PRESETS = [
     Icon: Bot,
   },
   {
-    id: 'groc',
-    label: 'Groc',
-    command: 'groc',
-    description: 'Inicia Groc en cada terminal',
+    id: 'grok',
+    label: 'Grok',
+    command: 'grok',
+    description: 'Inicia Grok en cada terminal',
     Icon: Sparkles,
   },
 ];
@@ -232,7 +232,9 @@ export default function WorkspaceTerminalSetupModal({
         if (delta !== 0) {
           event.preventDefault();
           event.stopPropagation();
-          setTerminalCount((value) => clampTerminalCount(value + delta, MIN_TERMINALS, MAX_TERMINALS));
+          setTerminalCount((value) =>
+            clampTerminalCount(value + delta, MIN_TERMINALS, MAX_TERMINALS)
+          );
         }
         return;
       }
@@ -288,8 +290,7 @@ export default function WorkspaceTerminalSetupModal({
       const modalRoot = modalPanelRef.current;
       if (!modalRoot) return;
 
-      const eventTarget =
-        event.target && typeof event.target === 'object' ? event.target : null;
+      const eventTarget = event.target && typeof event.target === 'object' ? event.target : null;
       const activeElement = document.activeElement;
       const targetInsideModal = Boolean(eventTarget && modalRoot.contains(eventTarget));
       const focusInsideModal = Boolean(activeElement && modalRoot.contains(activeElement));
@@ -538,7 +539,7 @@ export default function WorkspaceTerminalSetupModal({
                 onChange={handleCommandInputChange}
                 onFocus={() => setActiveSection('customCommand')}
                 disabled={!commandApplies}
-                placeholder="ej. opencode, groc, npm run dev"
+                placeholder="ej. opencode, grok, npm run dev"
                 data-testid="workspace-terminal-initial-command-input"
                 className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors focus:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-60"
                 style={{
@@ -557,7 +558,10 @@ export default function WorkspaceTerminalSetupModal({
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t px-6 py-4">
-          <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
+          <p
+            className="text-[10px] uppercase tracking-[0.16em]"
+            style={{ color: 'var(--text-muted)' }}
+          >
             ↑↓ secciones · ←→ ajustar · Enter crear
           </p>
           <div className="flex items-center gap-2">

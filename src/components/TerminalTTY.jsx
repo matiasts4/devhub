@@ -35,6 +35,7 @@ import {
   resolveOperationalRendererMode,
   resolveRendererSelection,
   TERMINAL_OPERATIONAL_CANVAS_MODE,
+  TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
   TERMINAL_WEBGL_FALLBACK_REASONS,
 } from '@/components/terminal/terminalRendererCapabilities';
 import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
@@ -133,11 +134,24 @@ export function normalizeTuiInitialCommand(initialCommand) {
 }
 
 export function isLikelyTuiInitialCommand(initialCommand) {
-  return /^(opencode|hermes|grok)\b/i.test(normalizeTuiInitialCommand(initialCommand));
+  return /^(opencode|hermes|grok|groc)\b/i.test(normalizeTuiInitialCommand(initialCommand));
 }
 
 export function isGrokTuiInitialCommand(initialCommand) {
-  return /^grok\b/i.test(normalizeTuiInitialCommand(initialCommand));
+  return /^(grok|groc)\b/i.test(normalizeTuiInitialCommand(initialCommand));
+}
+
+/** Block injecting initialCommand that appeared after the PTY was already live. */
+export function shouldBlockLateInitialCommandSend({
+  hasConnectedOnce = false,
+  isRecoveryRelaunch = false,
+  snapshotCommand = null,
+  currentCommand = null,
+} = {}) {
+  if (!hasConnectedOnce || isRecoveryRelaunch) return false;
+  const snapshot = normalizeTuiInitialCommand(snapshotCommand);
+  const current = normalizeTuiInitialCommand(currentCommand);
+  return snapshot !== current;
 }
 
 /** Grok TUI shortcut bar — input/transcript chrome is ready (no opencode-style footer). */
@@ -794,7 +808,10 @@ export function shouldClearGpuAtlasOnWorkspaceShow({
     if (reason.includes('workspace-removed')) return false;
     return reason.includes('delay-1000') || reason.includes('recover');
   }
-  return reason.includes('settled') || reason.includes('recover');
+  if (reason.startsWith('workspace-show-')) {
+    return reason === 'workspace-show-recover';
+  }
+  return reason.includes('recover');
 }
 
 /** Release WebGL while a panel is layout-hidden so PTY output cannot corrupt glyph atlases. */
@@ -1081,6 +1098,7 @@ export default function TerminalTTY({
     visibleTerminalPanelCount,
   });
   const hasSentInitialCommand = useRef(false);
+  const initialCommandConnectSnapshotRef = useRef(null);
   const viewportFitConfirmedRef = useRef(false);
   const opencodeReadyNotifiedRef = useRef(false);
   const lastViewportReadyPostedRef = useRef({ cols: 0, rows: 0 });
@@ -1687,9 +1705,14 @@ export default function TerminalTTY({
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
     const isRecoveryRelaunch = /#recovery-\d+\s*$/i.test(initialCommand);
-    // Late initialCommand updates must not inject into an already-live session
-    // (e.g. survivor grok panel after another workspace with OpenCode closes).
-    if (hasConnectedOnceRef.current && !isRecoveryRelaunch) {
+    if (
+      shouldBlockLateInitialCommandSend({
+        hasConnectedOnce: hasConnectedOnceRef.current,
+        isRecoveryRelaunch,
+        snapshotCommand: initialCommandConnectSnapshotRef.current,
+        currentCommand: initialCommand,
+      })
+    ) {
       hasSentInitialCommand.current = true;
       return;
     }
@@ -1884,62 +1907,67 @@ export default function TerminalTTY({
     }
   }, [buildViewportSnapshot, id]);
 
-  const tryReattachWebglAddon = useCallback(async () => {
-    const term = termRef.current;
-    if (!term || webglAddonRef.current) return false;
-    if (!shouldAttachWebglRenderer({ operationalRendererMode: effectiveRendererModeRef.current })) {
-      return false;
-    }
-    if (!isVisibleInLayoutRef.current) {
-      pendingWebglRecoveryRef.current = true;
-      return false;
-    }
-    if (!isTerminalRendererReady(term)) return false;
-
-    try {
-      const { WebglAddon: WebglAddonCtor } = await import('xterm-addon-webgl');
-      if (!termRef.current || webglAddonRef.current) return false;
-
-      const webglAddon = new WebglAddonCtor();
-      webglAddonRef.current = webglAddon;
-
-      if (typeof webglAddon.onContextLoss === 'function') {
-        webglAddon.onContextLoss(() => handleWebglContextLossRef.current?.());
+  const tryReattachWebglAddon = useCallback(
+    async ({ clearAtlas = true } = {}) => {
+      const term = termRef.current;
+      if (!term || webglAddonRef.current) return false;
+      if (
+        !shouldAttachWebglRenderer({ operationalRendererMode: effectiveRendererModeRef.current })
+      ) {
+        return false;
       }
+      if (!isVisibleInLayoutRef.current) {
+        pendingWebglRecoveryRef.current = true;
+        return false;
+      }
+      if (!isTerminalRendererReady(term)) return false;
 
-      termRef.current.loadAddon(webglAddon);
-      setWebglFallback(null);
-      pendingWebglRecoveryRef.current = false;
+      try {
+        const { WebglAddon: WebglAddonCtor } = await import('xterm-addon-webgl');
+        if (!termRef.current || webglAddonRef.current) return false;
 
-      fitTerminalViewport({
-        container: containerRef.current,
-        fitAddon: fitRef.current,
-        term: termRef.current,
-        socket: wsRef.current,
-        clearAtlas: true,
-        lastPtySizeRef: lastPtySizeRef.current,
-      });
-      stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
-      cliLog(`CLIENT:${id}`, 'WebGL addon reattached after context loss');
-      return true;
-    } catch (error) {
-      console.warn(
-        `[TTY:${id}] WebGL reattach failed, staying on DOM renderer`,
-        error?.message || error
-      );
-      pendingWebglRecoveryRef.current = true;
-      return false;
-    }
-  }, [id]);
+        const webglAddon = new WebglAddonCtor();
+        webglAddonRef.current = webglAddon;
+
+        if (typeof webglAddon.onContextLoss === 'function') {
+          webglAddon.onContextLoss(() => handleWebglContextLossRef.current?.());
+        }
+
+        termRef.current.loadAddon(webglAddon);
+        setWebglFallback(null);
+        pendingWebglRecoveryRef.current = false;
+
+        fitTerminalViewport({
+          container: containerRef.current,
+          fitAddon: fitRef.current,
+          term: termRef.current,
+          socket: wsRef.current,
+          clearAtlas,
+          lastPtySizeRef: lastPtySizeRef.current,
+        });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas });
+        cliLog(`CLIENT:${id}`, 'WebGL addon reattached after context loss');
+        return true;
+      } catch (error) {
+        console.warn(
+          `[TTY:${id}] WebGL reattach failed, staying on DOM renderer`,
+          error?.message || error
+        );
+        pendingWebglRecoveryRef.current = true;
+        return false;
+      }
+    },
+    [id]
+  );
 
   const scheduleWebglRecovery = useCallback(
-    (delayMs = 400) => {
+    (delayMs = 400, { clearAtlas = true } = {}) => {
       if (webglRecoveryTimerRef.current) {
         clearTimeout(webglRecoveryTimerRef.current);
       }
       webglRecoveryTimerRef.current = setTimeout(() => {
         webglRecoveryTimerRef.current = null;
-        void tryReattachWebglAddon();
+        void tryReattachWebglAddon({ clearAtlas });
       }, delayMs);
     },
     [tryReattachWebglAddon]
@@ -1985,6 +2013,19 @@ export default function TerminalTTY({
         return;
       }
 
+      const colsBefore = Number(termRef.current.cols ?? 0);
+      const rowsBefore = Number(termRef.current.rows ?? 0);
+      const sizeUnchanged =
+        lastPtySizeRef.current.cols === colsBefore &&
+        lastPtySizeRef.current.rows === rowsBefore &&
+        colsBefore > 0 &&
+        rowsBefore > 0;
+      const isDeferredShowPass = /workspace-show-(settled|recover|raf)/.test(reason);
+      if (isDeferredShowPass && sizeUnchanged && !pendingWebglRecoveryRef.current) {
+        logViewportDiagnostic(`${reason}-skipped-unchanged`);
+        return;
+      }
+
       needsViewportSyncOnShowRef.current = false;
       logViewportDiagnostic(reason);
 
@@ -2021,7 +2062,7 @@ export default function TerminalTTY({
         }) &&
         (pendingWebglRecoveryRef.current || !webglAddonRef.current)
       ) {
-        scheduleWebglRecovery(120);
+        scheduleWebglRecovery(80, { clearAtlas: false });
       }
 
       if (
@@ -2526,7 +2567,7 @@ export default function TerminalTTY({
         if (prevCount > visibleTerminalPanelCount) {
           cliLog(`RENDER:${id}`, 'webgl-reattach-after-split-collapse');
         }
-        void tryReattachWebglAddonRef.current?.();
+        void tryReattachWebglAddonRef.current?.({ clearAtlas: false });
       }
       return;
     }
@@ -2874,6 +2915,9 @@ export default function TerminalTTY({
         console.log(`[TTY:${id}] WebSocket connected`);
         cliLog(`CLIENT:${id}`, 'WS onopen — connected');
         hasConnectedOnceRef.current = true;
+        if (initialCommandConnectSnapshotRef.current === null) {
+          initialCommandConnectSnapshotRef.current = initialCommand;
+        }
         setHasConnectedOnce(true);
         setConnectionState('connected');
         if (!initialCommand) {
@@ -3120,19 +3164,9 @@ export default function TerminalTTY({
     }
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
-      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', { clearAtlas: true });
-      workspaceShowSyncTimerRef.current = setTimeout(() => {
-        workspaceShowSyncTimerRef.current = null;
-        syncTerminalViewportOnWorkspaceShow('workspace-show-settled');
-      }, 180);
-      workspaceShowRecoverTimerRef.current = setTimeout(() => {
-        workspaceShowRecoverTimerRef.current = null;
-        syncTerminalViewportOnWorkspaceShow('workspace-show-recover');
-      }, 340);
+      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', { clearAtlas: false });
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          syncTerminalViewportOnWorkspaceShow('workspace-show-raf');
-        });
+        syncTerminalViewportOnWorkspaceShow('workspace-show-raf', { clearAtlas: false });
       });
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
@@ -3744,11 +3778,14 @@ export default function TerminalTTY({
       layoutSettleBurstCleanupRef.current?.();
       const extraDelaysMs = String(reason).includes('workspace-removed')
         ? []
-        : String(reason).includes('swarm-launch')
-          ? [180, 340, 500, 1000]
-          : String(reason).includes('panel-focus-toggle')
-            ? [120, 180, 340, 500]
-            : [180, 340];
+        : String(reason).includes('workspace-switch') &&
+            visibleTerminalPanelCountRef.current <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT
+          ? []
+          : String(reason).includes('swarm-launch')
+            ? [180, 340, 500, 1000]
+            : String(reason).includes('panel-focus-toggle')
+              ? [120, 180, 340, 500]
+              : [180, 340];
       layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
         (phase) => {
           if (!isVisibleInLayoutRef.current) {

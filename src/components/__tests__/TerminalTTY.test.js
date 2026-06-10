@@ -136,6 +136,7 @@ const {
   scheduleTerminalViewportSyncBurst,
   shouldSyncTerminalViewportOnLayoutShow,
   shouldClearGpuAtlasOnWorkspaceShow,
+  shouldBlockLateInitialCommandSend,
   shouldReleaseCanvasRendererOnLayoutHide,
   shouldShowTerminalLoadingOverlay,
   shouldShowTerminalViewport,
@@ -619,7 +620,19 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
     ).toBe(true);
   });
 
-  test('keeps webgl atlas clears on settled/recover bursts but not layout-settled immediates', () => {
+  test('keeps webgl atlas clears on recover only, not layout or settled show passes', () => {
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'workspace-show-layout',
+      })
+    ).toBe(false);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'workspace-show-settled',
+      })
+    ).toBe(false);
     expect(
       shouldClearGpuAtlasOnWorkspaceShow({
         operationalRendererMode: 'xterm-webgl',
@@ -1689,9 +1702,36 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(isLikelyTuiInitialCommand('zsh')).toBe(false);
     });
 
+    test('shouldBlockLateInitialCommandSend blocks only post-connect command changes', () => {
+      expect(
+        shouldBlockLateInitialCommandSend({
+          hasConnectedOnce: true,
+          snapshotCommand: 'grok',
+          currentCommand: 'opencode --session ses_x',
+        })
+      ).toBe(true);
+      expect(
+        shouldBlockLateInitialCommandSend({
+          hasConnectedOnce: true,
+          snapshotCommand: 'opencode',
+          currentCommand: 'opencode',
+        })
+      ).toBe(false);
+      expect(
+        shouldBlockLateInitialCommandSend({
+          hasConnectedOnce: true,
+          isRecoveryRelaunch: true,
+          snapshotCommand: 'grok',
+          currentCommand: 'opencode --session ses_x #recovery-1',
+        })
+      ).toBe(false);
+    });
+
     test('grok helpers detect grok sessions and prefer page wheel scroll', () => {
       expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
+      expect(isGrokTuiInitialCommand('groc')).toBe(true);
       expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('page');
       expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
