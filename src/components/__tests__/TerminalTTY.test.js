@@ -155,6 +155,7 @@ const {
   resolveTerminalCellFromPointer,
   shouldRouteWheelToTranscript,
   resolveTerminalWheelScrollPrefer,
+  shouldPassthroughNativeTuiWheel,
   resolveTerminalWheelInputZoneRows,
   resolveTerminalPointerElement,
   isLikelyTuiInitialCommand,
@@ -1728,13 +1729,31 @@ describe('TerminalTTY renderer fallback UI', () => {
       ).toBe(false);
     });
 
-    test('grok helpers detect grok sessions and prefer SGR wheel scroll at pointer', () => {
+    test('grok helpers detect grok sessions and native wheel passthrough when ready', () => {
       expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
       expect(isGrokTuiInitialCommand('groc')).toBe(true);
-      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('sgr');
-      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
-      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('page');
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession: true,
+          grokTuiReady: true,
+        })
+      ).toBe(true);
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession: true,
+          grokTuiReady: false,
+        })
+      ).toBe(false);
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession: false,
+          opencodeFooterConfirmed: true,
+        })
+      ).toBe(true);
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(1);
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
       expect(isTerminalTranscriptCell(22, 24, 1)).toBe(true);
@@ -1751,11 +1770,17 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(buildTerminalWheelSgrSequence('down', 10, 4)).not.toContain('?1000');
     });
 
-    test('resolveTerminalPointerElement prefers xterm element for hit-testing', () => {
-      const term = { element: { tagName: 'DIV' } };
+    test('resolveTerminalPointerElement prefers xterm-screen for hit-testing', () => {
+      const screen = { tagName: 'DIV', className: 'xterm-screen' };
+      const term = {
+        element: {
+          tagName: 'DIV',
+          querySelector: (selector) => (selector === '.xterm-screen' ? screen : null),
+        },
+      };
       const container = { tagName: 'SECTION' };
       const shell = { tagName: 'MAIN' };
-      expect(resolveTerminalPointerElement(term, container, shell)).toBe(term.element);
+      expect(resolveTerminalPointerElement(term, container, shell)).toBe(screen);
       expect(resolveTerminalPointerElement(null, container, shell)).toBe(container);
     });
 

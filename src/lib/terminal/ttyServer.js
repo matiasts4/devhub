@@ -498,6 +498,14 @@ function detectSessionModeFromInput(session, input) {
     return;
   }
 
+  // Grok Build TUI (groc is a legacy launcher alias)
+  if (/\b(?:grok|groc)\b/i.test(input)) {
+    session.mode = 'tui';
+    session.historyEnabled = false;
+    session.history = '';
+    return;
+  }
+
   session.pendingInput = `${session.pendingInput || ''}${input}`;
 
   // Parse line-based shell commands to detect transitions into TUI mode.
@@ -531,6 +539,13 @@ function detectSessionModeFromInput(session, input) {
         const hermesId = ensureHermesSessionId(session);
         broadcastHermesSessionDetected(session, hermesId);
       }
+      return;
+    }
+
+    if (/^\s*(?:grok|groc)\b/i.test(trimmed)) {
+      session.mode = 'tui';
+      session.historyEnabled = false;
+      session.history = '';
       return;
     }
   }

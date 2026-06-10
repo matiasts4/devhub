@@ -164,19 +164,28 @@ export function detectGrokTuiReady(text) {
   );
 }
 
+/** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
+export function shouldPassthroughNativeTuiWheel({
+  isGrokSession = false,
+  grokTuiReady = false,
+  opencodeFooterConfirmed = false,
+} = {}) {
+  if (isGrokSession) return grokTuiReady;
+  return opencodeFooterConfirmed;
+}
+
 /**
- * Ink TUIs (grok + OpenCode) scroll the transcript via SGR wheel at pointer coords.
- * Arrow/Page keys route to the focused input — never the conversation pane.
+ * Pre-ready fallback when native passthrough is not yet safe.
+ * Grok uses Page Up/Down (arrows/SGR injection hit the Ink input); OpenCode uses SGR coords.
  */
 export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession = false) {
-  if (
-    isGrokSession ||
-    isGrokTuiInitialCommand(initialCommand) ||
-    isLikelyTuiInitialCommand(initialCommand)
-  ) {
+  if (isGrokSession || isGrokTuiInitialCommand(initialCommand)) {
+    return 'page';
+  }
+  if (isLikelyTuiInitialCommand(initialCommand)) {
     return 'sgr';
   }
-  return 'sgr';
+  return 'page';
 }
 
 /** Grok keeps a single prompt row; OpenCode footer/input needs a slightly taller guard. */
@@ -219,7 +228,8 @@ export function buildTerminalWheelSgrSequence(direction, col, row) {
 }
 
 export function resolveTerminalPointerElement(term, container, shell) {
-  return term?.element || container || shell || null;
+  const screen = term?.element?.querySelector?.('.xterm-screen');
+  return screen || term?.element || container || shell || null;
 }
 
 export function refreshTerminalViewport(term) {
@@ -1048,6 +1058,7 @@ export default function TerminalTTY({
   const lastPointerZoneRef = useRef('transcript');
   const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));
   const tuiSessionFooterConfirmedRef = useRef(false);
+  const grokTuiReadyRef = useRef(false);
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
@@ -2986,6 +2997,7 @@ export default function TerminalTTY({
               tuiSessionActiveRef.current = true;
               if (grokReady) {
                 isGrokSessionRef.current = true;
+                grokTuiReadyRef.current = true;
               }
               if (footerReady) {
                 tuiSessionFooterConfirmedRef.current = true;
@@ -3968,6 +3980,18 @@ export default function TerminalTTY({
       }
 
       const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
+
+      // OpenCode/grok: let xterm forward wheel as native SGR once TUI chrome is live.
+      if (
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession,
+          grokTuiReady: grokTuiReadyRef.current,
+          opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
+        })
+      ) {
+        return;
+      }
+
       const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
       const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession });
 
@@ -4004,7 +4028,11 @@ export default function TerminalTTY({
 
       let payload = null;
       if (isTuiSession) {
-        payload = buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow);
+        const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession);
+        payload =
+          scrollPrefer === 'sgr'
+            ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
+            : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
       } else {
         payload = buildTerminalWheelPageSequence(direction, steps);
       }
