@@ -150,9 +150,9 @@ export function detectGrokTuiReady(text) {
   );
 }
 
-/** Grok scrolls the transcript with arrow keys; OpenCode uses native SGR wheel passthrough. */
+/** Grok scrolls with Page Up/Down; OpenCode uses SGR wheel reports in the transcript zone. */
 export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession = false) {
-  return isGrokSession || isGrokTuiInitialCommand(initialCommand) ? 'arrow' : 'page';
+  return isGrokSession || isGrokTuiInitialCommand(initialCommand) ? 'page' : 'sgr';
 }
 
 export const TERMINAL_WHEEL_ARROW_UP_SEQ = '\x1b[A';
@@ -179,12 +179,14 @@ export function buildTerminalWheelScrollPayload(direction, steps = 1, { prefer =
   return buildTerminalWheelArrowSequence(direction, normalizedSteps);
 }
 
-/** SGR extended mouse wheel (buttons 64/65) — OpenCode TUIs scroll via this path. */
+/** SGR extended mouse wheel (buttons 64/65) — OpenCode/Ink TUIs scroll via this path. */
 export function buildTerminalWheelSgrSequence(direction, col, row) {
   const x = Math.max(1, Math.floor(col) + 1);
   const y = Math.max(1, Math.floor(row) + 1);
   const button = direction === 'up' ? 64 : 65;
-  return `\x1b[?1006h\x1b[?1000h\x1b[<${button};${x};${y}M\x1b[?1000l\x1b[?1006l`;
+  // Do not toggle mouse modes here — the TUI already owns ?1000/?1006 and toggling them off
+  // after each wheel burst breaks subsequent scroll/click handling.
+  return `\x1b[<${button};${x};${y}M`;
 }
 
 export function resolveTerminalPointerElement(term, container, shell) {
@@ -979,7 +981,6 @@ export default function TerminalTTY({
   const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));
   const tuiSessionFooterConfirmedRef = useRef(false);
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
-  const lastWheelTimeRef = useRef(0);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
@@ -3308,7 +3309,9 @@ export default function TerminalTTY({
         }
         const blurTarget = terminal.element || containerRef.current;
         const handleTerminalBlur = () =>
-          disableTerminalFocusReporting(terminal, { disableMouse: true });
+          disableTerminalFocusReporting(terminal, {
+            disableMouse: !tuiSessionActiveRef.current,
+          });
         blurTarget?.addEventListener('focusout', handleTerminalBlur);
         terminalBlurCleanupRef.current = () => {
           blurTarget?.removeEventListener('focusout', handleTerminalBlur);
@@ -3820,7 +3823,7 @@ export default function TerminalTTY({
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
-  // Wheel: Grok transcript scroll uses arrow keys; OpenCode uses native SGR after footer detection.
+  // Wheel: TUI transcript scroll (SGR for OpenCode, Page keys for grok); Shift+wheel = xterm scrollback.
   useEffect(() => {
     if (shouldUseNativeRenderer) return undefined;
 
@@ -3830,21 +3833,6 @@ export default function TerminalTTY({
     const handleWheel = (event) => {
       const term = termRef.current;
       if (!term) return;
-
-      const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-
-      // OpenCode: once footer is confirmed, let xterm forward wheel as SGR mouse natively.
-      if (tuiSessionFooterConfirmedRef.current && !isGrokSession) {
-        return;
-      }
-
-      const now = Date.now();
-      if (now - lastWheelTimeRef.current < 80) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      lastWheelTimeRef.current = now;
 
       if (shouldUseTerminalScrollbackWheel(event)) {
         const direction = resolveTerminalWheelScrollDirection(event.deltaY);
@@ -3856,6 +3844,9 @@ export default function TerminalTTY({
         return;
       }
 
+      const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
+      const isTuiSession = tuiSessionActiveRef.current;
+
       const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
       const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
       if (cell) {
@@ -3863,6 +3854,13 @@ export default function TerminalTTY({
           ? 'transcript'
           : 'input';
       }
+
+      const inTranscript = shouldRouteWheelToTranscript({
+        cell,
+        rows: term.rows,
+        lastPointerZone: lastPointerZoneRef.current,
+      });
+      if (!inTranscript) return;
 
       const direction = resolveTerminalWheelScrollDirection(event.deltaY);
       if (!direction) return;
@@ -3873,25 +3871,16 @@ export default function TerminalTTY({
       const wheelCol = cell?.col ?? Math.max(0, Math.floor((term.cols || 80) / 2));
       const wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
 
-      let payload;
-      if (isGrokSession) {
-        payload = buildTerminalWheelArrowSequence(direction, steps);
-      } else if (tuiSessionActiveRef.current) {
+      let payload = null;
+      if (isTuiSession) {
         const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession);
-        payload =
-          buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow) +
-          buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
-      } else if (
-        shouldRouteWheelToTranscript({
-          shiftKey: event.shiftKey,
-          cell,
-          rows: term.rows,
-          lastPointerZone: lastPointerZoneRef.current,
-        })
-      ) {
-        payload = buildTerminalWheelPageSequence(direction, steps);
+        if (scrollPrefer === 'sgr') {
+          payload = buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow);
+        } else {
+          payload = buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
+        }
       } else {
-        return;
+        payload = buildTerminalWheelPageSequence(direction, steps);
       }
 
       const sent = sendTerminalPasteInput({

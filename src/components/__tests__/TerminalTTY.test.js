@@ -1634,11 +1634,11 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(isLikelyTuiInitialCommand('zsh')).toBe(false);
     });
 
-    test('grok helpers detect grok sessions and prefer arrow wheel scroll', () => {
+    test('grok helpers detect grok sessions and prefer page wheel scroll', () => {
       expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
-      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('arrow');
-      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('page');
-      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('arrow');
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('page');
       expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
     });
 
@@ -1647,7 +1647,8 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(buildTerminalWheelScrollPayload('down', 2, { prefer: 'page' })).toBe(
         TERMINAL_PAGE_DOWN_SEQ + TERMINAL_PAGE_DOWN_SEQ
       );
-      expect(buildTerminalWheelSgrSequence('down', 10, 4)).toContain('<65;11;5M');
+      expect(buildTerminalWheelSgrSequence('down', 10, 4)).toBe('\x1b[<65;11;5M');
+      expect(buildTerminalWheelSgrSequence('down', 10, 4)).not.toContain('?1000');
     });
 
     test('resolveTerminalPointerElement prefers xterm element for hit-testing', () => {
