@@ -173,13 +173,19 @@ describe('filterTerminalInputForSession', () => {
     expect(filterTerminalInputForSession(null, '\u001b[O\r')).toBe('\r');
   });
 
-  it('drops pure SGR mouse wheel reports and returns null', () => {
+  it('drops pure SGR mouse click reports and returns null', () => {
     expect(filterTerminalInputForSession(null, '\u001b[<0;3;3M')).toBeNull();
-    expect(filterTerminalInputForSession(null, '\u001b[<65;12;4m')).toBeNull();
+    expect(filterTerminalInputForSession(null, '\u001b[<2;12;4m')).toBeNull();
   });
 
-  it('strips SGR mouse reports from mixed input and forwards the rest', () => {
+  it('forwards SGR mouse wheel reports (64/65) for TUI transcript scroll', () => {
+    expect(filterTerminalInputForSession(null, '\u001b[<65;12;4m')).toBe('\u001b[<65;12;4m');
+    expect(filterTerminalInputForSession(null, '\u001b[<64;8;3M')).toBe('\u001b[<64;8;3M');
+  });
+
+  it('strips SGR mouse click leaks from mixed input and forwards the rest', () => {
     expect(filterTerminalInputForSession(null, '\u001b[<0;3;3Ml')).toBe('l');
+    expect(filterTerminalInputForSession(null, 'x\u001b[<65;12;4my')).toBe('x\u001b[<65;12;4my');
   });
 });
 

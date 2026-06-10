@@ -45,6 +45,9 @@ export const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
 /** SGR mouse wheel/click reports (e.g. ESC[<0;3;3M) leaked on scroll/focus churn. */
 export const TERMINAL_MOUSE_REPORT_RE = /\x1b\[<[\d;]*[mM]/g;
 
+/** Click/drag only (buttons 0–3) — wheel buttons 64/65 must reach TUIs (OpenCode/grok). */
+export const TERMINAL_MOUSE_CLICK_LEAK_RE = /\x1b\[<(0|[1-3]);[\d;]*[mM]/g;
+
 export function stripTerminalFocusReporting(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(TERMINAL_FOCUS_REPORTING_RE, '');
@@ -53,6 +56,12 @@ export function stripTerminalFocusReporting(chunk) {
 export function stripTerminalMouseReporting(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(TERMINAL_MOUSE_REPORT_RE, '');
+}
+
+/** Input path: strip click leaks only; preserve SGR wheel (64/65) for TUI transcript scroll. */
+export function stripTerminalMouseClickLeak(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(TERMINAL_MOUSE_CLICK_LEAK_RE, '');
 }
 
 export function stripShellTerminalResponseNoise(chunk) {
@@ -65,8 +74,27 @@ export function stripShellTerminalResponseNoise(chunk) {
 
 export function stripTerminalInputNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  return stripTerminalMouseReporting(
-    stripTerminalFocusReporting(stripShellTerminalResponseNoise(chunk))
+  return stripTerminalMouseClickLeak(
+    stripTerminalFocusReporting(
+      chunk.replace(TERMINAL_WINDOW_REPORT_RE, '').replace(SHELL_TERMINAL_RESPONSE_RE, '')
+    )
+  );
+}
+
+/** Input noise check — wheel SGR (64/65) is intentional TUI scroll, not leak noise. */
+export function containsTerminalInputNoise(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return false;
+  const withoutWheel = chunk.replace(/\x1b\[<(64|65);[\d;]*[mM]/g, '');
+  if (!withoutWheel) return false;
+  SHELL_TERMINAL_RESPONSE_RE.lastIndex = 0;
+  TERMINAL_FOCUS_REPORTING_RE.lastIndex = 0;
+  TERMINAL_WINDOW_REPORT_RE.lastIndex = 0;
+  TERMINAL_MOUSE_CLICK_LEAK_RE.lastIndex = 0;
+  return (
+    SHELL_TERMINAL_RESPONSE_RE.test(withoutWheel) ||
+    TERMINAL_FOCUS_REPORTING_RE.test(withoutWheel) ||
+    TERMINAL_WINDOW_REPORT_RE.test(withoutWheel) ||
+    TERMINAL_MOUSE_CLICK_LEAK_RE.test(withoutWheel)
   );
 }
 
@@ -102,7 +130,7 @@ export function containsTerminalResponseNoise(chunk) {
 
 export function filterTerminalInputForSession(_session, chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  if (!containsTerminalResponseNoise(chunk)) return chunk;
+  if (!containsTerminalInputNoise(chunk)) return chunk;
   const stripped = stripTerminalInputNoise(chunk);
   return stripped.length === 0 ? null : stripped;
 }

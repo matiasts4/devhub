@@ -150,6 +150,17 @@ const {
   isTerminalTranscriptCell,
   resolveTerminalCellFromPointer,
   shouldRouteWheelToTranscript,
+  resolveTerminalWheelScrollPrefer,
+  resolveTerminalPointerElement,
+  isLikelyTuiInitialCommand,
+  isGrokTuiInitialCommand,
+  detectGrokTuiReady,
+  buildTerminalWheelArrowSequence,
+  buildTerminalWheelScrollPayload,
+  buildTerminalWheelSgrSequence,
+  disableTerminalFocusReporting,
+  TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
+  TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
   TERMINAL_PAGE_UP_SEQ,
   TERMINAL_PAGE_DOWN_SEQ,
   stabilizeTerminalRenderer,
@@ -1585,8 +1596,8 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
 
     test('transcript vs input zones gate wheel routing', () => {
-      expect(isTerminalTranscriptCell(10, 20, 4)).toBe(true);
-      expect(isTerminalTranscriptCell(17, 20, 4)).toBe(false);
+      expect(isTerminalTranscriptCell(10, 20, 2)).toBe(true);
+      expect(isTerminalTranscriptCell(18, 20, 2)).toBe(false);
       expect(
         shouldRouteWheelToTranscript({
           cell: { col: 4, row: 10 },
@@ -1615,6 +1626,46 @@ describe('TerminalTTY renderer fallback UI', () => {
         getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 480 }),
       };
       expect(resolveTerminalCellFromPointer(term, element, 400, 240)).toEqual({ col: 40, row: 12 });
+    });
+
+    test('isLikelyTuiInitialCommand detects opencode/hermes/grok launches', () => {
+      expect(isLikelyTuiInitialCommand('opencode --session ses_abc')).toBe(true);
+      expect(isLikelyTuiInitialCommand('grok')).toBe(true);
+      expect(isLikelyTuiInitialCommand('zsh')).toBe(false);
+    });
+
+    test('grok helpers detect grok sessions and prefer arrow wheel scroll', () => {
+      expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('arrow');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('arrow');
+      expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
+    });
+
+    test('buildTerminalWheelArrowSequence and SGR wheel payload', () => {
+      expect(buildTerminalWheelArrowSequence('up', 2)).toBe('\x1b[A\x1b[A');
+      expect(buildTerminalWheelScrollPayload('down', 2, { prefer: 'page' })).toBe(
+        TERMINAL_PAGE_DOWN_SEQ + TERMINAL_PAGE_DOWN_SEQ
+      );
+      expect(buildTerminalWheelSgrSequence('down', 10, 4)).toContain('<65;11;5M');
+    });
+
+    test('resolveTerminalPointerElement prefers xterm element for hit-testing', () => {
+      const term = { element: { tagName: 'DIV' } };
+      const container = { tagName: 'SECTION' };
+      const shell = { tagName: 'MAIN' };
+      expect(resolveTerminalPointerElement(term, container, shell)).toBe(term.element);
+      expect(resolveTerminalPointerElement(null, container, shell)).toBe(container);
+    });
+
+    test('disableTerminalFocusReporting keeps mouse on for active TUIs', () => {
+      const term = { write: jest.fn() };
+      disableTerminalFocusReporting(term, { disableMouse: false });
+      expect(term.write).toHaveBeenCalledWith(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+      disableTerminalFocusReporting(term, { disableMouse: true });
+      expect(term.write).toHaveBeenLastCalledWith(
+        TERMINAL_DISABLE_FOCUS_REPORTING_SEQ + TERMINAL_DISABLE_MOUSE_REPORTING_SEQ
+      );
     });
   });
 
