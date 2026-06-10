@@ -164,9 +164,10 @@ export function detectGrokTuiReady(text) {
   );
 }
 
-/** Grok scrolls with Page Up/Down; OpenCode uses SGR wheel reports in the transcript zone. */
+/** Grok scrolls via arrow keys; OpenCode uses SGR wheel reports in the transcript zone. */
 export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession = false) {
-  return isGrokSession || isGrokTuiInitialCommand(initialCommand) ? 'page' : 'sgr';
+  if (isGrokSession || isGrokTuiInitialCommand(initialCommand)) return 'arrow';
+  return 'sgr';
 }
 
 export const TERMINAL_WHEEL_ARROW_UP_SEQ = '\x1b[A';
@@ -3922,7 +3923,7 @@ export default function TerminalTTY({
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
-  // Wheel: TUI transcript scroll (SGR for OpenCode, Page keys for grok); Shift+wheel = xterm scrollback.
+  // Wheel: TUI transcript scroll (SGR for OpenCode, arrows for grok); Shift+wheel = xterm scrollback.
   useEffect(() => {
     if (shouldUseNativeRenderer) return undefined;
 
@@ -3944,7 +3945,7 @@ export default function TerminalTTY({
       }
 
       const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-      const isTuiSession = tuiSessionActiveRef.current;
+      const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
 
       const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
       const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);

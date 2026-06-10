@@ -1727,13 +1727,13 @@ describe('TerminalTTY renderer fallback UI', () => {
       ).toBe(false);
     });
 
-    test('grok helpers detect grok sessions and prefer page wheel scroll', () => {
+    test('grok helpers detect grok sessions and prefer arrow wheel scroll', () => {
       expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
       expect(isGrokTuiInitialCommand('groc')).toBe(true);
-      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
-      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('arrow');
+      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('arrow');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
-      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('arrow');
       expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
     });
 
