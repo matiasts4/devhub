@@ -155,6 +155,7 @@ const {
   resolveTerminalCellFromPointer,
   shouldRouteWheelToTranscript,
   resolveTerminalWheelScrollPrefer,
+  resolveTerminalWheelInputZoneRows,
   resolveTerminalPointerElement,
   isLikelyTuiInitialCommand,
   isGrokTuiInitialCommand,
@@ -1727,13 +1728,17 @@ describe('TerminalTTY renderer fallback UI', () => {
       ).toBe(false);
     });
 
-    test('grok helpers detect grok sessions and prefer arrow wheel scroll', () => {
+    test('grok helpers detect grok sessions and prefer SGR wheel scroll at pointer', () => {
       expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
       expect(isGrokTuiInitialCommand('groc')).toBe(true);
-      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('arrow');
-      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('arrow');
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('sgr');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
-      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('arrow');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('sgr');
+      expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(1);
+      expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
+      expect(isTerminalTranscriptCell(22, 24, 1)).toBe(true);
+      expect(isTerminalTranscriptCell(23, 24, 1)).toBe(false);
       expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
     });
 
