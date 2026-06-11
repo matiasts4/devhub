@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+const { TYPOGRAPHY_SCALE } = require('./src/lib/ui-tokens');
+
 module.exports = {
   darkMode: ['class'],
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
@@ -8,6 +10,12 @@ module.exports = {
         sans: ['var(--font-family-ui)', 'sans-serif'],
         mono: ['JetBrains Mono', 'source-code-pro', 'Menlo', 'monospace'],
       },
+      fontSize: Object.fromEntries(
+        Object.entries(TYPOGRAPHY_SCALE).map(([k, v]) => [
+          k,
+          [v.fontSize, { lineHeight: v.lineHeight, letterSpacing: v.letterSpacing }],
+        ])
+      ),
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',

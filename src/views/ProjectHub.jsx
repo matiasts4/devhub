@@ -475,7 +475,7 @@ export default function ProjectHub() {
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
                       {project.planning_status === 'pending' && (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[var(--project-type-university, #D2A8FF)]/10 border border-[var(--project-type-university, #D2A8FF)]/20 text-[var(--project-type-university, #D2A8FF)] flex items-center gap-1">
+                        <span className="text-caption-sm px-1.5 py-0.5 rounded-full bg-[var(--project-type-university, #D2A8FF)]/10 border border-[var(--project-type-university, #D2A8FF)]/20 text-[var(--project-type-university, #D2A8FF)] flex items-center gap-1">
                           <Brain className="w-2.5 h-2.5" />
                           Plan pendiente
                         </span>
