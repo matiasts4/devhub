@@ -1606,6 +1606,75 @@ code {
   animation: zed-aura-breathe 3s ease-in-out infinite;
 }
 
+/* zed-aura-*: Zed ambient aura tool-type block (ZAA-5) */
+.zed-aura-root {
+  --accent-terminal: #4ad3c0;
+  --accent-browser: #9b6bff;
+  --accent-file: #f0b54a;
+}
+
+@keyframes zed-aura-pulse-terminal {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+@keyframes zed-aura-pulse-browser {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+@keyframes zed-aura-pulse-file {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zed-aura-pulse-terminal {
+    animation: zed-aura-pulse-terminal 4s ease-in-out infinite;
+  }
+
+  .zed-aura-pulse-browser {
+    animation: zed-aura-pulse-browser 4s ease-in-out infinite;
+  }
+
+  .zed-aura-pulse-file {
+    animation: zed-aura-pulse-file 4s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zed-aura-pulse-terminal,
+  .zed-aura-pulse-browser,
+  .zed-aura-pulse-file,
+  .zed-aura-pulse {
+    animation: none;
+  }
+}
+
 @keyframes zed-status-in {
   from {
     opacity: 0;
