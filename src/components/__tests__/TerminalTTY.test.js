@@ -158,6 +158,7 @@ const {
   shouldPassthroughNativeTuiWheel,
   shouldInjectGrokWheelSgr,
   resolveGrokWheelSgrCoords,
+  buildGrokWheelScrollPayload,
   resolveTerminalWheelInputZoneRows,
   resolveTerminalPointerElement,
   resolveTerminalScreenElement,
@@ -1778,20 +1779,19 @@ describe('TerminalTTY renderer fallback UI', () => {
           opencodeFooterConfirmed: true,
         })
       ).toBe(true);
-      expect(resolveGrokWheelSgrCoords({ col: 10, row: 20 }, { cols: 80, rows: 24 }, 3)).toEqual({
+      expect(resolveGrokWheelSgrCoords({ col: 10, row: 20 }, { cols: 80, rows: 24 }, 5)).toEqual({
         col: 10,
-        row: 20,
+        row: 9,
       });
-      expect(resolveGrokWheelSgrCoords({ col: 10, row: 23 }, { cols: 80, rows: 24 }, 3)).toEqual({
-        col: 10,
-        row: 20,
-      });
+      expect(buildGrokWheelScrollPayload('down', 10, 9, 2)).toBe(
+        buildTerminalWheelSgrSequence('down', 10, 9) + buildTerminalWheelArrowSequence('down', 2)
+      );
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(
         TERMINAL_GROK_INPUT_ZONE_ROWS
       );
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
-      expect(isTerminalTranscriptCell(20, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(true);
-      expect(isTerminalTranscriptCell(21, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(false);
+      expect(isTerminalTranscriptCell(18, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(true);
+      expect(isTerminalTranscriptCell(19, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(false);
       expect(
         resolveTerminalScreenElement({ _core: { screenElement: { id: 'screen' } } }, null)
       ).toEqual({

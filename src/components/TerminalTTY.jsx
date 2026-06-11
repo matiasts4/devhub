@@ -202,21 +202,31 @@ export function shouldInjectGrokWheelSgr(isGrokSession = false, initialCommand =
   return isGrokSession || isGrokTuiInitialCommand(initialCommand);
 }
 
-/** Keep grok wheel coords inside the transcript pane (Ink input owns the last row). */
-export function resolveGrokWheelSgrCoords(cell, term, inputZoneRows = 1) {
+/** Keep grok wheel coords inside the transcript pane (Ink chrome owns the bottom rows). */
+export function resolveGrokWheelSgrCoords(
+  cell,
+  term,
+  inputZoneRows = TERMINAL_GROK_INPUT_ZONE_ROWS
+) {
   const cols = term?.cols || 80;
   const rows = term?.rows || 24;
   const reserved = Math.max(1, Math.min(rows - 1, Math.floor(inputZoneRows)));
   const maxTranscriptRow = Math.max(0, rows - reserved - 1);
   const defaultCol = Math.max(0, Math.floor(cols / 2));
-  const defaultRow = Math.max(0, Math.floor(maxTranscriptRow * 0.45));
-  if (!cell || !Number.isInteger(cell.col) || !Number.isInteger(cell.row)) {
-    return { col: defaultCol, row: defaultRow };
-  }
-  return {
-    col: Math.max(0, Math.min(cols - 1, cell.col)),
-    row: Math.max(0, Math.min(maxTranscriptRow, cell.row)),
-  };
+  // Ink transcript scroll is zone-based — anchor Y at transcript center, not pointer row.
+  const transcriptCenterRow = Math.max(0, Math.floor(maxTranscriptRow * 0.5));
+  const col =
+    cell && Number.isInteger(cell.col) ? Math.max(0, Math.min(cols - 1, cell.col)) : defaultCol;
+  return { col, row: transcriptCenterRow };
+}
+
+/** Grok Ink accepts SGR wheel and/or arrow scroll depending on focus — send both. */
+export function buildGrokWheelScrollPayload(direction, col, row, steps = 1) {
+  const normalizedSteps = Math.max(1, Math.floor(steps));
+  return (
+    buildTerminalWheelSgrSequence(direction, col, row) +
+    buildTerminalWheelArrowSequence(direction, normalizedSteps)
+  );
 }
 
 /**
@@ -232,7 +242,7 @@ export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession =
   return 'page';
 }
 
-export const TERMINAL_GROK_INPUT_ZONE_ROWS = 3;
+export const TERMINAL_GROK_INPUT_ZONE_ROWS = 5;
 
 /** Grok shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
 export function resolveTerminalWheelInputZoneRows({ isGrokSession = false } = {}) {
@@ -4122,6 +4132,10 @@ export default function TerminalTTY({
         const direction = resolveTerminalWheelScrollDirection(event.deltaY);
         if (!direction) return;
 
+        prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
+
+        const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);
+        const steps = Math.max(1, Math.min(2, rawSteps));
         const { col: wheelCol, row: wheelRow } = resolveGrokWheelSgrCoords(
           cell,
           term,
@@ -4130,7 +4144,7 @@ export default function TerminalTTY({
         const sent = sendTerminalPasteInput({
           socket: wsRef.current,
           transport: transportRef.current,
-          text: buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow),
+          text: buildGrokWheelScrollPayload(direction, wheelCol, wheelRow, steps),
         });
         if (!sent) return;
 
