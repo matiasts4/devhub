@@ -189,24 +189,42 @@ export function detectGrokSessionFromOutput(text) {
   return /\]0;grok\b/i.test(text) || detectGrokTuiReady(text);
 }
 
-/** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
+/** OpenCode scrolls via xterm native SGR once the footer is live. Grok uses direct PTY SGR injection. */
 export function shouldPassthroughNativeTuiWheel({
   isGrokSession = false,
-  grokTuiReady = false,
   opencodeFooterConfirmed = false,
 } = {}) {
-  // Grok enables mouse tracking immediately; waiting for footer text often never fires.
-  if (isGrokSession || grokTuiReady) return true;
+  if (isGrokSession) return false;
   return opencodeFooterConfirmed;
 }
 
+export function shouldInjectGrokWheelSgr(isGrokSession = false, initialCommand = '') {
+  return isGrokSession || isGrokTuiInitialCommand(initialCommand);
+}
+
+/** Keep grok wheel coords inside the transcript pane (Ink input owns the last row). */
+export function resolveGrokWheelSgrCoords(cell, term, inputZoneRows = 1) {
+  const cols = term?.cols || 80;
+  const rows = term?.rows || 24;
+  const reserved = Math.max(1, Math.min(rows - 1, Math.floor(inputZoneRows)));
+  const maxTranscriptRow = Math.max(0, rows - reserved - 1);
+  const defaultCol = Math.max(0, Math.floor(cols / 2));
+  const defaultRow = Math.max(0, Math.floor(maxTranscriptRow * 0.45));
+  if (!cell || !Number.isInteger(cell.col) || !Number.isInteger(cell.row)) {
+    return { col: defaultCol, row: defaultRow };
+  }
+  return {
+    col: Math.max(0, Math.min(cols - 1, cell.col)),
+    row: Math.max(0, Math.min(maxTranscriptRow, cell.row)),
+  };
+}
+
 /**
- * Pre-ready fallback when native passthrough is not yet safe.
- * Grok uses Page Up/Down (arrows/SGR injection hit the Ink input); OpenCode uses SGR coords.
+ * Pre-ready fallback when neither grok injection nor OpenCode passthrough is active.
  */
 export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession = false) {
   if (isGrokSession || isGrokTuiInitialCommand(initialCommand)) {
-    return 'page';
+    return 'sgr';
   }
   if (isLikelyTuiInitialCommand(initialCommand)) {
     return 'sgr';
@@ -1111,9 +1129,8 @@ export default function TerminalTTY({
   const tuiSessionFooterConfirmedRef = useRef(false);
   const grokTuiReadyRef = useRef(isGrokTuiInitialCommand(initialCommand));
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
-  const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(() =>
-    isGrokTuiInitialCommand(initialCommand)
-  );
+  const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(false);
+  const lastGrokWheelTimeRef = useRef(0);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
@@ -3058,9 +3075,6 @@ export default function TerminalTTY({
                 setNativeWheelPassthrough(true);
                 void notifyOpencodeReady(null, 'client-tui-footer');
               }
-              if (grokReady) {
-                setNativeWheelPassthrough(true);
-              }
               prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
             }
             return;
@@ -4038,15 +4052,65 @@ export default function TerminalTTY({
         return;
       }
 
-      // grok/OpenCode: forward wheel into xterm so SGR reports reach the PTY.
+      const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
+
+      if (shouldInjectGrokWheelSgr(isGrokSession, initialCommand)) {
+        const grokNow = Date.now();
+        if (grokNow - lastGrokWheelTimeRef.current < 48) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        lastGrokWheelTimeRef.current = grokNow;
+
+        const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: true });
+        const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
+        const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
+        if (cell) {
+          lastPointerZoneRef.current = isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
+            ? 'transcript'
+            : 'input';
+        }
+
+        const inTranscript = shouldRouteWheelToTranscript({
+          cell,
+          rows: term.rows,
+          lastPointerZone: lastPointerZoneRef.current,
+          inputZoneRows,
+        });
+        if (!inTranscript) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
+        if (!direction) return;
+
+        const { col: wheelCol, row: wheelRow } = resolveGrokWheelSgrCoords(
+          cell,
+          term,
+          inputZoneRows
+        );
+        const sent = sendTerminalPasteInput({
+          socket: wsRef.current,
+          transport: transportRef.current,
+          text: buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow),
+        });
+        if (!sent) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      // OpenCode: forward wheel into xterm so native SGR reports reach the PTY.
       if (nativeWheelPassthrough) {
         event.preventDefault();
         event.stopPropagation();
         forwardTerminalWheelToXterm(term, event);
         return;
       }
-
-      const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
 
       const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
       const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession });

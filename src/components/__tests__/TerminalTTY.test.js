@@ -156,6 +156,8 @@ const {
   shouldRouteWheelToTranscript,
   resolveTerminalWheelScrollPrefer,
   shouldPassthroughNativeTuiWheel,
+  shouldInjectGrokWheelSgr,
+  resolveGrokWheelSgrCoords,
   resolveTerminalWheelInputZoneRows,
   resolveTerminalPointerElement,
   forwardTerminalWheelToXterm,
@@ -1733,31 +1735,34 @@ describe('TerminalTTY renderer fallback UI', () => {
       ).toBe(false);
     });
 
-    test('grok helpers detect grok sessions and native wheel passthrough when ready', () => {
+    test('grok helpers use direct PTY SGR injection; OpenCode keeps native passthrough', () => {
       expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
       expect(isGrokTuiInitialCommand('groc')).toBe(true);
-      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
-      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
+      expect(shouldInjectGrokWheelSgr(true)).toBe(true);
+      expect(shouldInjectGrokWheelSgr(false, 'grok')).toBe(true);
+      expect(shouldInjectGrokWheelSgr(false, 'opencode')).toBe(false);
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('sgr');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
-      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc', true)).toBe('page');
       expect(
         shouldPassthroughNativeTuiWheel({
           isGrokSession: true,
-          grokTuiReady: false,
         })
-      ).toBe(true);
-      expect(
-        shouldPassthroughNativeTuiWheel({
-          isGrokSession: false,
-          grokTuiReady: true,
-        })
-      ).toBe(true);
+      ).toBe(false);
       expect(
         shouldPassthroughNativeTuiWheel({
           isGrokSession: false,
           opencodeFooterConfirmed: true,
         })
       ).toBe(true);
+      expect(resolveGrokWheelSgrCoords({ col: 10, row: 22 }, { cols: 80, rows: 24 }, 1)).toEqual({
+        col: 10,
+        row: 22,
+      });
+      expect(resolveGrokWheelSgrCoords({ col: 10, row: 23 }, { cols: 80, rows: 24 }, 1)).toEqual({
+        col: 10,
+        row: 22,
+      });
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(1);
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
       expect(isTerminalTranscriptCell(22, 24, 1)).toBe(true);
