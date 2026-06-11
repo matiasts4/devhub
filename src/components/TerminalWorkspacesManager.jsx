@@ -183,6 +183,12 @@ import {
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
 import {
+  collectSwarmLaunchIdsForWorkspace,
+  dispatchTerminatePanelCloseEvents,
+  getSwarmSnapshotStorageKey as getSwarmSnapshotStorageKeyFromLib,
+  terminateSwarmLaunchesForWorkspace,
+} from '@/lib/terminal/swarmWorkspaceLifecycle';
+import {
   useLiveSurfaceRegistry,
   LiveSurfaceRegistryContext,
 } from '@/lib/pizarra/useLiveSurfaceRegistry';
@@ -250,7 +256,7 @@ const SWARM_ROLE_META = {
 };
 
 function getSwarmSnapshotStorageKey(projectId) {
-  return projectId ? `devhub_swarm_control_snapshot:${projectId}` : 'devhub_swarm_control_snapshot';
+  return getSwarmSnapshotStorageKeyFromLib(projectId);
 }
 
 function readAgentRuns(storage) {
@@ -1240,10 +1246,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
-    submitting: false,
-    error: null,
-  });
-  const [swarmTerminateState, setSwarmTerminateState] = useState({
     submitting: false,
     error: null,
   });
@@ -2706,83 +2708,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
   }, [projectId, swarmLaunchPreview?.draft]);
 
-  const handleTerminateSwarmLaunch = useCallback(async () => {
-    if (!projectId || !activeSwarmLaunchSummary?.launchId) return;
-
-    setSwarmTerminateState({ submitting: true, error: null });
-
-    try {
-      const terminateHints = collectSwarmTerminateHints(
-        storage,
-        activeSwarmLaunchSummary.launchId,
-        workspaces
-      );
-      const response = await fetch('/api/agenthub/operations/health', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'terminate_swarm_local',
-          project_id: projectId,
-          launch_id: activeSwarmLaunchSummary.launchId,
-          panel_ids: terminateHints.panel_ids,
-          opencode_session_ids: terminateHints.opencode_session_ids,
-        }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || 'No se pudo terminar el swarm desde terminales.');
-      }
-
-      if (payload.control_room_snapshot_input) {
-        try {
-          localStorage.setItem(
-            getSwarmSnapshotStorageKey(projectId),
-            JSON.stringify(payload.control_room_snapshot_input)
-          );
-        } catch {
-          // Ignore localStorage failures.
-        }
-        setSwarmControlSnapshot(payload.control_room_snapshot_input);
-      } else {
-        try {
-          localStorage.removeItem(getSwarmSnapshotStorageKey(projectId));
-        } catch {
-          // ignore
-        }
-        setSwarmControlSnapshot(null);
-      }
-
-      (payload?.terminate_result?.terminals?.attempted || []).forEach((panelId) => {
-        window.dispatchEvent(
-          new CustomEvent('devhub:terminal-session-closing', {
-            detail: { panelId },
-          })
-        );
-      });
-
-      try {
-        const runs = readAgentRuns(storage);
-        Object.keys(runs).forEach((taskId) => {
-          const taskLaunchId = String(taskId || '').split(':')[0];
-          if ((runs[taskId]?.launchId || taskLaunchId) === activeSwarmLaunchSummary.launchId) {
-            delete runs[taskId];
-          }
-        });
-        storage?.setItem('devhub_agent_runs', JSON.stringify(runs));
-      } catch {
-        // Ignore localStorage failures.
-      }
-
-      setSwarmTerminateState({ submitting: false, error: null });
-    } catch (error) {
-      setSwarmTerminateState({
-        submitting: false,
-        error: error?.message || 'No se pudo terminar el swarm desde terminales.',
-      });
-    }
-  }, [activeSwarmLaunchSummary?.launchId, projectId, storage, workspaces]);
-
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
       const currentState = prev ?? { ...DEFAULT_RIGHT_DOCK_STATE };
@@ -3579,6 +3504,38 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     e.stopPropagation();
     const workspaceToRemove = workspaces.find((workspace) => workspace.id === idToRemove);
     if (!workspaceToRemove || workspaces.length <= 1) return;
+
+    const swarmLaunchIds = collectSwarmLaunchIdsForWorkspace(workspaceToRemove, storage);
+    const workspaceSwarmSummary = readWorkspaceSwarmLaunchSummary(
+      storage,
+      workspaceToRemove,
+      projectId,
+      swarmControlSnapshot
+    );
+    if (
+      workspaceSwarmSummary?.launchId &&
+      !swarmLaunchIds.includes(workspaceSwarmSummary.launchId)
+    ) {
+      swarmLaunchIds.push(workspaceSwarmSummary.launchId);
+    }
+    if (swarmLaunchIds.length > 0 && projectId) {
+      try {
+        const terminateResults = await terminateSwarmLaunchesForWorkspace({
+          workspace: workspaceToRemove,
+          projectId,
+          storage,
+          workspaces,
+        });
+        terminateResults.forEach((result) => {
+          if (result.ok) {
+            dispatchTerminatePanelCloseEvents(result.payload);
+          }
+        });
+        setSwarmControlSnapshot(null);
+      } catch {
+        // Best-effort: workspace close still proceeds.
+      }
+    }
 
     const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== idToRemove);
     const nextActiveWsId =
@@ -5991,35 +5948,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 >
                   <Wand2 className="h-4 w-4" />
                 </button>
-                <button
-                  type="button"
-                  onClick={handleTerminateSwarmLaunch}
-                  disabled={!activeSwarmLaunchSummary?.launchId || swarmTerminateState.submitting}
-                  className="inline-flex items-center gap-1.5 h-7 rounded-sm px-2 text-rose-300/80 transition-all hover:text-rose-200 hover:bg-rose-400/10 disabled:opacity-40 disabled:hover:bg-transparent"
-                  title={
-                    activeSwarmLaunchSummary?.launchId
-                      ? `Terminar swarm ${activeSwarmLaunchSummary.title}`
-                      : 'No hay swarm activo para terminar'
-                  }
-                  aria-label="Terminar swarm activo"
-                  data-testid="workspace-swarm-terminate-button"
-                >
-                  <X className="h-4 w-4" />
-                  <span className="text-[11px] font-semibold">End swarm</span>
-                </button>
-                {swarmTerminateState.error ? (
-                  <span
-                    className="max-w-[220px] truncate text-[10px] text-rose-300"
-                    data-testid="workspace-swarm-terminate-error"
-                    title={swarmTerminateState.error}
-                  >
-                    {swarmTerminateState.error}
-                  </span>
-                ) : activeSwarmLaunchSummary?.launchId ? (
+                {activeSwarmLaunchSummary?.launchId ? (
                   <span
                     className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
-                    data-testid="workspace-swarm-terminate-summary"
-                    title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles`}
+                    data-testid="workspace-swarm-active-summary"
+                    title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles · cerrá el workspace para finalizar`}
                   >
                     {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
                   </span>

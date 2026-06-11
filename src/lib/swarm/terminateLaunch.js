@@ -191,6 +191,7 @@ export async function terminateSwarmLaunch(
     opencodeUrl = OPENCODE_URL,
     panelIds = [],
     opencodeSessionIds = [],
+    forceOrphanCleanup = false,
   } = {}
 ) {
   const normalizedLaunchId = String(launchId || '').trim();
@@ -199,8 +200,47 @@ export async function terminateSwarmLaunch(
   }
 
   const artifacts = listLaunchArtifacts(db, normalizedLaunchId);
-  if (!artifacts.mission) {
+  const missionMissing = !artifacts.mission;
+
+  if (missionMissing && !forceOrphanCleanup) {
     throw new Error(`No existe un swarm activo para ${normalizedLaunchId}.`);
+  }
+
+  if (missionMissing && forceOrphanCleanup) {
+    const tmuxPrefix = `devhub-swarm-${normalizedLaunchId}-`;
+    const discoveredTmuxSessions = await listTmuxSessionsByPrefixImpl(tmuxPrefix);
+    const terminalIds = uniqueStrings(panelIds);
+    const terminalResults = await Promise.allSettled(
+      terminalIds.map((terminalId) => closeTerminalSessionImpl(terminalId))
+    );
+    const abortResults = await Promise.allSettled(
+      uniqueStrings(opencodeSessionIds).map((sessionId) =>
+        abortOpenCodeSession(sessionId, { fetchImpl, opencodeUrl })
+      )
+    );
+    const tmuxResults = await Promise.allSettled(
+      discoveredTmuxSessions.map((sessionName) => killTmuxSessionImpl(sessionName))
+    );
+
+    return {
+      launchId: normalizedLaunchId,
+      missionId: null,
+      terminated: true,
+      orphan_cleanup: true,
+      terminals: {
+        attempted: terminalIds,
+        results: terminalResults,
+      },
+      opencodeSessions: {
+        attempted: uniqueStrings(opencodeSessionIds),
+        results: abortResults,
+      },
+      tmuxSessions: {
+        attempted: discoveredTmuxSessions,
+        results: tmuxResults,
+      },
+      worktrees: { launch_id: normalizedLaunchId, workspaces_processed: 0, results: [] },
+    };
   }
 
   const terminalIds = uniqueStrings(

@@ -2418,6 +2418,7 @@ export const POST = withAuth(async function POST(request, _context, dependencies
         opencodeSessionIds: Array.isArray(payload?.opencode_session_ids)
           ? payload.opencode_session_ids
           : [],
+        forceOrphanCleanup: Boolean(payload?.force_orphan_cleanup),
       });
 
       const refreshedSnapshot = await gatherOperationalHealth(

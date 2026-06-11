@@ -540,7 +540,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(document.body.textContent).toContain('Asistente de lanzamiento');
   });
 
-  test('shows terminate swarm action for active workspace launch and posts launch-scoped terminate request', async () => {
+  test('shows active swarm summary without End swarm button (close workspace to terminate)', async () => {
     window.localStorage.setItem(
       'devhub_agent_runs',
       JSON.stringify({
@@ -581,24 +581,14 @@ describe('TerminalWorkspacesManager right dock', () => {
     );
 
     expect(
-      view.container.querySelector('[data-testid="workspace-swarm-terminate-summary"]')?.textContent
+      view.container.querySelector('[data-testid="workspace-swarm-active-summary"]')?.textContent
     ).toContain('Terminal swarm');
-
-    await click(view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]'));
-
-    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'terminate_swarm_local',
-        project_id: 'project-1',
-        launch_id: 'launch-1',
-      }),
-    });
-    expect(JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}')).toEqual({});
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]')
+    ).toBeNull();
   });
 
-  test('shows terminate swarm action based on cached control snapshot when devhub_agent_runs is empty', async () => {
+  test('shows active swarm summary from cached control snapshot when devhub_agent_runs is empty', async () => {
     window.localStorage.removeItem('devhub_agent_runs');
     window.localStorage.setItem(
       'devhub_swarm_control_snapshot:project-1',
@@ -656,25 +646,11 @@ describe('TerminalWorkspacesManager right dock', () => {
     );
 
     expect(
-      view.container.querySelector('[data-testid="workspace-swarm-terminate-summary"]')?.textContent
+      view.container.querySelector('[data-testid="workspace-swarm-active-summary"]')?.textContent
     ).toContain('Cached Swarm Title');
-
-    await click(view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]'));
-
-    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'terminate_swarm_local',
-        project_id: 'project-1',
-        launch_id: 'launch-cached-123',
-      }),
-    });
-
-    const cached = JSON.parse(
-      window.localStorage.getItem('devhub_swarm_control_snapshot:project-1') || '{}'
-    );
-    expect(cached?.mission_control?.mission?.status).toBe('terminated');
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]')
+    ).toBeNull();
   });
 
   test('batches swarm runtime requests into a dedicated workspace instead of replacing the same split', async () => {

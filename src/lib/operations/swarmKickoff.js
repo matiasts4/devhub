@@ -2,11 +2,58 @@
 /* eslint-disable no-undef -- CommonJS module used by health route and tests */
 'use strict';
 
-const { createRequire } = require('module');
-const inboxRequire = createRequire(__filename);
-const { injectTextToTmuxSession, waitForOpencodeReady } = inboxRequire('../bus/inboxConsume.js');
+const fs = require('fs');
+const { spawnSync } = require('child_process');
 
 const ORCHESTRATOR_ROLE_KEYS = ['zed', 'director'];
+
+function waitForOpencodeReady(sessionName, maxWaitMs = 30000) {
+  const target = String(sessionName || '').trim();
+  if (!target) return false;
+  const readyFile = `/tmp/devhub-opencode-ready-${target}`;
+  const deadline = Date.now() + Math.max(500, Number(maxWaitMs) || 30000);
+  while (Date.now() < deadline) {
+    try {
+      if (fs.existsSync(readyFile)) return true;
+    } catch {
+      /* best effort */
+    }
+    const until = Date.now() + 200;
+    while (Date.now() < until) {
+      /* brief spin */
+    }
+  }
+  return false;
+}
+
+function injectTextToTmuxSession(sessionName, text) {
+  const target = String(sessionName || '').trim();
+  if (!target) return false;
+  const payload = String(text || '').trim();
+  if (!payload) return false;
+
+  const header = `[DevHub directive ${new Date().toISOString()}]`;
+  spawnSync('tmux', ['send-keys', '-t', target, '-l', header], { stdio: 'ignore' });
+  spawnSync('tmux', ['send-keys', '-t', target, 'Enter'], { stdio: 'ignore' });
+
+  const lines = payload.split('\n');
+  for (const line of lines) {
+    const chunks = [];
+    const chunkSize = 400;
+    for (let index = 0; index < line.length; index += chunkSize) {
+      chunks.push(line.slice(index, index + chunkSize));
+    }
+    if (chunks.length === 0) {
+      spawnSync('tmux', ['send-keys', '-t', target, 'Enter'], { stdio: 'ignore' });
+      continue;
+    }
+    for (const chunk of chunks) {
+      spawnSync('tmux', ['send-keys', '-t', target, '-l', chunk], { stdio: 'ignore' });
+    }
+    spawnSync('tmux', ['send-keys', '-t', target, 'Enter'], { stdio: 'ignore' });
+  }
+  return true;
+}
 
 /**
  * Build activation prompt injected when operator wakes ZED from standby.
@@ -75,4 +122,6 @@ module.exports = {
   buildZedActivationPrompt,
   resolveOrchestratorTmuxSession,
   activateZedStandbySession,
+  waitForOpencodeReady,
+  injectTextToTmuxSession,
 };

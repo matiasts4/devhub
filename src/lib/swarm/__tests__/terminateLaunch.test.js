@@ -246,4 +246,37 @@ describe('terminateSwarmLaunch', () => {
     expect(result.terminals.attempted).toContain('p-extra');
     expect(result.opencodeSessions.attempted).toContain('oc-extra');
   });
+
+  test('forceOrphanCleanup kills tmux and closes panels when mission row is missing', async () => {
+    const closeTerminalSessionById = jest.fn().mockResolvedValue({ success: true });
+    const killTmuxSession = jest.fn().mockResolvedValue();
+    const listTmuxSessionsByPrefix = jest
+      .fn()
+      .mockResolvedValue(['devhub-swarm-orphan-zed', 'devhub-swarm-orphan-sdd_worker_1']);
+
+    const db = {
+      prepare(sql) {
+        if (sql.includes('FROM swarm_missions')) return { get: () => null };
+        if (sql.includes('FROM mission_participants')) return { all: () => [] };
+        if (sql.includes('FROM agent_workspaces')) return { all: () => [] };
+        if (sql.includes('FROM agent_runs')) return { all: () => [] };
+        if (sql.includes('FROM agent_hub_sessions')) return { all: () => [] };
+        throw new Error(`Unexpected SQL: ${sql}`);
+      },
+    };
+
+    const result = await terminateSwarmLaunch('orphan', {
+      db,
+      closeTerminalSessionImpl: closeTerminalSessionById,
+      killTmuxSessionImpl: killTmuxSession,
+      listTmuxSessionsByPrefixImpl: listTmuxSessionsByPrefix,
+      panelIds: ['p-orphan-1'],
+      forceOrphanCleanup: true,
+    });
+
+    expect(result.orphan_cleanup).toBe(true);
+    expect(result.terminated).toBe(true);
+    expect(closeTerminalSessionById).toHaveBeenCalledWith('p-orphan-1');
+    expect(killTmuxSession).toHaveBeenCalledWith('devhub-swarm-orphan-zed');
+  });
 });
