@@ -131,13 +131,16 @@ import { SHOW_RENDERER_SWITCH } from './terminal/terminalRendererPreferences';
 import {
   createSwarmLaunchDraft,
   deriveSwarmLaunchPreview,
+  isOrchestratorRoleKey,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
 import {
   RESTORE_ACTION,
   buildRestoreManifestFromWorkspaceState,
   buildStartupRestorePlan,
+  collectWorkspacePanelIds,
 } from '@/lib/terminal/startupRestoreCoordinator';
+import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import {
   readWorkspaceRestorePreferences,
   normalizeWorkspacesOpenCodeCommands,
@@ -1354,6 +1357,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const hasRunStartupRestoreRef = useRef(false);
   const startupRestoreCompletedRef = useRef(false);
   const terminalHydrationReadyRef = useRef(false);
+  const bootPanelIdsRef = useRef(new Set());
   const relaunchInFlightRef = useRef(new Set());
   const panelsClosingRef = useRef(new Set());
   const workspacesRef = useRef(workspaces);
@@ -1487,6 +1491,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           colCounterRef.current = nextCounters.column;
           panelCounterRef.current = nextCounters.panel;
           terminalHydrationReadyRef.current = true;
+          bootPanelIdsRef.current = new Set(collectWorkspacePanelIds(hydratedWorkspaces));
+          logTerminalSession('boot-hydration-complete', {
+            panelIds: Array.from(bootPanelIdsRef.current),
+            workspaceCount: hydratedWorkspaces.length,
+          });
         }
       }
     } catch (e) {
@@ -1494,6 +1503,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
     if (!terminalHydrationReadyRef.current) {
       terminalHydrationReadyRef.current = true;
+      bootPanelIdsRef.current = new Set();
+      logTerminalSession('boot-hydration-empty', { panelIds: [] });
     }
     const initialDockWorkspaceId =
       (typeof activeWsIdRef.current === 'string' && activeWsIdRef.current) ||
@@ -1583,6 +1594,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (!panelId || !command) return;
       if (relaunchInFlightRef.current.has(panelId)) return;
       relaunchInFlightRef.current.add(panelId);
+
+      logTerminalSession('panel-relaunch-command', {
+        panelId,
+        command,
+        bumpCommand,
+        forceBump,
+        emitEvent,
+      });
 
       const normalizedCommand = String(command)
         .replace(/\s*#recovery-\d+\s*$/i, '')
@@ -1687,14 +1706,27 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     );
 
     if (expectsHydratedWorkspaces && !terminalHydrationReadyRef.current) {
+      logTerminalSession('startup-restore-deferred', {
+        reason: 'awaiting-hydration',
+        expectsHydratedWorkspaces,
+      });
       return;
     }
 
     if (expectsHydratedWorkspaces && !hasHydratedPanels) {
+      logTerminalSession('startup-restore-deferred', {
+        reason: 'awaiting-panels',
+        expectsHydratedWorkspaces,
+      });
       return;
     }
 
     hasRunStartupRestoreRef.current = true;
+    logTerminalSession('startup-restore-begin', {
+      bootPanelIds: Array.from(bootPanelIdsRef.current),
+      snapshotPanelIds: collectWorkspacePanelIds(snapshotWorkspaces),
+      activeWsId: activeWsIdRef.current || activeWsId,
+    });
 
     let cancelled = false;
     const restorePrefs = readWorkspaceRestorePreferences(storage);
@@ -1797,6 +1829,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
           const plan = buildStartupRestorePlan({ manifest, runtimeSnapshot });
 
+          logTerminalSession('startup-restore-plan', {
+            actionCount: plan.actions.length,
+            actions: plan.actions.map((action) => ({
+              action: action.action,
+              terminalId: action.terminalId,
+              reason: action.reason,
+              sessionKind: action.sessionKind,
+            })),
+          });
+
           if (plan.actions.some((action) => action.action === RESTORE_ACTION.QUOTA_BLOCKED)) {
             setReopenActionError(
               'OpenCode appears quota-blocked (429). Review runtime diagnostics before relaunching sessions.'
@@ -1814,8 +1856,28 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           const queueResult = await dispatchStartupRestoreQueue({
             actions: plan.actions,
             getPanel: (panelId) => panelMap.get(panelId),
+            shouldSkipAction: (action) => {
+              const panelId = action?.terminalId;
+              if (!panelId) return false;
+              const bootIds = bootPanelIdsRef.current;
+              if (bootIds.size > 0 && !bootIds.has(panelId)) {
+                logTerminalSession('startup-restore-skip', {
+                  panelId,
+                  reason: 'panel-not-in-boot-baseline',
+                  action: action.action,
+                });
+                return true;
+              }
+              return false;
+            },
             onRelaunch: async (action, panel, command) => {
               if (cancelled) return;
+              logTerminalSession('startup-restore-relaunch', {
+                panelId: action.terminalId,
+                command,
+                reason: action.reason,
+                action: action.action,
+              });
               applyPanelRelaunchCommand(action.terminalId, command, panel?.cwd || null, {
                 emitEvent: true,
               });
@@ -3709,7 +3771,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (launchRequests.length === 0) return;
 
       const directorRequest =
-        launchRequests.find((request) => request.swarmRole?.roleKey === 'director') || null;
+        launchRequests.find((request) => isOrchestratorRoleKey(request.swarmRole?.roleKey)) || null;
       const workerRequests = launchRequests
         .filter((request) => request !== directorRequest)
         .sort(
@@ -3741,7 +3803,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             panelCounterRef.current += 1;
             const panelId = `p${panelCounterRef.current}`;
             if (!firstPanelId) firstPanelId = panelId;
-            if (request.swarmRole?.roleKey === 'director') directorPanelId = panelId;
+            if (isOrchestratorRoleKey(request.swarmRole?.roleKey)) directorPanelId = panelId;
             panelAssignments.push({ request, panelId });
             return createPanel(panelId, request.commandToRun, request.workspacePath || cwd, {
               swarmRole: request.swarmRole,
@@ -5050,6 +5112,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         setReopenActionError(null);
       }
 
+      const priorPanel = panelEntry;
       const nextWorkspaces = workspacesRef.current.map((ws) => ({
         ...ws,
         columns: ws.columns.map((col) => ({
@@ -5063,6 +5126,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           }),
         })),
       }));
+
+      logTerminalSession('opencode-session-detected', {
+        panelId,
+        sessionId,
+        priorCommand: priorPanel?.initialCommand || null,
+        nextCommand: `opencode --session ${sessionId}`,
+      });
 
       flushTerminalSessionPersistence(storage, {
         workspaces: nextWorkspaces,
@@ -5270,7 +5340,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       if (relaunchInFlightRef.current.has(panelId)) return;
 
-      console.log(`[Session Recovery] Relaunching panel ${panelId}: ${reason}`);
+      logTerminalSession('session-recovery-relaunch-event', {
+        panelId,
+        command,
+        cwd,
+        reason,
+      });
 
       // Startup restore already persisted the bumped command; avoid double-apply.
       if (reason === 'panel-relaunch') return;

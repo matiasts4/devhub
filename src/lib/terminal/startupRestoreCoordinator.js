@@ -65,6 +65,28 @@ function collectWorkspacePanels(workspaces = []) {
   );
 }
 
+export function collectWorkspacePanelIds(workspaces = []) {
+  return collectWorkspacePanels(workspaces)
+    .map(({ panel }) => panel?.id)
+    .filter(Boolean);
+}
+
+function isTuiLaunchCommand(initialCommand) {
+  const command = String(initialCommand || '')
+    .replace(/\s*#recovery-\d+\s*$/i, '')
+    .trim();
+  return /^(opencode|hermes|grok|groc)\b/i.test(command);
+}
+
+/** Shell-ephemeral respawn only — never relaunch live TUI sessions (opencode/grok/hermes). */
+export function isShellEphemeralRestoreCandidate(session = {}) {
+  const sessionKind = session.sessionKind || null;
+  if (sessionKind === 'opencode' || sessionKind === 'swarm') return false;
+  if (session.opencodeSessionId) return false;
+  if (isTuiLaunchCommand(session.initialCommand)) return false;
+  return true;
+}
+
 export function buildRestoreManifestFromWorkspaceState({
   workspaces = [],
   activeWorkspaceId = null,
@@ -92,6 +114,7 @@ export function buildRestoreManifestFromWorkspaceState({
         panelId: panel.id,
         workspaceId: workspace?.id || null,
         cwd: panel?.cwd || null,
+        initialCommand: initialCommand || null,
         sessionKind,
         roleKey,
         opencodeSessionId,
@@ -217,7 +240,7 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         sessionKind,
         reason: 'swarm-tmux-reattach',
       });
-    } else if (!runtimeTerminal && session.cwd) {
+    } else if (!runtimeTerminal && session.cwd && isShellEphemeralRestoreCandidate(session)) {
       // shell-ephemeral: no ptyPid, no opencode session — needs respawn via cwd/shell
       nextAction = createAction({
         action: RESTORE_ACTION.RESTORE_SHELL_EMERGENT,
@@ -225,6 +248,7 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         panelId: session.panelId,
         workspaceId: session.workspaceId,
         opencodeSessionId: null,
+        sessionKind,
         reason: 'shell-emergent-needs-respawn',
       });
     } else if (runtimeTerminal?.alive) {

@@ -203,6 +203,62 @@ describe('buildStartupRestorePlan emits RESTORE_SHELL_EMERGENT for shell-ephemer
   });
 });
 
+describe('TUI launch sessions are not treated as shell-ephemeral', () => {
+  it('does not emit RESTORE_SHELL_EMERGENT for plain opencode panels', () => {
+    const manifest = normalizeRestoreManifest({
+      workspaces: [{ workspaceId: 'ws1', name: 'Test Workspace', tabs: [], layout: {} }],
+      terminalSessions: [
+        {
+          terminalId: 'p1',
+          panelId: 'p1',
+          workspaceId: 'ws1',
+          cwd: '/home/user/project',
+          initialCommand: 'opencode',
+          sessionKind: 'opencode',
+          opencodeSessionId: null,
+        },
+      ],
+      swarmRuns: [],
+    });
+
+    const plan = buildStartupRestorePlan({
+      manifest,
+      runtimeSnapshot: { terminals: [], processes: [], anomalies: {} },
+    });
+
+    expect(
+      plan.actions.some((action) => action.action === RESTORE_ACTION.RESTORE_SHELL_EMERGENT)
+    ).toBe(false);
+  });
+
+  it('does not emit RESTORE_SHELL_EMERGENT for grok panels', () => {
+    const manifest = normalizeRestoreManifest({
+      workspaces: [{ workspaceId: 'ws1', name: 'Test Workspace', tabs: [], layout: {} }],
+      terminalSessions: [
+        {
+          terminalId: 'p1',
+          panelId: 'p1',
+          workspaceId: 'ws1',
+          cwd: '/home/user/project',
+          initialCommand: 'grok',
+          sessionKind: 'generic',
+          opencodeSessionId: null,
+        },
+      ],
+      swarmRuns: [],
+    });
+
+    const plan = buildStartupRestorePlan({
+      manifest,
+      runtimeSnapshot: { terminals: [], processes: [], anomalies: {} },
+    });
+
+    expect(
+      plan.actions.some((action) => action.action === RESTORE_ACTION.RESTORE_SHELL_EMERGENT)
+    ).toBe(false);
+  });
+});
+
 describe('swarm restore never re-runs launch wrapper', () => {
   it('emits REATTACH_LIVE_TERMINAL for swarm sessions instead of RESTORE_SHELL_EMERGENT', () => {
     const manifest = normalizeRestoreManifest({
