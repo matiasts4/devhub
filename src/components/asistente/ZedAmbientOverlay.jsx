@@ -9,10 +9,18 @@ import { buildZedAmbientStatus } from '@/lib/asistente/buildZedAmbientStatus';
 import {
   resolveZedAmbientPhase,
   shouldShowZedAura,
+  ZED_AURA_TOOL_TYPE_EVENT,
 } from '@/lib/asistente/zedOverlayEvents';
+import { clampZedAuraIntensity } from '@/lib/asistente/zedAuraBudget';
 
 const STATUS_VISIBLE_MS = 4000;
 const STATUS_EXIT_MS = 320;
+
+const ACCENT_HEX = Object.freeze({
+  terminal: '#4ad3c0',
+  browser: '#9b6bff',
+  file: '#f0b54a',
+});
 
 function ZedLoadingDots({ className = '' }) {
   return (
@@ -31,9 +39,24 @@ function ZedLoadingDots({ className = '' }) {
   );
 }
 
-function ZedAuraFrame({ phase, reducedMotion }) {
-  const intensity = phase === 'executing' ? 0.5 : phase === 'responding' ? 0.34 : 0.24;
-  const pulse = !reducedMotion && phase === 'executing';
+function ZedAuraFrame({ phase, reducedMotion, toolType }) {
+  const intensity = clampZedAuraIntensity(phase);
+  const pulseClass =
+    !reducedMotion && toolType && toolType !== 'null' ? `zed-aura-pulse-${toolType}` : '';
+
+  const innerStyle = useMemo(
+    () => ({
+      '--accent-terminal': ACCENT_HEX.terminal,
+      '--accent-browser': ACCENT_HEX.browser,
+      '--accent-file': ACCENT_HEX.file,
+      background: `
+        radial-gradient(ellipse 48% 58% at 0% 52%, color-mix(in srgb, var(--accent-primary) 16%, transparent) 0%, transparent 74%),
+        radial-gradient(ellipse 34% 42% at 100% 44%, color-mix(in srgb, var(--accent-primary) 9%, transparent) 0%, transparent 70%),
+        radial-gradient(ellipse 72% 28% at 50% 100%, color-mix(in srgb, var(--accent-primary) 10%, transparent) 0%, transparent 72%)
+      `,
+    }),
+    []
+  );
 
   return (
     <motion.div
@@ -46,14 +69,9 @@ function ZedAuraFrame({ phase, reducedMotion }) {
       aria-hidden="true"
     >
       <div
-        className={`absolute inset-0 ${pulse ? 'zed-aura-pulse' : ''}`}
-        style={{
-          background: `
-            radial-gradient(ellipse 48% 58% at 0% 52%, color-mix(in srgb, var(--accent-primary) 16%, transparent) 0%, transparent 74%),
-            radial-gradient(ellipse 34% 42% at 100% 44%, color-mix(in srgb, var(--accent-primary) 9%, transparent) 0%, transparent 70%),
-            radial-gradient(ellipse 72% 28% at 50% 100%, color-mix(in srgb, var(--accent-primary) 10%, transparent) 0%, transparent 72%)
-          `,
-        }}
+        className={`zed-aura-root absolute inset-0 ${pulseClass}`}
+        data-tool={toolType || 'null'}
+        style={innerStyle}
       />
     </motion.div>
   );
@@ -74,7 +92,25 @@ export default function ZedAmbientOverlay({
     handleKeyDown,
     handlePaste,
     lastAssistantMessage,
+    lastToolType,
   } = useZedChat({ sessionKey, getTerminalPanelCount });
+
+  // Subscribe to cross-component tool-type events so the overlay stays in
+  // sync with useZedChat without prop drilling. useZedChat dispatches on
+  // change; the overlay mirrors the latest value locally for rendering.
+  const [overlayToolType, setOverlayToolType] = useState(lastToolType);
+  useEffect(() => {
+    setOverlayToolType(lastToolType);
+  }, [lastToolType]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handler = (e) => {
+      const next = e?.detail?.toolType;
+      setOverlayToolType(next ?? null);
+    };
+    window.addEventListener(ZED_AURA_TOOL_TYPE_EVENT, handler);
+    return () => window.removeEventListener(ZED_AURA_TOOL_TYPE_EVENT, handler);
+  }, []);
 
   const inputRef = useRef(null);
   const [statusLine, setStatusLine] = useState(null);
@@ -188,7 +224,12 @@ export default function ZedAmbientOverlay({
     <>
       <AnimatePresence>
         {showAura ? (
-          <ZedAuraFrame key="zed-aura" phase={phase} reducedMotion={prefersReducedMotion} />
+          <ZedAuraFrame
+            key="zed-aura"
+            phase={phase}
+            reducedMotion={prefersReducedMotion}
+            toolType={overlayToolType}
+          />
         ) : null}
       </AnimatePresence>
 

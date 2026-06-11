@@ -3,6 +3,8 @@ const { JSDOM } = require('jsdom');
 const { flushSync } = require('react-dom');
 const { act } = require('react-dom/test-utils');
 
+let mockUseReducedMotionValue = true;
+
 jest.mock('framer-motion', () => {
   const React = require('react');
   const mockEl =
@@ -12,7 +14,7 @@ jest.mock('framer-motion', () => {
   return {
     motion: { div: mockEl('div'), span: mockEl('span') },
     AnimatePresence: ({ children }) => children,
-    useReducedMotion: () => true,
+    useReducedMotion: () => mockUseReducedMotionValue,
   };
 });
 
@@ -126,7 +128,11 @@ describe('ZedAmbientOverlay', () => {
         tool_results: [
           {
             tool: 'open_terminal',
-            result: { workspace: true, program: 'opencode', command_sent: 'opencode --agent gentle-orchestrator' },
+            result: {
+              workspace: true,
+              program: 'opencode',
+              command_sent: 'opencode --agent gentle-orchestrator',
+            },
           },
         ],
       },
