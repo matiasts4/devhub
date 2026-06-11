@@ -19,7 +19,13 @@ const {
 describe('createPanel', () => {
   test('creates panel with id only', () => {
     const panel = createPanel('p1');
-    expect(panel).toEqual({ id: 'p1', initialCommand: null, cwd: null, swarmRole: null });
+    expect(panel).toEqual({
+      id: 'p1',
+      initialCommand: null,
+      cwd: null,
+      swarmRole: null,
+      displayName: null,
+    });
   });
 
   test('creates panel with initialCommand and cwd', () => {

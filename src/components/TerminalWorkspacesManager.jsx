@@ -53,6 +53,11 @@ import {
   buildWorkspaceColumnsForTerminalCount,
   spawnFirstTerminalPanelColumns,
 } from './terminal/utils/panelHelpers';
+import {
+  getDisplayName as getPanelDisplayNameFromStore,
+  setDisplayName as setPanelDisplayNameInStore,
+  nextDisplayNameForPanel as nextPoolNameForWorkspace,
+} from '@/lib/terminal/panelDisplayName';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 import NotificationCenter from './NotificationCenter';
 import TerminalSettingsModal from './TerminalSettingsModal';
@@ -1549,6 +1554,36 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     );
     setIsClientLoaded(true);
   }, [projectId, storage, terminalStateStorageKey]);
+
+  // T5 migration: stamp a pool name on any panel that does not have one.
+  // Idempotent — re-running on a panel that already has a displayName is a
+  // no-op because the per-panel localStorage entry is already written.
+  useEffect(() => {
+    if (!isClientLoaded) return;
+    if (!workspaces || workspaces.length === 0) return;
+    let mutated = false;
+    const next = workspaces.map((ws) => {
+      const columns = (ws.columns || []).map((col) => {
+        const panels = (col.panels || []).map((panel) => {
+          if (panel.displayName) return panel;
+          const stored = getPanelDisplayNameFromStore(panel.id, ws.id);
+          if (stored) {
+            mutated = true;
+            return { ...panel, displayName: stored };
+          }
+          const assigned = nextPoolNameForWorkspace(ws.id);
+          setPanelDisplayNameInStore(panel.id, ws.id, assigned);
+          mutated = true;
+          return { ...panel, displayName: assigned };
+        });
+        return { ...col, panels };
+      });
+      return { ...ws, columns };
+    });
+    if (mutated) {
+      setWorkspaces(next);
+    }
+  }, [isClientLoaded, workspaces]);
 
   const flushTerminalPersistenceNow = useCallback(() => {
     if (!storage || !isClientLoaded) return false;

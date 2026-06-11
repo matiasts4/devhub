@@ -7,6 +7,7 @@ function createPanel(id, initialCommand = null, panelCwd = null, metadata = null
     initialCommand,
     cwd: panelCwd,
     swarmRole: metadata?.swarmRole || null,
+    displayName: metadata?.displayName || null,
   };
 }
 
@@ -122,6 +123,7 @@ function normalizeWorkspaceState(
           cwd: panel?.cwd || null,
           initialCommand: panel?.initialCommand || null,
           swarmRole: panel?.swarmRole || null,
+          displayName: panel?.displayName || null,
         };
       });
 
