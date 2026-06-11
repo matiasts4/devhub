@@ -51,6 +51,7 @@ import {
   markPanelInitialCommandDispatched,
   shouldSkipRedundantInitialCommandSend,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
+import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -194,12 +195,13 @@ export function detectGrokSessionFromOutput(text) {
   return /\]0;grok\b/i.test(text) || detectGrokTuiReady(text);
 }
 
-/** OpenCode scrolls via xterm native SGR once the footer is live. Grok uses direct PTY SGR injection. */
+/** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
 export function shouldPassthroughNativeTuiWheel({
   isGrokSession = false,
+  grokTuiReady = false,
   opencodeFooterConfirmed = false,
 } = {}) {
-  if (isGrokSession) return false;
+  if (isGrokSession) return grokTuiReady;
   return opencodeFooterConfirmed;
 }
 
@@ -239,7 +241,8 @@ export function buildGrokWheelScrollPayload(direction, col, row, steps = 1) {
  */
 export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession = false) {
   if (isGrokSession || isGrokTuiInitialCommand(initialCommand)) {
-    return 'sgr';
+    // Pre-ready grok: Page Up/Down avoids hitting the Ink input; live grok uses native passthrough.
+    return 'page';
   }
   if (isLikelyTuiInitialCommand(initialCommand)) {
     return 'sgr';
@@ -292,10 +295,17 @@ export function resolveTerminalPointerElement(term, container, shell) {
   return resolveTerminalScreenElement(term, container || shell);
 }
 
+export const TERMINAL_WHEEL_FORWARD_FLAG = '__devhubTerminalWheelForward';
+
+export function isForwardedTerminalWheelEvent(event) {
+  return Boolean(event?.[TERMINAL_WHEEL_FORWARD_FLAG]);
+}
+
 /** Shell capture can starve xterm's wheel listener — forward explicitly for TUI passthrough. */
 export function forwardTerminalWheelToXterm(term, event) {
   const target = term?.element;
   if (!target || !event || typeof WheelEvent === 'undefined') return false;
+  if (isForwardedTerminalWheelEvent(event)) return false;
 
   const forwarded = new WheelEvent(event.type, {
     deltaX: event.deltaX,
@@ -310,9 +320,11 @@ export function forwardTerminalWheelToXterm(term, event) {
     shiftKey: event.shiftKey,
     altKey: event.altKey,
     metaKey: event.metaKey,
-    bubbles: true,
+    // Do not bubble — shell capture listeners would re-enter and recurse.
+    bubbles: false,
     cancelable: true,
   });
+  forwarded[TERMINAL_WHEEL_FORWARD_FLAG] = true;
 
   return target.dispatchEvent(forwarded);
 }
@@ -1204,7 +1216,6 @@ export default function TerminalTTY({
   const grokTuiReadyRef = useRef(isGrokTuiInitialCommand(initialCommand));
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
   const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(false);
-  const lastGrokWheelTimeRef = useRef(0);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
@@ -1890,6 +1901,12 @@ export default function TerminalTTY({
 
     const isRecoveryRelaunch = /#recovery-\d+\s*$/i.test(initialCommand);
     if (skipRedundantInitialCommandSend(isRecoveryRelaunch)) {
+      logTerminalSession('initial-command-skipped', {
+        panelId: id,
+        reason: 'redundant-lifecycle',
+        command: initialCommand,
+        isRecoveryRelaunch,
+      });
       hasSentInitialCommand.current = true;
       markPanelInitialCommandDispatched(id, initialCommand);
       return;
@@ -1902,6 +1919,12 @@ export default function TerminalTTY({
         currentCommand: initialCommand,
       })
     ) {
+      logTerminalSession('initial-command-blocked', {
+        panelId: id,
+        reason: 'late-command-change',
+        snapshotCommand: initialCommandConnectSnapshotRef.current,
+        currentCommand: initialCommand,
+      });
       hasSentInitialCommand.current = true;
       markPanelInitialCommandDispatched(id, initialCommand);
       return;
@@ -1910,10 +1933,21 @@ export default function TerminalTTY({
     // Swarm panels attach to tmux on PTY spawn (ttyServer). The materialized launch
     // wrapper runs only on a fresh swarm launch, not when reopening the workspace.
     if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper !== true) {
+      logTerminalSession('initial-command-skipped', {
+        panelId: id,
+        reason: 'swarm-tmux-reattach',
+        command: initialCommand,
+      });
       return;
     }
 
     const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
+    logTerminalSession('initial-command-sent', {
+      panelId: id,
+      command: cleanCommand,
+      isRecoveryRelaunch,
+      transport: transportRef.current,
+    });
     console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
     if (transportRef.current === 'raw') {
       wsRef.current.send(cleanCommand + '\r');
@@ -3219,6 +3253,7 @@ export default function TerminalTTY({
               if (grokReady) {
                 isGrokSessionRef.current = true;
                 grokTuiReadyRef.current = true;
+                setNativeWheelPassthrough(true);
               }
               if (footerReady) {
                 tuiSessionFooterConfirmedRef.current = true;
@@ -3462,9 +3497,14 @@ export default function TerminalTTY({
       return;
     }
     cliLog(`CLIENT:${id}`, 'reconnect() called');
+    logTerminalSession('terminal-reconnect', {
+      panelId: id,
+      connectionState: connectionStateRef.current,
+      initialCommand,
+    });
     termRef.current?.clear();
     connect();
-  }, [autoFocus, connect, sendResize]);
+  }, [autoFocus, connect, initialCommand, sendResize]);
 
   const copyTextToClipboard = useCallback(async (text) => {
     if (!text) return false;
@@ -3933,6 +3973,12 @@ export default function TerminalTTY({
         attempt: reconnectAttemptsRef.current,
         delayMs: delay,
       });
+      logTerminalSession('terminal-auto-reconnect-scheduled', {
+        panelId: id,
+        connectionState,
+        attempt: reconnectAttemptsRef.current,
+        delayMs: delay,
+      });
       const timer = setTimeout(() => {
         reconnectAttemptsRef.current += 1;
         reconnect();
@@ -4200,14 +4246,16 @@ export default function TerminalTTY({
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
-  // Wheel: synthetic routing for shell/TUI bootstrap; live grok/OpenCode use xterm native SGR.
+  // Wheel: synthetic routing for shell/TUI bootstrap; live OpenCode uses xterm native SGR directly.
   useEffect(() => {
-    if (shouldUseNativeRenderer) return undefined;
+    if (shouldUseNativeRenderer || nativeWheelPassthrough) return undefined;
 
     const shell = viewportShellRef.current;
     if (!shell) return undefined;
 
     const handleWheel = (event) => {
+      if (isForwardedTerminalWheelEvent(event)) return;
+
       const term = termRef.current;
       if (!term) return;
 
@@ -4223,65 +4271,14 @@ export default function TerminalTTY({
 
       const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
 
-      if (shouldInjectGrokWheelSgr(isGrokSession, initialCommand)) {
-        const grokNow = Date.now();
-        if (grokNow - lastGrokWheelTimeRef.current < 24) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-        lastGrokWheelTimeRef.current = grokNow;
-
-        const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: true });
-        const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
-        const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
-        if (cell) {
-          lastPointerZoneRef.current = isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
-            ? 'transcript'
-            : 'input';
-        }
-
-        const inTranscript = shouldRouteWheelToTranscript({
-          cell,
-          rows: term.rows,
-          lastPointerZone: lastPointerZoneRef.current,
-          inputZoneRows,
-        });
-        if (!inTranscript) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-
-        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
-        if (!direction) return;
-
-        prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
-
-        const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);
-        const steps = Math.max(1, Math.min(2, rawSteps));
-        const { col: wheelCol, row: wheelRow } = resolveGrokWheelSgrCoords(
-          cell,
-          term,
-          inputZoneRows
-        );
-        const sent = sendTerminalPasteInput({
-          socket: wsRef.current,
-          transport: transportRef.current,
-          text: buildGrokWheelScrollPayload(direction, wheelCol, wheelRow, steps),
-        });
-        if (!sent) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
-      // OpenCode: forward wheel into xterm so native SGR reports reach the PTY.
-      if (nativeWheelPassthrough) {
-        event.preventDefault();
-        event.stopPropagation();
-        forwardTerminalWheelToXterm(term, event);
+      // Live grok/OpenCode: xterm forwards wheel as native SGR at the pointer row.
+      if (
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession,
+          grokTuiReady: grokTuiReadyRef.current,
+          opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
+        })
+      ) {
         return;
       }
 

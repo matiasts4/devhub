@@ -164,6 +164,8 @@ const {
   resolveTerminalPointerElement,
   resolveTerminalScreenElement,
   forwardTerminalWheelToXterm,
+  isForwardedTerminalWheelEvent,
+  TERMINAL_WHEEL_FORWARD_FLAG,
   TERMINAL_GROK_INPUT_ZONE_ROWS,
   isLikelyTuiInitialCommand,
   isGrokTuiInitialCommand,
@@ -1800,20 +1802,26 @@ describe('TerminalTTY renderer fallback UI', () => {
       ).toBe(false);
     });
 
-    test('grok helpers use direct PTY SGR injection; OpenCode keeps native passthrough', () => {
+    test('grok uses native passthrough when ready; OpenCode when footer is live', () => {
       expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
       expect(isGrokTuiInitialCommand('groc')).toBe(true);
       expect(shouldInjectGrokWheelSgr(true)).toBe(true);
       expect(shouldInjectGrokWheelSgr(false, 'grok')).toBe(true);
       expect(shouldInjectGrokWheelSgr(false, 'opencode')).toBe(false);
-      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('sgr');
-      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
       expect(
         shouldPassthroughNativeTuiWheel({
           isGrokSession: true,
         })
       ).toBe(false);
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession: true,
+          grokTuiReady: true,
+        })
+      ).toBe(true);
       expect(
         shouldPassthroughNativeTuiWheel({
           isGrokSession: false,
@@ -1874,7 +1882,11 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(forwardTerminalWheelToXterm(term, source)).toBe(true);
       expect(dispatched).toHaveLength(1);
       expect(dispatched[0].deltaY).toBe(120);
+      expect(dispatched[0].bubbles).toBe(false);
+      expect(dispatched[0][TERMINAL_WHEEL_FORWARD_FLAG]).toBe(true);
+      expect(isForwardedTerminalWheelEvent(dispatched[0])).toBe(true);
       expect(forwardTerminalWheelToXterm(null, source)).toBe(false);
+      expect(forwardTerminalWheelToXterm(term, dispatched[0])).toBe(false);
     });
 
     test('resolveTerminalPointerElement prefers xterm-screen for hit-testing', () => {
