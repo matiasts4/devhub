@@ -232,9 +232,11 @@ export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession =
   return 'page';
 }
 
-/** Grok keeps a single prompt row; OpenCode footer/input needs a slightly taller guard. */
+export const TERMINAL_GROK_INPUT_ZONE_ROWS = 3;
+
+/** Grok shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
 export function resolveTerminalWheelInputZoneRows({ isGrokSession = false } = {}) {
-  return isGrokSession ? 1 : TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
+  return isGrokSession ? TERMINAL_GROK_INPUT_ZONE_ROWS : TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
 }
 
 export const TERMINAL_WHEEL_ARROW_UP_SEQ = '\x1b[A';
@@ -272,8 +274,7 @@ export function buildTerminalWheelSgrSequence(direction, col, row) {
 }
 
 export function resolveTerminalPointerElement(term, container, shell) {
-  const screen = term?.element?.querySelector?.('.xterm-screen');
-  return screen || term?.element || container || shell || null;
+  return resolveTerminalScreenElement(term, container || shell);
 }
 
 /** Shell capture can starve xterm's wheel listener — forward explicitly for TUI passthrough. */
@@ -721,23 +722,57 @@ export function buildTerminalWheelPageSequence(direction, steps = 1) {
 
 export const TERMINAL_DEFAULT_INPUT_ZONE_ROWS = 2;
 
+export function resolveTerminalScreenElement(term, element) {
+  return (
+    term?._core?.screenElement ||
+    term?.element?.querySelector?.('.xterm-screen') ||
+    element ||
+    term?.element ||
+    null
+  );
+}
+
 export function resolveTerminalCellFromPointer(term, element, clientX, clientY) {
-  if (!term || !element) return null;
-  const rect = element.getBoundingClientRect?.();
+  if (!term) return null;
+
+  const screenElement = resolveTerminalScreenElement(term, element);
+  const mouseService = term?._core?._mouseService;
+  if (screenElement && mouseService && typeof mouseService.getMouseReportCoords === 'function') {
+    const pos = mouseService.getMouseReportCoords({ clientX, clientY }, screenElement);
+    if (pos && Number.isInteger(pos.col) && Number.isInteger(pos.row)) {
+      return { col: pos.col, row: pos.row };
+    }
+  }
+
+  if (!screenElement) return null;
+  const rect = screenElement.getBoundingClientRect?.();
   if (!rect || rect.width <= 0 || rect.height <= 0) return null;
   const cols = term.cols;
   const rows = term.rows;
   if (!Number.isInteger(cols) || cols <= 0 || !Number.isInteger(rows) || rows <= 0) {
     return null;
   }
-  const col = Math.min(
-    cols - 1,
-    Math.max(0, Math.floor(((clientX - rect.left) / rect.width) * cols))
-  );
-  const row = Math.min(
-    rows - 1,
-    Math.max(0, Math.floor(((clientY - rect.top) / rect.height) * rows))
-  );
+
+  const cell = term?._core?._renderService?.dimensions?.css?.cell;
+  const cellW = Number(cell?.width ?? 0);
+  const cellH = Number(cell?.height ?? 0);
+  const relX = clientX - rect.left;
+  const relY = clientY - rect.top;
+
+  if (cellW > 0 && cellH > 0) {
+    const canvas = term?._core?._renderService?.dimensions?.css?.canvas;
+    const maxX = Math.max(0, Number(canvas?.width ?? rect.width) - 1);
+    const maxY = Math.max(0, Number(canvas?.height ?? rect.height) - 1);
+    const x = Math.min(Math.max(relX, 0), maxX);
+    const y = Math.min(Math.max(relY, 0), maxY);
+    return {
+      col: Math.min(cols - 1, Math.max(0, Math.floor(x / cellW))),
+      row: Math.min(rows - 1, Math.max(0, Math.floor(y / cellH))),
+    };
+  }
+
+  const col = Math.min(cols - 1, Math.max(0, Math.floor((relX / rect.width) * cols)));
+  const row = Math.min(rows - 1, Math.max(0, Math.floor((relY / rect.height) * rows)));
   return { col, row };
 }
 
@@ -4056,7 +4091,7 @@ export default function TerminalTTY({
 
       if (shouldInjectGrokWheelSgr(isGrokSession, initialCommand)) {
         const grokNow = Date.now();
-        if (grokNow - lastGrokWheelTimeRef.current < 48) {
+        if (grokNow - lastGrokWheelTimeRef.current < 24) {
           event.preventDefault();
           event.stopPropagation();
           return;

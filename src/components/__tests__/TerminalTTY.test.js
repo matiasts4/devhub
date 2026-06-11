@@ -160,7 +160,9 @@ const {
   resolveGrokWheelSgrCoords,
   resolveTerminalWheelInputZoneRows,
   resolveTerminalPointerElement,
+  resolveTerminalScreenElement,
   forwardTerminalWheelToXterm,
+  TERMINAL_GROK_INPUT_ZONE_ROWS,
   isLikelyTuiInitialCommand,
   isGrokTuiInitialCommand,
   detectGrokTuiReady,
@@ -1696,6 +1698,27 @@ describe('TerminalTTY renderer fallback UI', () => {
       ).toBe(true);
     });
 
+    test('resolveTerminalCellFromPointer prefers xterm mouse service coords', () => {
+      const screenElement = {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 480 }),
+      };
+      const term = {
+        cols: 80,
+        rows: 24,
+        element: { querySelector: () => screenElement },
+        _core: {
+          screenElement,
+          _mouseService: {
+            getMouseReportCoords: () => ({ col: 12, row: 8, x: 96, y: 64 }),
+          },
+        },
+      };
+      expect(resolveTerminalCellFromPointer(term, screenElement, 96, 64)).toEqual({
+        col: 12,
+        row: 8,
+      });
+    });
+
     test('resolveTerminalCellFromPointer maps viewport coordinates to cells', () => {
       const term = { cols: 80, rows: 24 };
       const element = {
@@ -1755,18 +1778,25 @@ describe('TerminalTTY renderer fallback UI', () => {
           opencodeFooterConfirmed: true,
         })
       ).toBe(true);
-      expect(resolveGrokWheelSgrCoords({ col: 10, row: 22 }, { cols: 80, rows: 24 }, 1)).toEqual({
+      expect(resolveGrokWheelSgrCoords({ col: 10, row: 20 }, { cols: 80, rows: 24 }, 3)).toEqual({
         col: 10,
-        row: 22,
+        row: 20,
       });
-      expect(resolveGrokWheelSgrCoords({ col: 10, row: 23 }, { cols: 80, rows: 24 }, 1)).toEqual({
+      expect(resolveGrokWheelSgrCoords({ col: 10, row: 23 }, { cols: 80, rows: 24 }, 3)).toEqual({
         col: 10,
-        row: 22,
+        row: 20,
       });
-      expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(1);
+      expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(
+        TERMINAL_GROK_INPUT_ZONE_ROWS
+      );
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
-      expect(isTerminalTranscriptCell(22, 24, 1)).toBe(true);
-      expect(isTerminalTranscriptCell(23, 24, 1)).toBe(false);
+      expect(isTerminalTranscriptCell(20, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(true);
+      expect(isTerminalTranscriptCell(21, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(false);
+      expect(
+        resolveTerminalScreenElement({ _core: { screenElement: { id: 'screen' } } }, null)
+      ).toEqual({
+        id: 'screen',
+      });
       expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
       expect(detectGrokSessionFromOutput('\x1b]0;grok\x07')).toBe(true);
       expect(detectGrokSessionFromOutput('opencode ready')).toBe(false);
