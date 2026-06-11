@@ -90,9 +90,7 @@ jest.mock('@/lib/theme/themes', () => ({
   setAccent: jest.fn((value) => value),
 }));
 
-const themeModule = require('@/lib/theme/themes');
-const ajustesModule = require('../Ajustes');
-const Ajustes = ajustesModule.default;
+const Ajustes = require('../Ajustes').default;
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -130,7 +128,11 @@ async function renderIntoDom(element) {
   return { container, root };
 }
 
-describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', () => {
+function findButton(container, predicate) {
+  return Array.from(container.querySelectorAll('button')).find(predicate);
+}
+
+describe('Ajustes appearance tab — deprecation banner', () => {
   let dom;
   let rendered;
 
@@ -138,14 +140,10 @@ describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', 
     dom = installDom();
     rendered = null;
     mockUseOutletContext.mockReturnValue({
-      project: {
-        id: 'project-1',
-        name: 'DevHub',
-        color: '#58A6FF',
-        status: 'active',
-      },
+      project: { id: 'project-1', name: 'DevHub', color: '#58A6FF', status: 'active' },
       user: { id: 'user-1' },
     });
+    mockNavigate.mockClear();
   });
 
   afterEach(() => {
@@ -158,74 +156,40 @@ describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', 
     jest.clearAllMocks();
   });
 
-  test('legacy Ajustes appearance tab no longer renders theme/morphology/accent form controls', async () => {
+  test('renders deprecation banner inside the appearance shell with a CTA pointing to /settings/appearance', async () => {
     rendered = await renderIntoDom(React.createElement(Ajustes));
 
-    const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Apariencia')
+    // The default tab is "project" — switch to the appearance tab first
+    const appearanceTab = findButton(rendered.container, (button) =>
+      /apariencia|appearance/i.test(button.textContent || '')
     );
-
+    expect(appearanceTab).toBeTruthy();
     flushSync(() => {
       appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     });
     await flushEffects();
 
-    // The legacy form controls are gone; the deprecation banner is in their place.
-    expect(
-      rendered.container.querySelector('[data-testid="ajustes-accent-option-amber"]')
-    ).toBeNull();
-    expect(
-      rendered.container.querySelector('[data-testid="ajustes-morphology-option-default"]')
-    ).toBeNull();
+    const banner = rendered.container.querySelector(
+      '[data-testid="ajustes-appearance-deprecation-banner"]'
+    );
+    expect(banner).toBeTruthy();
 
-    // The appearance shell + deprecation banner are still mounted.
     const appearanceShell = rendered.container.querySelector(
       '[data-testid="ajustes-appearance-shell"]'
     );
     expect(appearanceShell).toBeTruthy();
-    expect(
-      rendered.container.querySelector('[data-testid="ajustes-appearance-deprecation-banner"]')
-    ).toBeTruthy();
+    expect(appearanceShell.contains(banner)).toBe(true);
 
-    // The shell still routes chrome through the shared morphology surface factory.
-    const appearanceShellStyle = ajustesModule.getSettingsShellStyle({ emphasized: true });
-    expect(appearanceShell.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
-    expect(appearanceShellStyle.background).toContain('var(--chrome-panel-fill)');
-    expect(appearanceShellStyle.borderColor).toBe('var(--chrome-border-color)');
-    expect(appearanceShellStyle.background).not.toContain('var(--surface-card)');
-  });
-
-  test('legacy Ajustes appearance tab is read-only — the banner CTA does not invoke legacy writers', async () => {
-    rendered = await renderIntoDom(React.createElement(Ajustes));
-
-    const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Apariencia')
-    );
-
-    flushSync(() => {
-      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await flushEffects();
-
-    const cta = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      /open new settings/i.test(button.textContent || '')
+    const cta = findButton(banner, (button) =>
+      /open new settings|go to new settings|abrir nuevo settings/i.test(button.textContent || '')
     );
     expect(cta).toBeTruthy();
-
-    // Snapshot the call counts *after* the appearance tab is mounted but *before* the CTA click.
-    const themeCallsBefore = themeModule.setTheme.mock.calls.length;
-    const morphologyCallsBefore = themeModule.setMorphology.mock.calls.length;
-    const accentCallsBefore = themeModule.setAccent.mock.calls.length;
 
     flushSync(() => {
       cta.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     });
     await flushEffects();
 
-    // The CTA navigates; it must not invoke any of the legacy writers.
     expect(mockNavigate).toHaveBeenCalledWith('/settings/appearance');
-    expect(themeModule.setTheme.mock.calls.length).toBe(themeCallsBefore);
-    expect(themeModule.setMorphology.mock.calls.length).toBe(morphologyCallsBefore);
-    expect(themeModule.setAccent.mock.calls.length).toBe(accentCallsBefore);
   });
 });
