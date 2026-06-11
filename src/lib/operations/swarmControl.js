@@ -18,6 +18,25 @@ export const SWARM_WORKER_FANOUT_STAGGER_MS = 4000;
 /** Base delay before first worker spawn so ZED can finish OpenCode startup (ms). */
 export const SWARM_WORKER_FANOUT_BASE_DELAY_MS = 8000;
 
+/**
+ * Standby launches: orchestrators get bootstrap at launch; workers wait for delegation.
+ */
+export function resolveBootstrapPromptForLaunch({
+  roleKey = '',
+  prompt = '',
+  bootstrapMode = 'engram_first',
+} = {}) {
+  const normalizedRoleKey = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (bootstrapMode === 'standby' && isSddWorkerRoleKey(normalizedRoleKey)) {
+    return '';
+  }
+  return String(prompt || '');
+}
+
 export function resolveLaunchKickoffBodySummary({
   mission,
   bootstrapMode = 'engram_first',

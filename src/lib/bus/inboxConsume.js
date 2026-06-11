@@ -39,6 +39,11 @@ function formatDirectiveForInjection(body, fromRole, toRole) {
       parsed.kind === 'delegate' || parsed.change || parsed.task_id || parsed.instruction;
     if (isDelegate) {
       const lines = [`[${from} → ${toRole}] Nueva directiva`];
+      if (/^sdd_worker_\d+$/.test(String(toRole || '').trim())) {
+        lines.push(
+          'Comms: reporta a ZED con `_devhub_chat --to zed`; directivas por inbox-consume; ACK con `_devhub_chat --to zed --kind ack`.'
+        );
+      }
       if (parsed.change) lines.push(`Change: ${parsed.change}`);
       if (parsed.task_id) lines.push(`Task: ${parsed.task_id}`);
       const instruction = parsed.instruction || parsed.message || parsed.body;

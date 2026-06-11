@@ -16,6 +16,10 @@ function isGrokLifecycleCommand(command) {
   return /^(grok|groc)\b/i.test(command);
 }
 
+function isSwarmLaunchWrapperCommand(command) {
+  return /^bash\s+\/tmp\/devhub-launch-/i.test(normalizeLifecycleCommand(command));
+}
+
 const dispatchedByPanelId = new Map();
 
 export function markPanelInitialCommandDispatched(panelId, command) {
@@ -63,6 +67,10 @@ export function shouldSkipRedundantInitialCommandSend({
   }
 
   if (isGrokLifecycleCommand(record.command) && isGrokLifecycleCommand(normalized)) {
+    return true;
+  }
+
+  if (isSwarmLaunchWrapperCommand(record.command) && isSwarmLaunchWrapperCommand(normalized)) {
     return true;
   }
 

@@ -48,6 +48,10 @@ import {
 import { buildSwarmTmuxSessionName } from '@/lib/terminal/viewportReadyMarker';
 import { detectOpenCodeTuiReady } from '@/lib/terminal/opencodeReadyMarker';
 import {
+  isSwarmLaunchWrapperDispatched,
+  markSwarmLaunchWrapperDispatched,
+} from '@/lib/terminal/swarmLaunchWrapperLifecycle';
+import {
   clearPanelInitialCommandLifecycle,
   markPanelInitialCommandDispatched,
   shouldSkipRedundantInitialCommandSend,
@@ -1960,13 +1964,26 @@ export default function TerminalTTY({
 
     // Swarm panels attach to tmux on PTY spawn (ttyServer). The materialized launch
     // wrapper runs only on a fresh swarm launch, not when reopening the workspace.
-    if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper !== true) {
-      logTerminalSession('initial-command-skipped', {
-        panelId: id,
-        reason: 'swarm-tmux-reattach',
-        command: initialCommand,
-      });
-      return;
+    if (swarmContext?.isSwarmRole) {
+      const wrapperAlreadyDispatched = isSwarmLaunchWrapperDispatched(
+        {
+          launchId: swarmContext.launchId,
+          roleKey: swarmContext.roleKey,
+        },
+        typeof window !== 'undefined' ? window.localStorage : null
+      );
+      if (wrapperAlreadyDispatched || swarmContext?.needsLaunchWrapper !== true) {
+        logTerminalSession('initial-command-skipped', {
+          panelId: id,
+          reason: wrapperAlreadyDispatched
+            ? 'swarm-wrapper-already-dispatched'
+            : 'swarm-tmux-reattach',
+          command: initialCommand,
+        });
+        hasSentInitialCommand.current = true;
+        markPanelInitialCommandDispatched(id, initialCommand);
+        return;
+      }
     }
 
     const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
@@ -1985,6 +2002,14 @@ export default function TerminalTTY({
     hasSentInitialCommand.current = true;
     markPanelInitialCommandDispatched(id, initialCommand);
     if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper === true) {
+      markSwarmLaunchWrapperDispatched(
+        {
+          launchId: swarmContext.launchId,
+          roleKey: swarmContext.roleKey,
+          panelId: id,
+        },
+        typeof window !== 'undefined' ? window.localStorage : null
+      );
       window.dispatchEvent(
         new CustomEvent('devhub:swarm-launch-wrapper-sent', { detail: { panelId: id } })
       );

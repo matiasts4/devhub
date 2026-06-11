@@ -52,6 +52,7 @@ import {
   SWARM_OPENCODE_READY_GRACE_MS,
   SWARM_WORKER_FANOUT_BASE_DELAY_MS,
   SWARM_WORKER_FANOUT_STAGGER_MS,
+  resolveBootstrapPromptForLaunch,
 } from '@/lib/operations/swarmControl';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
 import { buildLaunchWrapperForRole, resolveBusHelperPaths } from '@/lib/bus/launchPaths.js';
@@ -280,7 +281,8 @@ export function buildLaunchCommand(
   modelId = null,
   launchId = null,
   workspacePath = '',
-  projectId = null
+  projectId = null,
+  bootstrapMode = 'engram_first'
 ) {
   // T-023: default programId to 'opencode' when missing. Otherwise workers
   // fall through to the bash (hermes) default in buildAgentLaunchCommand,
@@ -342,7 +344,10 @@ export function buildLaunchCommand(
     projectId,
     tmuxSessionName,
     directorTmuxSession: isWorker ? directorTmuxSession : null,
-    bootstrapPrompt: effectiveProgramId === 'opencode' ? prompt : '',
+    bootstrapPrompt:
+      effectiveProgramId === 'opencode'
+        ? resolveBootstrapPromptForLaunch({ roleKey, prompt, bootstrapMode })
+        : '',
     innerCommand,
     supervisorUrl,
     busBinaryPath: busPaths.busBinaryPath,
@@ -1251,7 +1256,8 @@ function configureLaunchRole({
     roleModel,
     launchId,
     worktreePath,
-    projectId
+    projectId,
+    resolvedDraft.bootstrapMode || 'engram_first'
   );
 
   return {

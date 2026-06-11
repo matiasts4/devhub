@@ -189,6 +189,10 @@ import {
   terminateSwarmLaunchesForWorkspace,
 } from '@/lib/terminal/swarmWorkspaceLifecycle';
 import {
+  hydrateSwarmLaunchWrapperFlags,
+  markSwarmLaunchWrapperDispatched,
+} from '@/lib/terminal/swarmLaunchWrapperLifecycle';
+import {
   useLiveSurfaceRegistry,
   LiveSurfaceRegistryContext,
 } from '@/lib/pizarra/useLiveSurfaceRegistry';
@@ -1477,9 +1481,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           );
 
           const hydratedAgentRuns = readAgentRunsByPanel(storage);
-          const hydratedWorkspaces = normalizeWorkspacesOpenCodeCommands(
-            normalizedState.workspaces,
-            hydratedAgentRuns
+          const hydratedWorkspaces = hydrateSwarmLaunchWrapperFlags(
+            normalizeWorkspacesOpenCodeCommands(normalizedState.workspaces, hydratedAgentRuns),
+            storage
           );
 
           setWorkspaces(hydratedWorkspaces);
@@ -5278,6 +5282,25 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const handleSwarmLaunchWrapperSent = (e) => {
       const { panelId } = e.detail || {};
       if (!panelId) return;
+
+      let panel = null;
+      for (const workspace of workspacesRef.current || []) {
+        for (const column of workspace?.columns || []) {
+          panel = (column.panels || []).find((candidate) => candidate.id === panelId) || null;
+          if (panel) break;
+        }
+        if (panel) break;
+      }
+      if (panel?.swarmContext?.launchId && panel?.swarmContext?.roleKey) {
+        markSwarmLaunchWrapperDispatched(
+          {
+            launchId: panel.swarmContext.launchId,
+            roleKey: panel.swarmContext.roleKey,
+            panelId,
+          },
+          storage
+        );
+      }
 
       setWorkspaces((prev) =>
         prev.map((ws) => ({

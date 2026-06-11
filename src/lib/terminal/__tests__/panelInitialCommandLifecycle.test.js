@@ -42,6 +42,16 @@ describe('panelInitialCommandLifecycle', () => {
     ).toBe(false);
   });
 
+  test('skips repeated materialized swarm launch wrapper commands', () => {
+    markPanelInitialCommandDispatched('p1', 'bash /tmp/devhub-launch-launch-1-zed.sh');
+    expect(
+      shouldSkipRedundantInitialCommandSend({
+        panelId: 'p1',
+        command: 'bash /tmp/devhub-launch-launch-1-zed.sh',
+      })
+    ).toBe(true);
+  });
+
   test('skips when server reports session reattach', () => {
     expect(
       shouldSkipRedundantInitialCommandSend({
