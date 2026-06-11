@@ -73,8 +73,8 @@ export function resolveWorkspaceShellVisibilityStyle({
     visibility: 'visible',
     pointerEvents: 'auto',
     contain: 'layout paint',
-    transition: 'opacity 120ms cubic-bezier(0.4, 0, 0.2, 1)',
-    willChange: 'opacity',
+    transition: 'none',
+    willChange: 'auto',
   };
 }
 

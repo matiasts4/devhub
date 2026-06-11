@@ -12,11 +12,15 @@ describe('nativeLayoutSync', () => {
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body></body></html>');
     global.window = dom.window;
+    global.CustomEvent = dom.window.CustomEvent;
+    global.document = dom.window.document;
   });
 
   afterEach(() => {
     dom.window.close();
     delete global.window;
+    delete global.CustomEvent;
+    delete global.document;
   });
 
   test('dispatchTerminalLayoutSettled dispatches with detail', () => {
@@ -72,5 +76,22 @@ describe('nativeLayoutSync', () => {
 
     expect(layoutEvents[0].reason).toBe('internal-split-drag-end');
     expect(workspaceEvents[0].activePanelIds).toEqual(['p1']);
+  });
+
+  test('schedulePostLayoutNativeSync can skip follow-up passes for workspace-switch', () => {
+    const layoutEvents = [];
+
+    window.addEventListener('devhub:terminal-layout-settled', (event) =>
+      layoutEvents.push(event.detail)
+    );
+
+    schedulePostLayoutNativeSync({
+      layoutReason: 'workspace-switch',
+      workspaceDetail: { activePanelIds: ['p1'], reason: 'workspace-switch' },
+      includeFollowUpPasses: false,
+    });
+
+    expect(layoutEvents).toHaveLength(1);
+    expect(layoutEvents[0].reason).toBe('workspace-switch');
   });
 });

@@ -913,6 +913,30 @@ export function shouldAttachWebglRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-webgl';
 }
 
+/**
+ * Single-panel WebGL workspaces should not refit/resize on tab switch when the
+ * PTY grid is already correct — only reattach the GPU addon if it was released
+ * while the shell was hidden.
+ */
+export function shouldFreezeSingleWebglViewportOnWorkspaceShow({
+  reason = '',
+  sizeUnchanged = false,
+  operationalRendererMode = 'xterm',
+  visibleTerminalPanelCount = 1,
+} = {}) {
+  if (!sizeUnchanged) return false;
+  if (visibleTerminalPanelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) return false;
+  if (!shouldAttachWebglRenderer({ operationalRendererMode })) return false;
+
+  const normalizedReason = String(reason);
+  if (normalizedReason.includes('workspace-switch')) return true;
+  if (normalizedReason === 'workspace-show-layout' || normalizedReason === 'workspace-show-raf') {
+    return true;
+  }
+  if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
+  return false;
+}
+
 /** Canvas 2D attach/reattach is used for visible split siblings (all panels). */
 export function shouldAttachCanvasRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-canvas';
@@ -2075,7 +2099,7 @@ export default function TerminalTTY({
   }, [buildViewportSnapshot, id]);
 
   const tryReattachWebglAddon = useCallback(
-    async ({ clearAtlas = true } = {}) => {
+    async ({ clearAtlas = true, skipFitWhenUnchanged = false } = {}) => {
       const term = termRef.current;
       if (!term || webglAddonRef.current) return false;
       if (
@@ -2104,15 +2128,33 @@ export default function TerminalTTY({
         setWebglFallback(null);
         pendingWebglRecoveryRef.current = false;
 
-        fitTerminalViewport({
+        const colsBefore = Number(termRef.current.cols ?? 0);
+        const rowsBefore = Number(termRef.current.rows ?? 0);
+        const proposedDims = proposeTerminalViewportDimensions({
           container: containerRef.current,
           fitAddon: fitRef.current,
           term: termRef.current,
-          socket: wsRef.current,
-          clearAtlas,
-          lastPtySizeRef: lastPtySizeRef.current,
         });
-        stabilizeTerminalRenderer(termRef.current, { clearAtlas });
+        const viewportUnchanged =
+          skipFitWhenUnchanged &&
+          colsBefore > 0 &&
+          rowsBefore > 0 &&
+          proposedDims?.cols === colsBefore &&
+          proposedDims?.rows === rowsBefore;
+
+        if (viewportUnchanged) {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        } else {
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas,
+            lastPtySizeRef: lastPtySizeRef.current,
+          });
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas });
+        }
         cliLog(`CLIENT:${id}`, 'WebGL addon reattached after context loss');
         return true;
       } catch (error) {
@@ -2190,6 +2232,27 @@ export default function TerminalTTY({
       const isDeferredShowPass = /workspace-show-(settled|recover|raf)/.test(reason);
       if (isDeferredShowPass && sizeUnchanged && !pendingWebglRecoveryRef.current) {
         logViewportDiagnostic(`${reason}-skipped-unchanged`);
+        return;
+      }
+
+      if (
+        shouldFreezeSingleWebglViewportOnWorkspaceShow({
+          reason,
+          sizeUnchanged,
+          operationalRendererMode: operationalRendererModeRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+        })
+      ) {
+        needsViewportSyncOnShowRef.current = false;
+        logViewportDiagnostic(`${reason}-frozen-single-webgl`);
+        if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
+          void tryReattachWebglAddonRef.current?.({
+            clearAtlas: false,
+            skipFitWhenUnchanged: true,
+          });
+        } else {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        }
         return;
       }
 
@@ -3352,9 +3415,11 @@ export default function TerminalTTY({
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
       syncTerminalViewportOnWorkspaceShow('workspace-show-layout', { clearAtlas: false });
-      requestAnimationFrame(() => {
-        syncTerminalViewportOnWorkspaceShow('workspace-show-raf', { clearAtlas: false });
-      });
+      if (visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) {
+        requestAnimationFrame(() => {
+          syncTerminalViewportOnWorkspaceShow('workspace-show-raf', { clearAtlas: false });
+        });
+      }
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
@@ -3963,6 +4028,23 @@ export default function TerminalTTY({
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
 
       layoutSettleBurstCleanupRef.current?.();
+
+      if (
+        String(reason).includes('workspace-switch') &&
+        visibleTerminalPanelCountRef.current <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT &&
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        })
+      ) {
+        if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
+          void tryReattachWebglAddonRef.current?.({
+            clearAtlas: false,
+            skipFitWhenUnchanged: true,
+          });
+        }
+        return;
+      }
+
       const extraDelaysMs = String(reason).includes('workspace-removed')
         ? []
         : String(reason).includes('workspace-switch') &&

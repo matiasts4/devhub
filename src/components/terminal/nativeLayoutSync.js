@@ -59,7 +59,11 @@ export function scheduleNativeSurfaceActivation(runSync, { includeSettleDelays =
 /**
  * After split/dock drag or panel-group layout changes, re-align native VTE bounds with React chrome.
  */
-export function schedulePostLayoutNativeSync({ layoutReason, workspaceDetail = null } = {}) {
+export function schedulePostLayoutNativeSync({
+  layoutReason,
+  workspaceDetail = null,
+  includeFollowUpPasses = true,
+} = {}) {
   const run = () => {
     if (layoutReason) {
       dispatchTerminalLayoutSettled({ reason: layoutReason });
@@ -70,6 +74,9 @@ export function schedulePostLayoutNativeSync({ layoutReason, workspaceDetail = n
   };
 
   run();
+  if (!includeFollowUpPasses) {
+    return () => {};
+  }
   return scheduleNativeSurfaceActivation(run);
 }
 

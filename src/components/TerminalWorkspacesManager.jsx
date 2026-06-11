@@ -2969,12 +2969,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (typeof window === 'undefined') return;
 
       layoutSettleCleanupRef.current?.();
+      const isSinglePanelWorkspaceSwitch =
+        reason === 'workspace-switch' && getActiveWorkspaceTerminalPanelCount() <= 1;
       layoutSettleCleanupRef.current = schedulePostLayoutNativeSync({
         layoutReason: reason,
         workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
+        includeFollowUpPasses: !isSinglePanelWorkspaceSwitch,
       });
     },
-    [buildNativeWorkspaceSyncDetail]
+    [buildNativeWorkspaceSyncDetail, getActiveWorkspaceTerminalPanelCount]
   );
 
   useEffect(

@@ -130,6 +130,7 @@ const {
   shouldRecoverPanelOnActivation,
   shouldClearWebglAtlasOnPanelActivation,
   shouldAttachWebglRenderer,
+  shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldAttachCanvasRenderer,
   shouldRefitVisibleInactiveSplitPanel,
   sendTerminalPasteInput,
@@ -612,6 +613,46 @@ describe('shouldAttachCanvasRenderer()', () => {
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-canvas' })).toBe(true);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-webgl' })).toBe(false);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm' })).toBe(false);
+  });
+});
+
+describe('shouldFreezeSingleWebglViewportOnWorkspaceShow()', () => {
+  test('freezes unchanged single-panel webgl workspace tab switches', () => {
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'layout-settled-workspace-switch-immediate',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(true);
+  });
+
+  test('does not freeze split canvas workspaces or real resizes', () => {
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-canvas',
+        visibleTerminalPanelCount: 2,
+      })
+    ).toBe(false);
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: false,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
   });
 });
 

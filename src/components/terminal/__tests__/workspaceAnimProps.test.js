@@ -26,7 +26,7 @@ describe('resolveWorkspaceShellVisibilityStyle', () => {
     ).toBe('hidden');
   });
 
-  test('shows only the active workspace shell with a short fade-in', () => {
+  test('shows the active workspace shell instantly without opacity animation', () => {
     expect(
       resolveWorkspaceShellVisibilityStyle({
         isActiveWorkspace: true,
@@ -36,13 +36,8 @@ describe('resolveWorkspaceShellVisibilityStyle', () => {
       opacity: 1,
       visibility: 'visible',
       pointerEvents: 'auto',
+      transition: 'none',
     });
-    expect(
-      resolveWorkspaceShellVisibilityStyle({
-        isActiveWorkspace: true,
-        isManagerVisible: true,
-      }).transition
-    ).toContain('120ms');
   });
 });
 
