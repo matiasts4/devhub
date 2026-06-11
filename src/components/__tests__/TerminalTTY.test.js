@@ -161,6 +161,7 @@ const {
   isLikelyTuiInitialCommand,
   isGrokTuiInitialCommand,
   detectGrokTuiReady,
+  detectGrokSessionFromOutput,
   buildTerminalWheelArrowSequence,
   buildTerminalWheelScrollPayload,
   buildTerminalWheelSgrSequence,
@@ -1739,15 +1740,15 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(
         shouldPassthroughNativeTuiWheel({
           isGrokSession: true,
-          grokTuiReady: true,
+          grokTuiReady: false,
         })
       ).toBe(true);
       expect(
         shouldPassthroughNativeTuiWheel({
-          isGrokSession: true,
-          grokTuiReady: false,
+          isGrokSession: false,
+          grokTuiReady: true,
         })
-      ).toBe(false);
+      ).toBe(true);
       expect(
         shouldPassthroughNativeTuiWheel({
           isGrokSession: false,
@@ -1759,6 +1760,8 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(isTerminalTranscriptCell(22, 24, 1)).toBe(true);
       expect(isTerminalTranscriptCell(23, 24, 1)).toBe(false);
       expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
+      expect(detectGrokSessionFromOutput('\x1b]0;grok\x07')).toBe(true);
+      expect(detectGrokSessionFromOutput('opencode ready')).toBe(false);
     });
 
     test('buildTerminalWheelArrowSequence and SGR wheel payload', () => {

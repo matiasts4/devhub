@@ -160,8 +160,16 @@ export function detectGrokTuiReady(text) {
   return (
     /Shift\+Tab\s+mode/i.test(text) ||
     /ctrl\+c:cancel/i.test(text) ||
-    /user_prompt_submit/i.test(text)
+    /user_prompt_submit/i.test(text) ||
+    /ctrl\+c\s+cancel/i.test(text) ||
+    /esc\s+cancel/i.test(text)
   );
+}
+
+/** Grok sets DECSET 1000/1006 on startup and titles the PTY `grok`. */
+export function detectGrokSessionFromOutput(text) {
+  if (!text || typeof text !== 'string') return false;
+  return /\]0;grok\b/i.test(text) || detectGrokTuiReady(text);
 }
 
 /** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
@@ -170,7 +178,8 @@ export function shouldPassthroughNativeTuiWheel({
   grokTuiReady = false,
   opencodeFooterConfirmed = false,
 } = {}) {
-  if (isGrokSession) return grokTuiReady;
+  // Grok enables mouse tracking immediately; waiting for footer text often never fires.
+  if (isGrokSession || grokTuiReady) return true;
   return opencodeFooterConfirmed;
 }
 
@@ -1058,7 +1067,7 @@ export default function TerminalTTY({
   const lastPointerZoneRef = useRef('transcript');
   const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));
   const tuiSessionFooterConfirmedRef = useRef(false);
-  const grokTuiReadyRef = useRef(false);
+  const grokTuiReadyRef = useRef(isGrokTuiInitialCommand(initialCommand));
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
@@ -2992,7 +3001,7 @@ export default function TerminalTTY({
             writeTerminalOutput(payload.data);
             const footerReady =
               /ctrl\+p\s+commands/i.test(payload.data) || /esc\s+interrupt/i.test(payload.data);
-            const grokReady = detectGrokTuiReady(payload.data);
+            const grokReady = detectGrokSessionFromOutput(payload.data);
             if (footerReady || grokReady) {
               tuiSessionActiveRef.current = true;
               if (grokReady) {
