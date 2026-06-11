@@ -70,6 +70,19 @@ jest.mock('@/lib/pizarra/canvasViewport', () => ({
     setPan: () => {},
   }),
   CanvasViewportProvider: ({ children }) => children,
+  zoomAtPoint: ({ deltaY }) => ({ zoom: 1, pan: { x: 0, y: 0 } }),
+}));
+
+// pizarra-motion-polish (P-MP-4): the wheel handler now routes
+// through shouldCanvasConsumeWheel. The original tests target a
+// plain wrapper element; in JSDOM that doesn't match the
+// interactive-wheel selector, so the helper returns true and the
+// canvas consumes the wheel as zoom. Mock it explicitly so the
+// existing assertion (setZoom is called) keeps passing.
+jest.mock('@/lib/pizarra/pizarraWheel', () => ({
+  shouldCanvasConsumeWheel: () => true,
+  isPizarraInteractiveWheelTarget: () => false,
+  PIZARRA_INTERACTIVE_WHEEL_SELECTOR: '',
 }));
 
 jest.mock('@/lib/pizarra/shapeModel', () => ({
@@ -237,8 +250,12 @@ describe('PizarraCanvas — wheel listener is non-passive (pizarra-wheel-passive
 
     // Sanity: the handler ran and updated the viewport state.
     expect(mockSetZoom).toHaveBeenCalled();
+    // pizarra-motion-polish (P-MP-4): the wheel handler now calls
+    // setZoom with the focal-zoom result from `canvasViewport.zoomAtPoint`,
+    // not with the legacy inline `setZoom((z) => z - deltaY * 0.001)`
+    // updater function. The new contract is: pass a number.
     const zoomCallArg = mockSetZoom.mock.calls[0][0];
-    expect(typeof zoomCallArg).toBe('function');
+    expect(typeof zoomCallArg).toBe('number');
 
     // THE BUG-SPECIFIC ASSERTION: with React's onWheel (passive by
     // default in React 17+), preventDefault() is a no-op and

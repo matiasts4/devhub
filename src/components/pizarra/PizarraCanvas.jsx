@@ -20,8 +20,9 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useGesture } from '@use-gesture/react';
 import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
-import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
+import { useCanvasViewport, zoomAtPoint } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
+import { shouldCanvasConsumeWheel } from '@/lib/pizarra/pizarraWheel';
 
 // pizarra-ux-overhaul: module-scope env read for the texture.
 // Default ON (subtle dots) so the pizarra never looks like a pure "submarino"
@@ -137,23 +138,39 @@ export default function PizarraCanvas({
     transformerRef.current.getLayer()?.batchDraw();
   }, [selectedElementIds, konva, elements]);
 
-  // pizarra-wheel-passive-fix: attach a native non-passive wheel event
-  // listener on the wrapper ref. This prevents default browser-wide
-  // page zoom and executes the custom canvas zoom calculation instead.
+  // pizarra-wheel-passive-fix + pizarra-motion-polish (P-MP-4):
+  // attach a native non-passive wheel event listener on the wrapper
+  // ref. The handler routes through `shouldCanvasConsumeWheel`:
+  //   - false → return early, allow inner surface (terminal/browser) to scroll.
+  //   - true  → call `zoomAtPoint` with focal coords (clientX/Y minus
+  //             wrapper rect), then `setZoom` + `setPan` with the result.
+  //             `preventDefault()` blocks the browser-level page zoom.
+  // The two wheel handlers in the repo (here + canvasViewport provider)
+  // both consult the same selector helper so the routing can't drift.
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
     const handleWheel = (event) => {
+      if (!shouldCanvasConsumeWheel(event)) return; // inner surface scrolls
       event.preventDefault();
-      setZoom((currentZoom) => Math.min(Math.max(currentZoom - event.deltaY * 0.001, 0.1), 5));
+      const rect = wrapper.getBoundingClientRect();
+      const next = zoomAtPoint({
+        currentZoom: zoom,
+        currentPan: pan,
+        deltaY: event.deltaY,
+        focalX: event.clientX - rect.left,
+        focalY: event.clientY - rect.top,
+      });
+      setZoom(next.zoom);
+      setPan(next.pan);
     };
 
     wrapper.addEventListener('wheel', handleWheel, { passive: false });
     return () => {
       wrapper.removeEventListener('wheel', handleWheel);
     };
-  }, [setZoom, konva]);
+  }, [setZoom, setPan, zoom, pan, konva]);
 
   const bind = useGesture(
     {
