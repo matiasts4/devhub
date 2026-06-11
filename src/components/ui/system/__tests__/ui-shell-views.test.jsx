@@ -74,6 +74,7 @@ jest.mock('../../../../components/UsageChart', () => {
 
 const SettingsLayout = require('../../../../app/settings/layout').default;
 const Dashboard = require('../../../../views/Dashboard').default;
+const Proyectos = require('../../../../views/Proyectos').default;
 
 jest.mock('@/lib/db/localClient', () => {
   const chain = () => {
@@ -213,5 +214,43 @@ describe('Dashboard — UiShell migration', () => {
     expect(uiHeader).toBeTruthy();
     const heading = uiHeader.querySelector('h1');
     expect(heading).toBeTruthy();
+  });
+});
+
+describe('Proyectos — UiShell + hex sweep', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    jest.clearAllMocks();
+  });
+
+  test('renders UiHeader with data-testid="ui-header"', async () => {
+    rendered = await renderIntoDom(React.createElement(Proyectos));
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+    const heading = uiHeader.querySelector('h1');
+    expect(heading).toBeTruthy();
+  });
+
+  test('no banned hex literals in Proyectos.jsx', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../../../views/Proyectos.jsx'), 'utf8');
+    const matches = src.match(/#[0-9a-fA-F]{6}/g) || [];
+    const banned = ['#0B0F19', '#111827', '#79C0FF', '#388BFD', '#484F58'];
+    for (const h of banned) {
+      expect(matches).not.toContain(h);
+    }
   });
 });

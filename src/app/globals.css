@@ -23,6 +23,10 @@
   --density-row-padding-x: 0.75rem;
   --density-row-gap: 0.5rem;
   --warning: oklch(0.79 0.16 80);
+  --proyectos-accent-cyan: #00f0ff;
+  --proyectos-accent-lime: #39ff14;
+  --proyectos-accent-pink: #ff007f;
+  --proyectos-accent-yellow: #ffe600;
 }
 
 [data-density='compact'] {
