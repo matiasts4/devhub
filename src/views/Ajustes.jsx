@@ -771,17 +771,11 @@ export default function Ajustes() {
                       key={value}
                       type="button"
                       onClick={() => setProjectType(value)}
-                      className="rounded-none border px-3 py-2 text-left transition-all"
-                      style={{
-                        ...panelStyle({
-                          emphasized: selected,
-                          tone: selected ? 'accent' : 'neutral',
-                        }),
-                        borderRadius: 0,
-                        boxShadow: selected
-                          ? 'var(--chrome-shadow-control)'
-                          : '4px 4px 0 0 var(--border-strong)',
-                      }}
+                      className="border px-3 py-2 text-left transition-all"
+                      style={panelStyle({
+                        emphasized: selected,
+                        tone: selected ? 'accent' : 'neutral',
+                      })}
                     >
                       <div className="flex items-center gap-2">
                         <Icon
@@ -818,17 +812,11 @@ export default function Ajustes() {
                       key={value}
                       type="button"
                       onClick={() => setDocumentationPolicy(value)}
-                      className="w-full rounded-none border px-3 py-2.5 text-left transition-all"
-                      style={{
-                        ...panelStyle({
-                          emphasized: selected,
-                          tone: selected ? 'accent' : 'neutral',
-                        }),
-                        borderRadius: 0,
-                        boxShadow: selected
-                          ? 'var(--chrome-shadow-control)'
-                          : '4px 4px 0 0 var(--border-strong)',
-                      }}
+                      className="w-full border px-3 py-2.5 text-left transition-all"
+                      style={panelStyle({
+                        emphasized: selected,
+                        tone: selected ? 'accent' : 'neutral',
+                      })}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <span
