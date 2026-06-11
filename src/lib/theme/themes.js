@@ -354,6 +354,27 @@ export function applyThemeToDocument(theme) {
   document.documentElement.setAttribute('data-theme', normalizeTheme(theme));
 }
 
+// Per-theme --warning color overrides. The base :root --warning value in
+// globals.css is the deep-sea default; these overrides align each theme
+// with its palette (warm yellow in dark themes, red-orange in light).
+export const WARNING = {
+  [THEMES.DEEP_SEA]: 'oklch(0.79 0.16 80)',
+  [THEMES.NORD]: 'oklch(0.78 0.13 75)',
+  [THEMES.DRACULA]: 'oklch(0.82 0.14 85)',
+  [THEMES.LIGHT]: 'oklch(0.68 0.16 55)',
+  [THEMES.CATPPUCCIN]: 'oklch(0.82 0.14 85)',
+  [THEMES.TOKYO_NIGHT]: 'oklch(0.79 0.16 80)',
+  [THEMES.MONOKAI]: 'oklch(0.82 0.14 85)',
+  [THEMES.SYNTHWAVE]: 'oklch(0.79 0.16 80)',
+  [THEMES.BRUTALIST_STAGE]: 'oklch(0.79 0.16 80)',
+  [THEMES.SWITCHYARD]: 'oklch(0.79 0.16 80)',
+};
+
+export function applyWarning(value) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.setProperty('--warning', value);
+}
+
 export function applyMorphologyToDocument(morphology) {
   if (typeof document === 'undefined') return;
   document.documentElement.setAttribute('data-morphology', normalizeMorphology(morphology));
@@ -382,6 +403,7 @@ export function setStoredAccent(accent) {
 export function setTheme(theme) {
   const normalized = normalizeTheme(theme);
   applyThemeToDocument(normalized);
+  applyWarning(WARNING[normalized]);
   setStoredTheme(normalized);
   return normalized;
 }

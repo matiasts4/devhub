@@ -12,9 +12,11 @@ const {
   PALETTE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   THEMES,
+  WARNING,
   applyAccentToDocument,
   applyMorphologyToDocument,
   applyPaletteToDocument,
+  applyWarning,
   getStoredAccent,
   getStoredMorphology,
   getStoredPalette,
@@ -24,6 +26,7 @@ const {
   setAccent,
   setMorphology,
   setPalette,
+  setTheme,
 } = require('../themes.js');
 
 describe('theme morphology helpers', () => {
@@ -50,9 +53,7 @@ describe('theme morphology helpers', () => {
 
   test('normalizes supported morphology values', () => {
     expect(normalizeMorphology(MORPHOLOGIES.DEFAULT)).toBe(MORPHOLOGIES.DEFAULT);
-    expect(normalizeMorphology(MORPHOLOGIES.BRUTALIST_STAGE)).toBe(
-      MORPHOLOGIES.BRUTALIST_STAGE
-    );
+    expect(normalizeMorphology(MORPHOLOGIES.BRUTALIST_STAGE)).toBe(MORPHOLOGIES.BRUTALIST_STAGE);
     expect(normalizeMorphology(MORPHOLOGIES.SWITCHYARD)).toBe(MORPHOLOGIES.SWITCHYARD);
   });
 
@@ -79,9 +80,7 @@ describe('theme morphology helpers', () => {
     const result = setMorphology(MORPHOLOGIES.BRUTALIST_STAGE);
 
     expect(result).toBe(MORPHOLOGIES.BRUTALIST_STAGE);
-    expect(window.localStorage.getItem(MORPHOLOGY_STORAGE_KEY)).toBe(
-      MORPHOLOGIES.BRUTALIST_STAGE
-    );
+    expect(window.localStorage.getItem(MORPHOLOGY_STORAGE_KEY)).toBe(MORPHOLOGIES.BRUTALIST_STAGE);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(THEMES.DRACULA);
   });
 
@@ -226,5 +225,49 @@ describe('palette helpers (Switchyard sub-axis)', () => {
     expect(result).toBe(PALETTES.COBALT);
     expect(document.body.getAttribute('data-palette')).toBe(PALETTES.COBALT);
     expect(window.localStorage.getItem(PALETTE_STORAGE_KEY)).toBe(PALETTES.COBALT);
+  });
+});
+
+describe('warning token helper (FR-D06)', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = new JSDOM('<!doctype html><html><body></body></html>', {
+      url: 'https://devhub.test',
+    });
+
+    global.window = dom.window;
+    global.document = dom.window.document;
+    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('data-morphology');
+    document.documentElement.removeAttribute('data-accent');
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    dom.window.close();
+    delete global.window;
+    delete global.document;
+  });
+
+  test('applyWarning sets --warning on documentElement', () => {
+    applyWarning('oklch(0.79 0.16 80)');
+    expect(document.documentElement.style.getPropertyValue('--warning')).toBe(
+      'oklch(0.79 0.16 80)'
+    );
+  });
+
+  test('applyWarning overwrites an existing --warning value', () => {
+    applyWarning('oklch(0.5 0.1 60)');
+    applyWarning('oklch(0.9 0.2 30)');
+    expect(document.documentElement.style.getPropertyValue('--warning')).toBe('oklch(0.9 0.2 30)');
+  });
+
+  test('setTheme applies the matching theme --warning value inline', () => {
+    setTheme(THEMES.DRACULA);
+    expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.DRACULA);
+    expect(document.documentElement.style.getPropertyValue('--warning')).toBe(
+      WARNING[THEMES.DRACULA]
+    );
   });
 });

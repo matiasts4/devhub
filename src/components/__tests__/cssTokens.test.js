@@ -124,6 +124,30 @@ describe('CSS Tokens — globals.css', () => {
       expect(accentPrimaryLine?.[0] || '').not.toContain('#58a6ff');
     }
   });
+
+  test('--warning is a first-class token in :root and every [data-theme] block', () => {
+    // :root default
+    const rootMatch = css.match(/:root[^{]*\{([^}]+)\}/s);
+    expect(rootMatch?.[1] || '').toMatch(/--warning\s*:/);
+    // every [data-theme='...'] block
+    const themeBlocks = css.match(/\[data-theme=['"][a-z-]+['"]\][^{]*\{([^}]+)\}/g) || [];
+    expect(themeBlocks.length).toBeGreaterThanOrEqual(10);
+    for (const block of themeBlocks) {
+      expect(block).toMatch(/--warning\s*:/);
+    }
+  });
+
+  test('density tokens are defined on :root and overridden by [data-density=compact]', () => {
+    const rootMatch = css.match(/:root[^{]*\{([^}]+)\}/s);
+    expect(rootMatch?.[1] || '').toMatch(/--density-row-padding-y\s*:\s*0\.5rem/);
+    expect(rootMatch?.[1] || '').toMatch(/--density-row-padding-x\s*:\s*0\.75rem/);
+    expect(rootMatch?.[1] || '').toMatch(/--density-row-gap\s*:\s*0\.5rem/);
+
+    const compactMatch = css.match(/\[data-density=['"]compact['"]\][^{]*\{([^}]+)\}/s);
+    expect(compactMatch?.[1] || '').toMatch(/--density-row-padding-y\s*:\s*0\.25rem/);
+    expect(compactMatch?.[1] || '').toMatch(/--density-row-padding-x\s*:\s*0\.5rem/);
+    expect(compactMatch?.[1] || '').toMatch(/--density-row-gap\s*:\s*0\.25rem/);
+  });
 });
 
 describe('CSS Tokens — index.css cleanup', () => {

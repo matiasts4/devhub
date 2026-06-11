@@ -19,6 +19,16 @@
   --chrome-control-fill: color-mix(in srgb, var(--surface-card) 84%, transparent);
   --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
   --chrome-press-offset: 0px;
+  --density-row-padding-y: 0.5rem;
+  --density-row-padding-x: 0.75rem;
+  --density-row-gap: 0.5rem;
+  --warning: oklch(0.79 0.16 80);
+}
+
+[data-density='compact'] {
+  --density-row-padding-y: 0.25rem;
+  --density-row-padding-x: 0.5rem;
+  --density-row-gap: 0.25rem;
 }
 
 [data-morphology='default'] {
@@ -364,6 +374,7 @@ code {
     --shadow-lifted: 0 20px 45px rgba(1, 4, 9, 0.45);
     --danger: oklch(0.72 0.19 0);
     --success: oklch(0.6 0.16 145);
+    --warning: oklch(0.79 0.16 80);
   }
 
   [data-theme='nord'] {
@@ -409,6 +420,7 @@ code {
     --shadow-lifted: 0 20px 48px rgba(16, 21, 30, 0.4);
     --danger: #bf616a;
     --success: #a3be8c;
+    --warning: oklch(0.78 0.13 75);
   }
 
   [data-theme='dracula'] {
@@ -454,6 +466,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(13, 12, 24, 0.5);
     --danger: #ff5555;
     --success: #50fa7b;
+    --warning: oklch(0.82 0.14 85);
   }
 
   [data-theme='light'] {
@@ -499,6 +512,7 @@ code {
     --shadow-lifted: 0 22px 52px rgba(31, 35, 40, 0.12);
     --danger: #cf222e;
     --success: #1a7f37;
+    --warning: oklch(0.68 0.16 55);
   }
 
   [data-theme='catppuccin'] {
@@ -544,6 +558,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(14, 14, 24, 0.5);
     --danger: #f38ba8;
     --success: #a6e3a1;
+    --warning: oklch(0.82 0.14 85);
   }
 
   [data-theme='tokyo-night'] {
@@ -589,6 +604,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(10, 11, 18, 0.55);
     --danger: #f7768e;
     --success: #9ece6a;
+    --warning: oklch(0.79 0.16 80);
   }
 
   [data-theme='monokai'] {
@@ -634,6 +650,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(12, 12, 10, 0.5);
     --danger: #f92672;
     --success: #a6e22e;
+    --warning: oklch(0.82 0.14 85);
   }
 
   [data-theme='synthwave'] {
@@ -679,6 +696,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(8, 6, 16, 0.6);
     --danger: #ff6b6b;
     --success: #72f1b8;
+    --warning: oklch(0.79 0.16 80);
   }
 
   [data-theme='brutalist-stage'] {
@@ -724,6 +742,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(0, 0, 0, 0.75);
     --danger: #f85149;
     --success: #3fb950;
+    --warning: #e3b341;
   }
 
   [data-theme='switchyard'] {
@@ -769,6 +788,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(9, 16, 20, 0.65);
     --danger: #ef6b7b;
     --success: #43d19e;
+    --warning: oklch(0.79 0.16 80);
   }
 
   [data-accent='amber'] {
@@ -1612,5 +1632,23 @@ code {
   to {
     opacity: 0;
     transform: translateY(4px);
+  }
+}
+
+/* ─── Semantic accent escape hatch (FR-D06) ───
+ * Tailwind's `accent` slot is reserved for the shadcn palette
+ * (`hsl(var(--accent))`). Use these classes when a class site wants the
+ * in-house semantic accent (`var(--accent-primary)`). Sites that need
+ * the shadcn slot continue to use `bg-shadcn-accent`.
+ */
+@layer utilities {
+  .bg-app-accent {
+    background-color: var(--accent-primary);
+  }
+  .text-app-accent {
+    color: var(--accent-primary);
+  }
+  .border-app-accent {
+    border-color: var(--accent-primary);
   }
 }

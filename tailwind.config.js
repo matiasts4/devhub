@@ -24,7 +24,15 @@ module.exports = {
           foreground: 'hsl(var(--secondary-foreground))',
         },
         muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
-        accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
+        // shadcn palette slot — `bg-accent` / `border-accent` /
+        // `text-accent-foreground` resolve through `hsl(var(--accent))`
+        // for shadcn-imported components. Renamed from `accent` to
+        // `shadcn.accent` so the in-house semantic `accent.{primary,secondary}`
+        // below can keep its meaning.
+        shadcn: {
+          accent: 'hsl(var(--accent))',
+          'accent-foreground': 'hsl(var(--accent-foreground))',
+        },
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
@@ -45,6 +53,10 @@ module.exports = {
           muted: 'var(--text-muted)',
         },
         borders: { subtle: 'var(--border-subtle)', strong: 'var(--border-strong)' },
+        // In-house semantic accent — `bg-accent-primary`,
+        // `text-accent-primary`, `border-accent-primary` resolve to
+        // `var(--accent-primary)`. Replaces the previous key collision
+        // with the shadcn slot above.
         accent: { primary: 'var(--accent-primary)', secondary: 'var(--accent-secondary)' },
         danger: 'var(--danger)',
         success: 'var(--success)',
