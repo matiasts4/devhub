@@ -1830,6 +1830,16 @@ export default function TerminalTTY({
       const tmuxSession = resolveSwarmTmuxSessionName();
       if (!tmuxSession) return;
 
+      const storageKey = `devhub:opencode-ready-posted:${tmuxSession}`;
+      try {
+        if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(storageKey)) {
+          opencodeReadyNotifiedRef.current = true;
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+
       opencodeReadyNotifiedRef.current = true;
       try {
         await fetch('/api/terminal/opencode-ready', {
@@ -1847,7 +1857,13 @@ export default function TerminalTTY({
           opencodeSessionId,
           reason,
         });
+        try {
+          sessionStorage?.setItem(storageKey, String(Date.now()));
+        } catch {
+          /* ignore */
+        }
       } catch (error) {
+        opencodeReadyNotifiedRef.current = false;
         cliLog(`CLIENT:${id}`, 'opencode-ready-failed', { error: error?.message });
       }
     },

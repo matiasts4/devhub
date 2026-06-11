@@ -582,6 +582,7 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
       expect(result).toContain('_devhub_wait_opencode_ready');
       expect(result).toContain('/tmp/devhub-opencode-ready-${_tmux_session}');
+      expect(result).toContain('/tmp/devhub-viewport-ready-${_tmux_session}');
       expect(result).not.toMatch(/^sleep 10$/m);
     });
 
