@@ -4,10 +4,12 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { dispatchZedOpenTerminal } from '@/components/zedOpenTerminalEvent';
 import { dispatchZedOpenUrlFromToolResults } from '@/components/zedOpenUrlEvent';
 import { buildZedHistory } from './buildZedHistory';
+import { extractToolType } from './buildZedAmbientStatus';
 import {
   MAX_ZED_TERMINAL_PANELS,
   isWorkspaceTerminalPanelLimitReached,
 } from '@/lib/terminal/workspaceTerminalLimits';
+import { dispatchZedAuraToolType } from './zedOverlayEvents';
 
 export const DEFAULT_ZED_GREETING = {
   role: 'assistant',
@@ -36,6 +38,26 @@ function readPersistedZedMessages(sessionKey) {
 }
 
 /**
+ * Pure helper: returns the most recent discrete tool-type accent bucket
+ * from a messages array, or `null` when no `tool_results` exist. Drives
+ * the aura tint dispatch. Exported for unit testing without rendering
+ * the hook.
+ *
+ * @param {Array<{ role?: string; tool_results?: Array<{ tool?: string }> }> | null | undefined} messages
+ * @returns {'terminal' | 'browser' | 'file' | null}
+ */
+export function selectLastToolType(messages) {
+  if (!Array.isArray(messages)) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const result = m && Array.isArray(m.tool_results) ? m.tool_results : [];
+    if (result.length === 0) continue;
+    return extractToolType(m);
+  }
+  return null;
+}
+
+/**
  * Shared Zed chat state for ZedAmbientOverlay.
  *
  * @param {object} [options]
@@ -51,10 +73,13 @@ export function useZedChat({
   const [abortController, setAbortController] = useState(null);
   const textareaRef = useRef(null);
   const dispatchedSessionIdsRef = useRef(new Set());
+  const lastDispatchedTypeRef = useRef(null);
 
   const lastAssistantMessage = [...messages]
     .reverse()
     .find((m) => m.role === 'assistant' && typeof m.content === 'string');
+
+  const lastToolType = selectLastToolType(messages);
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || isLoading) return;
@@ -177,6 +202,12 @@ export function useZedChat({
   }, [messages, sessionKey]);
 
   useEffect(() => {
+    if (lastDispatchedTypeRef.current === lastToolType) return;
+    lastDispatchedTypeRef.current = lastToolType;
+    dispatchZedAuraToolType(lastToolType);
+  }, [lastToolType]);
+
+  useEffect(() => {
     let lastMessage = null;
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].tool_results?.some((r) => r.tool === 'open_terminal')) {
@@ -234,5 +265,6 @@ export function useZedChat({
     handlePaste,
     textareaRef,
     lastAssistantMessage,
+    lastToolType,
   };
 }
