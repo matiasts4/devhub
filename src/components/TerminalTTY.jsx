@@ -46,6 +46,11 @@ import {
   filterTerminalOutputForSession,
 } from '@/lib/terminal/terminalNoiseFilter';
 import { buildSwarmTmuxSessionName } from '@/lib/terminal/viewportReadyMarker';
+import {
+  clearPanelInitialCommandLifecycle,
+  markPanelInitialCommandDispatched,
+  shouldSkipRedundantInitialCommandSend,
+} from '@/lib/terminal/panelInitialCommandLifecycle';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -1240,6 +1245,7 @@ export default function TerminalTTY({
     visibleTerminalPanelCount,
   });
   const hasSentInitialCommand = useRef(false);
+  const sessionReattachedRef = useRef(false);
   const initialCommandConnectSnapshotRef = useRef(null);
   const viewportFitConfirmedRef = useRef(false);
   const opencodeReadyNotifiedRef = useRef(false);
@@ -1652,6 +1658,7 @@ export default function TerminalTTY({
   const tearDownClientSession = useCallback(
     (reason = 'session-close') => {
       sessionClosingRef.current = true;
+      clearPanelInitialCommandLifecycle(id);
       clearTimers();
       if (wsRef.current) {
         const stale = wsRef.current;
@@ -1841,12 +1848,28 @@ export default function TerminalTTY({
     [id, resolveSwarmTmuxSessionName]
   );
 
+  const skipRedundantInitialCommandSend = useCallback(
+    (isRecoveryRelaunch = false) =>
+      shouldSkipRedundantInitialCommandSend({
+        panelId: id,
+        command: initialCommand,
+        isRecoveryRelaunch,
+        sessionReattached: sessionReattachedRef.current,
+      }),
+    [id, initialCommand]
+  );
+
   const sendInitialCommandIfReady = useCallback(() => {
     if (!initialCommand || hasSentInitialCommand.current) return;
     if (!viewportFitConfirmedRef.current) return;
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
     const isRecoveryRelaunch = /#recovery-\d+\s*$/i.test(initialCommand);
+    if (skipRedundantInitialCommandSend(isRecoveryRelaunch)) {
+      hasSentInitialCommand.current = true;
+      markPanelInitialCommandDispatched(id, initialCommand);
+      return;
+    }
     if (
       shouldBlockLateInitialCommandSend({
         hasConnectedOnce: hasConnectedOnceRef.current,
@@ -1856,6 +1879,7 @@ export default function TerminalTTY({
       })
     ) {
       hasSentInitialCommand.current = true;
+      markPanelInitialCommandDispatched(id, initialCommand);
       return;
     }
 
@@ -1873,12 +1897,13 @@ export default function TerminalTTY({
       wsRef.current.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
     }
     hasSentInitialCommand.current = true;
+    markPanelInitialCommandDispatched(id, initialCommand);
     if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper === true) {
       window.dispatchEvent(
         new CustomEvent('devhub:swarm-launch-wrapper-sent', { detail: { panelId: id } })
       );
     }
-  }, [id, initialCommand, swarmContext]);
+  }, [id, initialCommand, skipRedundantInitialCommandSend, swarmContext]);
 
   const confirmViewportFit = useCallback(
     (cols, rows) => {
@@ -2967,6 +2992,7 @@ export default function TerminalTTY({
     }
 
     processExitedRef.current = false;
+    sessionReattachedRef.current = false;
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       cliLog(`CLIENT:${id}`, 'connect() skipped — socket already open');
@@ -3104,6 +3130,18 @@ export default function TerminalTTY({
         try {
           const payload = JSON.parse(event.data);
 
+          if (payload.type === 'ready') {
+            if (payload.reattached) {
+              sessionReattachedRef.current = true;
+              hasSentInitialCommand.current = true;
+              markPanelInitialCommandDispatched(id, initialCommand);
+              if (payload.mode === 'tui') {
+                tuiSessionActiveRef.current = true;
+              }
+            }
+            return;
+          }
+
           if (payload.type === 'output' && typeof payload.data === 'string') {
             writeTerminalOutput(payload.data);
             const footerReady =
@@ -3111,6 +3149,10 @@ export default function TerminalTTY({
             const grokReady = detectGrokSessionFromOutput(payload.data);
             if (footerReady || grokReady) {
               tuiSessionActiveRef.current = true;
+              if (!hasSentInitialCommand.current && initialCommand) {
+                hasSentInitialCommand.current = true;
+                markPanelInitialCommandDispatched(id, initialCommand);
+              }
               if (grokReady) {
                 isGrokSessionRef.current = true;
                 grokTuiReadyRef.current = true;

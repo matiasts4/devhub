@@ -1406,6 +1406,7 @@ export async function ensureTTYServer() {
     });
 
     let session = terminalSessions.get(terminalId);
+    const isSessionReattach = Boolean(session);
 
     if (!session) {
       const shell = resolveShell();
@@ -1636,8 +1637,18 @@ export async function ensureTTYServer() {
       }
     });
 
-    ttyLog('WS_CONN', `sending ready to client`, { terminalId });
-    socket.send(JSON.stringify({ type: 'ready' }));
+    ttyLog('WS_CONN', `sending ready to client`, {
+      terminalId,
+      reattached: isSessionReattach,
+      mode: session?.mode || 'shell',
+    });
+    socket.send(
+      JSON.stringify({
+        type: 'ready',
+        reattached: isSessionReattach,
+        mode: session?.mode || 'shell',
+      })
+    );
   });
 
   const serverState = { port, wsPath };
