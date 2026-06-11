@@ -27,6 +27,38 @@
  * convention. The reader accepts the following truthy spellings
  * (case-insensitive): '1', 'true', 'yes', 'on'. Anything else
  * is treated as false.
+ *
+ * ── Rollout stages (pizarra-motion-polish P-MP-10) ─────────────────────
+ *
+ * The flag is rolled out in three stages. The env var is read once
+ * at module scope; runtime mutations of the env do NOT take effect
+ * without a process restart.
+ *
+ *   Stage  | Default       | Override             | Owner
+ *   -------|---------------|----------------------|---------------------
+ *   dev:   | ON            | NEXT_PUBLIC_PIZARRA_ | local devs / CI
+ *          | (NODE_ENV !== |   SHARED_VIEW_STATE  |
+ *          |  'production')| = 0 / false / off    |
+ *   staging:| explicit ON  | NEXT_PUBLIC_PIZARRA_ | pre-prod QA env
+ *          | required      |   SHARED_VIEW_STATE  |
+ *          |               | = 1 / true / on      |
+ *   prod:  | OFF           | NEXT_PUBLIC_PIZARRA_ | production rollout
+ *          | (NODE_ENV === |   SHARED_VIEW_STATE  | — gated on Agente 1
+ *          |  'production')| = 1 / true / on (after|   (terminales) being
+ *          |               |   Agente 1 sign-off) |   stable
+ *
+ * Why the asymmetry: in dev we want the new code paths to run by
+ * default so regressions surface during dogfood. In staging the
+ * env var must be set explicitly (no fallback) so a missed env
+ * config in the staging deploy blocks the rollout rather than
+ * silently shipping a new code path. In production the default
+ * is OFF and an explicit opt-in is required — the rollout
+ * happens after Agente 1 (terminales) stabilizes the noise
+ * filter that pizarra-shared-view-state depends on.
+ *
+ * See docs/delegation/00-shared-context.md for the dependency
+ * table that ties this flag to the terminal noise filter
+ * rollout.
  */
 
 const FLAG_ENV = 'NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE';

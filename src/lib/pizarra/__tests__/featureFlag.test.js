@@ -139,3 +139,19 @@ describe('featureFlag — getFlagSource diagnostics', () => {
     else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prev;
   });
 });
+
+// pizarra-motion-polish (P-MP-10): the rollout stages for
+// NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE are documented inline in
+// featureFlag.js. The contract test pins the comment strings so
+// the rollout stages stay paired with the env var.
+describe('featureFlag — rollout stages are documented (P-MP-10)', () => {
+  test('featureFlag.js source contains the dev/staging/prod stage labels', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'featureFlag.js'), 'utf8');
+    // The rollout stages table uses these exact labels.
+    expect(source).toMatch(/dev\s*:/);
+    expect(source).toMatch(/staging\s*:/);
+    expect(source).toMatch(/prod\s*:/);
+  });
+});
