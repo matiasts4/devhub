@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { DatePicker } from '@/components/ui/date-picker';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import StatusSignal from '@/components/ui/StatusSignal';
+import { UiHeader } from '@/components/ui/system/ui-header';
 import {
   getWorkspaceDataTileStyle,
   getWorkspacePageContentStyle,
@@ -80,10 +81,7 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
     >
       <div
         className="p-6 w-full max-w-md fade-in-up"
-        style={{
-          ...getWorkspaceSectionSurfaceStyle({ emphasized: true }),
-          borderRadius: '0',
-        }}
+        style={getWorkspaceSectionSurfaceStyle({ emphasized: true })}
       >
         <div
           className="-mx-6 -mt-6 mb-5 flex items-center justify-between px-6 py-4"
@@ -266,26 +264,27 @@ export default function Roadmap() {
       style={{ background: 'var(--surface-app)', color: 'var(--text-primary)' }}
     >
       {/* Sticky header */}
-      <div
-        className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
-        style={getWorkspacePageHeaderStyle()}
-      >
-        <div className="flex items-center gap-3">
-          <WorkspacePageTitle icon={MapPin} title="Roadmap" projectName={project?.name} />
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 hover:-translate-y-px active:translate-y-0"
-          style={btnSecondaryStyle({ size: 'sm' })}
-        >
-          <Plus
-            className="w-3.5 h-3.5"
-            strokeWidth={2}
-            style={{ color: 'var(--accent-primary)' }}
-          />
-          Añadir Hito
-        </button>
-      </div>
+      <UiHeader sticky data-testid="ui-header">
+        <UiHeader.Title>
+          <div className="flex items-center gap-3">
+            <WorkspacePageTitle icon={MapPin} title="Roadmap" projectName={project?.name} />
+          </div>
+        </UiHeader.Title>
+        <UiHeader.Actions>
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 hover:-translate-y-px active:translate-y-0"
+            style={btnSecondaryStyle({ size: 'sm' })}
+          >
+            <Plus
+              className="w-3.5 h-3.5"
+              strokeWidth={2}
+              style={{ color: 'var(--accent-primary)' }}
+            />
+            Añadir Hito
+          </button>
+        </UiHeader.Actions>
+      </UiHeader>
 
       <div style={getWorkspacePageContentStyle()}>
         {/* Progress card */}
@@ -335,7 +334,6 @@ export default function Roadmap() {
                   ...progressFillStyle(),
                   width: `${progress}%`,
                   background: 'var(--accent-primary)',
-                  borderRadius: '0',
                 }}
               />
             </div>

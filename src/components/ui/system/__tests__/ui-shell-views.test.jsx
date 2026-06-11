@@ -30,6 +30,40 @@ jest.mock(
 );
 
 jest.mock(
+  '../../../../components/ui/date-picker',
+  () => {
+    const React = require('react');
+    return {
+      DatePicker: (props) =>
+        React.createElement('input', { 'data-testid': 'date-picker', ...props }),
+    };
+  }
+);
+
+jest.mock(
+  '../../../../components/workspace/WorkspacePageTitle',
+  () => {
+    const React = require('react');
+    return {
+      __esModule: true,
+      default: ({ title }) =>
+        React.createElement('h1', { 'data-testid': 'workspace-page-title' }, title),
+    };
+  }
+);
+
+jest.mock(
+  '../../../../components/ui/StatusSignal',
+  () => {
+    const React = require('react');
+    return {
+      __esModule: true,
+      default: () => React.createElement('span', { 'data-testid': 'status-signal' }),
+    };
+  }
+);
+
+jest.mock(
   'sonner',
   () => ({
     toast: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn(), dismiss: jest.fn() }),
@@ -252,5 +286,81 @@ describe('Proyectos — UiShell + hex sweep', () => {
     for (const h of banned) {
       expect(matches).not.toContain(h);
     }
+  });
+});
+
+describe('ProjectHub — UiShell + hex sweep', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, json: async () => ({ success: true }) })
+    );
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    delete global.fetch;
+    jest.clearAllMocks();
+  });
+
+  test('no plain hex outside var() fallback in ProjectHub.jsx', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../../../../views/ProjectHub.jsx'),
+      'utf8'
+    );
+    // Strip out var(--name, #fallback) fallbacks (those are intentional)
+    const lines = src.split('\n');
+    const bad = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Skip lines that are inside a var() fallback
+      if (/var\([^)]*#[0-9a-fA-F]{6}/.test(line)) continue;
+      const m = line.match(/#[0-9a-fA-F]{6}/g);
+      if (m) bad.push({ line: i + 1, hex: m });
+    }
+    expect(bad.length).toBe(0);
+  });
+});
+
+describe('Roadmap — UiShell + borderRadius cleanup', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    jest.clearAllMocks();
+  });
+
+  test('renders UiHeader with data-testid="ui-header"', async () => {
+    const Roadmap = require('../../../../views/Roadmap').default;
+    rendered = await renderIntoDom(React.createElement(Roadmap));
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+  });
+
+  test('no borderRadius: "0" literal in Roadmap.jsx', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../../../views/Roadmap.jsx'), 'utf8');
+    expect(src).not.toMatch(/borderRadius:\s*['"]0['"]/);
   });
 });
