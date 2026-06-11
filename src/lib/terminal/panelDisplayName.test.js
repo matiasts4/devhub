@@ -31,19 +31,16 @@ let localStorageMock;
 
 beforeEach(() => {
   localStorageMock = makeLocalStorageMock();
+  // In a real browser, `window.localStorage === localStorage`. Tests run
+  // under testEnvironment: 'node' with no jsdom, so we synthesize the
+  // minimal `window` shape the module reads through.
+  globalThis.window = { localStorage: localStorageMock };
   globalThis.localStorage = localStorageMock;
-  // jsdom's `window` is undefined under testEnvironment: node; tests that
-  // exercise the SSR safety path will temporarily set/clear it explicitly.
-  if (typeof globalThis.window !== 'undefined') {
-    delete globalThis.window;
-  }
   jest.resetModules();
 });
 
 afterEach(() => {
-  if (typeof globalThis.window !== 'undefined') {
-    delete globalThis.window;
-  }
+  delete globalThis.window;
   delete globalThis.localStorage;
 });
 
@@ -235,10 +232,10 @@ describe('panelDisplayName.nextDisplayNameForPanel', () => {
   });
 
   test('returns Panel-N when the pool is exhausted', () => {
-    const { setDisplayName, nextDisplayNameForPanel, DISPLAY_NAME_POOL } = loadModule();
+    const { setDisplayName, nextDisplayNameForPanel } = loadModule();
+    const pool = require('./displayNamePool').DISPLAY_NAME_POOL;
     // Exhaust the pool by inserting 30 names that lowercase-collide with
     // every pool entry.
-    const pool = DISPLAY_NAME_POOL;
     pool.forEach((name, idx) => {
       setDisplayName(`p${idx}`, 'ws1', name);
     });
