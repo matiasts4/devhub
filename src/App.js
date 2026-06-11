@@ -51,6 +51,7 @@ import {
   getWorkspaceShellChromeStyle,
 } from './components/terminal/terminalChromeStyles';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { MotionProvider } from '@/components/ui/motion/MotionProvider';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -354,41 +355,43 @@ function App() {
 
   return (
     <div className="App">
-      <HashRouter>
-        <Toaster
-          theme="dark"
-          position="bottom-right"
-          richColors
-          toastOptions={{
-            style: {
-              background: 'var(--surface-card)',
-              border: '1px solid var(--border-strong)',
-              color: 'var(--text-primary)',
-            },
-          }}
-        />
-        <Routes>
-          <Route path="/" element={<Navigate to="/hub" replace />} />
-          <Route path="/hub" element={<ProjectHub />} />
-          <Route path="/project/:projectId" element={<WorkspaceLayout />}>
-            <Route index element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<ProjectDashboard />} />
-            <Route path="tareas" element={<Tareas />} />
-            <Route path="editor" element={<CodeEditor />} />
-            <Route path="scaffolding" element={<Scaffolding />} />
-            <Route path="roadmap" element={<Roadmap />} />
-            <Route path="historial" element={<Historial />} />
-            <Route path="conexiones" element={<Conexiones />} />
-            <Route path="ajustes" element={<Ajustes />} />
-            <Route path="swarm" element={<SwarmControl />} />
-            <Route path="telegram" element={<TelegramMonitor />} />
-            <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
+      <MotionProvider>
+        <HashRouter>
+          <Toaster
+            theme="dark"
+            position="bottom-right"
+            richColors
+            toastOptions={{
+              style: {
+                background: 'var(--surface-card)',
+                border: '1px solid var(--border-strong)',
+                color: 'var(--text-primary)',
+              },
+            }}
+          />
+          <Routes>
+            <Route path="/" element={<Navigate to="/hub" replace />} />
+            <Route path="/hub" element={<ProjectHub />} />
+            <Route path="/project/:projectId" element={<WorkspaceLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<ProjectDashboard />} />
+              <Route path="tareas" element={<Tareas />} />
+              <Route path="editor" element={<CodeEditor />} />
+              <Route path="scaffolding" element={<Scaffolding />} />
+              <Route path="roadmap" element={<Roadmap />} />
+              <Route path="historial" element={<Historial />} />
+              <Route path="conexiones" element={<Conexiones />} />
+              <Route path="ajustes" element={<Ajustes />} />
+              <Route path="swarm" element={<SwarmControl />} />
+              <Route path="telegram" element={<TelegramMonitor />} />
+              <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
 
-            {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}
-            <Route path="terminales" element={<div />} />
-          </Route>
-        </Routes>
-      </HashRouter>
+              {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}
+              <Route path="terminales" element={<div />} />
+            </Route>
+          </Routes>
+        </HashRouter>
+      </MotionProvider>
     </div>
   );
 }
