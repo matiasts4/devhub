@@ -95,9 +95,14 @@ describe('usePizarraOrphan — orphan deletion regression', () => {
       // the success path for this assertion.
       stdout = e.stdout ? String(e.stdout) : '';
     }
-    // Filter out the _deprecated.md marker — that's the one place
-    // where the name is allowed to appear.
-    const lines = stdout.split('\n').filter((l) => l && !l.includes('_deprecated.md'));
+    // Filter out the _deprecated.md marker (the documented deprecation
+    // pointer) AND the test file itself (it legitimately mentions the
+    // orphan by name in its comments and assertion strings). These are
+    // the only two places where the name is allowed to appear.
+    const TEST_REL = 'src/lib/pizarra/__tests__/usePizarraOrphan.test.js';
+    const lines = stdout
+      .split('\n')
+      .filter((l) => l && !l.includes('_deprecated.md') && !l.startsWith(TEST_REL));
     expect(lines).toEqual([]);
   });
 });
