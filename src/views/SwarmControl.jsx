@@ -56,6 +56,7 @@ import {
   getWorkspacePageHeaderStyle,
   getWorkspacePageShellStyle,
 } from './workspacePageChrome';
+import { dispatchSwarmLaunchMaterialized } from '@/lib/terminal/swarmLaunchBatch';
 
 void [
   ControlRoomHeader,
@@ -106,23 +107,6 @@ function writeCachedSwarmSnapshot(projectId, snapshotInput) {
   } catch {
     // Ignore localStorage failures.
   }
-}
-
-function scheduleSwarmRuntimeRequests(requests = [], timersRef = null) {
-  requests.forEach((request) => {
-    const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
-    if (delayMs > 0 && timersRef?.current) {
-      const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
-      const timerId = window.setTimeout(() => {
-        timersRef.current.delete(requestKey);
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      }, delayMs);
-      timersRef.current.set(requestKey, timerId);
-      return;
-    }
-
-    window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-  });
 }
 
 export function getSwarmControlLayoutButtonVariant(layout, targetLayout) {
@@ -552,10 +536,7 @@ export default function SwarmControl({ snapshotInput = null }) {
         runtimeRequests: payload.launch_result?.runtime_requests || [],
       });
 
-      scheduleSwarmRuntimeRequests(
-        payload.launch_result?.runtime_requests || [],
-        scheduledLaunchTimersRef
-      );
+      dispatchSwarmLaunchMaterialized(payload.launch_result?.runtime_requests || []);
 
       setLaunchWizardOpen(false);
       setLaunchWizardStep('launch');

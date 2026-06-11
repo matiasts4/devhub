@@ -717,33 +717,12 @@ describe('SwarmControl control room composition', () => {
     );
   });
 
-  test('launches through the durable route and dispatches runtime requests after the wizard completes', async () => {
-    const launchEvents = [];
-    const scheduledTimers = [];
-    const handleLaunchEvent = (event) => launchEvents.push(event.detail);
-    const originalSetTimeout = window.setTimeout.bind(window);
-    const originalClearTimeout = window.clearTimeout.bind(window);
-    const setTimeoutSpy = jest
-      .spyOn(window, 'setTimeout')
-      .mockImplementation((callback, delay, ...args) => {
-        if (!Number.isFinite(delay) || delay <= 0) {
-          return originalSetTimeout(callback, delay, ...args);
-        }
-
-        const timerId = scheduledTimers.length + 1;
-        scheduledTimers.push({ timerId, callback, delay, args });
-        return timerId;
-      });
-    const clearTimeoutSpy = jest.spyOn(window, 'clearTimeout').mockImplementation((timerId) => {
-      const timerIndex = scheduledTimers.findIndex((timer) => timer.timerId === timerId);
-      if (timerIndex >= 0) {
-        scheduledTimers.splice(timerIndex, 1);
-        return;
-      }
-      originalClearTimeout(timerId);
-    });
+  test('launches through the durable route and materializes runtime requests after the wizard completes', async () => {
+    const { SWARM_LAUNCH_MATERIALIZED_EVENT } = require('@/lib/terminal/swarmLaunchBatch');
+    const materializedEvents = [];
+    const handleMaterializedEvent = (event) => materializedEvents.push(event.detail);
     try {
-      window.addEventListener('devhub:run-agent', handleLaunchEvent);
+      window.addEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleMaterializedEvent);
       global.fetch = wrapFetchMock([
         {
           ok: true,
@@ -900,31 +879,16 @@ describe('SwarmControl control room composition', () => {
         '/api/agenthub/operations/health?project_id=project-1',
         { cache: 'no-store' },
       ]);
-      expect(launchEvents).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
-        ])
-      );
-      expect(launchEvents).not.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
-        ])
-      );
-
-      expect(scheduledTimers).toEqual([expect.objectContaining({ delay: 4000 })]);
-
-      scheduledTimers[0].callback(...scheduledTimers[0].args);
-
-      expect(launchEvents).toEqual(
+      expect(materializedEvents).toHaveLength(1);
+      expect(materializedEvents[0].runtimeRequests).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
           expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
         ])
       );
+      expect(materializedEvents[0].runtimeRequests).toHaveLength(2);
     } finally {
-      window.removeEventListener('devhub:run-agent', handleLaunchEvent);
-      setTimeoutSpy.mockRestore();
-      clearTimeoutSpy.mockRestore();
+      window.removeEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleMaterializedEvent);
     }
   });
 

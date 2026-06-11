@@ -1286,6 +1286,8 @@ export default function TerminalTTY({
   const opencodeReadyNotifiedRef = useRef(false);
   const lastViewportReadyPostedRef = useRef({ cols: 0, rows: 0 });
   const viewportReadyNotifyTimerRef = useRef(null);
+  const initialCommandDelayTimerRef = useRef(null);
+  const initialCommandDelayScheduledRef = useRef(false);
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
@@ -1363,6 +1365,11 @@ export default function TerminalTTY({
     if (viewportReadyNotifyTimerRef.current) {
       clearTimeout(viewportReadyNotifyTimerRef.current);
       viewportReadyNotifyTimerRef.current = null;
+    }
+
+    if (initialCommandDelayTimerRef.current) {
+      clearTimeout(initialCommandDelayTimerRef.current);
+      initialCommandDelayTimerRef.current = null;
     }
 
     if (autoScrollRafRef.current) {
@@ -1963,6 +1970,25 @@ export default function TerminalTTY({
     }
   }, [id, initialCommand, skipRedundantInitialCommandSend, swarmContext]);
 
+  const scheduleInitialCommandAfterViewport = useCallback(() => {
+    if (initialCommandDelayScheduledRef.current) return;
+    initialCommandDelayScheduledRef.current = true;
+
+    const delayMs = Math.max(0, Number(swarmContext?.startAfterMs) || 0);
+    if (initialCommandDelayTimerRef.current) {
+      window.clearTimeout(initialCommandDelayTimerRef.current);
+      initialCommandDelayTimerRef.current = null;
+    }
+    if (delayMs > 0) {
+      initialCommandDelayTimerRef.current = window.setTimeout(() => {
+        initialCommandDelayTimerRef.current = null;
+        sendInitialCommandIfReady();
+      }, delayMs);
+      return;
+    }
+    sendInitialCommandIfReady();
+  }, [sendInitialCommandIfReady, swarmContext?.startAfterMs]);
+
   const confirmViewportFit = useCallback(
     (cols, rows) => {
       if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) return;
@@ -1974,9 +2000,9 @@ export default function TerminalTTY({
         notifyViewportReady(cols, rows);
       }
 
-      sendInitialCommandIfReady();
+      scheduleInitialCommandAfterViewport();
     },
-    [notifyViewportReady, sendInitialCommandIfReady]
+    [notifyViewportReady, scheduleInitialCommandAfterViewport]
   );
 
   const fitAndResize = useCallback(

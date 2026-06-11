@@ -169,7 +169,11 @@ import {
   buildCleanTerminalStatePayload,
   flushTerminalSessionPersistence,
 } from '@/lib/terminal/terminalSessionFlush';
-import { rescheduleSwarmLaunchBatchFlush } from '@/lib/terminal/swarmLaunchBatch';
+import {
+  dispatchSwarmLaunchMaterialized,
+  rescheduleSwarmLaunchBatchFlush,
+  SWARM_LAUNCH_MATERIALIZED_EVENT,
+} from '@/lib/terminal/swarmLaunchBatch';
 import {
   schedulePostLayoutNativeSync,
   dispatchNativeVteWorkspaceSync,
@@ -1182,6 +1186,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const swarmLaunchFlushTimerRef = useRef(null);
   const swarmLaunchScheduledTimersRef = useRef(new Map());
   const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
+  const materializedSwarmLaunchIdsRef = useRef(new Set());
 
   const [activeWsId, setActiveWsId] = useState(() => createDefaultWorkspaceState().activeWsId);
   const [activePanelIds, setActivePanelIds] = useState(
@@ -2669,20 +2674,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         setSwarmControlSnapshot(payload.control_room_snapshot_input);
       }
 
-      runtimeRequests.forEach((request) => {
-        const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
-        if (delayMs > 0) {
-          const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
-          const timerId = window.setTimeout(() => {
-            swarmLaunchScheduledTimersRef.current.delete(requestKey);
-            window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-          }, delayMs);
-          swarmLaunchScheduledTimersRef.current.set(requestKey, timerId);
-          return;
-        }
-
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      });
+      dispatchSwarmLaunchMaterialized(runtimeRequests);
 
       setSwarmLaunchWizardOpen(false);
       setSwarmLaunchSubmitState({ submitting: false, error: null });
@@ -3757,6 +3749,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const createWorkspaceForSwarmLaunchRequests = useCallback(
     (requests = []) => {
+      const launchId = String(requests[0]?.launchId || '').trim();
+      if (launchId && materializedSwarmLaunchIdsRef.current.has(launchId)) {
+        return;
+      }
+
       const launchRequests = requests
         .map((request) => {
           const commandToRun = enforceDocOpsGateOnLaunchCommand(
@@ -3811,6 +3808,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 roleKey: request.roleKey || request.swarmRole?.roleKey || null,
                 launchId: request.launchId || null,
                 needsLaunchWrapper: true,
+                startAfterMs: Number.isFinite(request.startAfterMs) ? request.startAfterMs : 0,
               },
             });
           });
@@ -3866,6 +3864,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         persistAgentRunMetadata(request, panelId, request.commandToRun);
       });
 
+      if (launchId) {
+        materializedSwarmLaunchIdsRef.current.add(launchId);
+        const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+        if (pendingBatch?.timer) {
+          window.clearTimeout(pendingBatch.timer);
+        }
+        pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+      }
+
       if (typeof window !== 'undefined') {
         const swarmPanelIds = panelAssignments.map(({ panelId }) => panelId);
         const scheduleSwarmViewportSync = (phase) => {
@@ -3919,6 +3926,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const enqueueSwarmLaunchRequest = useCallback(
     (request) => {
       const launchId = request.launchId || 'unknown';
+      if (launchId !== 'unknown' && materializedSwarmLaunchIdsRef.current.has(launchId)) {
+        return;
+      }
       let batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
 
       if (!batch) {
@@ -4984,6 +4994,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     };
 
+    const handleSwarmLaunchMaterialized = (e) => {
+      const runtimeRequests = e.detail?.runtimeRequests || [];
+      createWorkspaceForSwarmLaunchRequests(runtimeRequests);
+    };
+
     const handleRunAgent = async (e) => {
       const { taskId, command, selectedAgent, launchOrigin, promptSummary, taskTitle } = e.detail;
 
@@ -5009,16 +5024,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     document.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('devhub:run-agent', handleRunAgent);
+    window.addEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleSwarmLaunchMaterialized);
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('devhub:run-agent', handleRunAgent);
+      window.removeEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleSwarmLaunchMaterialized);
     };
   }, [
     isVisible,
     handleSplit,
     handleClosePanel,
     cwd,
+    createWorkspaceForSwarmLaunchRequests,
     enqueueSwarmLaunchRequest,
     persistAgentRunMetadata,
     applyTerminalNavigationAction,

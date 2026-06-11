@@ -22,7 +22,10 @@ import {
   TERMINAL_RENDERER_INHERIT_MODE,
 } from '../terminalRendererPreferences';
 
-import { rescheduleSwarmLaunchBatchFlush } from '@/lib/terminal/swarmLaunchBatch';
+import {
+  dispatchSwarmLaunchMaterialized,
+  rescheduleSwarmLaunchBatchFlush,
+} from '@/lib/terminal/swarmLaunchBatch';
 
 export default function useSwarmLaunchController({
   projectId,
@@ -193,21 +196,7 @@ export default function useSwarmLaunchController({
         }
       }
 
-      const launchRequests = payload.launch_result?.runtime_requests || [];
-      launchRequests.forEach((request) => {
-        const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
-        if (delayMs > 0) {
-          const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
-          const timerId = window.setTimeout(() => {
-            swarmLaunchScheduledTimersRef.current.delete(requestKey);
-            window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-          }, delayMs);
-          swarmLaunchScheduledTimersRef.current.set(requestKey, timerId);
-          return;
-        }
-
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      });
+      dispatchSwarmLaunchMaterialized(payload.launch_result?.runtime_requests || []);
 
       setSwarmLaunchWizardOpen(false);
       setSwarmLaunchSubmitState({ submitting: false, error: null });

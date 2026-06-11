@@ -737,6 +737,50 @@ describe('TerminalWorkspacesManager right dock', () => {
     }
   });
 
+  test('materializes all swarm panels in one workspace from a single launch event', async () => {
+    const { SWARM_LAUNCH_MATERIALIZED_EVENT } = require('@/lib/terminal/swarmLaunchBatch');
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    const runtimeRequests = [
+      'zed',
+      'sdd_worker_1',
+      'sdd_worker_2',
+      'sdd_worker_3',
+      'sdd_worker_4',
+    ].map((roleKey, index) => ({
+      taskId: `launch-mat:${roleKey}`,
+      selectedAgent: 'opencode',
+      command: `opencode --prompt ${roleKey}`,
+      launchOrigin: 'swarm-control-launch',
+      taskTitle: `ZED Pod · ${roleKey}`,
+      launchId: 'launch-mat',
+      roleKey,
+      startAfterMs: index === 0 ? 0 : 8000 + (index - 1) * 4000,
+    }));
+
+    window.dispatchEvent(
+      new window.CustomEvent(SWARM_LAUNCH_MATERIALIZED_EVENT, {
+        detail: { runtimeRequests },
+      })
+    );
+
+    await flushEffects();
+    await flushEffects();
+
+    const visibleShell = getVisibleWorkspaceShell(view.container);
+    expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
+    expect(view.container.textContent).toContain('ZED Pod');
+
+    const columnContainers = visibleShell?.querySelectorAll('[data-testid^="workspace-column-c"]');
+    expect(columnContainers.length).toBeGreaterThanOrEqual(3);
+  });
+
   test('preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
@@ -979,9 +1023,9 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(
-      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.getAttribute(
-        'data-dock-layer-visible'
-      )
+      view.container
+        .querySelector('[data-testid="workspace-right-dock-layer"]')
+        ?.getAttribute('data-dock-layer-visible')
     ).toBe('false');
 
     await click(view.container.querySelector('[title="Workspace 1"]'));
