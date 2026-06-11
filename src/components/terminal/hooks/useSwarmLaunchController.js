@@ -4,7 +4,11 @@
 // Returns: { swarmLaunchWizardOpen, swarmLaunchWizardStep, swarmLaunchDraft, swarmLaunchSubmitState, updateSwarmLaunchDraft, openTerminalSwarmLauncher, handleTerminalSwarmLaunch, enqueueSwarmLaunchRequest, resolvedSwarmLaunchDraft, swarmLaunchPreview }
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { createSwarmLaunchDraft, deriveSwarmLaunchPreview } from '@/lib/operations/swarmControl';
+import {
+  createSwarmLaunchDraft,
+  deriveSwarmLaunchPreview,
+  isOrchestratorRoleKey,
+} from '@/lib/operations/swarmControl';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import {
@@ -286,7 +290,7 @@ export default function useSwarmLaunchController({
       if (launchRequests.length === 0) return;
 
       const directorRequest =
-        launchRequests.find((request) => request.swarmRole?.roleKey === 'director') || null;
+        launchRequests.find((request) => isOrchestratorRoleKey(request.swarmRole?.roleKey)) || null;
       const workerRequests = launchRequests
         .filter((request) => request !== directorRequest)
         .sort(
@@ -319,7 +323,7 @@ export default function useSwarmLaunchController({
             const panelId = `p${panelCounterRef.current}`;
             const panelCwd = request.workspacePath || cwd;
             if (!firstPanelId) firstPanelId = panelId;
-            if (request.swarmRole?.roleKey === 'director') directorPanelId = panelId;
+            if (isOrchestratorRoleKey(request.swarmRole?.roleKey)) directorPanelId = panelId;
             panelAssignments.push({ request, panelId, panelCwd });
             return {
               id: panelId,

@@ -15,7 +15,10 @@ function shortenUrlLabel(label) {
   if (!label || typeof label !== 'string') return null;
   const trimmed = label.trim();
   if (!trimmed) return null;
-  return trimmed.replace(/^https?:\/\//i, '').replace(/\/$/, '').split('/')[0];
+  return trimmed
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/$/, '')
+    .split('/')[0];
 }
 
 function summarizeOpenTerminal(result) {
@@ -24,6 +27,9 @@ function summarizeOpenTerminal(result) {
     .trim();
   const program = typeof result.program === 'string' ? result.program.trim().toLowerCase() : '';
 
+  if (/--agent\s+zed-orchestrator/i.test(cmd)) {
+    return 'Listo. Abrí ZED Orchestrator.';
+  }
   if (
     program === 'opencode' ||
     /^opencode\b/i.test(cmd) ||
@@ -75,9 +81,7 @@ function compressProse(text) {
   const trimmed = text.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith('Error:')) {
-    return trimmed.length <= MAX_STATUS_LEN
-      ? trimmed
-      : `${trimmed.slice(0, MAX_STATUS_LEN - 1)}…`;
+    return trimmed.length <= MAX_STATUS_LEN ? trimmed : `${trimmed.slice(0, MAX_STATUS_LEN - 1)}…`;
   }
 
   const shortened = trimmed.includes('. ') ? `${trimmed.split('. ')[0]}.` : trimmed;

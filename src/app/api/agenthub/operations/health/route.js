@@ -45,6 +45,8 @@ import {
   buildRoleAgentProfile,
   createSwarmLaunchDraft,
   deriveSwarmLaunchPreview,
+  isOrchestratorRoleKey,
+  isSddWorkerRoleKey,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
@@ -91,13 +93,14 @@ const DIRECTOR_HANDOFF_DISABLED_MESSAGES = Object.freeze({
 });
 
 function mapLaunchRoleToParticipantRole(roleKey = '') {
-  if (roleKey === 'director') return 'director';
+  if (isOrchestratorRoleKey(roleKey)) return 'director';
   if (roleKey === 'qa' || roleKey === 'reviewer' || roleKey === 'evidence') return 'reviewer';
   return 'executor';
 }
 
 function describeLaunchRole(roleKey = '') {
   const descriptions = {
+    zed: 'Orquestador general (ZED): lee MCP, delega changes a SDD Workers, monitorea y escala al operador humano. No implementa ni corre SDD directamente.',
     director:
       'Coordina la misión, asigna foco a cada agente, verifica evidencia y decide cuándo cerrar/hacer handoff.',
     coder:
@@ -110,6 +113,10 @@ function describeLaunchRole(roleKey = '') {
       'Cuida estructura, límites técnicos, coherencia del diseño y próximos pasos durables.',
   };
 
+  if (isSddWorkerRoleKey(roleKey)) {
+    return 'SDD Worker (gentle-orchestrator): espera asignación de ZED; al recibir un change, ejecuta el pipeline SDD estándar con subagentes nativos.';
+  }
+
   return (
     descriptions[roleKey] || 'Ejecuta tu parte de la misión y reporta estado/evidencia al Director.'
   );
@@ -121,6 +128,7 @@ export function buildLaunchPrompt({
   mission,
   workspacePath,
   hierarchy = [],
+  bootstrapMode = 'engram_first',
   // T-017.2: launchId is no longer embedded in the verbose chat-list
   // example (dropped in the trim). Kept in the signature for API
   // compatibility with the route.js caller (buildLaunchCommand) and
@@ -130,10 +138,17 @@ export function buildLaunchPrompt({
 }) {
   const normalizedRoleKey = String(roleKey || '')
     .trim()
-    .toLowerCase();
-  const isDirector = normalizedRoleKey === 'director';
-  const isWorker = normalizedRoleKey !== 'director';
-  const workerRoles = hierarchy.filter((entry) => entry && entry.toLowerCase() !== 'director');
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const isOrchestrator = isOrchestratorRoleKey(normalizedRoleKey);
+  const isWorker = !isOrchestrator;
+  const isStandby = bootstrapMode === 'standby';
+  const isZed = normalizedRoleKey === 'zed';
+  const isSddWorker = isSddWorkerRoleKey(normalizedRoleKey);
+  const workerRoles = hierarchy.filter(
+    (entry) => entry && !isOrchestratorRoleKey(String(entry).toLowerCase().replace(/\s+/g, '_'))
+  );
   const missionId = String(launchId || '').trim() || '${DEVHUB_MISSION_ID}';
   const tmuxRosterHint = launchId
     ? `devhub-swarm-${launchId}-`
@@ -159,10 +174,27 @@ export function buildLaunchPrompt({
   // T-017.2: director prompt trimmed from 19 to 7 lines. Original was
   // ~45 lines total; trim target is 25. Required key phrases preserved:
   // team_chat, no Plyrium, agent DevHub.
-  const directorSpecific = isDirector
+  const standbyBlock = isStandby
     ? [
         '',
-        '=== Director: status y coordinacion ===',
+        '=== STANDBY — esperar operador ===',
+        '- Modo standby activo: NO reclames tareas MCP, NO delegues trabajo, NO inicies SDD hasta instruccion explicita del operador humano.',
+        isZed
+          ? '- Como ZED: saluda brevemente y confirma que esperas ordenes. Usa DevHub MCP solo cuando el operador lo pida.'
+          : '',
+        isSddWorker
+          ? '- Como SDD Worker (gentle-orchestrator): cuando ZED asigne un change, usa el flujo SDD estandar (/sdd-continue, subagentes sdd-*). No inventes fases ni perfiles nuevos.'
+          : '',
+        isOrchestrator && !isZed
+          ? '- Como Director: espera instrucciones del operador antes de repartir foco.'
+          : '',
+      ].filter(Boolean)
+    : [];
+
+  const directorSpecific = isOrchestrator
+    ? [
+        '',
+        isZed ? '=== ZED Orchestrator ===' : '=== Director: status y coordinacion ===',
         '- Sos un agente DevHub. NO menciones Plyrium ni frameworks externos.',
         '- Fuente de verdad: team_chat (bus DevHub). /tmp/devhub-swarm-*.log es solo diagnostico del wrapper, NO la fuente.',
         '- Reparte foco con `_devhub_chat --to <role>`, lee respuestas con `_devhub_inbox_check`.',
@@ -171,7 +203,10 @@ export function buildLaunchPrompt({
         '- Si un worker reporto via `_devhub_chat` o `process_exit`, no lo trates como pendiente de heartbeat.',
         '- Si un worker no responde en 2min, marcalo inactivo y reasigna foco.',
         '- Confirma roster tmux/presence-list; MCP solo para tareas/comentarios del proyecto si hace falta.',
-      ]
+        isZed
+          ? '- Los SDD Workers usan gentle-orchestrator y SDD estandar; delega changes completos, no micro-fases.'
+          : '',
+      ].filter(Boolean)
     : [];
 
   // T-017.2: worker prompt trimmed from 28 to 9 lines. Original was
@@ -179,11 +214,13 @@ export function buildLaunchPrompt({
   // _devhub_chat, _devhub_inbox_check, no Plyrium, agent DevHub.
   const workerSpecific = isWorker
     ? [
-        '=== Worker: identidad y reporte ===',
+        isSddWorker
+          ? '=== SDD Worker (gentle-orchestrator) ==='
+          : '=== Worker: identidad y reporte ===',
         // T-016.2 + T-017.2: anti-hallucination. Worker must self-identify
         // as a DevHub agent and not invent Plyrium / Forge / warp tools.
         '- Sos un agente DevHub. NO menciones Plyrium, Forge, ni "warp". Si una herramienta no esta en tu toolbox, no la inventes.',
-        '- Reporta al Director con `_devhub_chat --to director --message "..."` (helper bash, durable en team_chat).',
+        `- Reporta a ${isSddWorker ? 'ZED' : 'el Director'} con \`_devhub_chat --to ${isSddWorker ? 'zed' : 'director'} --message "..."\` (helper bash, durable en team_chat).`,
         '- Si `type _devhub_chat` falla: `source "$DEVHUB_BUS_HELPERS_FILE"` o usa el shim en `$PATH`.',
         '- Lee directivas con `_devhub_inbox_check` (lee de team_inbox).',
         '- NO uses _devhub_tell_director (retired en T-006) ni busques estado en Engram MCP.',
@@ -211,11 +248,14 @@ export function buildLaunchPrompt({
     'Reglas de ejecución:',
     '- No asumas que otro agente completó tu parte: deja evidencia concreta.',
     '- Mantén cambios acotados y evita pisar trabajo de otros roles.',
-    isDirector
-      ? '- Como Director, primero confirma roster, reparte foco y pide reportes; no ejecutes como worker salvo desbloqueo puntual.'
-      : '- Como worker, no cierres la misión: entrega resultado, pruebas/observaciones y próximos pasos al Director.',
+    isOrchestrator
+      ? isZed
+        ? '- Como ZED, coordina workers y MCP; no implementes ni ejecutes SDD directamente.'
+        : '- Como Director, primero confirma roster, reparte foco y pide reportes; no ejecutes como worker salvo desbloqueo puntual.'
+      : '- Como worker, no cierres la misión: entrega resultado, pruebas/observaciones y próximos pasos al orquestador.',
+    ...standbyBlock,
     ...devHubInstructions,
-    ...(isDirector ? directorSpecific : []),
+    ...(isOrchestrator ? directorSpecific : []),
     ...(isWorker ? workerSpecific : []),
   ].join('\n');
 }
@@ -240,7 +280,7 @@ export function buildLaunchCommand(
   const agentProfile = roleKey ? buildRoleAgentProfile(roleKey) : 'sdd-orchestrator';
   const tmuxSessionName = launchId && roleKey ? `devhub-swarm-${launchId}-${roleKey}` : null;
   const directorTmuxSession = launchId ? `devhub-swarm-${launchId}-director` : null;
-  const isWorker = roleKey && roleKey.toLowerCase() !== 'director';
+  const isWorker = roleKey && !isOrchestratorRoleKey(roleKey);
 
   console.log(`[SWARM_LAUNCH_CMD] Building command for role: ${roleKey}`);
   console.log(`[SWARM_LAUNCH_CMD] Agent profile: ${agentProfile}`);
@@ -1102,6 +1142,7 @@ function configureLaunchRole({
     mission: resolvedDraft.mission,
     workspacePath: worktreePath,
     hierarchy: preview.topology?.roles || [],
+    bootstrapMode: resolvedDraft.bootstrapMode || 'engram_first',
     launchId,
   });
   const workspaceLease = prepareAgentWorkspaceLease(
@@ -1327,8 +1368,11 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
       const runtimeRequests = [];
       const failedRoles = [];
       const roleEntries = Array.isArray(preview.rolePrograms) ? preview.rolePrograms : [];
-      const directorRoleEntry = roleEntries.find((entry) => entry?.role_key === 'director') || null;
-      const workerRoleEntries = roleEntries.filter((entry) => entry?.role_key !== 'director');
+      const directorRoleEntry =
+        roleEntries.find((entry) => isOrchestratorRoleKey(entry?.role_key)) || null;
+      const workerRoleEntries = roleEntries.filter(
+        (entry) => !isOrchestratorRoleKey(entry?.role_key)
+      );
 
       if (directorRoleEntry) {
         phaseEvents.push(
@@ -1484,7 +1528,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
       });
 
       for (const request of runtimeRequests) {
-        if (request.roleKey === 'director') continue;
+        if (isOrchestratorRoleKey(request.roleKey)) continue;
 
         upsertMessageDelivery(writeDb, {
           message_id: kickoffMessage.message_id,
@@ -2161,6 +2205,8 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
     })(),
   };
 
+  const launchCatalog = selectSwarmLaunchCatalog(controlRoomSnapshotInput);
+
   return {
     ...snapshot,
     ...(Object.keys(controlRoomSnapshotInput).length > 0
@@ -2168,6 +2214,7 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
           control_room_snapshot_input: controlRoomSnapshotInput,
         }
       : {}),
+    launch_catalog: launchCatalog,
   };
 }
 

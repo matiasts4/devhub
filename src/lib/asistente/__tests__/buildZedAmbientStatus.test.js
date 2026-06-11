@@ -5,10 +5,32 @@ describe('buildZedAmbientStatus', () => {
     expect(
       buildZedAmbientStatus({
         role: 'assistant',
-        content: 'Listo, abrí GitHub en el navegador integrado del workspace para que puedas verlo.',
-        tool_results: [{ tool: 'open_url', result: { url: 'https://github.com/', label: 'GitHub' } }],
+        content:
+          'Listo, abrí GitHub en el navegador integrado del workspace para que puedas verlo.',
+        tool_results: [
+          { tool: 'open_url', result: { url: 'https://github.com/', label: 'GitHub' } },
+        ],
       })
     ).toBe('Listo. Abrí GitHub en pizarra.');
+  });
+
+  test('summarizes ZED Orchestrator launches distinctly from generic OpenCode', () => {
+    expect(
+      buildZedAmbientStatus({
+        role: 'assistant',
+        content: 'Abrí ZED en standby.',
+        tool_results: [
+          {
+            tool: 'open_terminal',
+            result: {
+              workspace: true,
+              program: 'opencode',
+              command_sent: 'opencode --agent zed-orchestrator',
+            },
+          },
+        ],
+      })
+    ).toBe('Listo. Abrí ZED Orchestrator.');
   });
 
   test('summarizes OpenCode launches with a short line', () => {

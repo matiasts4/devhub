@@ -129,6 +129,37 @@ export function getSwarmControlLayoutButtonVariant(layout, targetLayout) {
   return layout === targetLayout ? 'devhubGlass' : 'devhubGhost';
 }
 
+export function getSwarmControlChromeStyles() {
+  return {
+    launchSummaryShell: {
+      ...sectionSurfaceStyle({ emphasized: true }),
+      background: 'var(--chrome-panel-fill-emphasis)',
+      borderColor: 'var(--chrome-border-color)',
+    },
+    launchSummaryCard: {
+      ...dataTileStyle(),
+      background: 'var(--chrome-control-fill)',
+    },
+    controlSection: {
+      ...panelStyle(),
+      background: 'var(--chrome-panel-fill)',
+    },
+    controlCluster: {
+      ...panelStyle(),
+      background: 'var(--chrome-control-fill)',
+    },
+    filterInput: {
+      ...inputStyle(),
+      background: 'var(--chrome-control-fill)',
+      borderRadius: 'var(--chrome-radius-control)',
+    },
+    statChip: {
+      ...pillStyle(),
+      background: 'var(--chrome-control-fill)',
+    },
+  };
+}
+
 export default function SwarmControl({ snapshotInput = null }) {
   const { project } = useOutletContext() || {};
   const [fetchedInput, setFetchedInput] = useState(null);
@@ -383,22 +414,6 @@ export default function SwarmControl({ snapshotInput = null }) {
     [launchCatalog, project]
   );
 
-  const handlePrimaryAction = useCallback(
-    (cta) => {
-      if (cta?.target === 'launchpad-templates') {
-        openLaunchWizard({
-          templateId: launchCatalog?.recommended_template_id,
-          step: 'team',
-          mode: 'template',
-        });
-      }
-      if (cta?.target === 'terminate-swarm') {
-        handleTerminateSwarmLaunch();
-      }
-    },
-    [launchCatalog?.recommended_template_id, openLaunchWizard, handleTerminateSwarmLaunch]
-  );
-
   const handleTerminateSwarmLaunch = useCallback(async () => {
     const launchId = primarySurface?.hero?.launchId;
     if (!project?.id || !launchId) {
@@ -445,6 +460,22 @@ export default function SwarmControl({ snapshotInput = null }) {
       });
     }
   }, [primarySurface, project]);
+
+  const handlePrimaryAction = useCallback(
+    (cta) => {
+      if (cta?.target === 'launchpad-templates') {
+        openLaunchWizard({
+          templateId: launchCatalog?.recommended_template_id,
+          step: 'team',
+          mode: 'template',
+        });
+      }
+      if (cta?.target === 'terminate-swarm') {
+        handleTerminateSwarmLaunch();
+      }
+    },
+    [launchCatalog?.recommended_template_id, openLaunchWizard, handleTerminateSwarmLaunch]
+  );
 
   const handlePruneAllWorktrees = useCallback(async () => {
     if (!project?.localPath) {

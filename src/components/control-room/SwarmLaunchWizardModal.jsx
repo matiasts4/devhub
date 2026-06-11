@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { ZED_ORCHESTRATOR_TEMPLATE_ID } from '@/lib/operations/swarmControl';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import {
   brutalPanelStyle,
@@ -159,11 +160,17 @@ export default function SwarmLaunchWizardModal({
     : [];
   const bootstrapModes = Array.isArray(catalog?.bootstrap_modes) ? catalog.bootstrap_modes : [];
 
+  const isZedPodTemplate = draft.templateId === ZED_ORCHESTRATOR_TEMPLATE_ID;
+
   const stepDescription = useMemo(() => {
     if (currentStep === 'team') return 'Elegí base operativa: template team o custom team.';
-    if (currentStep === 'configure') return 'Ajustá defaults snapshot-first antes de lanzar.';
+    if (currentStep === 'configure') {
+      return isZedPodTemplate
+        ? 'ZED + SDD Workers en standby. Ajustá workers y ruta; el trabajo empieza cuando hables con ZED.'
+        : 'Ajustá defaults snapshot-first antes de lanzar.';
+    }
     return 'Revisá summary, topología y payload local del launch.';
-  }, [currentStep]);
+  }, [currentStep, isZedPodTemplate]);
 
   if (!open) return null;
 
@@ -302,25 +309,51 @@ export default function SwarmLaunchWizardModal({
                   <div className="grid gap-3 md:grid-cols-2">
                     {templates.map((template) => {
                       const selected = template.id === draft.templateId;
+                      const isFeatured = Boolean(template.featured);
 
                       return (
                         <button
                           key={template.id}
                           type="button"
                           onClick={() =>
-                            onDraftChange({ templateId: template.id, mode: 'template' })
+                            onDraftChange({
+                              templateId: template.id,
+                              mode: 'template',
+                              category: template.category || draft.category,
+                              swarmTypeId: template.swarm_type_id || draft.swarmTypeId,
+                              teamId: template.default_team_id || draft.teamId,
+                              ...(template.launch_defaults || {}),
+                            })
                           }
                           aria-pressed={selected}
                           className="text-left"
+                          style={
+                            isFeatured
+                              ? {
+                                  gridColumn: templates.length > 1 ? '1 / -1' : undefined,
+                                }
+                              : undefined
+                          }
                         >
-                          <SurfaceCard emphasized={selected} className="h-full p-4">
-                            <div className="flex items-center justify-between gap-3">
+                          <SurfaceCard emphasized={selected || isFeatured} className="h-full p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
                               <h4 className="text-sm font-semibold">{template.label}</h4>
-                              {selected ? <SurfacePill tone="accent">Base</SurfacePill> : null}
+                              <div className="flex flex-wrap gap-2">
+                                {isFeatured ? <SurfacePill tone="accent">Nuevo</SurfacePill> : null}
+                                {selected ? <SurfacePill>Base</SurfacePill> : null}
+                              </div>
                             </div>
                             <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                               {template.summary}
                             </p>
+                            {isFeatured ? (
+                              <p
+                                className="mt-2 text-xs font-medium"
+                                style={{ color: 'var(--accent-cyan, var(--accent-primary))' }}
+                              >
+                                ZED delega · Workers usan gentle-orchestrator · Standby al launch
+                              </p>
+                            ) : null}
                           </SurfaceCard>
                         </button>
                       );
@@ -332,6 +365,41 @@ export default function SwarmLaunchWizardModal({
 
             {currentStep === 'configure' ? (
               <div className="space-y-5">
+                {isZedPodTemplate ? (
+                  <div
+                    className="border p-4 text-sm"
+                    style={wizardInsetPanelStyle({ emphasized: true })}
+                  >
+                    <p className="font-medium">ZED Orchestrator Pod — modo standby</p>
+                    <p className="mt-2" style={{ color: 'var(--text-secondary)' }}>
+                      Se abrirán terminales para ZED y SDD Workers sin trabajo asignado. Conversá
+                      con ZED para delegar changes; cada worker ejecuta el SDD estándar vía{' '}
+                      <code>gentle-orchestrator</code>.
+                    </p>
+                  </div>
+                ) : null}
+
+                {isZedPodTemplate ? (
+                  <label className="block space-y-2 text-sm font-medium md:max-w-xs">
+                    <span>SDD Workers (1–4)</span>
+                    <select
+                      aria-label="Cantidad de SDD Workers"
+                      value={String(draft.workerCount || 4)}
+                      onChange={(event) =>
+                        onDraftChange({ workerCount: Number(event.target.value) })
+                      }
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
+                      {[1, 2, 3, 4].map((count) => (
+                        <option key={count} value={count}>
+                          {count} worker{count > 1 ? 's' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-2 text-sm font-medium">
                     <span>Categoría</span>
@@ -557,66 +625,74 @@ export default function SwarmLaunchWizardModal({
                     </select>
                   </label>
 
-                  <div className="space-y-3 md:col-span-2">
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-                        <input
-                          type="checkbox"
-                          aria-label="Enable SDD mode"
-                          checked={draft.sddEnabled || false}
-                          onChange={(event) => onDraftChange({ sddEnabled: event.target.checked })}
-                          className="w-4 h-4 accent-[var(--accent-primary)]"
-                        />
-                        <span>Modo SDD</span>
-                      </label>
-                    </div>
-
-                    {draft.sddEnabled && (
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="space-y-2 text-sm font-medium">
-                          <span>Nombre del cambio</span>
+                  {!isZedPodTemplate ? (
+                    <div className="space-y-3 md:col-span-2">
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
                           <input
-                            aria-label="Change name"
-                            value={draft.changeName || ''}
-                            onChange={(event) => onDraftChange({ changeName: event.target.value })}
-                            placeholder="e.g. swarm-sdd-integration"
-                            className="w-full"
-                            style={wizardFieldStyle}
+                            type="checkbox"
+                            aria-label="Enable SDD mode"
+                            checked={draft.sddEnabled || false}
+                            onChange={(event) =>
+                              onDraftChange({ sddEnabled: event.target.checked })
+                            }
+                            className="w-4 h-4 accent-[var(--accent-primary)]"
                           />
-                        </label>
-
-                        <label className="space-y-2 text-sm font-medium">
-                          <span>Fase inicial</span>
-                          <select
-                            aria-label="Initial SDD phase"
-                            value={draft.phase || ''}
-                            onChange={(event) => onDraftChange({ phase: event.target.value })}
-                            className="w-full"
-                            style={wizardSelectFieldStyle}
-                          >
-                            <option value="">Seleccionar fase...</option>
-                            {SDD_PHASES.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.label}
-                              </option>
-                            ))}
-                          </select>
+                          <span>Modo SDD</span>
                         </label>
                       </div>
-                    )}
-                  </div>
 
-                  <label className="space-y-2 text-sm font-medium md:col-span-2">
-                    <span>Misión</span>
-                    <textarea
-                      aria-label="Launch mission"
-                      value={draft.mission || ''}
-                      onChange={(event) => onDraftChange({ mission: event.target.value })}
-                      rows={5}
-                      className="w-full"
-                      style={wizardFieldStyle}
-                    />
-                  </label>
+                      {draft.sddEnabled && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="space-y-2 text-sm font-medium">
+                            <span>Nombre del cambio</span>
+                            <input
+                              aria-label="Change name"
+                              value={draft.changeName || ''}
+                              onChange={(event) =>
+                                onDraftChange({ changeName: event.target.value })
+                              }
+                              placeholder="e.g. swarm-sdd-integration"
+                              className="w-full"
+                              style={wizardFieldStyle}
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium">
+                            <span>Fase inicial</span>
+                            <select
+                              aria-label="Initial SDD phase"
+                              value={draft.phase || ''}
+                              onChange={(event) => onDraftChange({ phase: event.target.value })}
+                              className="w-full"
+                              style={wizardSelectFieldStyle}
+                            >
+                              <option value="">Seleccionar fase...</option>
+                              {SDD_PHASES.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {!isZedPodTemplate ? (
+                    <label className="space-y-2 text-sm font-medium md:col-span-2">
+                      <span>Misión</span>
+                      <textarea
+                        aria-label="Launch mission"
+                        value={draft.mission || ''}
+                        onChange={(event) => onDraftChange({ mission: event.target.value })}
+                        rows={5}
+                        className="w-full"
+                        style={wizardFieldStyle}
+                      />
+                    </label>
+                  ) : null}
                 </div>
               </div>
             ) : null}

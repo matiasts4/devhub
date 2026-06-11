@@ -1618,19 +1618,25 @@ describe('composeControlRoomSnapshot', () => {
     );
     expect(catalog.templates[1]).toEqual(
       expect.objectContaining({
+        id: 'zed-orchestrator-pod',
+      })
+    );
+    expect(catalog.templates[2]).toEqual(
+      expect.objectContaining({
         id: 'queue-restart',
       })
     );
   });
 
-  test('selectSwarmLaunchCatalog falls back to a clean-start recommendation when the control room is idle', () => {
+  test('selectSwarmLaunchCatalog falls back to ZED pod when the control room is idle', () => {
     const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
 
-    expect(catalog.recommended_template_id).toBe('clean-slate');
+    expect(catalog.recommended_template_id).toBe('zed-orchestrator-pod');
     expect(catalog.templates[0]).toEqual(
       expect.objectContaining({
-        id: 'clean-slate',
+        id: 'zed-orchestrator-pod',
         readiness: 'ready-now',
+        featured: true,
       })
     );
     expect(catalog.swarm_types).toEqual(
@@ -1653,36 +1659,36 @@ describe('composeControlRoomSnapshot', () => {
       })
     ).toEqual({
       mode: 'template',
-      category: 'delivery',
-      templateId: 'clean-slate',
-      swarmTypeId: 'delivery-swarm',
-      teamId: 'feature-delivery-team',
-      providerId: 'github-copilot/gpt-4o-mini',
+      category: 'orchestration',
+      templateId: 'zed-orchestrator-pod',
+      swarmTypeId: 'zed-orchestration-swarm',
+      teamId: 'zed-sdd-pod',
+      providerId: 'minimax-coding-plan/MiniMax-M3',
       launchStrategy: 'director_first',
-      bootstrapMode: 'engram_first',
+      bootstrapMode: 'standby',
       workspacePath: '/home/matias/ArxonLabs/devhub',
+      workerCount: 4,
       rolePrograms: {
-        director: 'opencode',
-        coder: 'opencode',
-        auditor: 'opencode',
-        devops: 'opencode',
-        architect: 'opencode',
+        zed: 'opencode',
+        sdd_worker_1: 'opencode',
+        sdd_worker_2: 'opencode',
+        sdd_worker_3: 'opencode',
+        sdd_worker_4: 'opencode',
       },
       roleModels: {
-        director: 'minimax-coding-plan/MiniMax-M3',
-        coder: 'minimax-coding-plan/MiniMax-M3',
-        auditor: 'minimax-coding-plan/MiniMax-M3',
-        devops: 'minimax-coding-plan/MiniMax-M3',
-        architect: 'minimax-coding-plan/MiniMax-M3',
+        zed: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
       },
-      sddEnabled: true,
+      sddEnabled: false,
       sddOptions: {
-        sddEnabled: true,
+        sddEnabled: false,
         phase: null,
         changeName: null,
       },
-      mission:
-        'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
+      mission: '',
     });
   });
 
@@ -1762,6 +1768,15 @@ describe('composeControlRoomSnapshot', () => {
 });
 
 describe('buildRoleAgentProfile', () => {
+  test('maps zed to zed-orchestrator', () => {
+    expect(buildRoleAgentProfile('zed')).toBe('zed-orchestrator');
+  });
+
+  test('maps sdd workers to gentle-orchestrator default', () => {
+    expect(buildRoleAgentProfile('sdd_worker_1')).toBe('gentle-orchestrator');
+    expect(buildRoleAgentProfile('sdd_worker_4')).toBe('gentle-orchestrator');
+  });
+
   test('maps director to swarm-director', () => {
     expect(buildRoleAgentProfile('director')).toBe('swarm-director');
   });

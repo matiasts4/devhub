@@ -51,12 +51,14 @@ import {
   enforceDocOpsGateOnLaunchCommand,
   shellQuotePrompt,
 } from '@/lib/docopsPrompts';
+import { TASK_STATUS_LABELS } from '@/lib/taskStatuses';
 
 const COLOR_VARS = {
   muted: 'var(--text-muted)',
   primary: 'var(--accent-primary)',
   pending: 'var(--warning, var(--accent-secondary))',
   in_progress: 'var(--accent-cyan)',
+  qa_ready: 'var(--accent-primary)',
   pink: 'var(--accent-pink)',
   danger: 'var(--danger)',
   success: 'var(--success)',
@@ -65,10 +67,36 @@ const COLOR_VARS = {
 };
 
 const COLUMNS = [
-  { id: 'pending', label: 'Pendiente', color: COLOR_VARS.pending, bg: `color-mix(in srgb, ${COLOR_VARS.pending} 15%, transparent)` },
-  { id: 'in_progress', label: 'En Progreso', color: COLOR_VARS.in_progress, bg: `color-mix(in srgb, ${COLOR_VARS.in_progress} 15%, transparent)` },
-  { id: 'blocked', label: 'Bloqueada', color: COLOR_VARS.danger, bg: `color-mix(in srgb, ${COLOR_VARS.danger} 15%, transparent)` },
-  { id: 'completed', label: 'Completada', color: COLOR_VARS.success, bg: `color-mix(in srgb, ${COLOR_VARS.success} 15%, transparent)` },
+  {
+    id: 'pending',
+    label: TASK_STATUS_LABELS.pending,
+    color: COLOR_VARS.pending,
+    bg: `color-mix(in srgb, ${COLOR_VARS.pending} 15%, transparent)`,
+  },
+  {
+    id: 'in_progress',
+    label: TASK_STATUS_LABELS.in_progress,
+    color: COLOR_VARS.in_progress,
+    bg: `color-mix(in srgb, ${COLOR_VARS.in_progress} 15%, transparent)`,
+  },
+  {
+    id: 'qa_ready',
+    label: TASK_STATUS_LABELS.qa_ready,
+    color: COLOR_VARS.qa_ready,
+    bg: `color-mix(in srgb, ${COLOR_VARS.qa_ready} 15%, transparent)`,
+  },
+  {
+    id: 'blocked',
+    label: TASK_STATUS_LABELS.blocked,
+    color: COLOR_VARS.danger,
+    bg: `color-mix(in srgb, ${COLOR_VARS.danger} 15%, transparent)`,
+  },
+  {
+    id: 'completed',
+    label: TASK_STATUS_LABELS.completed,
+    color: COLOR_VARS.success,
+    bg: `color-mix(in srgb, ${COLOR_VARS.success} 15%, transparent)`,
+  },
 ];
 
 const PRIORITY = {
@@ -129,14 +157,43 @@ export function getToolbarToggleRailStyle() {
   };
 }
 
-export function getTaskCardChromeStyle({ blocked = false, accent = 'var(--accent-primary)', accentVar } = {}) {
+export function getFilterPillChromeStyle({
+  active = false,
+  accent = 'var(--accent-primary)',
+  accentVar,
+} = {}) {
+  const resolvedAccent = resolveAccent(accent, accentVar);
+
+  if (active) {
+    return {
+      ...pillStyle({ tone: 'accent' }),
+      background: `color-mix(in srgb, ${resolvedAccent} 12%, var(--chrome-control-fill-hover))`,
+      borderColor: mixChromeAccent(resolvedAccent, 28),
+      color: resolvedAccent,
+    };
+  }
+
+  return {
+    ...pillStyle(),
+    background: 'var(--chrome-control-fill)',
+    borderColor: 'var(--chrome-border-color)',
+  };
+}
+
+export function getTaskCardChromeStyle({
+  blocked = false,
+  accent = 'var(--accent-primary)',
+  accentVar,
+} = {}) {
   const resolvedAccent = resolveAccent(accent, accentVar);
   return {
     ...kanbanCardStyle(),
     background: blocked
       ? 'color-mix(in srgb, var(--danger) 8%, var(--chrome-panel-fill))'
       : 'var(--chrome-panel-fill)',
-    borderColor: blocked ? 'color-mix(in srgb, var(--danger) 30%, var(--chrome-border-color))' : mixChromeAccent(resolvedAccent, 18),
+    borderColor: blocked
+      ? 'color-mix(in srgb, var(--danger) 30%, var(--chrome-border-color))'
+      : mixChromeAccent(resolvedAccent, 18),
     borderRadius: 'calc(var(--chrome-radius-panel) - 2px)',
     boxShadow: 'var(--chrome-shadow-panel)',
   };
@@ -217,7 +274,9 @@ const selectStyles = {
   control: (base, state) => ({
     ...base,
     ...getTaskFieldChromeStyle(),
-    borderColor: state.isFocused ? mixChromeAccent('var(--accent-primary)', 30) : 'var(--chrome-border-color)',
+    borderColor: state.isFocused
+      ? mixChromeAccent('var(--accent-primary)', 30)
+      : 'var(--chrome-border-color)',
     color: 'var(--text-primary)',
     fontSize: '12px',
     boxShadow: state.isFocused
@@ -246,7 +305,10 @@ const selectStyles = {
   multiValueRemove: (base) => ({
     ...base,
     color: 'var(--text-muted)',
-    '&:hover': { background: 'color-mix(in srgb, var(--danger) 16%, transparent)', color: 'var(--danger)' },
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--danger) 16%, transparent)',
+      color: 'var(--danger)',
+    },
   }),
   placeholder: (base) => ({ ...base, color: 'var(--text-muted)', fontSize: '12px' }),
   input: (base) => ({ ...base, color: 'var(--text-primary)' }),
@@ -369,11 +431,7 @@ function TaskModal({
     }
 
     if (targetTaskId) {
-      await db
-        .from('task_dependencies')
-        .delete()
-        .eq('task_id', targetTaskId)
-        .eq('tipo', 'blocks');
+      await db.from('task_dependencies').delete().eq('task_id', targetTaskId).eq('tipo', 'blocks');
       if (selectedDeps.length > 0) {
         await db.from('task_dependencies').insert(
           selectedDeps.map((d) => ({
@@ -400,11 +458,11 @@ function TaskModal({
   const fieldStyle = getTaskFieldChromeStyle();
 
   return (
-      <div
-        className="fixed inset-0 flex items-center justify-center z-50 p-4"
-        style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
-        onClick={onClose}
-      >
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50 p-4"
+      style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
+      onClick={onClose}
+    >
       <div
         className="w-full max-w-lg flex flex-col max-h-[92vh]"
         data-testid="task-modal-shell"
@@ -418,7 +476,11 @@ function TaskModal({
         >
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 border flex items-center justify-center" style={iconBadgeStyle}>
-              <ListTodo className="w-3.5 h-3.5" strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
+              <ListTodo
+                className="w-3.5 h-3.5"
+                strokeWidth={1.5}
+                style={{ color: 'var(--accent-primary)' }}
+              />
             </div>
             <h2 className="font-mono font-bold text-text-primary text-sm">
               {existingTask ? 'Editar Tarea' : 'Nueva Tarea'}
@@ -500,25 +562,25 @@ function TaskModal({
                   {Object.entries(PRIORITY).map(([k, v]) => (
                     <button
                       key={k}
-                        type="button"
-                        onClick={() => setForm((p) => ({ ...p, priority: k }))}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border transition-all"
-                        style={
-                          form.priority === k
-                            ? {
-                                ...pillStyle(),
-                                background: `color-mix(in srgb, ${v.color} 12%, var(--chrome-control-fill))`,
-                                borderColor: mixChromeAccent(v.color, 30),
-                                borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
-                                color: v.color,
-                              }
-                            : {
-                                ...pillStyle(),
-                                borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
-                                color: 'var(--text-muted)',
-                              }
-                        }
-                      >
+                      type="button"
+                      onClick={() => setForm((p) => ({ ...p, priority: k }))}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border transition-all"
+                      style={
+                        form.priority === k
+                          ? {
+                              ...pillStyle(),
+                              background: `color-mix(in srgb, ${v.color} 12%, var(--chrome-control-fill))`,
+                              borderColor: mixChromeAccent(v.color, 30),
+                              borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                              color: v.color,
+                            }
+                          : {
+                              ...pillStyle(),
+                              borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                              color: 'var(--text-muted)',
+                            }
+                      }
+                    >
                       <Flag className="w-3 h-3" />
                       {v.label}
                     </button>
@@ -537,12 +599,12 @@ function TaskModal({
                     min="1"
                     max="10"
                     value={form.business_value}
-                   onChange={(e) =>
-                     setForm((p) => ({ ...p, business_value: parseInt(e.target.value) }))
-                   }
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, business_value: parseInt(e.target.value) }))
+                    }
                     className="w-full accent-[var(--accent-primary)] cursor-pointer"
-                     style={{ accentColor: 'var(--accent-primary)' }}
-                   />
+                    style={{ accentColor: 'var(--accent-primary)' }}
+                  />
                   <div className="flex justify-between text-[11px] text-text-muted mt-1">
                     <span>Mínimo (1)</span>
                     <span>Core (10)</span>
@@ -563,7 +625,10 @@ function TaskModal({
             </div>
 
             {/* Dependencies */}
-            <div className="pt-1" style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}>
+            <div
+              className="pt-1"
+              style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}
+            >
               <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
                 Depende de (Bloqueada por)
               </label>
@@ -598,7 +663,10 @@ function TaskModal({
           </form>
 
           {existingTask && (
-            <div className="mt-6 pt-6" style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}>
+            <div
+              className="mt-6 pt-6"
+              style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}
+            >
               <TaskComments taskId={existingTask.id} />
             </div>
           )}
@@ -725,7 +793,10 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
           </div>
           <div>
             <div className="mb-1 flex items-center gap-2">
-              <span className="h-2.5 w-2.5 animate-pulse border" style={getWorkspaceStatusPillStyle({ tone: 'accent' })} />
+              <span
+                className="h-2.5 w-2.5 animate-pulse border"
+                style={getWorkspaceStatusPillStyle({ tone: 'accent' })}
+              />
               <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
                 autonomous execution queue
               </span>
@@ -734,7 +805,8 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
               [A] task launch rail
             </h3>
             <p className="mt-1 max-w-[44ch] text-xs leading-relaxed text-text-muted">
-              Pending tasks ranked by urgency, business value, and unblock impact. Launch from here when the board says go.
+              Pending tasks ranked by urgency, business value, and unblock impact. Launch from here
+              when the board says go.
             </p>
           </div>
         </div>
@@ -794,12 +866,12 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
                         {task.m_title}
                       </span>
                     )}
-                      <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">
-                        unlocks {task.unlocks}
-                      </span>
-                    </div>
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">
+                      unlocks {task.unlocks}
+                    </span>
                   </div>
                 </div>
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={(e) => {
@@ -950,11 +1022,17 @@ export default function Tareas() {
   return (
     <div className="h-full flex flex-col" style={getWorkspacePageShellStyle()}>
       {/* Content */}
-      <div className="flex-1 overflow-hidden flex flex-col gap-5 min-h-0" style={getWorkspacePageContentStyle()}>
+      <div
+        className="flex-1 overflow-hidden flex flex-col gap-5 min-h-0"
+        style={getWorkspacePageContentStyle()}
+      >
         <div className="shrink-0 grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
           <div className="border px-5 py-4" style={getQueueHeroStyle()}>
             <div className="mb-2 flex items-center gap-2">
-              <span className="h-2.5 w-2.5 animate-pulse border" style={getWorkspaceStatusPillStyle({ tone: 'accent' })} />
+              <span
+                className="h-2.5 w-2.5 animate-pulse border"
+                style={getWorkspaceStatusPillStyle({ tone: 'accent' })}
+              />
               <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
                 workspace task grid
               </span>
@@ -965,10 +1043,11 @@ export default function Tareas() {
                   [+] task_kanban_board
                 </h2>
                 <p className="mt-1 max-w-[56ch] text-xs leading-relaxed text-text-muted">
-                  Wider execution board for blockers, milestones, and movement between lanes. Built to feel closer to the brutalist preview, not a soft SaaS grid.
+                  Wider execution board for blockers, milestones, and movement between lanes. Built
+                  to feel closer to the brutalist preview, not a soft SaaS grid.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:min-w-[360px]">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:min-w-[420px]">
                 {COLUMNS.map((column) => {
                   const count = visibleTasks.filter((task) => task.status === column.id).length;
                   return (
@@ -1000,11 +1079,7 @@ export default function Tareas() {
                       variant={viewMode === 'kanban' ? 'devhubGlass' : 'devhubGhost'}
                       size="toolbar"
                       className={viewMode === 'kanban' ? 'text-text-primary' : ''}
-                      style={
-                        viewMode === 'kanban'
-                          ? pillStyle({ tone: 'accent' })
-                          : pillStyle()
-                      }
+                      style={viewMode === 'kanban' ? pillStyle({ tone: 'accent' }) : pillStyle()}
                     >
                       <LayoutDashboard className="w-3.5 h-3.5" /> Tablero
                     </Button>
@@ -1013,11 +1088,7 @@ export default function Tareas() {
                       variant={viewMode === 'agent' ? 'devhubGlass' : 'devhubGhost'}
                       size="toolbar"
                       className={viewMode === 'agent' ? 'text-[var(--text-primary)]' : ''}
-                      style={
-                        viewMode === 'agent'
-                          ? pillStyle({ tone: 'accent' })
-                          : pillStyle()
-                      }
+                      style={viewMode === 'agent' ? pillStyle({ tone: 'accent' }) : pillStyle()}
                     >
                       <Bot className="w-3.5 h-3.5" /> Cola Agente
                     </Button>
@@ -1039,23 +1110,38 @@ export default function Tareas() {
                 </Button>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <div className="border px-3 py-2" style={getWorkspaceStatusPillStyle({ tone: 'accent' })}>
+                <div
+                  className="border px-3 py-2"
+                  style={getWorkspaceStatusPillStyle({ tone: 'accent' })}
+                >
                   <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-muted">
                     visible
                   </div>
-                  <div className="mt-1 font-mono text-xl font-bold leading-none">{visibleTasks.length}</div>
+                  <div className="mt-1 font-mono text-xl font-bold leading-none">
+                    {visibleTasks.length}
+                  </div>
                 </div>
-                <div className="border px-3 py-2" style={getWorkspaceStatusPillStyle({ tone: 'neutral' })}>
+                <div
+                  className="border px-3 py-2"
+                  style={getWorkspaceStatusPillStyle({ tone: 'neutral' })}
+                >
                   <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-muted">
                     filtered
                   </div>
-                  <div className="mt-1 font-mono text-xl font-bold leading-none">{activeFiltersCount}</div>
+                  <div className="mt-1 font-mono text-xl font-bold leading-none">
+                    {activeFiltersCount}
+                  </div>
                 </div>
-                <div className="border px-3 py-2" style={getWorkspaceStatusPillStyle({ tone: 'neutral' })}>
+                <div
+                  className="border px-3 py-2"
+                  style={getWorkspaceStatusPillStyle({ tone: 'neutral' })}
+                >
                   <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-muted">
                     milestones
                   </div>
-                  <div className="mt-1 font-mono text-xl font-bold leading-none">{milestones.length}</div>
+                  <div className="mt-1 font-mono text-xl font-bold leading-none">
+                    {milestones.length}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1072,7 +1158,9 @@ export default function Tareas() {
             {/* Filter icon + label */}
             <div className="flex items-center gap-2 text-text-muted pr-3 border-r border-borders-subtle mr-1">
               <Filter className="w-3.5 h-3.5" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.22em]">signal filters</span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.22em]">
+                signal filters
+              </span>
               {activeFiltersCount > 0 && (
                 <span
                   className="text-[11px] text-white w-6 h-6 flex items-center justify-center font-bold"
@@ -1101,9 +1189,9 @@ export default function Tareas() {
               <select
                 value={fMilestone}
                 onChange={(e) => setFMilestone(e.target.value)}
-                  className="appearance-none bg-surface-app border border-borders-subtle text-xs text-text-primary pl-7 pr-7 py-1.5 outline-none focus:border-[var(--accent-primary)]/40 cursor-pointer"
-                  style={getTaskFieldChromeStyle()}
-                >
+                className="appearance-none bg-surface-app border border-borders-subtle text-xs text-text-primary pl-7 pr-7 py-1.5 outline-none focus:border-[var(--accent-primary)]/40 cursor-pointer"
+                style={getTaskFieldChromeStyle()}
+              >
                 <option value="">Todos los Milestones</option>
                 {milestones.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -1165,189 +1253,201 @@ export default function Tareas() {
             data-testid="kanban-board"
           >
             <div className="grid min-h-0 grid-cols-1 gap-5 xl:h-full xl:grid-cols-4">
-            {COLUMNS.map((col) => {
-              const colTasks = visibleTasks.filter((t) => t.status === col.id);
-              return (
-                <div
-                  key={col.id}
-                  data-testid={`kanban-column-${col.id}`}
-                  className="flex min-h-0 flex-col overflow-hidden xl:h-full"
-                  style={getKanbanColumnShellStyle({ accent: col.color })}
-                >
-                  {/* Column header */}
+              {COLUMNS.map((col) => {
+                const colTasks = visibleTasks.filter((t) => t.status === col.id);
+                return (
                   <div
-                    className="flex items-start justify-between gap-3 px-4 py-4 border-b border-borders-subtle"
-                    style={getKanbanColumnHeaderStyle({ accent: col.color })}
+                    key={col.id}
+                    data-testid={`kanban-column-${col.id}`}
+                    className="flex min-h-0 flex-col overflow-hidden xl:h-full"
+                    style={getKanbanColumnShellStyle({ accent: col.color })}
                   >
-                    <div>
-                      <div className="mb-1 flex items-center gap-2">
+                    {/* Column header */}
+                    <div
+                      className="flex items-start justify-between gap-3 px-4 py-4 border-b border-borders-subtle"
+                      style={getKanbanColumnHeaderStyle({ accent: col.color })}
+                    >
+                      <div>
+                        <div className="mb-1 flex items-center gap-2">
+                          <span
+                            className={`h-2.5 w-2.5 border ${col.id === 'in_progress' || col.id === 'qa_ready' ? 'animate-pulse' : ''}`}
+                            style={{
+                              background: col.color,
+                              borderColor: mixChromeAccent(col.color, 28),
+                            }}
+                          />
+                          <span className="text-[9px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                            {col.id.replace('_', ' ')}
+                          </span>
+                        </div>
                         <span
-                          className={`h-2.5 w-2.5 border ${col.id === 'in_progress' ? 'animate-pulse' : ''}`}
-                          style={{ background: col.color, borderColor: mixChromeAccent(col.color, 28) }}
-                        />
-                        <span className="text-[9px] font-semibold uppercase tracking-[0.22em] text-text-muted">
-                          {col.id.replace('_', ' ')}
+                          className="font-mono text-xs font-bold uppercase tracking-[0.2em]"
+                          style={{ color: col.color }}
+                        >
+                          {col.label}
                         </span>
                       </div>
                       <span
-                        className="font-mono text-xs font-bold uppercase tracking-[0.2em]"
-                        style={{ color: col.color }}
+                        className="font-mono text-sm font-bold px-3 py-2 text-center"
+                        style={getKanbanColumnCountStyle({ accent: col.color })}
                       >
-                        {col.label}
+                        {colTasks.length}
                       </span>
                     </div>
-                    <span
-                      className="font-mono text-sm font-bold px-3 py-2 text-center"
-                      style={getKanbanColumnCountStyle({ accent: col.color })}
-                    >
-                      {colTasks.length}
-                    </span>
-                  </div>
 
-                  {/* Tasks */}
-                  <div
-                    className="kanban-column-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3 pr-2"
-                    data-testid={`kanban-column-body-${col.id}`}
-                    style={{ '--kanban-column-accent': col.color }}
-                  >
-                    {colTasks.map((task) => {
-                      const prio = PRIORITY[task.priority] || PRIORITY.medium;
-                      const nextCols = COLUMNS.filter((c) => c.id !== col.id);
-                      const isBlocked = dependencies
-                        .filter((d) => d.task_id === task.id && d.tipo === 'blocks')
-                        .some((d) => statusMap[d.depends_on] !== 'completed');
+                    {/* Tasks */}
+                    <div
+                      className="kanban-column-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3 pr-2"
+                      data-testid={`kanban-column-body-${col.id}`}
+                      style={{ '--kanban-column-accent': col.color }}
+                    >
+                      {colTasks.map((task) => {
+                        const prio = PRIORITY[task.priority] || PRIORITY.medium;
+                        const nextCols = COLUMNS.filter((c) => c.id !== col.id);
+                        const isBlocked = dependencies
+                          .filter((d) => d.task_id === task.id && d.tipo === 'blocks')
+                          .some((d) => statusMap[d.depends_on] !== 'completed');
 
                         return (
                           <div
                             key={task.id}
-                          onClick={() => {
-                            setEditingTask(task);
-                            setModalOpen(true);
-                          }}
-                          className="border px-4 py-4 transition-all cursor-pointer group relative z-0 border-borders-subtle hover:border-borders-strong hover:-translate-y-px"
-                          data-testid={`task-card-${task.id}`}
-                          style={getTaskCardChromeStyle({ blocked: isBlocked, accent: prio.color })}
-                        >
-                          {isBlocked && (
-                            <div className="mb-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-danger">
-                              <ShieldAlert className="w-3 h-3" /> BLOQUEADA
-                            </div>
-                          )}
-                          <p className="mb-3 pr-5 font-mono text-[11px] font-bold uppercase leading-snug tracking-[0.14em] text-text-primary">
-                            {task.title}
-                          </p>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span
-                                className="text-[10px] font-semibold uppercase tracking-[0.18em] flex items-center gap-1"
-                                style={{ color: prio.color }}
-                              >
-                                <Flag className="w-3 h-3" /> {prio.label}
-                              </span>
-                              {task.business_value && (
+                            onClick={() => {
+                              setEditingTask(task);
+                              setModalOpen(true);
+                            }}
+                            className="border px-4 py-4 transition-all cursor-pointer group relative z-0 border-borders-subtle hover:border-borders-strong hover:-translate-y-px"
+                            data-testid={`task-card-${task.id}`}
+                            style={getTaskCardChromeStyle({
+                              blocked: isBlocked,
+                              accent: prio.color,
+                            })}
+                          >
+                            {isBlocked && (
+                              <div className="mb-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-danger">
+                                <ShieldAlert className="w-3 h-3" /> BLOQUEADA
+                              </div>
+                            )}
+                            <p className="mb-3 pr-5 font-mono text-[11px] font-bold uppercase leading-snug tracking-[0.14em] text-text-primary">
+                              {task.title}
+                            </p>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span
-                                  className="px-2 py-1 text-[10px] text-[var(--accent-primary)] font-mono uppercase tracking-[0.18em]"
-                                  title="Valor Negocio"
-                                  style={getKanbanDetailPillStyle({ accentVar: 'var(--accent-primary)' })}
+                                  className="text-[10px] font-semibold uppercase tracking-[0.18em] flex items-center gap-1"
+                                  style={{ color: prio.color }}
                                 >
-                                  V:{task.business_value}
+                                  <Flag className="w-3 h-3" /> {prio.label}
                                 </span>
-                              )}
-                              {task.due_date && (
-                                <span
-                                  className="flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-text-muted border"
-                                  style={getKanbanDetailPillStyle({ accent: prio.color })}
-                                >
-                                  <Calendar className="w-3 h-3" />
-                                  {new Date(task.due_date).toLocaleDateString('es-ES', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                  })}
-                                </span>
-                              )}
-                            </div>
+                                {task.business_value && (
+                                  <span
+                                    className="px-2 py-1 text-[10px] text-[var(--accent-primary)] font-mono uppercase tracking-[0.18em]"
+                                    title="Valor Negocio"
+                                    style={getKanbanDetailPillStyle({
+                                      accentVar: 'var(--accent-primary)',
+                                    })}
+                                  >
+                                    V:{task.business_value}
+                                  </span>
+                                )}
+                                {task.due_date && (
+                                  <span
+                                    className="flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-text-muted border"
+                                    style={getKanbanDetailPillStyle({ accent: prio.color })}
+                                  >
+                                    <Calendar className="w-3 h-3" />
+                                    {new Date(task.due_date).toLocaleDateString('es-ES', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                    })}
+                                  </span>
+                                )}
+                              </div>
 
-                            {/* Move dropdown */}
-                            <div
-                              className="relative group/move"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                                <button
-                                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-white transition-all p-1.5 bg-surface-elevated border border-borders-subtle"
-                                style={{
-                                  ...btnSecondaryStyle({ size: 'xs' }),
-                                  padding: '0.375rem',
-                                  minWidth: 'auto',
-                                  color: 'var(--text-muted)',
-                                }}
-                              >
-                                <ChevronDown className="w-3 h-3" />
-                              </button>
+                              {/* Move dropdown */}
                               <div
-                                className="absolute right-0 top-8 bg-surface-card border border-borders-subtle py-1 hidden group-hover/move:block z-20 w-40 shadow-xl"
-                                data-testid={`task-move-menu-${task.id}`}
-                                style={getMoveMenuChromeStyle()}
+                                className="relative group/move"
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                {nextCols.map((nc) => (
-                                  <button
-                                    key={nc.id}
-                                    onClick={() => moveTask(task.id, nc.id)}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-text-muted hover:text-white hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
-                                    style={{
-                                      ...pillStyle(),
-                                      width: '100%',
-                                      justifyContent: 'flex-start',
-                                      borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
-                                      color: 'var(--text-muted)',
-                                    }}
-                                  >
-                                    <span
-                                      className="w-1.5 h-1.5 rounded-full"
-                                      style={{ background: nc.color }}
-                                    />
-                                    {nc.label}
-                                  </button>
-                                ))}
-                                <div className="border-t border-borders-subtle mt-1 pt-1">
-                                  <button
-                                    onClick={() => deleteTask(task.id)}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-red-500/10 flex items-center gap-2 transition-colors cursor-pointer"
-                                    style={{ ...btnDangerStyle({ size: 'xs' }), width: '100%', justifyContent: 'flex-start' }}
-                                  >
-                                    <Trash2 className="w-3 h-3" /> Eliminar
-                                  </button>
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-white transition-all p-1.5 bg-surface-elevated border border-borders-subtle"
+                                  style={{
+                                    ...btnSecondaryStyle({ size: 'xs' }),
+                                    padding: '0.375rem',
+                                    minWidth: 'auto',
+                                    color: 'var(--text-muted)',
+                                  }}
+                                >
+                                  <ChevronDown className="w-3 h-3" />
+                                </button>
+                                <div
+                                  className="absolute right-0 top-8 bg-surface-card border border-borders-subtle py-1 hidden group-hover/move:block z-20 w-40 shadow-xl"
+                                  data-testid={`task-move-menu-${task.id}`}
+                                  style={getMoveMenuChromeStyle()}
+                                >
+                                  {nextCols.map((nc) => (
+                                    <button
+                                      key={nc.id}
+                                      onClick={() => moveTask(task.id, nc.id)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-text-muted hover:text-white hover:bg-surface-elevated flex items-center gap-2 transition-colors cursor-pointer"
+                                      style={{
+                                        ...pillStyle(),
+                                        width: '100%',
+                                        justifyContent: 'flex-start',
+                                        borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                                        color: 'var(--text-muted)',
+                                      }}
+                                    >
+                                      <span
+                                        className="w-1.5 h-1.5 rounded-full"
+                                        style={{ background: nc.color }}
+                                      />
+                                      {nc.label}
+                                    </button>
+                                  ))}
+                                  <div className="border-t border-borders-subtle mt-1 pt-1">
+                                    <button
+                                      onClick={() => deleteTask(task.id)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-red-500/10 flex items-center gap-2 transition-colors cursor-pointer"
+                                      style={{
+                                        ...btnDangerStyle({ size: 'xs' }),
+                                        width: '100%',
+                                        justifyContent: 'flex-start',
+                                      }}
+                                    >
+                                      <Trash2 className="w-3 h-3" /> Eliminar
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
 
-                    <button
-                      onClick={() => {
-                        setEditingTask(null);
-                        setInitialStatus(col.id);
-                        setModalOpen(true);
-                      }}
-                      className="w-full py-3 text-[10px] font-semibold uppercase tracking-[0.2em] hover:text-white transition-all flex items-center justify-center gap-1 border"
-                      style={{
-                        ...btnSecondaryStyle({ size: 'sm' }),
-                        width: '100%',
-                        borderRadius: 0,
-                        borderStyle: 'solid',
-                        borderColor: col.color,
-                        background: `color-mix(in srgb, ${col.color} 18%, var(--chrome-control-fill))`,
-                        color: 'var(--text-primary)',
-                        boxShadow: 'var(--chrome-shadow-control)',
-                      }}
-                    >
-                      <Plus className="w-3 h-3" /> Añadir
-                    </button>
+                      <button
+                        onClick={() => {
+                          setEditingTask(null);
+                          setInitialStatus(col.id);
+                          setModalOpen(true);
+                        }}
+                        className="w-full py-3 text-[10px] font-semibold uppercase tracking-[0.2em] hover:text-white transition-all flex items-center justify-center gap-1 border"
+                        style={{
+                          ...btnSecondaryStyle({ size: 'sm' }),
+                          width: '100%',
+                          borderRadius: 0,
+                          borderStyle: 'solid',
+                          borderColor: col.color,
+                          background: `color-mix(in srgb, ${col.color} 18%, var(--chrome-control-fill))`,
+                          color: 'var(--text-primary)',
+                          boxShadow: 'var(--chrome-shadow-control)',
+                        }}
+                      >
+                        <Plus className="w-3 h-3" /> Añadir
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
             </div>
           </div>
         )}

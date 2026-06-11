@@ -106,6 +106,7 @@ export default function ProjectDashboard() {
   const total = tasks.length;
   const completed = tasks.filter((t) => t.status === 'completed').length;
   const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
+  const qaReady = tasks.filter((t) => t.status === 'qa_ready').length;
   const blocked = tasks.filter((t) => t.status === 'blocked').length;
   const compPct = total > 0 ? Math.round((completed / total) * 100) : 0;
   const accentColor = project?.color || '#58A6FF';
@@ -217,7 +218,7 @@ export default function ProjectDashboard() {
             </div>
 
             <div className="p-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
                 <StatCard
                   label="Tareas totales"
                   value={total}
@@ -234,6 +235,12 @@ export default function ProjectDashboard() {
                   label="En progreso"
                   value={inProgress}
                   color="var(--accent-primary)"
+                  icon={Clock}
+                />
+                <StatCard
+                  label="Pendiente revisión"
+                  value={qaReady}
+                  color="var(--accent-secondary)"
                   icon={Clock}
                 />
                 <StatCard

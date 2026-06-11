@@ -93,6 +93,7 @@ export function registerProjectTools(server, deps) {
           total_tasks: tasksRes.data?.length || 0,
           completed_tasks: tasksRes.data?.filter((t) => t.status === 'completed').length || 0,
           in_progress: tasksRes.data?.filter((t) => t.status === 'in_progress').length || 0,
+          qa_ready: tasksRes.data?.filter((t) => t.status === 'qa_ready').length || 0,
           blocked: tasksRes.data?.filter((t) => t.status === 'blocked').length || 0,
           milestones_done: msRes.data?.filter((m) => m.status === 'completed').length || 0,
         },

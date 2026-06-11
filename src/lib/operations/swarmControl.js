@@ -3,7 +3,39 @@ import {
   mergeControlRoomStatus,
   normalizeEvidenceRefs,
 } from '@/lib/operations/contracts';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { buildPrompt } from '../sdd/SwarmPromptEngine';
+
+/** Launchpad template: ZED + N SDD Workers (gentle-orchestrator), standby by default. */
+export const ZED_ORCHESTRATOR_TEMPLATE_ID = 'zed-orchestrator-pod';
+
+export function isOrchestratorRoleKey(roleKey = '') {
+  const key = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return key === 'director' || key === 'zed';
+}
+
+export function isSddWorkerRoleKey(roleKey = '') {
+  const key = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return /^sdd_worker_\d+$/.test(key);
+}
+
+export function buildZedSddPodTopology(workerCount = 4) {
+  const count = Math.min(4, Math.max(1, Number(workerCount) || 4));
+  const workerRoles = Array.from({ length: count }, (_, index) => `SDD Worker ${index + 1}`);
+  return {
+    label: `ZED → ${workerRoles.join(' / ')}`,
+    roles: ['ZED', ...workerRoles],
+    connections: workerRoles.map((worker) => `ZED → ${worker}`),
+  };
+}
 
 export function getSourceByKey(snapshot, key) {
   return snapshot?.sources?.find((source) => source.key === key) || null;
@@ -92,6 +124,27 @@ function countPendingApprovals(approvals = []) {
 function buildSwarmTemplateCatalog() {
   return [
     {
+      id: ZED_ORCHESTRATOR_TEMPLATE_ID,
+      label: 'ZED Orchestrator Pod',
+      summary:
+        'ZED en standby + SDD Workers con Gentle Orchestrator. Vos conversás con ZED; él delega changes sin SDD custom.',
+      readiness: 'ready-now',
+      featured: true,
+      tags: ['nuevo', 'zed', 'sdd', 'standby', 'orchestration'],
+      category: 'orchestration',
+      swarm_type_id: 'zed-orchestration-swarm',
+      default_team_id: 'zed-sdd-pod',
+      default_provider_id: 'minimax-coding-plan/MiniMax-M3',
+      default_mission: '',
+      launch_defaults: {
+        bootstrapMode: 'standby',
+        launchStrategy: 'director_first',
+        sddEnabled: false,
+        workerCount: 4,
+      },
+      topology: buildZedSddPodTopology(4),
+    },
+    {
       id: 'approval-recovery',
       label: 'Resolver aprobaciones y destrabar',
       summary: 'Volvé al swarm activo, cerrá bloqueos y seguí desde la cola durable.',
@@ -157,6 +210,18 @@ function buildSwarmTemplateCatalog() {
 function buildSwarmTypeCatalog() {
   return [
     {
+      id: 'zed-orchestration-swarm',
+      label: 'ZED Orchestration',
+      summary:
+        'ZED delega changes a SDD Workers (gentle-orchestrator); flujo SDD estándar por worker.',
+      readiness: 'ready-now',
+      defaults_preview: ['standby', 'mcp-queue', 'human-qa-gate'],
+      category: 'orchestration',
+      default_team_id: 'zed-sdd-pod',
+      default_provider_id: 'minimax-coding-plan/MiniMax-M3',
+      topology: buildZedSddPodTopology(4),
+    },
+    {
       id: 'delivery-swarm',
       label: 'Delivery swarm',
       summary: 'Ejecuta, valida y entrega con foco en handoff seguro.',
@@ -218,6 +283,11 @@ function buildSwarmTypeCatalog() {
 function buildSwarmLaunchCategories() {
   return [
     {
+      id: 'orchestration',
+      label: 'Orquestación',
+      summary: 'ZED + SDD Workers en standby; delegación conversacional y SDD estándar por worker.',
+    },
+    {
       id: 'delivery',
       label: 'Delivery',
       summary: 'Entregar, validar y cerrar handoff sin perder contexto durable.',
@@ -237,6 +307,11 @@ function buildSwarmLaunchCategories() {
 
 function buildSwarmLaunchProviders() {
   return [
+    {
+      id: 'minimax-coding-plan/MiniMax-M3',
+      label: 'MiniMax M3',
+      summary: 'Modelo por defecto para ZED Orchestrator Pod y swarms DevHub.',
+    },
     {
       id: 'claude-sonnet-4-20250514',
       label: 'Claude Sonnet 4',
@@ -287,6 +362,13 @@ function buildSwarmLaunchPrograms() {
 
 function buildSwarmLaunchTeams() {
   return [
+    {
+      id: 'zed-sdd-pod',
+      label: 'ZED SDD Pod',
+      category: 'orchestration',
+      summary: 'ZED Orchestrator + SDD Workers (gentle-orchestrator) en standby hasta delegación.',
+      topology: buildZedSddPodTopology(4),
+    },
     {
       id: 'feature-delivery-team',
       label: 'Feature Delivery Team',
@@ -408,7 +490,7 @@ function selectRecommendedTemplateId(snapshot = {}) {
   if (approvals > 0) return 'approval-recovery';
   if (asArray(queue.items).length > 0 || Number(header.queue_depth || 0) > 0)
     return 'queue-restart';
-  return 'clean-slate';
+  return ZED_ORCHESTRATOR_TEMPLATE_ID;
 }
 
 function findTemplateById(templates = [], templateId) {
@@ -420,7 +502,10 @@ function findTemplateBySwarmTypeId(templates = [], swarmTypeId) {
 }
 
 function findRecordById(records = [], id) {
-  return records.find((record) => record.id === id) || records[0] || null;
+  if (id === undefined || id === null || id === '') {
+    return null;
+  }
+  return records.find((record) => record.id === id) || null;
 }
 
 function hasActiveSwarm(snapshot = {}) {
@@ -530,8 +615,23 @@ function buildActiveRoster(snapshot = {}) {
       'asking_questions',
     ].includes(normalizedLiveHintStatus);
 
+    if (runtimeMetrics.quota_blocked && isDirector) {
+      return 'quota-blocked';
+    }
+
+    if (normalizedSupervisorState === 'idle' && hasLiveActivity) {
+      return 'stale-registry';
+    }
+
     if (hasLiveActivity) {
       return normalizedLiveHintStatus;
+    }
+
+    if (
+      Number(runtimeMetrics.stale_registry_agents || 0) > 0 &&
+      normalizedSupervisorState === 'idle'
+    ) {
+      return 'stale-registry';
     }
 
     return baseStatus;
@@ -1599,6 +1699,12 @@ function buildSwarmLaunchStrategies() {
 function buildSwarmBootstrapModes() {
   return [
     {
+      id: 'standby',
+      label: 'Standby (esperar operador)',
+      summary:
+        'Terminales abiertas sin trabajo. ZED y workers esperan instrucciones antes de delegar o correr SDD.',
+    },
+    {
       id: 'engram_first',
       label: 'Engram primero',
       summary: 'El Director arranca leyendo contexto durable antes de repartir foco.',
@@ -1686,10 +1792,19 @@ export function createSwarmLaunchDraft({
   const launchStrategy =
     findRecordById(launchStrategies, draft.launchStrategy || null) ||
     findRecordById(launchStrategies, 'director_first');
+  const launchDefaults = template?.launch_defaults || {};
   const bootstrapMode =
-    findRecordById(bootstrapModes, draft.bootstrapMode || null) ||
+    findRecordById(bootstrapModes, draft.bootstrapMode || launchDefaults.bootstrapMode || null) ||
     findRecordById(bootstrapModes, 'engram_first');
-  const topology = team?.topology || template?.topology || swarmType?.topology || null;
+  let topology = team?.topology || template?.topology || swarmType?.topology || null;
+  const isZedPodTemplate = template?.id === ZED_ORCHESTRATOR_TEMPLATE_ID;
+  const workerCount = Math.min(
+    4,
+    Math.max(1, Number(draft.workerCount ?? launchDefaults.workerCount ?? 4) || 4)
+  );
+  if (isZedPodTemplate) {
+    topology = buildZedSddPodTopology(workerCount);
+  }
   const rolePrograms = mergeRolePrograms(
     buildDefaultRolePrograms(topology, 'opencode'),
     draft.rolePrograms
@@ -1698,11 +1813,13 @@ export function createSwarmLaunchDraft({
     project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
 
   // Phase 2: SDD integration — detect if SDD mode is active
-  // Wizard checkbox sets draft.sddEnabled; default is TRUE (SDD enabled)
-  // Env var SDD_ENABLED='false' can explicitly disable for CLI usage
-  const sddEnabled =
-    draft.sddEnabled === true ||
-    (draft.sddEnabled === undefined && process.env.SDD_ENABLED !== 'false');
+  // ZED pod: SDD runs inside gentle-orchestrator workers, not at launch.
+  const sddEnabled = isZedPodTemplate
+    ? false
+    : draft.sddEnabled === true ||
+      (draft.sddEnabled === undefined &&
+        launchDefaults.sddEnabled !== false &&
+        process.env.SDD_ENABLED !== 'false');
   const sddPhase = draft.phase || null;
 
   const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M3';
@@ -1720,6 +1837,10 @@ export function createSwarmLaunchDraft({
     analyst: 'minimax-coding-plan/MiniMax-M3',
     evidence: 'minimax-coding-plan/MiniMax-M3',
     zed: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
   });
   const defaultRoleModels = topology?.roles
     ? topology.roles.reduce((acc, role) => {
@@ -1736,13 +1857,15 @@ export function createSwarmLaunchDraft({
     swarmTypeId: swarmType?.id || null,
     teamId: team?.id || null,
     providerId: provider?.id || null,
-    launchStrategy: launchStrategy?.id || 'director_first',
-    bootstrapMode: bootstrapMode?.id || 'engram_first',
+    launchStrategy: launchStrategy?.id || launchDefaults.launchStrategy || 'director_first',
+    bootstrapMode: bootstrapMode?.id || launchDefaults.bootstrapMode || 'engram_first',
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
     roleModels:
       Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
-    mission: draft.mission ?? template?.default_mission ?? '',
+    workerCount: isZedPodTemplate ? workerCount : draft.workerCount,
+    mission:
+      draft.mission ?? (bootstrapMode?.id === 'standby' ? '' : (template?.default_mission ?? '')),
     // Phase 2: SDD options — pass sddEnabled + sddPhase to buildAgentLaunchCommand
     // Also expose sddEnabled at top level for SwarmLaunchWizardModal checkbox binding
     sddEnabled,
@@ -1770,7 +1893,10 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
     resolvedCatalog.bootstrap_modes,
     resolvedDraft.bootstrapMode
   );
-  const topology = team?.topology || template?.topology || swarmType?.topology || null;
+  let topology = team?.topology || template?.topology || swarmType?.topology || null;
+  if (template?.id === ZED_ORCHESTRATOR_TEMPLATE_ID) {
+    topology = buildZedSddPodTopology(resolvedDraft.workerCount || 4);
+  }
   const rolePrograms = buildRoleProgramPreview(
     topology,
     resolvedDraft.rolePrograms,
@@ -1801,11 +1927,13 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
       `${template?.label || 'Sin plantilla'} · ${swarmType?.label || 'Sin tipo'}`,
       `${team?.label || 'Sin equipo'} · ${provider?.label || 'Sin proveedor'}`,
       resolvedDraft.workspacePath || 'Sin ruta',
-      resolvedDraft.mission || 'Sin misión',
+      resolvedDraft.bootstrapMode === 'standby'
+        ? 'Modo standby — sin misión hasta que el operador hable con ZED'
+        : resolvedDraft.mission || 'Sin misión',
     ],
     isReady: Boolean(
       resolvedDraft.workspacePath?.trim() &&
-      resolvedDraft.mission?.trim() &&
+      (resolvedDraft.bootstrapMode === 'standby' || resolvedDraft.mission?.trim()) &&
       category?.id &&
       template?.id &&
       swarmType?.id &&
@@ -1825,6 +1953,24 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
  * SwarmPromptEngine for Phase Contract prompts and injects SDD_ENABLED flag.
  */
 export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = null) {
+  const normalizedKey = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (normalizedKey === 'zed') {
+    return changeName !== null && phase !== null
+      ? { profileKey: 'zed-orchestrator', sddEnabled: false, phase, changeName, prompt: null }
+      : 'zed-orchestrator';
+  }
+
+  if (isSddWorkerRoleKey(normalizedKey)) {
+    return changeName !== null && phase !== null
+      ? { profileKey: DEFAULT_OPENCODE_AGENT, sddEnabled: false, phase, changeName, prompt: null }
+      : DEFAULT_OPENCODE_AGENT;
+  }
+
   const mapping = {
     director: 'swarm-director',
     coder: 'swarm-coder',
@@ -1838,10 +1984,9 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
     analyst: 'swarm-explorer',
     recovery_ops: 'swarm-devops',
     evidence: 'swarm-explorer',
-    zed: 'swarm-director',
   };
 
-  const profileKey = mapping[roleKey] || 'swarm-coder';
+  const profileKey = mapping[normalizedKey] || 'swarm-coder';
 
   // When changeName + phase provided, return SDD-enriched profile object
   if (changeName !== null && phase !== null) {

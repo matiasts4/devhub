@@ -14,6 +14,7 @@ describe('repo opencode config', () => {
     const config = JSON.parse(raw);
 
     const expectedAgents = {
+      'zed-orchestrator': 'docs/prompts/swarm/zed-orchestrator-v1.md',
       'swarm-director': 'docs/prompts/swarm/swarm-director-v2.md',
       'swarm-coder': 'docs/prompts/swarm/swarm-coder-v3.md',
       'swarm-devops': 'docs/prompts/swarm/swarm-devops-v2.md',
