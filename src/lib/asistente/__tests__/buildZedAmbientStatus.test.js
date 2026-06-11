@@ -1,4 +1,4 @@
-const { buildZedAmbientStatus } = require('../buildZedAmbientStatus');
+const { buildZedAmbientStatus, extractToolType } = require('../buildZedAmbientStatus');
 
 describe('buildZedAmbientStatus', () => {
   test('prefers short tool summary over long assistant prose', () => {
@@ -92,5 +92,59 @@ describe('buildZedAmbientStatus', () => {
         content: 'Hola, soy Zed. ¿En qué te puedo ayudar?',
       })
     ).toBe('Hola, soy Zed. ¿En qué te puedo ayudar?');
+  });
+});
+
+describe('extractToolType', () => {
+  test('returns null for null input', () => {
+    expect(extractToolType(null)).toBeNull();
+  });
+
+  test('returns null for non-object input', () => {
+    expect(extractToolType(undefined)).toBeNull();
+    expect(extractToolType('string')).toBeNull();
+    expect(extractToolType(42)).toBeNull();
+  });
+
+  test('maps terminal tool names to "terminal"', () => {
+    expect(extractToolType({ tool_results: [{ tool: 'open_terminal' }] })).toBe('terminal');
+    expect(extractToolType({ tool_results: [{ tool: 'execute_in_terminal' }] })).toBe('terminal');
+    expect(extractToolType({ tool_results: [{ tool: 'close_terminal' }] })).toBe('terminal');
+  });
+
+  test('maps open_url to "browser"', () => {
+    expect(extractToolType({ tool_results: [{ tool: 'open_url' }] })).toBe('browser');
+  });
+
+  test('maps list_terminals to "file"', () => {
+    expect(extractToolType({ tool_results: [{ tool: 'list_terminals' }] })).toBe('file');
+  });
+
+  test('maps unknown tool names to "file" (catch-all bucket)', () => {
+    expect(extractToolType({ tool_results: [{ tool: 'weird_tool' }] })).toBe('file');
+  });
+
+  test('returns null for messages with content but no tool_results', () => {
+    expect(extractToolType({ role: 'assistant', content: 'Hello there' })).toBeNull();
+  });
+
+  test('returns null when tool_results is an empty array', () => {
+    expect(extractToolType({ tool_results: [] })).toBeNull();
+  });
+
+  test('returns null when tool_results[0].tool is not a string', () => {
+    expect(extractToolType({ tool_results: [{}] })).toBeNull();
+    expect(extractToolType({ tool_results: [{ tool: null }] })).toBeNull();
+    expect(extractToolType({ tool_results: [{ tool: 42 }] })).toBeNull();
+  });
+
+  test('prefers tool_results over content when both present', () => {
+    expect(
+      extractToolType({
+        role: 'assistant',
+        content: 'I opened a terminal for you.',
+        tool_results: [{ tool: 'open_terminal' }],
+      })
+    ).toBe('terminal');
   });
 });

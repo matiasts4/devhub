@@ -113,4 +113,33 @@ export function buildZedAmbientStatus(message) {
   return null;
 }
 
+/** @typedef {'terminal' | 'browser' | 'file' | null} ZedAmbientToolType */
+
+const TOOL_TYPE_MAP = Object.freeze({
+  open_terminal: 'terminal',
+  execute_in_terminal: 'terminal',
+  close_terminal: 'terminal',
+  open_url: 'browser',
+  list_terminals: 'file',
+});
+
+/**
+ * Pure helper: maps an assistant message's first `tool_results[0].tool`
+ * value to a discrete aura accent bucket. Returns `null` for messages
+ * without `tool_results`, an empty `tool_results` array, or a non-string
+ * `tool` value. Unknown tool names fall back to `'file'` (the catch-all
+ * bucket per ZAA-002).
+ *
+ * @param {ZedChatMessage | null | undefined} message
+ * @returns {ZedAmbientToolType}
+ */
+export function extractToolType(message) {
+  if (!message || typeof message !== 'object') return null;
+  const results = Array.isArray(message.tool_results) ? message.tool_results : [];
+  if (results.length === 0) return null;
+  const tool = results[0]?.tool;
+  if (typeof tool !== 'string') return null;
+  return TOOL_TYPE_MAP[tool] ?? 'file';
+}
+
 export { DEFAULT_GREETING as ZED_DEFAULT_GREETING };
