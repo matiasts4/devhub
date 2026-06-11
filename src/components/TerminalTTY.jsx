@@ -112,8 +112,9 @@ export const TERMINAL_DISABLE_FOCUS_REPORTING_SEQ = '\x1b[?1004l';
 export const TERMINAL_DISABLE_MOUSE_REPORTING_SEQ =
   '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1007l\x1b[?1015l';
 
-/** Re-arm xterm SGR wheel forwarding after a background panel stripped mouse locally. */
-export const TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ = '\x1b[?1000h\x1b[?1006h';
+/** Match grok/OpenCode DECSET burst so xterm re-binds SGR wheel after panel hide. */
+export const TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ =
+  '\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h';
 
 export const TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ =
   TERMINAL_DISABLE_FOCUS_REPORTING_SEQ + TERMINAL_DISABLE_MOUSE_REPORTING_SEQ;
@@ -255,6 +256,31 @@ export function buildTerminalWheelSgrSequence(direction, col, row) {
 export function resolveTerminalPointerElement(term, container, shell) {
   const screen = term?.element?.querySelector?.('.xterm-screen');
   return screen || term?.element || container || shell || null;
+}
+
+/** Shell capture can starve xterm's wheel listener — forward explicitly for TUI passthrough. */
+export function forwardTerminalWheelToXterm(term, event) {
+  const target = term?.element;
+  if (!target || !event || typeof WheelEvent === 'undefined') return false;
+
+  const forwarded = new WheelEvent(event.type, {
+    deltaX: event.deltaX,
+    deltaY: event.deltaY,
+    deltaZ: event.deltaZ,
+    deltaMode: event.deltaMode,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    screenX: event.screenX,
+    screenY: event.screenY,
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+    bubbles: true,
+    cancelable: true,
+  });
+
+  return target.dispatchEvent(forwarded);
 }
 
 export function refreshTerminalViewport(term) {
@@ -4012,8 +4038,11 @@ export default function TerminalTTY({
         return;
       }
 
-      // grok/OpenCode own plain wheel once TUI mouse tracking is live in xterm.
+      // grok/OpenCode: forward wheel into xterm so SGR reports reach the PTY.
       if (nativeWheelPassthrough) {
+        event.preventDefault();
+        event.stopPropagation();
+        forwardTerminalWheelToXterm(term, event);
         return;
       }
 

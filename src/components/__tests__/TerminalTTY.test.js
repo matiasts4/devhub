@@ -158,6 +158,7 @@ const {
   shouldPassthroughNativeTuiWheel,
   resolveTerminalWheelInputZoneRows,
   resolveTerminalPointerElement,
+  forwardTerminalWheelToXterm,
   isLikelyTuiInitialCommand,
   isGrokTuiInitialCommand,
   detectGrokTuiReady,
@@ -1773,6 +1774,31 @@ describe('TerminalTTY renderer fallback UI', () => {
       );
       expect(buildTerminalWheelSgrSequence('down', 10, 4)).toBe('\x1b[<65;11;5M');
       expect(buildTerminalWheelSgrSequence('down', 10, 4)).not.toContain('?1000');
+    });
+
+    test('forwardTerminalWheelToXterm dispatches wheel on the xterm root element', () => {
+      if (typeof WheelEvent === 'undefined') {
+        return;
+      }
+      const dispatched = [];
+      const term = {
+        element: {
+          dispatchEvent: (ev) => {
+            dispatched.push(ev);
+            return true;
+          },
+        },
+      };
+      const source = new WheelEvent('wheel', {
+        deltaY: 120,
+        clientX: 10,
+        clientY: 20,
+        bubbles: true,
+      });
+      expect(forwardTerminalWheelToXterm(term, source)).toBe(true);
+      expect(dispatched).toHaveLength(1);
+      expect(dispatched[0].deltaY).toBe(120);
+      expect(forwardTerminalWheelToXterm(null, source)).toBe(false);
     });
 
     test('resolveTerminalPointerElement prefers xterm-screen for hit-testing', () => {
