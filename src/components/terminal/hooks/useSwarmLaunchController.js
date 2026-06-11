@@ -22,7 +22,7 @@ import {
   TERMINAL_RENDERER_INHERIT_MODE,
 } from '../terminalRendererPreferences';
 
-const SWARM_LAUNCH_BATCH_DEADLINE_MS = 4500;
+import { rescheduleSwarmLaunchBatchFlush } from '@/lib/terminal/swarmLaunchBatch';
 
 export default function useSwarmLaunchController({
   projectId,
@@ -432,11 +432,12 @@ export default function useSwarmLaunchController({
 
       batch.requests.push(request);
 
-      if (batch.timer) return;
-
-      batch.timer = window.setTimeout(() => {
-        flushSwarmLaunchBatch(launchId);
-      }, SWARM_LAUNCH_BATCH_DEADLINE_MS);
+      batch.timer = rescheduleSwarmLaunchBatchFlush({
+        existingTimerId: batch.timer,
+        onFlush: () => flushSwarmLaunchBatch(launchId),
+        clearTimeoutFn: window.clearTimeout.bind(window),
+        setTimeoutFn: window.setTimeout.bind(window),
+      });
     },
     [flushSwarmLaunchBatch]
   );

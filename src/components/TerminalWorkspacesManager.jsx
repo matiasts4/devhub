@@ -169,6 +169,7 @@ import {
   buildCleanTerminalStatePayload,
   flushTerminalSessionPersistence,
 } from '@/lib/terminal/terminalSessionFlush';
+import { rescheduleSwarmLaunchBatchFlush } from '@/lib/terminal/swarmLaunchBatch';
 import {
   schedulePostLayoutNativeSync,
   dispatchNativeVteWorkspaceSync,
@@ -285,8 +286,6 @@ function collectSwarmTerminateHints(storage, launchId, workspaces = []) {
     opencode_session_ids: [...opencodeSessionIds],
   };
 }
-
-const SWARM_LAUNCH_BATCH_DEADLINE_MS = 4500;
 
 function getPanelIdsFromColumns(columns = []) {
   return columns.flatMap((column) => (column?.panels || []).map((panel) => panel.id));
@@ -3929,13 +3928,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       batch.requests.push(request);
 
-      // If deadline timer already running for this batch, just accumulate
-      if (batch.timer) return;
-
-      // Start deadline timer — wait long enough for delayed workers to arrive
-      batch.timer = window.setTimeout(() => {
-        flushSwarmLaunchBatch(launchId);
-      }, SWARM_LAUNCH_BATCH_DEADLINE_MS);
+      // Sliding deadline: reset the idle window on every staggered runtime request
+      // so we build one workspace with all roles instead of flushing early.
+      batch.timer = rescheduleSwarmLaunchBatchFlush({
+        existingTimerId: batch.timer,
+        onFlush: () => flushSwarmLaunchBatch(launchId),
+        clearTimeoutFn: window.clearTimeout.bind(window),
+        setTimeoutFn: window.setTimeout.bind(window),
+      });
     },
     [flushSwarmLaunchBatch]
   );
