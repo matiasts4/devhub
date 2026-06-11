@@ -3,7 +3,7 @@
  * Covers ZTT-001 scenarios + a few defensive edge cases.
  */
 
-const { resolve, resolveTerminalByName, nameFromId } = require('../zedTerminalResolver');
+import { resolve, resolveTerminalByName, nameFromId } from '../zedTerminalResolver';
 
 const T = (processes) => resolve('Chase', processes);
 
@@ -47,7 +47,7 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
     // distance 1. Sorted by distance asc (both are 1), then alpha.
     const result = resolve('Chasee', [
       { terminalId: 'p1', displayName: 'Chaser' }, // distance 1
-      { terminalId: 'p2', displayName: 'Chase' },  // distance 1
+      { terminalId: 'p2', displayName: 'Chase' }, // distance 1
     ]);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('ambiguous');
@@ -60,7 +60,7 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
     // distance 1. Sorted by distance asc (both are 1), then alpha.
     const result = resolve('Chasee', [
       { terminalId: 'p1', displayName: 'Chaser' }, // distance 1
-      { terminalId: 'p2', displayName: 'Chase' },  // distance 1
+      { terminalId: 'p2', displayName: 'Chase' }, // distance 1
     ]);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('ambiguous');

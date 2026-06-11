@@ -16,13 +16,18 @@
  * and CRLF normalization).
  */
 
+import { Buffer } from 'node:buffer';
+
 // CSI: ESC [ ... final-byte (0x40-0x7E, common range a-zA-Z)
+// eslint-disable-next-line no-control-regex
 const CSI_RE = /\u001b\[[0-9;?]*[a-zA-Z]/g;
 // OSC: ESC ] ... BEL (or ST = ESC \). We use BEL as the terminator.
+// eslint-disable-next-line no-control-regex
 const OSC_RE = /\u001b\][^\u0007]*\u0007/g;
 // Single-char ESC followed by an intermediate byte (0x20-0x2F) and a final
 // byte (0x30-0x7E). For our purposes, the practical pattern is
 // \u001b[@-_] which covers \u001b followed by a single byte in [@-_].
+// eslint-disable-next-line no-control-regex
 const SINGLE_ESC_RE = /\u001b[@-_]/g;
 
 const CRLF_RE = /\r\n/g;
@@ -33,7 +38,12 @@ const CRLF_RE = /\r\n/g;
  */
 function stripAnsi(input) {
   if (input === null || input === undefined) return '';
-  const text = typeof input === 'string' ? input : Buffer.isBuffer(input) ? input.toString('utf8') : String(input);
+  const text =
+    typeof input === 'string'
+      ? input
+      : Buffer.isBuffer(input)
+        ? input.toString('utf8')
+        : String(input);
   if (!text) return '';
 
   return text
@@ -46,4 +56,4 @@ function stripAnsi(input) {
     .join('\n');
 }
 
-module.exports = { stripAnsi };
+export { stripAnsi };

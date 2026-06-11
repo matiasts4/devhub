@@ -18,7 +18,14 @@
  * crashes, never throws.
  */
 
-const { DISPLAY_NAME_POOL } = require('../terminal/displayNamePool');
+// `displayNamePool.js` is intentionally CommonJS (Agente 1's territory, contract
+// is FIRM). Babel/webpack handle the ESM→CJS interop for the named import below:
+// under babel-jest the import becomes a CommonJS `require()` of the CJS module,
+// and under Next.js webpack the CJS module is consumed via the standard ESM
+// interop. We avoid `createRequire(import.meta.url)` because babel-jest does not
+// downlevel `import.meta` — it leaves it for the runtime, which fails under
+// Jest's CommonJS runtime. Plain `import { … } from '…'` works in both worlds.
+import { DISPLAY_NAME_POOL } from '../terminal/displayNamePool';
 
 const MAX_NAME_LEN = 24;
 const NAME_RE = /^[a-zA-Z0-9_-]{1,24}$/;
@@ -166,12 +173,8 @@ function nameFromId(terminalId) {
   return DISPLAY_NAME_POOL[idx];
 }
 
-module.exports = {
-  resolve,
-  resolveTerminalByName,
-  nameFromId,
-  // Exported for test isolation and to keep the contract explicit.
-  _levenshtein,
-  _NAME_RE: NAME_RE,
-  _MAX_NAME_LEN: MAX_NAME_LEN,
-};
+// Exported for test isolation and to keep the contract explicit.
+const _NAME_RE = NAME_RE;
+const _MAX_NAME_LEN = MAX_NAME_LEN;
+
+export { resolve, resolveTerminalByName, nameFromId, _levenshtein, _NAME_RE, _MAX_NAME_LEN };

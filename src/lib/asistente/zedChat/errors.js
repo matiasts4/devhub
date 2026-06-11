@@ -31,14 +31,11 @@ const KNOWN_TOOLS = new Set([
 // (ZCX-001). Do not rewrite without spec approval. The WELCOME_LINE is
 // reused by `useZedChat` (ZCX-002 welcome scenario).
 const SPANISH = Object.freeze({
-  notFound:
-    'no encontré ninguna terminal con ese nombre. Activas: {list}.',
+  notFound: 'no encontré ninguna terminal con ese nombre. Activas: {list}.',
   notFoundEmpty: 'no encontré ninguna terminal con ese nombre.',
-  ambiguous:
-    'hay varias terminales con nombres parecidos: {candidates}. ¿a cuál te referís?',
+  ambiguous: 'hay varias terminales con nombres parecidos: {candidates}. ¿a cuál te referís?',
   tooLong: 'el script es demasiado largo (máximo 64 líneas × 256 caracteres).',
-  multilineBlocked:
-    'el comando no se puede ejecutar: tiene {N} líneas, excede el máximo (64).',
+  multilineBlocked: 'el comando no se puede ejecutar: tiene {N} líneas, excede el máximo (64).',
   bothNameAndSession: 'no podés pasar name y session_id a la vez.',
   generic: '{message}',
   unknown: 'error desconocido',
@@ -125,7 +122,7 @@ function formatZedToolError(toolName, error) {
   // tools are the ones that set this.
   const code = (() => {
     if (error && typeof error === 'object' && 'code' in error) {
-      return String((/** @type {{code: unknown}} */ (error)).code);
+      return String(/** @type {{code: unknown}} */ (error).code);
     }
     if (error && typeof error === 'object' && error.cause && typeof error.cause === 'object') {
       return 'code' in error.cause ? String(/** @type {any} */ (error.cause).code) : null;
@@ -159,21 +156,18 @@ function formatZedToolError(toolName, error) {
 
   switch (code) {
     case 'not_found': {
-      const list = formatActiveNames(
-        error?.activeNames ?? error?.cause?.activeNames
-      );
+      const list = formatActiveNames(error?.activeNames ?? error?.cause?.activeNames);
       return {
         kind: 'not_found',
-        message: list === SPANISH.notFoundEmpty
-          ? SPANISH.notFoundEmpty
-          : SPANISH.notFound.replace('{list}', list),
+        message:
+          list === SPANISH.notFoundEmpty
+            ? SPANISH.notFoundEmpty
+            : SPANISH.notFound.replace('{list}', list),
         details,
       };
     }
     case 'ambiguous': {
-      const candidates = formatCandidates(
-        error?.candidates ?? error?.cause?.candidates
-      );
+      const candidates = formatCandidates(error?.candidates ?? error?.cause?.candidates);
       return {
         kind: 'ambiguous',
         message: SPANISH.ambiguous.replace('{candidates}', candidates || ''),
@@ -198,9 +192,10 @@ function formatZedToolError(toolName, error) {
     case 'unsafe_url': {
       // Map to generic for now; the canonical Spanish phrasing for these
       // is owned by Phase 3 (T-301) when `useZedChat` wires it in.
-      const raw = error && typeof error === 'object'
-        ? (error.reason || error.message || error.error || '')
-        : '';
+      const raw =
+        error && typeof error === 'object'
+          ? error.reason || error.message || error.error || ''
+          : '';
       return {
         kind: /** @type {ErrorKind} */ (code),
         message: lowercaseFirst(cleanUserMessage(String(raw))) || SPANISH.unknown,
@@ -245,13 +240,19 @@ function formatToolErrorForUser(toolName, error) {
   return formatZedToolError(toolName, error);
 }
 
-module.exports = {
+// Exposed for test isolation and Phase 3 / Phase 4 reuse.
+const _SPANISH = SPANISH;
+const _WELCOME_LINE = WELCOME_LINE;
+const _formatActiveNames = formatActiveNames;
+const _formatCandidates = formatCandidates;
+const _cleanUserMessage = cleanUserMessage;
+
+export {
   formatZedToolError,
   formatToolErrorForUser,
-  // Exposed for test isolation and Phase 3 / Phase 4 reuse.
-  _SPANISH: SPANISH,
-  _WELCOME_LINE: WELCOME_LINE,
-  _formatActiveNames: formatActiveNames,
-  _formatCandidates: formatCandidates,
-  _cleanUserMessage: cleanUserMessage,
+  _SPANISH,
+  _WELCOME_LINE,
+  _formatActiveNames,
+  _formatCandidates,
+  _cleanUserMessage,
 };

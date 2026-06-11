@@ -3,7 +3,7 @@
  * No `strip-ansi` dep — we test the local regex-based helper directly.
  */
 
-const { stripAnsi } = require('../zedAnsiStrip');
+import { stripAnsi } from '../zedAnsiStrip';
 
 describe('zedAnsiStrip.stripAnsi', () => {
   test('plain text passes through unchanged', () => {

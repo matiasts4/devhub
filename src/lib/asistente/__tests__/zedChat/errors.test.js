@@ -7,7 +7,7 @@
  * traces.
  */
 
-const { formatZedToolError, formatToolErrorForUser } = require('../../zedChat/errors');
+import { formatZedToolError, formatToolErrorForUser } from '../../zedChat/errors';
 
 describe('zedChat errors.formatZedToolError — ZCX-001', () => {
   test('not_found with three active names lists all three', () => {
