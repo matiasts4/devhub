@@ -46,6 +46,7 @@ import {
   filterTerminalOutputForSession,
 } from '@/lib/terminal/terminalNoiseFilter';
 import { buildSwarmTmuxSessionName } from '@/lib/terminal/viewportReadyMarker';
+import { detectOpenCodeTuiReady } from '@/lib/terminal/opencodeReadyMarker';
 import {
   clearPanelInitialCommandLifecycle,
   markPanelInitialCommandDispatched,
@@ -1284,6 +1285,7 @@ export default function TerminalTTY({
   const initialCommandConnectSnapshotRef = useRef(null);
   const viewportFitConfirmedRef = useRef(false);
   const opencodeReadyNotifiedRef = useRef(false);
+  const tuiOutputTailRef = useRef('');
   const lastViewportReadyPostedRef = useRef({ cols: 0, rows: 0 });
   const viewportReadyNotifyTimerRef = useRef(null);
   const initialCommandDelayTimerRef = useRef(null);
@@ -1822,6 +1824,36 @@ export default function TerminalTTY({
     return buildSwarmTmuxSessionName(swarmContext.launchId, swarmContext.roleKey);
   }, [swarmContext]);
 
+  const notifyOpencodeReady = useCallback(
+    async (opencodeSessionId, reason = 'client-tui-footer') => {
+      if (opencodeReadyNotifiedRef.current) return;
+      const tmuxSession = resolveSwarmTmuxSessionName();
+      if (!tmuxSession) return;
+
+      opencodeReadyNotifiedRef.current = true;
+      try {
+        await fetch('/api/terminal/opencode-ready', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: id,
+            tmuxSession,
+            opencodeSessionId: opencodeSessionId || null,
+            reason,
+          }),
+        });
+        cliLog(`CLIENT:${id}`, 'opencode-ready-notified', {
+          tmuxSession,
+          opencodeSessionId,
+          reason,
+        });
+      } catch (error) {
+        cliLog(`CLIENT:${id}`, 'opencode-ready-failed', { error: error?.message });
+      }
+    },
+    [id, resolveSwarmTmuxSessionName]
+  );
+
   const notifyViewportReady = useCallback(
     (cols, rows) => {
       const tmuxSession = resolveSwarmTmuxSessionName();
@@ -1851,43 +1883,16 @@ export default function TerminalTTY({
               }),
             });
             cliLog(`CLIENT:${id}`, 'viewport-ready-notified', { tmuxSession, cols, rows });
+            // Swarm panels attach after OpenCode is already running — viewport-ready
+            // is a reliable fallback when the legacy footer regex never appears in a chunk.
+            void notifyOpencodeReady(null, 'viewport-ready-fallback');
           } catch (error) {
             cliLog(`CLIENT:${id}`, 'viewport-ready-failed', { error: error?.message });
           }
         })();
       }, 200);
     },
-    [id, resolveSwarmTmuxSessionName]
-  );
-
-  const notifyOpencodeReady = useCallback(
-    async (opencodeSessionId, reason = 'client-tui-footer') => {
-      if (opencodeReadyNotifiedRef.current) return;
-      const tmuxSession = resolveSwarmTmuxSessionName();
-      if (!tmuxSession) return;
-
-      opencodeReadyNotifiedRef.current = true;
-      try {
-        await fetch('/api/terminal/opencode-ready', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: id,
-            tmuxSession,
-            opencodeSessionId: opencodeSessionId || null,
-            reason,
-          }),
-        });
-        cliLog(`CLIENT:${id}`, 'opencode-ready-notified', {
-          tmuxSession,
-          opencodeSessionId,
-          reason,
-        });
-      } catch (error) {
-        cliLog(`CLIENT:${id}`, 'opencode-ready-failed', { error: error?.message });
-      }
-    },
-    [id, resolveSwarmTmuxSessionName]
+    [id, resolveSwarmTmuxSessionName, notifyOpencodeReady]
   );
 
   const skipRedundantInitialCommandSend = useCallback(
@@ -3225,6 +3230,31 @@ export default function TerminalTTY({
         // Initial focus handled by the other useEffect
       };
 
+      const handleTuiReadyFromOutput = (chunk) => {
+        if (!chunk || typeof chunk !== 'string') return;
+        const tail = `${tuiOutputTailRef.current}${chunk}`.slice(-8192);
+        tuiOutputTailRef.current = tail;
+        const footerReady = detectOpenCodeTuiReady(chunk) || detectOpenCodeTuiReady(tail);
+        const grokReady = detectGrokSessionFromOutput(chunk) || detectGrokSessionFromOutput(tail);
+        if (!footerReady && !grokReady) return;
+        tuiSessionActiveRef.current = true;
+        if (!hasSentInitialCommand.current && initialCommand) {
+          hasSentInitialCommand.current = true;
+          markPanelInitialCommandDispatched(id, initialCommand);
+        }
+        if (grokReady) {
+          isGrokSessionRef.current = true;
+          grokTuiReadyRef.current = true;
+          setNativeWheelPassthrough(true);
+        }
+        if (footerReady) {
+          tuiSessionFooterConfirmedRef.current = true;
+          setNativeWheelPassthrough(true);
+          void notifyOpencodeReady(null, 'client-tui-footer');
+        }
+        prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
+      };
+
       const writeTerminalOutput = (chunk) => {
         if (containsTerminalResponseNoise(chunk)) {
           cliLog(`RENDER:${id}`, 'output-noise-filtered', {
@@ -3236,6 +3266,7 @@ export default function TerminalTTY({
         const filtered = filterTerminalOutputForSession(null, chunk);
         if (typeof filtered !== 'string' || filtered.length === 0) return;
         termRef.current?.write(filtered);
+        handleTuiReadyFromOutput(filtered);
         scrollIfActivePanel();
         if (!isActivePanelRef.current || !isVisibleInLayoutRef.current) {
           scheduleInactiveViewportRepaint();
@@ -3267,27 +3298,6 @@ export default function TerminalTTY({
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
             writeTerminalOutput(payload.data);
-            const footerReady =
-              /ctrl\+p\s+commands/i.test(payload.data) || /esc\s+interrupt/i.test(payload.data);
-            const grokReady = detectGrokSessionFromOutput(payload.data);
-            if (footerReady || grokReady) {
-              tuiSessionActiveRef.current = true;
-              if (!hasSentInitialCommand.current && initialCommand) {
-                hasSentInitialCommand.current = true;
-                markPanelInitialCommandDispatched(id, initialCommand);
-              }
-              if (grokReady) {
-                isGrokSessionRef.current = true;
-                grokTuiReadyRef.current = true;
-                setNativeWheelPassthrough(true);
-              }
-              if (footerReady) {
-                tuiSessionFooterConfirmedRef.current = true;
-                setNativeWheelPassthrough(true);
-                void notifyOpencodeReady(null, 'client-tui-footer');
-              }
-              prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
-            }
             return;
           }
 

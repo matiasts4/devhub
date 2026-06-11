@@ -57,17 +57,33 @@ function formatDirectiveForInjection(body, fromRole, toRole) {
  * @param {number} [maxWaitMs]
  * @returns {boolean}
  */
+function resolveReadyMarkerPath(prefix, sessionName) {
+  const safe = String(sessionName || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '');
+  if (!safe) return null;
+  return `/tmp/devhub-${prefix}-${safe}`;
+}
+
+function isTuiReadyForInjection(sessionName) {
+  const opencodeReady = resolveReadyMarkerPath('opencode-ready', sessionName);
+  const viewportReady = resolveReadyMarkerPath('viewport-ready', sessionName);
+  try {
+    if (opencodeReady && fs.existsSync(opencodeReady)) return true;
+    // Client attached and rendered the pane — OpenCode is already running in tmux.
+    if (viewportReady && fs.existsSync(viewportReady)) return true;
+  } catch {
+    /* best effort */
+  }
+  return false;
+}
+
 function waitForOpencodeReady(sessionName, maxWaitMs = 30000) {
   const target = String(sessionName || '').trim();
   if (!target) return false;
-  const readyFile = `/tmp/devhub-opencode-ready-${target}`;
   const deadline = Date.now() + Math.max(500, Number(maxWaitMs) || 30000);
   while (Date.now() < deadline) {
-    try {
-      if (fs.existsSync(readyFile)) return true;
-    } catch {
-      /* best effort */
-    }
+    if (isTuiReadyForInjection(target)) return true;
     const until = Date.now() + 200;
     while (Date.now() < until) {
       /* brief spin */

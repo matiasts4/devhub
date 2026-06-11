@@ -43,6 +43,17 @@ describe('inboxConsume', () => {
     }
   });
 
+  test('waitForOpencodeReady accepts viewport-ready marker as fallback', () => {
+    const session = `test-viewport-${Date.now()}`;
+    const marker = `/tmp/devhub-viewport-ready-${session}`;
+    fs.writeFileSync(marker, '{"cols":120,"rows":32}');
+    try {
+      expect(waitForOpencodeReady(session, 2000)).toBe(true);
+    } finally {
+      fs.rmSync(marker, { force: true });
+    }
+  });
+
   test('deliverInboxRow defers when TUI not ready', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-deliver-'));
     const dbPath = path.join(dir, 'test.db');

@@ -18,6 +18,9 @@ describe('opencodeReadyMarker', () => {
   test('detectOpenCodeTuiReady matches interactive footer hints', () => {
     expect(detectOpenCodeTuiReady('ctrl+p commands')).toBe(true);
     expect(detectOpenCodeTuiReady('esc interrupt')).toBe(true);
+    expect(
+      detectOpenCodeTuiReady('⊙ 6 MCP /status    1.16.2\nMiniMax Token Plan (minimax.io)')
+    ).toBe(true);
     expect(detectOpenCodeTuiReady('booting opencode')).toBe(false);
   });
 
