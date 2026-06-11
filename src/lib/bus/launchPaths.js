@@ -81,6 +81,8 @@ function resolveBusHelperPaths({ repoRoot, env } = {}) {
  * @param {string} [params.dbPath] - if omitted, the placeholder is emitted
  * @param {boolean} [params.disableMinimaxMcp] - T-016.3: opt out of
  *   minimax MCP env var injection (for swarm agents).
+ * @param {string} [params.projectId] - DevHub project id for MCP context
+ * @param {number} [params.inboxPollIntervalSeconds] - inbox-consume poll interval
  * @param {number} [params.tuiReadyGraceMs] - max wait for opencode-ready marker
  * @returns {string} Complete shell wrapper script
  */
@@ -90,6 +92,7 @@ function buildLaunchWrapperForRole({
   role,
   workspacePath,
   workspaceId,
+  projectId,
   runId,
   supervisorUrl,
   tmuxSessionName,
@@ -102,6 +105,7 @@ function buildLaunchWrapperForRole({
   repoRoot,
   env,
   disableMinimaxMcp,
+  inboxPollIntervalSeconds,
   tuiReadyGraceMs,
 }) {
   // T-011 — auto-resolve bus helper paths when the caller hasn't passed
@@ -122,6 +126,7 @@ function buildLaunchWrapperForRole({
     role,
     workspacePath,
     workspaceId,
+    projectId,
     runId,
     supervisorUrl,
     tmuxSessionName,
@@ -132,6 +137,7 @@ function buildLaunchWrapperForRole({
     busBinaryPath: resolvedBusBinaryPath,
     dbPath: resolvedDbPath,
     disableMinimaxMcp,
+    inboxPollIntervalSeconds,
     tuiReadyGraceMs,
   });
 }

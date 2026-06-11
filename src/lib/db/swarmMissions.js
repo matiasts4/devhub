@@ -29,7 +29,15 @@ const MISSION_MESSAGE_KINDS = [
   'approval_result',
 ];
 const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
-const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline', 'booting', 'crashed'];
+const AGENT_PRESENCE_STATES = [
+  'online',
+  'busy',
+  'idle',
+  'waiting',
+  'offline',
+  'booting',
+  'crashed',
+];
 const AGENT_PRESENCE_TTL_MS = 120_000;
 const DIRECTOR_FEED_EVENT_TYPES = [
   'task_completed',
@@ -350,6 +358,25 @@ function getMissionBusSnapshot(dbOrDbPath, maybeMissionId) {
       ), '[]') AS inbox_pending,
       COALESCE((
         SELECT json_group_array(json_object(
+          'id', id,
+          'ts', consumed_at,
+          'from_role', from_role,
+          'to_role', to_role,
+          'body', body,
+          'body_hash', body_hash,
+          'consumed_at', consumed_at,
+          'created_at', created_at
+        ))
+        FROM (
+          SELECT * FROM team_inbox
+          WHERE mission_id = @mid
+            AND consumed_at IS NOT NULL
+          ORDER BY consumed_at DESC
+          LIMIT 20
+        )
+      ), '[]') AS inbox_recent_consumed,
+      COALESCE((
+        SELECT json_group_array(json_object(
           'agent_id', agent_id,
           'runtime_surface', runtime_surface,
           'presence_state', presence_state,
@@ -374,6 +401,7 @@ function getMissionBusSnapshot(dbOrDbPath, maybeMissionId) {
     chat_recent: JSON.parse(row.chat_recent || '[]'),
     events_recent: JSON.parse(row.events_recent || '[]'),
     inbox_pending: JSON.parse(row.inbox_pending || '[]'),
+    inbox_recent_consumed: JSON.parse(row.inbox_recent_consumed || '[]'),
     presence_active: JSON.parse(row.presence_active || '[]'),
   };
 }
@@ -1232,11 +1260,27 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
 
 const DG_INITIATORS = Object.freeze(['operator', 'director-general', 'swarm-director']);
 const DG_TARGETS = Object.freeze(['director-general', 'swarm-director', 'operator']);
-const DG_ACTIONS = Object.freeze(['mission-request', 'status-poll', 'approval-required', 'mission-result']);
-const DG_STATUSES = Object.freeze([
-  'pending', 'waiting', 'in-progress', 'awaiting-approval', 'completed', 'rejected', 'failed',
+const DG_ACTIONS = Object.freeze([
+  'mission-request',
+  'status-poll',
+  'approval-required',
+  'mission-result',
 ]);
-const DG_AUTHORITIES = Object.freeze(['operator', 'operator-initiated', 'director', 'director-escalated']);
+const DG_STATUSES = Object.freeze([
+  'pending',
+  'waiting',
+  'in-progress',
+  'awaiting-approval',
+  'completed',
+  'rejected',
+  'failed',
+]);
+const DG_AUTHORITIES = Object.freeze([
+  'operator',
+  'operator-initiated',
+  'director',
+  'director-escalated',
+]);
 const DG_FRESHNESS_VALUES = Object.freeze(['just_now', 'stale', 'unknown']);
 
 // authority validation per DG MUST NOT rules
@@ -1244,34 +1288,53 @@ const DG_FRESHNESS_VALUES = Object.freeze(['just_now', 'stale', 'unknown']);
 // DG SHALL NOT emit authority "director-escalated" for non-Director failures
 // swarm-director CAN emit "operator" authority for approval-required (operator is the approving actor)
 const VALID_AUTHORITY_FOR_INITIATOR = Object.freeze({
-  'operator':           new Set(['operator', 'operator-initiated']),
-  'director-general':  new Set(['operator', 'operator-initiated']),
-  'swarm-director':    new Set(['director', 'director-escalated', 'operator']),
+  operator: new Set(['operator', 'operator-initiated']),
+  'director-general': new Set(['operator', 'operator-initiated']),
+  'swarm-director': new Set(['director', 'director-escalated', 'operator']),
 });
 
-function isValidDGInitiator(v) { return DG_INITIATORS.includes(v); }
-function isValidDGTarget(v) { return DG_TARGETS.includes(v); }
-function isValidDGAction(v) { return DG_ACTIONS.includes(v); }
-function isValidDGStatus(v) { return DG_STATUSES.includes(v); }
-function isValidDGAuthority(v) { return DG_AUTHORITIES.includes(v); }
-function isValidDGFreshness(v) { return DG_FRESHNESS_VALUES.includes(v); }
+function isValidDGInitiator(v) {
+  return DG_INITIATORS.includes(v);
+}
+function isValidDGTarget(v) {
+  return DG_TARGETS.includes(v);
+}
+function isValidDGAction(v) {
+  return DG_ACTIONS.includes(v);
+}
+function isValidDGStatus(v) {
+  return DG_STATUSES.includes(v);
+}
+function isValidDGAuthority(v) {
+  return DG_AUTHORITIES.includes(v);
+}
+function isValidDGFreshness(v) {
+  return DG_FRESHNESS_VALUES.includes(v);
+}
 
 function validateTimelineRowSchema(row, contextLabel) {
   if (!row.id) throw new Error(`${contextLabel}: id es requerido.`);
   if (!row.missionId) throw new Error(`${contextLabel}: missionId es requerido.`);
-  if (typeof row.timestamp !== 'number') throw new Error(`${contextLabel}: timestamp debe ser número.`);
-  if (!isValidDGInitiator(row.initiator)) throw new Error(`${contextLabel}: initiator inválido: ${row.initiator}`);
-  if (!isValidDGTarget(row.target)) throw new Error(`${contextLabel}: target inválido: ${row.target}`);
-  if (!isValidDGAction(row.action)) throw new Error(`${contextLabel}: action inválido: ${row.action}`);
-  if (!isValidDGStatus(row.status)) throw new Error(`${contextLabel}: status inválido: ${row.status}`);
-  if (!isValidDGAuthority(row.authority)) throw new Error(`${contextLabel}: authority inválido: ${row.authority}`);
-  if (!isValidDGFreshness(row.freshness)) throw new Error(`${contextLabel}: freshness inválido: ${row.freshness}`);
+  if (typeof row.timestamp !== 'number')
+    throw new Error(`${contextLabel}: timestamp debe ser número.`);
+  if (!isValidDGInitiator(row.initiator))
+    throw new Error(`${contextLabel}: initiator inválido: ${row.initiator}`);
+  if (!isValidDGTarget(row.target))
+    throw new Error(`${contextLabel}: target inválido: ${row.target}`);
+  if (!isValidDGAction(row.action))
+    throw new Error(`${contextLabel}: action inválido: ${row.action}`);
+  if (!isValidDGStatus(row.status))
+    throw new Error(`${contextLabel}: status inválido: ${row.status}`);
+  if (!isValidDGAuthority(row.authority))
+    throw new Error(`${contextLabel}: authority inválido: ${row.authority}`);
+  if (!isValidDGFreshness(row.freshness))
+    throw new Error(`${contextLabel}: freshness inválido: ${row.freshness}`);
 
   const validAuthorities = VALID_AUTHORITY_FOR_INITIATOR[row.initiator];
   if (!validAuthorities || !validAuthorities.has(row.authority)) {
     throw new Error(
       `${contextLabel}: authority "${row.authority}" no es válido para initiator "${row.initiator}". ` +
-      `DG MUST NOT: authority debe coincidir con initiator.`
+        `DG MUST NOT: authority debe coincidir con initiator.`
     );
   }
 }
@@ -1308,9 +1371,11 @@ function appendTimelineRow(dbOrMissionId, maybeMissionIdOrRow, maybeRow) {
     `INSERT OR IGNORE INTO dg_timeline (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
   ).run(...keys.map((key) => insertRow[key] ?? null));
 
-  return db
-    .prepare('SELECT * FROM dg_timeline WHERE id = ? AND mission_id = ? LIMIT 1')
-    .get(insertRow.id, insertRow.mission_id) || null;
+  return (
+    db
+      .prepare('SELECT * FROM dg_timeline WHERE id = ? AND mission_id = ? LIMIT 1')
+      .get(insertRow.id, insertRow.mission_id) || null
+  );
 }
 
 function getTimelineRows(dbOrMissionId, maybeMissionId) {
@@ -1320,7 +1385,9 @@ function getTimelineRows(dbOrMissionId, maybeMissionId) {
   if (!missionId) throw new Error('missionId es requerido para getTimelineRows.');
 
   return db
-    .prepare('SELECT * FROM dg_timeline WHERE mission_id = ? ORDER BY timestamp ASC, created_at ASC')
+    .prepare(
+      'SELECT * FROM dg_timeline WHERE mission_id = ? ORDER BY timestamp ASC, created_at ASC'
+    )
     .all(missionId);
 }
 

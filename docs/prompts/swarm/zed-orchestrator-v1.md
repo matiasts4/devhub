@@ -43,10 +43,17 @@ Worker role keys look like `sdd_worker_1`, `sdd_worker_2`, etc.
 
 When the operator says to assign work (example: _"assign terminal-fix to Worker 2"_):
 
-1. Resolve or create the MCP task / change name.
-2. `update_task` → `in_progress`, comment with change + branch expectation.
-3. `_devhub_chat` to the worker with: change name, task id, what to verify, link to MCP comment.
-4. Track worker status via inbox; do not micro-manage SDD phases inside the worker session.
+1. `get_project_context` using `DEVHUB_PROJECT_ID` (do not assume `list_projects` alone).
+2. Resolve or create the MCP task / change name (`update_task` / `bulk_create_tasks`).
+3. `update_task` → `in_progress`, comment with change + branch expectation.
+4. `_devhub_chat --to sdd_worker_N` with JSON delegate body:
+   `{"kind":"delegate","change":"<name>","task_id":"<id>","instruction":"<what to do>"}`
+5. **Proof required before saying "delegated":** capture stdout JSON from `_devhub_chat`
+   (`inbox_row_id`, exit code 0). Do not claim delivery without `inbox_row_id`.
+6. Track worker via inbox ACK (`kind: ack` in team_chat) or `inbox_delivered` events.
+7. Workers auto-consume inbox via `inbox-consume`; do not ask the operator to run `_devhub_inbox_check` manually.
+
+**Forbidden:** claiming a worker is executing work without ACK or `inbox_delivered` evidence.
 
 When a worker reports done:
 

@@ -181,6 +181,7 @@ import {
   computeCarvedBounds,
 } from '@/components/terminal/nativeLayoutSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
+import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
 import {
   useLiveSurfaceRegistry,
   LiveSurfaceRegistryContext,
@@ -230,7 +231,12 @@ const SWARM_ROLE_ORDER = [
   'analyst',
 ];
 const SWARM_ROLE_META = {
+  zed: { label: 'ZED', abbrev: 'ZED', rgb: '245,158,11' },
   director: { label: 'Director', abbrev: 'DIR', rgb: '245,158,11' },
+  sdd_worker_1: { label: 'SDD Worker 1', abbrev: 'W1', rgb: '34,197,94' },
+  sdd_worker_2: { label: 'SDD Worker 2', abbrev: 'W2', rgb: '52,211,153' },
+  sdd_worker_3: { label: 'SDD Worker 3', abbrev: 'W3', rgb: '56,189,248' },
+  sdd_worker_4: { label: 'SDD Worker 4', abbrev: 'W4', rgb: '129,140,248' },
   coder: { label: 'Coder', abbrev: 'COD', rgb: '34,197,94' },
   auditor: { label: 'Auditor', abbrev: 'AUD', rgb: '168,85,247' },
   devops: { label: 'DevOps', abbrev: 'DEV', rgb: '20,184,166' },
@@ -804,6 +810,7 @@ function renderWorkspacePanel(
     connectionState,
     visibleTerminalPanelCount = 1,
     deferLiveSurfaceToPizarra = false,
+    inboxPendingCount = 0,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
@@ -862,6 +869,15 @@ function renderWorkspacePanel(
                 className="inline-flex h-[18px] shrink-0 items-center rounded border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-1.5 text-[9px] font-black tracking-[0.06em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_10px_rgba(var(--swarm-role-rgb),0.1)]"
               >
                 {swarmRole.abbrev}
+              </span>
+            ) : null}
+            {inboxPendingCount > 0 ? (
+              <span
+                data-testid={`panel-inbox-badge-${panel.id}`}
+                title={`${inboxPendingCount} directiva(s) pendiente(s)`}
+                className="inline-flex h-[18px] shrink-0 items-center rounded border border-[rgba(251,191,36,0.45)] bg-[rgba(251,191,36,0.14)] px-1.5 text-[9px] font-bold text-[rgb(251,191,36)]"
+              >
+                {inboxPendingCount}
               </span>
             ) : null}
             <span
@@ -2171,6 +2187,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     activeWorkspace,
     projectId,
     swarmControlSnapshot
+  );
+  const { pendingCountByRole: swarmInboxPendingByRole } = useSwarmBusSnapshot(
+    activeSwarmLaunchSummary?.launchId || null,
+    { enabled: Boolean(activeSwarmLaunchSummary?.launchId) }
   );
   const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
   const effectiveRightDockState = activeWorkspaceOwnsDockState
@@ -6219,6 +6239,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         panel,
                         agentRunsByPanel[panel.id]
                       ),
+                      inboxPendingCount:
+                        swarmInboxPendingByRole?.[
+                          panel?.swarmRole?.roleKey ||
+                            inferSwarmRoleKey({
+                              ...(agentRunsByPanel[panel.id] || {}),
+                              ...(panel?.swarmContext || {}),
+                              roleKey: panel?.swarmRole?.roleKey,
+                            })
+                        ] || 0,
                       suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
                       nativeSurfacePolicy,
                       requestedRendererMode: resolveRequestedRenderer({

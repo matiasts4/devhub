@@ -40,6 +40,7 @@ import { ChromeSurface } from '@/components/ui/chrome-surface';
 import { Button } from '@/components/ui/button';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import ActiveProcessesPanel from '@/components/control-room/ActiveProcessesPanel';
+import SwarmDelegationPanel from '@/components/control-room/SwarmDelegationPanel';
 import StatusSignal from '@/components/ui/StatusSignal';
 import OperatorTimelineFeed from '@/components/OperatorTimeline/OperatorTimelineFeed.jsx';
 import {
@@ -166,6 +167,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [launchResult, setLaunchResult] = useState(null);
   const [launchSubmitState, setLaunchSubmitState] = useState({ submitting: false, error: null });
   const [terminateState, setTerminateState] = useState({ submitting: false, error: null });
+  const [activateZedState, setActivateZedState] = useState({ submitting: false, error: null });
   const [pruneState, setPruneState] = useState({ submitting: false, error: null, result: null });
   const eventSourceRef = useRef(null);
 
@@ -650,7 +652,53 @@ export default function SwarmControl({ snapshotInput = null }) {
     [normalizedFilter]
   );
 
+  const handleActivateZed = useCallback(async () => {
+    const launchId = effectiveMissionControl?.mission?.mission_id || null;
+    if (!launchId || !project?.id) return;
+
+    setActivateZedState({ submitting: true, error: null });
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'activate_zed_standby',
+          project_id: project.id,
+          launch_id: launchId,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo activar ZED.');
+      }
+      setActivateZedState({ submitting: false, error: null });
+    } catch (error) {
+      setActivateZedState({
+        submitting: false,
+        error: error?.message || 'No se pudo activar ZED.',
+      });
+    }
+  }, [effectiveMissionControl?.mission?.mission_id, project?.id]);
+
   const filteredAgents = useMemo(() => agents.filter(matchesFilter), [agents, matchesFilter]);
+
+  const workerRoles = useMemo(
+    () =>
+      filteredAgents
+        .map((agent) => {
+          const id = String(agent?.agent_id || '');
+          const match = id.match(/sdd_worker_\d+$/);
+          return match ? match[0] : null;
+        })
+        .filter(Boolean)
+        .sort(),
+    [filteredAgents]
+  );
+
+  const isStandbyMission = useMemo(() => {
+    const summary = String(missionSummary?.summary || missionControl?.mission?.summary || '');
+    return /standby/i.test(summary);
+  }, [missionControl?.mission?.summary, missionSummary?.summary]);
   const filteredWorkspaces = useMemo(
     () => workspaces.filter(matchesFilter),
     [workspaces, matchesFilter]
@@ -907,6 +955,14 @@ export default function SwarmControl({ snapshotInput = null }) {
                   dgError={dg.error}
                 />
               </div>
+
+              <SwarmDelegationPanel
+                missionId={missionControl?.mission?.mission_id || null}
+                workerRoles={workerRoles}
+                standbyMode={isStandbyMission}
+                onActivateZed={handleActivateZed}
+                activateState={activateZedState}
+              />
             </section>
 
             <section className="space-y-3" aria-label="Procesos OpenCode">

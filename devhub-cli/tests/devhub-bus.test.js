@@ -765,6 +765,9 @@ describe('worker-consume subcommand', () => {
       ).run('m-worker', 'sdd_worker_2', 'zed', 'investigate MCP list_projects', 'hash-w2');
       db.close();
 
+      const targetSession = 'devhub-swarm-m-worker-sdd_worker_2';
+      fs.writeFileSync(`/tmp/devhub-opencode-ready-${targetSession}`, '1');
+
       const proc = spawn(
         'node',
         [
@@ -777,9 +780,11 @@ describe('worker-consume subcommand', () => {
           '--role',
           'sdd_worker_2',
           '--target-session',
-          'devhub-swarm-m-worker-sdd_worker_2',
+          targetSession,
           '--poll-interval',
           '1',
+          '--skip-tui-wait',
+          'true',
         ],
         { stdio: ['ignore', 'pipe', 'pipe'] }
       );
@@ -800,6 +805,7 @@ describe('worker-consume subcommand', () => {
         .get('m-worker', 'sdd_worker_2');
       db2.close();
       expect(row?.consumed_at).toBeTruthy();
+      fs.rmSync(`/tmp/devhub-opencode-ready-${targetSession}`, { force: true });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

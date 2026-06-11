@@ -62,6 +62,7 @@ import {
 import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
 import { prepareAgentWorktree } from '@/lib/swarm/agentWorkspaceManager';
 import { terminateSwarmLaunch } from '@/lib/swarm/terminateLaunch';
+const { activateZedStandbySession } = require('@/lib/operations/swarmKickoff.js');
 import { withAuth } from '@/lib/swarm/withAuth.js';
 import { execSync } from 'child_process';
 
@@ -210,6 +211,13 @@ export function buildLaunchPrompt({
         isZed
           ? '- Los SDD Workers usan gentle-orchestrator y SDD estandar; delega changes completos, no micro-fases.'
           : '',
+        isZed
+          ? '- PROOF OF DELEGATION: no digas "delegado" sin ejecutar `_devhub_chat` y citar exit code + inbox_row_id del JSON stdout.'
+          : '',
+        isZed
+          ? '- No afirmes que un worker trabaja sin ACK (`kind: ack`) en team_chat o evento inbox_delivered.'
+          : '',
+        '- MCP: usa DEVHUB_PROJECT_ID (get_project_context) antes de list_projects/create_task.',
       ].filter(Boolean)
     : [];
 
@@ -226,7 +234,8 @@ export function buildLaunchPrompt({
         '- Sos un agente DevHub. NO menciones Plyrium, Forge, ni "warp". Si una herramienta no esta en tu toolbox, no la inventes.',
         `- Reporta a ${isSddWorker ? 'ZED' : 'el Director'} con \`_devhub_chat --to ${isSddWorker ? 'zed' : 'director'} --message "..."\` (helper bash, durable en team_chat).`,
         '- Si `type _devhub_chat` falla: `source "$DEVHUB_BUS_HELPERS_FILE"` o usa el shim en `$PATH`.',
-        '- Lee directivas con `_devhub_inbox_check` (lee de team_inbox).',
+        '- Directivas llegan por inbox-consume automatico; `_devhub_inbox_check` es fallback manual.',
+        '- Tras ejecutar una directiva: `_devhub_chat --to zed --kind ack --message "inbox#<id> done"`.',
         '- NO uses _devhub_tell_director (retired en T-006) ni busques estado en Engram MCP.',
         '- /tmp/devhub-swarm-<role>.log es solo diagnostico del wrapper — para comunicacion durable usa _devhub_chat.',
         '1. Heartbeat al iniciar.',
@@ -270,7 +279,8 @@ export function buildLaunchCommand(
   roleKey = '',
   modelId = null,
   launchId = null,
-  workspacePath = ''
+  workspacePath = '',
+  projectId = null
 ) {
   // T-023: default programId to 'opencode' when missing. Otherwise workers
   // fall through to the bash (hermes) default in buildAgentLaunchCommand,
@@ -329,6 +339,7 @@ export function buildLaunchCommand(
     missionId: launchId,
     role: roleKey,
     workspacePath,
+    projectId,
     tmuxSessionName,
     directorTmuxSession: isWorker ? directorTmuxSession : null,
     bootstrapPrompt: effectiveProgramId === 'opencode' ? prompt : '',
@@ -342,6 +353,7 @@ export function buildLaunchCommand(
     // swarm agents in worktrees should run on the default anthropic
     // provider instead.
     disableMinimaxMcp: true,
+    inboxPollIntervalSeconds: 5,
     tuiReadyGraceMs: SWARM_OPENCODE_READY_GRACE_MS,
   });
 
@@ -1238,7 +1250,8 @@ function configureLaunchRole({
     roleKey,
     roleModel,
     launchId,
-    worktreePath
+    worktreePath,
+    projectId
   );
 
   return {
@@ -2354,6 +2367,38 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       });
 
       return NextResponse.json(launchPayload);
+    }
+
+    if (payload?.action === 'activate_zed_standby') {
+      const launchId = String(payload?.launch_id || '').trim();
+      const projectId = payload?.project_id || getProjectIdFromRequest(request);
+      let resolvedLaunchId = launchId;
+      if (!resolvedLaunchId && projectId) {
+        const db = dependencies.db || getDb();
+        resolvedLaunchId = getActiveMissionId(db, projectId);
+      }
+      if (!resolvedLaunchId) {
+        return NextResponse.json(
+          { error: 'launch_id es requerido o no hay mision activa.' },
+          { status: 400 }
+        );
+      }
+
+      const activation = activateZedStandbySession({
+        launchId: resolvedLaunchId,
+        operatorMessage: payload?.message || '',
+        roleKey: payload?.role_key || 'zed',
+        tuiWaitMs: Number(payload?.tui_wait_ms) || 30000,
+      });
+
+      if (!activation.ok) {
+        return NextResponse.json(
+          { error: `No se pudo activar ZED (${activation.reason}).`, activation },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({ ok: true, activation });
     }
 
     if (payload?.action === 'terminate_swarm_local') {

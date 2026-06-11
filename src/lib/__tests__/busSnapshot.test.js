@@ -64,18 +64,22 @@ function makeTempDb() {
 function seedMission(db, missionId) {
   // Seed 4 rows in each table for a single mission
   for (let i = 0; i < 4; i++) {
-    db.prepare(`INSERT INTO team_chat (mission_id, from_role, to_role, kind, body, body_hash) VALUES (?,?,?,?,?,?)`)
-      .run(missionId, 'auditor', 'director', 'chat', `chat-${i}`, `ch-${i}`);
-    db.prepare(`INSERT INTO team_events (mission_id, source_role, kind, dedupe_key, payload_json) VALUES (?,?,?,?,?)`)
-      .run(missionId, 'worker', 'task_completed', `dk-${i}`, JSON.stringify({ i }));
-    db.prepare(`INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash) VALUES (?,?,?,?,?)`)
-      .run(missionId, 'worker', 'director', `directive-${i}`, `ib-${i}`);
+    db.prepare(
+      `INSERT INTO team_chat (mission_id, from_role, to_role, kind, body, body_hash) VALUES (?,?,?,?,?,?)`
+    ).run(missionId, 'auditor', 'director', 'chat', `chat-${i}`, `ch-${i}`);
+    db.prepare(
+      `INSERT INTO team_events (mission_id, source_role, kind, dedupe_key, payload_json) VALUES (?,?,?,?,?)`
+    ).run(missionId, 'worker', 'task_completed', `dk-${i}`, JSON.stringify({ i }));
+    db.prepare(
+      `INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash) VALUES (?,?,?,?,?)`
+    ).run(missionId, 'worker', 'director', `directive-${i}`, `ib-${i}`);
     const now = new Date().toISOString();
     const exp = new Date(Date.now() + 3600 * 1000).toISOString();
-    db.prepare(`INSERT OR REPLACE INTO agent_presence
+    db.prepare(
+      `INSERT OR REPLACE INTO agent_presence
       (presence_id, mission_id, agent_id, runtime_surface, presence_state, status_summary, last_seen_at, expires_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(`p-${i}`, missionId, `agent-${i}`, 'shell', 'busy', `doing-${i}`, now, exp, now);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(`p-${i}`, missionId, `agent-${i}`, 'shell', 'busy', `doing-${i}`, now, exp, now);
   }
 }
 
@@ -130,14 +134,36 @@ describe('T-009 — getMissionBusSnapshot', () => {
     }
   });
 
+  test('inbox_recent_consumed shows latest delivered rows', () => {
+    const { dir, db } = makeTempDb();
+    try {
+      const older = new Date(Date.now() - 60_000).toISOString();
+      const newer = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash, consumed_at) VALUES (?,?,?,?,?,?)`
+      ).run('missionC2', 'sdd_worker_1', 'zed', 'older', 'h1', older);
+      db.prepare(
+        `INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash, consumed_at) VALUES (?,?,?,?,?,?)`
+      ).run('missionC2', 'sdd_worker_1', 'zed', 'newer', 'h2', newer);
+      const snap = swarmMissions.getMissionBusSnapshot(db, 'missionC2');
+      expect(snap.inbox_recent_consumed).toHaveLength(2);
+      expect(snap.inbox_recent_consumed[0].body).toBe('newer');
+    } finally {
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('inbox_pending only shows unconsumed rows', () => {
     const { dir, db, dbPath } = makeTempDb();
     try {
       // Seed: 1 consumed, 1 pending
-      db.prepare(`INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash, consumed_at) VALUES (?,?,?,?,?,?)`)
-        .run('missionC', 'worker', 'director', 'consumed-one', 'h1', new Date().toISOString());
-      db.prepare(`INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash) VALUES (?,?,?,?,?)`)
-        .run('missionC', 'worker', 'director', 'pending-one', 'h2');
+      db.prepare(
+        `INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash, consumed_at) VALUES (?,?,?,?,?,?)`
+      ).run('missionC', 'worker', 'director', 'consumed-one', 'h1', new Date().toISOString());
+      db.prepare(
+        `INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash) VALUES (?,?,?,?,?)`
+      ).run('missionC', 'worker', 'director', 'pending-one', 'h2');
       const snap = swarmMissions.getMissionBusSnapshot(db, 'missionC');
       expect(snap.inbox_pending).toHaveLength(1);
       expect(snap.inbox_pending[0].body).toBe('pending-one');
@@ -154,14 +180,16 @@ describe('T-009 — getMissionBusSnapshot', () => {
       const now = new Date().toISOString();
       const futureExp = new Date(Date.now() + 3600 * 1000).toISOString();
       const pastExp = new Date(Date.now() - 3600 * 1000).toISOString();
-      db.prepare(`INSERT OR REPLACE INTO agent_presence
+      db.prepare(
+        `INSERT OR REPLACE INTO agent_presence
         (presence_id, mission_id, agent_id, runtime_surface, presence_state, last_seen_at, expires_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run('p-active', 'missionD', 'agent-1', 'shell', 'busy', now, futureExp, now);
-      db.prepare(`INSERT OR REPLACE INTO agent_presence
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run('p-active', 'missionD', 'agent-1', 'shell', 'busy', now, futureExp, now);
+      db.prepare(
+        `INSERT OR REPLACE INTO agent_presence
         (presence_id, mission_id, agent_id, runtime_surface, presence_state, last_seen_at, expires_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run('p-expired', 'missionD', 'agent-2', 'shell', 'offline', now, pastExp, now);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run('p-expired', 'missionD', 'agent-2', 'shell', 'offline', now, pastExp, now);
       const snap = swarmMissions.getMissionBusSnapshot(db, 'missionD');
       expect(snap.presence_active).toHaveLength(1);
       expect(snap.presence_active[0].agent_id).toBe('agent-1');

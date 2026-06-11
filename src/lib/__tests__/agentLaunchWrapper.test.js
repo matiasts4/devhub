@@ -403,18 +403,33 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toMatch(/director-consume/);
     });
 
-    test('worker wrapper starts background worker-consume inbox poller', () => {
+    test('worker wrapper starts background inbox-consume poller', () => {
       const workerParams = {
         ...baseParams,
         role: 'sdd_worker_2',
         tmuxSessionName: 'devhub-swarm-test-1-sdd_worker_2',
         busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
         dbPath: '/repo/devhub.db',
+        projectId: 'project-devhub-1',
       };
       const result = buildAgentLaunchWrapper(workerParams);
-      expect(result).toMatch(/worker-consume/);
+      expect(result).toMatch(/inbox-consume/);
       expect(result).toContain('--role "sdd_worker_2"');
       expect(result).toMatch(/devhub-worker-inbox-consume-.*sdd_worker_2\.pid/);
+      expect(result).toContain('DEVHUB_PROJECT_ID="project-devhub-1"');
+      expect(result).toContain('DEVHUB_INBOX_POLL_SEC');
+    });
+
+    test('zed orchestrator wrapper does not start inbox-consume', () => {
+      const zedParams = {
+        ...baseParams,
+        role: 'zed',
+        tmuxSessionName: 'devhub-swarm-test-1-zed',
+        busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+        dbPath: '/repo/devhub.db',
+      };
+      const result = buildAgentLaunchWrapper(zedParams);
+      expect(result).not.toMatch(/inbox-consume/);
     });
 
     test('director wrapper exit trap cleans up the consumer PID file', () => {

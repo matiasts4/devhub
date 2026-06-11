@@ -39,6 +39,7 @@ export function buildAgentEnvExports({
   role,
   workspacePath,
   workspaceId,
+  projectId,
   runId,
   supervisorUrl,
   tmuxSessionName,
@@ -53,6 +54,7 @@ export function buildAgentEnvExports({
     `export DEVHUB_ROLE="${role}"`,
     `export DEVHUB_WORKSPACE_PATH="${workspacePath}"`,
     `export DEVHUB_WORKSPACE_ID="${workspaceId || ''}"`,
+    `export DEVHUB_PROJECT_ID="${projectId || ''}"`,
     `export DEVHUB_RUN_ID="${runId || ''}"`,
     // T-020: the agent's own OS process ID, exported at spawn time
     // so the exit trap can sample this process and its children via
@@ -939,24 +941,30 @@ export function buildWorkerInboxConsumerBlock({
   missionId,
   role,
   sessionName,
-  pollIntervalSeconds = 15,
+  pollIntervalSeconds = null,
 } = {}) {
   if (!busBinaryPath || !sessionName || !role || role === 'director') {
     return '# Worker inbox consumer skipped (missing busBinaryPath, sessionName, or role)';
   }
   const launchTag = missionId || 'launch-unknown';
   const roleTag = role || 'worker';
+  const pollSeconds =
+    Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0
+      ? Math.max(5, Math.floor(pollIntervalSeconds))
+      : '${DEVHUB_INBOX_POLL_SEC:-5}';
   return [
     '# Worker inbox consumer: poll team_inbox → inject directives into the OpenCode pane.',
-    `nohup "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" worker-consume \\`,
+    'export DEVHUB_INBOX_POLL_SEC="${DEVHUB_INBOX_POLL_SEC:-5}"',
+    `nohup "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" inbox-consume \\`,
     `  --db "$_DEVHUB_BUS_DB" \\`,
     `  --mission "${launchTag}" \\`,
     `  --role "${roleTag}" \\`,
     `  --target-session "${sessionName}" \\`,
-    `  --poll-interval ${pollIntervalSeconds} \\`,
+    `  --poll-interval ${pollSeconds} \\`,
     `  >> "$AGENT_LOG" 2>&1 &`,
     `_worker_inbox_consume_pid=$!`,
     `echo "$_worker_inbox_consume_pid" > "/tmp/devhub-worker-inbox-consume-${launchTag}-${roleTag}.pid"`,
+    `echo "[$(date -Iseconds 2>/dev/null || date)] inbox-consume pid=\$_worker_inbox_consume_pid poll=\${DEVHUB_INBOX_POLL_SEC:-5}s role=${roleTag}" >> "\${DEVHUB_TRANSCRIPT_FILE:-/tmp/devhub-swarm-${roleTag}.transcript}" 2>/dev/null || true`,
   ].join('\n');
 }
 
@@ -1255,6 +1263,7 @@ export function buildAgentLaunchWrapper({
   role,
   workspacePath,
   workspaceId,
+  projectId,
   runId,
   supervisorUrl,
   tmuxSessionName,
@@ -1265,6 +1274,7 @@ export function buildAgentLaunchWrapper({
   dbPath,
   busBinaryPath,
   disableMinimaxMcp,
+  inboxPollIntervalSeconds,
   // T-022: TUI wait timings (milliseconds).
   //   - tuiWaitTimeoutMs: UNUSED (default 10000), kept for backward compat
   //   - tuiReadyGraceMs:  max wait for opencode-ready marker (default 12000)
@@ -1307,14 +1317,16 @@ export function buildAgentLaunchWrapper({
   const directorConsumerCleanup = isDirectorRole
     ? buildDirectorConsumerCleanupBlock({ launchId: missionId })
     : null;
+  const isOrchestratorRole = role === 'director' || role === 'zed';
   const shouldRunWorkerInboxConsumer =
-    Boolean(role) && role !== 'director' && Boolean(tmuxSessionName) && Boolean(busBinaryPath);
+    Boolean(role) && !isOrchestratorRole && Boolean(tmuxSessionName) && Boolean(busBinaryPath);
   const workerInboxConsumerBlock = shouldRunWorkerInboxConsumer
     ? buildWorkerInboxConsumerBlock({
         busBinaryPath,
         missionId,
         role,
         sessionName: tmuxSessionName,
+        pollIntervalSeconds: inboxPollIntervalSeconds,
       })
     : '';
   const workerInboxConsumerCleanup = shouldRunWorkerInboxConsumer
@@ -1346,6 +1358,7 @@ export function buildAgentLaunchWrapper({
       role,
       workspacePath,
       workspaceId,
+      projectId,
       runId,
       supervisorUrl,
       tmuxSessionName,
@@ -1354,6 +1367,7 @@ export function buildAgentLaunchWrapper({
       dbPath,
       disableMinimaxMcp,
     }),
+    'export DEVHUB_INBOX_POLL_SEC="${DEVHUB_INBOX_POLL_SEC:-5}"',
     '',
     buildBusHelpersPersistBlock({ missionId, busBinaryPath, dbPath }),
     '',

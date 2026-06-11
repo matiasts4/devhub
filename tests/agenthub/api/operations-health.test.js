@@ -2255,6 +2255,26 @@ describe('GET /api/agenthub/operations/health', () => {
       // example but kept the helper name).
       expect(prompt).toContain('_devhub_inbox_check');
     });
+
+    test('zed prompt requires proof of delegation before claiming delegated', () => {
+      const {
+        buildLaunchPrompt,
+      } = require('../../../src/app/api/agenthub/operations/health/route');
+
+      const prompt = buildLaunchPrompt({
+        role: 'ZED',
+        roleKey: 'zed',
+        mission: '',
+        workspacePath: '/tmp/ws',
+        hierarchy: ['ZED', 'SDD Worker 1'],
+        bootstrapMode: 'standby',
+        launchId: 'launch-zed-1',
+      });
+
+      expect(prompt).toContain('PROOF OF DELEGATION');
+      expect(prompt).toContain('inbox_row_id');
+      expect(prompt).toContain('DEVHUB_PROJECT_ID');
+    });
   });
 
   // =========================================================================

@@ -16,6 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const tct = require('../../src/lib/bus/shim/tct.js');
+const inboxConsume = require('../../src/lib/bus/inboxConsume.js');
 
 const EXIT_OK = 0;
 const EXIT_USAGE = 64;
@@ -35,6 +36,7 @@ const KNOWN_SUBCOMMANDS = new Set([
   'rotate',
   'director-consume',
   'worker-consume',
+  'inbox-consume',
 ]);
 
 function failExit(code, msg) {
@@ -738,51 +740,29 @@ function spawnSafe(cmd, args) {
   }
 }
 
-function injectTextToTmuxSession(sessionName, text) {
-  const { spawnSync } = require('child_process');
-  const target = String(sessionName || '').trim();
-  if (!target) return false;
-  const payload = String(text || '').trim();
-  if (!payload) return false;
-
-  const header = `[DevHub directive ${new Date().toISOString()}]`;
-  spawnSync('tmux', ['send-keys', '-t', target, '-l', header], { stdio: 'ignore' });
-  spawnSync('tmux', ['send-keys', '-t', target, 'Enter'], { stdio: 'ignore' });
-
-  const lines = payload.split('\n');
-  for (const line of lines) {
-    const chunks = [];
-    const chunkSize = 400;
-    for (let index = 0; index < line.length; index += chunkSize) {
-      chunks.push(line.slice(index, index + chunkSize));
-    }
-    if (chunks.length === 0) {
-      spawnSync('tmux', ['send-keys', '-t', target, 'Enter'], { stdio: 'ignore' });
-      continue;
-    }
-    for (const chunk of chunks) {
-      spawnSync('tmux', ['send-keys', '-t', target, '-l', chunk], { stdio: 'ignore' });
-    }
-    spawnSync('tmux', ['send-keys', '-t', target, 'Enter'], { stdio: 'ignore' });
-  }
-  return true;
-}
-
-function cmdWorkerConsume(db, args) {
-  // Poll team_inbox for this role, mark rows consumed, inject directive text
-  // into the agent tmux pane so OpenCode picks it up without manual inbox checks.
+function cmdInboxConsume(db, args, label = 'inbox-consume') {
+  // Poll team_inbox for this role; deliver only after OpenCode TUI is ready
+  // and tmux injection succeeds (row stays pending on failure for retry).
   const {
     mission: missionId,
     role: toRole,
     'target-session': targetSession,
     'poll-interval': pollIntervalArg,
+    'tui-wait-ms': tuiWaitMsArg,
+    'skip-tui-wait': skipTuiWaitArg,
   } = args;
   validateMissionId(missionId);
   if (!toRole) failExit(EXIT_USAGE, '--role required');
   if (!targetSession) failExit(EXIT_USAGE, '--target-session required');
   checkTableExists(db, 'team_inbox');
 
-  const pollIntervalSeconds = Math.max(5, Number(pollIntervalArg) || 15);
+  const envPoll = Number(process.env.DEVHUB_INBOX_POLL_SEC);
+  const pollIntervalSeconds = Math.max(
+    5,
+    Number(pollIntervalArg) || (Number.isFinite(envPoll) && envPoll > 0 ? envPoll : 15)
+  );
+  const tuiWaitMs = Math.max(1000, Number(tuiWaitMsArg) || 30000);
+  const skipTuiWait = skipTuiWaitArg === 'true' || process.env.DEVHUB_INBOX_SKIP_TUI_WAIT === '1';
   let stopping = false;
 
   const selectPending = db.prepare(
@@ -791,33 +771,39 @@ function cmdWorkerConsume(db, args) {
      WHERE mission_id = ? AND to_role = ? AND consumed_at IS NULL
      ORDER BY created_at ASC`
   );
-  const markConsumed = db.prepare(
-    'UPDATE team_inbox SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL'
-  );
 
   function deliverPending() {
     if (stopping) return;
     const pending = withBusyRetry(() => selectPending.all(missionId, toRole));
     for (const row of pending) {
-      const consumedAt = new Date().toISOString();
-      const updated = withBusyRetry(() => markConsumed.run(consumedAt, row.id));
-      if (!updated.changes) continue;
-      const prefix = row.from_role ? `[${row.from_role} → ${toRole}] ` : '';
-      const injected = injectTextToTmuxSession(targetSession, `${prefix}${row.body || ''}`);
-      process.stderr.write(
-        `devhub-helper: worker-consume: delivered inbox#${row.id} to ${targetSession}` +
-          (injected ? '' : ' (tmux inject failed)') +
-          '\n'
-      );
-      appendJsonl(missionId, 'inbox', {
-        seq: `inbox-${row.id}`,
-        mission_id: missionId,
-        to_role: toRole,
-        from_role: row.from_role,
-        body: row.body,
-        body_hash: row.body_hash,
-        delivered_at: consumedAt,
+      const result = inboxConsume.deliverInboxRow({
+        db,
+        withBusyRetry,
+        row,
+        targetSession,
+        missionId,
+        toRole,
+        tuiWaitMs,
+        skipTuiWait,
       });
+      if (result.ok) {
+        process.stderr.write(
+          `devhub-helper: ${label}: delivered inbox#${result.inboxId} to ${targetSession}\n`
+        );
+        appendJsonl(missionId, 'inbox', {
+          seq: `inbox-${row.id}`,
+          mission_id: missionId,
+          to_role: toRole,
+          from_role: row.from_role,
+          body: row.body,
+          body_hash: row.body_hash,
+          delivered_at: result.consumedAt,
+        });
+        continue;
+      }
+      process.stderr.write(
+        `devhub-helper: ${label}: deferred inbox#${result.inboxId} (${result.reason})\n`
+      );
     }
   }
 
@@ -835,6 +821,10 @@ function cmdWorkerConsume(db, args) {
   if (typeof timer.unref === 'function') timer.unref();
 }
 
+function cmdWorkerConsume(db, args) {
+  return cmdInboxConsume(db, args, 'worker-consume');
+}
+
 function main() {
   const argv = process.argv;
   const args = parseArgs(argv);
@@ -842,7 +832,7 @@ function main() {
   if (!sub || sub === '--help' || sub === '-h') {
     process.stderr.write(
       'Usage: devhub-bus <subcommand> [--db <path>] [--mission <id>] [...]\n' +
-        'Subcommands: chat-write, event-write, presence-upsert, inbox-check, snapshot, rotate, director-consume, worker-consume\n'
+        'Subcommands: chat-write, event-write, presence-upsert, inbox-check, snapshot, rotate, director-consume, worker-consume, inbox-consume\n'
     );
     process.exit(EXIT_USAGE);
   }
@@ -884,6 +874,8 @@ function main() {
         return cmdDirectorConsume(db, args);
       case 'worker-consume':
         return cmdWorkerConsume(db, args);
+      case 'inbox-consume':
+        return cmdInboxConsume(db, args);
       default:
         failExit(EXIT_USAGE, `unknown subcommand: ${sub}`);
     }
