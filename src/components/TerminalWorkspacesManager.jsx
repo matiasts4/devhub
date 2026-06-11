@@ -1568,6 +1568,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           if (panel.displayName) return panel;
           const stored = getPanelDisplayNameFromStore(panel.id, ws.id);
           if (stored) {
+            // Mirror the cached name into localStorage so a stale Map cannot
+            // hide the entry from a fresh hydrate. Re-write is cheap.
+            setPanelDisplayNameInStore(panel.id, ws.id, stored);
             mutated = true;
             return { ...panel, displayName: stored };
           }
