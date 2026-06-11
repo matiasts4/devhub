@@ -768,13 +768,8 @@ function shortenCommandSummary(command) {
   return `${raw.slice(0, 137)}...`;
 }
 
-function buildUniqueRenderKey(scope, id, index, countsMap) {
-  const normalizedId = String(id || 'unknown');
-  const base = `${scope}-${normalizedId}`;
-  const used = countsMap.get(base) || 0;
-  countsMap.set(base, used + 1);
-  if (used === 0) return `${base}-${index}`;
-  return `${base}-${index}-${used}`;
+function buildStableWorkspaceShellKey(scope, workspaceId) {
+  return `${scope}-${String(workspaceId || 'unknown')}`;
 }
 
 function renderWorkspacePanel(
@@ -5533,8 +5528,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     await win?.close().catch(() => {});
   }, [getTauriWindow]);
 
-  const workspaceTabKeyCounts = new Map();
-  const workspaceGridKeyCounts = new Map();
   const activeWorkspacePanelCount = activeWorkspace
     ? getAllPanelIds(activeWorkspace.columns).length
     : 0;
@@ -5586,12 +5579,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
                 {workspaces.map((ws, wsIndex) => {
                   const totalPanels = getAllPanelIds(ws.columns).length;
-                  const workspaceTabKey = buildUniqueRenderKey(
-                    'workspace-tab',
-                    ws.id,
-                    wsIndex,
-                    workspaceTabKeyCounts
-                  );
+                  const workspaceTabKey = buildStableWorkspaceShellKey('workspace-tab', ws.id);
                   const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
                   const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
                   return (
@@ -6091,12 +6079,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               {/* Terminal Grid */}
               <div ref={workspaceGridAreaRef} className="flex-1 relative min-w-0">
                 {workspaces.map((ws, wsIndex) => {
-                  const workspaceGridKey = buildUniqueRenderKey(
-                    'workspace-grid',
-                    ws.id,
-                    wsIndex,
-                    workspaceGridKeyCounts
-                  );
+                  const workspaceGridKey = buildStableWorkspaceShellKey('workspace-grid', ws.id);
                   const wsDockState =
                     activeWsId === ws.id
                       ? effectiveRightDockState
