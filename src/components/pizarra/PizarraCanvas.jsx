@@ -23,6 +23,7 @@ import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
 import { useCanvasViewport, zoomAtPoint } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { shouldCanvasConsumeWheel } from '@/lib/pizarra/pizarraWheel';
+import ShapePreviewOverlay from './ShapePreviewOverlay';
 
 // pizarra-ux-overhaul: module-scope env read for the texture.
 // Default ON (subtle dots) so the pizarra never looks like a pure "submarino"
@@ -64,6 +65,13 @@ export default function PizarraCanvas({
   const [konva, setKonva] = useState(null);
   const [konvaLoadError, setKonvaLoadError] = useState(null);
   const [drawing, setDrawing] = useState(null);
+  // pizarra-motion-polish (P-MP-7): in-flight shape geometry during
+  // a drag. `previewShape` is the geometry-only projection of
+  // `drawing` (start + current pointer) and is recomputed on every
+  // mousemove. The persisted `elements` list is NOT touched until
+  // mouseup (where onShapeCreate fires). The render path reads
+  // `previewShape` to show a live outline as the user drags.
+  const [previewShape, setPreviewShape] = useState(null);
   // pizarra-multi-select: marquee rectangle drawn while area-selecting on
   // empty canvas. null when inactive. `moved` flips true once the drag
   // exceeds a small threshold so a plain click still deselects.
@@ -236,7 +244,57 @@ export default function PizarraCanvas({
         setMarquee({ ...marquee, x, y, width: mWidth, height: mHeight, moved });
         return;
       }
+      // pizarra-motion-polish (P-MP-7): live preview during a shape
+      // drag. The pre-fix handler early-returned on `!drawing` so
+      // the user saw nothing until mouseup. We now project the
+      // start + current pointer into the in-flight geometry and
+      // stash it in `previewShape`. The render path reads that
+      // state to draw a live outline. `onShapeCreate` is still
+      // mouseup-only — the persisted `elements` list is not
+      // touched on mousemove.
       if (!drawing) return;
+      const pos = e.target.getStage().getPointerPosition();
+      const { startX, startY, type } = drawing;
+      const dxRaw = pos.x - startX;
+      const dyRaw = pos.y - startY;
+      const absDx = Math.abs(dxRaw);
+      const absDy = Math.abs(dyRaw);
+      // The preview carries the same geometry the final shape will
+      // have on mouseup, computed identically. This keeps the
+      // outline and the eventual shape pixel-aligned (no "snap"
+      // on release).
+      let preview;
+      if (type === SHAPE_TYPES.CIRCLE) {
+        const radius = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw) / 2;
+        preview = {
+          type,
+          x: (startX + pos.x) / 2,
+          y: (startY + pos.y) / 2,
+          radius,
+        };
+      } else if (type === SHAPE_TYPES.LINE || type === SHAPE_TYPES.ARROW) {
+        preview = {
+          type,
+          x: Math.min(startX, pos.x),
+          y: Math.min(startY, pos.y),
+          points: [
+            Math.max(0, startX - Math.min(startX, pos.x)),
+            Math.max(0, startY - Math.min(startY, pos.y)),
+            Math.abs(dxRaw),
+            Math.abs(dyRaw),
+          ],
+        };
+      } else {
+        // rect, textbox, etc. — same as the rect fallback.
+        preview = {
+          type,
+          x: Math.min(startX, pos.x),
+          y: Math.min(startY, pos.y),
+          width: absDx,
+          height: absDy,
+        };
+      }
+      setPreviewShape(preview);
     },
     [marquee, drawing]
   );
@@ -300,12 +358,28 @@ export default function PizarraCanvas({
           ...toolSettings,
         });
       } else if (type === SHAPE_TYPES.CIRCLE) {
-        const dx = Math.abs(pos.x - startX);
-        const dy = Math.abs(pos.y - startY);
+        // pizarra-motion-polish (P-MP-7): circles are stored with
+        // x/y at the bounding-box MIDPOINT and radius = half the
+        // diagonal. The renderer (and every consumer) treats x/y
+        // as the circle's center, so this matches the spec for
+        // rects/lines/arrows (which also use x/y as the corner
+        // OR the center depending on shape type — for circle the
+        // convention is center).
+        //
+        // Pre-fix the math was:
+        //   x: startX, y: startY, radius: Math.min(dx, dy) / 2
+        // which made circles render at the bounding-box corner
+        // with half the shorter axis (visually broken and offset
+        // from the drag).
+        const dx = pos.x - startX;
+        const dy = pos.y - startY;
+        const cx = (startX + pos.x) / 2;
+        const cy = (startY + pos.y) / 2;
+        const radius = Math.sqrt(dx * dx + dy * dy) / 2;
         shape = createShape(type, {
-          x: startX,
-          y: startY,
-          radius: Math.min(dx, dy) / 2,
+          x: cx,
+          y: cy,
+          radius,
           ...toolSettings,
         });
       } else {
@@ -320,6 +394,11 @@ export default function PizarraCanvas({
 
       onShapeCreate(shape);
       setDrawing(null);
+      // pizarra-motion-polish (P-MP-7): clear the live preview at
+      // the same commit point as drawing. The preview is geometry-
+      // only; the persisted shape was just committed via
+      // onShapeCreate.
+      setPreviewShape(null);
     },
     [marquee, elements, onMarqueeSelect, onDeselect, drawing, toolSettings, onShapeCreate]
   );
@@ -534,6 +613,14 @@ export default function PizarraCanvas({
               listening={false}
             />
           )}
+
+          {/* pizarra-motion-polish (P-MP-7): live shape preview during
+              a drag. Renders the in-flight geometry as a dashed
+              outline so the user sees what they are about to commit
+              before mouseup. Persisted elements list is NOT touched
+              here — onShapeCreate is mouseup-only. The preview is
+              cleared in handleMouseUp at the same commit point. */}
+          {previewShape && <ShapePreviewOverlay konva={konva} preview={previewShape} />}
         </Layer>
       </Stage>
     </div>

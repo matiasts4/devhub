@@ -131,6 +131,34 @@ describe('pizarraReducer — state shape contract', () => {
     expect(PIZARRA_ACTIONS.CASCADE_OFFSET).toBe('CASCADE_OFFSET');
   });
 
+  // pizarra-motion-polish (P-MP-7): DRAW_UPDATE action exists in the
+  // module's PIZARRA_ACTIONS map. Currently the live preview path
+  // lives in component-local state inside PizarraCanvas.jsx, but the
+  // reducer action is exposed for future work that lifts the preview
+  // into the reducer (see design Decision 7 in pizarra-motion-polish).
+  test('PIZARRA_ACTIONS.DRAW_UPDATE is exported from the module (P-MP-7)', () => {
+    expect(PIZARRA_ACTIONS.DRAW_UPDATE).toBe('DRAW_UPDATE');
+  });
+
+  test('DRAW_UPDATE action returns the same state (no-op, reserved for future use)', () => {
+    // The current implementation routes the in-flight shape geometry
+    // through component-local state, so the reducer simply returns
+    // the state unchanged. The action exists so the canonical
+    // "draw update" path has a stable action type — future work
+    // that lifts the preview into the reducer can dispatch
+    // DRAW_UPDATE without further contract changes.
+    const before = makeState({
+      elements: [{ id: 'a', type: 'rect', x: 0, y: 0, width: 10, height: 10 }],
+    });
+    const after = pizarraReducer(before, {
+      type: PIZARRA_ACTIONS.DRAW_UPDATE,
+      payload: { x: 5, y: 5, width: 20, height: 20 },
+    });
+    // The state MUST be returned unchanged (the elements list is
+    // not mutated by a DRAW_UPDATE; commits go through ADD_ELEMENT).
+    expect(after).toBe(before);
+  });
+
   test('named exports expose pizarraReducer + PIZARRA_INITIAL_STATE', () => {
     expect(typeof pizarraReducer).toBe('function');
     expect(typeof PIZARRA_INITIAL_STATE).toBe('object');

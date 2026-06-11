@@ -21,6 +21,15 @@ export const PIZARRA_ACTIONS = {
   DESELECT_ALL: 'DESELECT_ALL',
   CASCADE_OFFSET: 'CASCADE_OFFSET',
   RESET_ELEMENTS: 'RESET_ELEMENTS',
+  // pizarra-motion-polish (P-MP-7): in-flight shape geometry
+  // update during a drag. Pairs with the live preview in
+  // PizarraCanvas.jsx (handleMouseMove) — the reducer action
+  // exists for the canonical "draw update" path even though
+  // PizarraCanvas currently keeps the preview in component-local
+  // state (see the design decision in pizarra-motion-polish §
+  // Decision 7). Future work that lifts the preview into the
+  // reducer can dispatch this action without further changes.
+  DRAW_UPDATE: 'DRAW_UPDATE',
 };
 
 // ─── Reducer ────────────────────────────────────────────────────────────────
@@ -94,6 +103,17 @@ export function pizarraReducer(state, action) {
         selectedElementIds: [],
         cascadeIndex: 0,
       };
+    }
+
+    // pizarra-motion-polish (P-MP-7): DRAW_UPDATE is the canonical
+    // action type for the in-flight shape geometry during a drag.
+    // The current PizarraCanvas implementation routes the preview
+    // through component-local state, so the reducer is a no-op for
+    // now (the state reference is preserved). Future work that
+    // lifts the preview into the reducer can dispatch this action
+    // without further contract changes.
+    case PIZARRA_ACTIONS.DRAW_UPDATE: {
+      return state;
     }
 
     default:
