@@ -127,6 +127,7 @@ export function zoomAtPoint({
 }
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { shouldCanvasConsumeWheel } from './pizarraWheel';
 
 const CanvasViewportContext = createContext(null);
 
@@ -223,15 +224,34 @@ export function CanvasViewportProvider({
     if (!container) return;
 
     const handleWheel = (event) => {
-      // Check if the wheel event occurred inside scrollable interactive widgets (e.g., TerminalTTY viewport or browser frame)
-      const isInsideInteractive = event.target.closest(
-        '[data-testid="pizarra-browser-surface"], [data-testid="canvas-terminal"]'
-      );
-
-      // Intercept and handle zoom if it is a trackpad pinch zoom (ctrlKey is true) OR if it is outside interactive cards.
-      if (event.ctrlKey || !isInsideInteractive) {
+      // pizarra-motion-polish (P-MP-5): route through the shared
+      // helper so the provider's selector set cannot drift from
+      // PizarraCanvas.jsx's. The helper returns false when the
+      // wheel is over a terminal/browser surface (xterm viewport
+      // scrolls) or when the event target matches the interactive
+      // wheel selector. Trackpad pinch zoom (ctrlKey) is honored
+      // by treating it as a zoom regardless of target.
+      //
+      // For focal zoom math we use the same `zoomAtPoint` helper
+      // the PizarraCanvas wheel handler uses (P-MP-4). The focal
+      // point is `event.clientX/Y - containerRect.left/top`. On
+      // containers that don't expose a real rect (test envs), the
+      // zoomAtPoint default focal (0,0) is the safe fallback —
+      // still produces a valid zoom clamp.
+      if (event.ctrlKey || shouldCanvasConsumeWheel(event)) {
         event.preventDefault();
-        setZoom((currentZoom) => Math.min(Math.max(currentZoom - event.deltaY * 0.001, 0.1), 5));
+        const rect = container.getBoundingClientRect
+          ? container.getBoundingClientRect()
+          : { left: 0, top: 0 };
+        const next = zoomAtPoint({
+          currentZoom: zoom,
+          currentPan: pan,
+          deltaY: event.deltaY,
+          focalX: event.clientX - rect.left,
+          focalY: event.clientY - rect.top,
+        });
+        setZoom(next.zoom);
+        setPan(next.pan);
       }
     };
 
@@ -239,7 +259,7 @@ export function CanvasViewportProvider({
     return () => {
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [canvasContainerRef, setZoom]);
+  }, [canvasContainerRef, setZoom, zoom, pan]);
 
   const value = {
     zoom,
