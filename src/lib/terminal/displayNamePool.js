@@ -46,7 +46,13 @@ function acquire(usedNames) {
     }
   }
 
-  return null;
+  const fallback = `Panel-${used.size + 1}`;
+  if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn(
+      `[displayNamePool] pool exhausted (${used.size} used); falling back to ${fallback}`
+    );
+  }
+  return fallback;
 }
 
 module.exports = {

@@ -40,3 +40,20 @@ describe('displayNamePool constants', () => {
     }
   });
 });
+
+describe('displayNamePool.acquire exhaustion fallback', () => {
+  test('returns Panel-31 when all 30 pool names are used', () => {
+    const used = new Set(DISPLAY_NAME_POOL);
+    expect(acquire(used)).toBe('Panel-31');
+  });
+
+  test('exhaustion is case-insensitive — 30 names regardless of casing yields Panel-31', () => {
+    const used = new Set(DISPLAY_NAME_POOL.map((n) => n.toUpperCase()));
+    expect(acquire(used)).toBe('Panel-31');
+  });
+
+  test('returns Panel-N where N is usedNames.size + 1 for larger used sets', () => {
+    const used = new Set([...DISPLAY_NAME_POOL, 'extra1', 'extra2', 'extra3']);
+    expect(acquire(used)).toBe('Panel-34');
+  });
+});
