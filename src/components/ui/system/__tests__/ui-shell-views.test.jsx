@@ -20,7 +20,88 @@ jest.mock('next/link', () => {
   return ({ children, ...props }) => React.createElement('a', props, children);
 });
 
+jest.mock(
+  'react-router-dom',
+  () => ({
+    useOutletContext: () => ({ project: { id: 'p1', name: 'E-commerce V2' } }),
+    useNavigate: () => jest.fn(),
+  }),
+  { virtual: true }
+);
+
+jest.mock(
+  'sonner',
+  () => ({
+    toast: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn(), dismiss: jest.fn() }),
+  }),
+  { virtual: true }
+);
+
+jest.mock('../../../../components/MetricCard', () => {
+  const React = require('react');
+  return function MetricCard() {
+    return React.createElement('div', { 'data-testid': 'metric-card' });
+  };
+});
+
+jest.mock('../../../../components/HistorialCommits', () => {
+  const React = require('react');
+  return function HistorialCommits() {
+    return React.createElement('div', { 'data-testid': 'historial-commits' });
+  };
+});
+
+jest.mock('../../../../components/UltimasInteracciones', () => {
+  const React = require('react');
+  return function UltimasInteracciones() {
+    return React.createElement('div', { 'data-testid': 'ultimas-interacciones' });
+  };
+});
+
+jest.mock('../../../../components/AgentActivityFeed', () => {
+  const React = require('react');
+  return function AgentActivityFeed() {
+    return React.createElement('div', { 'data-testid': 'agent-activity-feed' });
+  };
+});
+
+jest.mock('../../../../components/UsageChart', () => {
+  const React = require('react');
+  return function UsageChart() {
+    return React.createElement('div', { 'data-testid': 'usage-chart' });
+  };
+});
+
 const SettingsLayout = require('../../../../app/settings/layout').default;
+const Dashboard = require('../../../../views/Dashboard').default;
+
+jest.mock('@/lib/db/localClient', () => {
+  const chain = () => {
+    const value = { data: [], error: null };
+    const fn = () => chain();
+    fn.eq = () => chain();
+    fn.neq = () => chain();
+    fn.lt = () => chain();
+    fn.gt = () => chain();
+    fn.in = () => chain();
+    fn.order = () => chain();
+    fn.single = () => Promise.resolve(value);
+    fn.then = (resolve) => Promise.resolve(value).then(resolve);
+    Object.assign(fn, value);
+    return fn;
+  };
+  return {
+    createClient: () => ({
+      from: () => ({
+        select: () => chain(),
+        update: () => chain(),
+        insert: () => chain(),
+        upsert: () => chain(),
+        delete: () => chain(),
+      }),
+    }),
+  };
+});
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -101,5 +182,36 @@ describe('Settings layout — UiShell migration', () => {
     const heading = uiHeader.querySelector('h1');
     expect(heading).toBeTruthy();
     expect(heading.textContent).toMatch(/account/i);
+  });
+});
+
+describe('Dashboard — UiShell migration', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, json: async () => ({ success: true, kpis: {} }) })
+    );
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    delete global.fetch;
+    jest.clearAllMocks();
+  });
+
+  test('renders UiHeader with data-testid="ui-header"', async () => {
+    rendered = await renderIntoDom(React.createElement(Dashboard));
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+    const heading = uiHeader.querySelector('h1');
+    expect(heading).toBeTruthy();
   });
 });
