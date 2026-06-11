@@ -49,7 +49,10 @@ export function registerProjectTools(server, deps) {
         .select('id, name, status, progress')
         .order('created_at', { ascending: false });
       if (status && status !== 'all') query = query.eq('status', status);
-      if (workspace_id) query = query.eq('workspace_id', workspace_id);
+      // Legacy local rows often have NULL workspace_id but belong to local-ws.
+      if (workspace_id && workspace_id !== 'local-ws') {
+        query = query.eq('workspace_id', workspace_id);
+      }
       const { data, error } = await query;
       if (error) return err(error.message);
       return ok({ total: data.length, projects: data });

@@ -35,13 +35,14 @@ describe('T-011 — bus helper wiring in production launch path', () => {
     expect(out.dbPath).toBe('/tmp/explicit.db');
   });
 
-  test('resolveBusHelperPaths defaults dbPath to <repoRoot>/data/devhub.db when env is unset', () => {
+  test('resolveBusHelperPaths defaults dbPath to canonical resolveDbPath when env is unset', () => {
     const launchPaths = require('../../bus/launchPaths.js');
+    const { resolveDbPath } = require('../../db/pathResolver');
     const env = {};
     delete env.DEVHUB_DB_PATH;
     const out = launchPaths.resolveBusHelperPaths({ repoRoot: '/repo/root', env });
     expect(out.busBinaryPath).toBe('/repo/root/devhub-cli/bin/devhub-bus.js');
-    expect(out.dbPath).toBe('/repo/root/data/devhub.db');
+    expect(out.dbPath).toBe(resolveDbPath({ env, cwd: '/repo/root' }));
   });
 
   test('buildLaunchWrapperForRole composes a wrapper that contains _devhub_chat () and _devhub_event ()', () => {
@@ -99,7 +100,10 @@ describe('T-011 — bus helper wiring in production launch path', () => {
       dbPath: '/tmp/ws/devhub.db',
       innerCommand: 'sleep 1',
     });
-    const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-bus-paths-')), 'wrapper.sh');
+    const tmp = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-bus-paths-')),
+      'wrapper.sh'
+    );
     fs.writeFileSync(tmp, wrapper, { mode: 0o644 });
     const r = spawnSync('bash', ['-n', tmp], { encoding: 'utf-8' });
     expect(r.status).toBe(0);

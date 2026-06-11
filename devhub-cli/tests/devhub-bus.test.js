@@ -755,6 +755,57 @@ describe('T-013c — event-list (Bash bus subcommand for devhub events list)', (
   });
 });
 
+describe('worker-consume subcommand', () => {
+  test('delivers pending inbox rows and marks them consumed', async () => {
+    const { dir, dbPath, db } = setupTempDb();
+    try {
+      db.prepare(
+        `INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash)
+           VALUES (?, ?, ?, ?, ?)`
+      ).run('m-worker', 'sdd_worker_2', 'zed', 'investigate MCP list_projects', 'hash-w2');
+      db.close();
+
+      const proc = spawn(
+        'node',
+        [
+          BUS_BIN,
+          '--db',
+          dbPath,
+          'worker-consume',
+          '--mission',
+          'm-worker',
+          '--role',
+          'sdd_worker_2',
+          '--target-session',
+          'devhub-swarm-m-worker-sdd_worker_2',
+          '--poll-interval',
+          '1',
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      proc.kill('SIGTERM');
+      await new Promise((resolve) => {
+        const fallback = setTimeout(resolve, 2000);
+        proc.on('exit', () => {
+          clearTimeout(fallback);
+          resolve();
+        });
+      });
+
+      const db2 = new Database(dbPath);
+      const row = db2
+        .prepare('SELECT consumed_at FROM team_inbox WHERE mission_id = ? AND to_role = ?')
+        .get('m-worker', 'sdd_worker_2');
+      db2.close();
+      expect(row?.consumed_at).toBeTruthy();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 15000);
+});
+
 describe('T-008 — director-consume subcommand', () => {
   function setupConsumerTempDb() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-consume-'));

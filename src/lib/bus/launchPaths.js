@@ -20,6 +20,7 @@
 'use strict';
 
 const path = require('path');
+const { resolveDbPath } = require('../db/pathResolver');
 const { buildAgentLaunchWrapper } = require('../agentLaunchWrapper.js');
 
 /**
@@ -30,7 +31,8 @@ const { buildAgentLaunchWrapper } = require('../agentLaunchWrapper.js');
  *   - dbPath:
  *       1. `env.DEVHUB_DB_PATH` if set (explicit override, may be a path
  *          produced by the test harness or by a packaged standalone build)
- *       2. `<repoRoot>/data/devhub.db` (default for in-tree dev / CI)
+ *       2. `resolveDbPath()` — same canonical DB as the app and DevHub MCP
+ *          (`~/.devhub-dev/data/devhub.db` in dev, `~/.devhub/data` in prod)
  *
  * @param {object} params
  * @param {string} params.repoRoot - absolute path to the DevHub repo root
@@ -44,7 +46,7 @@ function resolveBusHelperPaths({ repoRoot, env } = {}) {
   const sourceEnv = env || process.env;
   const dbPath = sourceEnv.DEVHUB_DB_PATH
     ? path.resolve(sourceEnv.DEVHUB_DB_PATH)
-    : path.join(root, 'data', 'devhub.db');
+    : resolveDbPath({ env: sourceEnv, cwd: root });
   return {
     busBinaryPath: path.join(root, 'devhub-cli', 'bin', 'devhub-bus.js'),
     dbPath,

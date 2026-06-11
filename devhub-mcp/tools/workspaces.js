@@ -1064,11 +1064,22 @@ async function listWorkspacesForActor(deps, actor = null) {
       created_at: r.created_at,
     }));
   }
-  // Local (sqlite) — unchanged behavior, synthetic local-ws + local-user.
+  // Local (sqlite) — count projects per workspace; NULL/empty workspace_id
+  // rolls up to local-ws for legacy catalogs.
   const db = deps.localDb.getDb();
   const rows = db
     .prepare('SELECT id, name, slug, created_at, owner_id FROM workspaces ORDER BY created_at ASC')
     .all();
+  const countRows = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(workspace_id), ''), 'local-ws') AS ws_key, COUNT(*) AS c
+       FROM projects
+       GROUP BY ws_key`
+    )
+    .all();
+  const projectCountByWorkspace = new Map(
+    (countRows || []).map((row) => [String(row.ws_key), Number(row.c) || 0])
+  );
   return rows.map((r) => ({
     workspace_id: r.id,
     id: r.id,
@@ -1076,7 +1087,7 @@ async function listWorkspacesForActor(deps, actor = null) {
     slug: r.slug,
     role: 'owner',
     member_count: 1,
-    project_count: 0,
+    project_count: projectCountByWorkspace.get(r.id) || 0,
     created_at: r.created_at,
   }));
 }

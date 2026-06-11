@@ -930,6 +930,47 @@ export function buildDirectorConsumerCleanupBlock({ launchId } = {}) {
 }
 
 /**
+ * Background inbox poller for swarm workers and ZED.
+ * Reads durable team_inbox rows for this role and injects directive text
+ * into the tmux pane so OpenCode does not require manual `_devhub_inbox_check`.
+ */
+export function buildWorkerInboxConsumerBlock({
+  busBinaryPath,
+  missionId,
+  role,
+  sessionName,
+  pollIntervalSeconds = 15,
+} = {}) {
+  if (!busBinaryPath || !sessionName || !role || role === 'director') {
+    return '# Worker inbox consumer skipped (missing busBinaryPath, sessionName, or role)';
+  }
+  const launchTag = missionId || 'launch-unknown';
+  const roleTag = role || 'worker';
+  return [
+    '# Worker inbox consumer: poll team_inbox → inject directives into the OpenCode pane.',
+    `nohup "$_DEVHUB_BUS_NODE" "$_DEVHUB_BUS_BIN" worker-consume \\`,
+    `  --db "$_DEVHUB_BUS_DB" \\`,
+    `  --mission "${launchTag}" \\`,
+    `  --role "${roleTag}" \\`,
+    `  --target-session "${sessionName}" \\`,
+    `  --poll-interval ${pollIntervalSeconds} \\`,
+    `  >> "$AGENT_LOG" 2>&1 &`,
+    `_worker_inbox_consume_pid=$!`,
+    `echo "$_worker_inbox_consume_pid" > "/tmp/devhub-worker-inbox-consume-${launchTag}-${roleTag}.pid"`,
+  ].join('\n');
+}
+
+export function buildWorkerInboxConsumerCleanupBlock({ launchId, role } = {}) {
+  const tag = `${launchId || 'launch-unknown'}-${role || 'worker'}`;
+  return [
+    `  if [ -f "/tmp/devhub-worker-inbox-consume-${tag}.pid" ]; then`,
+    `    kill "$(cat /tmp/devhub-worker-inbox-consume-${tag}.pid)" 2>/dev/null || true`,
+    `    rm -f "/tmp/devhub-worker-inbox-consume-${tag}.pid"`,
+    `  fi`,
+  ].join('\n');
+}
+
+/**
  * T-016.4 — Per-agent transcript capture via tmux pipe-pane.
  *
  * Captures the LLM's full terminal output to a transcript file so the
@@ -1107,6 +1148,7 @@ export function buildExitTrapCommand({
   missionId: _missionId,
   transcriptDetach = null,
   directorConsumerCleanup = null,
+  workerInboxConsumerCleanup = null,
 }) {
   const detachBlock = transcriptDetach
     ? [
@@ -1120,6 +1162,11 @@ export function buildExitTrapCommand({
         // so we do not leak a tail -F consumer on every director exit.',
         directorConsumerCleanup,
       ].join('\n')
+    : '';
+  const workerInboxCleanupBlock = workerInboxConsumerCleanup
+    ? ['  # Kill the background worker inbox consumer (if any)', workerInboxConsumerCleanup].join(
+        '\n'
+      )
     : '';
   // T-020: self-metrics block. Runs in the exit trap BEFORE the bus
   // event-write so we always capture a sample (even on bus failures).
@@ -1164,6 +1211,7 @@ _devhub_exit_handler() {
   local _devhub_AGENT_EXIT_CODE=$?
 ${detachBlock}
 ${directorCleanupBlock}
+${workerInboxCleanupBlock}
 ${selfMetricsBlock}
   _devhub_invoke_helper _devhub_presence --state offline --summary "process exit code=\${_devhub_AGENT_EXIT_CODE}" --ttl 60 2>/dev/null || true
   if [ -n "\${DEVHUB_ROLE:-}" ] && [ "\$DEVHUB_ROLE" != "director" ]; then
@@ -1258,6 +1306,19 @@ export function buildAgentLaunchWrapper({
     : '';
   const directorConsumerCleanup = isDirectorRole
     ? buildDirectorConsumerCleanupBlock({ launchId: missionId })
+    : null;
+  const shouldRunWorkerInboxConsumer =
+    Boolean(role) && role !== 'director' && Boolean(tmuxSessionName) && Boolean(busBinaryPath);
+  const workerInboxConsumerBlock = shouldRunWorkerInboxConsumer
+    ? buildWorkerInboxConsumerBlock({
+        busBinaryPath,
+        missionId,
+        role,
+        sessionName: tmuxSessionName,
+      })
+    : '';
+  const workerInboxConsumerCleanup = shouldRunWorkerInboxConsumer
+    ? buildWorkerInboxConsumerCleanupBlock({ launchId: missionId, role })
     : null;
 
   // T-017.1 — pre-bootstrap sleep (2s for director, 0 for workers). The
@@ -1381,6 +1442,7 @@ export function buildAgentLaunchWrapper({
       // T-017.1 — also kill the background director-consume process on
       // exit so we don't leak a tail -F consumer per launch.
       directorConsumerCleanup,
+      workerInboxConsumerCleanup,
     }),
     '',
     buildDirectorTmuxInjection(directorTmuxSession),
@@ -1392,6 +1454,7 @@ export function buildAgentLaunchWrapper({
     // T-017.1 — director consumer (background tail -F + tmux send-keys).
     // The 2s sleep above already gave the consumer time to attach.
     ...(directorConsumerBlock ? [directorConsumerBlock] : []),
+    ...(workerInboxConsumerBlock ? [workerInboxConsumerBlock] : []),
     '',
     '# Execute the actual agent via auto-restart loop',
     '# Captures both stdout and stderr to log; restarts on non-zero exit (max 3)',

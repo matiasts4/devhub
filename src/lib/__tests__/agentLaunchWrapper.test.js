@@ -400,9 +400,21 @@ describe('agentLaunchWrapper', () => {
         dbPath: '/repo/devhub.db',
       };
       const result = buildAgentLaunchWrapper(workerParams);
-      // The consumer is director-only. Workers don't tail chat.jsonl
-      // for inbound messages — they use _devhub_inbox_check on demand.
       expect(result).not.toMatch(/director-consume/);
+    });
+
+    test('worker wrapper starts background worker-consume inbox poller', () => {
+      const workerParams = {
+        ...baseParams,
+        role: 'sdd_worker_2',
+        tmuxSessionName: 'devhub-swarm-test-1-sdd_worker_2',
+        busBinaryPath: '/repo/devhub-cli/bin/devhub-bus.js',
+        dbPath: '/repo/devhub.db',
+      };
+      const result = buildAgentLaunchWrapper(workerParams);
+      expect(result).toMatch(/worker-consume/);
+      expect(result).toContain('--role "sdd_worker_2"');
+      expect(result).toMatch(/devhub-worker-inbox-consume-.*sdd_worker_2\.pid/);
     });
 
     test('director wrapper exit trap cleans up the consumer PID file', () => {
