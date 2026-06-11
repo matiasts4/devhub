@@ -7,6 +7,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import TitleBar from '@/components/TitleBar';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { UiHeader } from '@/components/ui/system';
 import {
   Plus,
   Search,
@@ -117,7 +118,14 @@ const STATUS_CONFIG = {
   },
 };
 
-const ACCENT_COLORS = ['#58A6FF', '#3FB950', '#F778BA', '#D2A8FF', '#E3B341', '#FF7B72'];
+const ACCENT_COLORS = [
+  'var(--accent-primary, #58A6FF)',
+  'var(--status-active, var(--success, #3FB950))',
+  'var(--project-type-creative, #F778BA)',
+  'var(--project-type-university, #D2A8FF)',
+  'var(--status-paused, var(--warning, #E3B341))',
+  'var(--project-type-business, #FF7B72)',
+];
 
 const modalFieldStyle = inputStyle();
 
@@ -152,7 +160,7 @@ export default function ProjectHub() {
   const [newProject, setNewProject] = useState({
     name: '',
     description: '',
-    color: '#6366f1',
+    color: 'var(--accent-primary, #6366f1)',
     local_path: '',
     planning_prompt: '',
     project_type: DEFAULT_PROJECT_TYPE,
@@ -286,7 +294,7 @@ export default function ProjectHub() {
       setNewProject({
         name: '',
         description: '',
-        color: '#6366f1',
+        color: 'var(--accent-primary, #6366f1)',
         local_path: '',
         planning_prompt: '',
         project_type: DEFAULT_PROJECT_TYPE,
@@ -361,7 +369,7 @@ export default function ProjectHub() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar proyecto..."
-                className="bg-surface-card border border-borders-subtle pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder-[#484F58] focus:outline-none focus:border-[var(--accent-primary)] w-52 transition-all"
+                className="bg-surface-card border border-borders-subtle pl-9 pr-4 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-[var(--accent-primary)] w-52 transition-all"
               />
             </div>
             <Button onClick={() => setShowNewModal(true)} variant="devhubPrimary" size="toolbar">
@@ -375,12 +383,12 @@ export default function ProjectHub() {
 
       <div className="px-8 py-8">
         {/* Header */}
-        <div className="mb-8 fade-in-up">
-          <h1 className="typography-title mb-1">Bienvenido a DevHub</h1>
-          <p className="text-text-muted text-sm">
-            Selecciona un proyecto para entrar al workspace — o crea uno nuevo.
-          </p>
-        </div>
+        <UiHeader className="px-0 mb-8 fade-in-up" data-testid="ui-header">
+          <UiHeader.Title>Bienvenido a DevHub</UiHeader.Title>
+        </UiHeader>
+        <p className="text-text-muted text-sm -mt-6 mb-6">
+          Selecciona un proyecto para entrar al workspace — o crea uno nuevo.
+        </p>
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 stagger-children">
@@ -424,7 +432,7 @@ export default function ProjectHub() {
         {/* Projects grid */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 text-[#388BFD] animate-spin" />
+            <Loader2 className="w-8 h-8 text-accent-primary animate-spin" />
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 stagger-children">
@@ -467,7 +475,7 @@ export default function ProjectHub() {
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
                       {project.planning_status === 'pending' && (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[#D2A8FF]/10 border border-[#D2A8FF]/20 text-[#D2A8FF] flex items-center gap-1">
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[var(--project-type-university, #D2A8FF)]/10 border border-[var(--project-type-university, #D2A8FF)]/20 text-[var(--project-type-university, #D2A8FF)] flex items-center gap-1">
                           <Brain className="w-2.5 h-2.5" />
                           Plan pendiente
                         </span>
@@ -531,7 +539,7 @@ export default function ProjectHub() {
                 borderColor: 'var(--chrome-border-color)',
               }}
             >
-              <div className="w-10 h-10 rounded-full bg-surface-elevated flex items-center justify-center group-hover:bg-[#388BFD]/15 transition-colors cursor-pointer">
+              <div className="w-10 h-10 rounded-full bg-surface-elevated flex items-center justify-center group-hover:bg-accent-primary/15 transition-colors cursor-pointer">
                 <Plus
                   className="w-5 h-5 text-text-muted group-hover:text-accent-primary transition-colors cursor-pointer"
                   strokeWidth={1.5}
@@ -553,8 +561,8 @@ export default function ProjectHub() {
           <div className="fade-in-up max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-card)] p-6 shadow-[8px_8px_0_0_var(--border-strong)]">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-none border-2 border-[#D2A8FF]/30 bg-[var(--surface-elevated)] shadow-[3px_3px_0_0_var(--border-strong)]">
-                  <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />
+                <div className="flex h-9 w-9 items-center justify-center rounded-none border-2 border-[var(--project-type-university, #D2A8FF)]/30 bg-[var(--surface-elevated)] shadow-[3px_3px_0_0_var(--border-strong)]">
+                  <Brain className="w-4 h-4 text-[var(--project-type-university, #D2A8FF)]" strokeWidth={1.5} />
                 </div>
                 <h2 className="font-mono font-bold text-text-primary">Nuevo Proyecto</h2>
               </div>
@@ -660,7 +668,7 @@ export default function ProjectHub() {
               <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
-                    <Brain className="w-4 h-4 text-[#D2A8FF]" strokeWidth={1.5} />
+                    <Brain className="w-4 h-4 text-[var(--project-type-university, #D2A8FF)]" strokeWidth={1.5} />
                     <span className="text-sm font-semibold text-text-primary">
                       Planning IA automático
                     </span>
@@ -669,7 +677,7 @@ export default function ProjectHub() {
                     checked={enablePlanning}
                     onCheckedChange={setEnablePlanning}
                     aria-label="Activar planning IA automático"
-                    className="data-[state=checked]:border-[#D2A8FF]/35 data-[state=checked]:bg-[linear-gradient(135deg,rgba(210,168,255,0.96),rgba(188,139,255,0.9))]"
+                    className="data-[state=checked]:border-[var(--project-type-university, #D2A8FF)]/35 data-[state=checked]:bg-[linear-gradient(135deg,rgba(210,168,255,0.96),rgba(188,139,255,0.9))]"
                   />
                 </div>
 
@@ -681,7 +689,7 @@ export default function ProjectHub() {
                         const spec = PROJECT_TYPES_MODAL.find((item) => item.key === value);
                         const sel = newProject.project_type === value;
                         const Icon = spec?.Icon || MonitorSmartphone;
-                        const color = spec?.color || '#58A6FF';
+                        const color = spec?.color || 'var(--accent-primary, #58A6FF)';
                         return (
                           <button
                             key={value}
@@ -797,8 +805,8 @@ export default function ProjectHub() {
                         onClick={() => document.getElementById('modal-file-input').click()}
                         className={`border border-dashed px-4 py-3 flex items-center gap-3 cursor-pointer transition-all ${
                           isDragging
-                            ? 'border-[#58A6FF] bg-[#58A6FF]/5'
-                            : 'border-borders-strong hover:border-[#D2A8FF]/30 hover:bg-surface-elevated'
+                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5'
+                            : 'border-borders-strong hover:border-[var(--project-type-university)]/30 hover:bg-surface-elevated'
                         }`}
                       >
                         <input
@@ -817,7 +825,7 @@ export default function ProjectHub() {
                           <p className="text-xs text-text-muted">
                             Arrastra archivos de contexto (specs, READMEs, wireframes...)
                           </p>
-                          <p className="text-xs text-[#484F58]">
+                          <p className="text-xs text-[var(--text-muted)]">
                             Opcional · .txt .md .json .py .js .ts — máx 2MB
                           </p>
                         </div>
@@ -830,7 +838,7 @@ export default function ProjectHub() {
                               key={i}
                               className="flex items-center gap-2 bg-surface-elevated px-3 py-1.5"
                             >
-                              <FileText className="w-3 h-3 text-[#58A6FF] flex-shrink-0" />
+                              <FileText className="w-3 h-3 text-[var(--accent-primary)] flex-shrink-0" />
                               <span className="text-xs font-mono text-text-primary flex-1 truncate">
                                 {f.file_name}
                               </span>
@@ -849,7 +857,7 @@ export default function ProjectHub() {
                         </div>
                       )}
 
-                      <div className="flex items-center gap-2 text-xs text-[#D2A8FF]">
+                      <div className="flex items-center gap-2 text-xs text-[var(--project-type-university)]">
                         <Zap className="w-3 h-3" />
                         Se generarán 40-60+ tareas organizadas en hitos — plan exhaustivo
                       </div>
