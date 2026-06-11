@@ -42,17 +42,17 @@ Chain strategy: pending
 
 ### Phase 2 — Core tools (→ WU-2 + WU-3)
 
-- [ ] **T-101.1** RED `tools/terminal.list.test.js`: `displayName` fallback to `nameFromId` (ZTT-002).
-- [ ] **T-101.2** GREEN `listTerminalsTool.execute` augments each entry.
-- [ ] **T-102.1** RED `tools/terminal.summarize.test.js`: ANSI, 8KB, footer, `status:'unknown'`, not_found (ZTT-005).
-- [ ] **T-102.2** GREEN `tools/summarizeTerminal.js`: local `stripAnsi`, footer heur, `Map` TTL 2000ms.
-- [ ] **T-102.3** REFACTOR: extract `_buildDigest`.
-- [ ] **T-103.1** RED `terminal.list.test.js`: `open_terminal({name:'Chase'})` full shape (ZTT-003/010).
-- [ ] **T-103.2** GREEN `openTerminalTool` accepts `name`, resolves from pool.
-- [ ] **T-104.1** RED `terminal.exec.test.js`: `name` resolves; both→Spanish err, no HTTP (ZTT-004).
-- [ ] **T-104.2** GREEN execute/review/close accept `name XOR session_id`; mutex guard.
-- [ ] **T-105.1** RED `chat/__tests__/route.summarize.test.js`: registry exposes oneOf (ZTT-005).
-- [ ] **T-105.2** GREEN `chat/route.js` registers `summarizeTerminalTool`.
+- [x] **T-101.1** RED `tools/terminal.list.test.js`: `displayName` fallback to `nameFromId` (ZTT-002).
+- [x] **T-101.2** GREEN `listTerminalsTool.execute` augments each entry.
+- [x] **T-102.1** RED `tools/terminal.summarize.test.js`: ANSI, 8KB, footer, `status:'unknown'`, not_found (ZTT-005).
+- [x] **T-102.2** GREEN `tools/summarizeTerminal.js`: local `stripAnsi`, footer heur, `Map` TTL 2000ms.
+- [x] **T-102.3** REFACTOR: extract `_buildDigest`.
+- [x] **T-103.1** RED `terminal.list.test.js`: `open_terminal({name:'Chase'})` full shape (ZTT-003/010).
+- [x] **T-103.2** GREEN `openTerminalTool` accepts `name`, resolves from pool.
+- [x] **T-104.1** RED `terminal.exec.test.js`: `name` resolves; both→Spanish err, no HTTP (ZTT-004).
+- [x] **T-104.2** GREEN execute/review/close accept `name XOR session_id`; mutex guard.
+- [x] **T-105.1** RED `chat/__tests__/route.summarize.test.js`: registry exposes oneOf (ZTT-005).
+- [x] **T-105.2** GREEN `chat/route.js` registers `summarizeTerminalTool`.
 
 ### Phase 3 — Policy + UX (→ WU-4)
 

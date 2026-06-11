@@ -18,6 +18,7 @@ import {
   executeInTerminalTool,
   closeTerminalTool,
 } from '@/lib/asistente/tools/terminal';
+import { summarizeTerminalTool } from '@/lib/asistente/tools/summarizeTerminal';
 import { browserTool } from '@/lib/asistente/tools/browser';
 import { fileTool, reviewLogFileTool } from '@/lib/asistente/tools/files';
 import { swarmTool } from '@/lib/asistente/tools/swarm';
@@ -109,6 +110,7 @@ function buildRegistry() {
   registry.register(reviewTerminalTool);
   registry.register(executeInTerminalTool);
   registry.register(closeTerminalTool);
+  registry.register(summarizeTerminalTool);
   registry.register(browserTool);
   registry.register(fileTool);
   registry.register(reviewLogFileTool);

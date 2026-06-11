@@ -84,6 +84,68 @@ describe('execute_in_terminal (executeInTerminalTool)', () => {
     expect(calls).toHaveLength(0);
     expect(result.error).toBe('missing required parameter: session_id');
   });
+
+  // T-104 / ZTT-004: execute_in_terminal accepts `name` as an alternative
+  // to `session_id` (mutually exclusive). `name` triggers a resolver lookup
+  // over /api/terminal/processes first.
+  test('name lookup: execute_in_terminal({name, input}) resolves the name and PUTs to the right session_id', async () => {
+    const calls = [];
+    mockFetch(async (url, init) => {
+      calls.push({ url, init });
+      if (typeof url === 'string' && url.includes('/api/terminal/processes')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            processes: [
+              { terminalId: 'p7', displayName: 'Chase' },
+              { terminalId: 'p2', displayName: 'Nate' },
+            ],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ session_id: 'p7', sent: true }),
+      };
+    });
+    const result = await executeInTerminalTool.execute(
+      { name: 'Chase', input: 'ls\n' },
+      {}
+    );
+    // /processes call first (resolver), then the PUT to p7.
+    const putCall = calls.find(
+      (c) =>
+        typeof c.url === 'string' && c.url.includes('/api/terminal/session/p7/input')
+    );
+    expect(putCall).toBeDefined();
+    expect(putCall.init.method).toBe('PUT');
+    expect(JSON.parse(putCall.init.body)).toEqual({ data: 'ls\n' });
+    // p2 must NOT have been touched.
+    const p2Call = calls.find(
+      (c) =>
+        typeof c.url === 'string' && c.url.includes('/api/terminal/session/p2/input')
+    );
+    expect(p2Call).toBeUndefined();
+    expect(result.session_id).toBe('p7');
+  });
+
+  test('both name and session_id set: Spanish error, NO HTTP call', async () => {
+    const calls = [];
+    mockFetch(async (...args) => {
+      calls.push(args);
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    const result = await executeInTerminalTool.execute(
+      { name: 'Chase', session_id: 'p2', input: 'ls\n' },
+      {}
+    );
+    // No HTTP call at all — we never reach the resolver or the PUT.
+    expect(calls).toHaveLength(0);
+    expect(result.error).toBe('both_name_and_session');
+    expect(result.message).toBe('no podés pasar name y session_id a la vez.');
+  });
 });
 
 describe('close_terminal (closeTerminalTool)', () => {
@@ -120,5 +182,21 @@ describe('close_terminal (closeTerminalTool)', () => {
     const result = await closeTerminalTool.execute({ confirm: true }, {});
     expect(result.error).toBe('missing required parameter: session_id');
     expect(closeTerminalSessionById).not.toHaveBeenCalled();
+  });
+
+  test('both name and session_id set on close_terminal: Spanish error, NO HTTP call', async () => {
+    const calls = [];
+    mockFetch(async (...args) => {
+      calls.push(args);
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    const result = await closeTerminalTool.execute(
+      { name: 'Chase', session_id: 'p2', confirm: true },
+      {}
+    );
+    expect(calls).toHaveLength(0);
+    expect(closeTerminalSessionById).not.toHaveBeenCalled();
+    expect(result.error).toBe('both_name_and_session');
+    expect(result.message).toBe('no podés pasar name y session_id a la vez.');
   });
 });
