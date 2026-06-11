@@ -166,8 +166,10 @@ const {
   buildTerminalWheelScrollPayload,
   buildTerminalWheelSgrSequence,
   disableTerminalFocusReporting,
+  prepareActiveTuiTerminalFocus,
   TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
   TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
+  TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ,
   TERMINAL_PAGE_UP_SEQ,
   TERMINAL_PAGE_DOWN_SEQ,
   stabilizeTerminalRenderer,
@@ -1795,6 +1797,17 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(term.write).toHaveBeenLastCalledWith(
         TERMINAL_DISABLE_FOCUS_REPORTING_SEQ + TERMINAL_DISABLE_MOUSE_REPORTING_SEQ
       );
+    });
+
+    test('prepareActiveTuiTerminalFocus re-enables xterm mouse modes for live TUIs', () => {
+      const term = { write: jest.fn() };
+      prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
+      expect(term.write).toHaveBeenNthCalledWith(1, TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+      expect(term.write).toHaveBeenNthCalledWith(2, TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
+      term.write.mockClear();
+      prepareActiveTuiTerminalFocus(term, { tuiSessionActive: false });
+      expect(term.write).toHaveBeenCalledTimes(1);
+      expect(term.write).toHaveBeenCalledWith(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
     });
   });
 

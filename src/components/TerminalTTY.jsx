@@ -112,6 +112,9 @@ export const TERMINAL_DISABLE_FOCUS_REPORTING_SEQ = '\x1b[?1004l';
 export const TERMINAL_DISABLE_MOUSE_REPORTING_SEQ =
   '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1007l\x1b[?1015l';
 
+/** Re-arm xterm SGR wheel forwarding after a background panel stripped mouse locally. */
+export const TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ = '\x1b[?1000h\x1b[?1006h';
+
 export const TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ =
   TERMINAL_DISABLE_FOCUS_REPORTING_SEQ + TERMINAL_DISABLE_MOUSE_REPORTING_SEQ;
 
@@ -123,6 +126,19 @@ export function disableTerminalFocusReporting(term, { disableMouse = false } = {
         ? TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ
         : TERMINAL_DISABLE_FOCUS_REPORTING_SEQ
     );
+  } catch {
+    // terminal may be mid-dispose
+  }
+}
+
+/** Active TUI panels: silence focus leaks and restore mouse modes xterm needs for wheel SGR. */
+export function prepareActiveTuiTerminalFocus(term, { tuiSessionActive = false } = {}) {
+  if (!term || typeof term.write !== 'function') return;
+  try {
+    term.write(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+    if (tuiSessionActive) {
+      term.write(TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
+    }
   } catch {
     // terminal may be mid-dispose
   }
@@ -1069,6 +1085,9 @@ export default function TerminalTTY({
   const tuiSessionFooterConfirmedRef = useRef(false);
   const grokTuiReadyRef = useRef(isGrokTuiInitialCommand(initialCommand));
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
+  const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(() =>
+    isGrokTuiInitialCommand(initialCommand)
+  );
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
@@ -2160,8 +2179,8 @@ export default function TerminalTTY({
       if (zeroSized) {
         logViewportDiagnostic('reactivate-skipped-zero-size');
         if (autoFocus && isActivePanelRef.current) {
-          disableTerminalFocusReporting(termRef.current, {
-            disableMouse: !tuiSessionActiveRef.current,
+          prepareActiveTuiTerminalFocus(termRef.current, {
+            tuiSessionActive: tuiSessionActiveRef.current,
           });
           termRef.current?.focus?.();
         }
@@ -2171,8 +2190,8 @@ export default function TerminalTTY({
       const clearAtlas = options.clearAtlas ?? false;
 
       logViewportDiagnostic('reactivate-start');
-      disableTerminalFocusReporting(termRef.current, {
-        disableMouse: !tuiSessionActiveRef.current,
+      prepareActiveTuiTerminalFocus(termRef.current, {
+        tuiSessionActive: tuiSessionActiveRef.current,
       });
       fitAndResize({ clearAtlas });
       stabilizeTerminalRenderer(termRef.current, { clearAtlas });
@@ -3010,8 +3029,13 @@ export default function TerminalTTY({
               }
               if (footerReady) {
                 tuiSessionFooterConfirmedRef.current = true;
+                setNativeWheelPassthrough(true);
                 void notifyOpencodeReady(null, 'client-tui-footer');
               }
+              if (grokReady) {
+                setNativeWheelPassthrough(true);
+              }
+              prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
             }
             return;
           }
@@ -3158,8 +3182,8 @@ export default function TerminalTTY({
       return;
     }
 
-    disableTerminalFocusReporting(term, {
-      disableMouse: !tuiSessionActiveRef.current,
+    prepareActiveTuiTerminalFocus(term, {
+      tuiSessionActive: tuiSessionActiveRef.current,
     });
   }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);
 
@@ -3238,8 +3262,8 @@ export default function TerminalTTY({
       setConnectionState('connected');
       sendResize();
       if (autoFocus) {
-        disableTerminalFocusReporting(termRef.current, {
-          disableMouse: !tuiSessionActiveRef.current,
+        prepareActiveTuiTerminalFocus(termRef.current, {
+          tuiSessionActive: tuiSessionActiveRef.current,
         });
         termRef.current?.focus?.();
       }
@@ -3430,8 +3454,8 @@ export default function TerminalTTY({
         terminal.loadAddon(searchAddon);
 
         terminal.open(containerRef.current);
-        disableTerminalFocusReporting(terminal, {
-          disableMouse: !tuiSessionActiveRef.current,
+        prepareActiveTuiTerminalFocus(terminal, {
+          tuiSessionActive: tuiSessionActiveRef.current,
         });
         if (terminalBlurCleanupRef.current) {
           terminalBlurCleanupRef.current();
@@ -3439,8 +3463,8 @@ export default function TerminalTTY({
         }
         const blurTarget = terminal.element || containerRef.current;
         const handleTerminalBlur = () =>
-          disableTerminalFocusReporting(terminal, {
-            disableMouse: !tuiSessionActiveRef.current,
+          prepareActiveTuiTerminalFocus(terminal, {
+            tuiSessionActive: tuiSessionActiveRef.current,
           });
         blurTarget?.addEventListener('focusout', handleTerminalBlur);
         terminalBlurCleanupRef.current = () => {
@@ -3683,8 +3707,8 @@ export default function TerminalTTY({
     });
 
     if (!autoFocus) return;
-    disableTerminalFocusReporting(term, {
-      disableMouse: !tuiSessionActiveRef.current,
+    prepareActiveTuiTerminalFocus(term, {
+      tuiSessionActive: tuiSessionActiveRef.current,
     });
     term.focus?.();
   }, [autoFocus, isActivePanel, logRenderHealth, operationalRendererMode, shouldUseNativeRenderer]);
@@ -3903,8 +3927,8 @@ export default function TerminalTTY({
       }
 
       // Activation is handled by the parent panel shell (onMouseDown bubbles up).
-      disableTerminalFocusReporting(term, {
-        disableMouse: !tuiSessionActiveRef.current,
+      prepareActiveTuiTerminalFocus(term, {
+        tuiSessionActive: tuiSessionActiveRef.current,
       });
       term?.focus?.();
     },
@@ -3967,7 +3991,7 @@ export default function TerminalTTY({
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
-  // Wheel: TUI transcript scroll via SGR coords; Shift+wheel = xterm scrollback.
+  // Wheel: synthetic routing for shell/TUI bootstrap; live grok/OpenCode use xterm native SGR.
   useEffect(() => {
     if (shouldUseNativeRenderer) return undefined;
 
@@ -3988,18 +4012,12 @@ export default function TerminalTTY({
         return;
       }
 
-      const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-
-      // OpenCode/grok: let xterm forward wheel as native SGR once TUI chrome is live.
-      if (
-        shouldPassthroughNativeTuiWheel({
-          isGrokSession,
-          grokTuiReady: grokTuiReadyRef.current,
-          opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
-        })
-      ) {
+      // grok/OpenCode own plain wheel once TUI mouse tracking is live in xterm.
+      if (nativeWheelPassthrough) {
         return;
       }
+
+      const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
 
       const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
       const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession });
@@ -4059,7 +4077,7 @@ export default function TerminalTTY({
 
     shell.addEventListener('wheel', handleWheel, { passive: false, capture: true });
     return () => shell.removeEventListener('wheel', handleWheel, { capture: true });
-  }, [initialCommand, shouldUseNativeRenderer]);
+  }, [initialCommand, nativeWheelPassthrough, shouldUseNativeRenderer]);
 
   // ── Keyboard shortcuts: copy/paste ───────────────────────────────────────────
   useEffect(() => {
