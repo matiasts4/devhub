@@ -817,8 +817,7 @@ function cmdInboxConsume(db, args, label = 'inbox-consume') {
   process.on('SIGINT', shutdown);
 
   deliverPending();
-  const timer = setInterval(deliverPending, pollIntervalSeconds * 1000);
-  if (typeof timer.unref === 'function') timer.unref();
+  setInterval(deliverPending, pollIntervalSeconds * 1000);
 }
 
 function cmdWorkerConsume(db, args) {

@@ -810,6 +810,47 @@ describe('worker-consume subcommand', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 15000);
+
+  test('inbox-consume stays alive between polls (timer must not unref)', async () => {
+    const { dir, dbPath } = setupTempDb();
+    const targetSession = 'devhub-swarm-m-alive-sdd_worker_1';
+    try {
+      fs.writeFileSync(`/tmp/devhub-opencode-ready-${targetSession}`, '1');
+      const proc = spawn(
+        'node',
+        [
+          BUS_BIN,
+          '--db',
+          dbPath,
+          'inbox-consume',
+          '--mission',
+          'm-alive',
+          '--role',
+          'sdd_worker_1',
+          '--target-session',
+          targetSession,
+          '--poll-interval',
+          '30',
+          '--skip-tui-wait',
+          'true',
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      expect(proc.exitCode).toBeNull();
+      proc.kill('SIGTERM');
+      await new Promise((resolve) => {
+        const fallback = setTimeout(resolve, 2000);
+        proc.on('exit', () => {
+          clearTimeout(fallback);
+          resolve();
+        });
+      });
+    } finally {
+      fs.rmSync(`/tmp/devhub-opencode-ready-${targetSession}`, { force: true });
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 10000);
 });
 
 describe('T-008 — director-consume subcommand', () => {
