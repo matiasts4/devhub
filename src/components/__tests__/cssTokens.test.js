@@ -87,9 +87,7 @@ describe('CSS Tokens — globals.css', () => {
 
   test('kanban column scrollbar is wider and tinted for visible overflow cues', () => {
     expect(css).toMatch(/\.kanban-column-scrollbar\s*\{[\s\S]*scrollbar-gutter:\s*stable;/);
-    expect(css).toMatch(
-      /\.kanban-column-scrollbar::-webkit-scrollbar\s*\{[\s\S]*width:\s*10px;/
-    );
+    expect(css).toMatch(/\.kanban-column-scrollbar::-webkit-scrollbar\s*\{[\s\S]*width:\s*10px;/);
   });
 
   test('xterm viewport no longer uses transparent background that corrupts TUI canvas rendering', () => {
@@ -145,5 +143,11 @@ describe('CSS Tokens — index.css cleanup', () => {
 
   test('index.css imports or mirrors the morphology runtime token layer needed by the desktop shell', () => {
     expect(indexCss).toMatch(/data-morphology|globals\.css/);
+  });
+
+  test('index.css re-exports globals.css and does not redefine chrome tokens', () => {
+    expect(indexCss).toMatch(/@import.*globals\.css/);
+    expect(indexCss).not.toMatch(/--chrome-radius-panel\s*:/);
+    expect(indexCss).not.toMatch(/--accent-primary\s*:/);
   });
 });
