@@ -1,7 +1,7 @@
 const React = require('react');
 const { JSDOM } = require('jsdom');
 const { flushSync } = require('react-dom');
-const { act } = require('react-dom/test-utils');
+const { act } = require('react');
 
 let mockUseReducedMotionValue = true;
 
