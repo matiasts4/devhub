@@ -49,6 +49,9 @@ import {
   isSddWorkerRoleKey,
   resolveLaunchKickoffBodySummary,
   selectSwarmLaunchCatalog,
+  SWARM_OPENCODE_READY_GRACE_MS,
+  SWARM_WORKER_FANOUT_BASE_DELAY_MS,
+  SWARM_WORKER_FANOUT_STAGGER_MS,
 } from '@/lib/operations/swarmControl';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
 import { buildLaunchWrapperForRole, resolveBusHelperPaths } from '@/lib/bus/launchPaths.js';
@@ -339,6 +342,7 @@ export function buildLaunchCommand(
     // swarm agents in worktrees should run on the default anthropic
     // provider instead.
     disableMinimaxMcp: true,
+    tuiReadyGraceMs: SWARM_OPENCODE_READY_GRACE_MS,
   });
 
   console.log(`[SWARM_LAUNCH_CMD] Wrapper length: ${wrapper.length} chars`);
@@ -1460,7 +1464,10 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         })
       );
 
-      for (const roleEntry of workerRoleEntries) {
+      for (let workerIndex = 0; workerIndex < workerRoleEntries.length; workerIndex += 1) {
+        const roleEntry = workerRoleEntries[workerIndex];
+        const workerStartAfterMs =
+          SWARM_WORKER_FANOUT_BASE_DELAY_MS + workerIndex * SWARM_WORKER_FANOUT_STAGGER_MS;
         const workerSetup = configureLaunchRole({
           writeDb,
           projectId,
@@ -1473,7 +1480,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           parentSessionId,
           now,
           launchPhase: 'fanout',
-          startAfterMs: 0,
+          startAfterMs: workerStartAfterMs,
           precomputedWorktree: precomputedWorktrees.get(roleEntry.role_key) ?? null,
         });
 

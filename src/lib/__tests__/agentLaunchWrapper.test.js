@@ -170,7 +170,7 @@ describe('agentLaunchWrapper', () => {
         tuiGraceSeconds: 10,
       });
       expect(result).toMatch(
-        /\(\s*\n\s*_devhub_wait_opencode_ready[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &/
+        /\(\s*\n\s*if _devhub_wait_opencode_ready; then[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &/
       );
       expect(result).toMatch(
         /_devhub_run_inner\(\) \{[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &[\s\S]*opencode --agent swarm-coder/
@@ -586,7 +586,7 @@ describe('agentLaunchWrapper', () => {
       expect(result).not.toMatch(/^sleep 10$/m);
       expect(result).not.toContain('(_devhub_bootstrap_prompt) &');
       expect(result).toMatch(
-        /\(\s*\n\s*_devhub_wait_opencode_ready[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &/
+        /\(\s*\n\s*if _devhub_wait_opencode_ready; then[\s\S]*_devhub_bootstrap_prompt[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &/
       );
       expect(result).toMatch(
         /_devhub_run_inner\(\) \{[\s\S]*\) >> "\$AGENT_LOG" 2>&1 &[\s\S]*opencode --agent swarm-coder/
@@ -623,6 +623,17 @@ describe('agentLaunchWrapper', () => {
       // 5000ms = 5s → ceil(5/0.25) poll attempts
       expect(result).toContain('_max_attempts=20');
       expect(result).toContain('opencode ready timeout (5s)');
+      expect(result).toContain('skipping bootstrap injection');
+      expect(result).toContain('return 1');
+    });
+
+    test('deferBootstrap skips bootstrap when opencode-ready times out', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        innerCommand: '/home/matias/.opencode/bin/opencode --agent swarm-coder',
+      });
+      expect(result).toContain('if _devhub_wait_opencode_ready; then');
+      expect(result).toContain('SKIP: OpenCode TUI not ready; bootstrap not injected');
     });
 
     test('tuiWaitTimeoutMs is ignored (param kept for backward compat, not emitted)', () => {

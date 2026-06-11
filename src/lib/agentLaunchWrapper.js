@@ -613,7 +613,8 @@ export function buildOpencodeReadyWaitBlock({
     `    sleep ${sleepArg}`,
     '    _attempt=$((_attempt + 1))',
     '  done',
-    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: opencode ready timeout (${maxWaitSeconds}s); injecting anyway"`,
+    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: opencode ready timeout (${maxWaitSeconds}s); skipping bootstrap injection"`,
+    '  return 1',
     '}',
   ].join('\n');
 }
@@ -1037,9 +1038,12 @@ export function buildAutoRestartLoopCommand({
   const runInnerBody = deferBootstrap
     ? [
         '(',
-        '  _devhub_wait_opencode_ready',
-        '  if declare -F _devhub_bootstrap_prompt >/dev/null 2>&1; then',
-        '    _devhub_bootstrap_prompt',
+        '  if _devhub_wait_opencode_ready; then',
+        '    if declare -F _devhub_bootstrap_prompt >/dev/null 2>&1; then',
+        '      _devhub_bootstrap_prompt',
+        '    fi',
+        '  else',
+        `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] SKIP: OpenCode TUI not ready; bootstrap not injected" >> "$AGENT_LOG"`,
         '  fi',
         ') >> "$AGENT_LOG" 2>&1 &',
         innerCommand,
@@ -1219,7 +1223,7 @@ export function buildAgentLaunchWrapper({
   // Swarm panels poll /tmp/devhub-opencode-ready-<tmux> (written by sidecar
   // when OpenCode session/footer is detected) instead of a fixed sleep.
   tuiWaitTimeoutMs = 10000,
-  tuiReadyGraceMs = 8000,
+  tuiReadyGraceMs = 30000,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',

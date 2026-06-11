@@ -9,6 +9,15 @@ import { buildPrompt } from '../sdd/SwarmPromptEngine';
 /** Launchpad template: ZED + N SDD Workers (gentle-orchestrator), standby by default. */
 export const ZED_ORCHESTRATOR_TEMPLATE_ID = 'zed-orchestrator-pod';
 
+/** Max wait for /tmp/devhub-opencode-ready-<tmux> before bootstrap paste (ms). */
+export const SWARM_OPENCODE_READY_GRACE_MS = 30000;
+
+/** Delay between worker terminal spawns during fanout (ms). */
+export const SWARM_WORKER_FANOUT_STAGGER_MS = 4000;
+
+/** Base delay before first worker spawn so ZED can finish OpenCode startup (ms). */
+export const SWARM_WORKER_FANOUT_BASE_DELAY_MS = 8000;
+
 export function resolveLaunchKickoffBodySummary({
   mission,
   bootstrapMode = 'engram_first',
