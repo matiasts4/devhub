@@ -38,9 +38,9 @@ function safeParse(json) {
 }
 
 function loadFromStorage(workspaceId) {
-  if (typeof window === 'undefined') return {};
+  if (typeof globalThis.window === 'undefined') return {};
   try {
-    const raw = window.localStorage.getItem(panelDisplayNameStorageKey(workspaceId));
+    const raw = globalThis.window.localStorage.getItem(panelDisplayNameStorageKey(workspaceId));
     return safeParse(raw);
   } catch {
     return {};
@@ -48,9 +48,9 @@ function loadFromStorage(workspaceId) {
 }
 
 function writeToStorage(workspaceId, map) {
-  if (typeof window === 'undefined') return;
+  if (typeof globalThis.window === 'undefined') return;
   try {
-    window.localStorage.setItem(
+    globalThis.window.localStorage.setItem(
       panelDisplayNameStorageKey(workspaceId),
       JSON.stringify(map)
     );
