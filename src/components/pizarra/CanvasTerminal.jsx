@@ -15,9 +15,13 @@ import {
   resolveFrameVisual,
   resolveHandleSizing,
   FRAME_TRANSITION,
-  SURFACE_ENTER_ANIMATION,
+  SURFACE_ENTER_OPACITY_ONLY,
   ACCENT,
 } from '@/lib/pizarra/surfaceMotion';
+import {
+  useSurfaceEnterAnimation,
+  SURFACE_ENTER_STATE_ATTRIBUTE,
+} from '@/lib/pizarra/useSurfaceEnterAnimation';
 // Note: we DO NOT route the requested renderer through
 // resolveRendererSelection here. That resolver consults a STATIC
 // capability map (no live WebGL probe is wired in this code path), so
@@ -500,6 +504,12 @@ export default function CanvasTerminal({
 
   const frameVisual = resolveFrameVisual({ selected, hovered: isHovered, dragging: isDragging });
   const handleSizing = resolveHandleSizing(zoom);
+  // pizarra-motion-polish (P-MP-6): apply the opacity-only enter
+  // animation to the inner frame (not the positioned wrapper, which
+  // is IPC-locked to the native VTE rect). The animation runs once
+  // on mount and the data-surface-state="entering" attribute is
+  // dropped after DUR.enter ms so the chrome settles.
+  const enterAnim = useSurfaceEnterAnimation();
 
   return (
     <div
@@ -522,6 +532,14 @@ export default function CanvasTerminal({
         onMouseLeave={handleFrameMouseLeave}
         data-pizarra-surface-dragging={isDragging ? 'true' : 'false'}
         data-pizarra-surface-selected={selected ? 'true' : 'false'}
+        // pizarra-motion-polish (P-MP-6): opacity-only enter animation
+        // on the inner chrome frame. The positioned wrapper above stays
+        // unanimated to keep the IPC-locked native VTE rect in sync.
+        // The "entering" state attribute is held for DUR.enter ms and
+        // then dropped by useSurfaceEnterAnimation().
+        {...(enterAnim.surfaceState
+          ? { [SURFACE_ENTER_STATE_ATTRIBUTE]: enterAnim.surfaceState }
+          : {})}
         style={{
           position: 'absolute',
           inset: 10,
@@ -532,6 +550,11 @@ export default function CanvasTerminal({
           border: frameVisual.border,
           boxShadow: frameVisual.boxShadow,
           transform: frameVisual.transform,
+          // pizarra-motion-polish (P-MP-6): opacity-only enter animation
+          // applied on mount. Animation name is 'pizarraSurfaceEnterOpacity'
+          // (see surfaceMotion.js). `both` fill mode prevents a flash of
+          // the un-faded state.
+          animation: enterAnim.animation,
           // Kill transitions on the chrome frame (header bar + body container) while
           // actively manipulating (drag or resize). Removes the visual delay/lag
           // between the header and the resizable content (VTE body follows the

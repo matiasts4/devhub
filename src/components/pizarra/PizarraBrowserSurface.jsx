@@ -34,8 +34,12 @@ import {
   resolveFrameVisual,
   resolveHandleSizing,
   FRAME_TRANSITION,
-  SURFACE_ENTER_ANIMATION,
+  SURFACE_ENTER_OPACITY_ONLY,
 } from '@/lib/pizarra/surfaceMotion';
+import {
+  useSurfaceEnterAnimation,
+  SURFACE_ENTER_STATE_ATTRIBUTE,
+} from '@/lib/pizarra/useSurfaceEnterAnimation';
 
 const FRAME_INSET = 10;
 
@@ -546,6 +550,12 @@ export default function PizarraBrowserSurface({
     dragging: isManipulating,
   });
   const handleSizing = resolveHandleSizing(zoom);
+  // pizarra-motion-polish (P-MP-6): apply the opacity-only enter
+  // animation to the inner chrome frame (not the positioned wrapper,
+  // which is IPC-locked to the native WebKitGTK rect). The
+  // animation runs once on mount and the data-surface-state
+  // attribute is dropped after DUR.enter ms.
+  const enterAnim = useSurfaceEnterAnimation();
 
   return (
     <div
@@ -576,6 +586,11 @@ export default function PizarraBrowserSurface({
         data-pizarra-header-active={isButtonActive ? 'true' : 'false'}
         data-pizarra-surface-dragging={isManipulating ? 'true' : 'false'}
         data-pizarra-surface-selected={selected ? 'true' : 'false'}
+        // pizarra-motion-polish (P-MP-6): opacity-only enter animation
+        // on the inner chrome frame. Position wrapper stays unanimated.
+        {...(enterAnim.surfaceState
+          ? { [SURFACE_ENTER_STATE_ATTRIBUTE]: enterAnim.surfaceState }
+          : {})}
         style={{
           position: 'absolute',
           inset: FRAME_INSET,
@@ -585,6 +600,11 @@ export default function PizarraBrowserSurface({
           outline: isButtonActive ? '1px inset var(--accent-primary)' : 'none',
           background: 'rgba(8, 14, 24, 0.94)',
           boxShadow: frameVisual.boxShadow,
+          // pizarra-motion-polish (P-MP-6): opacity-only enter animation
+          // applied on mount. Animation name 'pizarraSurfaceEnterOpacity'
+          // (see surfaceMotion.js). `both` fill mode prevents a flash of
+          // the un-faded state.
+          animation: enterAnim.animation,
           // During resize or drag: kill ALL transitions on the chrome frame (header,
           // buttons, content container). This eliminates the "delay entre header y cuerpo"
           // the user sees — the header chrome (move/close buttons, tabstrip, browser
