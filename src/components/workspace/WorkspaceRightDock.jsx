@@ -7,7 +7,6 @@ import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 import WorkspaceOperatorObserverPane from './WorkspaceOperatorObserverPane';
 import PizarraPane from '@/components/pizarra/PizarraPane';
-import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 
 export default function WorkspaceRightDock({
@@ -36,19 +35,12 @@ export default function WorkspaceRightDock({
   const isSwarmActive = dockState.activeTab === 'swarm';
   const isPizarraActive = dockState.activeTab === 'pizarra';
 
-  // ── ModeTransitionShell wiring (pizarra-shared-view-state §7) ──────────────
-  // When the pizarra-shared-view-state feature flag is ON, wrap the
-  // right-dock chrome in <ModeTransitionShell> so the workspace↔
-  // pizarra mode toggle plays a cross-fade + slide + scale animation
-  // in lockstep with PizarraPane. The shell's `maximizedView` is
-  // derived from `dockState.maximizedView` — when the user flips
-  // from 'browser' to 'pizarra' (or any other transition) the shell
-  // runs the choreography. Flag OFF preserves the legacy hard-cut
-  // behavior; the shell is a no-op.
-  const transitionEnabled = isPizarraSharedViewEnabled();
-  const view = dockState?.maximizedView;
-  const shellMaximizedView = view === 'pizarra' ? 'pizarra' : 'workspace';
-  const reducedMotion = detectReducedMotionPref();
+  // pizarra-motion-polish (P-MP-3): the OUTER <ModeTransitionShell> wrap
+  // was removed. The inner shell in PizarraPane is the SINGLE owner
+  // (NFR-P03). Previously both WorkspaceRightDock AND PizarraPane
+  // wrapped their content, producing two sibling shells that ran
+  // parallel phase machines. The shell stays inside PizarraPane;
+  // this file returns dockBody directly.
 
   const dockBody = (
     <section
@@ -125,37 +117,5 @@ export default function WorkspaceRightDock({
     </section>
   );
 
-  if (!transitionEnabled) {
-    return dockBody;
-  }
-
-  return (
-    <ModeTransitionShell
-      maximizedView={shellMaximizedView}
-      reducedMotion={reducedMotion}
-      testId="mode-transition-shell"
-      style={{ width: '100%', height: '100%' }}
-    >
-      {dockBody}
-    </ModeTransitionShell>
-  );
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * detectReducedMotionPref — SSR-safe read of the OS reduced-motion
- * preference. Mirrors the detection used in useModeTransition so
- * the wiring point can pass the same value down to the shell.
- * Returns false in non-DOM environments.
- */
-function detectReducedMotionPref() {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  } catch {
-    return false;
-  }
+  return dockBody;
 }
