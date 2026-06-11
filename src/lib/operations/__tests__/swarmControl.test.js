@@ -22,6 +22,7 @@ const {
   selectControlRoomEvidenceTimeline,
   selectControlRoomErrors,
   buildRoleAgentProfile,
+  resolveLaunchKickoffBodySummary,
   buildSwarmLaunchModels,
 } = require('../swarmControl');
 const {
@@ -1764,6 +1765,36 @@ describe('composeControlRoomSnapshot', () => {
         ],
       })
     );
+  });
+});
+
+describe('resolveLaunchKickoffBodySummary', () => {
+  test('uses mission text when present', () => {
+    expect(
+      resolveLaunchKickoffBodySummary({
+        mission: '  Coordinar change X  ',
+        bootstrapMode: 'standby',
+      })
+    ).toBe('Coordinar change X');
+  });
+
+  test('uses standby placeholder when mission is empty in standby mode', () => {
+    expect(
+      resolveLaunchKickoffBodySummary({
+        mission: '',
+        bootstrapMode: 'standby',
+      })
+    ).toContain('standby');
+  });
+
+  test('falls back to launch label when mission empty and not standby', () => {
+    expect(
+      resolveLaunchKickoffBodySummary({
+        mission: '',
+        bootstrapMode: 'engram_first',
+        launchLabel: 'Lanzar Arranque limpio guiado',
+      })
+    ).toBe('Lanzar Arranque limpio guiado');
   });
 });
 

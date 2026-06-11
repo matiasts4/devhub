@@ -47,6 +47,7 @@ import {
   deriveSwarmLaunchPreview,
   isOrchestratorRoleKey,
   isSddWorkerRoleKey,
+  resolveLaunchKickoffBodySummary,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
@@ -1518,11 +1519,17 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         );
       }
 
+      const kickoffBodySummary = resolveLaunchKickoffBodySummary({
+        mission: resolvedDraft.mission,
+        bootstrapMode,
+        launchLabel: missionTitle,
+      });
+
       const kickoffMessage = createMissionMessage(writeDb, {
         mission_id: mission.mission_id,
         sender_agent_id: directorAgentId,
         message_kind: LOCAL_MISSION_MESSAGE_KIND,
-        body_summary: resolvedDraft.mission,
+        body_summary: kickoffBodySummary,
         created_at: now,
         updated_at: now,
       });

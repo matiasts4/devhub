@@ -9,6 +9,24 @@ import { buildPrompt } from '../sdd/SwarmPromptEngine';
 /** Launchpad template: ZED + N SDD Workers (gentle-orchestrator), standby by default. */
 export const ZED_ORCHESTRATOR_TEMPLATE_ID = 'zed-orchestrator-pod';
 
+export function resolveLaunchKickoffBodySummary({
+  mission,
+  bootstrapMode = 'engram_first',
+  launchLabel = '',
+} = {}) {
+  const trimmedMission = String(mission ?? '').trim();
+  if (trimmedMission) return trimmedMission;
+
+  if (bootstrapMode === 'standby') {
+    return 'Modo standby — terminales listas; esperando instrucciones del operador antes de delegar trabajo.';
+  }
+
+  const label = String(launchLabel ?? '').trim();
+  if (label) return label;
+
+  return 'Kickoff durable del swarm.';
+}
+
 export function isOrchestratorRoleKey(roleKey = '') {
   const key = String(roleKey || '')
     .trim()
