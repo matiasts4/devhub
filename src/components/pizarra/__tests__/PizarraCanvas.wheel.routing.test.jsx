@@ -207,7 +207,7 @@ describe('PizarraCanvas — wheel routing via shouldCanvasConsumeWheel (P-MP-4)'
     expect(event.defaultPrevented).toBe(false);
   });
 
-  test('wheel event over empty canvas: shouldCanvasConsumeWheel returns true -> setZoom called with focal-aware delta, defaultPrevented true', async () => {
+  test('plain wheel over empty canvas: shouldCanvasConsumeWheel true -> PAN (setPan), no zoom, defaultPrevented true', async () => {
     mockShouldCanvasConsumeWheel.mockReturnValue(true);
     mockZoomAtPoint.mockReturnValue({ zoom: 1.25, pan: { x: 0, y: 0 } });
 
@@ -219,18 +219,36 @@ describe('PizarraCanvas — wheel routing via shouldCanvasConsumeWheel (P-MP-4)'
 
     // The handler MUST consult shouldCanvasConsumeWheel.
     expect(mockShouldCanvasConsumeWheel).toHaveBeenCalledTimes(1);
-    // It MUST call zoomAtPoint with the focal coords (clientX - rect.left,
-    // clientY - rect.top). The wrapper is in a fresh JSDOM body at
-    // (0, 0) so focalX/Y === clientX/Y.
+    // pizarra-fluidity: a plain wheel/two-finger gesture PANS (no zoom modifier).
+    expect(mockZoomAtPoint).not.toHaveBeenCalled();
+    expect(mockSetZoom).not.toHaveBeenCalled();
+    expect(mockSetPan).toHaveBeenCalledTimes(1);
+    expect(typeof mockSetPan.mock.calls[0][0]).toBe('function');
+    // It MUST preventDefault to stop the page-level scroll/zoom.
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('ctrl+wheel over empty canvas: ZOOM via zoomAtPoint with focal coords, defaultPrevented true', async () => {
+    mockShouldCanvasConsumeWheel.mockReturnValue(true);
+    mockZoomAtPoint.mockReturnValue({ zoom: 1.25, pan: { x: 0, y: 0 } });
+
+    const wrapper = await mount();
+    expect(wrapper).toBeTruthy();
+
+    const event = buildWheelEvent(-100, 400, 200);
+    Object.defineProperty(event, 'ctrlKey', { value: true, configurable: true });
+    wrapper.dispatchEvent(event);
+
+    expect(mockShouldCanvasConsumeWheel).toHaveBeenCalledTimes(1);
+    // ctrl modifier → focal zoom with (clientX - rect.left, clientY - rect.top).
+    // The wrapper is in a fresh JSDOM body at (0, 0) so focalX/Y === clientX/Y.
     expect(mockZoomAtPoint).toHaveBeenCalledTimes(1);
     const call = mockZoomAtPoint.mock.calls[0][0];
     expect(call.deltaY).toBe(-100);
     expect(call.focalX).toBe(400);
     expect(call.focalY).toBe(200);
-    // It MUST call setZoom with the helper's result.
     expect(mockSetZoom).toHaveBeenCalledTimes(1);
     expect(mockSetZoom).toHaveBeenCalledWith(1.25);
-    // It MUST preventDefault to stop the page-level browser zoom.
     expect(event.defaultPrevented).toBe(true);
   });
 });

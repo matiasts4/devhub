@@ -42,6 +42,7 @@ const React = require('react');
 const { JSDOM } = require('jsdom');
 
 const mockSetZoom = jest.fn();
+const mockSetPan = jest.fn();
 
 jest.mock('lucide-react', () => {
   const ReactLocal = require('react');
@@ -67,7 +68,7 @@ jest.mock('@/lib/pizarra/canvasViewport', () => ({
     zoom: 1,
     setZoom: mockSetZoom,
     pan: { x: 0, y: 0 },
-    setPan: () => {},
+    setPan: mockSetPan,
   }),
   CanvasViewportProvider: ({ children }) => children,
   zoomAtPoint: ({ deltaY }) => ({ zoom: 1, pan: { x: 0, y: 0 } }),
@@ -170,6 +171,7 @@ describe('PizarraCanvas — wheel listener is non-passive (pizarra-wheel-passive
 
   beforeEach(() => {
     mockSetZoom.mockClear();
+    mockSetPan.mockClear();
     dom = installJsdom();
 
     // Spy on HTMLElement.prototype.addEventListener so we can assert
@@ -220,7 +222,7 @@ describe('PizarraCanvas — wheel listener is non-passive (pizarra-wheel-passive
     // window attached is harmless — the next beforeEach overwrites it.
   });
 
-  test('wheel event on wrapper calls setZoom and preventDefault actually works', async () => {
+  test('plain wheel on wrapper PANS (setPan) and preventDefault actually works', async () => {
     flushSync(() => {
       root.render(
         React.createElement(PizarraCanvas, {
@@ -245,22 +247,57 @@ describe('PizarraCanvas — wheel listener is non-passive (pizarra-wheel-passive
     const wrapper = container.querySelector('[data-testid="pizarra-canvas-wrapper"]');
     expect(wrapper).toBeTruthy();
 
-    const event = buildWheelEvent(-100); // negative = zoom in
+    const event = buildWheelEvent(-100); // no zoom modifier → pan
     wrapper.dispatchEvent(event);
 
-    // Sanity: the handler ran and updated the viewport state.
-    expect(mockSetZoom).toHaveBeenCalled();
-    // pizarra-motion-polish (P-MP-4): the wheel handler now calls
-    // setZoom with the focal-zoom result from `canvasViewport.zoomAtPoint`,
-    // not with the legacy inline `setZoom((z) => z - deltaY * 0.001)`
-    // updater function. The new contract is: pass a number.
-    const zoomCallArg = mockSetZoom.mock.calls[0][0];
-    expect(typeof zoomCallArg).toBe('number');
+    // pizarra-fluidity: a wheel/trackpad gesture WITHOUT ctrl/⌘ now PANS the
+    // board instead of zooming. The handler calls setPan (with a functional
+    // updater) and does NOT call setZoom.
+    expect(mockSetPan).toHaveBeenCalled();
+    expect(mockSetZoom).not.toHaveBeenCalled();
+    const panCallArg = mockSetPan.mock.calls[0][0];
+    expect(typeof panCallArg).toBe('function');
 
     // THE BUG-SPECIFIC ASSERTION: with React's onWheel (passive by
     // default in React 17+), preventDefault() is a no-op and
     // defaultPrevented stays false. After the fix the listener is
     // non-passive, so preventDefault() flips defaultPrevented to true.
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('ctrl+wheel on wrapper ZOOMS (setZoom) toward the focal point', async () => {
+    flushSync(() => {
+      root.render(
+        React.createElement(PizarraCanvas, {
+          elements: [],
+          selectedElementIds: [],
+          activeTool: 'select',
+          toolSettings: {},
+          onShapeCreate: () => {},
+          onSelect: () => {},
+          onDeselect: () => {},
+          onUpdateElement: () => {},
+          width: 800,
+          height: 600,
+        })
+      );
+    });
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flushSync(() => {});
+
+    const wrapper = container.querySelector('[data-testid="pizarra-canvas-wrapper"]');
+    expect(wrapper).toBeTruthy();
+
+    const event = buildWheelEvent(-100);
+    Object.defineProperty(event, 'ctrlKey', { value: true, configurable: true });
+    Object.defineProperty(event, 'clientX', { value: 100, configurable: true });
+    Object.defineProperty(event, 'clientY', { value: 100, configurable: true });
+    wrapper.dispatchEvent(event);
+
+    expect(mockSetZoom).toHaveBeenCalled();
+    const zoomCallArg = mockSetZoom.mock.calls[0][0];
+    expect(typeof zoomCallArg).toBe('number');
     expect(event.defaultPrevented).toBe(true);
   });
 
@@ -338,18 +375,18 @@ describe('PizarraCanvas — wheel listener is non-passive (pizarra-wheel-passive
     const wrapper = container.querySelector('[data-testid="pizarra-canvas-wrapper"]');
     expect(wrapper).toBeTruthy();
 
-    // Fire one event to confirm the handler is active.
+    // Fire one event to confirm the handler is active (plain wheel → pan).
     const event1 = buildWheelEvent(-100);
     wrapper.dispatchEvent(event1);
-    expect(mockSetZoom).toHaveBeenCalledTimes(1);
+    expect(mockSetPan).toHaveBeenCalledTimes(1);
 
     // Unmount. The useEffect cleanup should removeEventListener('wheel', ...)
-    // off the wrapper, so subsequent dispatches must NOT call setZoom.
+    // off the wrapper, so subsequent dispatches must NOT call setPan.
     flushSync(() => root.unmount());
 
-    mockSetZoom.mockClear();
+    mockSetPan.mockClear();
     const event2 = buildWheelEvent(-100);
     wrapper.dispatchEvent(event2);
-    expect(mockSetZoom).not.toHaveBeenCalled();
+    expect(mockSetPan).not.toHaveBeenCalled();
   });
 });

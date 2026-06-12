@@ -95,6 +95,12 @@ export default function PizarraLiveSurfaceLayer({
         const isActiveTerminal = shape.id === activeTerminalId;
         const zIndex = selected || isActiveTerminal ? 100 : 5;
 
+        // pizarra-workspace-switch: hide surfaces that have no resolved layout
+        // yet (off-screen placeholder) so the stacked-corner flash never shows.
+        if (shape._layoutResolved === false) {
+          return null;
+        }
+
         return (
           <LiveSurfaceItem
             key={shape.id}

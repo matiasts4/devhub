@@ -162,16 +162,32 @@ export default function PizarraCanvas({
     const handleWheel = (event) => {
       if (!shouldCanvasConsumeWheel(event)) return; // inner surface scrolls
       event.preventDefault();
-      const rect = wrapper.getBoundingClientRect();
-      const next = zoomAtPoint({
-        currentZoom: zoom,
-        currentPan: pan,
-        deltaY: event.deltaY,
-        focalX: event.clientX - rect.left,
-        focalY: event.clientY - rect.top,
-      });
-      setZoom(next.zoom);
-      setPan(next.pan);
+      // pizarra-fluidity: stop the event here so the CanvasViewportProvider's
+      // container-level wheel listener (an ancestor) does NOT also handle the
+      // same wheel — that double-handling doubled the zoom/pan speed.
+      event.stopPropagation();
+
+      const dx = event.deltaX || 0;
+      const dy = event.deltaY || 0;
+
+      // pizarra-fluidity: a wheel/trackpad gesture without a zoom modifier is a
+      // PAN (two-finger drag → navigate the board), matching modern canvas apps
+      // (Figma/Miro). Pinch-zoom and ctrl/⌘+wheel still ZOOM toward the cursor.
+      if (event.ctrlKey || event.metaKey) {
+        const rect = wrapper.getBoundingClientRect();
+        const next = zoomAtPoint({
+          currentZoom: zoom,
+          currentPan: pan,
+          deltaY: dy,
+          focalX: event.clientX - rect.left,
+          focalY: event.clientY - rect.top,
+        });
+        setZoom(next.zoom);
+        setPan(next.pan);
+        return;
+      }
+
+      setPan((current) => ({ x: (current?.x ?? 0) - dx, y: (current?.y ?? 0) - dy }));
     };
 
     wrapper.addEventListener('wheel', handleWheel, { passive: false });
@@ -199,19 +215,26 @@ export default function PizarraCanvas({
       if (!clickedOnEmpty) return;
 
       if (activeTool === 'select') {
-        // pizarra-multi-select: begin a marquee instead of deselecting
-        // immediately. Deselect happens on mouseup only if no drag occurred.
-        const pos = e.target.getStage().getPointerPosition();
-        setMarquee({
-          startX: pos.x,
-          startY: pos.y,
-          x: pos.x,
-          y: pos.y,
-          width: 0,
-          height: 0,
-          shift: e.evt?.shiftKey || false,
-          moved: false,
-        });
+        // pizarra-fluidity: a plain drag on empty canvas PANS the board (handled
+        // by the useGesture `bind()` on the wrapper). Drawing a marquee on every
+        // empty drag fought the pan and prevented free navigation. The marquee
+        // multi-select is now opt-in with Shift held; a plain empty click just
+        // clears the current selection.
+        if (e.evt?.shiftKey) {
+          const pos = e.target.getStage().getPointerPosition();
+          setMarquee({
+            startX: pos.x,
+            startY: pos.y,
+            x: pos.x,
+            y: pos.y,
+            width: 0,
+            height: 0,
+            shift: true,
+            moved: false,
+          });
+          return;
+        }
+        onDeselect();
         return;
       }
 

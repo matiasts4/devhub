@@ -11,7 +11,7 @@
 
 'use client';
 
-import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react';
 import dynamic from 'next/dynamic';
 import PizarraToolPalette from './PizarraToolPalette';
 import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
@@ -28,8 +28,13 @@ import { createPizarraSurfaceController } from '@/lib/commandBar/surface/pizarra
 import { LiveSurfaceRegistryContext } from '@/lib/pizarra/useLiveSurfaceRegistry';
 import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
+import { runCircleMigration } from '@/lib/pizarra/circleMigration';
 import { closeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
-import { computeViewportFitToBounds, resolveZoneSnap } from '@/lib/pizarra/canvasBounds';
+import {
+  computeElementsBounds,
+  computeViewportFitToBounds,
+  resolveZoneSnap,
+} from '@/lib/pizarra/canvasBounds';
 import {
   computeAdaptiveSnapZones,
   computeAdaptiveViewLayout,
@@ -40,6 +45,14 @@ import {
   surfaceBelongsToView,
 } from '@/lib/pizarra/pizarraViewLayout';
 import { animatePanTransition, prefersReducedMotion } from '@/lib/pizarra/pizarraViewTransition';
+import {
+  computeDevSplitSlots,
+  computeDevTrioSlots,
+  computeDualBrowserSlots,
+  computeAutoFitSlotMap,
+  isSurfacePositioned,
+  resolveSurfaceRenderBounds,
+} from '@/lib/pizarra/pizarraInitialLayout';
 
 // SSR-safe canvas import
 const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
@@ -143,6 +156,11 @@ export default function PizarraPane({
     deselectAll,
   } = usePizarraState();
 
+  // P-MP-9: one-shot circle shape migration before persisted shapes hydrate.
+  useEffect(() => {
+    runCircleMigration();
+  }, []);
+
   const [activeTerminalId, setActiveTerminalId] = useState(null);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const containerRef = useRef(null);
@@ -179,17 +197,19 @@ export default function PizarraPane({
       (el) => el.type !== SHAPE_TYPES.TERMINAL && el.type !== SHAPE_TYPES.BROWSER
     );
 
-    // Map registry surfaces into pizarra-compatible canvas shapes
-    const registryShapes = (registry.surfaces || []).map((s) => ({
-      ...s,
-      x: s.pizarra?.x ?? 100,
-      y: s.pizarra?.y ?? 100,
-      width: s.pizarra?.width ?? 640,
-      height: s.pizarra?.height ?? 400,
-    }));
+    // pizarra-workspace-switch: surfaces without saved x/y used to fall back to
+    // (100,100) here, so every card stacked in the corner for ~200ms until
+    // useEffect auto-fit ran. Resolve initial slots synchronously instead.
+    const vis = {
+      x: 0,
+      y: 0,
+      width: canvasSize.width || 900,
+      height: canvasSize.height || 600,
+    };
+    const registryShapes = resolveSurfaceRenderBounds(registry.surfaces || [], vis);
 
     return [...localDrawings, ...registryShapes];
-  }, [state.elements, registry.surfaces]);
+  }, [state.elements, registry.surfaces, canvasSize.width, canvasSize.height]);
 
   const selectedElements = useMemo(() => {
     return mergedElements.filter((el) => state.selectedElementIds.includes(el.id));
@@ -362,9 +382,10 @@ export default function PizarraPane({
       }}
     >
       {/* Canvas viewport context — provides zoom/pan/coordinate translation */}
-      <CanvasViewportProvider canvasContainerRef={canvasContainerRef}>
+      <CanvasViewportProvider key={workspaceId} canvasContainerRef={canvasContainerRef}>
         {/* PizarraInner is a child of the provider so it can useCanvasViewport() */}
         <PizarraInner
+          key={workspaceId}
           state={state}
           dispatch={dispatch}
           setTool={setTool}
@@ -547,7 +568,11 @@ function PizarraInner({
         return;
       }
 
-      const fitBounds = activeSnapZones?.bounds || computeViewZones(viewOrigin).bounds;
+      const surfaceBounds = computeElementsBounds(liveSurfacesForZones);
+      const fitBounds =
+        surfaceBounds?.width > 0 && surfaceBounds?.height > 0
+          ? surfaceBounds
+          : activeSnapZones?.bounds || computeViewZones(viewOrigin).bounds;
       const { zoom: fitZoom, pan: fitPan } = computeViewportFitToBounds(
         fitBounds,
         canvasSize.width,
@@ -592,6 +617,19 @@ function PizarraInner({
     [handleFitAllView]
   );
 
+  const scheduleCameraFitView = useCallback(
+    (delayMs = 120) => {
+      if (autoFitTimerRef.current) {
+        clearTimeout(autoFitTimerRef.current);
+      }
+      autoFitTimerRef.current = setTimeout(() => {
+        autoFitTimerRef.current = null;
+        fitCameraToActiveView();
+      }, delayMs);
+    },
+    [fitCameraToActiveView]
+  );
+
   useEffect(
     () => () => {
       if (autoFitTimerRef.current) {
@@ -624,8 +662,8 @@ function PizarraInner({
     scheduleAutoFitView,
   ]);
 
-  // Surfaces often arrive after mount (carried from normal view) — run the same
-  // layout+camera fit as the manual "autoajuste" once they appear.
+  // Surfaces often arrive after mount (carried from normal view or workspace return).
+  // Full layout+camera when unpositioned; camera-only when positions are already saved.
   useEffect(() => {
     const count = liveSurfacesForZones.length;
     if (count === 0 || canvasSize.width < 200) {
@@ -634,10 +672,15 @@ function PizarraInner({
     }
     const hadNoSurfaces = prevSurfaceCountRef.current === 0;
     prevSurfaceCountRef.current = count;
-    if (hadNoSurfaces) {
+    if (!hadNoSurfaces) return;
+
+    const hasUnpositioned = liveSurfacesForZones.some((s) => !isSurfacePositioned(s.pizarra || {}));
+    if (hasUnpositioned) {
       scheduleAutoFitView(160);
+    } else {
+      scheduleCameraFitView(160);
     }
-  }, [liveSurfacesForZones.length, canvasSize.width, scheduleAutoFitView]);
+  }, [liveSurfacesForZones, canvasSize.width, scheduleAutoFitView, scheduleCameraFitView]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -704,12 +747,14 @@ function PizarraInner({
   // positions using matching default preset (dev-split etc) based on counts, so they start
   // in the "split sections" / trio / dual as user expects, instead of spread or default.
   // Fallback to basic spread for other cases. Done once via ref.
-  React.useEffect(() => {
+  // pizarra-workspace-switch: commit layout to registry BEFORE paint so native
+  // overlays and persisted positions match the synchronous render bounds.
+  useLayoutEffect(() => {
     if (!registry || typeof registry.updatePizarraLayout !== 'function') return;
     const surfaces = registry.surfaces || [];
     const needs = surfaces.filter((s) => {
       const p = s.pizarra || {};
-      return (p.x == null || typeof p.x !== 'number') && !laidOutRegistryRef.current.has(s.id);
+      return !isSurfacePositioned(p) && !laidOutRegistryRef.current.has(s.id);
     });
     if (needs.length === 0) return;
 
@@ -756,27 +801,16 @@ function PizarraInner({
     }
 
     if (!assigned) {
-      // Fallback spread
-      const w = canvasSize.width || 900;
-      const h = canvasSize.height || 600;
-      const baseX = Math.max(40, Math.round(w * 0.15));
-      const baseY = Math.max(40, Math.round(h * 0.15));
-      const step = 32;
-
-      needs.forEach((s, idx) => {
+      const vis = getVisibleCanvasRegion
+        ? getVisibleCanvasRegion()
+        : { width: canvasSize.width || 900, height: canvasSize.height || 600, x: 0, y: 0 };
+      const slotMap = computeAutoFitSlotMap(vis, needs);
+      needs.forEach((s) => {
         if (laidOutRegistryRef.current.has(s.id)) return;
-        const isTerm = s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL;
-        const ww = s.pizarra?.width || (isTerm ? 640 : 1024);
-        const hh = s.pizarra?.height || (isTerm ? 400 : 700);
-        const layout = {
-          x: baseX + idx * step,
-          y: baseY + idx * step,
-          width: ww,
-          height: hh,
-          visible: true,
-        };
+        const slot = slotMap.get(s.id);
+        if (!slot) return;
         try {
-          registry.updatePizarraLayout(s.id, layout);
+          registry.updatePizarraLayout(s.id, { ...slot, visible: true });
         } catch {
           // best-effort
         }
@@ -785,7 +819,8 @@ function PizarraInner({
     }
 
     if (needs.length > 0) {
-      scheduleAutoFitView(120);
+      // First-time placement: fit immediately (no 120–200ms dead zone).
+      handleFitAllView();
     }
   }, [
     registry,
@@ -794,7 +829,7 @@ function PizarraInner({
     canvasSize,
     SHAPE_TYPES,
     getVisibleCanvasRegion,
-    scheduleAutoFitView,
+    handleFitAllView,
   ]);
 
   // ── handleAddElement — spawns at current visible viewport center ─────────
@@ -1626,16 +1661,40 @@ function PizarraInner({
 
   // Auto-fit when surfaces already exist (carried from normal view or user-added).
   // Empty pizarra canvas stays empty until the user adds surfaces explicitly.
+  //
+  // pizarra-fluidity: this effect previously depended on `mergedElements` and
+  // re-fired on EVERY element change — including a user dragging/resizing a
+  // surface. 200ms after any move, handleFitAllView() ran applyAdaptiveViewLayout
+  // (which snaps every surface back to the adaptive grid) + fitCameraToActiveView
+  // (which recenters the camera), so the canvas felt "locked": you could not
+  // freely move a window or pan because it reverted. We now only auto-fit when
+  // the SET of live surfaces changes (a surface added/removed) or the canvas is
+  // resized — never on a plain position/size change of existing surfaces. This
+  // preserves the "auto-adapt on add" behavior the user likes while leaving the
+  // camera and surface positions under the user's control afterwards.
+  const prevAutoFitKeyRef = useRef('');
   React.useEffect(() => {
     if (canvasSize.width < 200 || canvasSize.height < 200) return;
 
     const liveSurfaces = (mergedElements || []).filter(
       (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
     );
-    if (liveSurfaces.length > 0) {
-      scheduleAutoFitView(200);
+    const idsKey = liveSurfaces
+      .map((s) => s.id)
+      .sort()
+      .join('|');
+    const fitKey = `${Math.round(canvasSize.width)}x${Math.round(canvasSize.height)}|${idsKey}`;
+    if (fitKey === prevAutoFitKeyRef.current) return;
+    prevAutoFitKeyRef.current = fitKey;
+
+    const hasUnpositioned = liveSurfaces.some((s) => !isSurfacePositioned(s.pizarra || {}));
+    if (liveSurfaces.length > 0 && hasUnpositioned) {
+      // Workspace switch / carried surfaces with x:null — fit immediately.
+      // Skip when every surface already has explicit spawn/layout coords
+      // (handleAddElement zone placement must not be overwritten).
+      handleFitAllView();
     }
-  }, [canvasSize, mergedElements, scheduleAutoFitView]);
+  }, [canvasSize, mergedElements, handleFitAllView]);
 
   // Listen for deferred auto-refit events dispatched by handleAddElement
   // when a new card is added while others already exist.

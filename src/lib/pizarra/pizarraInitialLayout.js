@@ -1,0 +1,234 @@
+/**
+ * Synchronous initial layout for pizarra live surfaces.
+ *
+ * Surfaces without saved pizarra.x/y must NOT render at a shared fallback
+ * (e.g. 100,100) while a useEffect assigns real slots — that causes the
+ * visible "stacked cards" flash on workspace/mode switches. These helpers
+ * compute the same preset slots the auto-fit path uses, synchronously at
+ * render time, so the first paint already shows the distributed layout.
+ */
+
+import { SHAPE_TYPES } from './shapeModel';
+
+export function isSurfacePositioned(pizarra = {}) {
+  return typeof pizarra.x === 'number' && typeof pizarra.y === 'number';
+}
+
+export function computeDevSplitSlots(vis) {
+  const edgePad = 8;
+  const gap = 12;
+  const usableW = Math.max(640, vis.width - edgePad * 2);
+  const usableH = Math.max(300, vis.height - edgePad * 2);
+  const bw = Math.round(usableW * 0.58);
+  const tw = usableW - bw - gap;
+  const leftX = vis.x + edgePad;
+  const rightX = leftX + bw + gap;
+  const topY = vis.y + edgePad;
+  return {
+    browser: { x: leftX, y: topY, width: bw, height: usableH },
+    terminals: [{ x: rightX, y: topY, width: tw, height: usableH }],
+  };
+}
+
+export function computeDevTrioSlots(vis) {
+  const edgePad = 8;
+  const gap = 12;
+  const rowGap = 12;
+  const usableW = Math.max(640, vis.width - edgePad * 2);
+  const usableH = Math.max(300, vis.height - edgePad * 2);
+  const bw = Math.round(usableW * 0.58);
+  const tw = usableW - bw - gap;
+  const th = Math.max(140, Math.round((usableH - rowGap) / 2));
+  const leftX = vis.x + edgePad;
+  const rightX = leftX + bw + gap;
+  const topY = vis.y + edgePad;
+  return {
+    browser: { x: leftX, y: topY, width: bw, height: usableH },
+    terminals: [
+      { x: rightX, y: topY, width: tw, height: th },
+      { x: rightX, y: topY + th + rowGap, width: tw, height: th },
+    ],
+  };
+}
+
+export function computeDualBrowserSlots(vis) {
+  const edgePad = 8;
+  const gap = 12;
+  const usableW = Math.max(640, vis.width - edgePad * 2);
+  const usableH = Math.max(300, vis.height - edgePad * 2);
+  const bw = Math.round((usableW - gap) / 2);
+  const leftX = vis.x + edgePad;
+  const rightX = leftX + bw + gap;
+  const topY = vis.y + edgePad;
+  return {
+    browsers: [
+      { x: leftX, y: topY, width: bw, height: usableH },
+      { x: rightX, y: topY, width: bw, height: usableH },
+    ],
+  };
+}
+
+/**
+ * Compute layout slots for a set of live surfaces inside `vis`.
+ * Returns Map<surfaceId, { x, y, width, height }>.
+ */
+export function computeAutoFitSlotMap(vis, surfaces = []) {
+  const slotMap = new Map();
+  if (!vis || surfaces.length === 0) return slotMap;
+
+  const cx = vis.x + vis.width / 2;
+  const cy = vis.y + vis.height / 2;
+  const PAD = 20;
+  const GAP = 16;
+  const maxH = Math.max(200, Math.round(vis.height * 0.88));
+
+  const browsers = surfaces.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
+  const terminals = surfaces.filter(
+    (s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL
+  );
+  const n = surfaces.length;
+
+  const put = (id, layout) => slotMap.set(id, layout);
+
+  if (n === 1) {
+    const s = surfaces[0];
+    const isBrowser = s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER;
+    const w = Math.max(400, Math.round(vis.width * 0.86));
+    const h = Math.max(300, Math.min(Math.round(vis.height * 0.86), isBrowser ? 800 : 600));
+    put(s.id, { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), width: w, height: h });
+    return slotMap;
+  }
+
+  if (browsers.length === 1 && terminals.length === 1) {
+    const slots = computeDevSplitSlots(vis);
+    put(browsers[0].id, slots.browser);
+    put(terminals[0].id, slots.terminals[0]);
+    return slotMap;
+  }
+
+  if (browsers.length === 1 && terminals.length === 2) {
+    const slots = computeDevTrioSlots(vis);
+    put(browsers[0].id, slots.browser);
+    put(terminals[0].id, slots.terminals[0]);
+    put(terminals[1].id, slots.terminals[1]);
+    return slotMap;
+  }
+
+  if (browsers.length === 2 && terminals.length === 0) {
+    const slots = computeDualBrowserSlots(vis);
+    put(browsers[0].id, slots.browsers[0]);
+    put(browsers[1].id, slots.browsers[1]);
+    return slotMap;
+  }
+
+  if (browsers.length === 0 && terminals.length > 0 && terminals.length <= 3) {
+    const tw = Math.max(
+      200,
+      Math.round((vis.width - PAD * 2 - GAP * (terminals.length - 1)) / terminals.length)
+    );
+    const th = Math.max(240, Math.min(maxH, Math.round(vis.height * 0.82)));
+    const totalW = tw * terminals.length + GAP * (terminals.length - 1);
+    const startX = Math.round(cx - totalW / 2);
+    const startY = Math.round(cy - th / 2);
+    terminals.forEach((t, i) => {
+      put(t.id, { x: startX + i * (tw + GAP), y: startY, width: tw, height: th });
+    });
+    return slotMap;
+  }
+
+  const cols = n <= 2 ? n : Math.min(2, Math.ceil(Math.sqrt(n)));
+  const rows = Math.ceil(n / cols);
+  const usableW = vis.width - PAD * 2 - GAP * (cols - 1);
+  const usableH = vis.height - PAD * 2 - GAP * (rows - 1);
+  const cellW = Math.max(200, Math.round(usableW / cols));
+  const cellH = Math.max(160, Math.round(usableH / rows));
+  const totalGridW = cols * cellW + GAP * (cols - 1);
+  const totalGridH = rows * cellH + GAP * (rows - 1);
+  const startX = Math.round(vis.x + (vis.width - totalGridW) / 2);
+  const startY = Math.round(vis.y + (vis.height - totalGridH) / 2);
+  const sorted = [...browsers, ...terminals];
+  sorted.forEach((s, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    put(s.id, {
+      x: startX + col * (cellW + GAP),
+      y: startY + row * (cellH + GAP),
+      width: cellW,
+      height: cellH,
+    });
+  });
+  return slotMap;
+}
+
+/**
+ * Merge saved pizarra bounds with synchronous initial slots for unpositioned
+ * live surfaces. Used at render time so the first paint is already distributed.
+ */
+export function resolveSurfaceRenderBounds(
+  surfaces,
+  vis,
+  {
+    defaultTerminalW = 640,
+    defaultTerminalH = 400,
+    defaultBrowserW = 1024,
+    defaultBrowserH = 700,
+  } = {}
+) {
+  const live = surfaces.filter(
+    (s) =>
+      s.type === 'terminal' ||
+      s.type === 'browser' ||
+      s.type === SHAPE_TYPES.TERMINAL ||
+      s.type === SHAPE_TYPES.BROWSER
+  );
+  const unpositioned = live.filter((s) => !isSurfacePositioned(s.pizarra));
+  const slotMap = unpositioned.length > 0 ? computeAutoFitSlotMap(vis, live) : new Map();
+
+  return surfaces.map((s) => {
+    const isLive =
+      s.type === 'terminal' ||
+      s.type === 'browser' ||
+      s.type === SHAPE_TYPES.TERMINAL ||
+      s.type === SHAPE_TYPES.BROWSER;
+    if (!isLive) return s;
+
+    const isBrowser = s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER;
+    const defaultW = isBrowser ? defaultBrowserW : defaultTerminalW;
+    const defaultH = isBrowser ? defaultBrowserH : defaultTerminalH;
+    const saved = s.pizarra || {};
+    const slot = slotMap.get(s.id);
+
+    if (isSurfacePositioned(saved)) {
+      return {
+        ...s,
+        x: saved.x,
+        y: saved.y,
+        width: saved.width ?? defaultW,
+        height: saved.height ?? defaultH,
+        _layoutResolved: true,
+      };
+    }
+
+    if (slot) {
+      return {
+        ...s,
+        x: slot.x,
+        y: slot.y,
+        width: slot.width,
+        height: slot.height,
+        _layoutResolved: true,
+        _layoutProvisional: true,
+      };
+    }
+
+    // No slot yet (empty vis) — keep off-screen rather than stacking at (100,100).
+    return {
+      ...s,
+      x: -10000,
+      y: -10000,
+      width: saved.width ?? defaultW,
+      height: saved.height ?? defaultH,
+      _layoutResolved: false,
+    };
+  });
+}

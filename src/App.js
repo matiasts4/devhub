@@ -330,6 +330,26 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Block the browser's native ctrl/⌘ + wheel (and trackpad pinch, which the
+  // engine reports as a wheel event with ctrlKey set) page zoom. Without this,
+  // pinching/ctrl-scrolling inside the app — e.g. while zooming the pizarra
+  // canvas — zooms the ENTIRE webview (top workspace tabs, HUD, bottom bars all
+  // scale/disappear) instead of only the intended target. The app exposes its
+  // own document zoom via the keyboard handler above; the pizarra canvas does
+  // its own focal zoom in JS. We only need to stop the engine's default zoom.
+  // Capture phase + { passive: false } so preventDefault is honored even when an
+  // inner handler stops propagation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const preventBrowserZoom = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('wheel', preventBrowserZoom, { passive: false, capture: true });
+    return () => window.removeEventListener('wheel', preventBrowserZoom, { capture: true });
+  }, []);
+
   useEffect(() => {
     if (!isDevelopmentRuntime()) return;
     if (typeof window === 'undefined') return;

@@ -240,18 +240,29 @@ export function CanvasViewportProvider({
       // still produces a valid zoom clamp.
       if (event.ctrlKey || shouldCanvasConsumeWheel(event)) {
         event.preventDefault();
-        const rect = container.getBoundingClientRect
-          ? container.getBoundingClientRect()
-          : { left: 0, top: 0 };
-        const next = zoomAtPoint({
-          currentZoom: zoom,
-          currentPan: pan,
-          deltaY: event.deltaY,
-          focalX: event.clientX - rect.left,
-          focalY: event.clientY - rect.top,
-        });
-        setZoom(next.zoom);
-        setPan(next.pan);
+
+        // pizarra-fluidity: pinch / ctrl / ⌘ + wheel → focal ZOOM. A plain
+        // wheel / two-finger trackpad gesture → PAN (navigate the board). This
+        // mirrors the PizarraCanvas wrapper handler so the routing can't drift.
+        if (event.ctrlKey || event.metaKey) {
+          const rect = container.getBoundingClientRect
+            ? container.getBoundingClientRect()
+            : { left: 0, top: 0 };
+          const next = zoomAtPoint({
+            currentZoom: zoom,
+            currentPan: pan,
+            deltaY: event.deltaY,
+            focalX: event.clientX - rect.left,
+            focalY: event.clientY - rect.top,
+          });
+          setZoom(next.zoom);
+          setPan(next.pan);
+          return;
+        }
+
+        const dx = event.deltaX || 0;
+        const dy = event.deltaY || 0;
+        setPan((current) => ({ x: (current?.x ?? 0) - dx, y: (current?.y ?? 0) - dy }));
       }
     };
 
@@ -259,7 +270,7 @@ export function CanvasViewportProvider({
     return () => {
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [canvasContainerRef, setZoom, zoom, pan]);
+  }, [canvasContainerRef, setZoom, setPan, zoom, pan]);
 
   const value = {
     zoom,

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useLayoutEffect, useCallback } from 'react';
 import { createSharedSurfaceRegistry } from './useSharedSurfaceRegistry';
 
 export const LiveSurfaceRegistryContext = createContext(null);
@@ -30,15 +30,21 @@ export function useLiveSurfaceRegistry(projectId, workspaceId) {
     return `devhub_pizarra_surfaces_${projectId || 'default'}_${workspaceId || 'default'}`;
   }, [projectId, workspaceId]);
 
-  useEffect(() => {
+  // pizarra-workspace-switch: load synchronously on workspace change.
+  // The previous useEffect left the OLD workspace's surfaces visible for
+  // one+ frames after activeWsId changed — pizarra rendered stale cards at
+  // wrong positions (stacked flash) and native reconcile could race/crash.
+  // localStorage is sync; useLayoutEffect applies the new workspace data
+  // before the browser paints.
+  useLayoutEffect(() => {
     if (typeof window === 'undefined') return;
+    setIsLoaded(false);
+    setSurfaces([]);
     try {
       const key = getStorageKey();
       const saved = window.localStorage.getItem(key);
       if (saved) {
         setSurfaces(JSON.parse(saved));
-      } else {
-        setSurfaces([]);
       }
     } catch (e) {
       console.error('[useLiveSurfaceRegistry] failed to load surfaces:', e);
