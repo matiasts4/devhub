@@ -49,15 +49,30 @@ toggle. Record the observed counts below.
 
 Dimensions: panel count × interaction × renderer × build.
 
-| # | Panels | Interaction | Renderer | Build | dispose/toggle | boot/toggle | Glyph corruption? | Crash? | Notes |
-|---|--------|-------------|----------|-------|----------------|-------------|-------------------|--------|-------|
-| 1 | 1 | workspace→pizarra | webgl | dev (Chrome) | _TBD_ | _TBD_ | | | |
-| 2 | 1 | workspace→pizarra | webgl | `.deb` (WebKitGTK) | _TBD_ | _TBD_ | | | |
-| 3 | 1 | pizarra→workspace | webgl | `.deb` | _TBD_ | _TBD_ | | | |
-| 4 | 3 (split) | workspace-switch | canvas | dev | _TBD_ | _TBD_ | | | |
-| 5 | 3 (split) | workspace-switch | canvas | `.deb` | _TBD_ | _TBD_ | | | |
-| 6 | 3 (split) | window-resize during pizarra enter | webgl | `.deb` | _TBD_ | _TBD_ | | | A.3 target |
-| 7 | 1 | pizarra-toggle ×20 | vte-experimental | `.deb` | _TBD_ | _TBD_ | | | scrollback preserved? |
+| #   | Panels    | Interaction                        | Renderer         | Build              | dispose/toggle | boot/toggle | Glyph corruption? | Crash? | Notes                 |
+| --- | --------- | ---------------------------------- | ---------------- | ------------------ | -------------- | ----------- | ----------------- | ------ | --------------------- |
+| 1   | 1         | workspace→pizarra                  | webgl            | dev (Chrome)       | _TBD_          | _TBD_       |                   |        |                       |
+| 2   | 1         | workspace→pizarra                  | webgl            | `.deb` (WebKitGTK) | _TBD_          | _TBD_       |                   |        |                       |
+| 3   | 1         | pizarra→workspace                  | webgl            | `.deb`             | _TBD_          | _TBD_       |                   |        |                       |
+| 4   | 3 (split) | workspace-switch                   | canvas           | dev                | _TBD_          | _TBD_       |                   |        |                       |
+| 5   | 3 (split) | workspace-switch                   | canvas           | `.deb`             | _TBD_          | _TBD_       |                   |        |                       |
+| 6   | 3 (split) | window-resize during pizarra enter | webgl            | `.deb`             | _TBD_          | _TBD_       |                   |        | A.3 target            |
+| 7   | 1         | pizarra-toggle ×20                 | vte-experimental | `.deb`             | _TBD_          | _TBD_       |                   |        | scrollback preserved? |
+
+### Extension — lifecycle gaps (post terminal-pizarra-stability)
+
+> Scenarios from [04-terminal-lifecycle-coverage-gaps](../04-terminal-lifecycle-coverage-gaps/README.md). Fill after Fase 1+ remediation.
+
+| #   | Panels    | Interaction                       | Renderer | Build  | dispose/action | boot/action | Glyph corruption? | Crash? | Notes                    |
+| --- | --------- | --------------------------------- | -------- | ------ | -------------- | ----------- | ----------------- | ------ | ------------------------ |
+| 8   | 5 (swarm) | swarm-launch ZED+4 workers        | canvas   | dev    | _TBD_          | _TBD_       |                   |        | OpenCode standby workers |
+| 9   | 5 (swarm) | swarm-launch                      | canvas   | `.deb` | _TBD_          | _TBD_       |                   |        | WebKitGTK multi-TUI      |
+| 10  | 4 (split) | close 3 tabs sequentially         | canvas   | dev    | _TBD_          | _TBD_       |                   |        | panel-closed burst       |
+| 11  | 3 (split) | split-right + OpenCode active     | canvas   | dev    | _TBD_          | _TBD_       |                   |        | panel-split sync         |
+| 12  | 2         | relaunch panel (OpenCode session) | webgl    | dev    | _TBD_          | _TBD_       |                   |        | panel-relaunch           |
+| 13  | 3         | workspace-switch + swarm ws       | canvas   | dev    | _TBD_          | _TBD_       |                   |        | V1↔V2 with swarm grid    |
+| 14  | 1         | run-agent planning-launch         | webgl    | dev    | _TBD_          | _TBD_       |                   |        | non-swarm path           |
+| 15  | 4         | grid launcher → 4 terminals       | canvas   | dev    | _TBD_          | _TBD_       |                   |        | suspend policy           |
 
 ## Acceptance targets (post A.1)
 

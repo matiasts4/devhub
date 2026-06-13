@@ -5,9 +5,9 @@ import { withAuth } from '@/lib/swarm/withAuth.js';
 export const runtime = 'nodejs';
 
 // GET /api/agenthub/swarm/:missionId/timeline
-export const GET = withAuth(async function GET(_request, context) {
+export const GET = withAuth(async function GET(_request, { params }) {
   try {
-    const missionId = context?.params?.missionId;
+    const { missionId } = (await params) || {};
     if (!missionId) {
       return NextResponse.json({ error: 'missionId es requerido.' }, { status: 400 });
     }
@@ -23,9 +23,9 @@ export const GET = withAuth(async function GET(_request, context) {
 });
 
 // POST /api/agenthub/swarm/:missionId/timeline
-export const POST = withAuth(async function POST(request, context) {
+export const POST = withAuth(async function POST(request, { params }) {
   try {
-    const missionId = context?.params?.missionId;
+    const { missionId } = (await params) || {};
     if (!missionId) {
       return NextResponse.json({ error: 'missionId es requerido.' }, { status: 400 });
     }
@@ -39,6 +39,9 @@ export const POST = withAuth(async function POST(request, context) {
     return NextResponse.json({ row }, { status: 201 });
   } catch (error) {
     const status = error.message.includes('no es válido') ? 400 : 500;
-    return NextResponse.json({ error: error.message || 'Error al escribir timeline row.' }, { status });
+    return NextResponse.json(
+      { error: error.message || 'Error al escribir timeline row.' },
+      { status }
+    );
   }
 });

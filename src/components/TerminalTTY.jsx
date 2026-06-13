@@ -39,7 +39,12 @@ import {
   TERMINAL_WEBGL_FALLBACK_REASONS,
 } from '@/components/terminal/terminalRendererCapabilities';
 import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
-import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
+import {
+  extractOpenCodeSessionId,
+  isSwarmLaunchWrapperCommand,
+  readAgentRunForPanel,
+  resolveTerminalInjectCommand,
+} from '@/lib/terminal/restorePolicyResolver';
 import {
   containsTerminalResponseNoise,
   filterTerminalInputForSession,
@@ -1061,6 +1066,13 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
 } = {}) {
   if (!sizeUnchanged || pendingWebglRecovery || !hasGpuRenderer) return false;
   const normalized = String(reason);
+  if (
+    normalized.includes('panel-group-layout') ||
+    normalized.includes('internal-split-drag-end') ||
+    normalized.includes('right-dock-drag-end')
+  ) {
+    return false;
+  }
   if (normalized.includes('pizarra-mode-exit') || normalized.includes('pizarra-mode-enter')) {
     return true;
   }
@@ -1108,12 +1120,33 @@ export function shouldDiscardHiddenOutputCatchup({
   sessionReattached = false,
   tuiSessionActive = false,
   bufferText = '',
+  termHasContent = false,
   maxBytes = HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES,
 } = {}) {
   if (sessionReattached) return true;
   if (tuiSessionActive) return true;
+  if (termHasContent) return true;
   if (shouldDiscardOpenCodeCatchupReplay(bufferText)) return true;
   return bufferedBytes > maxBytes;
+}
+
+export function terminalBufferHasRenderableContent(term) {
+  const buffer = term?.buffer?.active;
+  if (!buffer || buffer.length === 0) return false;
+
+  try {
+    const start = Math.max(0, buffer.length - 4);
+    for (let lineIndex = start; lineIndex < buffer.length; lineIndex += 1) {
+      const line = buffer.getLine(lineIndex);
+      if (line && line.translateToString(true).trim().length > 0) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
 }
 
 export function chunkTerminalOutputForCatchup(
@@ -1151,6 +1184,20 @@ export function nudgeTerminalPtyResize({
   return true;
 }
 
+/** Canvas split siblings need atlas clears after geometry churn to avoid ghost glyphs (G-01). */
+export function shouldClearAtlasForSplitCanvas({
+  operationalRendererMode,
+  visibleTerminalPanelCount = 1,
+} = {}) {
+  return (
+    shouldAttachCanvasRenderer({ operationalRendererMode }) &&
+    visibleTerminalPanelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT
+  );
+}
+
+const CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON =
+  /layout-settled-(panel-group-layout|panel-focus-toggle|internal-split-drag-end|right-dock-drag-end|swarm-launch|shared-surface|panel-split|panel-relaunch)/;
+
 /** Canvas uses release-on-hide + reattach-on-show; avoid repeated atlas clears on delayed bursts. */
 export function shouldClearGpuAtlasOnWorkspaceShow({
   operationalRendererMode,
@@ -1159,7 +1206,9 @@ export function shouldClearGpuAtlasOnWorkspaceShow({
 } = {}) {
   if (typeof explicitClearAtlas === 'boolean') return explicitClearAtlas;
   if (operationalRendererMode === 'xterm-canvas') {
-    return reason === 'workspace-show-pending';
+    if (reason === 'workspace-show-pending') return true;
+    if (CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON.test(reason)) return true;
+    return false;
   }
   if (reason.startsWith('layout-settled-')) {
     if (reason.includes('workspace-removed')) return false;
@@ -2187,15 +2236,21 @@ export default function TerminalTTY({
   );
 
   const skipRedundantInitialCommandSend = useCallback(
-    (isRecoveryRelaunch = false) =>
+    (commandToSend, isRecoveryRelaunch = false) =>
       shouldSkipRedundantInitialCommandSend({
         panelId: id,
-        command: initialCommand,
+        command: commandToSend,
         isRecoveryRelaunch,
         sessionReattached: sessionReattachedRef.current,
       }),
-    [id, initialCommand]
+    [id]
   );
+
+  const resolveInjectCommand = useCallback(() => {
+    const storage = typeof window !== 'undefined' ? window.localStorage : null;
+    const agentRun = readAgentRunForPanel(storage, id);
+    return resolveTerminalInjectCommand(initialCommand, agentRun);
+  }, [id, initialCommand]);
 
   const sendInitialCommandIfReady = useCallback(() => {
     if (!initialCommand || hasSentInitialCommand.current) return;
@@ -2203,7 +2258,58 @@ export default function TerminalTTY({
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
     const isRecoveryRelaunch = /#recovery-\d+\s*$/i.test(initialCommand);
-    if (skipRedundantInitialCommandSend(isRecoveryRelaunch)) {
+    let commandToSend = null;
+
+    if (swarmContext?.isSwarmRole) {
+      const wrapperAlreadyDispatched = isSwarmLaunchWrapperDispatched(
+        {
+          launchId: swarmContext.launchId,
+          roleKey: swarmContext.roleKey,
+        },
+        typeof window !== 'undefined' ? window.localStorage : null
+      );
+      if (wrapperAlreadyDispatched || swarmContext?.needsLaunchWrapper !== true) {
+        logTerminalSession('initial-command-skipped', {
+          panelId: id,
+          reason: wrapperAlreadyDispatched
+            ? 'swarm-wrapper-already-dispatched'
+            : 'swarm-tmux-reattach',
+          command: initialCommand,
+        });
+        hasSentInitialCommand.current = true;
+        markPanelInitialCommandDispatched(id, initialCommand);
+        return;
+      }
+
+      // Fresh swarm launch: inject materialized bash wrapper directly.
+      // resolveTerminalInjectCommand intentionally returns null for wrappers (reconnect safety).
+      commandToSend = String(initialCommand || '')
+        .replace(/\s*#recovery-\d+\s*$/i, '')
+        .trim();
+      if (!commandToSend || !isSwarmLaunchWrapperCommand(commandToSend)) {
+        logTerminalSession('initial-command-skipped', {
+          panelId: id,
+          reason: 'swarm-wrapper-command-missing',
+          command: initialCommand,
+        });
+        hasSentInitialCommand.current = true;
+        return;
+      }
+    } else {
+      commandToSend = resolveInjectCommand();
+      if (!commandToSend) {
+        logTerminalSession('initial-command-skipped', {
+          panelId: id,
+          reason: 'no-resolved-inject-command',
+          command: initialCommand,
+          isRecoveryRelaunch,
+        });
+        hasSentInitialCommand.current = true;
+        return;
+      }
+    }
+
+    if (skipRedundantInitialCommandSend(commandToSend, isRecoveryRelaunch)) {
       logTerminalSession('initial-command-skipped', {
         panelId: id,
         reason: 'redundant-lifecycle',
@@ -2233,34 +2339,11 @@ export default function TerminalTTY({
       return;
     }
 
-    // Swarm panels attach to tmux on PTY spawn (ttyServer). The materialized launch
-    // wrapper runs only on a fresh swarm launch, not when reopening the workspace.
-    if (swarmContext?.isSwarmRole) {
-      const wrapperAlreadyDispatched = isSwarmLaunchWrapperDispatched(
-        {
-          launchId: swarmContext.launchId,
-          roleKey: swarmContext.roleKey,
-        },
-        typeof window !== 'undefined' ? window.localStorage : null
-      );
-      if (wrapperAlreadyDispatched || swarmContext?.needsLaunchWrapper !== true) {
-        logTerminalSession('initial-command-skipped', {
-          panelId: id,
-          reason: wrapperAlreadyDispatched
-            ? 'swarm-wrapper-already-dispatched'
-            : 'swarm-tmux-reattach',
-          command: initialCommand,
-        });
-        hasSentInitialCommand.current = true;
-        markPanelInitialCommandDispatched(id, initialCommand);
-        return;
-      }
-    }
-
-    const cleanCommand = initialCommand.replace(/\s*#recovery-\d+\s*$/, '');
+    const cleanCommand = commandToSend.replace(/\s*#recovery-\d+\s*$/, '');
     logTerminalSession('initial-command-sent', {
       panelId: id,
       command: cleanCommand,
+      sourceCommand: initialCommand,
       isRecoveryRelaunch,
       transport: transportRef.current,
     });
@@ -2271,7 +2354,7 @@ export default function TerminalTTY({
       wsRef.current.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
     }
     hasSentInitialCommand.current = true;
-    markPanelInitialCommandDispatched(id, initialCommand);
+    markPanelInitialCommandDispatched(id, commandToSend);
     if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper === true) {
       markSwarmLaunchWrapperDispatched(
         {
@@ -2285,7 +2368,7 @@ export default function TerminalTTY({
         new CustomEvent('devhub:swarm-launch-wrapper-sent', { detail: { panelId: id } })
       );
     }
-  }, [id, initialCommand, skipRedundantInitialCommandSend, swarmContext]);
+  }, [id, initialCommand, resolveInjectCommand, skipRedundantInitialCommandSend, swarmContext]);
 
   const scheduleInitialCommandAfterViewport = useCallback(() => {
     if (initialCommandDelayScheduledRef.current) return;
@@ -2367,7 +2450,13 @@ export default function TerminalTTY({
         logViewportDiagnostic('fit-skip');
         return false;
       }
-      const clearAtlas = options.clearAtlas ?? isActivePanelRef.current;
+      const clearAtlas =
+        options.clearAtlas ??
+        (isActivePanelRef.current ||
+          shouldClearAtlasForSplitCanvas({
+            operationalRendererMode: operationalRendererModeRef.current,
+            visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+          }));
       const fitWorked = fitTerminalViewport({
         container: containerRef.current,
         fitAddon: fitRef.current,
@@ -2422,12 +2511,16 @@ export default function TerminalTTY({
       }
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect && rect.width > 0 && rect.height > 0 && fitRef.current) {
+        const splitCanvasClear = shouldClearAtlasForSplitCanvas({
+          operationalRendererMode: operationalRendererModeRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+        });
         const fitWorked = fitTerminalViewport({
           container: containerRef.current,
           fitAddon: fitRef.current,
           term: termRef.current,
           socket: wsRef.current,
-          clearAtlas: false,
+          clearAtlas: splitCanvasClear,
           lastPtySizeRef: lastPtySizeRef.current,
         });
         if (fitWorked && termRef.current) {
@@ -2453,6 +2546,12 @@ export default function TerminalTTY({
         return;
       }
       if (termRef.current && isTerminalRendererReady(termRef.current)) {
+        stabilizeTerminalRenderer(termRef.current, {
+          clearAtlas: shouldClearAtlasForSplitCanvas({
+            operationalRendererMode: operationalRendererModeRef.current,
+            visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+          }),
+        });
         refreshTerminalViewport(termRef.current);
       }
     });
@@ -2785,6 +2884,7 @@ export default function TerminalTTY({
             sessionReattached: sessionReattachedRef.current,
             tuiSessionActive: tuiSessionActiveRef.current,
             bufferText: buffered,
+            termHasContent: terminalBufferHasRenderableContent(termRef.current),
           });
           if (discardCatchup) {
             nudgeTerminalPtyResize({
@@ -2800,11 +2900,13 @@ export default function TerminalTTY({
             }
             stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
             refreshTerminalViewport(termRef.current);
-            nudgeTerminalPtyResize({
-              term: termRef.current,
-              socket: wsRef.current,
-              lastPtySizeRef: lastPtySizeRef.current,
-            });
+            if (tuiSessionActiveRef.current) {
+              nudgeTerminalPtyResize({
+                term: termRef.current,
+                socket: wsRef.current,
+                lastPtySizeRef: lastPtySizeRef.current,
+              });
+            }
           }
         }
       }
@@ -3756,6 +3858,9 @@ export default function TerminalTTY({
 
     processExitedRef.current = false;
     sessionReattachedRef.current = false;
+    hasSentInitialCommand.current = false;
+    initialCommandDelayScheduledRef.current = false;
+    clearPanelInitialCommandLifecycle(id);
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       cliLog(`CLIENT:${id}`, 'connect() skipped — socket already open');
@@ -4262,6 +4367,24 @@ export default function TerminalTTY({
     termRef.current?.clear();
     connect();
   }, [autoFocus, connect, initialCommand, sendResize]);
+
+  const prevInitialCommandRef = useRef(initialCommand);
+  useEffect(() => {
+    const previous = prevInitialCommandRef.current;
+    prevInitialCommandRef.current = initialCommand;
+
+    if (previous === initialCommand) return;
+    if (!/#recovery-\d+\s*$/i.test(initialCommand)) return;
+
+    logTerminalSession('initial-command-recovery-reconnect', {
+      panelId: id,
+      previous,
+      initialCommand,
+    });
+    hasSentInitialCommand.current = false;
+    clearPanelInitialCommandLifecycle(id);
+    reconnect();
+  }, [id, initialCommand, reconnect]);
 
   const copyTextToClipboard = useCallback(async (text) => {
     if (!text) return false;
@@ -4954,6 +5077,82 @@ export default function TerminalTTY({
         return;
       }
 
+      if (String(reason).includes('swarm-launch')) {
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        if (
+          shouldAttachCanvasRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          }) &&
+          !canvasAddonRef.current
+        ) {
+          void tryReattachCanvasAddonRef.current?.();
+        }
+        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+          clearAtlas: true,
+        });
+        if (
+          !isDisposingRef.current &&
+          termRef.current &&
+          isTerminalRendererReady(termRef.current)
+        ) {
+          refreshTerminalViewport(termRef.current);
+        }
+        return;
+      }
+
+      if (
+        String(reason).includes('panel-group-layout') ||
+        String(reason).includes('internal-split-drag-end') ||
+        String(reason).includes('right-dock-drag-end') ||
+        String(reason).includes('panel-focus-toggle')
+      ) {
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        if (
+          shouldAttachCanvasRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          }) &&
+          !canvasAddonRef.current
+        ) {
+          void tryReattachCanvasAddonRef.current?.();
+        }
+        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+          clearAtlas: true,
+        });
+        if (
+          !isDisposingRef.current &&
+          termRef.current &&
+          isTerminalRendererReady(termRef.current)
+        ) {
+          refreshTerminalViewport(termRef.current);
+        }
+        return;
+      }
+
+      if (String(reason).includes('panel-split') || String(reason).includes('panel-relaunch')) {
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        if (
+          shouldAttachCanvasRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          }) &&
+          !canvasAddonRef.current
+        ) {
+          void tryReattachCanvasAddonRef.current?.();
+        }
+        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+          clearAtlas: webglReleasedOnLayoutHideRef.current,
+        });
+        return;
+      }
+
       if (
         String(reason).includes('pizarra-mode-exit') ||
         String(reason).includes('pizarra-mode-enter')
@@ -4999,11 +5198,10 @@ export default function TerminalTTY({
           ? [120, 180, 340]
           : String(reason).includes('workspace-switch')
             ? []
-            : String(reason).includes('swarm-launch')
-              ? [180, 340, 500, 1000]
-              : String(reason).includes('panel-focus-toggle')
-                ? [120, 180, 340, 500]
-                : [180, 340];
+            : String(reason).includes('panel-focus-toggle') ||
+                String(reason).includes('panel-group-layout')
+              ? [120, 180, 340, 500]
+              : [180, 340];
       layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
         (phase) => {
           if (isDisposingRef.current) return;
@@ -5207,12 +5405,15 @@ export default function TerminalTTY({
       }
 
       // Live grok/OpenCode: xterm forwards wheel as native SGR at the pointer row.
+      // In split grids the inactive panel is blurred — inject scroll instead so small
+      // worker panes can scroll without requiring maximize/focus (G-01 scroll fix).
       if (
         shouldPassthroughNativeTuiWheel({
           isGrokSession,
           grokTuiReady: grokTuiReadyRef.current,
           opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
-        })
+        }) &&
+        isActivePanelRef.current
       ) {
         return;
       }

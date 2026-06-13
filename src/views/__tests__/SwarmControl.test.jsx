@@ -785,7 +785,7 @@ describe('SwarmControl control room composition', () => {
                     '/home/matias/.opencode/bin/opencode --agent swarm-director --prompt "Builder launch"',
                   launchOrigin: 'swarm-control-launch',
                   launchPhase: 'fanout',
-                  startAfterMs: 4000,
+                  startAfterMs: 0,
                   promptSummary: 'Builder · Arranque limpio guiado',
                   taskTitle: 'Lanzar Arranque limpio guiado · Builder',
                 },

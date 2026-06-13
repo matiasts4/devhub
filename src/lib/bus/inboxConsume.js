@@ -50,6 +50,12 @@ function formatDirectiveForInjection(body, fromRole, toRole) {
       if (instruction) lines.push(String(instruction));
       lines.push('Ejecuta el flujo SDD estandar (/sdd-continue o /sdd-new segun corresponda).');
       if (parsed.kickoff_sdd) lines.push(String(parsed.kickoff_sdd));
+      if (/^sdd_worker_\d+$/.test(String(toRole || '').trim())) {
+        const {
+          formatOperatorPresetsForWorkerDirective,
+        } = require('../operations/zedOperatorPresets.cjs');
+        lines.push(formatOperatorPresetsForWorkerDirective());
+      }
       return lines.join('\n');
     }
   }

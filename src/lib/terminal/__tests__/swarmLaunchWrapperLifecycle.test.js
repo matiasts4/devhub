@@ -1,5 +1,6 @@
 const {
   buildSwarmLaunchWrapperDispatchKey,
+  clearSwarmLaunchWrapperDispatchForLaunch,
   hydrateSwarmLaunchWrapperFlags,
   isSwarmLaunchWrapperCommand,
   isSwarmLaunchWrapperDispatched,
@@ -33,6 +34,22 @@ describe('swarmLaunchWrapperLifecycle', () => {
     ).toBe(true);
     expect(buildSwarmLaunchWrapperDispatchKey('launch-9', 'sdd_worker_1')).toBe(
       'launch-9:sdd_worker_1'
+    );
+  });
+
+  test('clearSwarmLaunchWrapperDispatchForLaunch removes only matching launch keys', () => {
+    const storage = mockStorage();
+    markSwarmLaunchWrapperDispatched({ launchId: 'launch-9', roleKey: 'zed' }, storage);
+    markSwarmLaunchWrapperDispatched({ launchId: 'launch-9', roleKey: 'sdd_worker_1' }, storage);
+    markSwarmLaunchWrapperDispatched({ launchId: 'launch-10', roleKey: 'zed' }, storage);
+
+    clearSwarmLaunchWrapperDispatchForLaunch('launch-9', storage);
+
+    expect(isSwarmLaunchWrapperDispatched({ launchId: 'launch-9', roleKey: 'zed' }, storage)).toBe(
+      false
+    );
+    expect(isSwarmLaunchWrapperDispatched({ launchId: 'launch-10', roleKey: 'zed' }, storage)).toBe(
+      true
     );
   });
 

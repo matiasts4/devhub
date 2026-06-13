@@ -84,6 +84,7 @@ function resolveBusHelperPaths({ repoRoot, env } = {}) {
  * @param {string} [params.projectId] - DevHub project id for MCP context
  * @param {number} [params.inboxPollIntervalSeconds] - inbox-consume poll interval
  * @param {number} [params.tuiReadyGraceMs] - max wait for opencode-ready marker
+ * @param {number} [params.preLaunchDelayMs] - stagger worker wrapper OpenCode start (UI attaches at 0)
  * @returns {string} Complete shell wrapper script
  */
 function buildLaunchWrapperForRole({
@@ -107,6 +108,7 @@ function buildLaunchWrapperForRole({
   disableMinimaxMcp,
   inboxPollIntervalSeconds,
   tuiReadyGraceMs,
+  preLaunchDelayMs,
 }) {
   // T-011 — auto-resolve bus helper paths when the caller hasn't passed
   // them explicitly. This is the primary fix: the production caller in
@@ -139,6 +141,7 @@ function buildLaunchWrapperForRole({
     disableMinimaxMcp,
     inboxPollIntervalSeconds,
     tuiReadyGraceMs,
+    preLaunchDelayMs,
   });
 }
 

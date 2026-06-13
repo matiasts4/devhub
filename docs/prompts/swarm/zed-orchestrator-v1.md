@@ -43,6 +43,16 @@ Worker role keys look like `sdd_worker_1`, `sdd_worker_2`, etc.
 
 When the operator says to assign work (example: _"assign terminal-fix to Worker 2"_):
 
+0. **Lazy workers (default):** if the worker panel is not live yet, provision it in the **same swarm workspace** before delegating:
+
+   ```bash
+   curl -sS -X POST "$DEVHUB_SUPERVISOR_URL/operations/health" \
+     -H 'Content-Type: application/json' \
+     -d '{"action":"provision_swarm_worker","launch_id":"<mission>","role_key":"sdd_worker_2"}'
+   ```
+
+   Wait until the UI materializes the panel (a few seconds), then delegate.
+
 1. `get_project_context` using `DEVHUB_PROJECT_ID` (do not assume `list_projects` alone).
 2. Resolve or create the MCP task / change name (`update_task` / `bulk_create_tasks`).
 3. `update_task` → `in_progress`, comment with change + branch expectation.
@@ -62,6 +72,30 @@ When a worker reports done:
 3. Notify the operator what to test and where (branch, files, checklist).
 
 Only the **human operator** moves tasks to `completed` after functional QA.
+
+## Operator presets (autopilot — Matías defaults)
+
+When a worker shows the **Gentle Orchestrator setup menu** (acting / version / git-PR / revision), answer **without waiting for the human**:
+
+| Menu     | Choice | Meaning                                                                                                          |
+| -------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
+| Acting   | **B3** | Automatic acting profile                                                                                         |
+| Version  | **V3** | Operator default version                                                                                         |
+| Git/PR   | **C1** | **Same shared branch, single PR** — required for parallel agents (branch switches break cross-worker visibility) |
+| Revision | **D2** | Operator default revision policy                                                                                 |
+
+Inject via tmux when the worker is idle on a menu (>30s) or right after delegation:
+
+```bash
+tmux send-keys -t devhub-swarm-<mission>-sdd_worker_N -l 'B3' Enter
+tmux send-keys -t devhub-swarm-<mission>-sdd_worker_N -l 'V3' Enter
+tmux send-keys -t devhub-swarm-<mission>-sdd_worker_N -l 'C1' Enter
+tmux send-keys -t devhub-swarm-<mission>-sdd_worker_N -l 'D2' Enter
+```
+
+When a worker pauses **before apply** asking to continue and the plan is still valid: inject `/sdd-continue` or confirm apply — do not wait for the operator unless there is a real blocker.
+
+Delegate messages should include `instruction` plus change name; inbox-consume also appends operator preset hints to workers.
 
 ## Skills awareness (reference)
 

@@ -31,6 +31,16 @@ describe('panelInitialCommandLifecycle', () => {
     ).toBe(true);
   });
 
+  test('allows opencode session resume after bash wrapper was dispatched', () => {
+    markPanelInitialCommandDispatched('p1', 'bash /tmp/devhub-launch-launch-1-zed.sh');
+    expect(
+      shouldSkipRedundantInitialCommandSend({
+        panelId: 'p1',
+        command: 'opencode --session ses_abc',
+      })
+    ).toBe(false);
+  });
+
   test('allows recovery relaunch even when command was dispatched before', () => {
     markPanelInitialCommandDispatched('p1', 'opencode --session ses_abc');
     expect(

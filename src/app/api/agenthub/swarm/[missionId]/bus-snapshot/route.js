@@ -4,9 +4,9 @@ import { getMissionBusSnapshot } from '@/lib/db/swarmMissions';
 export const runtime = 'nodejs';
 
 // GET /api/agenthub/swarm/:missionId/bus-snapshot
-export async function GET(_request, context) {
+export async function GET(_request, { params }) {
   try {
-    const missionId = context?.params?.missionId;
+    const { missionId } = (await params) || {};
     if (!missionId) {
       return NextResponse.json({ error: 'missionId es requerido.' }, { status: 400 });
     }

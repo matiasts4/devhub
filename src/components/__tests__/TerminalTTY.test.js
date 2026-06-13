@@ -143,9 +143,11 @@ const {
   appendHiddenTerminalOutputBuffer,
   takeHiddenTerminalOutputBuffer,
   shouldDiscardHiddenOutputCatchup,
+  terminalBufferHasRenderableContent,
   chunkTerminalOutputForCatchup,
   nudgeTerminalPtyResize,
   shouldClearGpuAtlasOnWorkspaceShow,
+  shouldClearAtlasForSplitCanvas,
   shouldBlockLateInitialCommandSend,
   shouldReleaseCanvasRendererOnLayoutHide,
   shouldShowTerminalLoadingOverlay,
@@ -665,10 +667,27 @@ describe('shouldAttachCanvasRenderer()', () => {
 });
 
 describe('shouldSkipRedundantLayoutSettleViewportSync()', () => {
-  test('skips unchanged layout-settled sync when a GPU renderer is attached', () => {
+  test('does not skip split layout churn even when cols/rows are unchanged', () => {
     expect(
       shouldSkipRedundantLayoutSettleViewportSync({
         reason: 'layout-settled-panel-group-layout-immediate',
+        sizeUnchanged: true,
+        hasGpuRenderer: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-internal-split-drag-end-immediate',
+        sizeUnchanged: true,
+        hasGpuRenderer: true,
+      })
+    ).toBe(false);
+  });
+
+  test('still skips generic layout-settled when dimensions are unchanged', () => {
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-workspace-switch-immediate',
         sizeUnchanged: true,
         hasGpuRenderer: true,
       })
@@ -689,6 +708,29 @@ describe('shouldSkipRedundantLayoutSettleViewportSync()', () => {
         sizeUnchanged: true,
         pendingWebglRecovery: true,
         hasGpuRenderer: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldClearAtlasForSplitCanvas()', () => {
+  test('requires canvas renderer and more than one visible panel', () => {
+    expect(
+      shouldClearAtlasForSplitCanvas({
+        operationalRendererMode: 'xterm-canvas',
+        visibleTerminalPanelCount: 5,
+      })
+    ).toBe(true);
+    expect(
+      shouldClearAtlasForSplitCanvas({
+        operationalRendererMode: 'xterm-canvas',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
+    expect(
+      shouldClearAtlasForSplitCanvas({
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 5,
       })
     ).toBe(false);
   });
@@ -734,6 +776,25 @@ describe('hidden output catchup policy', () => {
     );
     expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 40000 })).toBe(true);
     expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 4000 })).toBe(false);
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 4000, termHasContent: true })).toBe(
+      true
+    );
+  });
+
+  test('terminalBufferHasRenderableContent detects existing prompt lines', () => {
+    const term = {
+      buffer: {
+        active: {
+          length: 2,
+          getLine: (index) => ({
+            translateToString: () => (index === 1 ? '└─$ ' : ''),
+          }),
+        },
+      },
+    };
+
+    expect(terminalBufferHasRenderableContent(term)).toBe(true);
+    expect(terminalBufferHasRenderableContent({ buffer: { active: { length: 0 } } })).toBe(false);
   });
 
   test('shouldDiscardHiddenOutputCatchup rejects active TUI and OpenCode footer replay', () => {
@@ -861,7 +922,7 @@ describe('shouldFreezeSingleWebglViewportOnWorkspaceShow()', () => {
 });
 
 describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
-  test('limits canvas atlas clears to pending catch-up syncs only', () => {
+  test('limits canvas atlas clears to pending catch-up and split-layout churn', () => {
     expect(
       shouldClearGpuAtlasOnWorkspaceShow({
         operationalRendererMode: 'xterm-canvas',
@@ -872,6 +933,18 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
       shouldClearGpuAtlasOnWorkspaceShow({
         operationalRendererMode: 'xterm-canvas',
         reason: 'workspace-show-pending',
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'layout-settled-panel-group-layout-immediate',
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'layout-settled-panel-focus-toggle-delay-340',
       })
     ).toBe(true);
   });

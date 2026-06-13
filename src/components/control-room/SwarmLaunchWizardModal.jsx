@@ -599,29 +599,23 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   {/*
-                    T-018 hook: spawnStrategy field. T-018 (lazy spawn) is
-                    being designed separately. This is a UI-only hook so the
-                    modal can pass spawnStrategy through to the launch
-                    request body. The actual lazy-spawn behavior is NOT
-                    implemented in this change — values are stored in the
-                    draft and forwarded to the launch request, but the
-                    orchestrator ignores them for now. Two values:
-                      - automatic:     default. Spawn all roles concurrently
-                                       (current behavior, no change).
-                      - all-at-once:   spawn every role in a single nohup.
-                                       (Reserved for T-018 lazy spawn.)
+                    Spawn strategy for ZED pod:
+                      - automatic: mount every role at launch (legacy).
+                      - lazy-on-demand: only ZED at launch; workers grow in the same workspace.
                   */}
                   <label className="space-y-2 text-sm font-medium">
                     <span>Estrategia de spawn</span>
                     <select
-                      aria-label="Spawn strategy (T-018 hook)"
-                      value={draft.spawnStrategy || 'automatic'}
+                      aria-label="Spawn strategy"
+                      value={draft.spawnStrategy || 'lazy-on-demand'}
                       onChange={(event) => onDraftChange({ spawnStrategy: event.target.value })}
                       className="w-full"
                       style={wizardSelectFieldStyle}
                     >
-                      <option value="automatic">Automatic (default)</option>
-                      <option value="all-at-once">All-at-once (T-018 reserved)</option>
+                      <option value="lazy-on-demand">
+                        Lazy — grid crece al delegar (recomendado)
+                      </option>
+                      <option value="automatic">Automatic — todos los paneles al lanzar</option>
                     </select>
                   </label>
 

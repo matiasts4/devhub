@@ -38,6 +38,7 @@ import {
   Globe,
   FileCode2,
   Wand2,
+  Terminal,
   Settings,
 } from 'lucide-react';
 import TerminalTTY from './TerminalTTY';
@@ -151,9 +152,12 @@ import { SHOW_RENDERER_SWITCH } from './terminal/terminalRendererPreferences';
 import {
   createSwarmLaunchDraft,
   deriveSwarmLaunchPreview,
-  isOrchestratorRoleKey,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
+import {
+  resolveSwarmDelegatedRoleKeys,
+  shouldShowSwarmStandbyOverlay,
+} from '@/lib/operations/swarmDelegatedRoles';
 import {
   RESTORE_ACTION,
   buildRestoreManifestFromWorkspaceState,
@@ -191,15 +195,29 @@ import {
 } from '@/lib/terminal/terminalSessionFlush';
 import {
   dispatchSwarmLaunchMaterialized,
-  rescheduleSwarmLaunchBatchFlush,
   SWARM_LAUNCH_MATERIALIZED_EVENT,
 } from '@/lib/terminal/swarmLaunchBatch';
+import {
+  appendSwarmWorkerToWorkspace,
+  createSwarmLaunchQueueHandlers,
+  createSyncActiveWindowSnapshot,
+  createWorkspaceForSwarmLaunchRequestsFn,
+  resolveSwarmPanelStandbyFlag,
+  resolveWorkspaceWindowAfterPanelClose,
+} from '@/lib/terminal/swarmLaunchWorkspace';
+import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
   dispatchNativeVteWorkspaceSync,
   dispatchTerminalLayoutSettled,
   computeCarvedBounds,
   createNativeLayoutSyncQueue,
 } from '@/components/terminal/nativeLayoutSync';
+import {
+  LIFECYCLE_BURST_PHASES,
+  PANEL_LIFECYCLE_REASONS,
+  scheduleSwarmProjectionReadyBurst,
+  scheduleTerminalLifecycleSync,
+} from '@/lib/terminal/terminalLifecycleSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
 import {
@@ -210,6 +228,7 @@ import {
 } from '@/lib/terminal/swarmWorkspaceLifecycle';
 import {
   hydrateSwarmLaunchWrapperFlags,
+  clearSwarmLaunchWrapperDispatchForLaunch,
   markSwarmLaunchWrapperDispatched,
 } from '@/lib/terminal/swarmLaunchWrapperLifecycle';
 import { useWorkspaceSurfaceRegistry } from '@/lib/pizarra/useWorkspaceSurfaceRegistry';
@@ -875,6 +894,7 @@ function renderWorkspacePanel(
     visibleTerminalPanelCount = 1,
     deferLiveSurfaceToPizarra = false,
     pizarraOwnsLiveSurfaces = false,
+    swarmDelegatedRoleKeys = null,
     inboxPendingCount = 0,
     renameEditing = false,
     renameValue = '',
@@ -1142,7 +1162,7 @@ function renderWorkspacePanel(
         </div>
       </div>
       <div
-        className="min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
+        className="relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
         data-testid={`panel-body-${panel.id}`}
         style={getTerminalPanelBodyStyle({ withBackground: false })}
       >
@@ -1190,6 +1210,18 @@ function renderWorkspacePanel(
             />
           )}
         </div>
+        {shouldShowSwarmStandbyOverlay(panel, swarmDelegatedRoleKeys) ? (
+          <div
+            data-testid={`panel-standby-hint-${panel.id}`}
+            className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-[rgba(5,8,20,0.42)]"
+            aria-hidden="true"
+          >
+            <div className="rounded-md border border-white/10 bg-[rgba(8,12,24,0.88)] px-3 py-2 text-center text-[11px] text-[var(--text-muted)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+              <span className="block font-medium text-[var(--text-secondary)]">Standby</span>
+              <span className="mt-0.5 block">Esperando delegación desde ZED</span>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1369,6 +1401,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const swarmLaunchScheduledTimersRef = useRef(new Map());
   const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
   const materializedSwarmLaunchIdsRef = useRef(new Set());
+  const swarmProjectionBurstCleanupRef = useRef(null);
 
   const [activeWsId, setActiveWsId] = useState(() => createDefaultWorkspaceState().activeWsId);
   const [activePanelIds, setActivePanelIds] = useState(
@@ -1936,6 +1969,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         );
       }
 
+      const hostWorkspace = workspacesRef.current.find((ws) =>
+        (ws.columns || []).some((col) => (col.panels || []).some((entry) => entry.id === panelId))
+      );
+      const relaunchPanelIds = getPanelIdsFromColumns(hostWorkspace?.columns || []);
+      if (hostWorkspace && relaunchPanelIds.length > 0) {
+        scheduleTerminalLifecycleSync({
+          reason: PANEL_LIFECYCLE_REASONS.PANEL_RELAUNCH,
+          workspaceId: hostWorkspace.id,
+          panelIds: relaunchPanelIds,
+          phases: LIFECYCLE_BURST_PHASES[PANEL_LIFECYCLE_REASONS.PANEL_RELAUNCH],
+        });
+      }
+
       relaunchInFlightRef.current.delete(panelId);
     },
     [storage, terminalStateStorageKey]
@@ -2435,9 +2481,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     projectId,
     swarmControlSnapshot
   );
-  const { pendingCountByRole: swarmInboxPendingByRole } = useSwarmBusSnapshot(
-    activeSwarmLaunchSummary?.launchId || null,
-    { enabled: Boolean(activeSwarmLaunchSummary?.launchId) }
+  const { snapshot: swarmBusSnapshot, pendingCountByRole: swarmInboxPendingByRole } =
+    useSwarmBusSnapshot(activeSwarmLaunchSummary?.launchId || null, {
+      enabled: Boolean(activeSwarmLaunchSummary?.launchId),
+    });
+  const swarmDelegatedRoleKeys = useMemo(
+    () => resolveSwarmDelegatedRoleKeys(swarmBusSnapshot),
+    [swarmBusSnapshot]
   );
   const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
   const effectiveRightDockState = activeWorkspaceOwnsDockState
@@ -3283,6 +3333,29 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [buildNativeWorkspaceSyncDetail]
   );
 
+  const markPanelsClosing = useCallback((panelIds = [], clearAfterMs = 2000) => {
+    const ids = Array.isArray(panelIds) ? panelIds.filter(Boolean) : [];
+    ids.forEach((id) => panelsClosingRef.current.add(id));
+    if (clearAfterMs > 0 && typeof window !== 'undefined') {
+      ids.forEach((id) => {
+        window.setTimeout(() => panelsClosingRef.current.delete(id), clearAfterMs);
+      });
+    }
+  }, []);
+
+  const syncPanelLifecycleLayout = useCallback(
+    (reason, workspaceId, panelIds, { phases, notifyNative = true } = {}) => {
+      return scheduleTerminalLifecycleSync({
+        reason,
+        workspaceId,
+        panelIds,
+        phases: phases || LIFECYCLE_BURST_PHASES[reason] || undefined,
+        notifyNative: notifyNative ? notifyNativeLayoutSettled : undefined,
+      });
+    },
+    [notifyNativeLayoutSettled]
+  );
+
   useEffect(
     () => () => {
       if (nativeSyncIdleTimerRef.current) {
@@ -3367,9 +3440,27 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     panelLayoutDebounceRef.current = setTimeout(() => {
       panelLayoutDebounceRef.current = null;
+      const workspace = workspaces.find((ws) => ws.id === activeWsId);
+      const panelIds = workspace ? getAllPanelIds(workspace.columns) : [];
+      const multiPanelGrid = panelIds.length > 1 && !focusedPanelByWorkspace[activeWsId];
+
+      if (multiPanelGrid) {
+        syncPanelLifecycleLayout('panel-group-layout', activeWsId, panelIds);
+        return;
+      }
+
       notifyNativeLayoutSettled('panel-group-layout');
     }, 32);
-  }, [isDraggingDock, isDraggingInternalSplit, notifyNativeLayoutSettled]);
+  }, [
+    activeWsId,
+    focusedPanelByWorkspace,
+    getAllPanelIds,
+    isDraggingDock,
+    isDraggingInternalSplit,
+    notifyNativeLayoutSettled,
+    syncPanelLifecycleLayout,
+    workspaces,
+  ]);
 
   useEffect(
     () => () => {
@@ -3434,23 +3525,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const schedulePanelFocusLayoutSync = useCallback(
     (workspaceId, panelIds) => {
-      const scheduleFocusLayoutSync = (phase) => {
-        dispatchTerminalLayoutSettled({
-          reason: 'panel-focus-toggle',
-          workspaceId,
-          panelIds,
-          phase,
-        });
-      };
-      scheduleFocusLayoutSync('immediate');
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => scheduleFocusLayoutSync('raf'));
-      });
-      window.setTimeout(() => scheduleFocusLayoutSync('delay-120'), 120);
-      window.setTimeout(() => scheduleFocusLayoutSync('delay-340'), 340);
-      notifyNativeLayoutSettled('panel-focus-toggle');
+      syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.PANEL_FOCUS, workspaceId, panelIds);
     },
-    [notifyNativeLayoutSettled]
+    [syncPanelLifecycleLayout]
   );
 
   const pulsePanelNavigation = useCallback((panelId) => {
@@ -3657,30 +3734,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     };
   }, []);
 
-  const syncActiveWindowSnapshot = useCallback(
-    (wsId, columns, nextActivePanelId = null) => {
-      setWorkspaceWindows((prev) => {
-        const windows = prev[wsId] || [];
-        const activeWindowId = activeWindowIds[wsId];
-        if (!activeWindowId || windows.length === 0) return prev;
-
-        return {
-          ...prev,
-          [wsId]: windows.map((win) => {
-            if (win.id !== activeWindowId) return win;
-            return {
-              ...win,
-              columns,
-              activePanelId:
-                nextActivePanelId ||
-                win.activePanelId ||
-                columns.flatMap((col) => col.panels || [])[0]?.id ||
-                null,
-            };
-          }),
-        };
-      });
-    },
+  const syncActiveWindowSnapshot = useMemo(
+    () =>
+      createSyncActiveWindowSnapshot({
+        setWorkspaceWindows,
+        getActiveWindowIds: () => activeWindowIds,
+      }),
     [activeWindowIds]
   );
 
@@ -3987,7 +4046,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     // When the active workspace changes, activeWsId effect already emits workspace-switch.
     // Avoid duplicate layout bursts that flash/refit survivor terminals on close.
     if (!activeWsWillChange && typeof window !== 'undefined') {
-      notifyNativeLayoutSettled('workspace-removed');
+      if (targetPanelIds.length > 0) {
+        syncPanelLifecycleLayout(
+          PANEL_LIFECYCLE_REASONS.WORKSPACE_REMOVED,
+          nextActiveWsId,
+          targetPanelIds
+        );
+      } else {
+        notifyNativeLayoutSettled('workspace-removed');
+      }
     }
   };
 
@@ -4039,6 +4106,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setTerminalRendererPreferences((prev) =>
       setPanelRendererPreference(prev, newWsId, firstPanelId, TERMINAL_RENDERER_INHERIT_MODE)
     );
+    const gridPanelIds = getAllPanelIds(newColumns);
+    syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.PANEL_SPLIT, newWsId, gridPanelIds);
   };
 
   const persistAgentRunMetadata = useCallback(
@@ -4088,208 +4157,209 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [storage]
   );
 
-  const createWorkspaceForSwarmLaunchRequests = useCallback(
-    (requests = []) => {
-      const launchId = String(requests[0]?.launchId || '').trim();
-      if (launchId && materializedSwarmLaunchIdsRef.current.has(launchId)) {
-        return;
-      }
+  const createWorkspaceForSwarmLaunchRequests = useMemo(
+    () =>
+      createWorkspaceForSwarmLaunchRequestsFn({
+        cwd,
+        wsCounterRef,
+        colCounterRef,
+        panelCounterRef,
+        materializedSwarmLaunchIdsRef,
+        getAllPanelIds,
+        buildPanel: (request, panelId, panelCwd) =>
+          createPanel(panelId, request.commandToRun, panelCwd, {
+            swarmRole: request.swarmRole,
+            swarmContext: {
+              isSwarmRole: Boolean(request.isSwarmRole),
+              roleKey: request.roleKey || request.swarmRole?.roleKey || null,
+              launchId: request.launchId || null,
+              needsLaunchWrapper: true,
+              startAfterMs: 0,
+              standbyAwaitingDelegation: resolveSwarmPanelStandbyFlag(request),
+              bootstrapMode: request.bootstrapMode || 'engram_first',
+            },
+          }),
+        setWorkspaces,
+        setActiveWsId,
+        setActivePanelIds,
+        setTerminalRendererPreferences,
+        applyRendererPreference: (acc, wsId, panelId) =>
+          setPanelRendererPreference(acc, wsId, panelId, TERMINAL_RENDERER_INHERIT_MODE),
+        syncActiveWindowSnapshot,
+        persistAgentRunMetadata,
+        onMarkPanelsClosing: markPanelsClosing,
+        onClearLaunchWrapperDispatch: (launchId) => {
+          clearSwarmLaunchWrapperDispatchForLaunch(launchId, storage);
+        },
+        onAfterMaterialize: ({ launchId, plan, panelAssignments }) => {
+          if (launchId) {
+            materializedSwarmLaunchIdsRef.current.add(launchId);
+            const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+            if (pendingBatch?.timer) {
+              window.clearTimeout(pendingBatch.timer);
+            }
+            pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+          }
 
-      const launchRequests = requests
-        .map((request) => {
-          const commandToRun = enforceDocOpsGateOnLaunchCommand(
-            request.command || `opencode --agent ${request.selectedAgent || DEFAULT_OPENCODE_AGENT}`
-          );
-          const swarmRole = buildSwarmRoleMetadata(request);
-          return { ...request, commandToRun, swarmRole };
-        })
-        .filter((request) => request.taskId && request.commandToRun);
+          const panelIds = panelAssignments.map(({ panelId }) => panelId);
+          syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.SWARM_LAUNCH, plan.newWsId, panelIds);
 
-      if (launchRequests.length === 0) return;
-
-      const directorRequest =
-        launchRequests.find((request) => isOrchestratorRoleKey(request.swarmRole?.roleKey)) || null;
-      const workerRequests = launchRequests
-        .filter((request) => request !== directorRequest)
-        .sort(
-          (a, b) =>
-            getSwarmRoleOrder(a.swarmRole?.roleKey) - getSwarmRoleOrder(b.swarmRole?.roleKey)
-        );
-
-      const groupedRequests =
-        directorRequest && launchRequests.length >= 3
-          ? [
-              workerRequests.filter((_, index) => index % 2 === 0),
-              workerRequests.filter((_, index) => index % 2 === 1),
-              [directorRequest],
-            ].filter((columnRequests) => columnRequests.length > 0)
-          : [launchRequests];
-
-      wsCounterRef.current += 1;
-      const newWsId = `ws${wsCounterRef.current}`;
-
-      let firstPanelId = null;
-      let directorPanelId = null;
-      const panelAssignments = [];
-      const newColumns = groupedRequests
-        .filter((columnRequests) => columnRequests.length > 0)
-        .map((columnRequests) => {
-          colCounterRef.current += 1;
-          const colId = `c${colCounterRef.current}`;
-          const panels = columnRequests.map((request) => {
-            panelCounterRef.current += 1;
-            const panelId = `p${panelCounterRef.current}`;
-            if (!firstPanelId) firstPanelId = panelId;
-            if (isOrchestratorRoleKey(request.swarmRole?.roleKey)) directorPanelId = panelId;
-            panelAssignments.push({ request, panelId });
-            return createPanel(panelId, request.commandToRun, request.workspacePath || cwd, {
-              swarmRole: request.swarmRole,
-              swarmContext: {
-                isSwarmRole: Boolean(request.isSwarmRole),
-                roleKey: request.roleKey || request.swarmRole?.roleKey || null,
-                launchId: request.launchId || null,
-                needsLaunchWrapper: true,
-                startAfterMs: Number.isFinite(request.startAfterMs) ? request.startAfterMs : 0,
-              },
-            });
+          if (swarmProjectionBurstCleanupRef.current) {
+            swarmProjectionBurstCleanupRef.current();
+            swarmProjectionBurstCleanupRef.current = null;
+          }
+          swarmProjectionBurstCleanupRef.current = scheduleSwarmProjectionReadyBurst({
+            workspaceId: plan.newWsId,
+            panelIds,
           });
-          return { id: colId, panels };
-        });
-
-      const launchLabel = launchRequests[0]?.taskTitle?.split(' · ')?.[0] || 'Swarm launch';
-      const activePanelForLaunch = directorPanelId || firstPanelId;
-      const nextWorkspace = {
-        id: newWsId,
-        name: launchLabel,
-        columns: newColumns,
-      };
-
-      let previousSwarmPanelIds = [];
-      try {
-        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
-        previousSwarmPanelIds = Object.values(runs || {})
-          .filter((run) => run?.launchOrigin === 'swarm-control-launch' && run?.panelId)
-          .map((run) => run.panelId);
-      } catch {
-        previousSwarmPanelIds = [];
-      }
-      if (previousSwarmPanelIds.length > 0) {
-        closeTerminalSessions(previousSwarmPanelIds);
-      }
-
-      setWorkspaces((prev) => {
-        const oldSwarmPanelIds = new Set(previousSwarmPanelIds);
-        const retained = prev.filter((workspace) => {
-          const panelIds = getAllPanelIds(workspace.columns || []);
-          return !panelIds.some((panelId) => oldSwarmPanelIds.has(panelId));
-        });
-        return [...retained, nextWorkspace];
-      });
-      setActiveWsId(newWsId);
-      setActivePanelIds((prev) => ({ ...prev, [newWsId]: activePanelForLaunch }));
-      setTerminalRendererPreferences((prev) =>
-        panelAssignments.reduce(
-          (acc, assignment) =>
-            setPanelRendererPreference(
-              acc,
-              newWsId,
-              assignment.panelId,
-              TERMINAL_RENDERER_INHERIT_MODE
-            ),
-          prev
-        )
-      );
-      syncActiveWindowSnapshot(newWsId, newColumns, activePanelForLaunch);
-
-      panelAssignments.forEach(({ request, panelId }) => {
-        persistAgentRunMetadata(request, panelId, request.commandToRun);
-      });
-
-      if (launchId) {
-        materializedSwarmLaunchIdsRef.current.add(launchId);
-        const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
-        if (pendingBatch?.timer) {
-          window.clearTimeout(pendingBatch.timer);
-        }
-        pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
-      }
-
-      if (typeof window !== 'undefined') {
-        const swarmPanelIds = panelAssignments.map(({ panelId }) => panelId);
-        const scheduleSwarmViewportSync = (phase) => {
-          dispatchTerminalLayoutSettled({
-            reason: 'swarm-launch',
-            workspaceId: newWsId,
-            panelIds: swarmPanelIds,
-            phase,
-          });
-        };
-        scheduleSwarmViewportSync('immediate');
-        notifyNativeLayoutSettled('swarm-launch');
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => scheduleSwarmViewportSync('raf'));
-        });
-        window.setTimeout(() => scheduleSwarmViewportSync('delay-120'), 120);
-        window.setTimeout(() => scheduleSwarmViewportSync('delay-340'), 340);
-        window.setTimeout(() => scheduleSwarmViewportSync('delay-500'), 500);
-        window.setTimeout(() => scheduleSwarmViewportSync('delay-1000'), 1000);
-      }
-    },
-    [cwd, notifyNativeLayoutSettled, persistAgentRunMetadata, syncActiveWindowSnapshot]
+        },
+      }),
+    [
+      cwd,
+      markPanelsClosing,
+      persistAgentRunMetadata,
+      storage,
+      syncActiveWindowSnapshot,
+      syncPanelLifecycleLayout,
+    ]
   );
 
-  const flushSwarmLaunchBatch = useCallback(
-    (launchId) => {
-      const batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
-      if (!batch) return;
-
-      if (batch.timer) {
-        window.clearTimeout(batch.timer);
-        batch.timer = null;
-      }
-
-      pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
-      createWorkspaceForSwarmLaunchRequests(batch.requests);
-    },
+  const { enqueueSwarmLaunchRequest } = useMemo(
+    () =>
+      createSwarmLaunchQueueHandlers({
+        pendingSwarmLaunchByLaunchIdRef,
+        pendingSwarmLaunchRequestsRef,
+        swarmLaunchFlushTimerRef,
+        materializedSwarmLaunchIdsRef,
+        createWorkspaceForSwarmLaunchRequests,
+        clearTimeoutFn: window.clearTimeout.bind(window),
+        setTimeoutFn: window.setTimeout.bind(window),
+      }),
     [createWorkspaceForSwarmLaunchRequests]
   );
 
-  const flushPendingSwarmLaunchRequests = useCallback(() => {
-    // Legacy: flush flat array if still used
-    const requests = pendingSwarmLaunchRequestsRef.current;
-    pendingSwarmLaunchRequestsRef.current = [];
-    swarmLaunchFlushTimerRef.current = null;
-    if (requests.length > 0) {
-      createWorkspaceForSwarmLaunchRequests(requests);
-    }
-  }, [createWorkspaceForSwarmLaunchRequests]);
+  const consumedUiProvisionKeysRef = useRef(new Set());
 
-  const enqueueSwarmLaunchRequest = useCallback(
-    (request) => {
-      const launchId = request.launchId || 'unknown';
-      if (launchId !== 'unknown' && materializedSwarmLaunchIdsRef.current.has(launchId)) {
-        return;
-      }
-      let batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+  const materializeSwarmWorkerInPlace = useCallback(
+    async (runtimeRequest) => {
+      const launchId = String(runtimeRequest?.launchId || '').trim();
+      const roleKey = String(runtimeRequest?.roleKey || '').trim();
+      if (!launchId || !roleKey) return false;
 
-      if (!batch) {
-        batch = { requests: [], timer: null };
-        pendingSwarmLaunchByLaunchIdRef.current.set(launchId, batch);
-      }
+      const provisionKey = buildProvisionedWorkerKey(launchId, roleKey);
+      if (consumedUiProvisionKeysRef.current.has(provisionKey)) return false;
 
-      batch.requests.push(request);
+      const buildPanel = (request, panelId, panelCwd) =>
+        createPanel(panelId, request.commandToRun, panelCwd, {
+          swarmRole: request.swarmRole,
+          swarmContext: {
+            isSwarmRole: Boolean(request.isSwarmRole),
+            roleKey: request.roleKey || request.swarmRole?.roleKey || null,
+            launchId: request.launchId || null,
+            needsLaunchWrapper: true,
+            startAfterMs: 0,
+            standbyAwaitingDelegation: resolveSwarmPanelStandbyFlag(request),
+            bootstrapMode: request.bootstrapMode || 'engram_first',
+          },
+        });
 
-      // Sliding deadline: reset the idle window on every staggered runtime request
-      // so we build one workspace with all roles instead of flushing early.
-      batch.timer = rescheduleSwarmLaunchBatchFlush({
-        existingTimerId: batch.timer,
-        onFlush: () => flushSwarmLaunchBatch(launchId),
-        clearTimeoutFn: window.clearTimeout.bind(window),
-        setTimeoutFn: window.setTimeout.bind(window),
+      const result = appendSwarmWorkerToWorkspace({
+        workspaces: workspacesRef.current,
+        runtimeRequest,
+        buildPanel,
+        panelCounterRef,
       });
+
+      if (!result.ok) {
+        return false;
+      }
+
+      consumedUiProvisionKeysRef.current.add(provisionKey);
+
+      setWorkspaces((prev) =>
+        prev.map((ws) =>
+          ws.id === result.wsId
+            ? {
+                ...ws,
+                columns: result.columns,
+                swarmLaunchId: ws.swarmLaunchId || launchId,
+              }
+            : ws
+        )
+      );
+
+      setTerminalRendererPreferences((prev) =>
+        setPanelRendererPreference(
+          prev,
+          result.wsId,
+          result.panelId,
+          TERMINAL_RENDERER_INHERIT_MODE
+        )
+      );
+
+      syncActiveWindowSnapshot(result.wsId, result.columns);
+
+      await persistAgentRunMetadata(result.request, result.panelId, result.request.commandToRun);
+
+      syncPanelLifecycleLayout(
+        PANEL_LIFECYCLE_REASONS.PANEL_SPLIT,
+        result.wsId,
+        getPanelIdsFromColumns(result.columns)
+      );
+
+      if (projectId) {
+        try {
+          await fetch('/api/agenthub/operations/health', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'acknowledge_swarm_ui_provision',
+              launch_id: launchId,
+              role_key: roleKey,
+            }),
+          });
+        } catch {
+          // Best-effort ack; duplicate poll is guarded by consumedUiProvisionKeysRef.
+        }
+      }
+
+      return true;
     },
-    [flushSwarmLaunchBatch]
+    [persistAgentRunMetadata, projectId, syncActiveWindowSnapshot, syncPanelLifecycleLayout]
   );
+
+  useEffect(() => {
+    if (!projectId || !isVisible) return undefined;
+
+    let cancelled = false;
+
+    const pollPendingWorkerProvisions = async () => {
+      if (cancelled) return;
+      try {
+        const response = await fetch(
+          `/api/agenthub/operations/health?project_id=${encodeURIComponent(projectId)}`
+        );
+        if (!response.ok) return;
+        const payload = await response.json();
+        const pending = payload?.control_room_snapshot_input?.pending_ui_provisions || [];
+        for (const entry of pending) {
+          if (cancelled) break;
+          const runtimeRequest = entry?.runtimeRequest;
+          if (!runtimeRequest) continue;
+          await materializeSwarmWorkerInPlace(runtimeRequest);
+        }
+      } catch {
+        // Polling is best-effort.
+      }
+    };
+
+    void pollPendingWorkerProvisions();
+    const timer = window.setInterval(pollPendingWorkerProvisions, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isVisible, materializeSwarmWorkerInPlace, projectId]);
 
   const reorderWorkspaceTabs = useCallback((sourceWsId, targetWsId) => {
     if (!sourceWsId || !targetWsId || sourceWsId === targetWsId) return;
@@ -4362,6 +4432,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           workspaceId: targetWorkspaceId,
           panelId: newPanelId,
         });
+        syncPanelLifecycleLayout(
+          PANEL_LIFECYCLE_REASONS.PANEL_SPLIT,
+          targetWorkspaceId,
+          getPanelIdsFromColumns(newColumns)
+        );
         return newPanelId;
       }
 
@@ -4394,6 +4469,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const makePanel = createPanelWithDisplayNameFactory(targetWorkspaceId, () =>
         collectSiblingPanelNames(targetWorkspaceId)
       );
+      let splitSyncPanelIds = [];
       setWorkspaces((prev) =>
         prev.map((ws) => {
           if (ws.id !== targetWorkspaceId) return ws;
@@ -4426,6 +4502,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             nextColumnsSnapshot[colIndex] = { ...nextColumnsSnapshot[colIndex], panels: newPanels };
           }
 
+          splitSyncPanelIds = getPanelIdsFromColumns(nextColumnsSnapshot);
           syncActiveWindowSnapshot(targetWorkspaceId, nextColumnsSnapshot, newPanelId);
           return { ...ws, columns: nextColumnsSnapshot };
         })
@@ -4440,9 +4517,22 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           TERMINAL_RENDERER_INHERIT_MODE
         )
       );
+      if (splitSyncPanelIds.length > 0) {
+        syncPanelLifecycleLayout(
+          PANEL_LIFECYCLE_REASONS.PANEL_SPLIT,
+          targetWorkspaceId,
+          splitSyncPanelIds
+        );
+      }
       return newPanelId;
     },
-    [activeWsId, activePanelId, collectSiblingPanelNames, syncActiveWindowSnapshot]
+    [
+      activeWsId,
+      activePanelId,
+      collectSiblingPanelNames,
+      syncActiveWindowSnapshot,
+      syncPanelLifecycleLayout,
+    ]
   );
 
   const renderWorkspaceWindowBar = useCallback(
@@ -4454,6 +4544,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const isBrowserFullscreen = isFullscreenMode && wsDockState.maximizedView === 'browser';
       const isSwarmFullscreen = isFullscreenMode && wsDockState.maximizedView === 'swarm';
       const activeWindowId = activeWindowIds[ws.id] || viewTabs[0]?.id;
+      const terminalPanelCount = countPanelsInColumns(ws.columns);
 
       return (
         <div
@@ -4555,6 +4646,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             >
               <Plus className="w-4 h-4" />
             </button>
+            {terminalPanelCount === 0 ? (
+              <button
+                type="button"
+                data-testid="panel-subtabs-add-terminal"
+                onClick={() => handleSplit('horizontal')}
+                className="h-6 shrink-0 inline-flex items-center gap-1.5 px-2.5 rounded-sm text-[11px] font-mono font-semibold border transition-colors text-[var(--accent-primary)] border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+                title="Nueva terminal"
+                aria-label="Nueva terminal"
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                Terminal
+              </button>
+            ) : null}
             {!isFullscreenMode ? (
               <>
                 <button
@@ -4703,7 +4807,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const targetId = panelIdToClose || activePanelId;
       if (!targetId || !activeWorkspace) return;
 
-      panelsClosingRef.current.add(targetId);
+      markPanelsClosing([targetId]);
 
       await closeTerminalSessions([targetId]);
 
@@ -4729,32 +4833,62 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         }))
         .filter((col) => col.panels.length > 0); // Eliminar columnas vacías
 
-      setWorkspaces((prev) =>
-        prev.map((ws) => (ws.id === activeWsId ? { ...ws, columns: nextColumnsSnapshot } : ws))
-      );
-
       const survivorPanelIds = getPanelIdsFromColumns(nextColumnsSnapshot);
-      if (survivorPanelIds.length > 0) {
-        dispatchTerminalLayoutSettled({
-          reason: 'panel-closed',
-          workspaceId: activeWsId,
-          panelIds: survivorPanelIds,
-        });
-        requestAnimationFrame(() => {
-          dispatchTerminalLayoutSettled({
-            reason: 'panel-closed-raf',
-            workspaceId: activeWsId,
-            panelIds: survivorPanelIds,
-          });
-        });
-        notifyNativeLayoutSettled('panel-closed');
-      }
+      const windowResolution = resolveWorkspaceWindowAfterPanelClose({
+        windows: workspaceWindows[activeWsId] || [],
+        activeWindowId: activeWindowIds[activeWsId],
+        remainingPanelIds: survivorPanelIds,
+      });
 
-      const fallbackPanel = nextColumnsSnapshot.flatMap((col) => col.panels || [])[0]?.id || null;
-      if (activePanelId === targetId) {
-        setActivePanelIds((p) => ({ ...p, [activeWsId]: fallbackPanel }));
+      if (windowResolution.action === 'remove') {
+        setWorkspaceWindows((prev) => ({
+          ...prev,
+          [activeWsId]: windowResolution.windows,
+        }));
+        setActiveWindowIds((prev) => ({
+          ...prev,
+          [activeWsId]: windowResolution.activeWindowId,
+        }));
+
+        const switchedColumns = windowResolution.nextActiveWindow?.columns || [];
+        setWorkspaces((prev) =>
+          prev.map((ws) => (ws.id === activeWsId ? { ...ws, columns: switchedColumns } : ws))
+        );
+
+        const switchedPanelIds = getPanelIdsFromColumns(switchedColumns);
+        if (switchedPanelIds.length > 0) {
+          syncPanelLifecycleLayout(
+            PANEL_LIFECYCLE_REASONS.PANEL_CLOSED,
+            activeWsId,
+            switchedPanelIds
+          );
+        }
+
+        if (activePanelId === targetId) {
+          setActivePanelIds((p) => ({
+            ...p,
+            [activeWsId]: windowResolution.nextPanelId,
+          }));
+        }
+      } else {
+        setWorkspaces((prev) =>
+          prev.map((ws) => (ws.id === activeWsId ? { ...ws, columns: nextColumnsSnapshot } : ws))
+        );
+
+        if (survivorPanelIds.length > 0) {
+          syncPanelLifecycleLayout(
+            PANEL_LIFECYCLE_REASONS.PANEL_CLOSED,
+            activeWsId,
+            survivorPanelIds
+          );
+        }
+
+        const fallbackPanel = nextColumnsSnapshot.flatMap((col) => col.panels || [])[0]?.id || null;
+        if (activePanelId === targetId) {
+          setActivePanelIds((p) => ({ ...p, [activeWsId]: fallbackPanel }));
+        }
+        syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, fallbackPanel);
       }
-      syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, fallbackPanel);
       setFocusedPanelByWorkspace((prev) => {
         if (prev[activeWsId] !== targetId) return prev;
         const next = { ...prev };
@@ -4806,16 +4940,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       } catch {
         // Non-critical
       }
-
-      window.setTimeout(() => panelsClosingRef.current.delete(targetId), 2000);
     },
     [
       activeWorkspace,
       activeWsId,
       activePanelId,
-      notifyNativeLayoutSettled,
+      activeWindowIds,
+      markPanelsClosing,
       projectId,
       syncActiveWindowSnapshot,
+      syncPanelLifecycleLayout,
+      workspaceWindows,
     ]
   );
 
@@ -6329,6 +6464,20 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 onAddView={() => addWindowToWorkspace(activeWsId)}
               />
 
+              {countPanelsInColumns(activeWorkspace?.columns || []) === 0 ? (
+                <button
+                  type="button"
+                  data-testid="header-add-terminal"
+                  onClick={() => handleSplit('horizontal')}
+                  className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-2.5 text-[11px] font-mono font-semibold text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+                  title="Nueva terminal"
+                  aria-label="Nueva terminal"
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  Terminal
+                </button>
+              ) : null}
+
               <div className="w-px h-5 bg-white/10 shrink-0" aria-hidden />
 
               {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
@@ -6754,6 +6903,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       connectionState: getPanelConnectionState(panel),
                       deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
                       pizarraOwnsLiveSurfaces,
+                      swarmDelegatedRoleKeys,
                     });
                   return (
                     <div
@@ -6791,107 +6941,134 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                             className="relative min-h-0 flex-1 overflow-hidden"
                             data-focus-mode={focusedPanelId ? 'true' : undefined}
                           >
-                            <PanelGroup
-                              direction="horizontal"
-                              className="h-full w-full"
-                              data-testid={`workspace-columns-${ws.id}`}
-                              data-layout-direction="horizontal"
-                              onLayout={handlePanelGroupLayout}
-                            >
-                              {ws.columns.map((column, columnIndex) => {
-                                const columnHiddenInFocus =
-                                  Boolean(focusedPanelId) &&
-                                  !columnContainsFocusedPanel(column, focusedPanelId);
-                                return (
-                                  <React.Fragment key={column.id}>
-                                    <Panel
-                                      minSize={focusedPanelId ? 0 : 18}
-                                      className={`min-h-0 min-w-0 ${columnHiddenInFocus ? 'hidden' : ''}`}
-                                    >
-                                      {column.panels.length > 1 ? (
-                                        <PanelGroup
-                                          direction="vertical"
-                                          className="h-full w-full"
-                                          data-testid={`workspace-column-panels-${column.id}`}
-                                          data-layout-direction="vertical"
-                                          onLayout={handlePanelGroupLayout}
-                                        >
-                                          {column.panels.map((panel, panelIndex) => (
-                                            <React.Fragment key={panel.id}>
-                                              <Panel
-                                                minSize={focusedPanelId ? 0 : 20}
-                                                className={`min-h-0 min-w-0 overflow-visible ${focusedPanelId && focusedPanelId !== panel.id ? 'hidden' : ''}`}
-                                                data-testid={`workspace-column-${column.id}`}
-                                              >
-                                                <div
-                                                  className={resolveFocusPanelSlotClassName({
-                                                    focusedPanelId,
-                                                    panelId: panel.id,
-                                                  })}
-                                                  data-testid={
-                                                    focusedPanelId === panel.id
-                                                      ? `workspace-focused-panel-${panel.id}`
-                                                      : `panel-slot-${panel.id}`
-                                                  }
-                                                >
-                                                  {renderWorkspacePanelSlot(panel, {
-                                                    visibleTerminalPanelCount: focusedPanelId
-                                                      ? 1
-                                                      : totalTerminalPanelCount,
-                                                  })}
-                                                </div>
-                                              </Panel>
-                                              {!focusedPanelId &&
-                                              panelIndex < column.panels.length - 1 ? (
-                                                <PanelResizeHandle
-                                                  className="relative z-30 h-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                                  data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
-                                                  onDragging={handleInternalSplitDragging}
-                                                >
-                                                  <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                                </PanelResizeHandle>
-                                              ) : null}
-                                            </React.Fragment>
-                                          ))}
-                                        </PanelGroup>
-                                      ) : (
-                                        <div
-                                          className="h-full w-full overflow-visible"
-                                          data-testid={`workspace-column-${column.id}`}
-                                        >
-                                          <div
-                                            className={resolveFocusPanelSlotClassName({
-                                              focusedPanelId,
-                                              panelId: column.panels[0].id,
-                                            })}
-                                            data-testid={
-                                              focusedPanelId === column.panels[0].id
-                                                ? `workspace-focused-panel-${column.panels[0].id}`
-                                                : `panel-slot-${column.panels[0].id}`
-                                            }
-                                          >
-                                            {renderWorkspacePanelSlot(column.panels[0], {
-                                              visibleTerminalPanelCount: focusedPanelId
-                                                ? 1
-                                                : totalTerminalPanelCount,
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </Panel>
-                                    {!focusedPanelId && columnIndex < ws.columns.length - 1 ? (
-                                      <PanelResizeHandle
-                                        className="relative z-30 w-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                        data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
-                                        onDragging={handleInternalSplitDragging}
+                            {totalTerminalPanelCount === 0 ? (
+                              <div
+                                data-testid="workspace-empty-terminal-state"
+                                className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center"
+                              >
+                                <div className="flex flex-col items-center gap-2 max-w-sm">
+                                  <Terminal className="w-8 h-8 text-[var(--text-muted)]" />
+                                  <p className="text-sm text-[var(--text-secondary)]">
+                                    Este workspace no tiene terminales activas.
+                                  </p>
+                                  <p className="text-xs text-[var(--text-muted)]">
+                                    Creá una nueva shell para seguir trabajando sin cerrar el
+                                    workspace.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  data-testid="workspace-add-terminal"
+                                  onClick={() => handleSplit('horizontal')}
+                                  className="inline-flex items-center gap-2 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-4 py-2 text-sm font-medium text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                  Nueva terminal
+                                </button>
+                              </div>
+                            ) : (
+                              <PanelGroup
+                                direction="horizontal"
+                                className="h-full w-full"
+                                data-testid={`workspace-columns-${ws.id}`}
+                                data-layout-direction="horizontal"
+                                onLayout={handlePanelGroupLayout}
+                              >
+                                {ws.columns.map((column, columnIndex) => {
+                                  const columnHiddenInFocus =
+                                    Boolean(focusedPanelId) &&
+                                    !columnContainsFocusedPanel(column, focusedPanelId);
+                                  return (
+                                    <React.Fragment key={column.id}>
+                                      <Panel
+                                        minSize={focusedPanelId ? 0 : 18}
+                                        className={`min-h-0 min-w-0 ${columnHiddenInFocus ? 'hidden' : ''}`}
                                       >
-                                        <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                      </PanelResizeHandle>
-                                    ) : null}
-                                  </React.Fragment>
-                                );
-                              })}
-                            </PanelGroup>
+                                        {column.panels.length > 1 ? (
+                                          <PanelGroup
+                                            direction="vertical"
+                                            className="h-full w-full"
+                                            data-testid={`workspace-column-panels-${column.id}`}
+                                            data-layout-direction="vertical"
+                                            onLayout={handlePanelGroupLayout}
+                                          >
+                                            {column.panels.map((panel, panelIndex) => (
+                                              <React.Fragment key={panel.id}>
+                                                <Panel
+                                                  minSize={focusedPanelId ? 0 : 20}
+                                                  className={`min-h-0 min-w-0 overflow-visible ${focusedPanelId && focusedPanelId !== panel.id ? 'hidden' : ''}`}
+                                                  data-testid={`workspace-column-${column.id}`}
+                                                >
+                                                  <div
+                                                    className={resolveFocusPanelSlotClassName({
+                                                      focusedPanelId,
+                                                      panelId: panel.id,
+                                                    })}
+                                                    data-testid={
+                                                      focusedPanelId === panel.id
+                                                        ? `workspace-focused-panel-${panel.id}`
+                                                        : `panel-slot-${panel.id}`
+                                                    }
+                                                  >
+                                                    {renderWorkspacePanelSlot(panel, {
+                                                      visibleTerminalPanelCount: focusedPanelId
+                                                        ? 1
+                                                        : totalTerminalPanelCount,
+                                                    })}
+                                                  </div>
+                                                </Panel>
+                                                {!focusedPanelId &&
+                                                panelIndex < column.panels.length - 1 ? (
+                                                  <PanelResizeHandle
+                                                    className="relative z-30 h-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                                    data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
+                                                    onDragging={handleInternalSplitDragging}
+                                                  >
+                                                    <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                                  </PanelResizeHandle>
+                                                ) : null}
+                                              </React.Fragment>
+                                            ))}
+                                          </PanelGroup>
+                                        ) : (
+                                          <div
+                                            className="h-full w-full overflow-visible"
+                                            data-testid={`workspace-column-${column.id}`}
+                                          >
+                                            <div
+                                              className={resolveFocusPanelSlotClassName({
+                                                focusedPanelId,
+                                                panelId: column.panels[0].id,
+                                              })}
+                                              data-testid={
+                                                focusedPanelId === column.panels[0].id
+                                                  ? `workspace-focused-panel-${column.panels[0].id}`
+                                                  : `panel-slot-${column.panels[0].id}`
+                                              }
+                                            >
+                                              {renderWorkspacePanelSlot(column.panels[0], {
+                                                visibleTerminalPanelCount: focusedPanelId
+                                                  ? 1
+                                                  : totalTerminalPanelCount,
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Panel>
+                                      {!focusedPanelId && columnIndex < ws.columns.length - 1 ? (
+                                        <PanelResizeHandle
+                                          className="relative z-30 w-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                          data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
+                                          onDragging={handleInternalSplitDragging}
+                                        >
+                                          <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                        </PanelResizeHandle>
+                                      ) : null}
+                                    </React.Fragment>
+                                  );
+                                })}
+                              </PanelGroup>
+                            )}
                           </div>
                         </Panel>
 

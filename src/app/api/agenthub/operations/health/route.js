@@ -50,10 +50,16 @@ import {
   resolveLaunchKickoffBodySummary,
   selectSwarmLaunchCatalog,
   SWARM_OPENCODE_READY_GRACE_MS,
-  SWARM_WORKER_FANOUT_BASE_DELAY_MS,
-  SWARM_WORKER_FANOUT_STAGGER_MS,
   resolveBootstrapPromptForLaunch,
+  resolveWorkerBootstrapDelayMs,
 } from '@/lib/operations/swarmControl';
+import { partitionRuntimeRequestsForSpawnStrategy } from '@/lib/operations/swarmLazySpawn';
+import {
+  acknowledgeWorkerUiProvision,
+  listPendingUiProvisionsForProject,
+  queueWorkerUiProvision,
+} from '@/lib/operations/swarmLaunchTrace';
+import { formatZedOperatorPresetsForPrompt } from '@/lib/operations/zedOperatorPresets.cjs';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
 import { buildLaunchWrapperForRole, resolveBusHelperPaths } from '@/lib/bus/launchPaths.js';
 import {
@@ -218,6 +224,7 @@ export function buildLaunchPrompt({
         isZed
           ? '- No afirmes que un worker trabaja sin ACK (`kind: ack`) en team_chat o evento inbox_delivered.'
           : '',
+        isZed ? formatZedOperatorPresetsForPrompt() : '',
         '- MCP: usa DEVHUB_PROJECT_ID (get_project_context) antes de list_projects/create_task.',
       ].filter(Boolean)
     : [];
@@ -282,7 +289,8 @@ export function buildLaunchCommand(
   launchId = null,
   workspacePath = '',
   projectId = null,
-  bootstrapMode = 'engram_first'
+  bootstrapMode = 'engram_first',
+  workerBootstrapDelayMs = 0
 ) {
   // T-023: default programId to 'opencode' when missing. Otherwise workers
   // fall through to the bash (hermes) default in buildAgentLaunchCommand,
@@ -360,6 +368,7 @@ export function buildLaunchCommand(
     disableMinimaxMcp: true,
     inboxPollIntervalSeconds: 5,
     tuiReadyGraceMs: SWARM_OPENCODE_READY_GRACE_MS,
+    preLaunchDelayMs: Math.max(0, Number(workerBootstrapDelayMs) || 0),
   });
 
   console.log(`[SWARM_LAUNCH_CMD] Wrapper length: ${wrapper.length} chars`);
@@ -619,6 +628,10 @@ function buildLaunchTracePayload({
   requestedAt,
   committedAt,
   runtimeRequests = [],
+  deferredWorkerRuntimeRequests = [],
+  spawnStrategy = 'automatic',
+  provisionedRoleKeys = [],
+  pendingUiProvisions = [],
   failedRoles = [],
   phaseEvents = [],
   memorySnapshots = [],
@@ -643,10 +656,12 @@ function buildLaunchTracePayload({
     workspaceRoot: workspaceRoot || null,
     launchStrategy,
     bootstrapMode,
+    spawnStrategy,
     requestedAt,
     committedAt,
     durationMs,
     runtimeRequestCount: runtimeRequests.length,
+    deferredWorkerCount: deferredWorkerRuntimeRequests.length,
     failedRoleCount: failedRoles.length,
     phaseCount: phaseEvents.length,
     memorySnapshotCount: memorySnapshots.length,
@@ -672,7 +687,14 @@ function buildLaunchTracePayload({
       promptSummary: request.promptSummary || null,
       promptReference: request.promptReference || null,
       commandPreview: request.commandPreview || null,
+      launchId: request.launchId || null,
     })),
+    deferredWorkerRuntimeRequests: deferredWorkerRuntimeRequests.map((request) => ({
+      ...request,
+      commandPreview: request.commandPreview || null,
+    })),
+    provisionedRoleKeys,
+    pendingUiProvisions,
     failedRoles: failedRoles.map((role) => ({
       roleKey: role.roleKey || null,
       roleLabel: role.roleLabel || null,
@@ -1120,6 +1142,7 @@ function configureLaunchRole({
   now,
   launchPhase = 'fanout',
   startAfterMs = 0,
+  workerIndex = null,
   precomputedWorktree = null,
 }) {
   const roleKey = roleEntry.role_key;
@@ -1257,7 +1280,10 @@ function configureLaunchRole({
     launchId,
     worktreePath,
     projectId,
-    resolvedDraft.bootstrapMode || 'engram_first'
+    resolvedDraft.bootstrapMode || 'engram_first',
+    launchPhase === 'fanout' && workerIndex != null
+      ? resolveWorkerBootstrapDelayMs({ roleKey, workerIndex })
+      : 0
   );
 
   return {
@@ -1271,6 +1297,11 @@ function configureLaunchRole({
       launchOrigin: 'swarm-control-launch',
       launchPhase,
       startAfterMs,
+      workerBootstrapDelayMs:
+        launchPhase === 'fanout' && workerIndex != null
+          ? resolveWorkerBootstrapDelayMs({ roleKey, workerIndex })
+          : 0,
+      bootstrapMode: resolvedDraft.bootstrapMode || 'engram_first',
       roleKey,
       roleLabel: roleEntry.role,
       roleAbbrev: roleEntry.role_abbrev || null,
@@ -1485,8 +1516,6 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
 
       for (let workerIndex = 0; workerIndex < workerRoleEntries.length; workerIndex += 1) {
         const roleEntry = workerRoleEntries[workerIndex];
-        const workerStartAfterMs =
-          SWARM_WORKER_FANOUT_BASE_DELAY_MS + workerIndex * SWARM_WORKER_FANOUT_STAGGER_MS;
         const workerSetup = configureLaunchRole({
           writeDb,
           projectId,
@@ -1499,7 +1528,8 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           parentSessionId,
           now,
           launchPhase: 'fanout',
-          startAfterMs: workerStartAfterMs,
+          startAfterMs: 0,
+          workerIndex,
           precomputedWorktree: precomputedWorktrees.get(roleEntry.role_key) ?? null,
         });
 
@@ -1560,8 +1590,16 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         updated_at: now,
       });
 
+      const spawnStrategy = resolvedDraft.spawnStrategy || 'automatic';
+      const { materialized: materializedRuntimeRequests, deferred: deferredRuntimeRequests } =
+        partitionRuntimeRequestsForSpawnStrategy(runtimeRequests, spawnStrategy);
+      const deferredRoleKeys = new Set(
+        deferredRuntimeRequests.map((request) => String(request.roleKey || '').trim())
+      );
+
       for (const request of runtimeRequests) {
         if (isOrchestratorRoleKey(request.roleKey)) continue;
+        if (deferredRoleKeys.has(request.roleKey)) continue;
 
         upsertMessageDelivery(writeDb, {
           message_id: kickoffMessage.message_id,
@@ -1584,11 +1622,15 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         workspaceRoot: resolvedDraft.workspacePath,
         launchStrategy,
         bootstrapMode,
+        spawnStrategy,
         directorAgentId,
         directorSessionId: parentSessionId,
         requestedAt: launchRequestedAt,
         committedAt: launchCommittedAt,
-        runtimeRequests,
+        runtimeRequests: materializedRuntimeRequests,
+        deferredWorkerRuntimeRequests: deferredRuntimeRequests,
+        provisionedRoleKeys: [],
+        pendingUiProvisions: [],
         failedRoles,
         phaseEvents,
         memorySnapshots,
@@ -1597,7 +1639,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
       persistLaunchTrace(writeDb, launchTrace);
 
       console.log(
-        `[SWARM_LAUNCH] SUCCESS: Swarm ${launchId} launched with ${runtimeRequests.length} agents`
+        `[SWARM_LAUNCH] SUCCESS: Swarm ${launchId} launched with ${materializedRuntimeRequests.length} materialized + ${deferredRuntimeRequests.length} deferred agents`
       );
       console.log(`[SWARM_LAUNCH] Mission ID: ${mission.mission_id}`);
       console.log(
@@ -1614,7 +1656,16 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           mission_id: mission.mission_id,
           launchLabel: missionTitle,
           summaryLines: preview.summaryLines,
-          runtime_requests: runtimeRequests,
+          runtime_requests: materializedRuntimeRequests.map((request) => ({
+            ...request,
+            spawnStrategy,
+          })),
+          deferred_worker_requests: deferredRuntimeRequests.map((request) => ({
+            roleKey: request.roleKey,
+            roleLabel: request.roleLabel,
+            taskId: request.taskId,
+          })),
+          spawn_strategy: spawnStrategy,
           failed_roles: failedRoles,
           launch_trace: {
             traceId: launchTrace.traceId,
@@ -2233,6 +2284,10 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
       : {}),
     ...(directorQueue ? { director_queue: directorQueue } : {}),
     ...(() => {
+      const pendingUiProvisions = listPendingUiProvisionsForProject(getDb(), projectId);
+      return pendingUiProvisions.length > 0 ? { pending_ui_provisions: pendingUiProvisions } : {};
+    })(),
+    ...(() => {
       const checkpointErrors = buildCheckpointGateErrors(directorQueue?.items || []);
       return checkpointErrors.length > 0 ? { errors: checkpointErrors } : {};
     })(),
@@ -2373,6 +2428,70 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       });
 
       return NextResponse.json(launchPayload);
+    }
+
+    if (payload?.action === 'provision_swarm_worker') {
+      const launchId = String(payload?.launch_id || '').trim();
+      const roleKey = String(payload?.role_key || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      if (!launchId || !roleKey) {
+        return NextResponse.json(
+          { error: 'launch_id y role_key son requeridos.' },
+          { status: 400 }
+        );
+      }
+      if (isOrchestratorRoleKey(roleKey)) {
+        return NextResponse.json(
+          { error: 'No se puede provisionar un rol orquestador como worker.' },
+          { status: 400 }
+        );
+      }
+
+      const db = dependencies.db || getDb();
+      const provision = queueWorkerUiProvision(db, launchId, roleKey);
+      if (!provision.ok) {
+        return NextResponse.json(
+          { error: `No se pudo provisionar ${roleKey} (${provision.reason}).`, provision },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        provision,
+        runtime_request: provision.runtime_request,
+      });
+    }
+
+    if (payload?.action === 'acknowledge_swarm_ui_provision') {
+      const launchId = String(payload?.launch_id || '').trim();
+      const roleKey = String(payload?.role_key || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      if (!launchId || !roleKey) {
+        return NextResponse.json(
+          { error: 'launch_id y role_key son requeridos.' },
+          { status: 400 }
+        );
+      }
+
+      const db = dependencies.db || getDb();
+      const ack = acknowledgeWorkerUiProvision(db, launchId, roleKey);
+      if (!ack.ok) {
+        return NextResponse.json(
+          { error: `No se pudo confirmar provision UI (${ack.reason}).`, ack },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({ ok: true, ack });
     }
 
     if (payload?.action === 'activate_zed_standby') {

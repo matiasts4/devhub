@@ -50,6 +50,23 @@ function writeDispatchMap(storage, map) {
   }
 }
 
+export function clearSwarmLaunchWrapperDispatchForLaunch(launchId, storage = null) {
+  const id = normalizeLaunchId(launchId);
+  if (!id || !storage) return;
+  const map = readDispatchMap(storage);
+  const prefix = `${id}:`;
+  let changed = false;
+  for (const key of Object.keys(map)) {
+    if (key.startsWith(prefix)) {
+      delete map[key];
+      changed = true;
+    }
+  }
+  if (changed) {
+    writeDispatchMap(storage, map);
+  }
+}
+
 export function markSwarmLaunchWrapperDispatched(
   { launchId, roleKey, panelId = null } = {},
   storage = null

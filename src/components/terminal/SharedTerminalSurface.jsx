@@ -90,6 +90,12 @@ function getTerminalSurfacePropsSnapshot(surfaceId) {
   return propsBySurfaceId.get(surfaceId) || null;
 }
 
+function isNonZeroTarget(el) {
+  if (!el || typeof el.getBoundingClientRect !== 'function') return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 1 && rect.height > 1;
+}
+
 export function useSharedTerminalSurfacesEnabled() {
   const registry = useSurfaceRegistry();
   return isPizarraSharedViewEnabled() && Boolean(registry);
@@ -119,6 +125,10 @@ function TerminalSurfaceContent({ surfaceId }) {
     if (!becameReady) return;
 
     let cancelled = false;
+    let raf1 = 0;
+    let raf2 = 0;
+    let timer = 0;
+
     const dispatchIfLive = (reason) => {
       if (cancelled || !propsBySurfaceId.has(surfaceId)) return;
       dispatchTerminalLayoutSettled({
@@ -127,18 +137,40 @@ function TerminalSurfaceContent({ surfaceId }) {
       });
     };
 
+    const scheduleProjectionReadyDelay = () => {
+      timer = window.setTimeout(() => {
+        dispatchIfLive('shared-surface-projection-ready-delay');
+      }, 180);
+    };
+
+    const targetEl = registry?.getActiveTarget(surfaceId);
+    const hasNonZeroTarget = isNonZeroTarget(targetEl);
+
     dispatchIfLive('shared-surface-projection-ready');
-    requestAnimationFrame(() => {
-      dispatchIfLive('shared-surface-projection-ready-raf');
-    });
-    const timer = window.setTimeout(() => {
-      dispatchIfLive('shared-surface-projection-ready-delay');
-    }, 180);
+
+    if (hasNonZeroTarget) {
+      raf1 = requestAnimationFrame(() => {
+        if (cancelled) return;
+        dispatchIfLive('shared-surface-projection-ready-raf');
+        scheduleProjectionReadyDelay();
+      });
+    } else {
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          if (cancelled) return;
+          dispatchIfLive('shared-surface-projection-ready-raf');
+          scheduleProjectionReadyDelay();
+        });
+      });
+    }
+
     return () => {
       cancelled = true;
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
       window.clearTimeout(timer);
     };
-  }, [hasActiveProjection, surfaceId, terminalProps]);
+  }, [hasActiveProjection, registry, surfaceId, terminalProps]);
 
   if (!terminalProps) return null;
 

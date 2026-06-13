@@ -676,7 +676,9 @@ describe('TerminalWorkspacesManager right dock', () => {
           ok: true,
           json: async () => ({
             terminate_result: { launchId: 'launch-1', terminated: true },
-            control_room_snapshot_input: { mission_control: { mission: { mission_id: 'launch-1' } } },
+            control_room_snapshot_input: {
+              mission_control: { mission: { mission_id: 'launch-1' } },
+            },
           }),
         });
       }
@@ -793,7 +795,8 @@ describe('TerminalWorkspacesManager right dock', () => {
       taskTitle: `ZED Pod · ${roleKey}`,
       launchId: 'launch-mat',
       roleKey,
-      startAfterMs: index === 0 ? 0 : 8000 + (index - 1) * 4000,
+      startAfterMs: 0,
+      workerBootstrapDelayMs: index === 0 ? 0 : 2000 + (index - 1) * 750,
     }));
 
     window.dispatchEvent(
@@ -855,7 +858,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       const shellAfterDirector = getVisibleWorkspaceShell(view.container);
       expect(shellAfterDirector?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(1);
 
-      // Phase 2: workers arrive later (simulates startAfterMs: 4000)
+      // Phase 2: workers arrive later (simulates deferred fanout batch)
       ['coder', 'auditor', 'devops', 'architect'].forEach((role) => {
         window.dispatchEvent(
           new window.CustomEvent('devhub:run-agent', {
@@ -867,7 +870,7 @@ describe('TerminalWorkspacesManager right dock', () => {
               taskTitle: `Lanzar Arranque limpio guiado · ${role}`,
               launchId: 'launch-2',
               roleKey: role,
-              startAfterMs: 4000,
+              startAfterMs: 0,
             },
           })
         );

@@ -24,6 +24,9 @@ const {
   buildRoleAgentProfile,
   resolveLaunchKickoffBodySummary,
   buildSwarmLaunchModels,
+  resolveWorkerBootstrapDelayMs,
+  SWARM_WORKER_FANOUT_BASE_DELAY_MS,
+  SWARM_WORKER_FANOUT_STAGGER_MS,
 } = require('../swarmControl');
 const {
   buildControlRoomInput,
@@ -1872,5 +1875,21 @@ describe('buildSwarmLaunchModels', () => {
     const catalog = selectSwarmLaunchCatalog({});
     expect(catalog.models).toBeDefined();
     expect(catalog.models).toHaveLength(6);
+  });
+});
+
+describe('resolveWorkerBootstrapDelayMs', () => {
+  test('orchestrators start immediately in wrapper', () => {
+    expect(resolveWorkerBootstrapDelayMs({ roleKey: 'zed', workerIndex: 0 })).toBe(0);
+    expect(resolveWorkerBootstrapDelayMs({ roleKey: 'director', workerIndex: 2 })).toBe(0);
+  });
+
+  test('workers stagger inside wrapper using base + index * stagger', () => {
+    expect(resolveWorkerBootstrapDelayMs({ roleKey: 'sdd_worker_1', workerIndex: 0 })).toBe(
+      SWARM_WORKER_FANOUT_BASE_DELAY_MS
+    );
+    expect(resolveWorkerBootstrapDelayMs({ roleKey: 'sdd_worker_2', workerIndex: 1 })).toBe(
+      SWARM_WORKER_FANOUT_BASE_DELAY_MS + SWARM_WORKER_FANOUT_STAGGER_MS
+    );
   });
 });

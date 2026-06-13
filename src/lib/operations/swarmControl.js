@@ -4,19 +4,34 @@ import {
   normalizeEvidenceRefs,
 } from '@/lib/operations/contracts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
+import { SWARM_SPAWN_STRATEGY_AUTOMATIC } from '@/lib/operations/swarmLazySpawn';
 import { buildPrompt } from '../sdd/SwarmPromptEngine';
 
 /** Launchpad template: ZED + N SDD Workers (gentle-orchestrator), standby by default. */
 export const ZED_ORCHESTRATOR_TEMPLATE_ID = 'zed-orchestrator-pod';
 
 /** Max wait for /tmp/devhub-opencode-ready-<tmux> before bootstrap paste (ms). */
-export const SWARM_OPENCODE_READY_GRACE_MS = 30000;
+export const SWARM_OPENCODE_READY_GRACE_MS = 12000;
 
-/** Delay between worker terminal spawns during fanout (ms). */
-export const SWARM_WORKER_FANOUT_STAGGER_MS = 4000;
+/**
+ * Stagger between worker wrapper script starts (inside bash), not UI panel attach.
+ * UI panels and initialCommand injection use startAfterMs: 0 (T1.2).
+ */
+export const SWARM_WORKER_FANOUT_STAGGER_MS = 750;
 
-/** Base delay before first worker spawn so ZED can finish OpenCode startup (ms). */
-export const SWARM_WORKER_FANOUT_BASE_DELAY_MS = 8000;
+/** Base delay before first worker wrapper runs OpenCode (lets ZED/director TUI settle). */
+export const SWARM_WORKER_FANOUT_BASE_DELAY_MS = 2000;
+
+/**
+ * Wrapper-side bootstrap delay for fanout workers. Orchestrators start immediately.
+ * @param {{ roleKey?: string, workerIndex?: number }} params
+ * @returns {number}
+ */
+export function resolveWorkerBootstrapDelayMs({ roleKey = '', workerIndex = 0 } = {}) {
+  if (isOrchestratorRoleKey(roleKey)) return 0;
+  const index = Math.max(0, Number(workerIndex) || 0);
+  return SWARM_WORKER_FANOUT_BASE_DELAY_MS + index * SWARM_WORKER_FANOUT_STAGGER_MS;
+}
 
 /**
  * Standby launches: orchestrators get bootstrap at launch; workers wait for delegation.
@@ -185,6 +200,7 @@ function buildSwarmTemplateCatalog() {
       launch_defaults: {
         bootstrapMode: 'standby',
         launchStrategy: 'director_first',
+        spawnStrategy: 'lazy-on-demand',
         sddEnabled: false,
         workerCount: 4,
       },
@@ -1905,6 +1921,8 @@ export function createSwarmLaunchDraft({
     providerId: provider?.id || null,
     launchStrategy: launchStrategy?.id || launchDefaults.launchStrategy || 'director_first',
     bootstrapMode: bootstrapMode?.id || launchDefaults.bootstrapMode || 'engram_first',
+    spawnStrategy:
+      draft.spawnStrategy || launchDefaults.spawnStrategy || SWARM_SPAWN_STRATEGY_AUTOMATIC,
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
     roleModels:

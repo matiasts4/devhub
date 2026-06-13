@@ -25,6 +25,7 @@ describe('inboxConsume', () => {
     expect(out).toContain('Fix glyph corruption');
     expect(out).toContain('/sdd-continue');
     expect(out).toContain('_devhub_chat --to zed');
+    expect(out).toContain('B3, V3, C1, D2');
   });
 
   test('formatDirectiveForInjection passes through plain text', () => {

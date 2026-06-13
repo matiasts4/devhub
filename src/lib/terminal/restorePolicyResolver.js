@@ -81,7 +81,34 @@ export function readWorkspaceRestorePreferences(storage) {
 }
 
 /**
+ * Read the newest agent run linked to a panel from localStorage.
+ */
+export function readAgentRunForPanel(storage, panelId) {
+  if (!storage || typeof storage.getItem !== 'function' || !panelId) return null;
+
+  try {
+    const rawRuns = JSON.parse(storage.getItem('devhub_agent_runs') || '{}');
+    let match = null;
+
+    Object.values(rawRuns || {}).forEach((run) => {
+      if (run?.panelId !== panelId) return;
+      const nextTimestamp = Number(run?.launchedAt) || 0;
+      const previousTimestamp = Number(match?.launchedAt) || 0;
+      if (!match || nextTimestamp >= previousTimestamp) {
+        match = run;
+      }
+    });
+
+    return match;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ensures durable OpenCode panels persist `opencode --session <id>` for reboot-safe resume.
+ * Upgrades plain `opencode`, Zed/bash launch wrappers, and other launch commands once a
+ * session id is known — never keep re-sending the original one-shot wrapper on restore.
  */
 export function normalizeOpenCodePanelCommand(panel, agentRun = null) {
   if (!panel?.id) return panel;
@@ -93,15 +120,39 @@ export function normalizeOpenCodePanelCommand(panel, agentRun = null) {
   if (!sessionId) return panel;
 
   const expectedCommand = `opencode --session ${sessionId}`;
-  const current = String(panel.initialCommand || '').trim();
+  const current = String(panel.initialCommand || '')
+    .replace(/\s*#recovery-\d+\s*$/i, '')
+    .trim();
 
   if (current === expectedCommand) return panel;
 
-  if (!current || /opencode/i.test(current)) {
-    return { ...panel, initialCommand: expectedCommand };
+  return { ...panel, initialCommand: expectedCommand };
+}
+
+/**
+ * Resolve the command that should be injected into a PTY after reconnect.
+ * Prefers durable `opencode --session` resume over one-shot bash/Zed launch wrappers.
+ */
+export function resolveTerminalInjectCommand(initialCommand, agentRun = null) {
+  const stripped = String(initialCommand || '')
+    .replace(/\s*#recovery-\d+\s*$/i, '')
+    .trim();
+  if (!stripped) return null;
+
+  const sessionId = resolveOpenCodeSessionIdForPanel({
+    panel: { initialCommand: stripped },
+    agentRun,
+  });
+  if (sessionId) {
+    return `opencode --session ${sessionId}`;
   }
 
-  return panel;
+  // One-shot materialized wrappers must not be re-injected after sidecar/dev-server restart.
+  if (isSwarmLaunchWrapperCommand(stripped)) {
+    return null;
+  }
+
+  return stripped;
 }
 
 export function normalizeWorkspacesOpenCodeCommands(workspaces = [], agentRunsByPanel = {}) {
@@ -163,12 +214,12 @@ export function resolveOpenCodeSessionIdForPanel({
   agentRun = null,
   hintSessionId = null,
 } = {}) {
-  const fromCommand = extractOpenCodeSessionId(panel?.initialCommand);
-  if (fromCommand) return fromCommand;
-
   const fromRun =
     typeof agentRun?.opencodeSessionId === 'string' ? agentRun.opencodeSessionId.trim() : '';
   if (fromRun) return fromRun;
+
+  const fromCommand = extractOpenCodeSessionId(panel?.initialCommand);
+  if (fromCommand) return fromCommand;
 
   const panelId = typeof panel?.id === 'string' ? panel.id.trim() : '';
   const hint = typeof hintSessionId === 'string' ? hintSessionId.trim() : '';

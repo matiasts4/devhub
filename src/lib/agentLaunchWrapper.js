@@ -1300,6 +1300,7 @@ export function buildAgentLaunchWrapper({
   // when OpenCode session/footer is detected) instead of a fixed sleep.
   tuiWaitTimeoutMs = 10000,
   tuiReadyGraceMs = 30000,
+  preLaunchDelayMs = 0,
 }) {
   const pathValidationBlock = [
     '# Validate worktree path exists',
@@ -1321,10 +1322,12 @@ export function buildAgentLaunchWrapper({
   // on exit). The detach command is injected into the exit trap below.
   const pipePane = tmuxSessionName ? buildPipePaneCommands({ role }) : null;
 
-  // T-017.1 — director consumer block (only emitted for the director role).
-  // Workers don't tail chat.jsonl — they read durable inbox rows on demand
-  // via _devhub_inbox_check.
+  // T-017.1 — pre-bootstrap sleep (2s for orchestrators, 0 for workers). The
+  // orchestrator needs the extra time so the consumer can attach to the tmux
+  // pane before the bootstrap prompt is injected.
+  const isOrchestratorRole = role === 'director' || role === 'zed';
   const isDirectorRole = role === 'director';
+  const preBootstrapSleepSeconds = isOrchestratorRole ? 2 : 0;
   const directorConsumerBlock = isDirectorRole
     ? buildDirectorConsumerBlock({
         busBinaryPath,
@@ -1335,7 +1338,6 @@ export function buildAgentLaunchWrapper({
   const directorConsumerCleanup = isDirectorRole
     ? buildDirectorConsumerCleanupBlock({ launchId: missionId })
     : null;
-  const isOrchestratorRole = role === 'director' || role === 'zed';
   const shouldRunWorkerInboxConsumer =
     Boolean(role) && !isOrchestratorRole && Boolean(tmuxSessionName) && Boolean(busBinaryPath);
   const workerInboxConsumerBlock = shouldRunWorkerInboxConsumer
@@ -1351,10 +1353,7 @@ export function buildAgentLaunchWrapper({
     ? buildWorkerInboxConsumerCleanupBlock({ launchId: missionId, role })
     : null;
 
-  // T-017.1 — pre-bootstrap sleep (2s for director, 0 for workers). The
-  // director needs the extra time so the consumer can attach to the tmux
-  // pane before the bootstrap prompt is injected.
-  const preBootstrapSleepSeconds = isDirectorRole ? 2 : 0;
+  const preLaunchDelaySeconds = Math.max(0, Number(preLaunchDelayMs) || 0) / 1000;
   const panelTmuxBacked =
     Boolean(String(innerCommand || '').trim()) &&
     !String(innerCommand).includes('tmux attach-session');
@@ -1431,7 +1430,7 @@ export function buildAgentLaunchWrapper({
     '',
     buildBootstrapPromptBlock(bootstrapPrompt, {
       preSleepSeconds: deferBootstrapUntilAgentStart
-        ? isDirectorRole
+        ? isOrchestratorRole
           ? preBootstrapSleepSeconds
           : 0
         : preBootstrapSleepSeconds,
@@ -1488,6 +1487,13 @@ export function buildAgentLaunchWrapper({
     ...(directorConsumerBlock ? [directorConsumerBlock] : []),
     ...(workerInboxConsumerBlock ? [workerInboxConsumerBlock] : []),
     '',
+    ...(preLaunchDelaySeconds > 0
+      ? [
+          `# Stagger worker OpenCode startup (${preLaunchDelaySeconds}s) — UI panels attach immediately.`,
+          `sleep ${preLaunchDelaySeconds.toFixed(3)}`,
+          '',
+        ]
+      : []),
     '# Execute the actual agent via auto-restart loop',
     '# Captures both stdout and stderr to log; restarts on non-zero exit (max 3)',
     buildAutoRestartLoopCommand({

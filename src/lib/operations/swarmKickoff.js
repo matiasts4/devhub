@@ -62,13 +62,22 @@ function injectTextToTmuxSession(sessionName, text) {
  */
 function buildZedActivationPrompt(operatorMessage = '') {
   const operatorLine = String(operatorMessage || '').trim();
+  let presetBlock = '';
+  try {
+    const { formatZedOperatorPresetsForPrompt } = require('./zedOperatorPresets.cjs');
+    presetBlock = `\n${formatZedOperatorPresetsForPrompt()}\n`;
+  } catch {
+    presetBlock = '';
+  }
   const lines = [
     '=== ACTIVACION — el operador te da la palabra ===',
     '- Modo standby finalizado: podes usar DevHub MCP y delegar a workers.',
     '- Antes de decir "delegado": ejecuta `_devhub_chat` y reporta exit code + inbox_row_id del JSON de salida.',
     '- No afirmes que un worker esta trabajando sin ACK (`kind: ack`) en team_chat.',
     '- Usa DEVHUB_PROJECT_ID para MCP (get_project_context, list_tasks, update_task).',
-  ];
+    '- Tras delegar, si el worker queda en menu Gentle Orchestrator, inyecta presets B3, V3, C1, D2 via tmux.',
+    presetBlock.trim(),
+  ].filter(Boolean);
   if (operatorLine) {
     lines.push('', `Instruccion del operador: ${operatorLine}`);
   }

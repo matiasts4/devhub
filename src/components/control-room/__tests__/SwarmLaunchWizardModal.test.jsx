@@ -106,12 +106,11 @@ describe('T-018 hook: SwarmLaunchWizardModal spawnStrategy field', () => {
     return fs.readFileSync(path.join(__dirname, '..', 'SwarmLaunchWizardModal.jsx'), 'utf8');
   }
 
-  test('modal renders the spawnStrategy field with default `automatic`', () => {
+  test('modal renders the spawnStrategy field with default `lazy-on-demand`', () => {
     const source = readModalSource();
-    // The modal source must define a spawnStrategy control
     expect(source).toMatch(/spawnStrategy/);
-    // The control's default value must be 'automatic' (the default option)
-    expect(source).toMatch(/value=\{draft\.spawnStrategy\s*\|\|\s*['"]automatic['"]/);
+    expect(source).toMatch(/value=\{draft\.spawnStrategy\s*\|\|\s*['"]lazy-on-demand['"]/);
+    expect(source).toMatch(/lazy-on-demand/);
   });
 
   test('modal passes spawnStrategy through to the launch request body via onDraftChange', () => {

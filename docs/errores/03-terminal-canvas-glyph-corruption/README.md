@@ -100,3 +100,9 @@ tail -f data/logs/terminal-debug.log
 2. Verificar si falta **release de WebGL on layout hide** en paneles de workspace único (canvas ya se libera; webgl solo en split-inactive hoy).
 3. Reproducir con **un solo panel** vs **tres splits** para separar causa 1 vs causa 5.
 4. No declarar cerrado hasta pasar protocolo `docs/26_TERM-01_Terminal_Renderer_Evidence_Pack.md` en **installed app** con sesión `opencode --session` real.
+
+---
+
+## Lifecycle gaps (post pizarra-stability)
+
+Cobertura incompleta de guards en swarm, split, relaunch: ver **[04-terminal-lifecycle-coverage-gaps](../04-terminal-lifecycle-coverage-gaps/README.md)**.
