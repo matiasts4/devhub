@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -45,6 +45,8 @@ const DOCUMENT_VIEW_MODES = {
   PREVIEW: 'preview',
   RAW: 'raw',
 };
+
+const EMBEDDED_DOCUMENT_MIN_WIDTH_PX = 1344;
 
 const safeHighlight = (options) => {
   const highlighter = rehypeHighlight(options);
@@ -146,7 +148,20 @@ function filterTreeNodes(nodes, query) {
   }, []);
 }
 
-function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
+function getScrollableDistance(element) {
+  if (!element) return 0;
+  return Math.max(0, element.scrollWidth - element.clientWidth);
+}
+
+function mapScrollOffset(offset, sourceMax, targetMax) {
+  if (!Number.isFinite(offset) || sourceMax <= 0 || targetMax <= 0) {
+    return 0;
+  }
+
+  return (offset / sourceMax) * targetMax;
+}
+
+const TreeNode = memo(function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
   const isDir = node.type === 'directory';
   const isExpanded = isDir && expanded.has(node.path);
   const isSelected = selectedPath === node.path;
@@ -224,10 +239,14 @@ function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
       )}
     </div>
   );
-}
+});
 
 export default function FileExplorerEditorPane({ project, workspaceId = 'default', embedded = false, onContextChange }) {
   const explorerPanelRef = useRef(null);
+  const previewScrollRegionRef = useRef(null);
+  const documentPreviewRailRef = useRef(null);
+  const embeddedHorizontalScrollRef = useRef(null);
+  const scrollSyncSourceRef = useRef(null);
   const workspaceSnapshotsRef = useRef(new Map());
   const [tree, setTree] = useState([]);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -240,30 +259,76 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   const [fileError, setFileError] = useState('');
   const [markdownViewMode, setMarkdownViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
   const [latexViewMode, setLatexViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
-  const [searchQuery, setSearchQuery] = useState(DEFAULT_EDITOR_PANE_STATE.searchQuery);
+  const [searchInputValue, setSearchInputValue] = useState(DEFAULT_EDITOR_PANE_STATE.searchQuery);
+  const [embeddedDocumentSurfaceWidth, setEmbeddedDocumentSurfaceWidth] = useState(0);
+  const deferredSearchQuery = useDeferredValue(searchInputValue);
 
   const language = useMemo(() => detectLanguage(selectedPath || ''), [selectedPath]);
+  const selectedPathLower = useMemo(() => (selectedPath || '').toLowerCase(), [selectedPath]);
   const isMarkdown = useMemo(
-    () => (selectedPath || '').toLowerCase().endsWith('.md'),
-    [selectedPath]
+    () => selectedPathLower.endsWith('.md'),
+    [selectedPathLower]
   );
   const isLatex = useMemo(
-    () => Boolean((selectedPath || '').toLowerCase().match(/\.(tex|latex|ltx)$/)),
-    [selectedPath]
+    () => Boolean(selectedPathLower.match(/\.(tex|latex|ltx)$/)),
+    [selectedPathLower]
+  );
+  const isPdf = useMemo(() => Boolean(selectedPathLower.match(/\.pdf$/)), [selectedPathLower]);
+  const isImage = useMemo(
+    () => Boolean(selectedPathLower.match(/\.(png|jpe?g|gif|webp|svg)$/)),
+    [selectedPathLower]
+  );
+  const isOfficeDocument = useMemo(
+    () => Boolean(selectedPathLower.match(/\.(docx?|xlsx?)$/)),
+    [selectedPathLower]
   );
   const activeDocumentViewMode = isMarkdown ? markdownViewMode : latexViewMode;
   const showPreviewToggle = (isMarkdown || isLatex) && !fileLoading && !fileError;
+  const shouldUseEmbeddedDocumentRail =
+    embedded &&
+    !isImage &&
+    !isOfficeDocument &&
+    ((isMarkdown && markdownViewMode === DOCUMENT_VIEW_MODES.PREVIEW) ||
+      (isLatex && latexViewMode === DOCUMENT_VIEW_MODES.PREVIEW) ||
+      isPdf);
+  const embeddedDocumentSurfaceClass = shouldUseEmbeddedDocumentRail
+    ? 'filesystem-document-surface filesystem-document-surface--embedded'
+    : '';
+  const markdownShellClassName = shouldUseEmbeddedDocumentRail
+    ? 'filesystem-markdown-shell filesystem-markdown-shell--embedded'
+    : 'filesystem-markdown-shell';
+  const markdownPreviewClassName = shouldUseEmbeddedDocumentRail
+    ? 'filesystem-markdown-preview filesystem-markdown-preview--embedded'
+    : 'filesystem-markdown-preview';
+  const embeddedHorizontalScrollbarSpacerClassName = shouldUseEmbeddedDocumentRail
+    ? 'filesystem-document-surface filesystem-document-surface--embedded'
+    : 'filesystem-document-surface';
+  const resolvedEmbeddedDocumentSurfaceWidth = embeddedDocumentSurfaceWidth || EMBEDDED_DOCUMENT_MIN_WIDTH_PX;
+  const embeddedDocumentSurfaceStyle = shouldUseEmbeddedDocumentRail
+    ? {
+        minWidth: `${resolvedEmbeddedDocumentSurfaceWidth}px`,
+      }
+    : undefined;
+  const embeddedScrollbarSpacerStyle = shouldUseEmbeddedDocumentRail
+    ? {
+        minWidth: `${resolvedEmbeddedDocumentSurfaceWidth}px`,
+      }
+    : undefined;
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
   const workspaceStateKey = `${project?.id || 'global'}:${workspaceId || 'default'}`;
-  const filteredTree = useMemo(() => filterTreeNodes(tree, searchQuery), [tree, searchQuery]);
+  const appliedSearchQuery = deferredSearchQuery.trim();
+  const filteredTree = useMemo(
+    () => filterTreeNodes(tree, deferredSearchQuery),
+    [deferredSearchQuery, tree]
+  );
   const forcedExpandedPaths = useMemo(
-    () => (searchQuery.trim() ? buildForcedExpandedPaths(filteredTree) : new Set()),
-    [filteredTree, searchQuery]
+    () => (appliedSearchQuery ? buildForcedExpandedPaths(filteredTree) : new Set()),
+    [appliedSearchQuery, filteredTree]
   );
   const visibleExpandedPaths = useMemo(() => {
-    if (!searchQuery.trim()) return expanded;
+    if (!appliedSearchQuery) return expanded;
     return new Set([...expanded, ...forcedExpandedPaths]);
-  }, [expanded, forcedExpandedPaths, searchQuery]);
+  }, [appliedSearchQuery, expanded, forcedExpandedPaths]);
   const currentFileBreadcrumb = useMemo(() => normalizePathSegments(selectedPath), [selectedPath]);
 
   const persistLegacyTreeCollapsedPref = useCallback(
@@ -356,7 +421,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     setContent(inMemorySnapshot?.content || DEFAULT_EDITOR_PANE_CONTENT);
     setFileError(inMemorySnapshot?.fileError || '');
     setFileLoading(false);
-    setSearchQuery(nextState.searchQuery || '');
+    setSearchInputValue(nextState.searchQuery || '');
     setMarkdownViewMode(nextState.markdownViewMode || DOCUMENT_VIEW_MODES.PREVIEW);
     setLatexViewMode(nextState.latexViewMode || DOCUMENT_VIEW_MODES.PREVIEW);
   }, [project?.id, storage, workspaceId, workspaceStateKey]);
@@ -370,7 +435,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
       expandedPaths: Array.from(expanded),
       isTreeCollapsed,
       selectedPath,
-      searchQuery,
+      searchQuery: searchInputValue,
       markdownViewMode,
       latexViewMode,
       content,
@@ -378,8 +443,38 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     };
 
     workspaceSnapshotsRef.current.set(workspaceStateKey, snapshot);
-    writeEditorPaneState(storage, project?.id, workspaceId, snapshot);
-  }, [content, expanded, fileError, isTreeCollapsed, markdownViewMode, latexViewMode, project?.id, searchQuery, selectedPath, storage, workspaceId, workspaceStateKey]);
+  }, [
+    content,
+    expanded,
+    fileError,
+    isTreeCollapsed,
+    latexViewMode,
+    markdownViewMode,
+    searchInputValue,
+    selectedPath,
+    workspaceStateKey,
+  ]);
+
+  useEffect(() => {
+    writeEditorPaneState(storage, project?.id, workspaceId, {
+      expandedPaths: Array.from(expanded),
+      isTreeCollapsed,
+      selectedPath,
+      searchQuery: deferredSearchQuery,
+      markdownViewMode,
+      latexViewMode,
+    });
+  }, [
+    deferredSearchQuery,
+    expanded,
+    isTreeCollapsed,
+    latexViewMode,
+    markdownViewMode,
+    project?.id,
+    selectedPath,
+    storage,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     onContextChange?.({
@@ -441,13 +536,252 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   }, [isTreeCollapsed, persistLegacyTreeCollapsedPref]);
 
   const clearSearch = useCallback(() => {
-    setSearchQuery('');
+    setSearchInputValue('');
   }, []);
+
+  const handleSearchQueryChange = useCallback((event) => {
+    const nextValue = event.target.value;
+    setSearchInputValue((previousValue) =>
+      previousValue === nextValue ? previousValue : nextValue
+    );
+  }, []);
+
+  const renderedTree = useMemo(
+    () =>
+      filteredTree.map((node) => (
+        <TreeNode
+          key={node.path}
+          node={node}
+          level={0}
+          expanded={visibleExpandedPaths}
+          onToggle={toggleNode}
+          onSelect={loadFile}
+          selectedPath={selectedPath}
+        />
+      )),
+    [filteredTree, loadFile, selectedPath, toggleNode, visibleExpandedPaths]
+  );
+
+  const measureEmbeddedDocumentSurfaceWidth = useCallback(() => {
+    if (!shouldUseEmbeddedDocumentRail) return;
+
+    const previewRegion = previewScrollRegionRef.current;
+    const previewRail = documentPreviewRailRef.current;
+    if (!previewRegion && !previewRail) return;
+
+    const nextWidth = Math.max(
+      EMBEDDED_DOCUMENT_MIN_WIDTH_PX,
+      Math.ceil(previewRegion?.scrollWidth || 0),
+      Math.ceil(previewRail?.scrollWidth || 0),
+      Math.ceil(previewRail?.getBoundingClientRect?.().width || 0)
+    );
+
+    setEmbeddedDocumentSurfaceWidth((previousWidth) =>
+      Math.abs(previousWidth - nextWidth) < 1 ? previousWidth : nextWidth
+    );
+  }, [shouldUseEmbeddedDocumentRail]);
+
+  const syncBottomScrollbarToPreview = useCallback(
+    (previewScrollLeft) => {
+      const previewRegion = previewScrollRegionRef.current;
+      const bottomScrollbar = embeddedHorizontalScrollRef.current;
+      if (!previewRegion || !bottomScrollbar) return;
+
+      const previewMaxScrollLeft = getScrollableDistance(previewRegion);
+      const bottomMaxScrollLeft = getScrollableDistance(bottomScrollbar);
+      const nextScrollLeft = mapScrollOffset(
+        previewScrollLeft,
+        previewMaxScrollLeft,
+        bottomMaxScrollLeft
+      );
+
+      if (Math.abs(bottomScrollbar.scrollLeft - nextScrollLeft) < 1) return;
+      bottomScrollbar.scrollLeft = nextScrollLeft;
+    },
+    []
+  );
+
+  const syncPreviewToBottomScrollbar = useCallback(
+    (bottomScrollLeft) => {
+      const previewRegion = previewScrollRegionRef.current;
+      const bottomScrollbar = embeddedHorizontalScrollRef.current;
+      if (!previewRegion || !bottomScrollbar) return;
+
+      const bottomMaxScrollLeft = getScrollableDistance(bottomScrollbar);
+      const previewMaxScrollLeft = getScrollableDistance(previewRegion);
+      const nextScrollLeft = mapScrollOffset(
+        bottomScrollLeft,
+        bottomMaxScrollLeft,
+        previewMaxScrollLeft
+      );
+
+      if (Math.abs(previewRegion.scrollLeft - nextScrollLeft) < 1) return;
+      previewRegion.scrollLeft = nextScrollLeft;
+    },
+    []
+  );
+
+  const syncEmbeddedHorizontalScrollState = useCallback(() => {
+    if (!shouldUseEmbeddedDocumentRail) return;
+
+    const previewRegion = previewScrollRegionRef.current;
+    const bottomScrollbar = embeddedHorizontalScrollRef.current;
+    if (!previewRegion || !bottomScrollbar) return;
+
+    const previewMaxScrollLeft = getScrollableDistance(previewRegion);
+    const clampedPreviewScrollLeft = Math.min(previewRegion.scrollLeft, previewMaxScrollLeft);
+
+    if (Math.abs(previewRegion.scrollLeft - clampedPreviewScrollLeft) >= 1) {
+      previewRegion.scrollLeft = clampedPreviewScrollLeft;
+    }
+
+    syncBottomScrollbarToPreview(clampedPreviewScrollLeft);
+  }, [shouldUseEmbeddedDocumentRail, syncBottomScrollbarToPreview]);
+
+  const releaseScrollSyncLock = useCallback((source) => {
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      scrollSyncSourceRef.current = null;
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      if (scrollSyncSourceRef.current === source) {
+        scrollSyncSourceRef.current = null;
+      }
+    });
+  }, []);
+
+  const handlePreviewRegionScroll = useCallback(
+    (event) => {
+      if (!shouldUseEmbeddedDocumentRail) return;
+
+      if (scrollSyncSourceRef.current === 'bottom-scrollbar') {
+        scrollSyncSourceRef.current = null;
+        return;
+      }
+
+      const nextScrollLeft = event.currentTarget.scrollLeft;
+      scrollSyncSourceRef.current = 'preview';
+      syncBottomScrollbarToPreview(nextScrollLeft);
+      releaseScrollSyncLock('preview');
+    },
+    [releaseScrollSyncLock, shouldUseEmbeddedDocumentRail, syncBottomScrollbarToPreview]
+  );
+
+  const handleBottomScrollbarScroll = useCallback(
+    (event) => {
+      if (!shouldUseEmbeddedDocumentRail) return;
+
+      if (scrollSyncSourceRef.current === 'preview') {
+        scrollSyncSourceRef.current = null;
+        return;
+      }
+
+      const nextScrollLeft = event.currentTarget.scrollLeft;
+      scrollSyncSourceRef.current = 'bottom-scrollbar';
+      syncPreviewToBottomScrollbar(nextScrollLeft);
+      releaseScrollSyncLock('bottom-scrollbar');
+    },
+    [releaseScrollSyncLock, shouldUseEmbeddedDocumentRail, syncPreviewToBottomScrollbar]
+  );
+
+  const handleEmbeddedHorizontalWheel = useCallback(
+    (event) => {
+      if (!shouldUseEmbeddedDocumentRail) return;
+
+      const previewRegion = previewScrollRegionRef.current;
+      const bottomScrollbar = embeddedHorizontalScrollRef.current;
+      if (!previewRegion || !bottomScrollbar) return;
+
+      const isBottomScrollbar = event.currentTarget === bottomScrollbar;
+      const hasHorizontalIntent =
+        Math.abs(event.deltaX) > 0.5 || event.shiftKey || (isBottomScrollbar && Math.abs(event.deltaY) > 0.5);
+
+      if (!hasHorizontalIntent) return;
+
+      const horizontalDelta = Math.abs(event.deltaX) > 0.5 ? event.deltaX : event.deltaY;
+      if (!Number.isFinite(horizontalDelta) || horizontalDelta === 0) return;
+
+      const scrollTarget = isBottomScrollbar ? bottomScrollbar : previewRegion;
+      scrollTarget.scrollLeft += horizontalDelta;
+
+      if (isBottomScrollbar) {
+        syncPreviewToBottomScrollbar(scrollTarget.scrollLeft);
+      } else {
+        syncBottomScrollbarToPreview(scrollTarget.scrollLeft);
+      }
+
+      event.preventDefault();
+    },
+    [
+      shouldUseEmbeddedDocumentRail,
+      syncBottomScrollbarToPreview,
+      syncPreviewToBottomScrollbar,
+    ]
+  );
+
+  useEffect(() => {
+    if (!shouldUseEmbeddedDocumentRail) {
+      setEmbeddedDocumentSurfaceWidth(0);
+      return undefined;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      const frame = window.requestAnimationFrame(() => {
+        measureEmbeddedDocumentSurfaceWidth();
+        syncEmbeddedHorizontalScrollState();
+      });
+
+      return () => {
+        if (typeof window.cancelAnimationFrame === 'function') {
+          window.cancelAnimationFrame(frame);
+        }
+      };
+    }
+
+    measureEmbeddedDocumentSurfaceWidth();
+    syncEmbeddedHorizontalScrollState();
+    return undefined;
+  }, [
+    content,
+    measureEmbeddedDocumentSurfaceWidth,
+    selectedPath,
+    shouldUseEmbeddedDocumentRail,
+    syncEmbeddedHorizontalScrollState,
+  ]);
+
+  useEffect(() => {
+    if (!shouldUseEmbeddedDocumentRail || typeof window === 'undefined') return undefined;
+
+    const previewRegion = previewScrollRegionRef.current;
+    const previewRail = documentPreviewRailRef.current;
+    const bottomScrollbar = embeddedHorizontalScrollRef.current;
+    if (!previewRegion || !previewRail || !bottomScrollbar || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      measureEmbeddedDocumentSurfaceWidth();
+      syncEmbeddedHorizontalScrollState();
+    });
+
+    resizeObserver.observe(previewRegion);
+    resizeObserver.observe(previewRail);
+    resizeObserver.observe(bottomScrollbar);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [
+    measureEmbeddedDocumentSurfaceWidth,
+    shouldUseEmbeddedDocumentRail,
+    syncEmbeddedHorizontalScrollState,
+  ]);
 
   return (
     <div
       data-testid="shared-editor-pane"
-      className={`flex flex-col min-h-0 ${embedded ? 'h-full' : 'flex-1'}`}
+      className={`flex h-full w-full min-h-0 flex-col overflow-hidden ${embedded ? '' : 'flex-1'}`}
       style={{ background: embedded ? 'var(--chrome-panel-fill)' : undefined }}
     >
       <div className="px-4 py-2 border-b border-borders-subtle flex items-center justify-between gap-3" style={{ background: 'var(--chrome-panel-fill-emphasis)', borderBottomColor: 'var(--chrome-border-color)' }}>
@@ -468,8 +802,8 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
         </button>
       </div>
 
-      <div className="flex-1 min-h-0">
-        <ResizablePanelGroup direction="horizontal" className="h-full">
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ResizablePanelGroup direction="horizontal" className="h-full min-h-0">
           <ResizablePanel
             ref={explorerPanelRef}
             defaultSize={embedded ? 34 : 26}
@@ -490,22 +824,22 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
           >
             {!isTreeCollapsed ? (
               <aside
-                className="h-full flex flex-col border-r border-borders-subtle bg-surface-app"
+                className="h-full flex flex-col overflow-hidden border-r border-borders-subtle bg-surface-app"
                 data-testid="editor-tree-panel"
               >
                 <div className="flex-shrink-0 border-b border-borders-subtle px-2 py-2">
                   <div className="flex items-center gap-2 border border-borders-subtle px-2.5 py-2" style={inputStyle()}>
                     <input
                       type="search"
-                      value={searchQuery}
-                      onInput={(event) => setSearchQuery(event.currentTarget.value)}
-                      onChange={(event) => setSearchQuery(event.target.value)}
+                      value={searchInputValue}
+                      onInput={handleSearchQueryChange}
+                      onChange={handleSearchQueryChange}
                       placeholder="Search files or paths"
                       className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
                       data-testid="editor-tree-search-input"
                       aria-label="Search files"
                     />
-                    {searchQuery ? (
+                    {searchInputValue ? (
                       <button
                         type="button"
                         onClick={clearSearch}
@@ -535,12 +869,12 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                       {treeError}
                     </div>
                   ) : filteredTree.length === 0 ? (
-                    searchQuery.trim() ? (
+                    appliedSearchQuery ? (
                       <div
                         className="rounded-md border border-borders-subtle bg-surface-elevated px-3 py-2 text-xs text-text-muted"
                         data-testid="editor-tree-empty-search"
                       >
-                        No files match “{searchQuery.trim()}”.
+                        No files match “{appliedSearchQuery}”.
                       </div>
                     ) : (
                       <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
@@ -548,17 +882,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                   ) : tree.length === 0 ? (
                     <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
                   ) : (
-                    filteredTree.map((node) => (
-                      <TreeNode
-                        key={node.path}
-                        node={node}
-                        level={0}
-                        expanded={visibleExpandedPaths}
-                        onToggle={toggleNode}
-                        onSelect={loadFile}
-                        selectedPath={selectedPath}
-                      />
-                    ))
+                    renderedTree
                   )}
                 </div>
               </aside>
@@ -569,8 +893,8 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
 
           {!isTreeCollapsed && <ResizableHandle className="bg-surface-elevated" />}
 
-          <ResizablePanel defaultSize={embedded ? 66 : 74} minSize={45} className="flex flex-col h-full" style={{ overflow: 'clip' }}>
-            <section className="h-full flex flex-col overflow-hidden">
+          <ResizablePanel defaultSize={embedded ? 66 : 74} minSize={45} className="flex h-full min-h-0 flex-col" style={{ overflow: 'clip' }}>
+            <section className="flex h-full min-h-0 flex-col overflow-hidden">
               <div className="px-4 py-2.5 border-b border-borders-subtle bg-surface-app flex items-center justify-between gap-3">
                 <div className="min-w-0 flex items-center gap-2 flex-1">
                   <button
@@ -624,20 +948,54 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                 </div>
               </div>
 
-              {fileError ? (
+              {!selectedPath ? (
+                <div
+                  className="flex h-full items-center justify-center px-6 text-center"
+                  data-testid="editor-empty-state"
+                  style={{ background: 'var(--chrome-panel-fill)' }}
+                >
+                  <div className="max-w-sm space-y-3">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-borders-subtle bg-surface-elevated text-text-muted">
+                      <FileText className="h-5 w-5" strokeWidth={1.8} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-medium text-text-primary">
+                        Select a file to start browsing
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        The file tree and the preview area now scroll independently inside this panel.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : fileError ? (
                 <div className="m-4 p-4 border border-[#F778BA33] bg-[#F778BA11] text-danger text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>{fileError}</span>
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 relative overflow-y-auto" style={{ background: 'var(--chrome-panel-fill)', overscrollBehavior: 'contain' }}>
-                  {(selectedPath || '').toLowerCase().match(/\.pdf$/) ? (
-                    <iframe src={content} className="w-full h-full border-none relative z-10" style={{ background: 'var(--chrome-panel-fill)' }} title="PDF Viewer" />
-                  ) : (selectedPath || '').toLowerCase().match(/\.(png|jpe?g|gif|webp|svg)$/) ? (
+                <div
+                  ref={previewScrollRegionRef}
+                  onScroll={shouldUseEmbeddedDocumentRail ? handlePreviewRegionScroll : undefined}
+                  onWheel={shouldUseEmbeddedDocumentRail ? handleEmbeddedHorizontalWheel : undefined}
+                  className={`relative flex-1 min-h-0 overflow-y-auto overscroll-contain ${shouldUseEmbeddedDocumentRail ? 'overflow-x-auto filesystem-document-viewport--embedded' : ''}`}
+                  data-testid="editor-preview-scroll-region"
+                  style={{ background: 'var(--chrome-panel-fill)' }}
+                >
+                  {isPdf ? (
+                    <div
+                      ref={documentPreviewRailRef}
+                      className={`h-full ${embeddedDocumentSurfaceClass}`}
+                      style={embeddedDocumentSurfaceStyle}
+                      data-testid="editor-document-preview-rail"
+                    >
+                      <iframe src={content} className="block h-full w-full border-none relative z-10" style={{ background: 'var(--chrome-panel-fill)' }} title="PDF Viewer" />
+                    </div>
+                  ) : isImage ? (
                     <div className="flex items-center justify-center h-full bg-surface-base/50 p-8 overflow-auto">
                       <img src={content} className="max-w-full max-h-full object-contain shadow-xl rounded pointer-events-none" alt={selectedPath} />
                     </div>
-                  ) : (selectedPath || '').toLowerCase().match(/\.(docx?|xlsx?)$/) ? (
+                  ) : isOfficeDocument ? (
                     <div className="flex flex-col items-center justify-center h-full bg-surface-base text-text-secondary gap-4 p-8 text-center">
                       <FileText className="w-16 h-16 opacity-30" />
                       <h3 className="text-text-primary text-lg font-medium">Archivo Office Detectado</h3>
@@ -660,18 +1018,25 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                         <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
                       </div>
                     ) : (
-                      <div className="filesystem-markdown-shell">
-                        <div className="filesystem-markdown-preview">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[[safeHighlight, { ignoreMissing: true }]]}
-                            components={{
-                              code: InlineCode,
-                              pre: BlockCode,
-                            }}
-                          >
-                            {content || ''}
-                          </ReactMarkdown>
+                      <div
+                        ref={documentPreviewRailRef}
+                        className={`h-full ${embeddedDocumentSurfaceClass}`}
+                        style={embeddedDocumentSurfaceStyle}
+                        data-testid="editor-document-preview-rail"
+                      >
+                        <div className={markdownShellClassName}>
+                          <div className={markdownPreviewClassName}>
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[[safeHighlight, { ignoreMissing: true }]]}
+                              components={{
+                                code: InlineCode,
+                                pre: BlockCode,
+                              }}
+                            >
+                              {content || ''}
+                            </ReactMarkdown>
+                          </div>
                         </div>
                       </div>
                     )
@@ -681,7 +1046,14 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                         <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
                       </div>
                     ) : (
-                      <LatexDocumentPreview content={content} filePath={selectedPath} />
+                      <div
+                        ref={documentPreviewRailRef}
+                        className={`h-full ${embeddedDocumentSurfaceClass}`}
+                        style={embeddedDocumentSurfaceStyle}
+                        data-testid="editor-document-preview-rail"
+                      >
+                        <LatexDocumentPreview content={content} filePath={selectedPath} />
+                      </div>
                     )
                   ) : (
                     <Editor
@@ -744,6 +1116,23 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
                   )}
                 </div>
               )}
+
+              {shouldUseEmbeddedDocumentRail ? (
+                <div
+                  ref={embeddedHorizontalScrollRef}
+                  onScroll={handleBottomScrollbarScroll}
+                  onWheel={handleEmbeddedHorizontalWheel}
+                  className="filesystem-embedded-horizontal-scrollbar"
+                  data-testid="editor-preview-horizontal-scrollbar"
+                  aria-label="Document horizontal scroll"
+                >
+                  <div
+                    className={`${embeddedHorizontalScrollbarSpacerClassName} h-px`}
+                    style={embeddedScrollbarSpacerStyle}
+                    aria-hidden="true"
+                  />
+                </div>
+              ) : null}
             </section>
           </ResizablePanel>
         </ResizablePanelGroup>

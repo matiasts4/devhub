@@ -16,6 +16,7 @@ import {
   Zap,
   Cpu,
 } from 'lucide-react';
+import { UiShell, UiHeader } from '@/components/ui/system';
 
 const navItems = [
   { name: 'Account', hint: 'Profile and billing', href: '/settings/account', icon: User },
@@ -34,19 +35,39 @@ const navItems = [
   { name: 'API Keys', hint: 'Create and manage keys', href: '/settings/keys', icon: Key },
 ];
 
+const ROUTE_TITLES = {
+  '/settings/account': 'Account',
+  '/settings/appearance': 'Appearance',
+  '/settings/llm-providers': 'LLM Providers',
+  '/settings/shortcuts': 'Shortcuts',
+  '/settings/agents': 'AI Agents',
+  '/settings/voice': 'BridgeVoice',
+  '/settings/notifications': 'Notifications',
+  '/settings/cli': 'CLI',
+  '/settings/keys': 'API Keys',
+};
+
+function titleForPathname(pathname) {
+  if (!pathname) return 'Settings';
+  if (ROUTE_TITLES[pathname]) return ROUTE_TITLES[pathname];
+  for (const prefix of Object.keys(ROUTE_TITLES)) {
+    if (pathname.startsWith(prefix)) return ROUTE_TITLES[prefix];
+  }
+  return 'Settings';
+}
+
 export default function SettingsLayout({ children }) {
   const pathname = usePathname();
-
   return (
-    <div
-      className="flex h-screen w-full text-zinc-100"
+    <UiShell
+      className="h-screen text-zinc-100"
       style={{
         background:
           'radial-gradient(1200px 420px at 78% -10%, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 70%), var(--surface-app)',
       }}
     >
       <aside
-        className="w-72 border-r flex flex-col"
+        className="w-72 border-r flex flex-col h-full flex-shrink-0"
         style={{
           background: 'color-mix(in srgb, var(--surface-card) 78%, black)',
           borderColor: 'var(--border-subtle)',
@@ -82,7 +103,6 @@ export default function SettingsLayout({ children }) {
             </button>
           </div>
         </div>
-
         <div className="px-5 pt-5 pb-2">
           <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
           <p
@@ -92,14 +112,12 @@ export default function SettingsLayout({ children }) {
             DevHub
           </p>
         </div>
-
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               pathname === item.href ||
               (pathname?.startsWith(item.href) && item.href !== '/settings/appearance');
-
             return (
               <Link
                 key={item.name}
@@ -146,23 +164,12 @@ export default function SettingsLayout({ children }) {
             );
           })}
         </nav>
-
         <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--border-subtle)' }} />
       </aside>
-
-      <main className="flex-1 overflow-y-auto">
-        <div
-          className="h-14 border-b px-6 flex items-center justify-between"
-          style={{
-            borderColor: 'var(--border-subtle)',
-            background: 'color-mix(in srgb, var(--surface-card) 56%, transparent)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-            DevHub
-          </p>
-          <div className="flex items-center gap-2">
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <UiHeader sticky data-testid="ui-header">
+          <UiHeader.Title>{titleForPathname(pathname)}</UiHeader.Title>
+          <UiHeader.Actions>
             <button
               type="button"
               className="h-8 px-3 rounded-full text-[11px] font-medium"
@@ -185,11 +192,12 @@ export default function SettingsLayout({ children }) {
             >
               <Zap size={14} style={{ color: 'var(--accent-primary)' }} />
             </button>
-          </div>
+          </UiHeader.Actions>
+        </UiHeader>
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto px-6 py-8">{children}</div>
         </div>
-
-        <div className="max-w-5xl mx-auto px-6 py-8">{children}</div>
-      </main>
-    </div>
+      </div>
+    </UiShell>
   );
 }

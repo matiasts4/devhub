@@ -1,10 +1,10 @@
 /**
  * DevHub Sidecar Backend
- * 
+ *
  * Responsabilidades:
  * 1. Gestionar sesiones PTY persistentes (sobreviven al cierre de ventana)
- * 2. Escribir PID en ~/.devhub/sidecar.pid para que Tauri detecte si ya corre
- * 3. Escribir puerto en ~/.devhub/sidecar-port.txt para el shutdown graceful
+ * 2. Escribir PID en $DEVHUB_HOME/sidecar.pid (o ~/.devhub) para que Tauri detecte si ya corre
+ * 3. Escribir puerto en $DEVHUB_HOME/sidecar-port.txt para el shutdown graceful
  * 4. Exponer POST /shutdown para que Tauri cierre el sidecar limpiamente
  */
 
@@ -13,25 +13,33 @@ const http = require('http');
 const WebSocket = require('ws');
 const pty = require('node-pty');
 const os = require('os');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const { resolveSidecarSessionCwd } = require('./sessionCwd');
+const { buildSidecarSpawnConfig, parseBooleanQueryFlag } = require('./sessionSpawn');
 const {
   buildHistoryReplay,
   buildServerMessage,
   detectOpenCodeSessionId,
+  detectOpenCodeTuiReady,
+  filterTerminalInputForSession,
   filterTerminalOutputForSession,
   getTransportMode,
   parseClientMessage,
   updateSessionModeFromInput,
 } = require('./sessionTransport');
+const { writeOpencodeReadyMarker } = require('./opencodeReadyMarker');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
-const DEVHUB_DIR = path.join(os.homedir(), '.devhub');
-const PID_FILE   = path.join(DEVHUB_DIR, 'sidecar.pid');
-const PORT_FILE  = path.join(DEVHUB_DIR, 'sidecar-port.txt');
-const PORT       = parseInt(process.env.SIDECAR_PORT || '4000', 10);
+// Respeta DEVHUB_HOME cuando el wrapper / Tauri lo pasan (permite tests con home
+// temporal y consistencia con la lógica de extracción del wrapper). Fallback al
+// default para compatibilidad.
+const DEVHUB_DIR = process.env.DEVHUB_HOME || path.join(os.homedir(), '.devhub');
+const PID_FILE = path.join(DEVHUB_DIR, 'sidecar.pid');
+const PORT_FILE = path.join(DEVHUB_DIR, 'sidecar-port.txt');
+const PORT = parseInt(process.env.SIDECAR_PORT || '4000', 10);
 
 // Crear directorio de estado si no existe
 if (!fs.existsSync(DEVHUB_DIR)) {
@@ -51,8 +59,12 @@ function writeRuntimeFiles() {
 function cleanup(exitCode = 0) {
   if (isCleaningUp) return;
   isCleaningUp = true;
-  try { fs.unlinkSync(PID_FILE); } catch (_) {}
-  try { fs.unlinkSync(PORT_FILE); } catch (_) {}
+  try {
+    fs.unlinkSync(PID_FILE);
+  } catch (_) {}
+  try {
+    fs.unlinkSync(PORT_FILE);
+  } catch (_) {}
   console.log('[Sidecar] Archivos PID/port eliminados. Bye.');
   process.exit(exitCode);
 }
@@ -63,6 +75,24 @@ process.on('SIGINT', () => cleanup(0));
 // ─── Sesiones PTY persistentes ────────────────────────────────────────────────
 // Clave: sessionId → { ptyProcess, history: string[], clients: Set<WebSocket> }
 const sessions = new Map();
+
+function killTmuxSessionBestEffort(sessionName) {
+  const normalized = String(sessionName || '').trim();
+  if (!normalized || os.platform() === 'win32') return;
+  try {
+    spawnSync('tmux', ['kill-session', '-t', normalized], { stdio: 'ignore', timeout: 5000 });
+  } catch (_) {}
+}
+
+function abortOpenCodeSessionBestEffort(opencodeSessionId) {
+  const normalized = String(opencodeSessionId || '').trim();
+  if (!normalized) return;
+  const port = Number(process.env.OPENCODE_PORT || 4154);
+  const url = `http://127.0.0.1:${port}/session/${encodeURIComponent(normalized)}/abort`;
+  try {
+    void fetch(url, { method: 'POST' }).catch(() => {});
+  } catch (_) {}
+}
 
 function sendToClient(ws, payload) {
   if (ws.readyState !== WebSocket.OPEN) return;
@@ -77,25 +107,34 @@ function broadcastSessionPayload(session, payload) {
   }
 }
 
-function getOrCreateSession(sessionId, cwd) {
+function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
   if (sessions.has(sessionId)) {
     return sessions.get(sessionId);
   }
 
   const cwdResolution = resolveSidecarSessionCwd(cwd || os.homedir());
   const effectiveCwd = cwdResolution.effectiveCwd;
-  const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || 'bash');
-  const ptyProcess = pty.spawn(shell, [], {
+  const spawnConfig = buildSidecarSpawnConfig({
+    sessionId,
+    cwd: effectiveCwd,
+    isSwarmRole: Boolean(swarmContext.isSwarmRole),
+    launchId: swarmContext.launchId || null,
+    roleKey: swarmContext.roleKey || null,
+    env: process.env,
+  });
+  const shell =
+    os.platform() === 'win32' ? 'powershell.exe' : spawnConfig.shell || process.env.SHELL || 'bash';
+  const ptyProcess = pty.spawn(shell, spawnConfig.args, {
     name: 'xterm-256color',
     cols: 120,
     rows: 36,
     cwd: effectiveCwd,
-    env: { ...process.env, TERM: 'xterm-256color' },
+    env: spawnConfig.env,
   });
 
   const session = {
     ptyProcess,
-    history: [],     // Buffer de los últimos 5000 chars para replay al reconectar
+    history: [], // Buffer de los últimos 5000 chars para replay al reconectar
     clients: new Set(),
     cwd: effectiveCwd,
     createdAt: Date.now(),
@@ -103,6 +142,12 @@ function getOrCreateSession(sessionId, cwd) {
     historyEnabled: true,
     opencodeSessionId: null,
     pendingInput: '',
+    tmuxSession: spawnConfig.tmuxSession || null,
+    swarmContext: {
+      isSwarmRole: Boolean(swarmContext.isSwarmRole),
+      launchId: swarmContext.launchId || null,
+      roleKey: swarmContext.roleKey || null,
+    },
   };
 
   // Capturar output del PTY y enviarlo a todos los clientes conectados
@@ -132,6 +177,14 @@ function getOrCreateSession(sessionId, cwd) {
       });
     }
 
+    if (session.tmuxSession && detectOpenCodeTuiReady(filteredData)) {
+      writeOpencodeReadyMarker(session.tmuxSession, {
+        sessionId,
+        opencodeSessionId: session.opencodeSessionId || null,
+        reason: 'sidecar-tui-footer',
+      });
+    }
+
     broadcastSessionPayload(session, { type: 'output', data: filteredData });
   });
 
@@ -153,6 +206,9 @@ function getOrCreateSession(sessionId, cwd) {
     requestedCwd: cwdResolution.requestedCwd,
     effectiveCwd,
     usedFallback: cwdResolution.usedFallback,
+    tmuxSession: spawnConfig.tmuxSession || null,
+    tmuxEnabled: spawnConfig.tmuxEnabled,
+    isSwarmRole: Boolean(swarmContext.isSwarmRole),
   });
   return session;
 }
@@ -181,6 +237,59 @@ app.get('/sessions', (_req, res) => {
   res.json({ sessions: list });
 });
 
+// Output buffer for a specific session (for external observers like Zed assistant to "see" contents)
+app.get('/sessions/:id/output', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  const output = (session.history || []).join('');
+  res.json({
+    output,
+    session_id: req.params.id,
+    cwd: session.cwd || null,
+    createdAt: session.createdAt || null,
+  });
+});
+
+// HTTP input for Zed assistant (symmetric to /output — Phase 1)
+app.put('/sessions/:id/input', (req, res) => {
+  const sessionId = req.params.id;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const data = req.body?.data;
+  if (data === undefined || data === null || typeof data !== 'string') {
+    return res.status(400).json({ error: 'data field (string) is required' });
+  }
+
+  const filteredInput = filterTerminalInputForSession(session, data);
+  if (filteredInput === null) {
+    return res.status(400).json({ error: 'input rejected by session filter' });
+  }
+
+  updateSessionModeFromInput(session, filteredInput);
+
+  const detectedSessionId = detectOpenCodeSessionId(filteredInput);
+  if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
+    session.opencodeSessionId = detectedSessionId;
+    broadcastSessionPayload(session, {
+      type: 'opencode-session-detected',
+      sessionId: detectedSessionId,
+    });
+  }
+
+  try {
+    session.ptyProcess.write(filteredInput);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'write failed' });
+  }
+
+  return res.json({ session_id: sessionId, sent: true, source: 'sidecar' });
+});
+
 app.delete('/sessions/:sessionId', (req, res) => {
   const { sessionId } = req.params;
   const session = sessions.get(sessionId);
@@ -195,6 +304,9 @@ app.delete('/sessions/:sessionId', (req, res) => {
     } catch (_) {}
   }
 
+  abortOpenCodeSessionBestEffort(session.opencodeSessionId);
+  killTmuxSessionBestEffort(session.tmuxSession);
+
   try {
     session.ptyProcess.kill();
   } catch (_) {}
@@ -208,12 +320,14 @@ app.delete('/sessions/:sessionId', (req, res) => {
 app.post('/shutdown', (_req, res) => {
   console.log('[Sidecar] Recibida señal de shutdown graceful...');
   res.json({ ok: true, message: 'Shutting down...' });
-  
+
   // Dar tiempo a que la respuesta HTTP llegue
   setTimeout(() => {
     // Matar todos los PTY activos
     for (const [id, session] of sessions) {
-      try { session.ptyProcess.kill(); } catch (_) {}
+      try {
+        session.ptyProcess.kill();
+      } catch (_) {}
       console.log(`[Sidecar] PTY ${id} terminado.`);
     }
     cleanup();
@@ -229,13 +343,20 @@ wss.on('connection', (ws, req) => {
   // Extraer parámetros de la URL: ?sessionId=xxx&cwd=/path
   const urlParams = new URL(req.url || '/', `http://localhost:${PORT}`).searchParams;
   const sessionId = urlParams.get('sessionId') || 'default';
-  const cwd       = urlParams.get('cwd') || os.homedir();
+  const cwd = urlParams.get('cwd') || os.homedir();
+  const swarmContext = {
+    isSwarmRole: parseBooleanQueryFlag(urlParams.get('isSwarmRole')),
+    roleKey: urlParams.get('roleKey') || null,
+    launchId: urlParams.get('launchId') || null,
+  };
   ws.__devhubTransport = getTransportMode(req.url || '/');
 
-  const session = getOrCreateSession(sessionId, cwd);
+  const session = getOrCreateSession(sessionId, cwd, swarmContext);
   session.clients.add(ws);
 
-  console.log(`[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport})`);
+  console.log(
+    `[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport})`
+  );
 
   // Replay del historial al reconectar
   if (session.history.length > 0) {
@@ -264,9 +385,12 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    updateSessionModeFromInput(session, payload.data);
+    const filteredInput = filterTerminalInputForSession(session, payload.data);
+    if (filteredInput === null) return;
 
-    const detectedSessionId = detectOpenCodeSessionId(payload.data);
+    updateSessionModeFromInput(session, filteredInput);
+
+    const detectedSessionId = detectOpenCodeSessionId(filteredInput);
     if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
       session.opencodeSessionId = detectedSessionId;
       broadcastSessionPayload(session, {
@@ -276,12 +400,16 @@ wss.on('connection', (ws, req) => {
     }
 
     // Input de teclado al PTY
-    try { session.ptyProcess.write(payload.data); } catch (_) {}
+    try {
+      session.ptyProcess.write(filteredInput);
+    } catch (_) {}
   });
 
   ws.on('close', () => {
     session.clients.delete(ws);
-    console.log(`[Sidecar] WS desconectado de sesión ${sessionId} (${session.clients.size} clientes restantes)`);
+    console.log(
+      `[Sidecar] WS desconectado de sesión ${sessionId} (${session.clients.size} clientes restantes)`
+    );
     // IMPORTANTE: NO matamos el PTY aquí — persiste aunque no haya clientes
   });
 

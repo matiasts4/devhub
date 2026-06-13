@@ -11,13 +11,16 @@ const mockResizeObserverInstances = [];
 const mockNativeVteBridge = {
   closeNativeVtePanel: jest.fn(),
   focusNativeVtePanel: jest.fn(),
+  getCachedNativeVteProbeResult: jest.fn(() => null),
   isNativeVteRuntimeAvailable: jest.fn(() => false),
   openNativeVtePanel: jest.fn(async () => ({ opened: false, reason: 'tauri-unavailable' })),
   pasteNativeVtePanel: jest.fn(async () => ({ supported: false, reason: 'tauri-unavailable' })),
   probeNativeVte: jest.fn(async () => ({ ready: false, reason: 'tauri-unavailable' })),
+  resetNativeVteProbeCache: jest.fn(),
   resizeNativeVtePanel: jest.fn(),
   setNativeVtePanelVisibility: jest.fn(),
   subscribeNativeVteEvents: jest.fn(() => jest.fn()),
+  warmNativeVteProbe: jest.fn(async () => ({ ready: false, reason: 'tauri-unavailable' })),
 };
 
 jest.mock('framer-motion', () => ({
@@ -58,6 +61,7 @@ jest.mock(
         dispose: jest.fn(),
         getSelection: jest.fn(() => ''),
         clear: jest.fn(),
+        scrollToLine: jest.fn(),
       };
       mockTerminalInstances.push(instance);
       return instance;
@@ -107,6 +111,12 @@ const {
   getNativeTerminalBounds,
   createTerminalViewportDiagnosticLogger,
   fitTerminalViewport,
+  proposeTerminalViewportDimensions,
+  isTerminalViewportUndersized,
+  shouldDeferTerminalConnectUntilViewportFitted,
+  clampTerminalViewportDimensions,
+  isPlausibleTerminalCellSize,
+  shouldReleaseWebglRendererOnLayoutHide,
   getTerminalRendererRecoveryActionLabel,
   getTerminalRendererStatusCopy,
   getXtermContainerAnimProps,
@@ -117,9 +127,71 @@ const {
   shouldShowTerminalStatusOverlay,
   shouldLogTerminalViewportDiagnostic,
   shouldOpenNativeVtePanel,
+  shouldRunTerminalViewportReactivation,
+  shouldRunPanelClickViewportRecovery,
+  shouldRecoverPanelOnActivation,
+  shouldClearWebglAtlasOnPanelActivation,
+  shouldAttachWebglRenderer,
+  shouldFreezeSingleWebglViewportOnWorkspaceShow,
+  shouldAttachCanvasRenderer,
+  shouldRefitVisibleInactiveSplitPanel,
+  sendTerminalPasteInput,
+  scheduleTerminalViewportSyncBurst,
+  shouldSyncTerminalViewportOnLayoutShow,
+  shouldSkipRedundantLayoutSettleViewportSync,
+  shouldSkipTerminalOutputWhileLayoutHidden,
+  appendHiddenTerminalOutputBuffer,
+  takeHiddenTerminalOutputBuffer,
+  shouldDiscardHiddenOutputCatchup,
+  chunkTerminalOutputForCatchup,
+  nudgeTerminalPtyResize,
+  shouldClearGpuAtlasOnWorkspaceShow,
+  shouldBlockLateInitialCommandSend,
+  shouldReleaseCanvasRendererOnLayoutHide,
+  shouldShowTerminalLoadingOverlay,
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
   shouldReinitializeTerminalForRenderer,
+  shouldBlockTerminalViewportForWebglFallback,
+  resolveTerminalFontFamily,
+  isTerminalViewportNearBottom,
+  getTerminalViewportScrollOffset,
+  restoreTerminalViewportScroll,
+  shouldUseTerminalScrollbackWheel,
+  shouldInjectTerminalWheelIntoPty,
+  scrollTerminalViewport,
+  resolveTerminalWheelScrollDirection,
+  resolveTerminalWheelPageSteps,
+  buildTerminalWheelPageSequence,
+  isTerminalTranscriptCell,
+  resolveTerminalCellFromPointer,
+  shouldRouteWheelToTranscript,
+  resolveTerminalWheelScrollPrefer,
+  shouldPassthroughNativeTuiWheel,
+  shouldInjectGrokWheelSgr,
+  resolveGrokWheelSgrCoords,
+  buildGrokWheelScrollPayload,
+  resolveTerminalWheelInputZoneRows,
+  resolveTerminalPointerElement,
+  resolveTerminalScreenElement,
+  forwardTerminalWheelToXterm,
+  isForwardedTerminalWheelEvent,
+  TERMINAL_WHEEL_FORWARD_FLAG,
+  TERMINAL_GROK_INPUT_ZONE_ROWS,
+  isLikelyTuiInitialCommand,
+  isGrokTuiInitialCommand,
+  detectGrokTuiReady,
+  detectGrokSessionFromOutput,
+  buildTerminalWheelArrowSequence,
+  buildTerminalWheelScrollPayload,
+  buildTerminalWheelSgrSequence,
+  disableTerminalFocusReporting,
+  prepareActiveTuiTerminalFocus,
+  TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
+  TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
+  TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ,
+  TERMINAL_PAGE_UP_SEQ,
+  TERMINAL_PAGE_DOWN_SEQ,
   stabilizeTerminalRenderer,
   TERMINAL_NATIVE_CONTENT_BODY_STYLE,
   TERMINAL_VIEWPORT_SHELL_STYLE,
@@ -252,25 +324,34 @@ function installTerminalRuntimeMocks() {
 }
 
 describe('getXtermContainerAnimProps()', () => {
-  test('returns opacity 0 as initial when connected=false', () => {
-    const props = getXtermContainerAnimProps(false);
-    expect(props.initial.opacity).toBe(0);
+  test('does not re-fade from opacity 0 on every visibility toggle', () => {
+    expect(getXtermContainerAnimProps(true).initial).toBe(false);
+    expect(getXtermContainerAnimProps(false).initial).toBe(false);
   });
 
-  test('returns opacity 1 as animate when connected=true', () => {
+  test('returns opacity 1 as animate when visible=true', () => {
     const props = getXtermContainerAnimProps(true);
     expect(props.animate.opacity).toBe(1);
   });
 
-  test('transition duration is 0.15s (150ms ease-out)', () => {
+  test('transition duration is 0.1s (ease-out)', () => {
     const props = getXtermContainerAnimProps(true);
-    expect(props.transition.duration).toBe(0.15);
+    expect(props.transition.duration).toBe(0.1);
     expect(props.transition.ease).toBe('easeOut');
   });
 
-  test('when connected=false, animate keeps opacity 0 (still loading)', () => {
+  test('when visible=false, animate keeps opacity 0', () => {
     const props = getXtermContainerAnimProps(false);
     expect(props.animate.opacity).toBe(0);
+  });
+});
+
+describe('shouldShowTerminalLoadingOverlay()', () => {
+  test('blocks only during first init or first connect', () => {
+    expect(shouldShowTerminalLoadingOverlay(true, 'idle', false)).toBe(true);
+    expect(shouldShowTerminalLoadingOverlay(false, 'connecting', false)).toBe(true);
+    expect(shouldShowTerminalLoadingOverlay(false, 'connecting', true)).toBe(false);
+    expect(shouldShowTerminalLoadingOverlay(false, 'connected', true)).toBe(false);
   });
 });
 
@@ -282,6 +363,27 @@ describe('shouldShowTerminalViewport()', () => {
   test('keeps the viewport hidden while initializing or after init failure', () => {
     expect(shouldShowTerminalViewport(true, null)).toBe(false);
     expect(shouldShowTerminalViewport(false, 'boom')).toBe(false);
+  });
+});
+
+describe('resolveTerminalFontFamily()', () => {
+  test('prefers the configured mono CSS variable when available', () => {
+    installTerminalDom();
+    document.documentElement.style.setProperty(
+      '--font-family-mono',
+      "'Fira Code', 'Liberation Mono', monospace"
+    );
+
+    expect(resolveTerminalFontFamily()).toBe("'Fira Code', 'Liberation Mono', monospace");
+  });
+
+  test('falls back to a stable system monospace stack when no CSS variable is set', () => {
+    installTerminalDom();
+    document.documentElement.style.removeProperty('--font-family-mono');
+
+    expect(resolveTerminalFontFamily()).toBe(
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+    );
   });
 });
 
@@ -299,6 +401,10 @@ describe('shouldShowTerminalStatusOverlay()', () => {
   test('does not show overlay while initializing or when connected', () => {
     expect(shouldShowTerminalStatusOverlay(true, null, 'connecting')).toBe(false);
     expect(shouldShowTerminalStatusOverlay(false, null, 'connected')).toBe(false);
+  });
+
+  test('shows suspended overlay even while initializing (native VTE probe)', () => {
+    expect(shouldShowTerminalStatusOverlay(true, null, 'suspended')).toBe(true);
   });
 });
 
@@ -324,6 +430,103 @@ describe('refreshTerminalViewport()', () => {
   });
 });
 
+describe('proposeTerminalViewportDimensions()', () => {
+  function makeTerm(cell = { width: 10, height: 20 }) {
+    return {
+      _core: {
+        viewport: { scrollBarWidth: 0 },
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell } },
+        },
+      },
+    };
+  }
+
+  test('keeps floored rows when clipping one extra row would waste more space than the slack band', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 509 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 80, rows: 25 });
+  });
+
+  test('keeps floored rows when slack is smaller than half a cell', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 504 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 80, rows: 25 });
+  });
+
+  test('adds one extra row when slack is larger than the clip cost of an extra cell', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 511 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 80, rows: 26 });
+  });
+
+  test('adds one extra column when horizontal slack is larger than the clip cost', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 809, height: 400 }),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon: { proposeDimensions: jest.fn() },
+        term: makeTerm(),
+      })
+    ).toEqual({ cols: 81, rows: 20 });
+  });
+
+  test('falls back to fitAddon when cell metrics are implausibly small', () => {
+    const container = {
+      getBoundingClientRect: () => ({ width: 1280, height: 720 }),
+    };
+    const fitAddon = {
+      proposeDimensions: jest.fn(() => ({ cols: 120, rows: 36 })),
+    };
+
+    expect(
+      proposeTerminalViewportDimensions({
+        container,
+        fitAddon,
+        term: makeTerm({ width: 2, height: 1 }),
+      })
+    ).toEqual({ cols: 120, rows: 36 });
+    expect(fitAddon.proposeDimensions).toHaveBeenCalledTimes(1);
+  });
+
+  test('clamps runaway row counts from corrupted renderer metrics', () => {
+    expect(clampTerminalViewportDimensions({ cols: 900, rows: 800 })).toEqual({
+      cols: 400,
+      rows: 120,
+    });
+    expect(isPlausibleTerminalCellSize(20, 10)).toBe(true);
+    expect(isPlausibleTerminalCellSize(1, 10)).toBe(false);
+  });
+});
+
 describe('stabilizeTerminalRenderer()', () => {
   test('clears the xterm texture atlas before repainting when supported', () => {
     const term = {
@@ -345,6 +548,468 @@ describe('stabilizeTerminalRenderer()', () => {
 
     expect(stabilizeTerminalRenderer(term)).toBe(true);
     expect(term.refresh).toHaveBeenCalledWith(0, 11);
+  });
+
+  test('can repaint inactive split siblings without clearing the WebGL atlas', () => {
+    const term = {
+      rows: 24,
+      clearTextureAtlas: jest.fn(),
+      refresh: jest.fn(),
+    };
+
+    expect(stabilizeTerminalRenderer(term, { clearAtlas: false })).toBe(true);
+    expect(term.clearTextureAtlas).not.toHaveBeenCalled();
+    expect(term.refresh).toHaveBeenCalledWith(0, 23);
+  });
+});
+
+describe('isTerminalViewportNearBottom()', () => {
+  test('returns true when the viewport is pinned to the latest output', () => {
+    expect(
+      isTerminalViewportNearBottom({
+        buffer: { active: { baseY: 120, viewportY: 119 } },
+      })
+    ).toBe(true);
+  });
+
+  test('returns false when the user is reading older output', () => {
+    expect(
+      isTerminalViewportNearBottom({
+        buffer: { active: { baseY: 120, viewportY: 80 } },
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldSyncTerminalViewportOnLayoutShow()', () => {
+  test('only triggers a full viewport sync when a workspace shell becomes visible', () => {
+    expect(shouldSyncTerminalViewportOnLayoutShow(false, true)).toBe(true);
+    expect(shouldSyncTerminalViewportOnLayoutShow(true, true)).toBe(false);
+    expect(shouldSyncTerminalViewportOnLayoutShow(false, false)).toBe(false);
+    expect(shouldSyncTerminalViewportOnLayoutShow(true, false)).toBe(false);
+  });
+});
+
+describe('shouldRunPanelClickViewportRecovery()', () => {
+  test('skips heavy recovery when the clicked panel is already active', () => {
+    expect(shouldRunPanelClickViewportRecovery(true)).toBe(false);
+    expect(shouldRunPanelClickViewportRecovery(false)).toBe(true);
+  });
+});
+
+describe('shouldRecoverPanelOnActivation()', () => {
+  test('only recovers on false→true activation edges', () => {
+    expect(shouldRecoverPanelOnActivation(false, true)).toBe(true);
+    expect(shouldRecoverPanelOnActivation(true, true)).toBe(false);
+    expect(shouldRecoverPanelOnActivation(true, false)).toBe(false);
+    expect(shouldRecoverPanelOnActivation(false, false)).toBe(false);
+  });
+});
+
+describe('shouldClearWebglAtlasOnPanelActivation()', () => {
+  test('skips atlas clears when WebGL is already attached', () => {
+    expect(shouldClearWebglAtlasOnPanelActivation(true)).toBe(false);
+    expect(shouldClearWebglAtlasOnPanelActivation(false)).toBe(true);
+  });
+});
+
+describe('shouldAttachWebglRenderer()', () => {
+  test('allows WebGL only when the operational renderer is xterm-webgl', () => {
+    expect(shouldAttachWebglRenderer({ operationalRendererMode: 'xterm-webgl' })).toBe(true);
+    expect(shouldAttachWebglRenderer({ operationalRendererMode: 'xterm' })).toBe(false);
+    expect(shouldAttachWebglRenderer({ operationalRendererMode: 'xterm-canvas' })).toBe(false);
+  });
+});
+
+describe('shouldAttachCanvasRenderer()', () => {
+  test('allows Canvas only when the operational renderer is xterm-canvas', () => {
+    expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-canvas' })).toBe(true);
+    expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-webgl' })).toBe(false);
+    expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm' })).toBe(false);
+  });
+});
+
+describe('shouldSkipRedundantLayoutSettleViewportSync()', () => {
+  test('skips unchanged layout-settled sync when a GPU renderer is attached', () => {
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-panel-group-layout-immediate',
+        sizeUnchanged: true,
+        hasGpuRenderer: true,
+      })
+    ).toBe(true);
+  });
+
+  test('does not skip when dimensions changed or renderer is recovering', () => {
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-panel-group-layout-immediate',
+        sizeUnchanged: false,
+        hasGpuRenderer: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-panel-group-layout-immediate',
+        sizeUnchanged: true,
+        pendingWebglRecovery: true,
+        hasGpuRenderer: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('terminal viewport undersize detection', () => {
+  test('isTerminalViewportUndersized flags a short fitted grid', () => {
+    const term = {
+      rows: 12,
+      _core: { _renderService: { dimensions: { css: { cell: { height: 20, width: 10 } } } } },
+    };
+    expect(isTerminalViewportUndersized({ containerRect: { height: 900 }, term })).toBe(true);
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: true,
+        fitWorked: true,
+        containerRect: { height: 900 },
+        term,
+      })
+    ).toBe(true);
+  });
+
+  test('shouldDeferTerminalConnectUntilViewportFitted allows a filled grid', () => {
+    const term = {
+      rows: 40,
+      _core: { _renderService: { dimensions: { css: { cell: { height: 20, width: 10 } } } } },
+    };
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: true,
+        fitWorked: true,
+        containerRect: { height: 900 },
+        term,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('hidden output catchup policy', () => {
+  test('shouldDiscardHiddenOutputCatchup rejects reattach and mega-buffers', () => {
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 1000, sessionReattached: true })).toBe(
+      true
+    );
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 40000 })).toBe(true);
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 4000 })).toBe(false);
+  });
+
+  test('shouldDiscardHiddenOutputCatchup rejects active TUI and OpenCode footer replay', () => {
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 400, tuiSessionActive: true })).toBe(
+      true
+    );
+    expect(
+      shouldDiscardHiddenOutputCatchup({
+        bufferedBytes: 200,
+        bufferText: '~/devhub § 6 MCP /status 1.16.2',
+      })
+    ).toBe(true);
+  });
+
+  test('shouldSkipRedundantLayoutSettleViewportSync skips pizarra mode transitions when size unchanged', () => {
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-pizarra-mode-exit-immediate',
+        sizeUnchanged: true,
+        pendingWebglRecovery: false,
+        hasGpuRenderer: true,
+      })
+    ).toBe(true);
+  });
+
+  test('chunkTerminalOutputForCatchup splits large replay safely', () => {
+    const buffer = 'x'.repeat(20000);
+    const chunks = chunkTerminalOutputForCatchup(buffer, 8192);
+    expect(chunks).toHaveLength(3);
+    expect(chunks.join('')).toBe(buffer);
+  });
+});
+
+describe('hidden terminal output buffer helpers', () => {
+  test('appendHiddenTerminalOutputBuffer caps retained bytes', () => {
+    const bufferRef = { value: '' };
+    appendHiddenTerminalOutputBuffer(bufferRef, 'abc', 5);
+    appendHiddenTerminalOutputBuffer(bufferRef, 'def', 5);
+    expect(bufferRef.value).toBe('bcdef');
+    expect(takeHiddenTerminalOutputBuffer(bufferRef)).toBe('bcdef');
+    expect(bufferRef.value).toBe('');
+  });
+
+  test('nudgeTerminalPtyResize sends restore resize to the PTY', () => {
+    const sends = [];
+    const term = { cols: 80, rows: 24, resize: jest.fn() };
+    const socket = {
+      readyState: 1,
+      send: (payload) => sends.push(JSON.parse(payload)),
+    };
+    expect(nudgeTerminalPtyResize({ term, socket, websocketOpenState: 1 })).toBe(true);
+    expect(term.resize).toHaveBeenCalledWith(80, 23);
+    expect(term.resize).toHaveBeenCalledWith(80, 24);
+    expect(sends.at(-1)).toEqual({ type: 'resize', cols: 80, rows: 24 });
+  });
+});
+
+describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
+  test('drops output for hidden canvas/webgl panels after renderer release', () => {
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: false,
+        canvasAttached: false,
+        operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(true);
+  });
+
+  test('keeps output while visible or renderer is still attached', () => {
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: true,
+        canvasAttached: false,
+        operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: false,
+        canvasAttached: true,
+        operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldFreezeSingleWebglViewportOnWorkspaceShow()', () => {
+  test('freezes unchanged single-panel webgl workspace tab switches', () => {
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'layout-settled-workspace-switch-immediate',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(true);
+  });
+
+  test('does not freeze split canvas workspaces or real resizes', () => {
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-canvas',
+        visibleTerminalPanelCount: 2,
+      })
+    ).toBe(false);
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: false,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
+  test('limits canvas atlas clears to pending catch-up syncs only', () => {
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'workspace-show-settled',
+      })
+    ).toBe(false);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'workspace-show-pending',
+      })
+    ).toBe(true);
+  });
+
+  test('keeps webgl atlas clears on recover only, not layout or settled show passes', () => {
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'workspace-show-layout',
+      })
+    ).toBe(false);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'workspace-show-settled',
+      })
+    ).toBe(false);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'workspace-show-recover',
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'layout-settled-workspace-switch-immediate',
+      })
+    ).toBe(false);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'layout-settled-swarm-launch-delay-1000',
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-webgl',
+        reason: 'layout-settled-workspace-removed-delay-340',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldReleaseWebglRendererOnLayoutHide()', () => {
+  test('releases webgl only on visible→hidden edges in webgl mode', () => {
+    expect(
+      shouldReleaseWebglRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-webgl',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldReleaseWebglRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-canvas',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldReleaseCanvasRendererOnLayoutHide()', () => {
+  test('releases canvas only on visible→hidden edges in canvas mode', () => {
+    expect(
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-canvas',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-webgl',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-canvas',
+        isVisibleInLayout: true,
+        prevVisibleInLayout: false,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('sendTerminalPasteInput()', () => {
+  test('sends JSON input when the websocket is open', () => {
+    const socket = { readyState: 1, send: jest.fn() };
+    expect(
+      sendTerminalPasteInput({
+        socket,
+        transport: 'json',
+        text: 'npm test\n',
+        websocketOpenState: 1,
+      })
+    ).toBe(true);
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'input', data: 'npm test\n' }));
+  });
+
+  test('returns false when the socket is not open', () => {
+    const socket = { readyState: 0, send: jest.fn() };
+    expect(sendTerminalPasteInput({ socket, text: 'x', websocketOpenState: 1 })).toBe(false);
+    expect(socket.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('scheduleTerminalViewportSyncBurst()', () => {
+  test('runs sync immediately and on delayed phases', () => {
+    jest.useFakeTimers();
+    const runSync = jest.fn();
+    const cleanup = scheduleTerminalViewportSyncBurst(runSync, { extraDelaysMs: [180] });
+
+    expect(runSync).toHaveBeenCalledWith('immediate');
+
+    jest.runAllTimers();
+    expect(runSync).toHaveBeenCalledWith('delay-180');
+
+    cleanup();
+    jest.useRealTimers();
+  });
+});
+
+describe('shouldRefitVisibleInactiveSplitPanel()', () => {
+  test('refits visible inactive split siblings on layout churn', () => {
+    expect(
+      shouldRefitVisibleInactiveSplitPanel({ isActivePanel: false, isVisibleInLayout: true })
+    ).toBe(true);
+    expect(
+      shouldRefitVisibleInactiveSplitPanel({ isActivePanel: true, isVisibleInLayout: true })
+    ).toBe(false);
+    expect(
+      shouldRefitVisibleInactiveSplitPanel({ isActivePanel: false, isVisibleInLayout: false })
+    ).toBe(false);
+  });
+});
+
+describe('shouldRunTerminalViewportReactivation()', () => {
+  test('only reactivates visible active panels while the document is visible', () => {
+    expect(
+      shouldRunTerminalViewportReactivation({
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        documentVisibilityState: 'visible',
+      })
+    ).toBe(true);
+
+    expect(
+      shouldRunTerminalViewportReactivation({
+        isActivePanel: false,
+        isVisibleInLayout: true,
+        documentVisibilityState: 'visible',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldRunTerminalViewportReactivation({
+        isActivePanel: true,
+        isVisibleInLayout: false,
+        documentVisibilityState: 'visible',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldRunTerminalViewportReactivation({
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        documentVisibilityState: 'hidden',
+      })
+    ).toBe(false);
   });
 });
 
@@ -481,6 +1146,11 @@ describe('buildTerminalViewportDiagnosticPayload()', () => {
       zeroSized: false,
       requestedRendererMode: 'xterm',
       effectiveRendererMode: 'xterm',
+      isActivePanel: false,
+      isVisibleInLayout: true,
+      webglAttached: false,
+      webglFallbackReason: null,
+      pendingWebglRecovery: false,
     });
   });
 
@@ -741,6 +1411,27 @@ describe('getTerminalRendererRecoveryActionLabel()', () => {
   });
 });
 
+describe('shouldBlockTerminalViewportForWebglFallback()', () => {
+  test('keeps the viewport visible for recoverable WebGL context loss', () => {
+    expect(
+      shouldBlockTerminalViewportForWebglFallback({
+        active: true,
+        reason: 'webgl-context-lost',
+      })
+    ).toBe(false);
+  });
+
+  test('blocks the viewport for permanent WebGL failures', () => {
+    expect(
+      shouldBlockTerminalViewportForWebglFallback({
+        active: true,
+        reason: 'webgl-addon-register-failed',
+      })
+    ).toBe(true);
+    expect(shouldBlockTerminalViewportForWebglFallback(null)).toBe(false);
+  });
+});
+
 describe('shouldReinitializeTerminalForRenderer()', () => {
   test('does not reinitialize when requested mode changes but effective renderer stays xterm', () => {
     const previous = resolveTerminalRendererViewModel({ requestedRendererMode: 'xterm' });
@@ -779,6 +1470,12 @@ describe('shouldAutoReconnectTerminal()', () => {
   test('does not reconnect terminated sessions or background tabs', () => {
     expect(shouldAutoReconnectTerminal('terminated', true)).toBe(false);
     expect(shouldAutoReconnectTerminal('disconnected', false)).toBe(false);
+  });
+
+  test('does not reconnect when xterm init failed', () => {
+    expect(shouldAutoReconnectTerminal('error', true, 'No se pudo inicializar la terminal')).toBe(
+      false
+    );
   });
 });
 
@@ -830,6 +1527,8 @@ describe('TERMINAL_NATIVE_CONTENT_BODY_STYLE', () => {
 
 describe('TerminalTTY renderer fallback UI', () => {
   beforeEach(() => {
+    const { _clearAllTerminalPanelBridges } = require('@/lib/terminal/terminalPanelBridge');
+    _clearAllTerminalPanelBridges();
     installTerminalDom();
     installTerminalRuntimeMocks();
     mockTerminalInstances.length = 0;
@@ -868,6 +1567,11 @@ describe('TerminalTTY renderer fallback UI', () => {
   });
 
   test('restore with invalid experimental renderer keeps xterm surface visible', async () => {
+    document.documentElement.style.setProperty(
+      '--font-family-mono',
+      "'Fira Code', 'Liberation Mono', monospace"
+    );
+
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
         id: 'term-restore-1',
@@ -893,6 +1597,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockTerminalInstances).toHaveLength(1);
     expect(mockTerminalInstances[0].open).toHaveBeenCalledWith(terminalContainer);
     expect(mockTerminalInstances[0].loadAddon).toHaveBeenCalledTimes(2);
+    expect(require('xterm').Terminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fontFamily: "'Fira Code', 'Liberation Mono', monospace",
+        letterSpacing: 0,
+      })
+    );
 
     expect(mockWebSocketInstances).toHaveLength(1);
     expect(mockWebSocketInstances[0].url).toContain('127.0.0.1:4020/ws');
@@ -903,6 +1613,500 @@ describe('TerminalTTY renderer fallback UI', () => {
         rows: 24,
       })
     );
+  });
+
+  test('new output keeps bottom-pinned sessions anchored but does not yank users reading older content', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-scroll-output',
+        restored: true,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    expect(mockTerminalInstances).toHaveLength(1);
+    const terminal = mockTerminalInstances[0];
+    terminal.scrollToBottom = jest.fn();
+    terminal.buffer = { active: { baseY: 240, viewportY: 239 } };
+
+    const socket = mockWebSocketInstances[0];
+    socket.onmessage({ data: JSON.stringify({ type: 'output', data: 'latest\n' }) });
+    await flushTerminalEffects();
+
+    expect(terminal.write).toHaveBeenCalledWith('latest\n');
+    expect(terminal.scrollToBottom).toHaveBeenCalledTimes(1);
+
+    terminal.scrollToBottom.mockClear();
+    terminal.buffer = { active: { baseY: 240, viewportY: 160 } };
+
+    socket.onmessage({ data: JSON.stringify({ type: 'output', data: 'older-safe\n' }) });
+    await flushTerminalEffects();
+
+    expect(terminal.write).toHaveBeenCalledWith('older-safe\n');
+    expect(terminal.scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  test('focus reactivation does not force bottom scroll when the viewport is not near bottom', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-scroll-reactivate',
+        restored: true,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const terminal = mockTerminalInstances[0];
+    terminal.scrollToBottom = jest.fn();
+    terminal.buffer = { active: { baseY: 240, viewportY: 140 } };
+    terminal.focus.mockClear();
+
+    window.dispatchEvent(new window.Event('focus'));
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    await flushTerminalEffects();
+
+    expect(terminal.focus).toHaveBeenCalled();
+    expect(terminal.scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  test('switching the active split panel does not clear the WebGL atlas on the panel that became inactive', async () => {
+    const view = await renderIntoDom(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(TerminalTTY, {
+          id: 'term-split-a',
+          requestedRendererMode: 'xterm',
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        }),
+        React.createElement(TerminalTTY, {
+          id: 'term-split-b',
+          requestedRendererMode: 'xterm',
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      )
+    );
+
+    await flushTerminalEffects();
+
+    const formerlyActiveTerminal = mockTerminalInstances[0];
+    formerlyActiveTerminal.clearTextureAtlas.mockClear();
+
+    await rerenderIntoRoot(
+      view.root,
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(TerminalTTY, {
+          id: 'term-split-a',
+          requestedRendererMode: 'xterm',
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        }),
+        React.createElement(TerminalTTY, {
+          id: 'term-split-b',
+          requestedRendererMode: 'xterm',
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      )
+    );
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    await flushTerminalEffects();
+
+    expect(formerlyActiveTerminal.clearTextureAtlas).not.toHaveBeenCalled();
+  });
+
+  test('clicking an already-active xterm panel does not rerun atlas-clearing recovery', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-click-active',
+        requestedRendererMode: 'xterm',
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const terminal = mockTerminalInstances[0];
+    terminal.clearTextureAtlas.mockClear();
+
+    const shell = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    shell.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await flushTerminalEffects();
+
+    expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
+  });
+
+  test('inactive visible xterm panels ignore aggressive focus reactivation while active panels still refresh', async () => {
+    await renderIntoDom(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(TerminalTTY, {
+          id: 'term-scroll-active',
+          restored: true,
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        }),
+        React.createElement(TerminalTTY, {
+          id: 'term-scroll-inactive',
+          restored: true,
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      )
+    );
+
+    await flushTerminalEffects();
+
+    const activeTerminal = mockTerminalInstances[0];
+    const inactiveTerminal = mockTerminalInstances[1];
+
+    activeTerminal.focus.mockClear();
+    inactiveTerminal.focus.mockClear();
+    activeTerminal.scrollToBottom = jest.fn();
+    inactiveTerminal.scrollToBottom = jest.fn().mockImplementation(() => {
+      console.log('INACTIVE SCROLL TO BOTTOM CALLSTACK:', new Error().stack);
+    });
+    activeTerminal.buffer = { active: { baseY: 100, viewportY: 99 } };
+    inactiveTerminal.buffer = { active: { baseY: 100, viewportY: 99 } };
+
+    window.dispatchEvent(new window.Event('focus'));
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    await flushTerminalEffects();
+
+    expect(activeTerminal.focus).toHaveBeenCalled();
+    expect(activeTerminal.scrollToBottom).toHaveBeenCalled();
+    expect(inactiveTerminal.focus).not.toHaveBeenCalled();
+    expect(inactiveTerminal.scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  test('preserves scroll position across workspace visibility changes', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-scroll-preserve',
+        restored: true,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const terminal = mockTerminalInstances[0];
+    terminal.scrollToLine = jest.fn();
+    terminal.buffer = { active: { baseY: 120, viewportY: 80 } };
+
+    // Hide workspace
+    await rerenderIntoRoot(
+      view.root,
+      React.createElement(TerminalTTY, {
+        id: 'term-scroll-preserve',
+        restored: true,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: false,
+        showQuickCopyButton: false,
+      })
+    );
+    await flushTerminalEffects();
+
+    terminal.scrollToLine.mockClear();
+
+    // Show workspace again
+    await rerenderIntoRoot(
+      view.root,
+      React.createElement(TerminalTTY, {
+        id: 'term-scroll-preserve',
+        restored: true,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await flushTerminalEffects();
+
+    expect(terminal.scrollToLine).toHaveBeenCalledWith(80);
+  });
+
+  describe('terminal wheel scroll helpers', () => {
+    test('shift+wheel routes to xterm scrollback', () => {
+      expect(shouldUseTerminalScrollbackWheel({ shiftKey: true })).toBe(true);
+      expect(shouldUseTerminalScrollbackWheel({ shiftKey: false })).toBe(false);
+    });
+
+    test('plain shells never inject wheel bytes into the PTY', () => {
+      expect(shouldInjectTerminalWheelIntoPty(false)).toBe(false);
+      expect(shouldInjectTerminalWheelIntoPty(true)).toBe(true);
+    });
+
+    test('scrollTerminalViewport scrolls xterm locally without PTY input', () => {
+      const term = { scrollLines: jest.fn() };
+      expect(scrollTerminalViewport(term, 'up', 120)).toBe(true);
+      expect(term.scrollLines).toHaveBeenCalledWith(-9);
+      term.scrollLines.mockClear();
+      expect(scrollTerminalViewport(term, 'down', 40)).toBe(true);
+      expect(term.scrollLines).toHaveBeenCalledWith(3);
+      expect(scrollTerminalViewport(null, 'up', 120)).toBe(false);
+    });
+
+    test('buildTerminalWheelPageSequence emits Page Up/Down sequences', () => {
+      expect(buildTerminalWheelPageSequence('up', 2)).toBe(
+        TERMINAL_PAGE_UP_SEQ + TERMINAL_PAGE_UP_SEQ
+      );
+      expect(buildTerminalWheelPageSequence('down', 1)).toBe(TERMINAL_PAGE_DOWN_SEQ);
+    });
+
+    test('resolveTerminalWheelPageSteps scales with wheel delta', () => {
+      expect(resolveTerminalWheelScrollDirection(-120)).toBe('up');
+      expect(resolveTerminalWheelScrollDirection(80)).toBe('down');
+      expect(resolveTerminalWheelPageSteps(120)).toBe(3);
+    });
+
+    test('transcript vs input zones gate wheel routing', () => {
+      expect(isTerminalTranscriptCell(10, 20, 2)).toBe(true);
+      expect(isTerminalTranscriptCell(18, 20, 2)).toBe(false);
+      expect(
+        shouldRouteWheelToTranscript({
+          cell: { col: 4, row: 10 },
+          rows: 20,
+          lastPointerZone: 'input',
+        })
+      ).toBe(true);
+      expect(
+        shouldRouteWheelToTranscript({
+          cell: { col: 4, row: 18 },
+          rows: 20,
+          lastPointerZone: 'transcript',
+        })
+      ).toBe(false);
+      expect(
+        shouldRouteWheelToTranscript({
+          lastPointerZone: 'transcript',
+          rows: 20,
+        })
+      ).toBe(true);
+    });
+
+    test('resolveTerminalCellFromPointer prefers xterm mouse service coords', () => {
+      const screenElement = {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 480 }),
+      };
+      const term = {
+        cols: 80,
+        rows: 24,
+        element: { querySelector: () => screenElement },
+        _core: {
+          screenElement,
+          _mouseService: {
+            getMouseReportCoords: () => ({ col: 12, row: 8, x: 96, y: 64 }),
+          },
+        },
+      };
+      expect(resolveTerminalCellFromPointer(term, screenElement, 96, 64)).toEqual({
+        col: 12,
+        row: 8,
+      });
+    });
+
+    test('resolveTerminalCellFromPointer maps viewport coordinates to cells', () => {
+      const term = { cols: 80, rows: 24 };
+      const element = {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 480 }),
+      };
+      expect(resolveTerminalCellFromPointer(term, element, 400, 240)).toEqual({ col: 40, row: 12 });
+    });
+
+    test('isLikelyTuiInitialCommand detects opencode/hermes/grok launches', () => {
+      expect(isLikelyTuiInitialCommand('opencode --session ses_abc')).toBe(true);
+      expect(isLikelyTuiInitialCommand('grok')).toBe(true);
+      expect(isLikelyTuiInitialCommand('zsh')).toBe(false);
+    });
+
+    test('shouldBlockLateInitialCommandSend blocks only post-connect command changes', () => {
+      expect(
+        shouldBlockLateInitialCommandSend({
+          hasConnectedOnce: true,
+          snapshotCommand: 'grok',
+          currentCommand: 'opencode --session ses_x',
+        })
+      ).toBe(true);
+      expect(
+        shouldBlockLateInitialCommandSend({
+          hasConnectedOnce: true,
+          snapshotCommand: 'opencode',
+          currentCommand: 'opencode',
+        })
+      ).toBe(false);
+      expect(
+        shouldBlockLateInitialCommandSend({
+          hasConnectedOnce: true,
+          isRecoveryRelaunch: true,
+          snapshotCommand: 'grok',
+          currentCommand: 'opencode --session ses_x #recovery-1',
+        })
+      ).toBe(false);
+    });
+
+    test('grok uses native passthrough when ready; OpenCode when footer is live', () => {
+      expect(isGrokTuiInitialCommand('grok chat')).toBe(true);
+      expect(isGrokTuiInitialCommand('groc')).toBe(true);
+      expect(shouldInjectGrokWheelSgr(true)).toBe(true);
+      expect(shouldInjectGrokWheelSgr(false, 'grok')).toBe(true);
+      expect(shouldInjectGrokWheelSgr(false, 'opencode')).toBe(false);
+      expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession: true,
+        })
+      ).toBe(false);
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession: true,
+          grokTuiReady: true,
+        })
+      ).toBe(true);
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isGrokSession: false,
+          opencodeFooterConfirmed: true,
+        })
+      ).toBe(true);
+      expect(resolveGrokWheelSgrCoords({ col: 10, row: 20 }, { cols: 80, rows: 24 }, 5)).toEqual({
+        col: 10,
+        row: 9,
+      });
+      expect(buildGrokWheelScrollPayload('down', 10, 9, 2)).toBe(
+        buildTerminalWheelSgrSequence('down', 10, 9) + buildTerminalWheelArrowSequence('down', 2)
+      );
+      expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(
+        TERMINAL_GROK_INPUT_ZONE_ROWS
+      );
+      expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
+      expect(isTerminalTranscriptCell(18, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(true);
+      expect(isTerminalTranscriptCell(19, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(false);
+      expect(
+        resolveTerminalScreenElement({ _core: { screenElement: { id: 'screen' } } }, null)
+      ).toEqual({
+        id: 'screen',
+      });
+      expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
+      expect(detectGrokSessionFromOutput('\x1b]0;grok\x07')).toBe(true);
+      expect(detectGrokSessionFromOutput('opencode ready')).toBe(false);
+    });
+
+    test('buildTerminalWheelArrowSequence and SGR wheel payload', () => {
+      expect(buildTerminalWheelArrowSequence('up', 2)).toBe('\x1b[A\x1b[A');
+      expect(buildTerminalWheelScrollPayload('down', 2, { prefer: 'page' })).toBe(
+        TERMINAL_PAGE_DOWN_SEQ + TERMINAL_PAGE_DOWN_SEQ
+      );
+      expect(buildTerminalWheelSgrSequence('down', 10, 4)).toBe('\x1b[<65;11;5M');
+      expect(buildTerminalWheelSgrSequence('down', 10, 4)).not.toContain('?1000');
+    });
+
+    test('forwardTerminalWheelToXterm dispatches wheel on the xterm root element', () => {
+      if (typeof WheelEvent === 'undefined') {
+        return;
+      }
+      const dispatched = [];
+      const term = {
+        element: {
+          dispatchEvent: (ev) => {
+            dispatched.push(ev);
+            return true;
+          },
+        },
+      };
+      const source = new WheelEvent('wheel', {
+        deltaY: 120,
+        clientX: 10,
+        clientY: 20,
+        bubbles: true,
+      });
+      expect(forwardTerminalWheelToXterm(term, source)).toBe(true);
+      expect(dispatched).toHaveLength(1);
+      expect(dispatched[0].deltaY).toBe(120);
+      expect(dispatched[0].bubbles).toBe(false);
+      expect(dispatched[0][TERMINAL_WHEEL_FORWARD_FLAG]).toBe(true);
+      expect(isForwardedTerminalWheelEvent(dispatched[0])).toBe(true);
+      expect(forwardTerminalWheelToXterm(null, source)).toBe(false);
+      expect(forwardTerminalWheelToXterm(term, dispatched[0])).toBe(false);
+    });
+
+    test('resolveTerminalPointerElement prefers xterm-screen for hit-testing', () => {
+      const screen = { tagName: 'DIV', className: 'xterm-screen' };
+      const term = {
+        element: {
+          tagName: 'DIV',
+          querySelector: (selector) => (selector === '.xterm-screen' ? screen : null),
+        },
+      };
+      const container = { tagName: 'SECTION' };
+      const shell = { tagName: 'MAIN' };
+      expect(resolveTerminalPointerElement(term, container, shell)).toBe(screen);
+      expect(resolveTerminalPointerElement(null, container, shell)).toBe(container);
+    });
+
+    test('disableTerminalFocusReporting keeps mouse on for active TUIs', () => {
+      const term = { write: jest.fn() };
+      disableTerminalFocusReporting(term, { disableMouse: false });
+      expect(term.write).toHaveBeenCalledWith(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+      disableTerminalFocusReporting(term, { disableMouse: true });
+      expect(term.write).toHaveBeenLastCalledWith(
+        TERMINAL_DISABLE_FOCUS_REPORTING_SEQ + TERMINAL_DISABLE_MOUSE_REPORTING_SEQ
+      );
+    });
+
+    test('prepareActiveTuiTerminalFocus re-enables xterm mouse modes for live TUIs and disables them for shells', () => {
+      const term = { write: jest.fn() };
+      prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
+      expect(term.write).toHaveBeenNthCalledWith(1, TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+      expect(term.write).toHaveBeenNthCalledWith(2, TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
+      term.write.mockClear();
+      prepareActiveTuiTerminalFocus(term, { tuiSessionActive: false });
+      expect(term.write).toHaveBeenNthCalledWith(1, TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+      expect(term.write).toHaveBeenNthCalledWith(2, TERMINAL_DISABLE_MOUSE_REPORTING_SEQ);
+    });
   });
 
   test('probes and opens native GTK VTE only for the active experimental panel', async () => {
@@ -942,7 +2146,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-1',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
     expect(mockTerminalInstances).toHaveLength(0);
@@ -1117,7 +2321,7 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
         expect.objectContaining({
           panelId: 'term-native-container-bounds',
-          bounds: expect.objectContaining({ x: 120, y: 180, width: 840, height: 520 }),
+          bounds: expect.objectContaining({ x: 121, y: 181, width: 838, height: 518 }),
         })
       );
     } finally {
@@ -1178,7 +2382,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-resize',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
   });
@@ -1217,7 +2421,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-panel-resize',
-        bounds: expect.objectContaining({ x: 24, y: 8, width: 920, height: 680 }),
+        bounds: expect.objectContaining({ x: 25, y: 9, width: 918, height: 678 }),
       })
     );
   });
@@ -1288,7 +2492,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-return-resize',
-        bounds: expect.objectContaining({ x: 984, y: 104, width: 920, height: 900 }),
+        bounds: expect.objectContaining({ x: 985, y: 105, width: 918, height: 898 }),
       })
     );
   });
@@ -1507,10 +2711,10 @@ describe('TerminalTTY renderer fallback UI', () => {
     };
 
     expect(getNativeTerminalBounds(element)).toEqual({
-      x: 40,
-      y: 96,
-      width: 880,
-      height: 540,
+      x: 41,
+      y: 97,
+      width: 878,
+      height: 538,
     });
   });
 
@@ -1555,6 +2759,64 @@ describe('TerminalTTY renderer fallback UI', () => {
     ).toBeNull();
     expect(view.container.querySelector('[data-testid="terminal-native-placeholder"]')).toBeNull();
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
+  });
+
+  test('boots xterm immediately even when startup visibility and dimensions are not ready yet', async () => {
+    let visibilityState = 'hidden';
+    let rect = { width: 0, height: 0 };
+    const originalVisibilityDescriptor = Object.getOwnPropertyDescriptor(
+      document,
+      'visibilityState'
+    );
+
+    try {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => visibilityState,
+      });
+
+      Object.defineProperty(global.HTMLElement.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value() {
+          return {
+            width: rect.width,
+            height: rect.height,
+            top: 0,
+            left: 0,
+            right: rect.width,
+            bottom: rect.height,
+          };
+        },
+      });
+
+      const view = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-hidden-startup',
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+
+      expect(mockTerminalInstances).toHaveLength(1);
+      expect(mockTerminalInstances[0].open).toHaveBeenCalledTimes(1);
+      expect(mockWebSocketInstances).toHaveLength(1);
+      expect(view.container.textContent).not.toContain('Iniciando terminal...');
+
+      rect = { width: 1280, height: 720 };
+      visibilityState = 'visible';
+      mockResizeObserverInstances[0]?.callback();
+      await flushTerminalEffects();
+
+      expect(mockTerminalInstances[0].open).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalVisibilityDescriptor) {
+        Object.defineProperty(document, 'visibilityState', originalVisibilityDescriptor);
+      } else {
+        delete document.visibilityState;
+      }
+    }
   });
 
   test('hides the native lease only when the panel leaves the visible layout and restores it on return', async () => {
@@ -1628,7 +2890,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-close',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
       panelId: 'term-native-close',
@@ -1636,7 +2898,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-close',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
   });
@@ -1679,6 +2941,60 @@ describe('TerminalTTY renderer fallback UI', () => {
     ).not.toBeNull();
     expect(view.container.textContent).not.toContain('Iniciando terminal...');
     expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledTimes(1);
+  });
+
+  test('retries native open after startup bounds settle without requiring a workspace switch', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
+
+    const originalGetBoundingClientRect = global.HTMLElement.prototype.getBoundingClientRect;
+    let rect = { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 };
+
+    Object.defineProperty(global.HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value() {
+        return { ...rect };
+      },
+    });
+
+    try {
+      const view = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-native-open-after-bounds-settle',
+          requestedRendererMode: 'vte-experimental',
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          runtimePlatform: 'linux',
+          showQuickCopyButton: false,
+        })
+      );
+
+      await flushTerminalEffects();
+
+      expect(mockNativeVteBridge.probeNativeVte).toHaveBeenCalledTimes(1);
+      expect(mockNativeVteBridge.openNativeVtePanel).not.toHaveBeenCalled();
+      expect(view.container.textContent).toContain('Iniciando terminal...');
+
+      rect = { width: 1280, height: 720, top: 0, left: 0, right: 1280, bottom: 720 };
+
+      await new Promise((resolve) => setTimeout(resolve, 320));
+      await flushTerminalEffects();
+
+      expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          panelId: 'term-native-open-after-bounds-settle',
+          bounds: expect.objectContaining({ width: 1278, height: 718 }),
+        })
+      );
+      expect(view.container.textContent).not.toContain('Iniciando terminal...');
+    } finally {
+      Object.defineProperty(global.HTMLElement.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+    }
   });
 
   test('reopens a preserved native lease if another active panel stole the registry while inactive', async () => {
@@ -1751,7 +3067,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-stolen-lease',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledTimes(2);
   });
@@ -1816,7 +3132,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-reshow-visible',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
@@ -1878,12 +3194,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-workspace-sync',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-workspace-sync',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
   });
@@ -1956,12 +3272,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-suspend-resume',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({
         panelId: 'term-native-suspend-resume',
-        bounds: expect.objectContaining({ width: 1280, height: 720 }),
+        bounds: expect.objectContaining({ width: 1278, height: 718 }),
       })
     );
     expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
@@ -2046,7 +3362,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-dock-fallback',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({ panelId: 'term-native-dock-fallback' })
@@ -2159,12 +3475,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-suspend-left',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-suspend-right',
       visible: true,
-      bounds: expect.objectContaining({ width: 1280, height: 720 }),
+      bounds: expect.objectContaining({ width: 1278, height: 718 }),
     });
     expect(mockNativeVteBridge.resizeNativeVtePanel).toHaveBeenCalledWith(
       expect.objectContaining({ panelId: 'term-native-suspend-left' })
@@ -2227,7 +3543,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(view.container.textContent).not.toContain('GTK VTE · misma ventana');
   });
 
-  test('hides but does not close the native lease on React unmount so view switches can resume it', async () => {
+  test('closes the native lease on React unmount when the panel owns the live native session', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
     mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
@@ -2248,13 +3564,70 @@ describe('TerminalTTY renderer fallback UI', () => {
     mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
 
     await rerenderIntoRoot(view.root, null);
+    await flushTerminalEffects();
 
-    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).not.toHaveBeenCalled();
+    expect(mockNativeVteBridge.closeNativeVtePanel).toHaveBeenCalledWith({
       panelId: 'term-native-unmount-hide',
-      visible: false,
       reason: 'unmount',
     });
-    expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
+  });
+
+  test('hides a native panel that finishes opening after the terminal route is hidden', async () => {
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
+
+    let resolveOpen;
+    mockNativeVteBridge.openNativeVtePanel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOpen = resolve;
+        })
+    );
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-native-open-hidden-race',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    expect(mockNativeVteBridge.openNativeVtePanel).toHaveBeenCalledWith(
+      expect.objectContaining({ panelId: 'term-native-open-hidden-race' })
+    );
+
+    await rerenderIntoRoot(
+      view.root,
+      React.createElement(TerminalTTY, {
+        id: 'term-native-open-hidden-race',
+        requestedRendererMode: 'vte-experimental',
+        autoFocus: false,
+        isActivePanel: false,
+        isVisibleInLayout: false,
+        runtimePlatform: 'linux',
+        showQuickCopyButton: false,
+      })
+    );
+    await flushTerminalEffects();
+
+    mockNativeVteBridge.setNativeVtePanelVisibility.mockClear();
+    resolveOpen({ opened: true, reason: null });
+    await flushTerminalEffects();
+
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
+      panelId: 'term-native-open-hidden-race',
+      visible: false,
+      reason: 'layout-hidden',
+    });
+    expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalledWith(
+      expect.objectContaining({ panelId: 'term-native-open-hidden-race' })
+    );
   });
 
   test('hides a native panel that finishes opening after the terminal route is hidden', async () => {
@@ -2450,7 +3823,10 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(clipboard.readText).toHaveBeenCalledTimes(1);
-    expect(mockTerminalInstances[0].paste).toHaveBeenCalledWith('npm test\n');
+    expect(mockWebSocketInstances[0].send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'input', data: 'npm test\n' })
+    );
+    expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
   });
 
@@ -2527,7 +3903,10 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(clipboard.readText).toHaveBeenCalledTimes(1);
-    expect(mockTerminalInstances[0].paste).toHaveBeenCalledWith('echo ok');
+    expect(mockWebSocketInstances[0].send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'input', data: 'echo ok' })
+    );
+    expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
   });
 
@@ -2575,7 +3954,10 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(clipboard.readText).toHaveBeenCalledTimes(1);
-    expect(mockTerminalInstances[0].paste).toHaveBeenCalledWith('pnpm dev');
+    expect(mockWebSocketInstances[0].send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'input', data: 'pnpm dev' })
+    );
+    expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled();
   });
 
   test('native VTE intercepts DOM paste events and routes them through focus + Tauri bridge', async () => {
@@ -2583,6 +3965,14 @@ describe('TerminalTTY renderer fallback UI', () => {
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
     mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
     mockNativeVteBridge.pasteNativeVtePanel = jest.fn().mockResolvedValue({ supported: true });
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('native paste'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
 
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -2610,6 +4000,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
     expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
       panelId: 'term-native-dom-paste',
+      text: 'native paste',
     });
     expect(pasteEvent.defaultPrevented).toBe(true);
   });
@@ -2619,6 +4010,14 @@ describe('TerminalTTY renderer fallback UI', () => {
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
     mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
     mockNativeVteBridge.pasteNativeVtePanel = jest.fn().mockResolvedValue({ supported: true });
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('document paste'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
 
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -2639,7 +4038,15 @@ describe('TerminalTTY renderer fallback UI', () => {
       bubbles: true,
       cancelable: true,
     });
-    document.dispatchEvent(pasteEvent);
+    // T-018: dispatch the paste on the shell (a child of the terminal root)
+    // rather than on `document` directly. The document-level capture
+    // listener still fires (capture phase runs first), and the event
+    // target is now inside the terminal root, so the tightened
+    // `belongsToTerminal` check matches. The previous test relied on
+    // `isActivePanel` being true, which was too aggressive — it hijacked
+    // paste events from other panels (e.g. the right-dock ChatPanel
+    // textarea) whenever some terminal was the active workspace panel.
+    shell.dispatchEvent(pasteEvent);
     await flushTerminalEffects();
 
     expect(mockNativeVteBridge.focusNativeVtePanel).toHaveBeenCalledWith({
@@ -2647,14 +4054,15 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
     expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
       panelId: 'term-native-document-paste',
+      text: 'document paste',
     });
     expect(pasteEvent.defaultPrevented).toBe(true);
   });
 
-  test('xterm does not intercept DOM paste events', async () => {
+  test('xterm intercepts DOM paste events and routes clipboard text through the websocket', async () => {
     const clipboard = {
       writeText: jest.fn().mockResolvedValue(undefined),
-      readText: jest.fn().mockResolvedValue('ignored'),
+      readText: jest.fn().mockResolvedValue('dom paste'),
     };
     Object.defineProperty(global.navigator, 'clipboard', {
       configurable: true,
@@ -2682,9 +4090,161 @@ describe('TerminalTTY renderer fallback UI', () => {
     shell.dispatchEvent(pasteEvent);
     await flushTerminalEffects();
 
-    expect(clipboard.readText).not.toHaveBeenCalled();
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+    expect(mockWebSocketInstances[0].send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'input', data: 'dom paste' })
+    );
     expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled();
-    expect(pasteEvent.defaultPrevented).toBe(false);
+    expect(pasteEvent.defaultPrevented).toBe(true);
+  });
+
+  describe('TerminalTTY suspended state', () => {
+    beforeEach(() => {
+      installTerminalDom();
+      installTerminalRuntimeMocks();
+      mockTerminalInstances.length = 0;
+      mockWebSocketInstances.length = 0;
+      mockResizeObserverInstances.length = 0;
+    });
+
+    afterEach(async () => {
+      cleanupMountedRoots();
+      await flushTerminalEffects();
+      if (global.document?.body) {
+        global.document.body.innerHTML = '';
+      }
+      mockTerminalInstances.length = 0;
+      mockWebSocketInstances.length = 0;
+      Object.values(mockNativeVteBridge).forEach((value) => {
+        if (value && typeof value.mockReset === 'function') {
+          value.mockReset();
+        }
+      });
+      mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(false);
+      mockNativeVteBridge.probeNativeVte.mockResolvedValue({
+        ready: false,
+        reason: 'tauri-unavailable',
+      });
+      mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({
+        opened: false,
+        reason: 'tauri-unavailable',
+      });
+      jest.clearAllMocks();
+    });
+
+    test('suspended terminal does not boot xterm runtime', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const view = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-suspend-no-xterm',
+          connectionState: 'suspended',
+          autoFocus: false,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+      await flushTerminalEffects();
+      expect(mockTerminalInstances).toHaveLength(0);
+      expect(mockWebSocketInstances).toHaveLength(0);
+      expect(view.container.querySelector('.devhub-xterm-container')).not.toBeNull();
+      consoleSpy.mockRestore();
+    });
+
+    test('suspended terminal renders placeholder overlay with session title and continuar button', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const view = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-suspend-overlay',
+          connectionState: 'suspended',
+          cwd: '/workspace/test',
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+      await flushTerminalEffects();
+      const overlay = view.container.querySelector('[data-testid="terminal-suspended-overlay"]');
+      expect(overlay).not.toBeNull();
+      const continuarBtn = view.container.querySelector(
+        '[data-testid="terminal-suspended-continue-btn"]'
+      );
+      expect(continuarBtn).not.toBeNull();
+      consoleSpy.mockRestore();
+    });
+
+    test('continuar button dispatches devhub:manual-revive-requested', async () => {
+      const reviveEvents = [];
+      const handler = (event) => reviveEvents.push(event.detail);
+      window.addEventListener('devhub:manual-revive-requested', handler);
+
+      const view = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-suspend-continue-stub',
+          connectionState: 'suspended',
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+      await flushTerminalEffects();
+      const continuarBtn = view.container.querySelector(
+        '[data-testid="terminal-suspended-continue-btn"]'
+      );
+      expect(continuarBtn).not.toBeNull();
+      continuarBtn.click();
+      await flushTerminalEffects();
+      expect(reviveEvents).toHaveLength(1);
+      expect(reviveEvents[0]).toMatchObject({
+        panelId: 'term-suspend-continue-stub',
+        sessionId: 'term-suspend-continue-stub',
+      });
+
+      window.removeEventListener('devhub:manual-revive-requested', handler);
+    });
+
+    test('suspended state shows in title bar status indicator', async () => {
+      const view = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-suspend-status',
+          connectionState: 'suspended',
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+      await flushTerminalEffects();
+      expect(view.container.textContent).toContain('Suspendida');
+    });
+
+    test('gear icon appears in title bar when suspended', async () => {
+      const modalEvents = [];
+      const handler = (event) => modalEvents.push(event.detail);
+      window.addEventListener('devhub:terminal-settings-modal-requested', handler);
+
+      const view = await renderIntoDom(
+        React.createElement(TerminalTTY, {
+          id: 'term-suspend-gear',
+          connectionState: 'suspended',
+          autoFocus: false,
+          isActivePanel: false,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+      await flushTerminalEffects();
+      const gearBtn = view.container.querySelector('[data-testid="terminal-settings-gear-btn"]');
+      expect(gearBtn).not.toBeNull();
+      gearBtn.click();
+      await flushTerminalEffects();
+      expect(modalEvents).toHaveLength(1);
+      expect(modalEvents[0]).toMatchObject({ panelId: 'term-suspend-gear' });
+
+      window.removeEventListener('devhub:terminal-settings-modal-requested', handler);
+    });
   });
 
   test('native VTE intercepts paste shortcuts and routes them through focus + Tauri bridge', async () => {
@@ -2692,6 +4252,14 @@ describe('TerminalTTY renderer fallback UI', () => {
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
     mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
     mockNativeVteBridge.pasteNativeVtePanel = jest.fn().mockResolvedValue({ supported: true });
+    const clipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+      readText: jest.fn().mockResolvedValue('shortcut paste'),
+    };
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
 
     const view = await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -2723,6 +4291,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
     expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
       panelId: 'term-native-paste',
+      text: 'shortcut paste',
     });
     expect(pasteEvent.defaultPrevented).toBe(true);
 
@@ -2744,6 +4313,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     });
     expect(mockNativeVteBridge.pasteNativeVtePanel).toHaveBeenCalledWith({
       panelId: 'term-native-paste',
+      text: 'shortcut paste',
     });
     expect(ctrlVPasteEvent.defaultPrevented).toBe(true);
 
@@ -2762,6 +4332,6 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     expect(mockNativeVteBridge.focusNativeVtePanel).not.toHaveBeenCalled();
     expect(mockNativeVteBridge.pasteNativeVtePanel).not.toHaveBeenCalled();
-    expect(copyEvent.defaultPrevented).toBe(false);
+    expect(copyEvent.defaultPrevented).toBe(true);
   });
 });

@@ -3,15 +3,11 @@
 
 import React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import {
-  SplitSquareVertical,
-  SplitSquareHorizontal,
-  Maximize2,
-  Minimize2,
-  X,
-} from 'lucide-react';
+import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } from 'lucide-react';
 import TerminalTTY from '../../TerminalTTY';
 import { derivePanelSemanticMetadata } from '../utils/semanticMetadata';
+import PanelRendererSelect from './PanelRendererSelect';
+import { SHOW_RENDERER_SWITCH } from '../terminalRendererPreferences';
 
 function WorkspaceTerminalSurface({
   workspace,
@@ -34,6 +30,7 @@ function WorkspaceTerminalSurface({
   togglePanelFocus,
   activateWorkspacePanel,
   handleResetPanelRendererToXterm,
+  handleSetPanelRenderer,
   resolveRequestedRenderer,
   getPanelDisplayLabel,
   wsDockState,
@@ -50,7 +47,31 @@ function WorkspaceTerminalSurface({
     const isActive = panel.id === activePanelId && activeWsId === workspace.id;
     const semanticMetadata = derivePanelSemanticMetadata(panel, agentRunsByPanel?.[panel.id]);
     const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
+
+    // Verification aid for "xterm-webgl is always the one used, including on Windows + swarm".
+    // When you launch a swarm, the panels created here will have swarmRole and will have
+    // resolved to xterm-webgl (or the plain xterm internal fallback only if webgl probe fails at runtime).
+    if (swarmRole && typeof console !== 'undefined') {
+      // One-time per panel for easy confirmation in devtools while testing on Windows.
+      // You should see this for every agent role terminal (director, coder, etc.).
+      console.debug('[swarm-terminal-renderer]', {
+        panelId: panel.id,
+        role: swarmRole?.roleKey || swarmRole,
+        resolvedRenderer: resolvedRendererMode,
+        note: 'Should be xterm-webgl (or xterm only on webgl failure). VTE paths are disabled.',
+      });
+    }
     const panelChromeSafeZoneMinTop = 34;
+    // Resolve the per-panel renderer once so the chrome switcher and the
+    // TerminalTTY below stay in lockstep. See
+    // openspec/changes/terminal-renderer-xterm-webgl/specs/terminal-renderer-selection/spec.md
+    // RS-03 / RS-04.
+    const resolvedRendererMode =
+      resolveRequestedRenderer?.({
+        workspaceId: workspace.id,
+        panelId: panel.id,
+        prefs: terminalRendererPreferences,
+      }) || 'xterm';
 
     return (
       <div
@@ -106,7 +127,10 @@ function WorkspaceTerminalSurface({
               </span>
               {semanticMetadata.secondary ? (
                 <>
-                  <span aria-hidden="true" className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]">
+                  <span
+                    aria-hidden="true"
+                    className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]"
+                  >
                     {' · '}
                   </span>
                   <span
@@ -140,6 +164,14 @@ function WorkspaceTerminalSurface({
               data-testid={`panel-header-actions-${panel.id}`}
               title={`Panel ${getPanelDisplayLabel(workspace, panel.id) || panel.id} actions`}
             >
+              {SHOW_RENDERER_SWITCH ? (
+                <PanelRendererSelect
+                  panelId={panel.id}
+                  currentMode={resolvedRendererMode}
+                  availableModes={['xterm-webgl', 'xterm']}
+                  onChange={(mode) => handleSetPanelRenderer?.(workspace.id, panel.id, mode)}
+                />
+              ) : null}
               <button
                 type="button"
                 data-testid={`panel-split-right-${panel.id}`}
@@ -204,10 +236,10 @@ function WorkspaceTerminalSurface({
           </div>
         </div>
         <div
-          className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+          className="min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
           data-testid={`panel-body-${panel.id}`}
         >
-          <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
+          <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
             <TerminalTTY
               id={panel.id}
               cwd={panel.cwd || cwd}
@@ -218,12 +250,10 @@ function WorkspaceTerminalSurface({
               isActivePanel={Boolean(isActive)}
               isVisibleInLayout={Boolean(activeWsId === workspace.id && isVisible)}
               initialCommand={panel.initialCommand}
-              requestedRendererMode={resolveRequestedRenderer?.({
-                workspaceId: workspace.id,
-                panelId: panel.id,
-                prefs: terminalRendererPreferences,
-              })}
-              onResetRendererToXterm={() => handleResetPanelRendererToXterm?.(workspace.id, panel.id)}
+              requestedRendererMode={resolvedRendererMode}
+              onResetRendererToXterm={() =>
+                handleResetPanelRendererToXterm?.(workspace.id, panel.id)
+              }
               onActivatePanel={(panelId) => activateWorkspacePanel?.(workspace.id, panelId)}
               suspendNativeSurface={Boolean(
                 activeWsId === workspace.id && isVisible && shouldSuspendNativeSurfaces
@@ -244,7 +274,7 @@ function WorkspaceTerminalSurface({
     <div
       key={workspace.id}
       data-testid={`workspace-shell-${workspace.id}`}
-      className={`absolute inset-0 p-1.5 ${activeWsId === workspace.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      className={`absolute inset-0 p-0 ${activeWsId !== workspace.id || !isVisible ? 'hidden' : ''}`}
       style={{
         zIndex: activeWsId === workspace.id ? 10 : 0,
       }}
@@ -257,7 +287,7 @@ function WorkspaceTerminalSurface({
         <Panel
           key={`${workspace.id}-terminal-grid`}
           minSize={18}
-          className="flex flex-col bg-[#0c1018] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
+          className="flex flex-col bg-[var(--surface-app)] rounded-none overflow-hidden border-0"
         >
           {/* Terminal bodies — preserve real split geometry */}
           <div className="flex-1 relative overflow-hidden min-h-0">
@@ -271,8 +301,9 @@ function WorkspaceTerminalSurface({
             ) : (
               <PanelGroup
                 key={`workspace-columns-layout-${workspace.id}-${workspace.columns
-                  .map((column) =>
-                    `${column.id}:${(column.panels || []).map((panel) => panel.id).join(',')}`
+                  .map(
+                    (column) =>
+                      `${column.id}:${(column.panels || []).map((panel) => panel.id).join(',')}`
                   )
                   .join('|')}`}
                 direction="horizontal"

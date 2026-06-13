@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -35,16 +35,18 @@ import {
   resolveBrowserRuntimeSelection,
   shouldWarnAboutFraming,
 } from './browserPreviewSupport';
-import {
-  closeNativeBrowser,
-  focusNativeBrowser,
-  loadNativeBrowserUrl,
-  openNativeBrowser,
-  probeNativeBrowser,
-  reloadNativeBrowser,
-  resizeNativeBrowser,
-  setNativeBrowserVisibility,
-} from '@/lib/browser/nativeBrowserBridge';
+import { closeNativeBrowser, focusNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
+import { useNativeBrowserCapability, useNativeBrowserSurface } from './useNativeBrowserSurface';
+import { reloadBrowserRuntime } from './browserRuntimeReload';
+// pizarra-shared-view-state Phase 3: opt-in tab strip shared with
+// the pizarra browser surface. When `tabsMode === 'multi'` we read
+// from useBrowserTabs (which delegates to the TWM-owned
+// useSharedDockState) and render the BrowserTabStrip above the
+// existing toolbar chrome. Default 'single' preserves the
+// pre-Phase-3 UX exactly.
+import { useBrowserTabs } from './hooks/useBrowserTabs';
+import BrowserTabStrip from './BrowserTabStrip';
+import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
@@ -73,17 +75,33 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowSelect = null,
   onWorkspaceWindowAdd = null,
   onWorkspaceWindowRemove = null,
+  layoutSyncKey = null,
+  suspendNativeSurface = false,
+  tabsMode = 'single',
+  isPizarraContext = false,
+  nativePanelId: nativePanelIdProp = null,
 }) {
   const viewportShellRef = useRef(null);
-  const nativeLeaseRef = useRef({ opened: false, lastUrl: '' });
-  const [nativeCapability, setNativeCapability] = useState(null);
-  const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
+  const measureNativeBounds = useCallback(() => {
+    const rect = viewportShellRef.current?.getBoundingClientRect?.();
+    return {
+      x: Number(rect?.x) || 0,
+      y: Number(rect?.y) || 0,
+      width: Math.max(Number(rect?.width) || 0, 1),
+      height: Math.max(Number(rect?.height) || 0, 1),
+    };
+  }, []);
   const previewEditMode = Boolean(dockState.editMode || forceEditMode);
   const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK;
+
   const nativePanelId = useMemo(
-    () => `browser-${projectId}-${workspaceId}`,
-    [projectId, workspaceId]
+    () => nativePanelIdProp || `browser-${projectId}-${workspaceId}`,
+    [nativePanelIdProp, projectId, workspaceId]
   );
+  const nativeCapability = useNativeBrowserCapability({
+    panelId: nativePanelId,
+    requested: requestedBrowserRuntime === BROWSER_RUNTIME.NATIVE_GTK,
+  });
   const nativeSelectorReady = hasNativeSelectorInspectCapability(nativeCapability);
   const browserRuntimeSelection = useMemo(
     () =>
@@ -97,21 +115,57 @@ function WorkspaceBrowserPane({
   const nativeRuntimeActive =
     browserRuntimeSelection.effectiveRuntime === BROWSER_RUNTIME.NATIVE_GTK;
   const nativeRuntimeVisibleInLayout = useMemo(() => {
+    if (isPizarraContext) {
+      return nativeRuntimeActive && !suspendNativeSurface;
+    }
+
     const activeTab = dockState.activeTab || 'browser';
     const dockVisible = dockState.visible !== false;
-    const browserOwnsMaximizedLayout =
-      !dockState.maximized || dockState.maximizedView === 'browser';
+    const maximizedView = dockState.maximizedView || 'browser';
+    const takeoverBlocksWorkspaceBrowser =
+      dockState.maximized === true &&
+      maximizedView !== 'browser' &&
+      maximizedView !== 'window';
+    const browserOwnsLayout = !dockState.maximized || maximizedView === 'browser';
 
     return (
-      nativeRuntimeActive && dockVisible && activeTab === 'browser' && browserOwnsMaximizedLayout
+      nativeRuntimeActive &&
+      dockVisible &&
+      activeTab === 'browser' &&
+      browserOwnsLayout &&
+      !takeoverBlocksWorkspaceBrowser &&
+      !suspendNativeSurface
     );
   }, [
     dockState.activeTab,
     dockState.maximized,
     dockState.maximizedView,
     dockState.visible,
+    isPizarraContext,
     nativeRuntimeActive,
+    suspendNativeSurface,
   ]);
+
+  useEffect(() => {
+    if (!isPizarraContext) return;
+    logPizarraBrowser('pane-native-visibility', {
+      nativePanelId,
+      nativeRuntimeActive,
+      nativeRuntimeVisibleInLayout,
+      suspendNativeSurface,
+      browserUrl: dockState.browserUrl,
+      activeTab: dockState.activeTab,
+    });
+  }, [
+    isPizarraContext,
+    nativePanelId,
+    nativeRuntimeActive,
+    nativeRuntimeVisibleInLayout,
+    suspendNativeSurface,
+    dockState.browserUrl,
+    dockState.activeTab,
+  ]);
+
   const canUseNativeEditMode = nativeRuntimeActive && nativeSelectorReady;
   const {
     browserError,
@@ -220,176 +274,43 @@ function WorkspaceBrowserPane({
   const visibleWorkspaceWindows = Array.isArray(workspaceWindows) ? workspaceWindows : [];
   const showFullscreenWorkspaceTabs = dockState.maximized && dockState.maximizedView === 'browser';
 
-  const measureNativeBounds = () => {
-    const rect = viewportShellRef.current?.getBoundingClientRect?.();
-    return {
-      x: Number(rect?.x) || 0,
-      y: Number(rect?.y) || 0,
-      width: Math.max(Number(rect?.width) || 0, 1),
-      height: Math.max(Number(rect?.height) || 0, 1),
-    };
-  };
+  // pizarra-shared-view-state Phase 3: opt-in tab strip. Reads
+  // the TWM-owned store via useBrowserTabs; the strip is only
+  // rendered when tabsMode === 'multi' so the existing single-tab
+  // UX is preserved by default.
+  const tabStripApi = useBrowserTabs({ projectId, workspaceId });
+  const showTabStrip = tabsMode === 'multi';
+  const { nativeRuntimeReady, nativeError, retryNative } = useNativeBrowserSurface({
+    panelId: nativePanelId,
+    url: dockState.browserUrl,
+    active: nativeRuntimeActive && !browserError,
+    visibleInLayout: nativeRuntimeVisibleInLayout,
+    measureBounds: measureNativeBounds,
+    observeNode: viewportShellRef,
+    layoutSyncKey,
+  });
 
-  const closeActiveNativeLease = async (reason) => {
-    if (!nativeLeaseRef.current.opened) return;
-    await closeNativeBrowser({ panelId: nativePanelId, reason }).catch(() => {});
-    nativeLeaseRef.current = { opened: false, lastUrl: '' };
-  };
-
-  const hideActiveNativeLease = async () => {
-    if (!nativeLeaseRef.current.opened) return;
-    const bounds = measureNativeBounds();
-    await setNativeBrowserVisibility({ panelId: nativePanelId, visible: false, bounds }).catch(
-      () => {}
-    );
-  };
-
+  // pizarra-browser-fix: clear any persisted browserLoadFallback:true that
+  // previous sessions may have written to localStorage, so native-gtk is
+  // retried on every fresh mount instead of staying permanently on iframe.
   useEffect(() => {
-    let cancelled = false;
-
-    if (requestedBrowserRuntime !== BROWSER_RUNTIME.NATIVE_GTK) {
-      setNativeCapability(null);
-      return undefined;
-    }
-
-    probeNativeBrowser({
-      panelId: nativePanelId,
-      requestedMode: BROWSER_RUNTIME.NATIVE_GTK,
-      tauriAvailable: true,
-    }).then((result) => {
-      if (cancelled) return;
-      setNativeCapability({
-        ready: result?.ready === true,
-        reason: result?.reason || null,
-        persistentProfile: result?.persistentProfile === true,
-        capabilities: result?.capabilities || null,
-      });
+    if (!dockState.browserLoadFallback) return;
+    onDockStateChange?.((current) => {
+      if (!current.browserLoadFallback) return current;
+      return { ...current, browserLoadFallback: false };
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally runs once on mount only
 
-    return () => {
-      cancelled = true;
-    };
-  }, [nativePanelId, requestedBrowserRuntime]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function syncNativeRuntime() {
-      if (!nativeRuntimeActive || !dockState.browserUrl || browserError) {
-        await closeActiveNativeLease('iframe-fallback');
-        if (!cancelled) setNativeRuntimeReady(false);
-        return;
-      }
-
-      if (!nativeRuntimeVisibleInLayout) {
-        await hideActiveNativeLease();
-        return;
-      }
-
-      const bounds = measureNativeBounds();
-
-      if (!nativeLeaseRef.current.opened) {
-        const result = await openNativeBrowser({
-          panelId: nativePanelId,
-          url: dockState.browserUrl,
-          bounds,
-        });
-
-        if (cancelled || !nativeRuntimeVisibleInLayout) {
-          if (result?.opened === true) {
-            await closeNativeBrowser({
-              panelId: nativePanelId,
-              reason: 'stale-open-cancelled',
-            }).catch(() => {});
-          }
-          return;
-        }
-
-        if (result?.opened !== true) {
-          setNativeCapability({ ready: false, reason: result?.reason || 'open-failed' });
-          setNativeRuntimeReady(false);
-          return;
-        }
-
-        nativeLeaseRef.current = { opened: true, lastUrl: dockState.browserUrl };
-      } else if (nativeLeaseRef.current.lastUrl !== dockState.browserUrl) {
-        const result = await loadNativeBrowserUrl({
-          panelId: nativePanelId,
-          url: dockState.browserUrl,
-        });
-
-        if (cancelled) return;
-
-        if (result?.loaded === false) {
-          setNativeCapability({ ready: false, reason: result?.reason || 'load-failed' });
-          setNativeRuntimeReady(false);
-          return;
-        }
-
-        nativeLeaseRef.current.lastUrl = dockState.browserUrl;
-      }
-
-      await resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
-      await setNativeBrowserVisibility({ panelId: nativePanelId, visible: true, bounds }).catch(
-        () => {}
-      );
-      await focusNativeBrowser({ panelId: nativePanelId }).catch(() => {});
-
-      if (!cancelled) setNativeRuntimeReady(true);
-    }
-
-    syncNativeRuntime();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    browserError,
-    dockState.browserUrl,
-    nativePanelId,
-    nativeRuntimeActive,
-    nativeRuntimeVisibleInLayout,
-  ]);
-
-  useEffect(
-    () => () => {
-      if (!nativeLeaseRef.current.opened) return;
-      closeNativeBrowser({ panelId: nativePanelId, reason: 'component-unmount' }).catch(() => {});
-      nativeLeaseRef.current = { opened: false, lastUrl: '' };
-    },
-    [nativePanelId]
-  );
-
-  useEffect(() => {
-    if (!nativeRuntimeActive || !nativeRuntimeReady) return undefined;
-    if (typeof window === 'undefined' || typeof window.ResizeObserver !== 'function')
-      return undefined;
-    const node = viewportShellRef.current;
-    if (!node) return undefined;
-
-    const observer = new window.ResizeObserver(() => {
-      const bounds = measureNativeBounds();
-      resizeNativeBrowser({ panelId: nativePanelId, bounds }).catch(() => {});
-      setNativeBrowserVisibility({
-        panelId: nativePanelId,
-        visible: nativeRuntimeVisibleInLayout,
-        bounds,
-      }).catch(() => {});
-    });
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [nativePanelId, nativeRuntimeActive, nativeRuntimeReady, nativeRuntimeVisibleInLayout]);
+  // `devhub:zed-open-url` is handled in TerminalWorkspacesManager so the dock
+  // opens even when only Zed is visible (WorkspaceBrowserPane is unmounted).
 
   const handleRuntimeReload = () => {
-    if (nativeRuntimeActive) {
-      reloadNativeBrowser({ panelId: nativePanelId }).catch(() => {
-        setNativeCapability({ ready: false, reason: 'reload-failed' });
-        setNativeRuntimeReady(false);
-      });
-      return;
-    }
-    handleReload();
+    void reloadBrowserRuntime({
+      nativeRuntimeActive,
+      nativePanelId,
+      handleReload,
+    });
   };
 
   const handleOpenDedicatedBrowser = async () => {
@@ -492,9 +413,20 @@ function WorkspaceBrowserPane({
     <div
       className="h-full min-h-0 flex flex-col bg-[linear-gradient(180deg,#09111b_0%,#060b12_100%)]"
       data-testid="workspace-browser-pane"
+      data-tabs-mode={tabsMode}
     >
+      {showTabStrip ? (
+        <BrowserTabStrip
+          tabs={tabStripApi.tabs}
+          activeTabId={tabStripApi.activeTabId}
+          onSelectTab={tabStripApi.selectTab}
+          onCloseTab={tabStripApi.closeTab}
+          onAddTab={tabStripApi.addTab}
+          currentUrl={dockState.browserUrl}
+        />
+      ) : null}
       <form
-        className="flex h-11 items-center gap-2 border-b border-[var(--border-subtle)] bg-[#07111c] px-3"
+        className={`flex ${isPizarraContext ? 'h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-2' : 'px-3'}`}
         onSubmit={handleSubmit}
         data-testid="workspace-browser-toolbar"
       >
@@ -560,41 +492,45 @@ function WorkspaceBrowserPane({
               onDockStateChange((currentState) => moveBrowserHistory(currentState, -1))
             }
             disabled={!canGoBack}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
+            className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent`}
             aria-label="Back"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
           </button>
           <button
             type="button"
             data-testid="browser-forward"
             onClick={() => onDockStateChange((currentState) => moveBrowserHistory(currentState, 1))}
             disabled={!canGoForward}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
+            className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent`}
             aria-label="Forward"
           >
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
           </button>
           <button
             type="button"
             data-testid="browser-reload"
             onClick={handleRuntimeReload}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05]"
+            className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05]`}
             aria-label="Reload"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
           </button>
         </div>
 
         <label className="flex-1 min-w-0 relative order-3">
-          <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <Globe
+            className={`${isPizarraContext ? 'w-3 h-3 left-2' : 'w-4 h-4 left-3'} absolute top-1/2 -translate-y-1/2 text-[var(--text-muted)]`}
+          />
           <input
             data-testid="browser-url-input"
             ref={urlInputRef}
             type="text"
             defaultValue={dockState.browserUrl || ''}
-            placeholder="Escribí una URL, localhost:3200 o una búsqueda"
-            className="w-full h-8 pl-9 pr-36 rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[13px] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]"
+            placeholder={
+              isPizarraContext ? 'URL' : 'Escribí una URL, localhost:3200 o una búsqueda'
+            }
+            className={`w-full ${isPizarraContext ? 'h-6 pl-7 pr-16 text-[10px]' : 'h-8 pl-9 pr-36 text-[13px]'} rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]`}
           />
           <div className="absolute inset-y-0 right-1 flex items-center gap-1">
             <button
@@ -611,7 +547,7 @@ function WorkspaceBrowserPane({
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
-            {dockState.browserUrl ? (
+            {dockState.browserUrl && !isPizarraContext ? (
               <button
                 type="button"
                 data-testid="browser-toggle-workspace-maximize"
@@ -640,6 +576,7 @@ function WorkspaceBrowserPane({
             ) : null}
             <div
               className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5"
+              style={{ display: 'none' }}
               data-testid="browser-runtime-toggle"
             >
               <button
@@ -659,7 +596,9 @@ function WorkspaceBrowserPane({
               <button
                 type="button"
                 data-testid="browser-runtime-option-native-gtk"
-                aria-pressed={browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK}
+                aria-pressed={
+                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                }
                 onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.NATIVE_GTK)}
                 className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
                   browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
@@ -671,6 +610,8 @@ function WorkspaceBrowserPane({
                 native gtk
               </button>
             </div>
+            {/* Show runtime/edit status chip even in pizarra (useful for inspector/reviews on page).
+                Was hidden before; now visible in browser cards for the "preguntas/reviews" functionality. */}
             <div
               className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
                 nativeRuntimeActive
@@ -863,30 +804,64 @@ function WorkspaceBrowserPane({
             </div>
           ) : nativeRuntimeActive ? (
             <>
+              {/*
+                The GTK/WebKitGTK WebView is rendered natively inside the Tauri
+                window overlay by `src-tauri/src/native_browser.rs`. We must
+                NOT paint any opaque React layer on top of it or the user only
+                sees this shell. The wrapper below stays in the DOM so the
+                `browser-native-runtime-shell` testid remains queryable, but
+                it is transparent and click-through so the WebView is visible
+                and receives input.
+              */}
               <div
-                className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(88,166,255,0.08),transparent_45%),#0a111d] text-center text-[var(--text-secondary)]"
                 data-testid="browser-native-runtime-shell"
-                onMouseDown={() => focusNativeBrowser({ panelId: nativePanelId }).catch(() => {})}
-              >
-                <div className="max-w-sm space-y-2 px-6">
-                  <div className="text-sm font-semibold text-[var(--text-primary)]">
-                    Native GTK/WebKitGTK runtime
-                  </div>
-                  <p className="text-sm leading-6">
-                    {nativeRuntimeReady
-                      ? 'El panel nativo está activo dentro de DevHub. Si falla, vuelve silenciosamente al iframe.'
-                      : 'Preparando el panel nativo dentro de DevHub.'}
-                  </p>
-                </div>
-              </div>
+                className="absolute inset-0 pointer-events-none"
+                aria-hidden="true"
+              />
 
-              {isLoading || !nativeRuntimeReady ? (
-                <div
-                  className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#050814]/80"
-                  data-testid="browser-loading-overlay"
-                >
-                  <RefreshCw className="h-5 w-5 animate-spin text-[var(--text-muted)]" />
-                </div>
+              {(!nativeRuntimeReady || nativeError) && !isPizarraContext ? (
+                nativeError ? (
+                  <div
+                    className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#050814]/90 px-6 text-center"
+                    data-testid="browser-native-error"
+                  >
+                    <TriangleAlert className="h-6 w-6 text-rose-400" />
+                    <div className="text-sm font-medium text-[var(--text-primary)]">
+                      No se pudo inicializar el navegador nativo
+                    </div>
+                    <div className="max-w-xs text-xs text-[var(--text-secondary)]">
+                      Razón: {nativeError}
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          retryNative?.();
+                        }}
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs hover:bg-white/10"
+                      >
+                        Reintentar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Force iframe fallback for this pane
+                          onDockStateChange?.((s) => ({ ...s, browserRuntime: 'iframe' }));
+                        }}
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs hover:bg-white/10"
+                      >
+                        Usar iframe (fallback)
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#050814]/80"
+                    data-testid="browser-loading-overlay"
+                  >
+                    <RefreshCw className="h-5 w-5 animate-spin text-[var(--text-muted)]" />
+                  </div>
+                )
               ) : null}
             </>
           ) : (
@@ -901,12 +876,18 @@ function WorkspaceBrowserPane({
                 onError={handleIframeError}
                 loading="eager"
                 referrerPolicy="no-referrer"
-                className="block w-full h-full border-0 bg-white"
-                style={IFRAME_GPU_STYLE}
+                className={`block w-full h-full border-0 ${
+                  isPizarraContext ? 'bg-[#050814]' : 'bg-white'
+                }`}
+                style={{
+                  ...IFRAME_GPU_STYLE,
+                  backgroundColor: isPizarraContext ? '#050814' : '#ffffff',
+                  pointerEvents: suspendNativeSurface ? 'none' : 'auto',
+                }}
                 sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
               />
 
-              {isLoading ? (
+              {isLoading && !isPizarraContext ? (
                 <div
                   className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#050814]/80"
                   data-testid="browser-loading-overlay"

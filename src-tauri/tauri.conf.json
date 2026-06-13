@@ -5,9 +5,9 @@
   "identifier": "com.devhub.desktop",
   "build": {
     "frontendDist": "http://127.0.0.1:3400",
-    "devUrl": "http://localhost:3100",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "devUrl": "http://127.0.0.1:3100",
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build"
   },
   "app": {
     "windows": [
@@ -33,7 +33,7 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
-    "targets": ["deb", "appimage", "rpm"],
+    "targets": ["deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -45,7 +45,12 @@
     "externalBin": ["binaries/devhub-server"],
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1", "unzip"],
+        "postInstallScript": "../packaging/linux/postinst",
+        "files": {
+          "/usr/share/applications/DevHub.desktop": "../packaging/linux/DevHub.desktop",
+          "/usr/lib/DevHub/bin/devhub-launcher": "../packaging/linux/devhub-launcher"
+        }
       }
     }
   }

@@ -19,6 +19,12 @@ import {
   upsertMessageDelivery,
 } from '@/lib/db/localDb.js';
 import {
+  listPendingDeliveriesForAgent,
+  markDeliveryConsumed,
+  getAgentPresenceStatus,
+  listAgentPresenceForMission,
+} from '@/lib/db/swarmMissions.js';
+import {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
   presentExecutionQueue,
@@ -39,14 +45,27 @@ import {
   buildRoleAgentProfile,
   createSwarmLaunchDraft,
   deriveSwarmLaunchPreview,
+  isOrchestratorRoleKey,
+  isSddWorkerRoleKey,
+  resolveLaunchKickoffBodySummary,
   selectSwarmLaunchCatalog,
+  SWARM_OPENCODE_READY_GRACE_MS,
+  SWARM_WORKER_FANOUT_BASE_DELAY_MS,
+  SWARM_WORKER_FANOUT_STAGGER_MS,
+  resolveBootstrapPromptForLaunch,
 } from '@/lib/operations/swarmControl';
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
-import { buildAgentLaunchWrapper } from '@/lib/agentLaunchWrapper';
+import { buildLaunchWrapperForRole, resolveBusHelperPaths } from '@/lib/bus/launchPaths.js';
+import {
+  buildMaterializedLaunchCommand,
+  resolveLaunchWrapperScriptPath,
+} from '@/lib/operations/materializeLaunchWrapper.js';
 import { withDbWriteQueue } from '@/lib/db/writeQueue.js';
 import { prepareAgentWorktree } from '@/lib/swarm/agentWorkspaceManager';
 import { terminateSwarmLaunch } from '@/lib/swarm/terminateLaunch';
+const { activateZedStandbySession } = require('@/lib/operations/swarmKickoff.js');
 import { withAuth } from '@/lib/swarm/withAuth.js';
+import { execSync } from 'child_process';
 
 export const runtime = 'nodejs';
 
@@ -54,7 +73,6 @@ const LOCAL_MISSION_DELIVERY_CHANNEL = 'local_snapshot';
 const LOCAL_MISSION_MESSAGE_KIND = 'directive';
 const LOCAL_SWARM_RUNTIME_SURFACE = 'swarm-control-launch';
 const DIRECTOR_TASK_LEASE_TTL_MS = 120_000;
-const DIRECTOR_FIRST_FANOUT_DELAY_MS = 4000;
 const SWARM_LAUNCH_TRACE_TYPE = 'swarm_launch';
 const SWARM_LAUNCH_TRACE_TOOL_NAME = 'launch_swarm_local';
 const NON_ACTIVE_AGENT_SUPERVISOR_STATES = new Set([
@@ -81,13 +99,14 @@ const DIRECTOR_HANDOFF_DISABLED_MESSAGES = Object.freeze({
 });
 
 function mapLaunchRoleToParticipantRole(roleKey = '') {
-  if (roleKey === 'director') return 'director';
+  if (isOrchestratorRoleKey(roleKey)) return 'director';
   if (roleKey === 'qa' || roleKey === 'reviewer' || roleKey === 'evidence') return 'reviewer';
   return 'executor';
 }
 
 function describeLaunchRole(roleKey = '') {
   const descriptions = {
+    zed: 'Orquestador general (ZED): lee MCP, delega changes a SDD Workers, monitorea y escala al operador humano. No implementa ni corre SDD directamente.',
     director:
       'Coordina la misión, asigna foco a cada agente, verifica evidencia y decide cuándo cerrar/hacer handoff.',
     coder:
@@ -100,17 +119,131 @@ function describeLaunchRole(roleKey = '') {
       'Cuida estructura, límites técnicos, coherencia del diseño y próximos pasos durables.',
   };
 
+  if (isSddWorkerRoleKey(roleKey)) {
+    return 'SDD Worker (gentle-orchestrator): espera asignación de ZED; al recibir un change, ejecuta el pipeline SDD estándar con subagentes nativos.';
+  }
+
   return (
     descriptions[roleKey] || 'Ejecuta tu parte de la misión y reporta estado/evidencia al Director.'
   );
 }
 
-function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = [] }) {
+export function buildLaunchPrompt({
+  role,
+  roleKey,
+  mission,
+  workspacePath,
+  hierarchy = [],
+  bootstrapMode = 'engram_first',
+  // T-017.2: launchId is no longer embedded in the verbose chat-list
+  // example (dropped in the trim). Kept in the signature for API
+  // compatibility with the route.js caller (buildLaunchCommand) and
+  // reserved for T-018 (lazy spawn) which will use it as a per-launch
+  // trace tag.
+  launchId = null,
+}) {
   const normalizedRoleKey = String(roleKey || '')
     .trim()
-    .toLowerCase();
-  const isDirector = normalizedRoleKey === 'director';
-  const workerRoles = hierarchy.filter((entry) => entry && entry.toLowerCase() !== 'director');
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const isOrchestrator = isOrchestratorRoleKey(normalizedRoleKey);
+  const isWorker = !isOrchestrator;
+  const isStandby = bootstrapMode === 'standby';
+  const isZed = normalizedRoleKey === 'zed';
+  const isSddWorker = isSddWorkerRoleKey(normalizedRoleKey);
+  const workerRoles = hierarchy.filter(
+    (entry) => entry && !isOrchestratorRoleKey(String(entry).toLowerCase().replace(/\s+/g, '_'))
+  );
+  const missionId = String(launchId || '').trim() || '${DEVHUB_MISSION_ID}';
+  const tmuxRosterHint = launchId
+    ? `devhub-swarm-${launchId}-`
+    : 'devhub-swarm-${DEVHUB_MISSION_ID}-';
+
+  // Instructions específicas para que usen las APIs de DevHub, no Engram MCP
+  // T-017.2: trimmed from 9 to 4 lines. Keeps the contract (bus is source
+  // of truth, no Engram MCP, no retired endpoints) without verbose examples.
+  const devHubInstructions = [
+    '',
+    '=== Sistema de Comunicación ===',
+    '- Fuente de verdad: bus DevHub (team_chat, team_inbox, agent_presence).',
+    '- Mensajes salientes: `_devhub_chat`. Mensajes entrantes: `_devhub_inbox_check`.',
+    '- NO uses Engram MCP ni /api/agenthub/events — esos paths estan retired.',
+    '',
+    '=== DevHub MCP (cuando) ===',
+    '- Swarm ya en tmux; inbox vacio inicial = normal (no "no registrado").',
+    '- MCP: planning (list_projects, get_project_context, get_execution_queue, add_task_comment).',
+    `- Roster runtime: tmux ls | grep ${tmuxRosterHint} o presence-list --mission ${missionId}; NO list_agent_workspaces ni devhub agents.`,
+    '',
+  ];
+
+  // T-017.2: director prompt trimmed from 19 to 7 lines. Original was
+  // ~45 lines total; trim target is 25. Required key phrases preserved:
+  // team_chat, no Plyrium, agent DevHub.
+  const standbyBlock = isStandby
+    ? [
+        '',
+        '=== STANDBY — esperar operador ===',
+        '- Modo standby activo: NO reclames tareas MCP, NO delegues trabajo, NO inicies SDD hasta instruccion explicita del operador humano.',
+        isZed
+          ? '- Como ZED: saluda brevemente y confirma que esperas ordenes. Usa DevHub MCP solo cuando el operador lo pida.'
+          : '',
+        isSddWorker
+          ? '- Como SDD Worker (gentle-orchestrator): cuando ZED asigne un change, usa el flujo SDD estandar (/sdd-continue, subagentes sdd-*). No inventes fases ni perfiles nuevos.'
+          : '',
+        isOrchestrator && !isZed
+          ? '- Como Director: espera instrucciones del operador antes de repartir foco.'
+          : '',
+      ].filter(Boolean)
+    : [];
+
+  const directorSpecific = isOrchestrator
+    ? [
+        '',
+        isZed ? '=== ZED Orchestrator ===' : '=== Director: status y coordinacion ===',
+        '- Sos un agente DevHub. NO menciones Plyrium ni frameworks externos.',
+        '- Fuente de verdad: team_chat (bus DevHub). /tmp/devhub-swarm-*.log es solo diagnostico del wrapper, NO la fuente.',
+        '- Reparte foco con `_devhub_chat --to <role>`, lee respuestas con `_devhub_inbox_check`.',
+        '- Workers publican heartbeats; no hagas polling manual.',
+        '- Idle en prompt NO es "waiting": verifica `tmux has-session -t devhub-swarm-<mission>-<role>` y `presence-list --mission <id>` antes de marcar waiting.',
+        '- Si un worker reporto via `_devhub_chat` o `process_exit`, no lo trates como pendiente de heartbeat.',
+        '- Si un worker no responde en 2min, marcalo inactivo y reasigna foco.',
+        '- Confirma roster tmux/presence-list; MCP solo para tareas/comentarios del proyecto si hace falta.',
+        isZed
+          ? '- Los SDD Workers usan gentle-orchestrator y SDD estandar; delega changes completos, no micro-fases.'
+          : '',
+        isZed
+          ? '- PROOF OF DELEGATION: no digas "delegado" sin ejecutar `_devhub_chat` y citar exit code + inbox_row_id del JSON stdout.'
+          : '',
+        isZed
+          ? '- No afirmes que un worker trabaja sin ACK (`kind: ack`) en team_chat o evento inbox_delivered.'
+          : '',
+        '- MCP: usa DEVHUB_PROJECT_ID (get_project_context) antes de list_projects/create_task.',
+      ].filter(Boolean)
+    : [];
+
+  // T-017.2: worker prompt trimmed from 28 to 9 lines. Original was
+  // ~50 lines total; trim target is 25. Required key phrases preserved:
+  // _devhub_chat, _devhub_inbox_check, no Plyrium, agent DevHub.
+  const workerSpecific = isWorker
+    ? [
+        isSddWorker
+          ? '=== SDD Worker (gentle-orchestrator) ==='
+          : '=== Worker: identidad y reporte ===',
+        // T-016.2 + T-017.2: anti-hallucination. Worker must self-identify
+        // as a DevHub agent and not invent Plyrium / Forge / warp tools.
+        '- Sos un agente DevHub. NO menciones Plyrium, Forge, ni "warp". Si una herramienta no esta en tu toolbox, no la inventes.',
+        `- Reporta a ${isSddWorker ? 'ZED' : 'el Director'} con \`_devhub_chat --to ${isSddWorker ? 'zed' : 'director'} --message "..."\` (helper bash, durable en team_chat).`,
+        '- Si `type _devhub_chat` falla: `source "$DEVHUB_BUS_HELPERS_FILE"` o usa el shim en `$PATH`.',
+        '- Directivas llegan por inbox-consume automatico; `_devhub_inbox_check` es fallback manual.',
+        '- Tras ejecutar una directiva: `_devhub_chat --to zed --kind ack --message "inbox#<id> done"`.',
+        '- NO uses _devhub_tell_director (retired en T-006) ni busques estado en Engram MCP.',
+        '- /tmp/devhub-swarm-<role>.log es solo diagnostico del wrapper — para comunicacion durable usa _devhub_chat.',
+        '1. Heartbeat al iniciar.',
+        '2. Revisa inbox con `_devhub_inbox_check`, ejecuta directivas, reporta evidencia.',
+        '3. Al terminar, envia resultado al Director con `_devhub_chat --to director`.',
+      ]
+    : [];
 
   return [
     `Rol: ${role}`,
@@ -129,34 +262,122 @@ function buildLaunchPrompt({ role, roleKey, mission, workspacePath, hierarchy = 
     'Reglas de ejecución:',
     '- No asumas que otro agente completó tu parte: deja evidencia concreta.',
     '- Mantén cambios acotados y evita pisar trabajo de otros roles.',
-    isDirector
-      ? '- Como Director, primero confirma roster, reparte foco y pide reportes; no ejecutes como worker salvo desbloqueo puntual.'
-      : '- Como worker, no cierres la misión: entrega resultado, pruebas/observaciones y próximos pasos al Director.',
+    isOrchestrator
+      ? isZed
+        ? '- Como ZED, coordina workers y MCP; no implementes ni ejecutes SDD directamente.'
+        : '- Como Director, primero confirma roster, reparte foco y pide reportes; no ejecutes como worker salvo desbloqueo puntual.'
+      : '- Como worker, no cierres la misión: entrega resultado, pruebas/observaciones y próximos pasos al orquestador.',
+    ...standbyBlock,
+    ...devHubInstructions,
+    ...(isOrchestrator ? directorSpecific : []),
+    ...(isWorker ? workerSpecific : []),
   ].join('\n');
 }
 
-function buildLaunchCommand(
+export function buildLaunchCommand(
   programId,
   prompt,
   roleKey = '',
   modelId = null,
   launchId = null,
-  workspacePath = ''
+  workspacePath = '',
+  projectId = null,
+  bootstrapMode = 'engram_first'
 ) {
+  // T-023: default programId to 'opencode' when missing. Otherwise workers
+  // fall through to the bash (hermes) default in buildAgentLaunchCommand,
+  // which launches a zsh session, not OpenCode. The bootstrap prompt is
+  // then pasted into zsh, which tries to execute prompt text as commands
+  // (`1.`, `2.`, `3.` lines fail with "command not found"), zsh exits,
+  // and the terminal stays empty. Symptom: 4 workers with bash prompts,
+  // 1 director with the OpenCode TUI.
+  const effectiveProgramId = programId || 'opencode';
+
   const agentProfile = roleKey ? buildRoleAgentProfile(roleKey) : 'sdd-orchestrator';
   const tmuxSessionName = launchId && roleKey ? `devhub-swarm-${launchId}-${roleKey}` : null;
-  const innerCommand = buildAgentLaunchCommand(programId, prompt, {
+  const directorTmuxSession = launchId ? `devhub-swarm-${launchId}-director` : null;
+  const isWorker = roleKey && !isOrchestratorRoleKey(roleKey);
+
+  console.log(`[SWARM_LAUNCH_CMD] Building command for role: ${roleKey}`);
+  console.log(`[SWARM_LAUNCH_CMD] Agent profile: ${agentProfile}`);
+  console.log(`[SWARM_LAUNCH_CMD] TMUX session: ${tmuxSessionName}`);
+  console.log(`[SWARM_LAUNCH_CMD] Model: ${modelId}`);
+  console.log(`[SWARM_LAUNCH_CMD] Program: ${effectiveProgramId}`);
+  console.log(`[SWARM_LAUNCH_CMD] Prompt length: ${prompt?.length || 0} chars`);
+
+  const innerCommand = buildAgentLaunchCommand(effectiveProgramId, prompt, {
     opencodeAgent: agentProfile,
     modelId,
     tmuxSessionName,
+    // Visible swarm panels are already tmux-backed (ttyServer spawn). A second
+    // tmux new-session/attach from the wrapper fails with exit 1 inside TMUX.
+    disableTmuxWrap: true,
+    // `opencode --prompt` is non-interactive in current CLI builds. Start the
+    // TUI first and inject the mission prompt into the already-running panel.
+    interactiveBootstrapPrompt: effectiveProgramId === 'opencode',
   });
-  return buildAgentLaunchWrapper({
+
+  console.log(`[SWARM_LAUNCH_CMD] Inner command: ${innerCommand}`);
+
+  const supervisorUrl = process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/agenthub`
+    : 'http://localhost:3100';
+
+  // T-011 — bus helpers MUST be wired in the production launch path.
+  // Without these, buildBusHelpersBlock emits the
+  // "# Bus helpers skipped (missing busBinaryPath or dbPath)" placeholder
+  // and the T-006 _devhub_tell_director shim (which calls _devhub_chat)
+  // fails at runtime in every launched agent. The repo root for path
+  // resolution is process.cwd() (Next.js server runs from the project
+  // root); the worktree path is the agent's isolated workspace, not the
+  // bus-binary host.
+  const busPaths = resolveBusHelperPaths({
+    repoRoot: process.cwd(),
+    env: process.env,
+  });
+
+  const wrapper = buildLaunchWrapperForRole({
     agentId: `${launchId}-${roleKey}`,
     missionId: launchId,
     role: roleKey,
     workspacePath,
+    projectId,
+    tmuxSessionName,
+    directorTmuxSession: isWorker ? directorTmuxSession : null,
+    bootstrapPrompt:
+      effectiveProgramId === 'opencode'
+        ? resolveBootstrapPromptForLaunch({ roleKey, prompt, bootstrapMode })
+        : '',
     innerCommand,
+    supervisorUrl,
+    busBinaryPath: busPaths.busBinaryPath,
+    dbPath: busPaths.dbPath,
+    // T-016.3: swarm agents are NOT the user's personal Zed session.
+    // Opt out of the minimax MCP env var injection. The minimax MCP
+    // routes the user's local Zed through their minimax subscription;
+    // swarm agents in worktrees should run on the default anthropic
+    // provider instead.
+    disableMinimaxMcp: true,
+    inboxPollIntervalSeconds: 5,
+    tuiReadyGraceMs: SWARM_OPENCODE_READY_GRACE_MS,
   });
+
+  console.log(`[SWARM_LAUNCH_CMD] Wrapper length: ${wrapper.length} chars`);
+  console.log(`[SWARM_LAUNCH_CMD] Has bootstrap prompt: ${wrapper.includes('DEVHUB_BOOTSTRAP')}`);
+  console.log(
+    `[SWARM_LAUNCH_CMD] Has DEVHUB_TMUX_SESSION export: ${wrapper.includes('DEVHUB_TMUX_SESSION')}`
+  );
+
+  // The PTY receives initialCommand as a single pasted line over WebSocket input.
+  // Pasting a multi-line bash wrapper (heredocs, functions) does not execute it;
+  // materialize to disk and expose only a one-line launcher to the terminal.
+  const wrapperScriptPath = resolveLaunchWrapperScriptPath(launchId, roleKey);
+  const command = buildMaterializedLaunchCommand(wrapper, launchId, roleKey);
+
+  console.log(`[SWARM_LAUNCH_CMD] Materialized wrapper: ${wrapperScriptPath}`);
+  console.log(`[SWARM_LAUNCH_CMD] Runtime command: ${command}`);
+
+  return { command, wrapper, wrapperScriptPath };
 }
 
 function summarizeLaunchPrompt(prompt = '', maxLength = 240) {
@@ -527,7 +748,13 @@ function captureLaunchMemorySnapshot({ phase, launchId, missionId = null, now = 
   };
 }
 
-function buildLaunchPhaseEvent({ phase, launchId, missionId = null, status = 'ok', detail = null } = {}) {
+function buildLaunchPhaseEvent({
+  phase,
+  launchId,
+  missionId = null,
+  status = 'ok',
+  detail = null,
+} = {}) {
   return {
     phase,
     launchId: launchId || null,
@@ -695,7 +922,9 @@ function choosePreferredPresence(current, candidate) {
     return currentIsLaunchSeed ? candidate : current;
   }
 
-  return getPresenceRecencyValue(candidate) >= getPresenceRecencyValue(current) ? candidate : current;
+  return getPresenceRecencyValue(candidate) >= getPresenceRecencyValue(current)
+    ? candidate
+    : current;
 }
 
 function buildMissionSupervisorSlice({
@@ -891,6 +1120,7 @@ function configureLaunchRole({
   now,
   launchPhase = 'fanout',
   startAfterMs = 0,
+  precomputedWorktree = null,
 }) {
   const roleKey = roleEntry.role_key;
   const agentId = `${launchId}-${roleKey}`;
@@ -899,23 +1129,31 @@ function configureLaunchRole({
 
   console.log(`[SWARM_LAUNCH] Setting up role: ${roleEntry.role} (${roleKey})`);
 
+  // T1.1: skip the (slow, 3× spawnSync) inner prepare when the caller
+  // has already pre-computed the worktree for this role in parallel.
+  // The precompute happens in launchSwarmLocal before the write queue
+  // opens, so no concurrency hazard.
   let worktreeResult;
-  try {
-    worktreeResult = prepareAgentWorktree({
-      repoRoot: resolvedDraft.workspacePath,
-      launchId,
-      roleKey,
-      baseRef: 'HEAD',
-    });
-  } catch (err) {
-    console.error(`[SWARM_LAUNCH] FAILED to prepare worktree for ${roleKey}: ${err.message}`);
-    return {
-      failure: {
+  if (precomputedWorktree) {
+    worktreeResult = precomputedWorktree;
+  } else {
+    try {
+      worktreeResult = prepareAgentWorktree({
+        repoRoot: resolvedDraft.workspacePath,
+        launchId,
         roleKey,
-        roleLabel: roleEntry.role,
-        error: err?.message || 'No se pudo preparar worktree.',
-      },
-    };
+        baseRef: 'HEAD',
+      });
+    } catch (err) {
+      console.error(`[SWARM_LAUNCH] FAILED to prepare worktree for ${roleKey}: ${err.message}`);
+      return {
+        failure: {
+          roleKey,
+          roleLabel: roleEntry.role,
+          error: err?.message || 'No se pudo preparar worktree.',
+        },
+      };
+    }
   }
 
   const { worktreePath, branchName, observedHead } = worktreeResult;
@@ -926,6 +1164,8 @@ function configureLaunchRole({
     mission: resolvedDraft.mission,
     workspacePath: worktreePath,
     hierarchy: preview.topology?.roles || [],
+    bootstrapMode: resolvedDraft.bootstrapMode || 'engram_first',
+    launchId,
   });
   const workspaceLease = prepareAgentWorkspaceLease(
     writeDb,
@@ -1009,13 +1249,15 @@ function configureLaunchRole({
 
   const roleModel = resolvedDraft.roleModels?.[roleKey] || null;
   const evidenceRef = `evidence://launch/${launchId}/${roleKey}`;
-  const command = buildLaunchCommand(
+  const launchCommand = buildLaunchCommand(
     roleEntry.program_id,
     prompt,
     roleKey,
     roleModel,
     launchId,
-    worktreePath
+    worktreePath,
+    projectId,
+    resolvedDraft.bootstrapMode || 'engram_first'
   );
 
   return {
@@ -1023,8 +1265,9 @@ function configureLaunchRole({
     runtimeRequest: {
       taskId,
       selectedAgent: roleEntry.program_id,
-      command,
-      commandPreview: redactLaunchCommand(command),
+      command: launchCommand.command,
+      commandPreview: redactLaunchCommand(launchCommand.wrapper),
+      wrapperScriptPath: launchCommand.wrapperScriptPath,
       launchOrigin: 'swarm-control-launch',
       launchPhase,
       startAfterMs,
@@ -1099,6 +1342,33 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
     `[SWARM_LAUNCH] Roles: ${preview.rolePrograms?.map((r) => r.role).join(', ') || 'none'}`
   );
 
+  // T1.1: pre-compute all role worktrees in parallel BEFORE the write
+  // queue opens. The WIP code path called prepareAgentWorktree serially
+  // inside each configureLaunchRole call (5 × 1.3s ≈ 6.5s of git work).
+  // Fanning out under a single Promise.all caps the wall-clock at the
+  // slowest role (~1.3s). The precomputed map is then injected back into
+  // each configureLaunchRole call so it can skip its inner prepare.
+  // The repoRoot comes from the resolved draft; we fall back to cwd to
+  // preserve the prior semantics when the draft didn't set a workspace.
+  const roleEntriesForPrecompute = Array.isArray(preview.rolePrograms) ? preview.rolePrograms : [];
+  const repoRootForPrecompute = resolvedDraft.workspacePath ?? process.cwd();
+  const precomputedWorktrees = new Map(
+    await Promise.all(
+      roleEntriesForPrecompute.map(async (entry) => {
+        if (!entry || !entry.role_key) return null;
+        const result = await Promise.resolve().then(() =>
+          prepareAgentWorktree({
+            repoRoot: repoRootForPrecompute,
+            launchId,
+            roleKey: entry.role_key,
+            baseRef: 'HEAD',
+          })
+        );
+        return [entry.role_key, result];
+      })
+    ).then((entries) => entries.filter(Boolean))
+  );
+
   // Writes: use write queue to serialize all critical DB mutations
   const result = await withDbWriteQueue(
     (writeDb) => {
@@ -1116,15 +1386,17 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
 
       const launchStrategy = resolvedDraft.launchStrategy || 'director_first';
       const bootstrapMode = resolvedDraft.bootstrapMode || 'engram_first';
-      const shouldDelayWorkerFanout = launchStrategy === 'director_first';
       const phaseEvents = [];
       const memorySnapshots = [];
       let parentSessionId = null;
       const runtimeRequests = [];
       const failedRoles = [];
       const roleEntries = Array.isArray(preview.rolePrograms) ? preview.rolePrograms : [];
-      const directorRoleEntry = roleEntries.find((entry) => entry?.role_key === 'director') || null;
-      const workerRoleEntries = roleEntries.filter((entry) => entry?.role_key !== 'director');
+      const directorRoleEntry =
+        roleEntries.find((entry) => isOrchestratorRoleKey(entry?.role_key)) || null;
+      const workerRoleEntries = roleEntries.filter(
+        (entry) => !isOrchestratorRoleKey(entry?.role_key)
+      );
 
       if (directorRoleEntry) {
         phaseEvents.push(
@@ -1160,6 +1432,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           now,
           launchPhase: 'bootstrap',
           startAfterMs: 0,
+          precomputedWorktree: precomputedWorktrees.get(directorRoleEntry.role_key) ?? null,
         });
 
         if (directorSetup?.failure) {
@@ -1169,7 +1442,8 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           runtimeRequests.push(directorSetup.runtimeRequest);
         }
 
-        const bootstrapPhaseName = bootstrapMode === 'skip_bootstrap' ? 'bootstrap_skipped' : 'bootstrap_complete';
+        const bootstrapPhaseName =
+          bootstrapMode === 'skip_bootstrap' ? 'bootstrap_skipped' : 'bootstrap_complete';
         phaseEvents.push(
           buildLaunchPhaseEvent({
             phase: bootstrapPhaseName,
@@ -1197,7 +1471,7 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           missionId: mission.mission_id,
           detail: {
             workerCount: workerRoleEntries.length,
-            startAfterMs: shouldDelayWorkerFanout ? DIRECTOR_FIRST_FANOUT_DELAY_MS : 0,
+            startAfterMs: 0,
           },
         })
       );
@@ -1209,7 +1483,10 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         })
       );
 
-      for (const roleEntry of workerRoleEntries) {
+      for (let workerIndex = 0; workerIndex < workerRoleEntries.length; workerIndex += 1) {
+        const roleEntry = workerRoleEntries[workerIndex];
+        const workerStartAfterMs =
+          SWARM_WORKER_FANOUT_BASE_DELAY_MS + workerIndex * SWARM_WORKER_FANOUT_STAGGER_MS;
         const workerSetup = configureLaunchRole({
           writeDb,
           projectId,
@@ -1222,7 +1499,8 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
           parentSessionId,
           now,
           launchPhase: 'fanout',
-          startAfterMs: shouldDelayWorkerFanout ? DIRECTOR_FIRST_FANOUT_DELAY_MS : 0,
+          startAfterMs: workerStartAfterMs,
+          precomputedWorktree: precomputedWorktrees.get(roleEntry.role_key) ?? null,
         });
 
         if (workerSetup?.failure) {
@@ -1267,17 +1545,23 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         );
       }
 
+      const kickoffBodySummary = resolveLaunchKickoffBodySummary({
+        mission: resolvedDraft.mission,
+        bootstrapMode,
+        launchLabel: missionTitle,
+      });
+
       const kickoffMessage = createMissionMessage(writeDb, {
         mission_id: mission.mission_id,
         sender_agent_id: directorAgentId,
         message_kind: LOCAL_MISSION_MESSAGE_KIND,
-        body_summary: resolvedDraft.mission,
+        body_summary: kickoffBodySummary,
         created_at: now,
         updated_at: now,
       });
 
       for (const request of runtimeRequests) {
-        if (request.roleKey === 'director') continue;
+        if (isOrchestratorRoleKey(request.roleKey)) continue;
 
         upsertMessageDelivery(writeDb, {
           message_id: kickoffMessage.message_id,
@@ -1806,13 +2090,18 @@ export function createLocalMissionMessage({
     ...new Set((recipient_agent_ids || []).map((value) => String(value).trim()).filter(Boolean)),
   ];
 
-  if (normalizedRecipients.length === 0) {
+  // Fan-out: ['*'] or empty array resolves to all eligible active participants
+  const resolvedRecipients =
+    normalizedRecipients.length === 0 ||
+    (normalizedRecipients.length === 1 && normalizedRecipients[0] === '*')
+      ? [...eligibleAgentIds]
+      : normalizedRecipients;
+
+  if (resolvedRecipients.length === 0) {
     throw new Error('Elegí al menos un destinatario activo.');
   }
 
-  const invalidRecipients = normalizedRecipients.filter(
-    (agentId) => !eligibleAgentIds.has(agentId)
-  );
+  const invalidRecipients = resolvedRecipients.filter((agentId) => !eligibleAgentIds.has(agentId));
   if (invalidRecipients.length > 0) {
     throw new Error(
       `Destinatarios inválidos para la misión activa: ${invalidRecipients.join(', ')}`
@@ -1832,7 +2121,7 @@ export function createLocalMissionMessage({
     updated_at: now,
   });
 
-  normalizedRecipients.forEach((recipientAgentId) => {
+  resolvedRecipients.forEach((recipientAgentId) => {
     upsertMessageDelivery(db, {
       message_id: message.message_id,
       recipient_agent_id: recipientAgentId,
@@ -1949,6 +2238,8 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
     })(),
   };
 
+  const launchCatalog = selectSwarmLaunchCatalog(controlRoomSnapshotInput);
+
   return {
     ...snapshot,
     ...(Object.keys(controlRoomSnapshotInput).length > 0
@@ -1956,13 +2247,45 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
           control_room_snapshot_input: controlRoomSnapshotInput,
         }
       : {}),
+    launch_catalog: launchCatalog,
   };
 }
 
 export async function GET(request, _context, dependencies) {
   try {
     const snapshot = await gatherOperationalHealth(dependencies || {}, request);
-    return NextResponse.json(snapshot);
+    // T-012 — TCT-DELTA-S1/S2/S3/S6: when ?mission_id=X&role=Y is supplied,
+    // the health endpoint reads team_inbox first and falls back to
+    // pending_deliveries (legacy). The response carries inbox_source +
+    // shim_warning so consumers can detect the deprecation path.
+    let inboxSection = null;
+    try {
+      const url = new URL(
+        request?.url || (typeof request === 'string' ? request : ''),
+        'http://localhost'
+      );
+      const missionId = url.searchParams.get('mission_id');
+      const role = url.searchParams.get('role');
+      if (missionId && role) {
+        const { resolveInboxForRole } = require('@/lib/bus/shim/tct.js');
+        const db =
+          (dependencies && dependencies.db) || (typeof getDb === 'function' ? getDb() : null);
+        if (db) {
+          const out = resolveInboxForRole(db, missionId, role, process.env);
+          inboxSection = {
+            mission_id: missionId,
+            role,
+            inbox_source: out.inbox_source,
+            rows: out.rows,
+            ...(out.shim_warning ? { shim_warning: out.shim_warning } : {}),
+          };
+        }
+      }
+    } catch (e) {
+      // best-effort: do not break the existing health payload
+      inboxSection = { error: e.message };
+    }
+    return NextResponse.json(inboxSection ? { ...snapshot, inbox: inboxSection } : snapshot);
   } catch (error) {
     console.error('[operations/health] Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -2052,6 +2375,38 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       return NextResponse.json(launchPayload);
     }
 
+    if (payload?.action === 'activate_zed_standby') {
+      const launchId = String(payload?.launch_id || '').trim();
+      const projectId = payload?.project_id || getProjectIdFromRequest(request);
+      let resolvedLaunchId = launchId;
+      if (!resolvedLaunchId && projectId) {
+        const db = dependencies.db || getDb();
+        resolvedLaunchId = getActiveMissionId(db, projectId);
+      }
+      if (!resolvedLaunchId) {
+        return NextResponse.json(
+          { error: 'launch_id es requerido o no hay mision activa.' },
+          { status: 400 }
+        );
+      }
+
+      const activation = activateZedStandbySession({
+        launchId: resolvedLaunchId,
+        operatorMessage: payload?.message || '',
+        roleKey: payload?.role_key || 'zed',
+        tuiWaitMs: Number(payload?.tui_wait_ms) || 30000,
+      });
+
+      if (!activation.ok) {
+        return NextResponse.json(
+          { error: `No se pudo activar ZED (${activation.reason}).`, activation },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({ ok: true, activation });
+    }
+
     if (payload?.action === 'terminate_swarm_local') {
       const launchId = String(payload?.launch_id || '').trim();
       if (!launchId) {
@@ -2065,6 +2420,11 @@ export const POST = withAuth(async function POST(request, _context, dependencies
         cleanupMissionWorktreesImpl: dependencies.cleanupMissionWorktrees,
         killTmuxSessionImpl: dependencies.killTmuxSession,
         db: dependencies.db || getDb(),
+        panelIds: Array.isArray(payload?.panel_ids) ? payload.panel_ids : [],
+        opencodeSessionIds: Array.isArray(payload?.opencode_session_ids)
+          ? payload.opencode_session_ids
+          : [],
+        forceOrphanCleanup: Boolean(payload?.force_orphan_cleanup),
       });
 
       const refreshedSnapshot = await gatherOperationalHealth(
@@ -2080,6 +2440,190 @@ export const POST = withAuth(async function POST(request, _context, dependencies
         terminate_result: terminateResult,
         control_room_snapshot_input: refreshedSnapshot.control_room_snapshot_input || null,
       });
+    }
+
+    if (payload?.action === 'prune_all_worktrees') {
+      const repoRoot = String(payload?.repo_root || '').trim();
+      if (!repoRoot) {
+        return NextResponse.json({ error: 'repo_root es requerido.' }, { status: 400 });
+      }
+
+      const { pruneWorktrees, safeRemoveWorktree } = require('@/lib/swarm/cleanup');
+
+      function listWorktreesForPrune(root) {
+        try {
+          const output = execSync('git worktree list --porcelain', {
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+            cwd: root,
+          }).trim();
+          if (!output) return [];
+
+          const worktrees = [];
+          let current = null;
+
+          for (const line of output.split('\n')) {
+            if (line.startsWith('worktree ')) {
+              if (current) worktrees.push(current);
+              current = { path: line.slice('worktree '.length), head: '', branch: '' };
+            } else if (line.startsWith('head ') && current) {
+              current.head = line.slice('head '.length);
+            } else if (line.startsWith('branch ') && current) {
+              current.branch = line.slice('branch '.length);
+            }
+          }
+          if (current) worktrees.push(current);
+          return worktrees;
+        } catch {
+          return [];
+        }
+      }
+
+      const diskWorktrees = listWorktreesForPrune(repoRoot);
+      const devhubWorktrees = diskWorktrees.filter((wt) => wt.path.includes('.devhub/worktrees'));
+
+      const removeResults = [];
+      for (const wt of devhubWorktrees) {
+        const result = safeRemoveWorktree({ repoRoot, worktreePath: wt.path }, { force: true });
+        removeResults.push({ path: wt.path, ...result });
+      }
+
+      const pruneResult = pruneWorktrees(repoRoot);
+
+      return NextResponse.json({
+        worktrees_removed: removeResults,
+        prune_result: pruneResult,
+        summary: `Removed ${removeResults.filter((r) => r.success).length} of ${removeResults.length} worktrees.`,
+      });
+    }
+
+    if (payload?.action === 'agent_heartbeat') {
+      const { agent_id, mission_id, workspace_id, status_summary } = payload;
+      const now = new Date().toISOString();
+
+      if (!agent_id || !mission_id) {
+        return NextResponse.json(
+          { error: 'agent_id y mission_id son requeridos.' },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const writeDb = dependencies.db || getDb();
+        upsertAgentPresence(writeDb, {
+          mission_id,
+          agent_id,
+          workspace_id: workspace_id || null,
+          runtime_surface: LOCAL_SWARM_RUNTIME_SURFACE,
+          presence_state: 'busy',
+          status_summary: status_summary || 'heartbeat',
+          last_seen_at: now,
+          updated_at: now,
+        });
+
+        // Determine stale/offline tracking for response
+        const presenceRows = listAgentPresenceForMission(writeDb, mission_id).filter(
+          (p) => p.agent_id === agent_id
+        );
+        const latestPresence = presenceRows[0] || null;
+        // eslint-disable-next-line no-unused-vars -- 'stale' is intentionally dropped (pre-existing)
+        const { effective_state, stale } = getAgentPresenceStatus(latestPresence, { now });
+
+        // Track missed heartbeats for stale/offline detection
+        const missedKey = `stale_missed_${agent_id}`;
+        let missedCount = parseInt(dependencies.missedHeartbeats?.get?.(missedKey) || '0', 10);
+        if (effective_state === 'stale' || effective_state === 'offline') {
+          missedCount += 1;
+        } else {
+          missedCount = 0;
+        }
+
+        // Determine presence_state: stale at 2 missed, offline at 3+
+        let presenceState = effective_state;
+        if (missedCount >= 3) {
+          presenceState = 'offline';
+        } else if (missedCount >= 2) {
+          presenceState = 'stale';
+        }
+
+        // Backoff hint: 120s base, doubles per consecutive miss (max 900s)
+        const baseInterval = 120_000;
+        const maxInterval = 900_000;
+        const retryAfterMs = Math.min(
+          baseInterval * Math.pow(2, Math.max(0, missedCount - 1)),
+          maxInterval
+        );
+
+        const pendingDeliveries = listPendingDeliveriesForAgent(writeDb, agent_id, {
+          status: 'pending',
+          limit: 50,
+        });
+        const pending_deliveries = pendingDeliveries.map((d) => ({
+          delivery_id: d.delivery_id,
+          message_id: d.message_id,
+          sender_agent_id: d.sender_agent_id,
+          payload: d.payload,
+          created_at: d.created_at,
+          status: d.status,
+        }));
+
+        const headers = new Headers();
+        headers.set('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+
+        return NextResponse.json(
+          {
+            ok: true,
+            agent_id,
+            mission_id,
+            last_seen_at: now,
+            presence_state: presenceState,
+            retry_after_ms: retryAfterMs,
+            pending_deliveries,
+          },
+          { headers }
+        );
+      } catch (err) {
+        console.error('[operations/health][POST] Heartbeat error:', err.message);
+        return NextResponse.json({ error: err.message }, { status: 500 });
+      }
+    }
+
+    if (payload?.action === 'ack_delivery') {
+      const { delivery_id } = payload;
+      if (!delivery_id) {
+        return NextResponse.json({ error: 'delivery_id required' }, { status: 400 });
+      }
+      const writeDb = dependencies.db || getDb();
+      const result = markDeliveryConsumed(writeDb, delivery_id);
+      return NextResponse.json({ ok: true, delivery_id, updated: result.changes });
+    }
+
+    if (payload?.action === 'signal_worker_handoff') {
+      const { agent_id, task_id, event_type, related_task_id } = payload;
+      if (!agent_id || !task_id || !event_type) {
+        return NextResponse.json(
+          { error: 'agent_id, task_id, event_type required' },
+          { status: 400 }
+        );
+      }
+      if (!['task_completed', 'handoff_ready'].includes(event_type)) {
+        return NextResponse.json(
+          { error: 'event_type must be task_completed or handoff_ready' },
+          { status: 400 }
+        );
+      }
+      const directive = {
+        task_id,
+        event_type,
+        related_task_id,
+        signaled_at: new Date().toISOString(),
+      };
+      const inboxDir = `/tmp/devhub-inbox`;
+      const { existsSync, mkdirSync, writeFileSync } = require('fs');
+      if (!existsSync(inboxDir)) mkdirSync(inboxDir, { recursive: true });
+      const directiveFile = `${inboxDir}/directive-${agent_id}-${task_id}.json`;
+      writeFileSync(directiveFile, JSON.stringify(directive));
+      return NextResponse.json({ ok: true, directive_file: directiveFile, directive });
     }
 
     if (payload?.action !== 'create_local_mission_message') {

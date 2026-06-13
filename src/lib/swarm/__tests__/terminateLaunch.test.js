@@ -42,7 +42,11 @@ describe('terminateSwarmLaunch', () => {
         },
       ],
       runs: [
-        { run_id: 'run-1', workspace_id: 'ws-1', run_id_or_session_id: 'launch-1-director-session' },
+        {
+          run_id: 'run-1',
+          workspace_id: 'ws-1',
+          run_id_or_session_id: 'launch-1-director-session',
+        },
         { run_id: 'run-2', workspace_id: 'ws-2', run_id_or_session_id: 'launch-1-coder-session' },
       ],
       sessions: [
@@ -79,7 +83,7 @@ describe('terminateSwarmLaunch', () => {
         if (sql.includes('FROM agent_hub_sessions')) {
           return { all: () => dbState.sessions };
         }
-        if (sql.includes("UPDATE agent_runs")) {
+        if (sql.includes('UPDATE agent_runs')) {
           return {
             run: (...args) => {
               dbState.runUpdates.push(args);
@@ -87,7 +91,7 @@ describe('terminateSwarmLaunch', () => {
             },
           };
         }
-        if (sql.includes("UPDATE agent_workspaces")) {
+        if (sql.includes('UPDATE agent_workspaces')) {
           return {
             run: (...args) => {
               dbState.workspaceUpdates.push(args);
@@ -95,7 +99,7 @@ describe('terminateSwarmLaunch', () => {
             },
           };
         }
-        if (sql.includes("UPDATE mission_participants")) {
+        if (sql.includes('UPDATE mission_participants')) {
           return {
             run: (...args) => {
               dbState.participantUpdates.push(args);
@@ -103,7 +107,7 @@ describe('terminateSwarmLaunch', () => {
             },
           };
         }
-        if (sql.includes("UPDATE swarm_missions")) {
+        if (sql.includes('UPDATE swarm_missions')) {
           return {
             run: (...args) => {
               dbState.missionUpdate = args;
@@ -111,7 +115,7 @@ describe('terminateSwarmLaunch', () => {
             },
           };
         }
-        if (sql.includes("UPDATE agent_presence")) {
+        if (sql.includes('UPDATE agent_presence')) {
           return {
             run: (...args) => {
               dbState.presenceUpdates.push(args);
@@ -171,5 +175,108 @@ describe('terminateSwarmLaunch', () => {
     ]);
     expect(result.terminated).toBe(true);
     expect(result.launchId).toBe('launch-1');
+  });
+
+  test('merges client panel/opencode hints and discovers tmux sessions by prefix', async () => {
+    const closeTerminalSessionById = jest.fn().mockResolvedValue({ success: true });
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    const killTmuxSession = jest.fn().mockResolvedValue();
+    const listTmuxSessionsByPrefix = jest
+      .fn()
+      .mockResolvedValue(['devhub-swarm-launch-1-researcher']);
+
+    const dbState = {
+      mission: { mission_id: 'launch-1', status: 'active' },
+      participants: [{ participant_id: 'part-1', agent_id: 'launch-1-director' }],
+      workspaces: [
+        {
+          id: 'ws-1',
+          agent_id: 'launch-1-director',
+          terminal_id: null,
+          pane_id: null,
+          run_id_or_session_id: 'launch-1-director-session',
+          repo_root: '/repo',
+        },
+      ],
+      runs: [
+        {
+          run_id: 'run-1',
+          workspace_id: 'ws-1',
+          run_id_or_session_id: 'launch-1-director-session',
+        },
+      ],
+      sessions: [{ id: 'launch-1-director-session', opencode_session_id: null }],
+    };
+
+    const db = {
+      prepare(sql) {
+        if (sql.includes('FROM swarm_missions')) return { get: () => dbState.mission };
+        if (sql.includes('FROM mission_participants')) return { all: () => dbState.participants };
+        if (sql.includes('FROM agent_workspaces')) return { all: () => dbState.workspaces };
+        if (sql.includes('FROM agent_runs')) return { all: () => dbState.runs };
+        if (sql.includes('FROM agent_hub_sessions')) return { all: () => dbState.sessions };
+        if (sql.includes('UPDATE agent_runs')) return { run: () => ({ changes: 1 }) };
+        if (sql.includes('UPDATE agent_workspaces')) return { run: () => ({ changes: 1 }) };
+        if (sql.includes('UPDATE mission_participants')) return { run: () => ({ changes: 1 }) };
+        if (sql.includes('UPDATE swarm_missions')) return { run: () => ({ changes: 1 }) };
+        if (sql.includes('UPDATE agent_presence')) return { run: () => ({ changes: 1 }) };
+        throw new Error(`Unexpected SQL: ${sql}`);
+      },
+    };
+
+    const result = await terminateSwarmLaunch('launch-1', {
+      db,
+      fetchImpl,
+      closeTerminalSessionImpl: closeTerminalSessionById,
+      killTmuxSessionImpl: killTmuxSession,
+      listTmuxSessionsByPrefixImpl: listTmuxSessionsByPrefix,
+      cleanupMissionWorktreesImpl: cleanupMissionWorktrees,
+      updateSessionStatusImpl: jest.fn(),
+      panelIds: ['p-extra'],
+      opencodeSessionIds: ['oc-extra'],
+    });
+
+    expect(closeTerminalSessionById).toHaveBeenCalledWith('p-extra');
+    expect(fetchImpl).toHaveBeenCalledWith('http://127.0.0.1:4154/session/oc-extra/abort', {
+      method: 'POST',
+    });
+    expect(listTmuxSessionsByPrefix).toHaveBeenCalledWith('devhub-swarm-launch-1-');
+    expect(killTmuxSession).toHaveBeenCalledWith('devhub-swarm-launch-1-director');
+    expect(killTmuxSession).toHaveBeenCalledWith('devhub-swarm-launch-1-researcher');
+    expect(result.terminals.attempted).toContain('p-extra');
+    expect(result.opencodeSessions.attempted).toContain('oc-extra');
+  });
+
+  test('forceOrphanCleanup kills tmux and closes panels when mission row is missing', async () => {
+    const closeTerminalSessionById = jest.fn().mockResolvedValue({ success: true });
+    const killTmuxSession = jest.fn().mockResolvedValue();
+    const listTmuxSessionsByPrefix = jest
+      .fn()
+      .mockResolvedValue(['devhub-swarm-orphan-zed', 'devhub-swarm-orphan-sdd_worker_1']);
+
+    const db = {
+      prepare(sql) {
+        if (sql.includes('FROM swarm_missions')) return { get: () => null };
+        if (sql.includes('FROM mission_participants')) return { all: () => [] };
+        if (sql.includes('FROM agent_workspaces')) return { all: () => [] };
+        if (sql.includes('FROM agent_runs')) return { all: () => [] };
+        if (sql.includes('FROM agent_hub_sessions')) return { all: () => [] };
+        throw new Error(`Unexpected SQL: ${sql}`);
+      },
+    };
+
+    const result = await terminateSwarmLaunch('orphan', {
+      db,
+      closeTerminalSessionImpl: closeTerminalSessionById,
+      killTmuxSessionImpl: killTmuxSession,
+      listTmuxSessionsByPrefixImpl: listTmuxSessionsByPrefix,
+      panelIds: ['p-orphan-1'],
+      forceOrphanCleanup: true,
+    });
+
+    expect(result.orphan_cleanup).toBe(true);
+    expect(result.terminated).toBe(true);
+    expect(closeTerminalSessionById).toHaveBeenCalledWith('p-orphan-1');
+    expect(killTmuxSession).toHaveBeenCalledWith('devhub-swarm-orphan-zed');
   });
 });

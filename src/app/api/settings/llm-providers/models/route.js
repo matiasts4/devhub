@@ -69,6 +69,11 @@ function getProviderRequest(provider, config = {}) {
         headers: {},
       };
     }
+    case 'minimax': {
+      return {
+        isMinimax: true,
+      };
+    }
     default:
       return null;
   }
@@ -100,6 +105,11 @@ export async function POST(request) {
       } catch (err) {
         return NextResponse.json({ models: [], error: `Error al obtener modelos: ${err.message}` });
       }
+    }
+
+    if (reqConfig.isMinimax) {
+      // Static manifest — no HTTP call needed (D-6)
+      return NextResponse.json({ models: ['minimax-coding-plan/MiniMax-M2.7', 'minimax-coding-plan/MiniMax-M3'] });
     }
 
     const baseUrl = normalizeBaseUrl(reqConfig.baseUrl);

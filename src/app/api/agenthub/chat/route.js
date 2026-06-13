@@ -399,7 +399,7 @@ export const POST = withAuth(async function POST(req) {
                           event.error?.message ||
                           JSON.stringify(event.error);
                       }
-                    } catch (e) {
+                    } catch {
                       // ignore partial JSON
                     }
                   }
@@ -574,7 +574,7 @@ HERRAMIENTAS DISPONIBLES:
 - update_project({ project_id, name?, description?, status?, progress?, color?, planning_status?: "none"|"pending"|"completed" })
 
 **Tareas:**
-- list_tasks({ project_id, status?: "pending"|"in_progress"|"completed"|"blocked"|"all", priority?: "low"|"medium"|"high"|"critical"|"all" })
+- list_tasks({ project_id, status?: "pending"|"in_progress"|"qa_ready"|"completed"|"blocked"|"all", priority?: "low"|"medium"|"high"|"critical"|"all" })
 - create_task({ project_id, user_id, title, description?, status?, priority?, due_date?, milestone_id? })
 - update_task({ task_id, title?, description?, status?, priority?, due_date? })
 - add_task_comment({ task_id, content, author_type?: "human"|"agent" })

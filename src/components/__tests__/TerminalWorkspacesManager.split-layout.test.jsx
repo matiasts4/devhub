@@ -1,14 +1,25 @@
 const React = require('react');
 const { cleanupMountedRoots, installDom, renderIntoDom } = require('@/test-support/domHarness');
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -265,6 +276,17 @@ jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   }),
 }));
 
+// Mock OperatorActionsDispatchContext — provider is normally in App.js
+jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
+  OperatorActionsDispatchProvider: ({ children }) => children,
+  useOperatorActionsDispatch: () => ({
+    dispatchAction: jest.fn(),
+    cards: [],
+    confirmCard: jest.fn(),
+    cancelCard: jest.fn(),
+  }),
+}));
+
 const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').default;
 
 const mountedRoots = [];
@@ -286,6 +308,25 @@ function persistWorkspaceState(state) {
 
 function persistAgentRuns(runs) {
   window.localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+}
+
+function collectWorkspaceSyncDetails() {
+  const events = [];
+  const handler = (event) => {
+    events.push(event.detail);
+  };
+  window.addEventListener('devhub:native-vte-workspace-sync', handler);
+  return {
+    events,
+    cleanup: () => window.removeEventListener('devhub:native-vte-workspace-sync', handler),
+  };
+}
+
+function getLatestWorkspaceSync(events, workspaceId) {
+  const matching = workspaceId
+    ? events.filter((detail) => detail?.workspaceId === workspaceId)
+    : events;
+  return matching[matching.length - 1] || null;
 }
 
 describe('TerminalWorkspacesManager split layout', () => {
@@ -626,7 +667,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(panelBody).not.toBeNull();
     expect(panelSafeZone).not.toBeNull();
     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
-    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
+    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
     expect(panelSemanticHeader).not.toBeNull();
     expect(panelSafeZone?.contains(panelSemanticHeader)).toBe(true);
     expect(panelChromeOverlay).not.toBeNull();
@@ -680,7 +721,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     const panelSafeZone = view.container.querySelector('[data-testid="panel-safe-zone-p1"]');
 
     expect(workspaceTopBar).not.toBeNull();
-    expect(workspaceTopBar?.className).toContain('min-h-[44px]');
+    expect(workspaceTopBar?.className).toContain('min-h-[42px]');
     expect(workspaceTopBar?.className).not.toContain('min-h-[52px]');
     expect(subtabsBar).not.toBeNull();
     expect(subtabsBar?.className).toContain('hidden');
@@ -688,10 +729,49 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(subtabsBar?.className).toContain('h-10');
     expect(subtabsBar?.className).not.toContain('h-11');
     expect(workspaceShell).not.toBeNull();
-    expect(workspaceShell?.className).toContain('p-1.5');
-    expect(workspaceShell?.className).not.toContain('p-2');
+    expect(workspaceShell?.className).toContain('p-0');
+    expect(workspaceShell?.className).not.toContain('p-1.5');
     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
-    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
+    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
+  });
+
+  test('keeps floating panel chrome invariants under brutalist-stage morphology', async () => {
+    document.documentElement.dataset.morphology = 'brutalist-stage';
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1' },
+    });
+
+    const view = await renderManager();
+
+    const workspaceTopBar = view.container.querySelector('[data-testid="workspace-top-tab-bar"]');
+    const panelSafeZone = view.container.querySelector('[data-testid="panel-safe-zone-p1"]');
+    const panelChromeOverlay = view.container.querySelector(
+      '[data-testid="panel-chrome-overlay-p1"]'
+    );
+    const splitRightButton = view.container.querySelector('[data-testid="panel-split-right-p1"]');
+    const closeButton = view.container.querySelector('[data-testid="panel-close-p1"]');
+
+    expect(workspaceTopBar?.getAttribute('data-testid')).toBe('workspace-top-tab-bar');
+    expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
+    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
+    expect(panelSafeZone?.contains(panelChromeOverlay)).toBe(true);
+    expect(panelChromeOverlay?.querySelector('[data-testid="panel-split-right-p1"]')).toBe(
+      splitRightButton
+    );
+    expect(panelChromeOverlay?.querySelector('[data-testid="panel-close-p1"]')).toBe(closeButton);
   });
 
   test('keeps floating panel chrome invariants under brutalist-stage morphology', async () => {
@@ -946,7 +1026,7 @@ describe('TerminalWorkspacesManager split layout', () => {
     );
   });
 
-  test('suspends native surfaces during internal split drag and restores them on drag end without changing active panel', async () => {
+  test('keeps native surfaces live during internal split drag and settles layout on drag end without changing active panel', async () => {
     persistWorkspaceState({
       workspaces: [
         {
@@ -990,10 +1070,10 @@ describe('TerminalWorkspacesManager split layout', () => {
     await Promise.resolve();
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
-      'suspended'
+      'live'
     );
     expect(view.container.querySelector('[data-testid="terminal-suspend-p2"]')?.textContent).toBe(
-      'suspended'
+      'live'
     );
     expect(view.container.querySelector('[data-testid="terminal-active-p1"]')?.textContent).toBe(
       'inactive'
@@ -1002,8 +1082,15 @@ describe('TerminalWorkspacesManager split layout', () => {
       'active'
     );
 
+    const settledDetails = [];
+    const onLayoutSettled = (event) => settledDetails.push(event.detail || {});
+    window.addEventListener('devhub:terminal-layout-settled', onLayoutSettled);
+
     handle?.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
     await Promise.resolve();
+
+    window.removeEventListener('devhub:terminal-layout-settled', onLayoutSettled);
+    expect(settledDetails.some((detail) => detail.reason === 'internal-split-drag-end')).toBe(true);
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
       'live'
@@ -1017,6 +1104,144 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(view.container.querySelector('[data-testid="terminal-active-p2"]')?.textContent).toBe(
       'active'
     );
+  });
+
+  test('emits only the focused panel as active for native workspace sync', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+            {
+              id: 'c2',
+              panels: [
+                {
+                  id: 'p2',
+                  cwd: '/workspace/devhub',
+                  initialCommand: 'opencode --session ses_split',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p2' },
+    });
+
+    const sync = collectWorkspaceSyncDetails();
+    const view = await renderManager();
+
+    view.container
+      .querySelector('[data-testid="panel-focus-p1"]')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    const latest = getLatestWorkspaceSync(sync.events, 'ws1');
+    expect(latest).not.toBeNull();
+    expect(latest.activePanelIds).toEqual(['p1']);
+    expect(latest.hiddenPanelIds).toEqual(expect.arrayContaining(['p2']));
+    expect(latest.hiddenPanelIds).not.toContain('p1');
+    expect(
+      view.container.querySelector('[data-testid="workspace-focused-panel-p1"]')
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-columns-ws1"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="workspace-focused-siblings-ws1"]')
+    ).toBeNull();
+
+    sync.cleanup();
+  });
+
+  test('emits non-rendered focused-mode siblings as hidden for native workspace sync', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [
+                { id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' },
+                {
+                  id: 'p2',
+                  cwd: '/workspace/devhub',
+                  initialCommand: 'opencode --session ses_vertical',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p2' },
+    });
+
+    const sync = collectWorkspaceSyncDetails();
+    const view = await renderManager();
+
+    view.container
+      .querySelector('[data-testid="panel-focus-p2"]')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    const latest = getLatestWorkspaceSync(sync.events, 'ws1');
+    expect(latest).not.toBeNull();
+    expect(latest.activePanelIds).toEqual(['p2']);
+    expect(latest.hiddenPanelIds).toContain('p1');
+
+    sync.cleanup();
+  });
+
+  test('emits previous workspace panels as hidden after workspace switch', async () => {
+    persistWorkspaceState({
+      workspaces: [
+        {
+          id: 'ws1',
+          name: 'Workspace 1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+          ],
+        },
+        {
+          id: 'ws2',
+          name: 'Workspace 2',
+          columns: [
+            {
+              id: 'c2',
+              panels: [{ id: 'p2', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
+            },
+          ],
+        },
+      ],
+      activeWsId: 'ws1',
+      activePanelIds: { ws1: 'p1', ws2: 'p2' },
+    });
+
+    const sync = collectWorkspaceSyncDetails();
+    const view = await renderManager();
+
+    view.container
+      .querySelector('[title="Workspace 2"]')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    const latest = getLatestWorkspaceSync(sync.events, 'ws2');
+    expect(latest).not.toBeNull();
+    expect(latest.activePanelIds).toEqual(['p2']);
+    expect(latest.hiddenPanelIds).toContain('p1');
+    expect(latest.hiddenPanelIds).not.toContain('p2');
+
+    sync.cleanup();
   });
 
 });

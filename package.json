@@ -33,13 +33,16 @@
     "@radix-ui/react-toggle": "^1.1.6",
     "@radix-ui/react-toggle-group": "^1.1.7",
     "@radix-ui/react-tooltip": "^1.2.4",
+    "@supabase/supabase-js": "2.107.0",
     "@tailwindcss/postcss": "^4.2.2",
+    "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "~2.6",
     "@tauri-apps/plugin-notification": "~2.3.3",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
+    "@use-gesture/react": "^10.3.1",
     "axios": "^1.14.0",
-    "better-sqlite3": "^12.8.0",
+    "better-sqlite3": "12.10.0",
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -51,16 +54,19 @@
     "framer-motion": "^12.38.0",
     "highlight.js": "^11.11.1",
     "input-otp": "^1.4.2",
+    "konva": "^10.3.0",
     "latex.js": "^0.12.6",
     "lucide-react": "^1.7.0",
     "next": "^16.2.4",
     "next-themes": "^0.4.6",
     "node-pty": "^1.1.0",
     "openai": "^6.33.0",
+    "prop-types": "^15.8.1",
     "react": "^19.2.4",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.4",
     "react-hook-form": "^7.56.2",
+    "react-konva": "^19.2.4",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.6",
     "react-router-dom": "^7.5.1",
@@ -75,8 +81,10 @@
     "vaul": "^1.1.2",
     "ws": "^8.20.0",
     "xterm": "^5.3.0",
+    "xterm-addon-canvas": "^0.5.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-search": "^0.13.0",
+    "xterm-addon-webgl": "^0.16.0",
     "zod": "^3.25.76"
   },
   "scripts": {
@@ -84,8 +92,8 @@
     "predev": "npm run native:ensure",
     "prebuild": "npm run native:ensure",
     "start": "next dev --port 3100",
-    "dev": "next dev --port 3100",
-    "build": "next build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/ && rm -rf .next/standalone/src-tauri .next/standalone/.next/cache .next/standalone/node_modules/@img/sharp*-linuxmusl* && mkdir -p src-tauri/resources && cd .next/standalone && zip -q -r ../../src-tauri/resources/standalone.zip .",
+    "dev": "DEVHUB_HOME=\"${DEVHUB_HOME:-$HOME/.devhub-dev}\" next dev --port 3100",
+    "build": "next build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/ && cp -r src/lib .next/standalone/src/ && rm -rf .next/standalone/src-tauri .next/standalone/.next/cache .next/standalone/node_modules/@img/sharp*-linuxmusl* && node scripts/materialize-standalone-runtime.cjs && mkdir -p src-tauri/resources && rm -f src-tauri/resources/standalone.zip && cd .next/standalone && zip -q -r ../../src-tauri/resources/standalone.zip .",
     "tauri": "node scripts/tauri-cli.cjs",
     "tauri:dev": "npm run tauri -- dev",
     "tauri:build": "npm run generate-icon && npm run tauri -- build",
@@ -95,6 +103,7 @@
     "agenthub-test": "node bin/agenthub-test.js",
     "agenthub-smoke": "node bin/agenthub-smoke.js",
     "test": "node ./node_modules/jest/bin/jest.js --runInBand",
+    "benchmark:zed-models": "node scripts/benchmark-zed-models.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
@@ -111,6 +120,9 @@
     "*.{css,json,md}": [
       "prettier --write"
     ]
+  },
+  "optionalDependencies": {
+    "pg": "^8.8"
   },
   "browserslist": {
     "production": [
@@ -132,6 +144,8 @@
     "@next/bundle-analyzer": "^16.2.4",
     "@playwright/test": "^1.59.0",
     "@tauri-apps/cli": "^2.10.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "autoprefixer": "^10.4.20",
     "eslint": "9.23.0",
     "eslint-plugin-import": "^2.32.0",
@@ -145,5 +159,5 @@
     "prettier": "^3.8.1",
     "tailwindcss": "^4.2.2"
   },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "pnpm@10.29.3"
 }

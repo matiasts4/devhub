@@ -298,8 +298,8 @@ class ProcessManager {
         `[${new Date().toISOString()}] launch cmd=${local.cmd} args=${local.args.join(' ')} cwd=${workingDir} root=${local.root}\n`
       );
 
-      this.serverProcess = spawn(local.cmd, local.args, {
-        cwd: workingDir,
+      this.serverProcess = spawn(/*turbopackIgnore: true*/ local.cmd, local.args, {
+        cwd: /*turbopackIgnore: true*/ workingDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env, BUN_CONFIG_VERBOSE: '0' },
       });

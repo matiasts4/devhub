@@ -159,6 +159,48 @@
       gap: 8px;
     }
 
+    .sidebar-section-title {
+      margin: 10px 2px 2px;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    .legacy-links {
+      display: grid;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .legacy-link {
+      display: grid;
+      gap: 4px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      color: inherit;
+      text-decoration: none;
+      background: rgba(255,255,255,0.02);
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .legacy-link:hover {
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .legacy-link strong {
+      font-size: 12px;
+    }
+
+    .legacy-link span {
+      font-size: 11px;
+      color: var(--text-2);
+      line-height: 1.4;
+    }
+
     .preview-card {
       width: 100%;
       border: 1px solid var(--line);
@@ -312,7 +354,7 @@
     <div class="brand">
       <div class="eyebrow">DevHub / Preview iterator</div>
       <h1>Iterador same shell</h1>
-      <p class="subtitle">Misma arquitectura interna, distinto lenguaje morfologico. Flechas izquierda/derecha navegan. Enter abre el archivo activo.</p>
+      <p class="subtitle">Misma shell, mismo orden de tabs, distinta direccion visual. Flechas izquierda/derecha navegan. Enter abre el archivo activo.</p>
     </div>
     <div class="toolbar">
       <button class="ghost" id="prev-button" type="button">←</button>
@@ -330,13 +372,28 @@
         <p>Comparacion apples-to-apples: topologia, dashboard, terminal room, kanban y roadmap sobre el mismo shell base.</p>
       </div>
       <div class="preview-list" id="preview-list"></div>
+      <div class="sidebar-section-title">Legacy / separate family</div>
+      <div class="legacy-links">
+        <a class="legacy-link" href="amber-command-deck-grounded.html" target="_blank" rel="noopener noreferrer">
+          <strong>Amber Grounded</strong>
+          <span>Familia previa. No entra en la comparacion same-shell principal.</span>
+        </a>
+        <a class="legacy-link" href="nordic-arctic.html" target="_blank" rel="noopener noreferrer">
+          <strong>Nordic Arctic</strong>
+          <span>Exploracion fria separada. Mantener aparte evita mezclar familias visuales.</span>
+        </a>
+        <a class="legacy-link" href="oxide-console-aspirational.html" target="_blank" rel="noopener noreferrer">
+          <strong>Oxide Aspirational</strong>
+          <span>Referencia legacy aspiracional. Util para contraste, no para switch rapido same-shell.</span>
+        </a>
+      </div>
     </aside>
 
     <main class="main">
       <section class="viewer-bar">
         <div class="viewer-copy">
-          <div class="eyebrow" id="current-family">Grounded</div>
-          <h2 id="current-title">Amber Command Deck</h2>
+          <div class="eyebrow" id="current-family">Same shell baseline</div>
+          <h2 id="current-title">Brutalist Tech / Brutally Staged</h2>
           <p id="current-summary"></p>
           <div class="meta-row" id="current-badges"></div>
         </div>
@@ -390,6 +447,60 @@
         fidelity: 'Alta',
         cost: 'Media',
         note: 'Mejor alternativa fria sin cambiar la app shell.',
+      },
+      {
+        id: 'devhub-command-molten',
+        title: 'DevHub Command / Molten Relay',
+        file: 'devhub-command-molten.html',
+        familyLabel: 'DevHub Command / thermal cockpit',
+        summary: 'Misma shell y mismo orden, pero con bandejas termicas, near-black calido y una lectura mas agresiva del terminal-first amber.',
+        fidelity: 'Alta',
+        cost: 'Media',
+        note: 'Empuja la direccion OpenChamber-calida sin caer en glow generico.',
+        recommended: true,
+      },
+      {
+        id: 'devhub-command-rack',
+        title: 'DevHub Command / Signal Rack',
+        file: 'devhub-command-rack.html',
+        familyLabel: 'DevHub Command / rack density',
+        summary: 'Misma shell y mismo orden, comprimidos en canales de rack, railes segmentados y una densidad mas operativa de consola desktop.',
+        fidelity: 'Alta',
+        cost: 'Alta',
+        note: 'La variante mas compacta y terminal-heavy del lote.',
+        recommended: true,
+      },
+      {
+        id: 'devhub-command-vault',
+        title: 'DevHub Command / Vault Operator',
+        file: 'devhub-command-vault.html',
+        familyLabel: 'DevHub Command / sealed matte',
+        summary: 'Misma shell y mismo orden, llevados a una camara de mando mate: superficies selladas, costuras ambar y mas autoridad visual sin cambiar la IA.',
+        fidelity: 'Alta',
+        cost: 'Media',
+        note: 'La opcion mas sobria y premium dentro del lenguaje DevHub.',
+      },
+      {
+        id: 'devhub-command-ledger',
+        title: 'DevHub Command / Command Ledger',
+        file: 'devhub-command-ledger.html',
+        familyLabel: 'DevHub Command / ruled operator ledger',
+        summary: 'Misma shell y mismo orden, convertidos en un folio operativo: ritmo de lineas, tipografia mas fuerte y una lectura mas registrada que blindada.',
+        fidelity: 'Alta',
+        cost: 'Media',
+        note: 'La variante mas tipografica y editorial del set comparable.',
+        recommended: true,
+      },
+      {
+        id: 'devhub-command-switchyard',
+        title: 'DevHub Command / Switchyard Control',
+        file: 'devhub-command-switchyard.html',
+        familyLabel: 'DevHub Command / mineral switchboard',
+        summary: 'Tema nuevo de identidad fria y mineral: geometria bracketed, iconografia remix, tipografia distinta y tab extra de swarm-control para arbitrar lanes y leases.',
+        fidelity: 'Alta',
+        cost: 'Alta',
+        note: 'Agrega una pagina interna nueva sin perder las cinco bases comparables.',
+        recommended: true,
       },
     ];
 

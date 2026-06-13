@@ -1,0 +1,92 @@
+const os = require('os');
+const { spawnSync } = require('child_process');
+
+let tmuxAvailabilityCache = null;
+
+function shellQuote(value = '') {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function parseBooleanQueryFlag(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function hasTmux() {
+  if (typeof tmuxAvailabilityCache === 'boolean') return tmuxAvailabilityCache;
+  if (os.platform() === 'win32') {
+    tmuxAvailabilityCache = false;
+    return tmuxAvailabilityCache;
+  }
+
+  try {
+    const result = spawnSync('tmux', ['-V'], { stdio: 'ignore' });
+    tmuxAvailabilityCache = result.status === 0;
+  } catch {
+    tmuxAvailabilityCache = false;
+  }
+
+  return tmuxAvailabilityCache;
+}
+
+function buildSwarmTmuxSessionName(launchId, roleKey) {
+  const safeLaunch = String(launchId || '').trim();
+  const safeRole = String(roleKey || '').trim();
+  if (!safeLaunch || !safeRole) return null;
+  return `devhub-swarm-${safeLaunch}-${safeRole}`;
+}
+
+function buildSidecarSpawnConfig({
+  sessionId,
+  cwd,
+  isSwarmRole = false,
+  launchId = null,
+  roleKey = null,
+  env = process.env,
+} = {}) {
+  const resolvedShell = env.SHELL || 'bash';
+  const swarmSessionName = isSwarmRole ? buildSwarmTmuxSessionName(launchId, roleKey) : null;
+  const tmuxSession = swarmSessionName;
+  const spawnEnv = {
+    ...env,
+    TERM: 'xterm-256color',
+    DEVHUB_PROJECT_DIR: cwd,
+    MOTD_SHOWN: 'true',
+    SSH_CONNECTION: '',
+    HUSHLOGIN: 'true',
+  };
+
+  if (tmuxSession) {
+    spawnEnv.DEVHUB_TMUX_SESSION = tmuxSession;
+  }
+
+  if (tmuxSession && hasTmux() && os.platform() !== 'win32') {
+    const attachCommand = `tmux set -g status off 2>/dev/null || true; tmux new-session -A -s ${shellQuote(tmuxSession)} -c ${shellQuote(cwd)}`;
+    return {
+      shell: resolvedShell,
+      args: ['-lc', attachCommand],
+      env: spawnEnv,
+      tmuxSession,
+      tmuxEnabled: true,
+      isSwarmRole: Boolean(isSwarmRole),
+    };
+  }
+
+  return {
+    shell: resolvedShell,
+    args: [],
+    env: spawnEnv,
+    tmuxSession: null,
+    tmuxEnabled: false,
+    isSwarmRole: Boolean(isSwarmRole),
+  };
+}
+
+module.exports = {
+  buildSidecarSpawnConfig,
+  buildSwarmTmuxSessionName,
+  hasTmux,
+  parseBooleanQueryFlag,
+};

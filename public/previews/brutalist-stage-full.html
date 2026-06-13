@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="brutalist-dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - Brutalist Stage Theme + Morphology</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --surface-card: #0a0a0a;
+            --surface-elevated: #111111;
+            --surface-muted: #1a1a1a;
+            --surface-hover: #222222;
+            --border-subtle: #333333;
+            --border-strong: #555555;
+            --text-primary: #f5f5f5;
+            --text-secondary: #aaaaaa;
+            --text-muted: #777777;
+            --accent-primary: #fbbf24;
+            --accent-hover: #fcd34d;
+            --accent-shadow: #92400e;
+            --accent-rgb: 251, 191, 36;
+        }
+
+        body {
+            background: var(--surface-card);
+            color: var(--text-primary);
+            font-family: 'Geist', -apple-system, sans-serif;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+
+        /* Brutalist Morphology Tokens */
+        [data-morphology="brutalist"] {
+            --chrome-radius-panel: 0;
+            --chrome-radius-control: 0;
+            --chrome-border-width: 2px;
+            --chrome-border-color: var(--border-strong);
+            --chrome-shadow-panel: 4px 4px 0 var(--border-strong);
+            --chrome-shadow-control: 3px 3px 0 var(--accent-shadow);
+            --chrome-panel-fill: var(--surface-card);
+            --chrome-panel-fill-emphasis: var(--surface-elevated);
+            --chrome-control-fill: var(--accent-primary);
+            --chrome-control-fill-hover: var(--accent-hover);
+            --chrome-press-offset: 2px;
+        }
+
+        .brutalist-panel {
+            background: var(--chrome-panel-fill);
+            border: var(--chrome-border-width) solid var(--chrome-border-color);
+            box-shadow: var(--chrome-shadow-panel);
+            border-radius: var(--chrome-radius-panel);
+        }
+
+        .brutal-btn-primary {
+            background: var(--chrome-control-fill);
+            border: var(--chrome-border-width) solid var(--accent-primary);
+            color: #000;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            box-shadow: var(--chrome-shadow-control);
+            border-radius: var(--chrome-radius-control);
+            transition: all 0.1s ease;
+        }
+
+        .brutal-btn-primary:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 5px 5px 0 var(--accent-shadow);
+        }
+
+        .brutal-btn-primary:active {
+            transform: translate(1px, 1px);
+            box-shadow: 1px 1px 0 var(--accent-shadow);
+        }
+
+        .brutal-btn-secondary {
+            background: var(--surface-elevated);
+            border: 2px solid var(--border-strong);
+            color: var(--text-primary);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            box-shadow: 3px 3px 0 var(--border-strong);
+            border-radius: 0;
+            transition: all 0.1s ease;
+        }
+
+        .brutal-btn-secondary:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 4px 4px 0 var(--border-strong);
+            border-color: var(--accent-primary);
+        }
+
+        .accent-bar {
+            height: 3px;
+            background: var(--accent-primary);
+            width: 100%;
+        }
+
+        .stat-value {
+            font-size: 3rem;
+            font-weight: 900;
+            line-height: 1;
+            color: var(--accent-primary);
+            letter-spacing: -0.02em;
+        }
+
+        .label-tag {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--accent-primary);
+        }
+
+        .section-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        .progress-track {
+            height: 8px;
+            background: var(--surface-muted);
+            border: 1px solid var(--border-strong);
+            border-radius: 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-primary);
+            box-shadow: 2px 0 0 var(--accent-shadow);
+        }
+
+        .input-brutal {
+            background: var(--surface-card);
+            border: 2px solid var(--border-strong);
+            color: var(--text-primary);
+            font-weight: 500;
+            border-radius: 0;
+            outline: none;
+            transition: border-color 0.1s;
+        }
+
+        .input-brutal:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 3px 3px 0 var(--accent-shadow);
+        }
+
+        .input-brutal::placeholder {
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="max-w-4xl mx-auto p-6">
+        <!-- HEADER -->
+        <div class="brutalist-panel mb-6">
+            <div class="accent-bar"></div>
+            <div class="p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="label-tag mb-1">Project Dashboard</p>
+                        <h1 class="text-2xl font-black" style="color: var(--text-primary)">ACME Corp Platform</h1>
+                    </div>
+                    <button class="brutal-btn-primary px-6 py-3 cursor-pointer text-sm">
+                        + New Task
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STATS GRID -->
+        <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="brutalist-panel p-4">
+                <p class="label-tag mb-2">Total</p>
+                <p class="stat-value">42</p>
+                <div class="progress-track mt-3">
+                    <div class="progress-fill" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="brutalist-panel p-4">
+                <p class="label-tag mb-2">Done</p>
+                <p class="stat-value" style="color: #22c55e">18</p>
+                <div class="progress-track mt-3">
+                    <div class="progress-fill" style="width: 43%; background: #22c55e; box-shadow: 2px 0 0 #166534;"></div>
+                </div>
+            </div>
+            <div class="brutalist-panel p-4">
+                <p class="label-tag mb-2">Active</p>
+                <p class="stat-value" style="color: #60a5fa">21</p>
+                <div class="progress-track mt-3">
+                    <div class="progress-fill" style="width: 50%; background: #60a5fa; box-shadow: 2px 0 0 #1e40af;"></div>
+                </div>
+            </div>
+            <div class="brutalist-panel p-4">
+                <p class="label-tag mb-2">Blocked</p>
+                <p class="stat-value" style="color: #f87171">3</p>
+                <div class="progress-track mt-3">
+                    <div class="progress-fill" style="width: 7%; background: #f87171; box-shadow: 2px 0 0 #991b1b;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+            <!-- Tasks Panel -->
+            <div class="col-span-2 brutalist-panel">
+                <div class="accent-bar"></div>
+                <div class="p-4">
+                    <p class="section-label mb-4">Active Tasks</p>
+                    <div class="space-y-2">
+                        <div class="brutalist-panel p-3 flex items-center gap-4" style="box-shadow: 3px 3px 0 var(--border-strong);">
+                            <div class="w-2 h-2" style="background: #60a5fa;"></div>
+                            <span class="flex-1 font-medium" style="color: var(--text-primary)">Implement authentication flow</span>
+                            <span class="text-xs font-bold px-2 py-1" style="background: rgba(96,165,250,0.2); color: #60a5fa; border: 1px solid #60a5fa;">IN PROG</span>
+                        </div>
+                        <div class="brutalist-panel p-3 flex items-center gap-4" style="box-shadow: 3px 3px 0 var(--border-strong);">
+                            <div class="w-2 h-2" style="background: #f87171;"></div>
+                            <span class="flex-1 font-medium" style="color: var(--text-primary)">Fix database migration bug</span>
+                            <span class="text-xs font-bold px-2 py-1" style="background: rgba(248,113,113,0.2); color: #f87171; border: 1px solid #f87171;">BLOCKED</span>
+                        </div>
+                        <div class="brutalist-panel p-3 flex items-center gap-4" style="box-shadow: 3px 3px 0 var(--border-strong);">
+                            <div class="w-2 h-2" style="background: #22c55e;"></div>
+                            <span class="flex-1 font-medium" style="color: var(--text-primary)">Code review: PR #847</span>
+                            <span class="text-xs font-bold px-2 py-1" style="background: rgba(34,197,94,0.2); color: #22c55e; border: 1px solid #22c55e;">READY</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side Panel -->
+            <div class="brutalist-panel">
+                <div class="accent-bar"></div>
+                <div class="p-4">
+                    <p class="section-label mb-4">Quick Actions</p>
+                    <div class="space-y-2">
+                        <button class="brutal-btn-primary w-full py-2 text-xs cursor-pointer">Deploy</button>
+                        <button class="brutal-btn-secondary w-full py-2 text-xs cursor-pointer">Preview</button>
+                        <button class="brutal-btn-secondary w-full py-2 text-xs cursor-pointer">Settings</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FORM SECTION -->
+        <div class="brutalist-panel mb-6">
+            <div class="accent-bar"></div>
+            <div class="p-6">
+                <p class="section-label mb-4">Add Task</p>
+                <div class="grid grid-cols-2 gap-4">
+                    <input type="text" class="input-brutal px-4 py-3 text-sm" placeholder="Task title...">
+                    <input type="text" class="input-brutal px-4 py-3 text-sm" placeholder="Assignee...">
+                </div>
+                <div class="flex justify-end mt-4">
+                    <button class="brutal-btn-primary px-8 py-2 text-sm cursor-pointer">Create Task</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MILESTONE -->
+        <div class="brutalist-panel">
+            <div class="accent-bar" style="background: #22c55e;"></div>
+            <div class="p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="label-tag" style="color: #22c55e;">Milestone</p>
+                        <h3 class="text-xl font-black mt-1" style="color: var(--text-primary)">v2.4.0 Release</h3>
+                        <p class="text-sm mt-1" style="color: var(--text-secondary)">Target: June 15, 2026</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="stat-value" style="font-size: 2rem;">83%</p>
+                        <div class="progress-track mt-1" style="width: 120px;">
+                            <div class="progress-fill" style="width: 83%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

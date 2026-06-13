@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - Aura Glassmorphism</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --surface-base: #070b14;
+            --surface-card: rgba(15, 23, 42, 0.6);
+            --surface-elevated: rgba(30, 41, 59, 0.7);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-primary: #38bdf8;
+            --accent-secondary: #818cf8;
+            --accent-glow: rgba(56, 189, 248, 0.15);
+            --border-subtle: rgba(148, 163, 184, 0.1);
+            --border-accent: rgba(56, 189, 248, 0.25);
+        }
+
+        body {
+            background:
+                radial-gradient(ellipse at 20% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, rgba(129, 140, 248, 0.06) 0%, transparent 50%),
+                linear-gradient(180deg, #070b14 0%, #0c1222 100%);
+            color: var(--text-primary);
+            font-family: 'Inter', 'Geist', sans-serif;
+            min-height: 100vh;
+        }
+
+        /* Aura Morphology */
+        [data-morphology="aura"] {
+            --chrome-radius-panel: 1.25rem;
+            --chrome-radius-control: 0.875rem;
+            --chrome-border-width: 1px;
+            --chrome-border-color: var(--border-accent);
+            --chrome-shadow-panel: 0 8px 32px rgba(56, 189, 248, 0.08), 0 2px 8px rgba(0, 0, 0, 0.3);
+            --chrome-shadow-control: 0 4px 16px rgba(56, 189, 248, 0.12);
+            --chrome-panel-fill: var(--surface-card);
+            --chrome-panel-fill-emphasis: var(--surface-elevated);
+            --chrome-control-fill: rgba(56, 189, 248, 0.08);
+            --chrome-control-fill-hover: rgba(56, 189, 248, 0.15);
+            --chrome-press-offset: 0px;
+        }
+
+        .aura-panel {
+            background: var(--chrome-panel-fill);
+            border: var(--chrome-border-width) solid var(--chrome-border-color);
+            box-shadow: var(--chrome-shadow-panel);
+            border-radius: var(--chrome-radius-panel);
+            backdrop-filter: blur(20px);
+        }
+
+        .aura-panel-glow {
+            background: var(--chrome-panel-fill);
+            border: var(--chrome-border-width) solid var(--chrome-border-color);
+            box-shadow:
+                var(--chrome-shadow-panel),
+                0 0 40px rgba(56, 189, 248, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            border-radius: var(--chrome-radius-panel);
+            backdrop-filter: blur(20px);
+        }
+
+        .aura-btn {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(129, 140, 248, 0.1));
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            color: var(--text-primary);
+            font-weight: 600;
+            box-shadow:
+                0 4px 16px rgba(56, 189, 248, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            border-radius: var(--chrome-radius-control);
+            backdrop-filter: blur(10px);
+            transition: all 0.2s ease;
+        }
+
+        .aura-btn:hover {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(129, 140, 248, 0.18));
+            border-color: rgba(56, 189, 248, 0.5);
+            box-shadow:
+                0 8px 24px rgba(56, 189, 248, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .aura-btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #0c1222;
+            font-weight: 700;
+            box-shadow:
+                0 4px 20px rgba(56, 189, 248, 0.3),
+                0 0 40px rgba(56, 189, 248, 0.15);
+            border-radius: var(--chrome-radius-control);
+        }
+
+        .aura-btn-primary:hover {
+            box-shadow:
+                0 8px 30px rgba(56, 189, 248, 0.4),
+                0 0 60px rgba(56, 189, 248, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .glow-text {
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .accent-glow {
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .progress-glow {
+            height: 6px;
+            background: rgba(56, 189, 248, 0.1);
+            border-radius: 999px;
+            overflow: hidden;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        .progress-glow-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 999px;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+        }
+
+        .input-aura {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border-accent);
+            color: var(--text-primary);
+            border-radius: var(--chrome-radius-control);
+            backdrop-filter: blur(10px);
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .input-aura:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.15), 0 4px 16px rgba(56, 189, 248, 0.1);
+        }
+
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            pointer-events: none;
+        }
+
+        .orb-1 {
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.15), transparent 70%);
+            top: -100px;
+            left: -100px;
+        }
+
+        .orb-2 {
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(129, 140, 248, 0.12), transparent 70%);
+            bottom: -50px;
+            right: -50px;
+        }
+    </style>
+</head>
+<body class="min-h-screen relative overflow-hidden">
+    <!-- Background orbs -->
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <div class="relative z-10 max-w-5xl mx-auto p-8">
+        <h1 class="text-4xl font-extrabold mb-2 glow-text">Aura Dashboard</h1>
+        <p class="mb-8" style="color: var(--text-secondary)">Glassmorphism aesthetic with ambient glow effects</p>
+
+        <!-- STATS -->
+        <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="aura-panel p-5">
+                <p class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted)">Total Tasks</p>
+                <p class="text-4xl font-black glow-text">42</p>
+                <div class="progress-glow mt-3">
+                    <div class="progress-glow-fill" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="aura-panel p-5">
+                <p class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted)">Completed</p>
+                <p class="text-4xl font-black" style="color: #22c55e">28</p>
+                <div class="progress-glow mt-3">
+                    <div class="progress-glow-fill" style="width: 67%; background: linear-gradient(90deg, #22c55e, #4ade80); box-shadow: 0 0 12px rgba(34, 197, 94, 0.5);"></div>
+                </div>
+            </div>
+            <div class="aura-panel p-5">
+                <p class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted)">In Progress</p>
+                <p class="text-4xl font-black" style="color: #38bdf8">12</p>
+                <div class="progress-glow mt-3">
+                    <div class="progress-glow-fill" style="width: 29%;"></div>
+                </div>
+            </div>
+            <div class="aura-panel p-5">
+                <p class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted)">Blocked</p>
+                <p class="text-4xl font-black" style="color: #f87171">2</p>
+                <div class="progress-glow mt-3">
+                    <div class="progress-glow-fill" style="width: 5%; background: linear-gradient(90deg, #f87171, #fca5a5); box-shadow: 0 0 12px rgba(248, 113, 113, 0.5);"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div class="grid grid-cols-3 gap-5 mb-6">
+            <!-- Tasks -->
+            <div class="col-span-2 aura-panel-glow p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <h2 class="text-lg font-bold" style="color: var(--text-primary)">Active Tasks</h2>
+                    <button class="aura-btn px-4 py-1.5 text-xs cursor-pointer">View All</button>
+                </div>
+                <div class="space-y-3">
+                    <div class="p-4 rounded-xl" style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.1);">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full" style="background: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);"></div>
+                                <span class="font-medium" style="color: var(--text-primary)">API integration</span>
+                            </div>
+                            <span class="text-xs px-3 py-1 rounded-full" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">In Progress</span>
+                        </div>
+                    </div>
+                    <div class="p-4 rounded-xl" style="background: rgba(129, 140, 248, 0.05); border: 1px solid rgba(129, 140, 248, 0.1);">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full" style="background: #818cf8; box-shadow: 0 0 8px rgba(129, 140, 248, 0.5);"></div>
+                                <span class="font-medium" style="color: var(--text-primary)">Database optimization</span>
+                            </div>
+                            <span class="text-xs px-3 py-1 rounded-full" style="background: rgba(129, 140, 248, 0.15); color: #818cf8; border: 1px solid rgba(129, 140, 248, 0.3);">Review</span>
+                        </div>
+                    </div>
+                    <div class="p-4 rounded-xl" style="background: rgba(34, 197, 94, 0.05); border: 1px solid rgba(34, 197, 94, 0.1);">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full" style="background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);"></div>
+                                <span class="font-medium" style="color: var(--text-primary)">Auth flow complete</span>
+                            </div>
+                            <span class="text-xs px-3 py-1 rounded-full" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3);">Done</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="aura-panel p-5">
+                <h2 class="text-lg font-bold mb-4" style="color: var(--text-primary)">Quick Actions</h2>
+                <div class="space-y-3">
+                    <button class="aura-btn-primary w-full py-3 text-sm cursor-pointer">+ New Task</button>
+                    <button class="aura-btn w-full py-3 text-sm cursor-pointer">Deploy</button>
+                    <button class="aura-btn w-full py-3 text-sm cursor-pointer">Generate Report</button>
+                    <button class="aura-btn w-full py-3 text-sm cursor-pointer">Settings</button>
+                </div>
+
+                <div class="mt-6 pt-5" style="border-top: 1px solid var(--border-subtle);">
+                    <p class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted)">Recent Activity</p>
+                    <div class="space-y-2">
+                        <p class="text-xs" style="color: var(--text-secondary)"><span style="color: #38bdf8;">API</span> deployment completed</p>
+                        <p class="text-xs" style="color: var(--text-secondary)"><span style="color: #22c55e;">Auth</span> module deployed</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- INPUT SECTION -->
+        <div class="aura-panel p-6">
+            <h2 class="text-lg font-bold mb-4" style="color: var(--text-primary)">Create Task</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <input type="text" class="input-aura px-4 py-3 text-sm" placeholder="Task title...">
+                <input type="text" class="input-aura px-4 py-3 text-sm" placeholder="Assigned to...">
+            </div>
+            <div class="flex justify-end mt-4">
+                <button class="aura-btn-primary px-8 py-3 text-sm cursor-pointer">Create Task</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

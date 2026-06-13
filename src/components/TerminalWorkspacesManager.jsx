@@ -1,6 +1,24 @@
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { getWorkspaceAnimProps } from './terminal/workspaceAnimProps';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  getRightDockAnimProps,
+  getWorkspaceAnimProps,
+  resolveRightDockTakeoverChromeStyle,
+  resolveWorkspaceShellVisibilityStyle,
+} from './terminal/workspaceAnimProps';
+import {
+  applyRightDockLayerBounds,
+  shouldDeferRightDockSizePersist,
+} from './terminal/rightDockLayerSync';
+import {
+  getTerminalFloatingControlStyle,
+  getTerminalGridShellStyle,
+  getTerminalPanelBodyStyle,
+  getTerminalPanelHeaderStyle,
+  getWorkspaceShellChromeStyle,
+  getWorkspaceTopBarStyle,
+  getWorkspaceTabChromeStyle,
+} from './terminal/terminalChromeStyles';
 import {
   getTerminalFloatingControlStyle,
   getWorkspaceShellChromeStyle,
@@ -25,16 +43,48 @@ import {
   Globe,
   FileCode2,
   Wand2,
+  Settings,
 } from 'lucide-react';
 import TerminalTTY from './TerminalTTY';
+import {
+  SharedTerminalSurfacePortal,
+  SharedTerminalSurfaceRegistrar,
+} from './terminal/SharedTerminalSurface';
+import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { createClient } from '@/lib/db/localClient';
 import {
   closeTerminalSessions,
   syncWorkspaceCountersMonotonic,
 } from './terminal/workspaceStateHelpers';
+import {
+  buildWorkspaceColumnsForTerminalCount,
+  spawnFirstTerminalPanelColumns,
+} from './terminal/utils/panelHelpers';
+import {
+  getDisplayName as getPanelDisplayNameFromStore,
+  setDisplayName as setPanelDisplayNameInStore,
+  nextDisplayNameForPanel as nextPoolNameForWorkspace,
+  resolvePanelSurfaceLabel,
+} from '@/lib/terminal/panelDisplayName';
+import { buildPanelHeaderDisplay } from './terminal/utils/panelHeaderDisplay';
+import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 import NotificationCenter from './NotificationCenter';
+import TerminalSettingsModal from './TerminalSettingsModal';
+import TerminalRestoreSettingsModal from './TerminalRestoreSettingsModal';
+import WorkspaceTerminalSetupModal from './WorkspaceTerminalSetupModal';
+import { isValidZedOpenTerminalEvent, resolveZedOpenTerminalPanelId } from './zedOpenTerminalEvent';
+import { applyZedOpenTerminalFocus } from './asistente/zedOpenTerminalFocus';
+import ZedAmbientOverlay from './asistente/ZedAmbientOverlay';
+import { countPanelsInColumns } from '@/lib/terminal/workspaceSurfaceReconcile';
+import {
+  MAX_WORKSPACE_TERMINAL_PANELS,
+  MAX_ZED_TERMINAL_PANELS,
+  isWorkspaceTerminalPanelLimitReached,
+} from '@/lib/terminal/workspaceTerminalLimits';
+import { dispatchZedOverlayToggle } from '@/lib/asistente/zedOverlayEvents';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +95,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { formatDistanceToNow } from 'date-fns';
 import WorkspaceRightDock from './workspace/WorkspaceRightDock';
+import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
 import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
 import {
@@ -54,15 +105,29 @@ import {
   sanitizeRightDockState,
   writeRightDockState,
 } from './workspace/rightDockState';
+import { applyRightDockTabSelect, applyZedOpenUrlDockUpdate } from './workspace/rightDockLayout';
+import { coerceZedOpenUrlFocus, isValidZedOpenUrlEvent } from './zedOpenUrlEvent';
 import {
   buildBrowserWindowLabel,
   readBrowserWindowStates,
   writeBrowserWindowStates,
 } from './workspace/browserWindowState';
 import {
+  getAdjacentPanelId,
   getAdjacentWorkspaceId,
+  resolveHorizontalNavigation,
+  resolvePanelNavigationDirection,
+  resolveVerticalNavigation,
+  CLOSE_PANEL_SHORTCUT_ARM_MS,
+  isTerminalWorkspaceUiAction,
+  resolveTerminalNavigationAction,
   resolveTerminalShortcutAction,
+  resolveTerminalWorkspaceAction,
+  shouldHandleTerminalFocusExitShortcut,
+  shouldHandleTerminalFocusShortcut,
+  shouldHandleTerminalNavigationShortcut,
   shouldHandleTerminalShortcut,
+  shouldHandleTerminalWorkspaceShortcut,
   TERMINAL_WORKSPACE_SHORTCUTS,
 } from './terminal/workspaceShortcuts';
 import {
@@ -74,16 +139,90 @@ import {
   writeTerminalRendererPreferences,
 } from './terminal/terminalRendererPreferences';
 import {
+  focusNativeVtePanel,
+  isNativeVteRuntimeAvailable,
+  subscribeNativeVteEvents,
+} from '@/lib/terminal/nativeVteBridge';
+import PanelRendererSelect from './terminal/components/PanelRendererSelect';
+import { SHOW_RENDERER_SWITCH } from './terminal/terminalRendererPreferences';
+import {
   createSwarmLaunchDraft,
   deriveSwarmLaunchPreview,
+  isOrchestratorRoleKey,
   selectSwarmLaunchCatalog,
 } from '@/lib/operations/swarmControl';
 import {
   RESTORE_ACTION,
   buildRestoreManifestFromWorkspaceState,
   buildStartupRestorePlan,
+  collectWorkspacePanelIds,
 } from '@/lib/terminal/startupRestoreCoordinator';
+import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import {
+  readWorkspaceRestorePreferences,
+  normalizeWorkspacesOpenCodeCommands,
+  isOpenCodePanel,
+  extractOpenCodeSessionId,
+  inferPanelSessionKind,
+  resolveEffectiveRestorePolicy,
+  resolveOpenCodeSessionIdForPanel,
+  shouldPersistOpenCodeSessionForPanel,
+} from '@/lib/terminal/restorePolicyResolver';
+import {
+  dispatchStartupRestoreQueue,
+  markStartupRestoreCompletedForSession,
+  runOpenCodeStartupRestoreMutex,
+  shouldBumpRelaunchCommand,
+  shouldRunStartupRestoreThisPageLoad,
+} from '@/lib/terminal/startupRestoreRunner';
+import {
+  enrichOpenCodeRestoreContext,
+  fetchOpenCodeSessionCatalog,
+  mergeDiscoveryIntoAgentRunsRecord,
+  patchTerminalStateWithDiscoveredCommands,
+  collectOpenCodePanelsNeedingDiscovery,
+} from '@/lib/terminal/opencodeSessionDiscovery';
+import {
+  buildCleanTerminalStatePayload,
+  flushTerminalSessionPersistence,
+} from '@/lib/terminal/terminalSessionFlush';
+import {
+  dispatchSwarmLaunchMaterialized,
+  rescheduleSwarmLaunchBatchFlush,
+  SWARM_LAUNCH_MATERIALIZED_EVENT,
+} from '@/lib/terminal/swarmLaunchBatch';
+import {
+  dispatchNativeVteWorkspaceSync,
+  dispatchTerminalLayoutSettled,
+  computeCarvedBounds,
+  createNativeLayoutSyncQueue,
+} from '@/components/terminal/nativeLayoutSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
+import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
+import {
+  collectSwarmLaunchIdsForWorkspace,
+  dispatchTerminatePanelCloseEvents,
+  getSwarmSnapshotStorageKey as getSwarmSnapshotStorageKeyFromLib,
+  terminateSwarmLaunchesForWorkspace,
+} from '@/lib/terminal/swarmWorkspaceLifecycle';
+import {
+  hydrateSwarmLaunchWrapperFlags,
+  markSwarmLaunchWrapperDispatched,
+} from '@/lib/terminal/swarmLaunchWrapperLifecycle';
+import { useWorkspaceSurfaceRegistry } from '@/lib/pizarra/useWorkspaceSurfaceRegistry';
+import WorkspaceSurfaceRegistryProvider from '@/components/workspace/WorkspaceSurfaceRegistryProvider';
+// pizarra-shared-view-state Phase 2: TWM is the canonical owner
+// of sharedDockState. Mounting SharedDockStoreProvider at the
+// TWM root gives every workspace + pizarra consumer in the same
+// tab the same store instance.
+import { SharedDockStoreProvider } from './workspace/hooks/useSharedDockState';
+import RightDockSharedMirror from './workspace/RightDockSharedMirror';
+// Phase 4: SharedSurfacesProvider sits ABOVE the dock store.
+// It owns the singleton lifecycle of every terminal/browser
+// surface mounted in workspace + pizarra. Toggling the
+// maximizedView re-targets the active host, never the
+// surface.
+import SharedSurfacesProvider from './workspace/SharedSurfacesProvider';
 
 // --- Helper Functions ---
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
@@ -92,7 +231,39 @@ const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null
   cwd: panelCwd,
   swarmRole: metadata?.swarmRole || null,
   swarmContext: metadata?.swarmContext || null,
+  displayName: metadata?.displayName ?? null,
 });
+
+function createPanelWithDisplayNameFactory(workspaceId, getSiblingNames = () => []) {
+  return (id, initialCommand = null, panelCwd = null, metadata = null) => {
+    const existing = getPanelDisplayNameFromStore(id, workspaceId);
+    if (existing) {
+      return createPanel(id, initialCommand, panelCwd, {
+        ...(metadata || {}),
+        displayName: existing,
+      });
+    }
+    const reserved =
+      typeof metadata?.displayName === 'string' && metadata.displayName.trim()
+        ? metadata.displayName.trim()
+        : null;
+    if (reserved) {
+      setPanelDisplayNameInStore(id, workspaceId, reserved);
+      return createPanel(id, initialCommand, panelCwd, {
+        ...(metadata || {}),
+        displayName: reserved,
+      });
+    }
+    const siblings = typeof getSiblingNames === 'function' ? getSiblingNames() : [];
+    const assigned = nextPoolNameForWorkspace(workspaceId, siblings);
+    setPanelDisplayNameInStore(id, workspaceId, assigned);
+    return createPanel(id, initialCommand, panelCwd, {
+      ...(metadata || {}),
+      displayName: assigned,
+    });
+  };
+}
+
 const createColumn = (colId, panelId, initialCommand = null, panelCwd = null) => ({
   id: colId,
   panels: [createPanel(panelId, initialCommand, panelCwd)],
@@ -118,7 +289,12 @@ const SWARM_ROLE_ORDER = [
   'analyst',
 ];
 const SWARM_ROLE_META = {
+  zed: { label: 'ZED', abbrev: 'ZED', rgb: '245,158,11' },
   director: { label: 'Director', abbrev: 'DIR', rgb: '245,158,11' },
+  sdd_worker_1: { label: 'SDD Worker 1', abbrev: 'W1', rgb: '34,197,94' },
+  sdd_worker_2: { label: 'SDD Worker 2', abbrev: 'W2', rgb: '52,211,153' },
+  sdd_worker_3: { label: 'SDD Worker 3', abbrev: 'W3', rgb: '56,189,248' },
+  sdd_worker_4: { label: 'SDD Worker 4', abbrev: 'W4', rgb: '129,140,248' },
   coder: { label: 'Coder', abbrev: 'COD', rgb: '34,197,94' },
   auditor: { label: 'Auditor', abbrev: 'AUD', rgb: '168,85,247' },
   devops: { label: 'DevOps', abbrev: 'DEV', rgb: '20,184,166' },
@@ -132,7 +308,172 @@ const SWARM_ROLE_META = {
 };
 
 function getSwarmSnapshotStorageKey(projectId) {
-  return projectId ? `devhub_swarm_control_snapshot:${projectId}` : 'devhub_swarm_control_snapshot';
+  return getSwarmSnapshotStorageKeyFromLib(projectId);
+}
+
+function readAgentRuns(storage) {
+  if (!storage) return {};
+  try {
+    return JSON.parse(storage.getItem('devhub_agent_runs') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function collectSwarmTerminateHints(storage, launchId, workspaces = []) {
+  const normalizedLaunchId = String(launchId || '').trim();
+  if (!normalizedLaunchId) {
+    return { panel_ids: [], opencode_session_ids: [] };
+  }
+
+  const panelIds = new Set();
+  const opencodeSessionIds = new Set();
+
+  try {
+    const runs = readAgentRuns(storage);
+    Object.entries(runs).forEach(([taskId, run]) => {
+      const taskLaunchId = String(taskId || '').split(':')[0];
+      if ((run?.launchId || taskLaunchId) !== normalizedLaunchId) return;
+      if (run?.panelId) panelIds.add(String(run.panelId).trim());
+      if (run?.opencodeSessionId) opencodeSessionIds.add(String(run.opencodeSessionId).trim());
+    });
+  } catch {
+    // Ignore localStorage failures.
+  }
+
+  workspaces.forEach((workspace) => {
+    getPanelsFromColumns(workspace?.columns || []).forEach((panel) => {
+      if (panel?.swarmContext?.launchId === normalizedLaunchId && panel?.id) {
+        panelIds.add(String(panel.id).trim());
+      }
+    });
+  });
+
+  return {
+    panel_ids: [...panelIds],
+    opencode_session_ids: [...opencodeSessionIds],
+  };
+}
+
+function getPanelIdsFromColumns(columns = []) {
+  return columns.flatMap((column) => (column?.panels || []).map((panel) => panel.id));
+}
+
+function resolveWorkspaceVisibleTerminalPanelCount(columns = []) {
+  return getPanelIdsFromColumns(columns).length;
+}
+
+/** Keep every terminal mounted in focus mode; only layout visibility changes. */
+function resolvePanelVisibleInLayout({ isWorkspaceVisibleInLayout, focusedPanelId, panelId }) {
+  if (!isWorkspaceVisibleInLayout) return false;
+  if (!focusedPanelId) return true;
+  return focusedPanelId === panelId;
+}
+
+function columnContainsFocusedPanel(column, focusedPanelId) {
+  if (!focusedPanelId) return true;
+  return (column?.panels || []).some((panel) => panel.id === focusedPanelId);
+}
+
+function resolveFocusPanelSlotClassName({ focusedPanelId, panelId }) {
+  if (!focusedPanelId) return 'h-full w-full min-h-0 min-w-0';
+  if (focusedPanelId === panelId) {
+    return 'absolute inset-0 z-20 h-full w-full min-h-0 min-w-0';
+  }
+  return 'hidden';
+}
+
+function getPanelsFromColumns(columns = []) {
+  return columns.flatMap((column) => column?.panels || []);
+}
+
+function readWorkspaceSwarmLaunchSummary(
+  storage,
+  workspace,
+  projectId = null,
+  swarmControlSnapshot = null
+) {
+  const workspacePanelIds = new Set(getPanelIdsFromColumns(workspace?.columns || []));
+
+  // 1. If we have panel IDs, filter devhub_agent_runs within the workspace
+  let runs = [];
+  if (workspacePanelIds.size > 0) {
+    runs = Object.values(readAgentRuns(storage)).filter(
+      (run) =>
+        run?.launchOrigin === 'swarm-control-launch' &&
+        workspacePanelIds.has(String(run?.panelId || ''))
+    );
+  }
+
+  // 2. If no matching runs in current workspace, search globally in all agent runs
+  if (runs.length === 0) {
+    runs = Object.values(readAgentRuns(storage)).filter(
+      (run) => run?.launchOrigin === 'swarm-control-launch'
+    );
+  }
+
+  if (runs.length > 0) {
+    const groups = new Map();
+    runs.forEach((run) => {
+      const taskLaunchId = String(run?.taskId || '').split(':')[0];
+      const launchId = run?.launchId || taskLaunchId;
+      if (!launchId) return;
+      const current = groups.get(launchId) || [];
+      current.push(run);
+      groups.set(launchId, current);
+    });
+
+    const sortedGroups = [...groups.entries()].sort(([, leftRuns], [, rightRuns]) => {
+      const leftAt = Math.max(...leftRuns.map((run) => Number(run?.launchedAt) || 0));
+      const rightAt = Math.max(...rightRuns.map((run) => Number(run?.launchedAt) || 0));
+      return rightAt - leftAt;
+    });
+
+    const [launchId, launchRuns] = sortedGroups[0] || [null, null];
+
+    if (launchId && launchRuns?.length) {
+      const latestRun = launchRuns.reduce((latest, run) => {
+        const latestAt = Number(latest?.launchedAt) || 0;
+        const nextAt = Number(run?.launchedAt) || 0;
+        return nextAt >= latestAt ? run : latest;
+      }, launchRuns[0]);
+
+      return {
+        launchId,
+        title:
+          latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
+        count: launchRuns.length,
+      };
+    }
+  }
+
+  // 3. Fallback to cached swarm control snapshot (state or local storage)
+  const snapshotToUse =
+    swarmControlSnapshot ||
+    (() => {
+      if (projectId && storage) {
+        try {
+          return JSON.parse(storage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null');
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    })();
+
+  if (snapshotToUse) {
+    const mission = snapshotToUse.mission_control?.mission || snapshotToUse.mission;
+    if (mission && mission.status === 'active' && mission.mission_id) {
+      return {
+        launchId: mission.mission_id,
+        title: mission.title || 'Swarm activo',
+        count: 1,
+        isFallback: true,
+      };
+    }
+  }
+
+  return null;
 }
 
 function readAgentRuns(storage) {
@@ -193,16 +534,18 @@ function readWorkspaceSwarmLaunchSummary(storage, workspace) {
 }
 
 function createDefaultWorkspaceState() {
+  const wsId = 'ws1';
+  const createPanelFn = createPanelWithDisplayNameFactory(wsId);
   return {
     workspaces: [
       {
-        id: 'ws1',
+        id: wsId,
         name: 'Workspace 1',
-        columns: [createColumn('c1', 'p1')],
+        columns: [{ id: 'c1', panels: [createPanelFn('p1')] }],
       },
     ],
-    activeWsId: 'ws1',
-    activePanelIds: { ws1: 'p1' },
+    activeWsId: wsId,
+    activePanelIds: { [wsId]: 'p1' },
   };
 }
 
@@ -286,6 +629,7 @@ function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds
           cwd: panel?.cwd || null,
           initialCommand: panel?.initialCommand || null,
           swarmRole: panel?.swarmRole || null,
+          displayName: panel?.displayName || null,
         };
       });
 
@@ -401,6 +745,13 @@ function shortenSemanticLabel(value, maxLength = 40) {
   if (!raw) return null;
   if (raw.length <= maxLength) return raw;
   return `${raw.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function resolvePanelStartupConnectionState(panel, panelRestoreModes) {
+  if (panelRestoreModes?.[panel?.id] === 'suspended') {
+    return 'suspended';
+  }
+  return undefined;
 }
 
 function readAgentRunsByPanel(storage) {
@@ -547,13 +898,8 @@ function shortenCommandSummary(command) {
   return `${raw.slice(0, 137)}...`;
 }
 
-function buildUniqueRenderKey(scope, id, index, countsMap) {
-  const normalizedId = String(id || 'unknown');
-  const base = `${scope}-${normalizedId}`;
-  const used = countsMap.get(base) || 0;
-  countsMap.set(base, used + 1);
-  if (used === 0) return `${base}-${index}`;
-  return `${base}-${index}-${used}`;
+function buildStableWorkspaceShellKey(scope, workspaceId) {
+  return `${scope}-${String(workspaceId || 'unknown')}`;
 }
 
 function renderWorkspacePanel(
@@ -573,24 +919,62 @@ function renderWorkspacePanel(
     isFocusedPanel,
     requestedRendererMode,
     onResetRendererToXterm,
+    onSetPanelRenderer,
     onActivatePanel,
     panelLabel,
     panelSemanticMetadata,
     suspendNativeSurface,
     nativeSurfacePolicy,
+    connectionState,
+    visibleTerminalPanelCount = 1,
+    deferLiveSurfaceToPizarra = false,
+    pizarraOwnsLiveSurfaces = false,
+    inboxPendingCount = 0,
+    renameEditing = false,
+    renameValue = '',
+    renameError = null,
+    onStartRename = null,
+    onRenameValueChange = null,
+    onCommitRename = null,
+    onCancelRename = null,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
-  const panelChromeSafeZoneMinTop = 34;
-  const semanticMetadata =
-    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand);
+  const sharedViewEnabled = isPizarraSharedViewEnabled();
+  const panelChromeSafeZoneMinTop = 30;
+  const semanticMetadata = buildPanelHeaderDisplay(
+    panelLabel,
+    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
+  );
   const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
+  const sharedTerminalProps = {
+    id: panel.id,
+    cwd: panel.cwd || cwd,
+    swarmContext: panel.swarmContext || null,
+    hideTitleBar: true,
+    showQuickCopyButton: false,
+    autoFocus: isActive,
+    isActivePanel: Boolean(isActivePanel ?? isActive),
+    isVisibleInLayout: Boolean(isVisibleInLayout),
+    visibleTerminalPanelCount,
+    initialCommand: panel.initialCommand,
+    connectionState,
+    requestedRendererMode,
+    onResetRendererToXterm,
+    onActivatePanel,
+    suspendNativeSurface: Boolean(suspendNativeSurface),
+    nativeSurfacePolicy: nativeSurfacePolicy || 'live',
+    surfaceHost: pizarraOwnsLiveSurfaces ? 'pizarra' : 'workspace',
+    pizarraOwnsLiveSurfaces: Boolean(pizarraOwnsLiveSurfaces),
+  };
 
   return (
     <div
       key={panel.id}
-      data-testid={`panel-slot-${panel.id}`}
-      className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-lg border ${
+      data-testid={
+        isFocusedPanel ? `workspace-focused-panel-${panel.id}` : `panel-slot-${panel.id}`
+      }
+      className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border ${
         isActive
           ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
           : 'border-transparent'
@@ -607,18 +991,21 @@ function renderWorkspacePanel(
       {swarmRole ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-2 left-0 z-20 w-1 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_18px_rgba(var(--swarm-role-rgb),0.36)]"
+          className="pointer-events-none absolute inset-y-1 left-0 z-20 w-0.5 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_12px_rgba(var(--swarm-role-rgb),0.32)]"
         />
       ) : null}
       <div
         data-testid={`panel-safe-zone-${panel.id}`}
         data-native-safe-zone="floating-chrome"
         data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
-        className="pointer-events-none relative min-h-9 shrink-0 overflow-visible px-2 pt-1"
-        style={{ minHeight: `${panelChromeSafeZoneMinTop}px` }}
+        className="pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5"
+        style={{
+          minHeight: `${panelChromeSafeZoneMinTop}px`,
+          ...getTerminalPanelHeaderStyle(),
+        }}
       >
         {/* Agent info bar — kept above the native terminal surface so VTE cannot cover it. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-3 pr-[120px] pt-[6px]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1">
           <div
             data-testid={`panel-semantic-header-${panel.id}`}
             data-panel-metadata-source={semanticMetadata.source}
@@ -628,9 +1015,18 @@ function renderWorkspacePanel(
             {swarmRole ? (
               <span
                 data-testid={`panel-role-badge-${panel.id}`}
-                className="inline-flex h-5 shrink-0 items-center rounded-md border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-2 text-[9px] font-black tracking-[0.08em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_16px_rgba(var(--swarm-role-rgb),0.12)]"
+                className="inline-flex h-[18px] shrink-0 items-center rounded border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-1.5 text-[9px] font-black tracking-[0.06em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_10px_rgba(var(--swarm-role-rgb),0.1)]"
               >
                 {swarmRole.abbrev}
+              </span>
+            ) : null}
+            {inboxPendingCount > 0 ? (
+              <span
+                data-testid={`panel-inbox-badge-${panel.id}`}
+                title={`${inboxPendingCount} directiva(s) pendiente(s)`}
+                className="inline-flex h-[18px] shrink-0 items-center rounded border border-[rgba(251,191,36,0.45)] bg-[rgba(251,191,36,0.14)] px-1.5 text-[9px] font-bold text-[rgb(251,191,36)]"
+              >
+                {inboxPendingCount}
               </span>
             ) : null}
             <span
@@ -656,28 +1052,93 @@ function renderWorkspacePanel(
         </div>
         <div
           aria-hidden="true"
-          className={`absolute inset-x-0 top-0 h-[calc(100%-0.125rem)] rounded-t-[14px] border-b border-transparent bg-[linear-gradient(180deg,rgba(15,23,36,0.22),rgba(15,23,36,0.02))] transition-opacity ${
+          className={`absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity ${
             isActive ? 'opacity-100' : 'opacity-70'
           }`}
         />
         {/* Panel controls — top-right, outside the native terminal body. */}
         <div
-          className="pointer-events-none absolute right-1.5 top-1 z-10"
+          className="pointer-events-none absolute right-1 top-0.5 z-10"
           data-testid={`panel-chrome-overlay-${panel.id}`}
           data-floating-placement="inside-top-right"
-          aria-label={`Panel ${panelLabel || panel.id} controls`}
+          aria-label={
+            renameEditing
+              ? `Rename panel ${panelLabel || panel.id}`
+              : `Panel ${panelLabel || panel.id} controls`
+          }
+          title={
+            renameEditing
+              ? `Rename panel ${panelLabel || panel.id}`
+              : `Panel ${panelLabel || panel.id} actions`
+          }
+          onDoubleClick={(e) => {
+            if (renameEditing) return;
+            e.stopPropagation();
+            onStartRename?.(panel, panelLabel);
+          }}
         >
+          {renameEditing ? (
+            <span
+              className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] bg-[var(--surface-card)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--text-primary)]"
+            >
+              <input
+                autoFocus
+                type="text"
+                data-testid={`panel-rename-input-${panel.id}`}
+                value={renameValue}
+                onChange={(e) => onRenameValueChange?.(e.target.value || '')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onRenameValueChange?.(e.currentTarget.value || '');
+                    onCommitRename?.(panel);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancelRename?.();
+                  }
+                }}
+                onBlur={(e) => {
+                  onRenameValueChange?.(e.currentTarget.value || '');
+                  onCommitRename?.(panel);
+                }}
+                className="w-[120px] bg-transparent outline-none"
+                aria-label={`Rename panel ${panel.id}`}
+              />
+            </span>
+          ) : null}
+          {renameError && renameEditing ? (
+            <span
+              data-testid={`panel-rename-error-${panel.id}`}
+              className="pointer-events-auto absolute right-0 top-full mt-1 inline-flex items-center rounded-md border border-[rgba(251,113,133,0.45)] bg-[rgba(251,113,133,0.14)] px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(251,113,133)]"
+            >
+              {renameError === 'name-in-use'
+                ? 'Name already in use in this workspace'
+                : renameError === 'invalid-name' || renameError === 'empty-name'
+                  ? 'Invalid name'
+                  : renameError === 'collision'
+                    ? 'Name already in use in this workspace'
+                    : renameError}
+            </span>
+          ) : null}
           <div
-            className="pointer-events-auto flex items-center gap-0.5 rounded-lg border px-0.5 py-0.5 backdrop-blur-md transition-colors"
+            className="pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors"
             data-testid={`panel-header-actions-${panel.id}`}
             title={`Panel ${panelLabel || panel.id} actions`}
             style={getTerminalFloatingControlStyle({ active: isActive })}
           >
+            {SHOW_RENDERER_SWITCH ? (
+              <PanelRendererSelect
+                panelId={panel.id}
+                currentMode={requestedRendererMode}
+                availableModes={['xterm-webgl', 'xterm']}
+                onChange={(mode) => onSetPanelRenderer?.(mode)}
+              />
+            ) : null}
             <button
               type="button"
               data-testid={`panel-split-right-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
               title="Dividir a la derecha"
               aria-label="Dividir a la derecha"
               onClick={(e) => {
@@ -691,7 +1152,7 @@ function renderWorkspacePanel(
               type="button"
               data-testid={`panel-split-down-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
               title="Dividir hacia abajo"
               aria-label="Dividir hacia abajo"
               onClick={(e) => {
@@ -705,7 +1166,7 @@ function renderWorkspacePanel(
               type="button"
               data-testid={`panel-focus-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
               title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
               aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
               onClick={(e) => {
@@ -723,7 +1184,7 @@ function renderWorkspacePanel(
               type="button"
               data-testid={`panel-close-${panel.id}`}
               data-size="comfortable"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
               title="Cerrar terminal"
               aria-label="Cerrar terminal"
               onClick={(e) => {
@@ -737,27 +1198,53 @@ function renderWorkspacePanel(
         </div>
       </div>
       <div
-        className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+        className="min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
         data-testid={`panel-body-${panel.id}`}
-        style={getWorkspaceShellChromeStyle({ withBackground: false })}
+        style={getTerminalPanelBodyStyle({ withBackground: false })}
       >
-        <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
-          <TerminalTTY
-            id={panel.id}
-            cwd={panel.cwd || cwd}
-            swarmContext={panel.swarmContext || null}
-            hideTitleBar={true}
-            showQuickCopyButton={false}
-            autoFocus={isActive}
-            isActivePanel={Boolean(isActivePanel ?? isActive)}
-            isVisibleInLayout={Boolean(isVisibleInLayout)}
-            initialCommand={panel.initialCommand}
-            requestedRendererMode={requestedRendererMode}
-            onResetRendererToXterm={onResetRendererToXterm}
-            onActivatePanel={onActivatePanel}
-            suspendNativeSurface={Boolean(suspendNativeSurface)}
-            nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+        {sharedViewEnabled ? (
+          <SharedTerminalSurfaceRegistrar
+            surfaceId={panel.id}
+            terminalProps={sharedTerminalProps}
           />
+        ) : null}
+        <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
+          {sharedViewEnabled ? (
+            pizarraOwnsLiveSurfaces ? null : (
+              <SharedTerminalSurfacePortal
+                surfaceId={panel.id}
+                hostId="workspace-dock"
+                isActiveHost={true}
+                className="h-full w-full"
+              />
+            )
+          ) : deferLiveSurfaceToPizarra ? (
+            <div
+              data-testid={`panel-body-deferred-pizarra-${panel.id}`}
+              className="h-full w-full"
+              aria-hidden="true"
+              style={{ background: 'var(--surface-app, #050814)' }}
+            />
+          ) : (
+            <TerminalTTY
+              id={panel.id}
+              cwd={panel.cwd || cwd}
+              swarmContext={panel.swarmContext || null}
+              hideTitleBar={true}
+              showQuickCopyButton={false}
+              autoFocus={isActive}
+              isActivePanel={Boolean(isActivePanel ?? isActive)}
+              isVisibleInLayout={Boolean(isVisibleInLayout)}
+              visibleTerminalPanelCount={visibleTerminalPanelCount}
+              initialCommand={panel.initialCommand}
+              connectionState={connectionState}
+              requestedRendererMode={requestedRendererMode}
+              onResetRendererToXterm={onResetRendererToXterm}
+              onActivatePanel={onActivatePanel}
+              suspendNativeSurface={Boolean(suspendNativeSurface)}
+              nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -877,7 +1364,7 @@ function normalizeWorkspaceWindows(
 
 export function resolveRightDockLayerStyle({ isFullscreenBrowser, size, measuredBounds }) {
   if (isFullscreenBrowser) {
-    return { top: 0, right: 0, bottom: 0, left: 0, width: '100%' };
+    return { top: 0, right: 'auto', bottom: 0, left: 0, width: '100%' };
   }
 
   if (measuredBounds) {
@@ -890,7 +1377,7 @@ export function resolveRightDockLayerStyle({ isFullscreenBrowser, size, measured
     };
   }
 
-  return { top: 0, right: 0, bottom: 0, left: 'auto', width: `${size}%` };
+  return { top: 0, right: 'auto', bottom: 0, left: `${100 - size}%`, width: `${size}%` };
 }
 
 export function resolveMeasuredRightDockBounds(containerRect, placeholderRect) {
@@ -909,9 +1396,18 @@ export function resolveMeasuredRightDockBounds(containerRect, placeholderRect) {
 
 export default function TerminalWorkspacesManager({ cwd, isVisible, projectId }) {
   const managerRootRef = useRef(null);
+  const closePanelShortcutArmedRef = useRef(null);
+  const closePanelShortcutArmTimerRef = useRef(null);
+  const [shortcutHint, setShortcutHint] = useState(null);
   const panelSubtabsBarRef = useRef(null);
   const workspaceGridAreaRef = useRef(null);
   const rightDockPlaceholderRef = useRef(null);
+  const rightDockLayerRef = useRef(null);
+  const pendingDockSizeRef = useRef(null);
+  const isDraggingDockRef = useRef(false);
+  const nudgeBrowserNativeLiveRef = useRef(null);
+  const syncRightDockMeasuredBoundsRef = useRef(null);
+  const applyLiveRightDockBoundsRef = useRef(null);
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
   const agentRunsByPanel = readAgentRunsByPanel(storage);
   const terminalStateStorageKey = projectId
@@ -928,6 +1424,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const swarmLaunchFlushTimerRef = useRef(null);
   const swarmLaunchScheduledTimersRef = useRef(new Map());
   const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
+  const materializedSwarmLaunchIdsRef = useRef(new Set());
 
   const [activeWsId, setActiveWsId] = useState(() => createDefaultWorkspaceState().activeWsId);
   const [activePanelIds, setActivePanelIds] = useState(
@@ -937,7 +1434,31 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [dragOverWsId, setDragOverWsId] = useState(null);
   const [gridCommand, setGridCommand] = useState('opencode');
   const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
+  const [workspaceTerminalSetupOpen, setWorkspaceTerminalSetupOpen] = useState(false);
   const [swarmLaunchWizardOpen, setSwarmLaunchWizardOpen] = useState(false);
+
+  // overlayAvoidRects: list of {x,y,width,height, source} for transient popups/modals
+  // (Grillas Predefinidas, swarm wizard, etc). When present we compute *carved* bounds
+  // for affected terminal panels and pass reduced rects to native VTE (instead of
+  // full suspend/hide). This lets web UI paint "sobre la terminal" while keeping
+  // the VTE widget live (full pty size, no winch to child TUIs, visible in non-covered
+  // areas). Core fix for bad UX of "no se logra mostrar cosas sobre la terminal sin suspenderla".
+  const [overlayAvoidRects, setOverlayAvoidRects] = useState([]);
+
+  const [terminalSettingsModal, setTerminalSettingsModal] = useState({
+    open: false,
+    panelId: null,
+    sessionId: null,
+    cwd: null,
+    sessionType: 'opencode-durable',
+    restorePolicy: 'manual',
+  });
+  const [restoreSettingsModal, setRestoreSettingsModal] = useState({ open: false });
+  const [panelRestoreModes, setPanelRestoreModes] = useState({});
+  const getPanelConnectionState = useCallback(
+    (panel) => resolvePanelStartupConnectionState(panel, panelRestoreModes),
+    [panelRestoreModes]
+  );
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
@@ -960,6 +1481,64 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [workspaceWindows, setWorkspaceWindows] = useState(() => ({}));
   const [activeWindowIds, setActiveWindowIds] = useState(() => ({}));
   const [focusedPanelByWorkspace, setFocusedPanelByWorkspace] = useState(() => ({}));
+  const [panelNavPulseId, setPanelNavPulseId] = useState(null);
+  const [editingPanelId, setEditingPanelId] = useState(null);
+  const [editingValue, setEditingValue] = useState('');
+  const editingValueRef = useRef('');
+  const [renameError, setRenameError] = useState(null);
+
+  const startPanelRename = useCallback((panel, currentLabel) => {
+    setEditingPanelId(panel.id);
+    setEditingValue(currentLabel);
+    editingValueRef.current = currentLabel;
+    setRenameError(null);
+  }, []);
+
+  const commitPanelRename = useCallback(
+    (panel, workspaceId, overrideValue) => {
+      const value = typeof overrideValue === 'string' ? overrideValue : editingValueRef.current;
+      const result = setPanelDisplayNameInStore(panel.id, workspaceId, value);
+      if (result && result.ok) {
+        setWorkspaces((prev) =>
+          prev.map((ws) => {
+            if (ws.id !== workspaceId) return ws;
+            return {
+              ...ws,
+              columns: ws.columns.map((col) => ({
+                ...col,
+                panels: col.panels.map((p) =>
+                  p.id === panel.id ? { ...p, displayName: value } : p
+                ),
+              })),
+            };
+          })
+        );
+        setEditingPanelId(null);
+        setEditingValue('');
+        editingValueRef.current = '';
+        setRenameError(null);
+      } else {
+        const previousName =
+          panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || '';
+        setRenameError((result && (result.reason || result.error)) || 'rename-failed');
+        setEditingValue(previousName);
+        editingValueRef.current = previousName;
+      }
+    },
+    []
+  );
+
+  const updateEditingValue = useCallback((val) => {
+    setEditingValue(val);
+    editingValueRef.current = val;
+  }, []);
+
+  const cancelPanelRename = useCallback(() => {
+    setEditingPanelId(null);
+    setEditingValue('');
+    editingValueRef.current = '';
+    setRenameError(null);
+  }, []);
   const [terminalRendererPreferences, setTerminalRendererPreferences] = useState(() =>
     createDefaultTerminalRendererPreferences()
   );
@@ -1004,15 +1583,108 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
   });
 
+  const [swarmControlSnapshot, setSwarmControlSnapshot] = useState(() => {
+    if (typeof window === 'undefined' || !projectId) return null;
+    try {
+      return JSON.parse(
+        window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId)) || 'null'
+      );
+    } catch {
+      return null;
+    }
+  });
+
+  // Sync swarmControlSnapshot on projectId changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = projectId
+        ? window.localStorage.getItem(getSwarmSnapshotStorageKey(projectId))
+        : null;
+      setSwarmControlSnapshot(raw ? JSON.parse(raw) : null);
+    } catch {
+      setSwarmControlSnapshot(null);
+    }
+  }, [projectId]);
+
+  // Sync swarm health from backend periodically / on mount
+  useEffect(() => {
+    if (!projectId || !storage) return;
+
+    let isSubscribed = true;
+    const fetchHealth = async () => {
+      try {
+        const base =
+          typeof window !== 'undefined' && window.location
+            ? window.location.origin
+            : 'http://localhost';
+        const response = await fetch(
+          new URL(`/api/agenthub/operations/health?project_id=${projectId}`, base).toString(),
+          {
+            cache: 'no-store',
+          }
+        );
+        if (!response.ok) return;
+        const payload = await response.json();
+        const nextInput =
+          payload.control_room_input ||
+          payload.control_room_snapshot_input ||
+          payload.control_room ||
+          null;
+
+        if (nextInput && isSubscribed) {
+          storage.setItem(getSwarmSnapshotStorageKey(projectId), JSON.stringify(nextInput));
+          setSwarmControlSnapshot(nextInput);
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV !== 'test') {
+          console.error('Failed to sync swarm health:', error);
+        }
+      }
+    };
+
+    fetchHealth();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [projectId, storage]);
+
   const wsCounterRef = useRef(1);
   const panelCounterRef = useRef(1);
   const colCounterRef = useRef(1);
   const windowCounterRef = useRef(1);
   const hasRunStartupRestoreRef = useRef(false);
+  const startupRestoreCompletedRef = useRef(false);
+  const terminalHydrationReadyRef = useRef(false);
+  const bootPanelIdsRef = useRef(new Set());
+  const relaunchInFlightRef = useRef(new Set());
+  const panelsClosingRef = useRef(new Set());
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
   const activeWindowIdsRef = useRef(activeWindowIds);
+  const workspaceWindowsRef = useRef(workspaceWindows);
+  const focusedPanelByWorkspaceRef = useRef(focusedPanelByWorkspace);
+  const panelNavPulseTimeoutRef = useRef(null);
+
+  // TIC-2: Randomize panel/col/ws counters to HIGH range [1000,10000] on first mount
+  // when workspaces exist (hydrated from localStorage). This prevents stale devhub_agent_runs
+  // entries with low IDs (p1, p2) from colliding with fresh panel IDs.
+  useEffect(() => {
+    const savedState =
+      storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
+    if (!savedState) return;
+
+    if (workspaces.length === 0) return;
+    // Only randomize once when counters are still in low range (initial state)
+    if (panelCounterRef.current <= 100) {
+      const RANDOMIZE_TO_HIGH = () => Math.floor(Math.random() * 9001) + 1000;
+      panelCounterRef.current = RANDOMIZE_TO_HIGH();
+      colCounterRef.current = RANDOMIZE_TO_HIGH();
+      wsCounterRef.current = RANDOMIZE_TO_HIGH();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount
 
   useEffect(() => {
     if (!isVisible || typeof document === 'undefined') return undefined;
@@ -1081,28 +1753,34 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             parsed.activePanelIds
           );
 
-          setWorkspaces(normalizedState.workspaces);
+          const hydratedAgentRuns = readAgentRunsByPanel(storage);
+          const hydratedWorkspaces = hydrateSwarmLaunchWrapperFlags(
+            normalizeWorkspacesOpenCodeCommands(normalizedState.workspaces, hydratedAgentRuns),
+            storage
+          );
+
+          setWorkspaces(hydratedWorkspaces);
           setActiveWsId(normalizedState.activeWsId);
           setActivePanelIds(normalizedState.activePanelIds);
 
           const normalizedWindows = normalizeWorkspaceWindows(
             parsed.workspaceWindows || {},
             parsed.activeWindowIds || {},
-            normalizedState.workspaces,
+            hydratedWorkspaces,
             normalizedState.activePanelIds
           );
 
           setWorkspaceWindows(normalizedWindows.workspaceWindows);
           setActiveWindowIds(normalizedWindows.activeWindowIds);
           setTerminalRendererPreferences(
-            readTerminalRendererPreferences(storage, projectId, normalizedState.workspaces)
+            readTerminalRendererPreferences(storage, projectId, hydratedWorkspaces)
           );
           windowCounterRef.current = Math.max(
             windowCounterRef.current,
             normalizedWindows.windowCounter
           );
 
-          const nextCounters = syncWorkspaceCountersMonotonic(normalizedState.workspaces, {
+          const nextCounters = syncWorkspaceCountersMonotonic(hydratedWorkspaces, {
             workspace: wsCounterRef.current,
             column: colCounterRef.current,
             panel: panelCounterRef.current,
@@ -1111,33 +1789,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           wsCounterRef.current = nextCounters.workspace;
           colCounterRef.current = nextCounters.column;
           panelCounterRef.current = nextCounters.panel;
-
-          // Session recovery: mark panels that need relaunch after TTY server restart
-          // This detects orphaned opencode processes and triggers clean relaunch
-          try {
-            const restoredPanelIds = new Set();
-            normalizedState.workspaces.forEach((ws) => {
-              ws.columns?.forEach((col) => {
-                col.panels?.forEach((panel) => {
-                  if (panel.initialCommand && /opencode/i.test(panel.initialCommand)) {
-                    restoredPanelIds.add(panel.id);
-                  }
-                });
-              });
-            });
-            if (restoredPanelIds.size > 0) {
-              localStorage.setItem(
-                'devhub_pending_session_recovery',
-                JSON.stringify({ panelIds: Array.from(restoredPanelIds), timestamp: Date.now() })
-              );
-            }
-          } catch {
-            // Ignore recovery tracking failures
-          }
+          terminalHydrationReadyRef.current = true;
+          bootPanelIdsRef.current = new Set(collectWorkspacePanelIds(hydratedWorkspaces));
+          logTerminalSession('boot-hydration-complete', {
+            panelIds: Array.from(bootPanelIdsRef.current),
+            workspaceCount: hydratedWorkspaces.length,
+          });
         }
       }
     } catch (e) {
       console.error('Failed to load terminal state:', e);
+    }
+    if (!terminalHydrationReadyRef.current) {
+      terminalHydrationReadyRef.current = true;
+      bootPanelIdsRef.current = new Set();
+      logTerminalSession('boot-hydration-empty', { panelIds: [] });
     }
     const initialDockWorkspaceId =
       (typeof activeWsIdRef.current === 'string' && activeWsIdRef.current) ||
@@ -1157,29 +1823,64 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setIsClientLoaded(true);
   }, [projectId, storage, terminalStateStorageKey]);
 
+  // T5 migration: stamp a pool name on any panel that does not have one.
+  // Idempotent — re-running on a panel that already has a displayName is a
+  // no-op because the per-panel localStorage entry is already written.
+  useEffect(() => {
+    if (!isClientLoaded) return;
+    if (!workspaces || workspaces.length === 0) return;
+    let mutated = false;
+    const next = workspaces.map((ws) => {
+      const columns = (ws.columns || []).map((col) => {
+        const panels = (col.panels || []).map((panel) => {
+          if (panel.displayName) return panel;
+          const stored = getPanelDisplayNameFromStore(panel.id, ws.id);
+          if (stored) {
+            // Mirror the cached name into localStorage so a stale Map cannot
+            // hide the entry from a fresh hydrate. Re-write is cheap.
+            setPanelDisplayNameInStore(panel.id, ws.id, stored);
+            mutated = true;
+            return { ...panel, displayName: stored };
+          }
+          const assigned = nextPoolNameForWorkspace(ws.id);
+          setPanelDisplayNameInStore(panel.id, ws.id, assigned);
+          mutated = true;
+          return { ...panel, displayName: assigned };
+        });
+        return { ...col, panels };
+      });
+      return { ...ws, columns };
+    });
+    if (mutated) {
+      setWorkspaces(next);
+    }
+  }, [isClientLoaded, workspaces]);
+
+  const flushTerminalPersistenceNow = useCallback(() => {
+    if (!storage || !isClientLoaded) return false;
+
+    return flushTerminalSessionPersistence(storage, {
+      workspaces: workspacesRef.current,
+      activeWsId: activeWsIdRef.current,
+      activePanelIds: activePanelIdsRef.current,
+      workspaceWindows: workspaceWindowsRef.current,
+      activeWindowIds: activeWindowIdsRef.current,
+      projectId,
+      appSessionId: `shutdown-${Date.now()}`,
+      agentRunsByPanel: readAgentRunsByPanel(storage),
+    });
+  }, [isClientLoaded, projectId, storage]);
+
   useEffect(() => {
     if (isClientLoaded) {
-      const cleanWorkspaces = workspaces.map((ws) => ({
-        ...ws,
-        columns: ws.columns.map((col) => ({
-          ...col,
-          panels: col.panels.map((p) => ({
-            id: p.id,
-            cwd: p.cwd || null,
-            initialCommand: p.initialCommand || null,
-          })),
-        })),
-      }));
-      storage?.setItem(
-        terminalStateStorageKey,
-        JSON.stringify({
-          workspaces: cleanWorkspaces,
-          activeWsId,
-          activePanelIds,
-          workspaceWindows,
-          activeWindowIds,
-        })
-      );
+      const payload = buildCleanTerminalStatePayload({
+        workspaces,
+        activeWsId,
+        activePanelIds,
+        workspaceWindows,
+        activeWindowIds,
+      });
+      storage?.setItem(terminalStateStorageKey, JSON.stringify(payload));
     }
   }, [
     workspaces,
@@ -1207,6 +1908,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         projectId,
         appSessionId: `live-${Date.now()}`,
         agentRunsByPanel: readAgentRunsByPanel(storage),
+        restorePreferences: readWorkspaceRestorePreferences(storage),
       });
       storage.setItem(restoreManifestStorageKey, JSON.stringify(manifest));
     } catch {
@@ -1214,81 +1916,352 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
   }, [activeWsId, isClientLoaded, projectId, restoreManifestStorageKey, storage, workspaces]);
 
-  // --- Startup restore coordinator: build restore plan once and dispatch idempotent relaunch actions ---
+  const applyPanelRelaunchCommand = useCallback(
+    (
+      panelId,
+      command,
+      panelCwd,
+      { bumpCommand = true, forceBump = false, emitEvent = true } = {}
+    ) => {
+      if (!panelId || !command) return;
+      if (relaunchInFlightRef.current.has(panelId)) return;
+      relaunchInFlightRef.current.add(panelId);
+
+      logTerminalSession('panel-relaunch-command', {
+        panelId,
+        command,
+        bumpCommand,
+        forceBump,
+        emitEvent,
+      });
+
+      const normalizedCommand = String(command)
+        .replace(/\s*#recovery-\d+\s*$/i, '')
+        .trim();
+      const panel = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+
+      const shouldAppendRecovery =
+        forceBump ||
+        (bumpCommand && shouldBumpRelaunchCommand(panel?.initialCommand, normalizedCommand));
+      const nextCommand = shouldAppendRecovery
+        ? `${normalizedCommand} #recovery-${Date.now()}`
+        : normalizedCommand;
+
+      setWorkspaces((prev) =>
+        prev.map((ws) => ({
+          ...ws,
+          columns: ws.columns.map((col) => ({
+            ...col,
+            panels: col.panels.map((p) => {
+              if (p.id !== panelId) return p;
+              return { ...p, initialCommand: nextCommand, cwd: panelCwd || p.cwd };
+            }),
+          })),
+        }))
+      );
+
+      try {
+        const savedState = JSON.parse(storage?.getItem(terminalStateStorageKey) || '{}');
+        if (savedState.workspaces) {
+          savedState.workspaces = savedState.workspaces.map((ws) => ({
+            ...ws,
+            columns: ws.columns.map((col) => ({
+              ...col,
+              panels: col.panels.map((p) => {
+                if (p.id !== panelId) return p;
+                return { ...p, initialCommand: nextCommand, cwd: panelCwd || p.cwd };
+              }),
+            })),
+          }));
+          storage?.setItem(terminalStateStorageKey, JSON.stringify(savedState));
+        }
+      } catch {
+        // Ignore persistence failures
+      }
+
+      setPanelRestoreModes((prev) => {
+        const next = { ...prev };
+        delete next[panelId];
+        return next;
+      });
+
+      if (emitEvent && typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('devhub:relaunch-panel', {
+            detail: {
+              panelId,
+              command: nextCommand,
+              cwd: panelCwd || null,
+              reason: 'panel-relaunch',
+            },
+          })
+        );
+      }
+
+      relaunchInFlightRef.current.delete(panelId);
+    },
+    [storage, terminalStateStorageKey]
+  );
+
+  // --- Startup restore: global prefs + queued OpenCode resume (reboot-safe via --session) ---
   useEffect(() => {
     if (!isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
+
+    const sessionStorage = typeof window !== 'undefined' ? window.sessionStorage : null;
+
+    if (!shouldRunStartupRestoreThisPageLoad(sessionStorage)) {
+      hasRunStartupRestoreRef.current = true;
+      return undefined;
+    }
+
+    const snapshotWorkspaces =
+      workspacesRef.current.length > 0 ? workspacesRef.current : workspaces;
+
+    let expectsHydratedWorkspaces = false;
+    try {
+      const savedRaw =
+        storage.getItem(terminalStateStorageKey) || storage.getItem('devhub_terminal_state');
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
+        expectsHydratedWorkspaces =
+          Array.isArray(parsed?.workspaces) && parsed.workspaces.length > 0;
+      }
+    } catch {
+      expectsHydratedWorkspaces = false;
+    }
+
+    const hasHydratedPanels = snapshotWorkspaces.some((ws) =>
+      (ws?.columns || []).some((col) => (col?.panels || []).length > 0)
+    );
+
+    if (expectsHydratedWorkspaces && !terminalHydrationReadyRef.current) {
+      logTerminalSession('startup-restore-deferred', {
+        reason: 'awaiting-hydration',
+        expectsHydratedWorkspaces,
+      });
+      return;
+    }
+
+    if (expectsHydratedWorkspaces && !hasHydratedPanels) {
+      logTerminalSession('startup-restore-deferred', {
+        reason: 'awaiting-panels',
+        expectsHydratedWorkspaces,
+      });
+      return;
+    }
+
     hasRunStartupRestoreRef.current = true;
+    logTerminalSession('startup-restore-begin', {
+      bootPanelIds: Array.from(bootPanelIdsRef.current),
+      snapshotPanelIds: collectWorkspacePanelIds(snapshotWorkspaces),
+      activeWsId: activeWsIdRef.current || activeWsId,
+    });
 
     let cancelled = false;
+    const restorePrefs = readWorkspaceRestorePreferences(storage);
+
+    const hasOpenCodePanels = snapshotWorkspaces.some((ws) =>
+      (ws.columns || []).some((col) =>
+        (col.panels || []).some((panel) => isOpenCodePanel(panel, agentRunsByPanel[panel.id]))
+      )
+    );
+
+    if (hasOpenCodePanels) {
+      const suspendedSeed = {};
+      snapshotWorkspaces.forEach((ws) => {
+        ws.columns?.forEach((col) => {
+          col.panels?.forEach((panel) => {
+            const agentRun = agentRunsByPanel[panel.id];
+            if (!isOpenCodePanel(panel, agentRun)) return;
+
+            const policy = resolveEffectiveRestorePolicy({
+              sessionKind: 'opencode',
+              perSessionPolicy: agentRun?.restorePolicy || null,
+              preferences: restorePrefs,
+            });
+
+            // Manual/off stay suspended until the user continues; auto relaunches via queue.
+            if (policy === 'manual' || policy === 'off') {
+              suspendedSeed[panel.id] = 'suspended';
+            }
+          });
+        });
+      });
+      if (Object.keys(suspendedSeed).length > 0) {
+        setPanelRestoreModes(suspendedSeed);
+      }
+    }
 
     const runStartupRestore = async () => {
       try {
-        const runtimeResponse = await fetch('/api/swarm/runtime-diagnostics', {
-          cache: 'no-store',
-        });
-        const runtimeSnapshot = runtimeResponse.ok ? await runtimeResponse.json() : null;
+        await runOpenCodeStartupRestoreMutex(storage, async () => {
+          const runtimeResponse = await fetch('/api/swarm/runtime-diagnostics', {
+            cache: 'no-store',
+          });
+          const runtimeSnapshot = runtimeResponse.ok ? await runtimeResponse.json() : null;
 
-        if (cancelled) return;
-
-        const manifest = buildRestoreManifestFromWorkspaceState({
-          workspaces,
-          activeWorkspaceId: activeWsId,
-          projectId,
-          appSessionId: `startup-${Date.now()}`,
-          agentRunsByPanel,
-        });
-
-        const plan = buildStartupRestorePlan({ manifest, runtimeSnapshot });
-        const panelMap = new Map(
-          workspaces.flatMap((workspace) =>
-            (workspace?.columns || []).flatMap((column) =>
-              (column?.panels || []).map((panel) => [panel.id, panel])
-            )
-          )
-        );
-        const relaunchDispatched = new Set();
-
-        plan.actions.forEach((action) => {
           if (cancelled) return;
 
-          if (action.action === RESTORE_ACTION.QUOTA_BLOCKED) {
+          const latestAgentRuns = readAgentRunsByPanel(storage);
+          let restoreWorkspaces = snapshotWorkspaces;
+          let restoreAgentRuns = latestAgentRuns;
+
+          const needsDiscovery = collectOpenCodePanelsNeedingDiscovery(
+            snapshotWorkspaces,
+            latestAgentRuns
+          );
+
+          if (needsDiscovery.length > 0) {
+            const catalog = await fetchOpenCodeSessionCatalog({ fetchImpl: fetch });
+            if (!cancelled && catalog.sessions.length > 0) {
+              const enriched = enrichOpenCodeRestoreContext({
+                workspaces: snapshotWorkspaces,
+                agentRunsByPanel: latestAgentRuns,
+                catalogSessions: catalog.sessions,
+              });
+
+              if (enriched.hasDiscoveries) {
+                restoreWorkspaces = enriched.workspaces;
+                restoreAgentRuns = enriched.agentRunsByPanel;
+
+                try {
+                  const fullRuns = readAgentRuns(storage);
+                  const mergedRuns = mergeDiscoveryIntoAgentRunsRecord(
+                    fullRuns,
+                    enriched.discoveries
+                  );
+                  storage?.setItem('devhub_agent_runs', JSON.stringify(mergedRuns));
+                  patchTerminalStateWithDiscoveredCommands(
+                    storage,
+                    terminalStateStorageKey,
+                    restoreWorkspaces
+                  );
+                  setWorkspaces((prev) => {
+                    if (!Array.isArray(prev) || prev.length === 0) return restoreWorkspaces;
+                    return restoreWorkspaces;
+                  });
+                } catch {
+                  // Discovery persistence must not block restore.
+                }
+              }
+            }
+          }
+
+          const manifest = buildRestoreManifestFromWorkspaceState({
+            workspaces: restoreWorkspaces,
+            activeWorkspaceId: activeWsIdRef.current || activeWsId,
+            projectId,
+            appSessionId: `startup-${Date.now()}`,
+            agentRunsByPanel: restoreAgentRuns,
+            restorePreferences: restorePrefs,
+          });
+
+          const plan = buildStartupRestorePlan({ manifest, runtimeSnapshot });
+
+          logTerminalSession('startup-restore-plan', {
+            actionCount: plan.actions.length,
+            actions: plan.actions.map((action) => ({
+              action: action.action,
+              terminalId: action.terminalId,
+              reason: action.reason,
+              sessionKind: action.sessionKind,
+            })),
+          });
+
+          if (plan.actions.some((action) => action.action === RESTORE_ACTION.QUOTA_BLOCKED)) {
             setReopenActionError(
               'OpenCode appears quota-blocked (429). Review runtime diagnostics before relaunching sessions.'
             );
-            return;
           }
 
-          if (
-            action.action === RESTORE_ACTION.RESTORE_READY ||
-            action.action === RESTORE_ACTION.REATTACH_LIVE_TERMINAL
-          ) {
-            return;
-          }
+          const panelMap = new Map(
+            restoreWorkspaces.flatMap((workspace) =>
+              (workspace?.columns || []).flatMap((column) =>
+                (column?.panels || []).map((panel) => [panel.id, panel])
+              )
+            )
+          );
 
-          const panel = panelMap.get(action.terminalId);
-          const command =
-            panel?.initialCommand ||
-            (action.opencodeSessionId ? `opencode --session ${action.opencodeSessionId}` : null);
-
-          if (!action.terminalId || !command) return;
-
-          const dedupeKey = `${action.terminalId}:${command}`;
-          if (relaunchDispatched.has(dedupeKey)) return;
-          relaunchDispatched.add(dedupeKey);
-
-          window.dispatchEvent(
-            new CustomEvent('devhub:relaunch-panel', {
-              detail: {
+          const queueResult = await dispatchStartupRestoreQueue({
+            actions: plan.actions,
+            getPanel: (panelId) => panelMap.get(panelId),
+            shouldSkipAction: (action) => {
+              const panelId = action?.terminalId;
+              if (!panelId) return false;
+              const bootIds = bootPanelIdsRef.current;
+              if (bootIds.size > 0 && !bootIds.has(panelId)) {
+                logTerminalSession('startup-restore-skip', {
+                  panelId,
+                  reason: 'panel-not-in-boot-baseline',
+                  action: action.action,
+                });
+                return true;
+              }
+              return false;
+            },
+            onRelaunch: async (action, panel, command) => {
+              if (cancelled) return;
+              logTerminalSession('startup-restore-relaunch', {
                 panelId: action.terminalId,
                 command,
-                cwd: panel?.cwd || null,
-                reason: action.reason || action.action,
-              },
-            })
-          );
+                reason: action.reason,
+                action: action.action,
+              });
+              applyPanelRelaunchCommand(action.terminalId, command, panel?.cwd || null, {
+                emitEvent: true,
+              });
+            },
+            onPanelLive: (panelId) => {
+              if (cancelled) return;
+              setPanelRestoreModes((prev) => {
+                const next = { ...prev };
+                delete next[panelId];
+                return next;
+              });
+            },
+          });
+
+          if (cancelled) return;
+
+          setPanelRestoreModes((prev) => {
+            const next = { ...prev };
+            queueResult.manualPanelIds.forEach((panelId) => {
+              next[panelId] = 'suspended';
+            });
+            manifest.terminalSessions.forEach((session) => {
+              if (session.restorePolicy === 'off' && session.sessionKind === 'opencode') {
+                next[session.terminalId] = 'suspended';
+              }
+            });
+            queueResult.livePanelIds.forEach((panelId) => {
+              delete next[panelId];
+            });
+            Object.keys(next).forEach((panelId) => {
+              if (
+                !queueResult.manualPanelIds.includes(panelId) &&
+                !manifest.terminalSessions.some(
+                  (session) =>
+                    session.terminalId === panelId &&
+                    session.restorePolicy === 'off' &&
+                    session.sessionKind === 'opencode'
+                )
+              ) {
+                delete next[panelId];
+              }
+            });
+            return next;
+          });
         });
       } catch {
         // Startup restore must not block workspace boot.
+      } finally {
+        if (!cancelled) {
+          startupRestoreCompletedRef.current = true;
+          markStartupRestoreCompletedForSession(sessionStorage);
+        }
       }
     };
 
@@ -1297,7 +2270,41 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return () => {
       cancelled = true;
     };
-  }, [activeWsId, isClientLoaded, projectId, storage, workspaces]);
+  }, [
+    activeWsId,
+    applyPanelRelaunchCommand,
+    isClientLoaded,
+    projectId,
+    storage,
+    terminalStateStorageKey,
+  ]);
+
+  // Synchronous flush before app/window close so opencode --session survives reboot.
+  useEffect(() => {
+    if (!isClientLoaded || typeof window === 'undefined') return undefined;
+
+    const runFlush = () => {
+      flushTerminalPersistenceNow();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        runFlush();
+      }
+    };
+
+    window.addEventListener('beforeunload', runFlush);
+    window.addEventListener('pagehide', runFlush);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('devhub:flush-terminal-persistence', runFlush);
+
+    return () => {
+      window.removeEventListener('beforeunload', runFlush);
+      window.removeEventListener('pagehide', runFlush);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('devhub:flush-terminal-persistence', runFlush);
+    };
+  }, [flushTerminalPersistenceNow, isClientLoaded]);
 
   // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
@@ -1317,10 +2324,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, dockWorkspaceId, isClientLoaded, projectId, storage]);
 
   useEffect(() => {
-    if (rightDockState.visible && rightDockState.activeTab === 'editor') {
+    if (rightDockState.visible) {
       setHasMountedRightDock(true);
     }
-  }, [rightDockState.activeTab, rightDockState.visible]);
+  }, [rightDockState.visible]);
 
   useEffect(() => {
     if (!isDraggingDock) return undefined;
@@ -1340,12 +2347,25 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // Continuous rAF sync while dragging: read placeholder geometry and write
+    // left/width directly on the dock layer so resize tracks at display refresh
+    // without waiting for React commits or localStorage persistence.
+    let raf = null;
+    const tick = () => {
+      if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
+        applyLiveRightDockBoundsRef.current?.();
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
     return () => {
       window.removeEventListener('mouseup', stopDockDrag);
       window.removeEventListener('pointerup', stopDockDrag);
       window.removeEventListener('dragend', stopDockDrag);
       window.removeEventListener('blur', stopDockDrag);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (raf != null) cancelAnimationFrame(raf);
     };
   }, [isDraggingDock]);
 
@@ -1474,11 +2494,122 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, rightDockState.maximized, rightDockState.visible, workspaceWindows]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
-  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(storage, activeWorkspace);
+  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(
+    storage,
+    activeWorkspace,
+    projectId,
+    swarmControlSnapshot
+  );
+  const { pendingCountByRole: swarmInboxPendingByRole } = useSwarmBusSnapshot(
+    activeSwarmLaunchSummary?.launchId || null,
+    { enabled: Boolean(activeSwarmLaunchSummary?.launchId) }
+  );
   const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
   const effectiveRightDockState = activeWorkspaceOwnsDockState
     ? rightDockState
     : { ...DEFAULT_RIGHT_DOCK_STATE };
+
+  // pizarra-sidebar-toggle-sync: notify App.js when Pizarra canvas mode is active
+  // so the main workspace sidebar can be autohidden or collapsed.
+  useEffect(() => {
+    const isPizarraActive = !!(
+      effectiveRightDockState?.visible &&
+      effectiveRightDockState?.maximized &&
+      effectiveRightDockState?.maximizedView === 'pizarra'
+    );
+    window.dispatchEvent(
+      new CustomEvent('devhub:pizarra-active', {
+        detail: { active: isPizarraActive },
+      })
+    );
+  }, [
+    effectiveRightDockState?.visible,
+    effectiveRightDockState?.maximized,
+    effectiveRightDockState?.maximizedView,
+  ]);
+
+  // Live direct nudge for the (native gtk) browser surface during dock drag.
+  // Mirrors the strong-sync pattern in PizarraBrowserSurface (direct DOM + direct
+  // resizeNativeBrowser in mousemove tick + force reflow + query shell rect).
+  // This makes the embedded browser content follow the dock resize handle with
+  // minimal latency instead of waiting for React state + motion + RO roundtrip.
+  // Only active while isDraggingDock to avoid unnecessary work.
+  const nudgeBrowserNativeLive = useCallback(() => {
+    if (!isDraggingDock) return;
+    if (typeof document === 'undefined') return;
+    // Only worth it if the right dock is showing browser content.
+    const showingBrowser =
+      effectiveRightDockState.visible &&
+      !effectiveRightDockState.maximized &&
+      (effectiveRightDockState.activeTab === 'browser' || !effectiveRightDockState.activeTab);
+    if (!showingBrowser) return;
+
+    try {
+      // Query the actual viewport shell that the browser pane uses for native bounds.
+      // Scoped to the current dock layer if possible.
+      const dockLayer = document.querySelector('[data-testid="workspace-right-dock-layer"]');
+      const shell =
+        (dockLayer && dockLayer.querySelector('[data-testid="browser-viewport-shell"]')) ||
+        document.querySelector('[data-testid="browser-viewport-shell"]');
+      if (!shell) return;
+
+      const r = shell.getBoundingClientRect();
+      if (r.width < 10 || r.height < 10) return;
+
+      const wsId = activeWsIdRef.current;
+      if (!projectId || !wsId) return;
+
+      const panelId = `browser-${projectId}-${wsId}`;
+
+      // Dynamic so we don't pull the bridge into the main bundle unconditionally.
+      import('@/lib/browser/nativeBrowserBridge')
+        .then(({ resizeNativeBrowser }) => {
+          resizeNativeBrowser({
+            panelId,
+            bounds: {
+              x: Math.round(r.left),
+              y: Math.round(r.top),
+              width: Math.round(r.width),
+              height: Math.round(r.height),
+            },
+          }).catch(() => {});
+        })
+        .catch(() => {});
+    } catch {
+      /* best effort during gesture */
+    }
+  }, [
+    isDraggingDock,
+    effectiveRightDockState.visible,
+    effectiveRightDockState.maximized,
+    effectiveRightDockState.activeTab,
+    projectId,
+  ]);
+
+  nudgeBrowserNativeLiveRef.current = nudgeBrowserNativeLive;
+
+  const applyLiveRightDockBounds = useCallback(() => {
+    if (!isDraggingDockRef.current) return false;
+
+    const containerElement = workspaceGridAreaRef.current;
+    const placeholderElement = rightDockPlaceholderRef.current;
+    const dockLayer = rightDockLayerRef.current;
+    if (!containerElement || !placeholderElement || !dockLayer) return false;
+
+    const nextBounds = resolveMeasuredRightDockBounds(
+      containerElement.getBoundingClientRect?.(),
+      placeholderElement.getBoundingClientRect?.()
+    );
+    if (!nextBounds) return false;
+
+    const changed = applyRightDockLayerBounds(dockLayer, nextBounds);
+    if (changed) {
+      nudgeBrowserNativeLiveRef.current?.();
+    }
+    return changed;
+  }, []);
+  applyLiveRightDockBoundsRef.current = applyLiveRightDockBounds;
+
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
   const requestedRendererMode = resolveRequestedRenderer({
     workspaceId: activeWsId,
@@ -1490,17 +2621,155 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     effectiveRightDockState.visible &&
     effectiveRightDockState.maximized &&
     (effectiveRightDockState.maximizedView === 'browser' ||
-      effectiveRightDockState.maximizedView === 'swarm');
+      effectiveRightDockState.maximizedView === 'swarm' ||
+      effectiveRightDockState.maximizedView === 'pizarra');
+  const pizarraOwnsLiveSurfaces =
+    effectiveRightDockState.visible &&
+    effectiveRightDockState.maximized &&
+    effectiveRightDockState.maximizedView === 'pizarra';
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
+  const dockLayerVisible = effectiveRightDockState.visible && !hideRightDockPanel;
+  const rightDockAnimProps = getRightDockAnimProps({
+    isVisible: dockLayerVisible,
+    isDragging: isDraggingDock,
+    // pizarra-fluidity: fullscreen takeovers (pizarra/browser/swarm maximized)
+    // fade in fast instead of sliding the whole screen from the right.
+    isFullscreen: isFullscreenBrowser,
+  });
+  // With carve/avoid rects we can show web popups (Grillas, swarm wizard, etc)
+  // over *live* (carved) terminals without full suspend for most cases.
+  // We still compute shouldSuspend for legacy/restore paths, but carve takes
+  // precedence for "mostrar cosas sobre la terminal" in active panels.
+  // See overlayAvoidRects + computeCarvedBounds + registration below.
   const shouldSuspendNativeSurfaces =
-    isGridLauncherOpen || swarmLaunchWizardOpen || isDraggingDock || isDraggingInternalSplit;
+    /* isGridLauncherOpen || swarmLaunchWizardOpen || */ restoreSettingsModal.open;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
+
+  // --- Carve / avoid rects registration for popups over live terminals ---
+  // When a popup (grillas dropdown, wizard, etc) opens that must sit above terminal
+  // areas, we measure its rect and add to overlayAvoidRects. The native sync then
+  // sends avoids to TTYs; TTYs compute carved bounds and pass reduced rects to
+  // setNativeVtePanelVisibility (visible=true + small bounds). VTE widget shrinks
+  // temporarily to the visible parts; web paints in the "hole". On close, full
+  // bounds restored. Terminal pty size stays full (child TUIs unaffected).
+  // This is the main path to fix "no se logra mostrar cosas sobre la terminal sin
+  // tener que suspenderla".
+  useEffect(() => {
+    if (!isGridLauncherOpen) {
+      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'grillas-launcher'));
+      return;
+    }
+    let rafId = 0;
+    const measure = () => {
+      const el = document.querySelector('[data-testid="workspace-grid-launcher-content"]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const rect = {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          source: 'grillas-launcher',
+        };
+        setOverlayAvoidRects((prev) => {
+          const others = prev.filter((r) => r.source !== 'grillas-launcher');
+          return [...others, rect];
+        });
+      }
+    };
+    measure();
+    rafId = requestAnimationFrame(measure);
+    const t = setTimeout(measure, 60);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(t);
+    };
+  }, [isGridLauncherOpen]);
+
+  // Measurement for swarm wizard (large modal) - carve instead of suspend while open
+  // so terminals under it stay live (partial view).
+  useEffect(() => {
+    if (!swarmLaunchWizardOpen) {
+      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'swarm-wizard'));
+      return;
+    }
+    const measure = () => {
+      // inner content card of the wizard
+      const el = document.querySelector('.max-w-6xl.flex-col.overflow-hidden.rounded-none.border');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setOverlayAvoidRects((prev) => {
+          const others = prev.filter((r) => r.source !== 'swarm-wizard');
+          return [
+            ...others,
+            { x: r.x, y: r.y, width: r.width, height: r.height, source: 'swarm-wizard' },
+          ];
+        });
+      }
+    };
+    measure();
+    const t = setTimeout(measure, 120);
+    return () => clearTimeout(t);
+  }, [swarmLaunchWizardOpen]);
+
+  // Measurement for restore settings modal.
+  useEffect(() => {
+    if (!restoreSettingsModal.open) {
+      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'restore-settings'));
+      return;
+    }
+    const measure = () => {
+      const el = document.querySelector('[role="dialog"] .fixed.inset-0');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setOverlayAvoidRects((prev) => {
+          const others = prev.filter((r) => r.source !== 'restore-settings');
+          return [
+            ...others,
+            { x: r.x, y: r.y, width: r.width, height: r.height, source: 'restore-settings' },
+          ];
+        });
+      }
+    };
+    measure();
+    const t = setTimeout(measure, 80);
+    return () => clearTimeout(t);
+  }, [restoreSettingsModal.open]);
+
+  // TODO for pizarra palette / overlapping canvas elements: register their rects
+  // when they overlap terminal surfaces (can use the register event below or direct).
+
+  // General registration for any component to carve terminals under it without
+  // full suspend. Components dispatch CustomEvent with {rect, source, action?}
+  // on open/mount and remove on close/unmount. Decoupled, works from pizarra etc.
+  useEffect(() => {
+    const handler = (ev) => {
+      const { rect, source, action = 'add' } = ev?.detail || {};
+      if (!source || !rect) return;
+      setOverlayAvoidRects((prev) => {
+        if (action === 'remove' || action === 'clear') {
+          return prev.filter((r) => r.source !== source);
+        }
+        const others = prev.filter((r) => r.source !== source);
+        return [
+          ...others,
+          { x: rect.x, y: rect.y, width: rect.width, height: rect.height, source },
+        ];
+      });
+    };
+    window.addEventListener('devhub:register-avoid-rect', handler);
+    return () => window.removeEventListener('devhub:register-avoid-rect', handler);
+  }, []);
+
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
     size: effectiveRightDockState.size,
     measuredBounds: rightDockMeasuredBounds,
   });
+  const rightDockLayerChromeStyle = isDraggingDock
+    ? { top: 0, right: 'auto', bottom: 0 }
+    : rightDockLayerStyle;
 
   const syncRightDockMeasuredBounds = useCallback(() => {
     if (
@@ -1529,6 +2798,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return;
     }
 
+    if (isDraggingDockRef.current) {
+      if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
+        applyLiveRightDockBoundsRef.current?.();
+      }
+      return;
+    }
+
     setRightDockMeasuredBounds((prev) => {
       if (
         prev &&
@@ -1546,6 +2822,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     hideRightDockPanel,
     isFullscreenBrowser,
   ]);
+  syncRightDockMeasuredBoundsRef.current = syncRightDockMeasuredBounds;
 
   useLayoutEffect(() => {
     syncRightDockMeasuredBounds();
@@ -1587,10 +2864,59 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     syncRightDockMeasuredBounds,
   ]);
 
+  // Initial / visibility-change eager measurement for the right dock layer.
+  // On default open of the browser (or dock), the first measuredBounds (pixel-accurate
+  // from placeholder) may arrive after the motion layer has already rendered with the
+  // % fallback. That causes the initial "dimensiones bastante alejados".
+  // We force a few syncs (layout + microtasks + rAFs) so the first style passed to the
+  // motion is already the correct rect, and the inner browser shell + native get good
+  // bounds immediately. Also helps when switching tabs to browser.
+  useEffect(() => {
+    if (
+      isFullscreenBrowser ||
+      !effectiveRightDockState.visible ||
+      effectiveRightDockState.maximized ||
+      hideRightDockPanel
+    ) {
+      return undefined;
+    }
+
+    // Run immediately (useLayout already does one), then a few more beats to let
+    // inner content (toolbar heights etc) and any pending panel lib measurements settle.
+    // In tests we only do the immediate one to avoid async setState after flushEffects
+    // that would make subsequent queries/clicks see a different tree (elements become null).
+    syncRightDockMeasuredBounds();
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
+      return undefined;
+    }
+    const t0 = setTimeout(() => syncRightDockMeasuredBounds(), 0);
+    const t1 = setTimeout(() => syncRightDockMeasuredBounds(), 16);
+    const r1 = requestAnimationFrame(() => syncRightDockMeasuredBounds());
+    const r2 = requestAnimationFrame(() =>
+      requestAnimationFrame(() => syncRightDockMeasuredBounds())
+    );
+
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
+  }, [
+    effectiveRightDockState.visible,
+    effectiveRightDockState.maximized,
+    effectiveRightDockState.activeTab, // when user or code switches to browser tab
+    hideRightDockPanel,
+    isFullscreenBrowser,
+    syncRightDockMeasuredBounds,
+  ]);
+
   workspacesRef.current = workspaces;
   activeWsIdRef.current = activeWsId;
   activePanelIdsRef.current = activePanelIds;
   activeWindowIdsRef.current = activeWindowIds;
+  workspaceWindowsRef.current = workspaceWindows;
+  focusedPanelByWorkspaceRef.current = focusedPanelByWorkspace;
 
   useEffect(() => {
     setSwarmLaunchDraft((current) =>
@@ -1680,22 +3006,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         } catch {
           // Ignore localStorage failures.
         }
+        setSwarmControlSnapshot(payload.control_room_snapshot_input);
       }
 
-      runtimeRequests.forEach((request) => {
-        const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
-        if (delayMs > 0) {
-          const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
-          const timerId = window.setTimeout(() => {
-            swarmLaunchScheduledTimersRef.current.delete(requestKey);
-            window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-          }, delayMs);
-          swarmLaunchScheduledTimersRef.current.set(requestKey, timerId);
-          return;
-        }
-
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      });
+      dispatchSwarmLaunchMaterialized(runtimeRequests);
 
       setSwarmLaunchWizardOpen(false);
       setSwarmLaunchSubmitState({ submitting: false, error: null });
@@ -1780,6 +3094,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     });
   }, []);
 
+  const lastZedOpenUrlRef = useRef({ url: null, label: null });
+
+  // Operator action cards — consumed from OperatorActionsDispatchContext (provider lives in App.js)
+  const { cards: operatorCards, confirmCard, cancelCard } = useOperatorActionsDispatch();
+
   const updateBrowserWindowState = useCallback((wsId, nextValue) => {
     if (!wsId) return;
     setBrowserWindowStates((prev) => {
@@ -1798,6 +3117,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const handleResetPanelRendererToXterm = useCallback((workspaceId, panelId) => {
     setTerminalRendererPreferences((prev) =>
       setPanelRendererPreference(prev, workspaceId, panelId, 'xterm')
+    );
+  }, []);
+
+  // Set the per-panel renderer preference (driven by the per-panel header
+  // switcher in WorkspaceTerminalSurface / renderWorkspacePanel).
+  // Mirrors handleResetPanelRendererToXterm but accepts an arbitrary mode
+  // (xterm-webgl | vte-experimental | inherit). See
+  // openspec/changes/terminal-renderer-xterm-webgl/specs/terminal-renderer-selection/spec.md
+  // RS-04.
+  const handleSetPanelRenderer = useCallback((workspaceId, panelId, mode) => {
+    if (!workspaceId || !panelId) return;
+    setTerminalRendererPreferences((prev) =>
+      setPanelRendererPreference(prev, workspaceId, panelId, mode)
     );
   }, []);
 
@@ -1829,31 +3161,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return changed ? { ...prev, [workspaceId]: nextWindows } : prev;
     });
   }, []);
-
-  useEffect(() => {
-    const handleNativePanelActivated = (event) => {
-      const detail = event.detail || {};
-      if (detail.type !== 'panel-activated') return;
-
-      const panelId = typeof detail.panelId === 'string' ? detail.panelId.trim() : '';
-      if (!panelId) return;
-
-      const workspaceId =
-        workspacesRef.current.find((workspace) =>
-          workspace?.columns?.some((column) =>
-            (column.panels || []).some((panel) => panel.id === panelId)
-          )
-        )?.id || null;
-
-      if (!workspaceId) return;
-      activateWorkspacePanel(workspaceId, panelId);
-    };
-
-    window.addEventListener('devhub:terminal-native-vte-event', handleNativePanelActivated);
-    return () => {
-      window.removeEventListener('devhub:terminal-native-vte-event', handleNativePanelActivated);
-    };
-  }, [activateWorkspacePanel]);
 
   const closeWorkspaceBrowserWindow = useCallback(
     async (wsId) => {
@@ -1953,12 +3260,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const handleRightDockTabSelect = useCallback(
     (tab) => {
-      updateRightDockState((currentState) => ({
-        ...currentState,
-        visible: currentState.visible && currentState.activeTab === tab ? false : true,
-        activeTab: tab,
-        maximizedView: tab === 'editor' ? 'editor' : tab === 'swarm' ? 'swarm' : 'browser',
-      }));
+      updateRightDockState((currentState) => applyRightDockTabSelect(currentState, tab));
     },
     [updateRightDockState]
   );
@@ -1979,6 +3281,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const getPanelDisplayLabel = (ws, panelId) => {
     const flatPanels = ws.columns.flatMap((col) => col.panels);
     const index = flatPanels.findIndex((panel) => panel.id === panelId);
+    if (index < 0) return `P${flatPanels.length + 1}`;
+    const fromMap = getPanelDisplayNameFromStore(panelId, ws.id);
+    if (fromMap) return fromMap;
+    const fromPanel = flatPanels[index]?.displayName;
+    if (fromPanel) return fromPanel;
     return `P${index + 1}`;
   };
 
@@ -1986,54 +3293,248 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return columns.flatMap((col) => col.panels.map((p) => p.id));
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+  const getActiveWorkspaceTerminalPanelCount = useCallback(() => {
+    const workspaceId = activeWsIdRef.current || activeWsId;
+    const workspace = workspacesRef.current.find((entry) => entry.id === workspaceId);
+    return countPanelsInColumns(workspace?.columns || []);
+  }, [activeWsId]);
 
-    const activeWorkspaceForNativeSurface = workspaces.find(
-      (workspace) => workspace.id === activeWsId
-    );
-    const activePanelIdsForNativeSurface = activeWorkspaceForNativeSurface
-      ? getAllPanelIds(activeWorkspaceForNativeSurface.columns || [])
-      : [];
-    const hiddenPanelIdsForNativeSurface = workspaces
-      .flatMap((workspace) => {
+  const inferProgramFromPanelCommand = useCallback((command) => {
+    const normalized = String(command || '').toLowerCase();
+    if (normalized.includes('opencode')) return 'opencode';
+    if (normalized.includes('codex')) return 'codex';
+    if (normalized.includes('hermes')) return 'hermes';
+    return null;
+  }, []);
+
+  const collectSiblingPanelNames = useCallback((workspaceId) => {
+    const ws = workspacesRef.current.find((w) => w.id === workspaceId);
+    if (!ws) return [];
+    return ws.columns
+      .flatMap((col) => col.panels || [])
+      .map(
+        (panel) =>
+          panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || null
+      )
+      .filter((name) => typeof name === 'string' && name.length > 0);
+  }, []);
+
+  const getWorkspaceTerminals = useCallback(() => {
+    const workspaceId = activeWsIdRef.current || activeWsId;
+    const workspace = workspacesRef.current.find((entry) => entry.id === workspaceId);
+    if (!workspace) return [];
+    return workspace.columns.flatMap((col) => col.panels || []).map((panel) => ({
+      terminalId: panel.id,
+      displayName:
+        panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || null,
+      cwd: panel.cwd || null,
+      program: inferProgramFromPanelCommand(panel.initialCommand),
+      tuiReady: true,
+    }));
+  }, [activeWsId, inferProgramFromPanelCommand]);
+
+  const buildNativeWorkspaceSyncDetail = useCallback(
+    (reason = 'workspace-switch') => {
+      const activePanelIdsForNativeSurface = [];
+      const hiddenPanelIdsForNativeSurface = [];
+
+      workspaces.forEach((workspace) => {
         const panelIds = getAllPanelIds(workspace.columns || []);
-        if (workspace.id !== activeWsId) return panelIds;
-        return [];
+        const focusedPanelId = focusedPanelByWorkspace[workspace.id];
+
+        if (workspace.id === activeWsId) {
+          if (focusedPanelId) {
+            activePanelIdsForNativeSurface.push(focusedPanelId);
+            panelIds.forEach((id) => {
+              if (id !== focusedPanelId) {
+                hiddenPanelIdsForNativeSurface.push(id);
+              }
+            });
+          } else {
+            activePanelIdsForNativeSurface.push(...panelIds);
+          }
+        } else {
+          hiddenPanelIdsForNativeSurface.push(...panelIds);
+        }
       });
 
-    const detail = {
-      activeWorkspaceId: activeWsId,
-      workspaceId: activeWsId,
-      activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
-      hiddenPanelIds: isVisible
-        ? hiddenPanelIdsForNativeSurface
-        : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
-      reason: isVisible ? 'workspace-switch' : 'terminal-manager-hidden',
-    };
+      return {
+        activeWorkspaceId: activeWsId,
+        workspaceId: activeWsId,
+        activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
+        hiddenPanelIds: isVisible
+          ? hiddenPanelIdsForNativeSurface
+          : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
+        reason: isVisible ? reason : 'terminal-manager-hidden',
+        // Sent to TTYs so they can carve bounds for panels under popups (see
+        // computeCarvedBounds). Enables showing web UI over live terminals.
+        avoidRects: overlayAvoidRects,
+      };
+    },
+    [activeWsId, focusedPanelByWorkspace, getAllPanelIds, isVisible, workspaces, overlayAvoidRects]
+  );
 
-    const dispatchNativeWorkspaceSync = () => {
-      window.dispatchEvent(new CustomEvent('devhub:native-vte-workspace-sync', { detail }));
-    };
+  // A.3 — serialized native-IPC sync queue. While a workspace↔pizarra
+  // transition animates, frame-by-frame panel-group-layout syncs are buffered
+  // and the native VTE reattach is deferred to a single pass against the final
+  // layout (see nativeLayoutSync.createNativeLayoutSyncQueue).
+  const nativeSyncQueueRef = useRef(null);
+  if (nativeSyncQueueRef.current === null) {
+    nativeSyncQueueRef.current = createNativeLayoutSyncQueue();
+  }
+  const nativeSyncIdleTimerRef = useRef(null);
 
-    dispatchNativeWorkspaceSync();
+  const notifyNativeLayoutSettled = useCallback(
+    (reason) => {
+      if (typeof window === 'undefined') return;
 
-    let rafId = null;
-    if (typeof requestAnimationFrame === 'function') {
-      rafId = requestAnimationFrame(dispatchNativeWorkspaceSync);
+      nativeSyncQueueRef.current?.enqueue(reason, {
+        workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
+        includeFollowUpPasses: true,
+      });
+    },
+    [buildNativeWorkspaceSyncDetail]
+  );
+
+  useEffect(
+    () => () => {
+      if (nativeSyncIdleTimerRef.current) {
+        clearTimeout(nativeSyncIdleTimerRef.current);
+        nativeSyncIdleTimerRef.current = null;
+      }
+      nativeSyncQueueRef.current?.reset();
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isClientLoaded) return undefined;
+    if (pizarraOwnsLiveSurfaces) {
+      const timer = setTimeout(() => {
+        notifyNativeLayoutSettled('workspace-switch');
+      }, 320);
+      return () => clearTimeout(timer);
+    }
+    notifyNativeLayoutSettled('workspace-switch');
+    return undefined;
+  }, [activeWsId, isClientLoaded, notifyNativeLayoutSettled, pizarraOwnsLiveSurfaces]);
+
+  const prevPizarraOwnsLiveSurfacesRef = useRef(pizarraOwnsLiveSurfaces);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isClientLoaded) return undefined;
+    const prev = prevPizarraOwnsLiveSurfacesRef.current;
+    prevPizarraOwnsLiveSurfacesRef.current = pizarraOwnsLiveSurfaces;
+    if (prev === pizarraOwnsLiveSurfaces) return undefined;
+
+    const reason = pizarraOwnsLiveSurfaces ? 'pizarra-mode-enter' : 'pizarra-mode-exit';
+    const queue = nativeSyncQueueRef.current;
+    if (!queue) {
+      notifyNativeLayoutSettled(reason);
+      return undefined;
     }
 
-    const settleTimers = [80, 180, 400].map((delayMs) =>
-      setTimeout(dispatchNativeWorkspaceSync, delayMs)
-    );
+    // A.3 — enter the animating window: buffer mid-transition layout syncs and
+    // emit the reattach once, at idle, against the settled layout. The settle
+    // delay is sized above the transition durations (enter 220ms / exit 110ms;
+    // see useModeTransition) and doubles as the safety timeout if the
+    // transition is cancelled.
+    queue.setAnimating(true);
+    queue.enqueue(reason, {
+      workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
+      includeFollowUpPasses: false,
+    });
 
-    return () => {
-      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(rafId);
+    if (nativeSyncIdleTimerRef.current) {
+      clearTimeout(nativeSyncIdleTimerRef.current);
+    }
+    const settleMs = pizarraOwnsLiveSurfaces ? 120 : 80;
+    nativeSyncIdleTimerRef.current = setTimeout(() => {
+      nativeSyncIdleTimerRef.current = null;
+      queue.flushOnIdle();
+    }, settleMs);
+
+    return undefined;
+  }, [
+    isClientLoaded,
+    notifyNativeLayoutSettled,
+    pizarraOwnsLiveSurfaces,
+    buildNativeWorkspaceSyncDetail,
+  ]);
+
+  // When avoid rects change (popup opened/closed/resized), immediately tell active
+  // terminals so they carve (or restore full) without waiting for a layout event.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const detail = buildNativeWorkspaceSyncDetail('popup-avoid-rects');
+    dispatchNativeVteWorkspaceSync(detail);
+  }, [overlayAvoidRects, buildNativeWorkspaceSyncDetail]);
+
+  const panelLayoutDebounceRef = useRef(null);
+
+  const handlePanelGroupLayout = useCallback(() => {
+    if (isDraggingInternalSplit || isDraggingDock) return;
+
+    if (panelLayoutDebounceRef.current) {
+      clearTimeout(panelLayoutDebounceRef.current);
+    }
+
+    panelLayoutDebounceRef.current = setTimeout(() => {
+      panelLayoutDebounceRef.current = null;
+      notifyNativeLayoutSettled('panel-group-layout');
+    }, 32);
+  }, [isDraggingDock, isDraggingInternalSplit, notifyNativeLayoutSettled]);
+
+  useEffect(
+    () => () => {
+      if (panelLayoutDebounceRef.current) {
+        clearTimeout(panelLayoutDebounceRef.current);
+        panelLayoutDebounceRef.current = null;
       }
-      settleTimers.forEach((timerId) => clearTimeout(timerId));
-    };
-  }, [activeWsId, getAllPanelIds, isVisible, workspaces]);
+    },
+    []
+  );
+
+  const handleInternalSplitDragging = useCallback(
+    (dragging) => {
+      setIsDraggingInternalSplit(dragging);
+      if (!dragging) {
+        notifyNativeLayoutSettled('internal-split-drag-end');
+      }
+    },
+    [notifyNativeLayoutSettled]
+  );
+
+  const handleDockDragging = useCallback(
+    (dragging) => {
+      isDraggingDockRef.current = dragging;
+      setIsDraggingDock(dragging);
+      if (dragging) {
+        applyLiveRightDockBoundsRef.current?.();
+        return;
+      }
+
+      const pendingSize = pendingDockSizeRef.current;
+      if (pendingSize != null) {
+        updateRightDockState({ size: pendingSize });
+        pendingDockSizeRef.current = null;
+      }
+      syncRightDockMeasuredBoundsRef.current?.();
+      notifyNativeLayoutSettled('right-dock-drag-end');
+    },
+    [notifyNativeLayoutSettled, updateRightDockState]
+  );
+
+  const handleRightDockPanelResize = useCallback(
+    (size, { maximized = false } = {}) => {
+      if (maximized) return;
+      pendingDockSizeRef.current = size;
+      if (shouldDeferRightDockSizePersist(isDraggingDockRef.current)) {
+        return;
+      }
+      updateRightDockState({ size });
+    },
+    [updateRightDockState]
+  );
 
   const findPanelInWorkspace = (workspace, panelId) => {
     if (!workspace || !panelId) return null;
@@ -2044,17 +3545,229 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return null;
   };
 
-  const togglePanelFocus = useCallback((workspaceId, panelId) => {
-    if (!workspaceId || !panelId) return;
-    setFocusedPanelByWorkspace((prev) => {
-      if (prev[workspaceId] === panelId) {
+  const schedulePanelFocusLayoutSync = useCallback(
+    (workspaceId, panelIds) => {
+      const scheduleFocusLayoutSync = (phase) => {
+        dispatchTerminalLayoutSettled({
+          reason: 'panel-focus-toggle',
+          workspaceId,
+          panelIds,
+          phase,
+        });
+      };
+      scheduleFocusLayoutSync('immediate');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => scheduleFocusLayoutSync('raf'));
+      });
+      window.setTimeout(() => scheduleFocusLayoutSync('delay-120'), 120);
+      window.setTimeout(() => scheduleFocusLayoutSync('delay-340'), 340);
+      notifyNativeLayoutSettled('panel-focus-toggle');
+    },
+    [notifyNativeLayoutSettled]
+  );
+
+  const pulsePanelNavigation = useCallback((panelId) => {
+    if (!panelId) return;
+    if (panelNavPulseTimeoutRef.current) {
+      window.clearTimeout(panelNavPulseTimeoutRef.current);
+    }
+    setPanelNavPulseId(panelId);
+    panelNavPulseTimeoutRef.current = window.setTimeout(() => {
+      setPanelNavPulseId((current) => (current === panelId ? null : current));
+    }, 150);
+  }, []);
+
+  const clearPanelFocusMode = useCallback(
+    (workspaceId) => {
+      if (!workspaceId) return;
+      setFocusedPanelByWorkspace((prev) => {
+        if (!prev[workspaceId]) return prev;
         const next = { ...prev };
         delete next[workspaceId];
         return next;
+      });
+      const workspace = workspacesRef.current.find((entry) => entry.id === workspaceId);
+      const panelIds = workspace ? getPanelIdsFromColumns(workspace.columns || []) : [];
+      schedulePanelFocusLayoutSync(workspaceId, panelIds);
+    },
+    [schedulePanelFocusLayoutSync]
+  );
+
+  const navigateToPanel = useCallback(
+    (workspaceId, panelId) => {
+      if (!workspaceId || !panelId) return;
+      const hadFocusMode = Boolean(focusedPanelByWorkspaceRef.current[workspaceId]);
+      activateWorkspacePanel(workspaceId, panelId);
+      if (hadFocusMode) {
+        setFocusedPanelByWorkspace((prev) => ({ ...prev, [workspaceId]: panelId }));
+        const workspace = workspacesRef.current.find((entry) => entry.id === workspaceId);
+        const panelIds = workspace ? getPanelIdsFromColumns(workspace.columns || []) : [panelId];
+        schedulePanelFocusLayoutSync(workspaceId, panelIds);
       }
-      return { ...prev, [workspaceId]: panelId };
-    });
-    setActivePanelIds((prev) => ({ ...prev, [workspaceId]: panelId }));
+      pulsePanelNavigation(panelId);
+    },
+    [activateWorkspacePanel, pulsePanelNavigation, schedulePanelFocusLayoutSync]
+  );
+
+  const switchWorkspace = useCallback(
+    (nextWorkspaceId) => {
+      if (!nextWorkspaceId || nextWorkspaceId === activeWsIdRef.current) return;
+
+      const nextWorkspace = workspacesRef.current.find(
+        (workspace) => workspace.id === nextWorkspaceId
+      );
+      const nextPanelId = resolveWorkspacePanelId(
+        nextWorkspace,
+        activePanelIdsRef.current[nextWorkspaceId]
+      );
+
+      if (nextPanelId) {
+        setActivePanelIds((prev) =>
+          prev[nextWorkspaceId] === nextPanelId ? prev : { ...prev, [nextWorkspaceId]: nextPanelId }
+        );
+        pulsePanelNavigation(nextPanelId);
+      }
+
+      setActiveWsId(nextWorkspaceId);
+      notifyNativeLayoutSettled('workspace-switch');
+    },
+    [notifyNativeLayoutSettled, pulsePanelNavigation]
+  );
+
+  const togglePanelFocus = useCallback(
+    (workspaceId, panelId) => {
+      if (!workspaceId || !panelId) return;
+      setFocusedPanelByWorkspace((prev) => {
+        if (prev[workspaceId] === panelId) {
+          const next = { ...prev };
+          delete next[workspaceId];
+          return next;
+        }
+        return { ...prev, [workspaceId]: panelId };
+      });
+      setActivePanelIds((prev) => ({ ...prev, [workspaceId]: panelId }));
+
+      const workspace = workspaces.find((entry) => entry.id === workspaceId);
+      const panelIds = workspace ? getPanelIdsFromColumns(workspace.columns || []) : [panelId];
+      schedulePanelFocusLayoutSync(workspaceId, panelIds);
+    },
+    [schedulePanelFocusLayoutSync, workspaces]
+  );
+
+  const scheduleNativePanelFocus = useCallback((panelId) => {
+    if (!panelId || !isNativeVteRuntimeAvailable()) return;
+    Promise.resolve(focusNativeVtePanel({ panelId })).catch(() => {});
+  }, []);
+
+  const applyTerminalNavigationAction = useCallback(
+    (navAction) => {
+      if (!navAction || !isVisible) return false;
+
+      const currentWorkspaceId = activeWsIdRef.current;
+      const currentWorkspace = workspacesRef.current.find(
+        (workspace) => workspace.id === currentWorkspaceId
+      );
+      const currentPanelId = resolveWorkspacePanelId(
+        currentWorkspace,
+        activePanelIdsRef.current[currentWorkspaceId]
+      );
+
+      if (navAction === 'togglePanelFocus') {
+        if (!currentPanelId) return false;
+        togglePanelFocus(currentWorkspaceId, currentPanelId);
+        return true;
+      }
+
+      if (navAction === 'previousWorkspace' || navAction === 'nextWorkspace') {
+        const nextWorkspaceId = getAdjacentWorkspaceId(
+          workspacesRef.current,
+          currentWorkspaceId,
+          navAction === 'previousWorkspace' ? 'previous' : 'next'
+        );
+        if (!nextWorkspaceId || nextWorkspaceId === currentWorkspaceId) return false;
+        const nextWorkspace = workspacesRef.current.find(
+          (workspace) => workspace.id === nextWorkspaceId
+        );
+        const nextPanelId = resolveWorkspacePanelId(
+          nextWorkspace,
+          activePanelIdsRef.current[nextWorkspaceId]
+        );
+        switchWorkspace(nextWorkspaceId);
+        if (nextPanelId) {
+          scheduleNativePanelFocus(nextPanelId);
+        }
+        return true;
+      }
+
+      if (!currentWorkspace || !currentPanelId) return false;
+
+      const panelDirection = resolvePanelNavigationDirection(navAction);
+      if (!panelDirection) return false;
+
+      const isHorizontal = panelDirection === 'left' || panelDirection === 'right';
+      const navDirection =
+        panelDirection === 'left' || panelDirection === 'up' ? 'previous' : 'next';
+      const navigationTarget = isHorizontal
+        ? resolveHorizontalNavigation(
+            workspacesRef.current,
+            currentWorkspace,
+            currentPanelId,
+            navDirection
+          )
+        : resolveVerticalNavigation(
+            workspacesRef.current,
+            currentWorkspace,
+            currentPanelId,
+            navDirection
+          );
+
+      if (!navigationTarget) return false;
+
+      if (navigationTarget.type === 'panel') {
+        if (!navigationTarget.panelId || navigationTarget.panelId === currentPanelId) return false;
+        navigateToPanel(currentWorkspaceId, navigationTarget.panelId);
+        scheduleNativePanelFocus(navigationTarget.panelId);
+        return true;
+      }
+
+      const nextWorkspaceId = navigationTarget.workspaceId;
+      if (!nextWorkspaceId || nextWorkspaceId === currentWorkspaceId) return false;
+      const nextWorkspace = workspacesRef.current.find(
+        (workspace) => workspace.id === nextWorkspaceId
+      );
+      const nextPanelId = resolveWorkspacePanelId(
+        nextWorkspace,
+        activePanelIdsRef.current[nextWorkspaceId]
+      );
+      switchWorkspace(nextWorkspaceId);
+      if (nextPanelId) {
+        scheduleNativePanelFocus(nextPanelId);
+      }
+      return true;
+    },
+    [isVisible, navigateToPanel, scheduleNativePanelFocus, switchWorkspace, togglePanelFocus]
+  );
+
+  useEffect(() => {
+    if (!isNativeVteRuntimeAvailable()) return undefined;
+
+    let unsubscribe = () => {};
+    let cancelled = false;
+
+    Promise.resolve(subscribeNativeVteEvents())
+      .then((unsub) => {
+        if (cancelled) {
+          unsub?.();
+          return;
+        }
+        unsubscribe = typeof unsub === 'function' ? unsub : () => {};
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   const syncActiveWindowSnapshot = useCallback(
@@ -2148,7 +3861,20 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       const targetWindow = windows.find((win) => win.id === windowId);
       if (targetWindow?.columns?.length) {
-        await closeTerminalSessions(getAllPanelIds(targetWindow.columns));
+        const panelIds = getAllPanelIds(targetWindow.columns);
+        await closeTerminalSessions(panelIds);
+        // Also close any native VTE visuals for the panels in the removed window
+        // to avoid ghosts when closing sub-windows/tabs of terminals.
+        try {
+          const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
+          for (const pid of panelIds) {
+            await closeNativeVtePanel({ panelId: pid, reason: 'workspace-window-removed' }).catch(
+              () => {}
+            );
+          }
+        } catch {
+          /* ignore close error for native panel */
+        }
       }
 
       const nextWindows = windows.filter((win) => win.id !== windowId);
@@ -2177,36 +3903,72 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [workspaceWindows, activeWindowIds]
   );
 
+  const createWorkspaceWithTerminalCount = useCallback(
+    (setup = {}) => {
+      const setupObject = typeof setup === 'number' ? { terminalCount: setup } : setup || {};
+      const safeCount = Math.max(0, Math.min(6, Number(setupObject.terminalCount) || 0));
+      const rawInitialCommand = setupObject.initialCommand;
+      const initialCommand =
+        typeof rawInitialCommand === 'string' && rawInitialCommand.trim()
+          ? rawInitialCommand.trim()
+          : null;
+
+      wsCounterRef.current += 1;
+      const newWsId = `ws${wsCounterRef.current}`;
+      windowCounterRef.current += 1;
+      const newWindowId = `v${windowCounterRef.current}`;
+
+      let newColumns = [];
+      let firstPanelId = null;
+
+      if (safeCount > 0) {
+        const built = buildWorkspaceColumnsForTerminalCount({
+          terminalCount: safeCount,
+          createPanel: createPanelWithDisplayNameFactory(newWsId, () =>
+            collectSiblingPanelNames(newWsId)
+          ),
+          allocateColumnId: () => {
+            colCounterRef.current += 1;
+            return `c${colCounterRef.current}`;
+          },
+          allocatePanelId: () => {
+            panelCounterRef.current += 1;
+            return `p${panelCounterRef.current}`;
+          },
+          initialCommand,
+          panelCwd: cwd,
+        });
+        newColumns = built.columns;
+        firstPanelId = built.firstPanelId;
+      }
+
+      setWorkspaces((prev) => [
+        ...prev,
+        {
+          id: newWsId,
+          name: `Workspace ${wsCounterRef.current}`,
+          columns: newColumns,
+        },
+      ]);
+      setActiveWsId(newWsId);
+      setActivePanelIds((prev) => ({ ...prev, [newWsId]: firstPanelId }));
+      setWorkspaceWindows((prev) => ({
+        ...prev,
+        [newWsId]: [createWindow(newWindowId, 'V1', newColumns, firstPanelId)],
+      }));
+      setActiveWindowIds((prev) => ({ ...prev, [newWsId]: newWindowId }));
+
+      if (firstPanelId) {
+        setTerminalRendererPreferences((prev) =>
+          setPanelRendererPreference(prev, newWsId, firstPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+        );
+      }
+    },
+    [collectSiblingPanelNames, cwd]
+  );
+
   const addWorkspace = () => {
-    wsCounterRef.current += 1;
-    panelCounterRef.current += 1;
-    colCounterRef.current += 1;
-
-    const newWsId = `ws${wsCounterRef.current}`;
-    const newPanelId = `p${panelCounterRef.current}`;
-    const newColId = `c${colCounterRef.current}`;
-    windowCounterRef.current += 1;
-    const newWindowId = `v${windowCounterRef.current}`;
-    const newColumns = [createColumn(newColId, newPanelId)];
-
-    setWorkspaces((prev) => [
-      ...prev,
-      {
-        id: newWsId,
-        name: `Workspace ${wsCounterRef.current}`,
-        columns: newColumns,
-      },
-    ]);
-    setActiveWsId(newWsId);
-    setActivePanelIds((prev) => ({ ...prev, [newWsId]: newPanelId }));
-    setWorkspaceWindows((prev) => ({
-      ...prev,
-      [newWsId]: [createWindow(newWindowId, 'V1', newColumns, newPanelId)],
-    }));
-    setActiveWindowIds((prev) => ({ ...prev, [newWsId]: newWindowId }));
-    setTerminalRendererPreferences((prev) =>
-      setPanelRendererPreference(prev, newWsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
-    );
+    setWorkspaceTerminalSetupOpen(true);
   };
 
   const removeWorkspace = async (e, idToRemove) => {
@@ -2214,7 +3976,77 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const workspaceToRemove = workspaces.find((workspace) => workspace.id === idToRemove);
     if (!workspaceToRemove || workspaces.length <= 1) return;
 
-    await closeTerminalSessions(getAllPanelIds(workspaceToRemove.columns));
+    const swarmLaunchIds = collectSwarmLaunchIdsForWorkspace(workspaceToRemove, storage);
+    const workspaceSwarmSummary = readWorkspaceSwarmLaunchSummary(
+      storage,
+      workspaceToRemove,
+      projectId,
+      swarmControlSnapshot
+    );
+    if (
+      workspaceSwarmSummary?.launchId &&
+      !swarmLaunchIds.includes(workspaceSwarmSummary.launchId)
+    ) {
+      swarmLaunchIds.push(workspaceSwarmSummary.launchId);
+    }
+    if (swarmLaunchIds.length > 0 && projectId) {
+      try {
+        const terminateResults = await terminateSwarmLaunchesForWorkspace({
+          workspace: workspaceToRemove,
+          projectId,
+          storage,
+          workspaces,
+        });
+        terminateResults.forEach((result) => {
+          if (result.ok) {
+            dispatchTerminatePanelCloseEvents(result.payload);
+          }
+        });
+        setSwarmControlSnapshot(null);
+      } catch {
+        // Best-effort: workspace close still proceeds.
+      }
+    }
+
+    const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== idToRemove);
+    const nextActiveWsId =
+      activeWsId === idToRemove
+        ? remainingWorkspaces[remainingWorkspaces.length - 1]?.id
+        : activeWsId;
+    const targetWorkspace = remainingWorkspaces.find(
+      (workspace) => workspace.id === nextActiveWsId
+    );
+    const targetPanelIds = targetWorkspace ? getAllPanelIds(targetWorkspace.columns) : [];
+
+    // TIC-1: Clean devhub_agent_runs BEFORE anything else
+    // This prevents stale identity bleed into new workspaces created before React state removal
+    const panelIdsToClean = getAllPanelIds(workspaceToRemove.columns);
+    const activeWsWillChange = activeWsId === idToRemove;
+    panelIdsToClean.forEach((panelId) => panelsClosingRef.current.add(panelId));
+    try {
+      const runs = JSON.parse(storage?.getItem('devhub_agent_runs') || '{}');
+      const cleanedRuns = {};
+      Object.entries(runs).forEach(([taskId, run]) => {
+        if (!panelIdsToClean.includes(run.panelId)) {
+          cleanedRuns[taskId] = run;
+        }
+      });
+      storage?.setItem('devhub_agent_runs', JSON.stringify(cleanedRuns));
+    } catch {
+      // Ignore localStorage failures — cleanup is best-effort
+    }
+
+    await closeTerminalSessions(panelIdsToClean);
+    // Close native VTEs for all panels of the removed workspace so no
+    // "terminal fantasma" can remain and paint over browser or other workspaces.
+    try {
+      const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
+      for (const pid of panelIdsToClean) {
+        await closeNativeVtePanel({ panelId: pid, reason: 'workspace-removed' }).catch(() => {});
+      }
+    } catch {
+      /* ignore native close during ws remove */
+    }
     await new Promise((resolve) => setTimeout(resolve, 200));
     await closeWorkspaceBrowserWindow(idToRemove);
 
@@ -2254,9 +4086,29 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       delete next[idToRemove];
       return next;
     });
+
+    panelIdsToClean.forEach((panelId) => {
+      window.setTimeout(() => panelsClosingRef.current.delete(panelId), 2000);
+    });
+
+    // When the active workspace changes, activeWsId effect already emits workspace-switch.
+    // Avoid duplicate layout bursts that flash/refit survivor terminals on close.
+    if (!activeWsWillChange && typeof window !== 'undefined') {
+      notifyNativeLayoutSettled('workspace-removed');
+    }
   };
 
   const handleApplyGrid = (numCols, numRows) => {
+    // Close the launcher immediately. This is critical: while isGridLauncherOpen is true,
+    // shouldSuspendNativeSurfaces forces suspend=true for panels (even newly created ones
+    // in the just-activated ws). New grid terminals would initialize under suspend (or xterm
+    // fallback), and the resume/re-inject paths for initialCommand could be skipped or
+    // guards (hasSentInitialCommand) prevent the typed command (e.g. "groc"/"GROC") from
+    // actually running in the launched terminals. By closing here, the batched state update
+    // that creates the panels will have launcher closed => no suspend => clean native/xterm
+    // open + initialCommand paste/send for *all* the selected quantity of terminals.
+    setIsGridLauncherOpen(false);
+
     wsCounterRef.current += 1;
     const newWsId = `ws${wsCounterRef.current}`;
 
@@ -2296,43 +4148,64 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     );
   };
 
-  const persistAgentRunMetadata = useCallback(async (request, panelId, commandToRun) => {
-    const { taskId, selectedAgent, launchOrigin, promptSummary, taskTitle } = request || {};
-    if (!taskId || !panelId) return;
-    const swarmRole = buildSwarmRoleMetadata(request);
+  const persistAgentRunMetadata = useCallback(
+    async (request, panelId, commandToRun) => {
+      const { taskId, selectedAgent, launchOrigin, promptSummary, taskTitle } = request || {};
+      if (!taskId || !panelId) return;
+      const swarmRole = buildSwarmRoleMetadata(request);
+      const restorePrefs = readWorkspaceRestorePreferences(storage);
+      const sessionKind = inferPanelSessionKind({
+        initialCommand: commandToRun,
+        agentRun: { swarmRole: swarmRole?.roleKey, launchOrigin },
+      });
+      const defaultRestorePolicy = resolveEffectiveRestorePolicy({
+        sessionKind,
+        perSessionPolicy: null,
+        preferences: restorePrefs,
+      });
+      const opencodeSessionId = extractOpenCodeSessionId(commandToRun);
 
-    try {
-      const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
-      const hints = JSON.parse(localStorage.getItem('devhub_agent_task_hints') || '{}');
-      runs[taskId] = {
-        panelId,
-        commandSummary: hints[taskId] || shortenCommandSummary(commandToRun),
-        promptSummary: promptSummary || hints[taskId] || shortenCommandSummary(commandToRun),
-        selectedAgent: selectedAgent || null,
-        launchOrigin: launchOrigin || null,
-        roleKey: swarmRole?.roleKey || request?.roleKey || null,
-        roleLabel: swarmRole?.label || request?.roleLabel || null,
-        roleAbbrev: swarmRole?.abbrev || request?.roleAbbrev || null,
-        taskTitle: taskTitle || null,
-        workspaceId: request?.workspaceId || null,
-        runId: request?.runId || null,
-        sessionId: request?.sessionId || null,
-        launchedAt: Date.now(),
-      };
-      localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
-    } catch {
-      // Ignore localStorage failures.
-    }
+      try {
+        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
+        const hints = JSON.parse(localStorage.getItem('devhub_agent_task_hints') || '{}');
+        runs[taskId] = {
+          panelId,
+          commandSummary: hints[taskId] || shortenCommandSummary(commandToRun),
+          promptSummary: promptSummary || hints[taskId] || shortenCommandSummary(commandToRun),
+          selectedAgent: selectedAgent || null,
+          launchOrigin: launchOrigin || null,
+          roleKey: swarmRole?.roleKey || request?.roleKey || null,
+          roleLabel: swarmRole?.label || request?.roleLabel || null,
+          roleAbbrev: swarmRole?.abbrev || request?.roleAbbrev || null,
+          taskTitle: taskTitle || null,
+          workspaceId: request?.workspaceId || null,
+          runId: request?.runId || null,
+          sessionId: request?.sessionId || null,
+          opencodeSessionId: opencodeSessionId || runs[taskId]?.opencodeSessionId || null,
+          restorePolicy: runs[taskId]?.restorePolicy || defaultRestorePolicy,
+          launchedAt: Date.now(),
+        };
+        localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+      } catch {
+        // Ignore localStorage failures.
+      }
 
-    // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
-  }, []);
+      // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
+    },
+    [storage]
+  );
 
   const createWorkspaceForSwarmLaunchRequests = useCallback(
     (requests = []) => {
+      const launchId = String(requests[0]?.launchId || '').trim();
+      if (launchId && materializedSwarmLaunchIdsRef.current.has(launchId)) {
+        return;
+      }
+
       const launchRequests = requests
         .map((request) => {
           const commandToRun = enforceDocOpsGateOnLaunchCommand(
-            request.command || `opencode --agent ${request.selectedAgent || 'sdd-orchestrator'}`
+            request.command || `opencode --agent ${request.selectedAgent || DEFAULT_OPENCODE_AGENT}`
           );
           const swarmRole = buildSwarmRoleMetadata(request);
           return { ...request, commandToRun, swarmRole };
@@ -2342,7 +4215,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (launchRequests.length === 0) return;
 
       const directorRequest =
-        launchRequests.find((request) => request.swarmRole?.roleKey === 'director') || null;
+        launchRequests.find((request) => isOrchestratorRoleKey(request.swarmRole?.roleKey)) || null;
       const workerRequests = launchRequests
         .filter((request) => request !== directorRequest)
         .sort(
@@ -2374,7 +4247,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             panelCounterRef.current += 1;
             const panelId = `p${panelCounterRef.current}`;
             if (!firstPanelId) firstPanelId = panelId;
-            if (request.swarmRole?.roleKey === 'director') directorPanelId = panelId;
+            if (isOrchestratorRoleKey(request.swarmRole?.roleKey)) directorPanelId = panelId;
             panelAssignments.push({ request, panelId });
             return createPanel(panelId, request.commandToRun, request.workspacePath || cwd, {
               swarmRole: request.swarmRole,
@@ -2382,6 +4255,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 isSwarmRole: Boolean(request.isSwarmRole),
                 roleKey: request.roleKey || request.swarmRole?.roleKey || null,
                 launchId: request.launchId || null,
+                needsLaunchWrapper: true,
+                startAfterMs: Number.isFinite(request.startAfterMs) ? request.startAfterMs : 0,
               },
             });
           });
@@ -2436,8 +4311,54 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       panelAssignments.forEach(({ request, panelId }) => {
         persistAgentRunMetadata(request, panelId, request.commandToRun);
       });
+
+      if (launchId) {
+        materializedSwarmLaunchIdsRef.current.add(launchId);
+        const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+        if (pendingBatch?.timer) {
+          window.clearTimeout(pendingBatch.timer);
+        }
+        pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+      }
+
+      if (typeof window !== 'undefined') {
+        const swarmPanelIds = panelAssignments.map(({ panelId }) => panelId);
+        const scheduleSwarmViewportSync = (phase) => {
+          dispatchTerminalLayoutSettled({
+            reason: 'swarm-launch',
+            workspaceId: newWsId,
+            panelIds: swarmPanelIds,
+            phase,
+          });
+        };
+        scheduleSwarmViewportSync('immediate');
+        notifyNativeLayoutSettled('swarm-launch');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => scheduleSwarmViewportSync('raf'));
+        });
+        window.setTimeout(() => scheduleSwarmViewportSync('delay-120'), 120);
+        window.setTimeout(() => scheduleSwarmViewportSync('delay-340'), 340);
+        window.setTimeout(() => scheduleSwarmViewportSync('delay-500'), 500);
+        window.setTimeout(() => scheduleSwarmViewportSync('delay-1000'), 1000);
+      }
     },
-    [cwd, persistAgentRunMetadata, syncActiveWindowSnapshot]
+    [cwd, notifyNativeLayoutSettled, persistAgentRunMetadata, syncActiveWindowSnapshot]
+  );
+
+  const flushSwarmLaunchBatch = useCallback(
+    (launchId) => {
+      const batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+      if (!batch) return;
+
+      if (batch.timer) {
+        window.clearTimeout(batch.timer);
+        batch.timer = null;
+      }
+
+      pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+      createWorkspaceForSwarmLaunchRequests(batch.requests);
+    },
+    [createWorkspaceForSwarmLaunchRequests]
   );
 
   const flushSwarmLaunchBatch = useCallback(
@@ -2469,6 +4390,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const enqueueSwarmLaunchRequest = useCallback(
     (request) => {
       const launchId = request.launchId || 'unknown';
+      if (launchId !== 'unknown' && materializedSwarmLaunchIdsRef.current.has(launchId)) {
+        return;
+      }
       let batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
 
       if (!batch) {
@@ -2478,13 +4402,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       batch.requests.push(request);
 
-      // If deadline timer already running for this batch, just accumulate
-      if (batch.timer) return;
-
-      // Start deadline timer — wait long enough for delayed workers to arrive
-      batch.timer = window.setTimeout(() => {
-        flushSwarmLaunchBatch(launchId);
-      }, SWARM_LAUNCH_BATCH_DEADLINE_MS);
+      // Sliding deadline: reset the idle window on every staggered runtime request
+      // so we build one workspace with all roles instead of flushing early.
+      batch.timer = rescheduleSwarmLaunchBatchFlush({
+        existingTimerId: batch.timer,
+        onFlush: () => flushSwarmLaunchBatch(launchId),
+        clearTimeoutFn: window.clearTimeout.bind(window),
+        setTimeoutFn: window.setTimeout.bind(window),
+      });
     },
     [flushSwarmLaunchBatch]
   );
@@ -2505,14 +4430,93 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, []);
 
   const handleSplit = useCallback(
-    (direction, sourcePanelId = null, initialCommand = null, panelCwd = null) => {
+    (
+      direction,
+      sourcePanelId = null,
+      initialCommand = null,
+      panelCwd = null,
+      explicitPanelId = null
+    ) => {
+      const targetWorkspaceId = activeWsIdRef.current || activeWsId;
+      if (!targetWorkspaceId) return null;
+
+      const targetWorkspace = workspacesRef.current.find((ws) => ws.id === targetWorkspaceId);
+      const currentPanelCount = countPanelsInColumns(targetWorkspace?.columns || []);
+      if (isWorkspaceTerminalPanelLimitReached(currentPanelCount)) {
+        console.warn(
+          `[DevHub] Terminal panel limit reached (${currentPanelCount}/${MAX_WORKSPACE_TERMINAL_PANELS})`
+        );
+        return null;
+      }
+
+      // Empty workspace: spawn the first panel (pizarra "Add Terminal", Zed, etc.).
+      if (currentPanelCount === 0) {
+        const spawned = spawnFirstTerminalPanelColumns({
+          createPanel: createPanelWithDisplayNameFactory(targetWorkspaceId, () =>
+            collectSiblingPanelNames(targetWorkspaceId)
+          ),
+          allocateColumnId: () => {
+            colCounterRef.current += 1;
+            return `c${colCounterRef.current}`;
+          },
+          allocatePanelId: () => {
+            panelCounterRef.current += 1;
+            return `p${panelCounterRef.current}`;
+          },
+          initialCommand,
+          panelCwd,
+          explicitPanelId,
+        });
+        const { columns: newColumns, panelId: newPanelId } = spawned;
+        setWorkspaces((prev) =>
+          prev.map((ws) => (ws.id === targetWorkspaceId ? { ...ws, columns: newColumns } : ws))
+        );
+        setActivePanelIds((prev) => ({ ...prev, [targetWorkspaceId]: newPanelId }));
+        setTerminalRendererPreferences((prev) =>
+          setPanelRendererPreference(
+            prev,
+            targetWorkspaceId,
+            newPanelId,
+            TERMINAL_RENDERER_INHERIT_MODE
+          )
+        );
+        syncActiveWindowSnapshot(targetWorkspaceId, newColumns, newPanelId);
+        logPizarraBrowser('spawn-first-panel', {
+          workspaceId: targetWorkspaceId,
+          panelId: newPanelId,
+        });
+        return newPanelId;
+      }
+
       const targetId =
         sourcePanelId || activePanelIdsRef.current[activeWsIdRef.current] || activePanelId;
-      const targetWorkspaceId = activeWsIdRef.current || activeWsId;
-      if (!targetWorkspaceId || !targetId) return null;
+      if (!targetId) return null;
 
-      panelCounterRef.current += 1;
-      const newPanelId = `p${panelCounterRef.current}`;
+      // T-029b: if the caller supplies an explicitPanelId (e.g. Zed's
+      // open_terminal tool result, which returns the ttyServer session id),
+      // reuse it as the new panel id. This makes TerminalTTY's
+      // `?sessionId=${id}` query resolve to the same PTY session the model
+      // is talking to, so the visual panel shows the same output the model
+      // sees. Falls back to the counter when no explicit id is provided
+      // (e.g. user-driven splits).
+      const newPanelId =
+        typeof explicitPanelId === 'string' && explicitPanelId.length > 0
+          ? explicitPanelId
+          : `p${panelCounterRef.current + 1}`;
+      if (newPanelId === `p${panelCounterRef.current + 1}`) {
+        panelCounterRef.current += 1;
+      } else {
+        const explicitNumeric = /^p(\d+)$/.exec(newPanelId);
+        if (explicitNumeric) {
+          const n = Number(explicitNumeric[1]);
+          if (Number.isFinite(n) && n > panelCounterRef.current) {
+            panelCounterRef.current = n;
+          }
+        }
+      }
+      const makePanel = createPanelWithDisplayNameFactory(targetWorkspaceId, () =>
+        collectSiblingPanelNames(targetWorkspaceId)
+      );
       setWorkspaces((prev) =>
         prev.map((ws) => {
           if (ws.id !== targetWorkspaceId) return ws;
@@ -2531,18 +4535,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             // Split Right: Agregar una nueva columna a la derecha
             colCounterRef.current += 1;
             const newColId = `c${colCounterRef.current}`;
-            nextColumnsSnapshot.splice(
-              colIndex + 1,
-              0,
-              createColumn(newColId, newPanelId, initialCommand, panelCwd)
-            );
+            nextColumnsSnapshot.splice(colIndex + 1, 0, {
+              id: newColId,
+              panels: [makePanel(newPanelId, initialCommand, panelCwd)],
+            });
           } else {
             // Split Down: Agregar un nuevo panel debajo en la misma columna
             const panelIndex = nextColumnsSnapshot[colIndex].panels.findIndex(
               (p) => p.id === targetId
             );
             const newPanels = [...nextColumnsSnapshot[colIndex].panels];
-            newPanels.splice(panelIndex + 1, 0, createPanel(newPanelId, initialCommand, panelCwd));
+            newPanels.splice(panelIndex + 1, 0, makePanel(newPanelId, initialCommand, panelCwd));
             nextColumnsSnapshot[colIndex] = { ...nextColumnsSnapshot[colIndex], panels: newPanels };
           }
 
@@ -2562,7 +4565,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       );
       return newPanelId;
     },
-    [activeWsId, activePanelId, syncActiveWindowSnapshot]
+    [activeWsId, activePanelId, collectSiblingPanelNames, syncActiveWindowSnapshot]
   );
 
   const renderWorkspaceWindowBar = useCallback(
@@ -2827,10 +4830,22 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const targetId = panelIdToClose || activePanelId;
       if (!targetId || !activeWorkspace) return;
 
-      const allIds = getAllPanelIds(activeWorkspace.columns);
-      if (allIds.length <= 1) return; // No cerrar si es el último
-
       await closeTerminalSessions([targetId]);
+
+      // Force-close the native VTE (the actual terminal "window") for this panel.
+      // The React unmount of TerminalTTY will also try via its cleanup, but
+      // explicit here guarantees we don't leave "terminal fantasma" that can
+      // paint on top of the browser dock, other terminals, or make the visual
+      // divider (resize handle) between terminals disappear because a stale
+      // native rect is still covering the handle's screen area.
+      try {
+        const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
+        await closeNativeVtePanel({ panelId: targetId, reason: 'workspace-panel-closed' }).catch(
+          () => {}
+        );
+      } catch {
+        // Non-fatal; the per-TTY unmount cleanup will still attempt it.
+      }
 
       const nextColumnsSnapshot = activeWorkspace.columns
         .map((col) => ({
@@ -2843,18 +4858,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         prev.map((ws) => (ws.id === activeWsId ? { ...ws, columns: nextColumnsSnapshot } : ws))
       );
 
-      if (activePanelId === targetId) {
-        setWorkspaces((prev) => {
-          const ws = prev.find((w) => w.id === activeWsId);
-          if (ws) {
-            const newIds = getAllPanelIds(ws.columns);
-            setActivePanelIds((p) => ({ ...p, [activeWsId]: newIds[0] }));
-          }
-          return prev;
-        });
-      }
-
       const fallbackPanel = nextColumnsSnapshot.flatMap((col) => col.panels || [])[0]?.id || null;
+      if (activePanelId === targetId) {
+        setActivePanelIds((p) => ({ ...p, [activeWsId]: fallbackPanel }));
+      }
       syncActiveWindowSnapshot(activeWsId, nextColumnsSnapshot, fallbackPanel);
       setFocusedPanelByWorkspace((prev) => {
         if (prev[activeWsId] !== targetId) return prev;
@@ -2911,6 +4918,452 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [activeWorkspace, activeWsId, activePanelId, projectId, syncActiveWindowSnapshot]
   );
 
+  const clearClosePanelShortcutArm = useCallback(() => {
+    if (closePanelShortcutArmTimerRef.current) {
+      window.clearTimeout(closePanelShortcutArmTimerRef.current);
+      closePanelShortcutArmTimerRef.current = null;
+    }
+    closePanelShortcutArmedRef.current = null;
+    setShortcutHint(null);
+  }, []);
+
+  const tryClosePanelWithDoubleShortcut = useCallback(
+    (panelId) => {
+      if (!panelId) return false;
+
+      const now = Date.now();
+      const armed = closePanelShortcutArmedRef.current;
+      if (armed && armed.panelId === panelId && armed.expiresAt > now) {
+        clearClosePanelShortcutArm();
+        handleClosePanel(panelId);
+        return true;
+      }
+
+      if (closePanelShortcutArmTimerRef.current) {
+        window.clearTimeout(closePanelShortcutArmTimerRef.current);
+      }
+
+      closePanelShortcutArmedRef.current = {
+        panelId,
+        expiresAt: now + CLOSE_PANEL_SHORTCUT_ARM_MS,
+      };
+      setShortcutHint('Pulsa Ctrl+Shift+W de nuevo para cerrar esta terminal');
+      closePanelShortcutArmTimerRef.current = window.setTimeout(() => {
+        if (closePanelShortcutArmedRef.current?.panelId === panelId) {
+          clearClosePanelShortcutArm();
+        }
+      }, CLOSE_PANEL_SHORTCUT_ARM_MS);
+
+      return true;
+    },
+    [clearClosePanelShortcutArm, handleClosePanel]
+  );
+
+  const closeRightDock = useCallback(() => {
+    updateRightDockState((currentState) => ({
+      ...currentState,
+      visible: false,
+      maximized: false,
+      maximizedView: 'browser',
+    }));
+  }, [updateRightDockState]);
+
+  const applyTerminalWorkspaceAction = useCallback(
+    (action) => {
+      if (!action || !isVisible) return false;
+
+      if (action === 'openBrowserDock') {
+        handleRightDockTabSelect('browser');
+        return true;
+      }
+
+      if (action === 'openEditorDock') {
+        handleRightDockTabSelect('editor');
+        return true;
+      }
+
+      if (action === 'closeRightDock') {
+        closeRightDock();
+        return true;
+      }
+
+      if (action === 'newWorkspace') {
+        setWorkspaceTerminalSetupOpen(true);
+        return true;
+      }
+
+      if (action === 'closePanel') {
+        const currentWorkspaceId = activeWsIdRef.current;
+        const currentWorkspace = workspacesRef.current.find(
+          (workspace) => workspace.id === currentWorkspaceId
+        );
+        const currentPanelId = resolveWorkspacePanelId(
+          currentWorkspace,
+          activePanelIdsRef.current[currentWorkspaceId]
+        );
+        return tryClosePanelWithDoubleShortcut(currentPanelId);
+      }
+
+      return false;
+    },
+    [closeRightDock, handleRightDockTabSelect, isVisible, tryClosePanelWithDoubleShortcut]
+  );
+
+  useEffect(() => {
+    const handleNativeVteRuntimeEvent = (event) => {
+      const detail = event.detail || {};
+
+      if (detail.type === 'navigation-shortcut') {
+        const action = typeof detail.action === 'string' ? detail.action.trim() : '';
+        if (!action) return;
+        if (isTerminalWorkspaceUiAction(action)) {
+          applyTerminalWorkspaceAction(action);
+        } else {
+          applyTerminalNavigationAction(action);
+        }
+        return;
+      }
+
+      if (detail.type !== 'panel-activated') return;
+
+      const panelId = typeof detail.panelId === 'string' ? detail.panelId.trim() : '';
+      if (!panelId) return;
+
+      const workspaceId =
+        workspacesRef.current.find((workspace) =>
+          workspace?.columns?.some((column) =>
+            (column.panels || []).some((panel) => panel.id === panelId)
+          )
+        )?.id || null;
+
+      if (!workspaceId) return;
+      activateWorkspacePanel(workspaceId, panelId);
+    };
+
+    window.addEventListener('devhub:terminal-native-vte-event', handleNativeVteRuntimeEvent);
+    return () => {
+      window.removeEventListener('devhub:terminal-native-vte-event', handleNativeVteRuntimeEvent);
+    };
+  }, [activateWorkspacePanel, applyTerminalNavigationAction, applyTerminalWorkspaceAction]);
+
+  // ─── Shared Live Surface Registry Hook & Interceptors ───────────────────
+  const registry = useWorkspaceSurfaceRegistry(projectId, activeWorkspace?.id);
+
+  // Distinguishes the single dedicated/detached browser window (tied to
+  // browserWindowState.open + WebviewWindow) from independent embedded
+  // browser *surfaces* that live only inside a pizarra canvas.
+  const isDedicatedBrowserSurface = useCallback(
+    (s) => {
+      if (!activeWorkspace?.id) return false;
+      const wid = activeWorkspace.id;
+      return s.id === `shape-browser-${wid}` || s.panelId === `browser-${wid}`;
+    },
+    [activeWorkspace?.id]
+  );
+
+  const registryAddSurface = useCallback(
+    (surface) => {
+      if (!activeWorkspace) return null;
+
+      // Check if we need to split or open a browser
+      if (surface.type === 'terminal' && !surface.panelId) {
+        // Create new terminal panel (also when workspace has zero panels).
+        const newPanelId = handleSplit('horizontal');
+        logPizarraBrowser('registry-add-terminal', {
+          workspaceId: activeWorkspace.id,
+          newPanelId,
+          panelCount: countPanelsInColumns(activeWorkspace.columns || []),
+        });
+        if (newPanelId) {
+          const panelLabel = resolvePanelSurfaceLabel(
+            {
+              id: newPanelId,
+              displayName: getPanelDisplayNameFromStore(newPanelId, activeWorkspace.id),
+            },
+            activeWorkspace.id
+          );
+          const finalSurface = {
+            ...surface,
+            id: `shape-term-${newPanelId}`,
+            panelId: newPanelId,
+            label: panelLabel,
+            pizarra: {
+              ...surface.pizarra,
+              visible: true,
+            },
+          };
+          registry.addSurface(finalSurface);
+          if (
+            effectiveRightDockState?.maximized &&
+            effectiveRightDockState?.maximizedView === 'pizarra' &&
+            typeof window !== 'undefined'
+          ) {
+            window.setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+            }, 400);
+          }
+          return finalSurface;
+        }
+        logPizarraBrowser('registry-add-terminal:failed', {
+          workspaceId: activeWorkspace.id,
+        });
+        return null;
+      } else if (surface.type === 'browser' && !surface.panelId) {
+        // Pizarra embedded browser surface (independent card on the canvas).
+        // Do NOT touch browserWindowState 'open' — that exclusively drives the
+        // detached dedicated "alternativo" WebviewWindow and its auto-injection
+        // into pizarra. Setting it caused reconcile to force false (no window)
+        // and the filter to prune the surface we just added.
+        const unique = `piz-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        const finalSurface = {
+          ...surface,
+          id: `shape-browser-${unique}`,
+          panelId: `pizarra-browser-${unique}`,
+          label: surface.label || 'Browser',
+          url: surface.url || 'http://localhost:3000/',
+          pizarra: {
+            ...surface.pizarra,
+            visible: true,
+          },
+        };
+        registry.addSurface(finalSurface);
+        return finalSurface;
+      } else {
+        registry.addSurface(surface);
+        return surface;
+      }
+    },
+    [activeWorkspace, handleSplit, registry.addSurface, effectiveRightDockState]
+  );
+
+  const registryRemoveSurface = useCallback(
+    (id) => {
+      if (!activeWorkspace) return;
+      const surface = registry.surfaces.find((s) => s.id === id);
+      if (!surface) return;
+
+      if (surface.type === 'terminal') {
+        handleClosePanel(surface.panelId);
+      } else if (surface.type === 'browser') {
+        // Only close dedicated for the canonical ws surface (the one that
+        // represents the detached alternative browser). Pizarra-only cards
+        // must not affect it.
+        if (isDedicatedBrowserSurface(surface)) {
+          closeWorkspaceBrowserWindow(activeWorkspace.id);
+        }
+      }
+      registry.removeSurface(id);
+    },
+    [
+      activeWorkspace,
+      registry.surfaces,
+      registry.removeSurface,
+      handleClosePanel,
+      closeWorkspaceBrowserWindow,
+      isDedicatedBrowserSurface,
+    ]
+  );
+
+  const registryUpdateSurface = useCallback(
+    (id, patch) => {
+      if (!patch || typeof patch !== 'object') return;
+
+      if (patch.requestedRendererMode && activeWorkspace) {
+        const surface = registry.surfaces.find((s) => s.id === id);
+        if (surface && surface.type === 'terminal' && surface.panelId) {
+          handleSetPanelRenderer(activeWorkspace.id, surface.panelId, patch.requestedRendererMode);
+        }
+      }
+
+      registry.updateSurface(id, patch);
+    },
+    [activeWorkspace, registry.surfaces, registry.updateSurface, handleSetPanelRenderer]
+  );
+
+  const registryValue = useMemo(
+    () => ({
+      surfaces: registry.surfaces,
+      isLoaded: registry.isLoaded,
+      addSurface: registryAddSurface,
+      removeSurface: registryRemoveSurface,
+      updatePizarraLayout: registry.updatePizarraLayout,
+      updateSurface: registryUpdateSurface,
+      resetSurfaces: registry.resetSurfaces,
+    }),
+    [
+      registry.surfaces,
+      registry.isLoaded,
+      registryAddSurface,
+      registryRemoveSurface,
+      registry.updatePizarraLayout,
+      registryUpdateSurface,
+      registry.resetSurfaces,
+    ]
+  );
+
+  // Auto-register terminal panels and browser window into the shared registry.
+  useEffect(() => {
+    if (!registry.isLoaded || !activeWorkspace) return;
+
+    // 1. Gather all current terminal panel IDs and details
+    const terminals = [];
+    activeWorkspace.columns.forEach((col) => {
+      if (col.panels) {
+        col.panels.forEach((p) => {
+          terminals.push({
+            id: `shape-term-${p.id}`,
+            type: 'terminal',
+            panelId: p.id,
+            label: resolvePanelSurfaceLabel(p, activeWorkspace.id),
+            cwd: p.cwd || null,
+            initialCommand: p.initialCommand || null,
+            requestedRendererMode: resolveRequestedRenderer({
+              workspaceId: activeWorkspace.id,
+              panelId: p.id,
+              prefs: terminalRendererPreferences,
+            }),
+            pizarra: {
+              x: null, // Let PizarraPane place it if not already placed
+              y: null,
+              width: 640,
+              height: 400,
+              visible: true,
+            },
+          });
+        });
+      }
+    });
+
+    // 2. Browser surface for the workspace — only include if the ws "browser is open"
+    // (controlled by dock/browser state in normal view, or set via pizarra close).
+    // This allows: close browser card in pizarra (sets open=false + removes surface) =>
+    // when switch back to normal, browser is not open by default (minimized/closed).
+    // Carry happens because when open in normal, surface is registered; pizarra picks it
+    // via registry for the card (with layout). Pizarra-only extra browsers (from "Add Browser")
+    // are separate and not re-added by this reconcile.
+    const browserOpen = browserWindowStates?.[activeWorkspace.id]?.open === true;
+    const browsers = [];
+    if (browserOpen) {
+      const browserState = browserWindowStates?.[activeWorkspace.id] || {};
+      const layoutPriority = browserState?.pizarraLayoutPriority === true;
+      browsers.push({
+        id: `shape-browser-${activeWorkspace.id}`,
+        type: 'browser',
+        panelId: `browser-${activeWorkspace.id}`,
+        label: browserState?.label || `Browser ${activeWorkspace.id}`,
+        url: browserState?.url || 'http://localhost:3000/',
+        pizarra: {
+          x: null, // pizarra side will assign initial spread position
+          y: null,
+          width: 1024,
+          height: 700,
+          visible: true,
+          ...(layoutPriority ? { layoutPriority: true } : {}),
+        },
+      });
+    }
+
+    const activeSurfaces = [...terminals, ...browsers];
+
+    // Reconcile
+    let changed = false;
+    const nextSurfaces = [...registry.surfaces];
+
+    activeSurfaces.forEach((as) => {
+      const existing = nextSurfaces.find(
+        (s) => s.id === as.id || (as.panelId && s.panelId === as.panelId)
+      );
+      if (!existing) {
+        nextSurfaces.push(as);
+        changed = true;
+      } else {
+        let itemChanged = false;
+        if (existing.label !== as.label) {
+          existing.label = as.label;
+          itemChanged = true;
+        }
+        if (as.type === 'browser' && existing.url !== as.url) {
+          existing.url = as.url;
+          itemChanged = true;
+        }
+        if (as.type === 'browser' && as.pizarra) {
+          const prevPizarra = existing.pizarra || {};
+          const nextPizarra = {
+            ...prevPizarra,
+            ...as.pizarra,
+            visible: as.pizarra.visible !== false ? true : prevPizarra.visible,
+          };
+          const pizarraChanged =
+            prevPizarra.visible !== nextPizarra.visible ||
+            prevPizarra.layoutPriority !== nextPizarra.layoutPriority;
+          if (pizarraChanged) {
+            existing.pizarra = nextPizarra;
+            itemChanged = true;
+          }
+        }
+        if (
+          as.requestedRendererMode &&
+          existing.requestedRendererMode !== as.requestedRendererMode
+        ) {
+          existing.requestedRendererMode = as.requestedRendererMode;
+          itemChanged = true;
+        }
+        if (itemChanged) {
+          changed = true;
+        }
+      }
+    });
+
+    const finalSurfaces = nextSurfaces.filter((s) => {
+      const stillExists = activeSurfaces.some(
+        (as) => as.id === s.id || (s.panelId && as.panelId === s.panelId)
+      );
+      if (stillExists) return true;
+
+      // Preserve pizarra-only browser surfaces (the ones added by "Add Browser"
+      // in the canvas, with pizarra- ids). They are not backed by workspace
+      // panels or the dedicated open flag, so must not be pruned by reconcile.
+      // (Terminals without backing panel are always dropped.)
+      if (s.type === 'browser' && !isDedicatedBrowserSurface(s)) {
+        return true;
+      }
+
+      changed = true;
+      return false;
+    });
+
+    if (changed) {
+      try {
+        registry.resetSurfaces(finalSurfaces);
+      } catch (err) {
+        console.error('[TerminalWorkspacesManager] registry reconcile failed:', err);
+      }
+    }
+
+    const browserSurfaces = finalSurfaces.filter((s) => s.type === 'browser');
+    if (browserWindowStates?.[activeWorkspace.id]?.open === true) {
+      logPizarraBrowser('registry-reconcile', {
+        workspaceId: activeWorkspace.id,
+        terminalCount: terminals.length,
+        browserCount: browserSurfaces.length,
+        browsers: browserSurfaces.map((b) => ({
+          id: b.id,
+          panelId: b.panelId,
+          visible: b.pizarra?.visible,
+          layoutPriority: b.pizarra?.layoutPriority,
+        })),
+      });
+    }
+  }, [
+    activeWorkspace,
+    browserWindowStates,
+    registry.isLoaded,
+    registry.surfaces,
+    registry.resetSurfaces,
+    isDedicatedBrowserSurface,
+    terminalRendererPreferences,
+  ]);
+
   const failPendingReopen = useCallback(
     (panelId, fallbackMessage = 'Session is no longer available to resume.') => {
       const pending = pendingReopenPanelsRef.current.get(panelId);
@@ -2953,8 +5406,74 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (workspaceTerminalSetupOpen) {
+        return;
+      }
+
       const rootElement = managerRootRef.current;
       const activeElement = document?.activeElement || null;
+      const currentWorkspaceId = activeWsIdRef.current;
+      const focusModeActive = Boolean(focusedPanelByWorkspaceRef.current[currentWorkspaceId]);
+
+      if (
+        shouldHandleTerminalFocusExitShortcut(e, {
+          isVisible,
+          rootElement,
+          activeElement,
+          focusModeActive,
+        })
+      ) {
+        e.preventDefault();
+        clearPanelFocusMode(currentWorkspaceId);
+        return;
+      }
+
+      if (
+        shouldHandleTerminalFocusShortcut(e, {
+          isVisible,
+          rootElement,
+          activeElement,
+        })
+      ) {
+        if (applyTerminalNavigationAction('togglePanelFocus')) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
+      if (
+        shouldHandleTerminalNavigationShortcut(e, {
+          isVisible,
+          rootElement,
+          activeElement,
+        })
+      ) {
+        const navAction = resolveTerminalNavigationAction(e);
+        if (!navAction) return;
+        if (applyTerminalNavigationAction(navAction)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
+      if (
+        shouldHandleTerminalWorkspaceShortcut(e, {
+          isVisible,
+          rootElement,
+          activeElement,
+        })
+      ) {
+        const workspaceAction = resolveTerminalWorkspaceAction(e);
+        if (!workspaceAction) return;
+        if (applyTerminalWorkspaceAction(workspaceAction)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
       if (!shouldHandleTerminalShortcut(e, { isVisible, rootElement, activeElement })) return;
 
       const action = resolveTerminalShortcutAction(e);
@@ -2969,49 +5488,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       if (action === 'splitRight') {
         handleSplit('horizontal');
-        return;
       }
+    };
 
-      if (action === 'closePanel') {
-        const currentWorkspace = workspacesRef.current.find(
-          (workspace) => workspace.id === activeWsIdRef.current
-        );
-        const currentPanelId = resolveWorkspacePanelId(
-          currentWorkspace,
-          activePanelIdsRef.current[activeWsIdRef.current]
-        );
-        handleClosePanel(currentPanelId);
-        return;
-      }
-
-      if (action === 'previousWorkspace' || action === 'nextWorkspace') {
-        const currentWorkspaceId = activeWsIdRef.current;
-        const nextWorkspaceId = getAdjacentWorkspaceId(
-          workspacesRef.current,
-          currentWorkspaceId,
-          action === 'previousWorkspace' ? 'previous' : 'next'
-        );
-
-        if (!nextWorkspaceId || nextWorkspaceId === currentWorkspaceId) return;
-
-        const nextWorkspace = workspacesRef.current.find(
-          (workspace) => workspace.id === nextWorkspaceId
-        );
-        const nextPanelId = resolveWorkspacePanelId(
-          nextWorkspace,
-          activePanelIdsRef.current[nextWorkspaceId]
-        );
-
-        if (nextPanelId) {
-          setActivePanelIds((prev) =>
-            prev[nextWorkspaceId] === nextPanelId
-              ? prev
-              : { ...prev, [nextWorkspaceId]: nextPanelId }
-          );
-        }
-
-        setActiveWsId(nextWorkspaceId);
-      }
+    const handleSwarmLaunchMaterialized = (e) => {
+      const runtimeRequests = e.detail?.runtimeRequests || [];
+      createWorkspaceForSwarmLaunchRequests(runtimeRequests);
     };
 
     const handleRunAgent = async (e) => {
@@ -3022,9 +5504,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         return;
       }
 
-      const cmdToRun = enforceDocOpsGateOnLaunchCommand(
-        command || `opencode --agent ${selectedAgent || 'sdd-orchestrator'}`
-      );
+      // Fase 4 (planning-launch-hardening): the planning path uses a dedicated
+      // launch command that does NOT go through the DocOps gate. The dispatcher
+      // (see `dispatchPlanningAgentRun.js`) is waiting on a matching
+      // `devhub:run-agent-accepted` ack — fire it after a successful split so
+      // the retry loop can short-circuit.
+      const fallback = `opencode --agent ${selectedAgent || DEFAULT_OPENCODE_AGENT}`;
+      const cmdToRun =
+        launchOrigin === 'planning-launch'
+          ? (command || fallback)
+          : enforceDocOpsGateOnLaunchCommand(command || fallback);
       // Use split right by default for agents
       const createdPanelId = handleSplit('horizontal', activePanelId, cmdToRun, cwd);
 
@@ -3034,24 +5523,41 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           createdPanelId,
           cmdToRun
         );
+        // Ack the dispatcher (design Decision 8). Minimal shape: { taskId }.
+        try {
+          window.dispatchEvent(
+            new window.CustomEvent('devhub:run-agent-accepted', { detail: { taskId } })
+          );
+        } catch {
+          // window/CustomEvent may be undefined in tests — best-effort ack.
+        }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('devhub:run-agent', handleRunAgent);
+    window.addEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleSwarmLaunchMaterialized);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('devhub:run-agent', handleRunAgent);
+      window.removeEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleSwarmLaunchMaterialized);
     };
   }, [
     isVisible,
     handleSplit,
     handleClosePanel,
     cwd,
+    createWorkspaceForSwarmLaunchRequests,
     enqueueSwarmLaunchRequest,
     persistAgentRunMetadata,
+    applyTerminalNavigationAction,
+    applyTerminalWorkspaceAction,
+    clearPanelFocusMode,
+    workspaceTerminalSetupOpen,
   ]);
+
+  useEffect(() => () => clearClosePanelShortcutArm(), [clearClosePanelShortcutArm]);
 
   // --- Persist OpenCode session ID per panel so it auto-restores after reboot ---
   // When ttyServer detects that a panel is running OpenCode (via input or output), it
@@ -3061,6 +5567,69 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const handleOpenCodeSessionDetected = (e) => {
       const { panelId, sessionId } = e.detail || {};
       if (!panelId || !sessionId) return;
+      if (panelsClosingRef.current.has(panelId)) return;
+
+      const panelEntry = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+
+      if (!panelEntry) return;
+
+      const panelAgentRun = readAgentRunsByPanel(storage)[panelId] || null;
+      if (!shouldPersistOpenCodeSessionForPanel(panelEntry, panelAgentRun)) return;
+
+      let runMetadata = null;
+      try {
+        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
+        const taskEntry = Object.entries(runs || {}).find(
+          ([, value]) => value?.panelId === panelId
+        );
+        runMetadata = taskEntry?.[1] || null;
+
+        // Persist opencodeSessionId to devhub_agent_runs so the restore manifest can
+        // identify this panel as opencode-durable without relying on the async
+        // useEffect flush of initialCommand to devhub_terminal_state.
+        // This fixes a race condition where the app crashes before the flush,
+        // causing restore to treat the session as shell-ephemeral (no command).
+        if (taskEntry?.[0]) {
+          const restorePrefs = readWorkspaceRestorePreferences(storage);
+          const sessionKind = inferPanelSessionKind({
+            initialCommand: `opencode --session ${sessionId}`,
+            agentRun: runs[taskEntry[0]],
+          });
+          const defaultRestorePolicy = resolveEffectiveRestorePolicy({
+            sessionKind,
+            perSessionPolicy: null,
+            preferences: restorePrefs,
+          });
+          runs[taskEntry[0]] = {
+            ...runs[taskEntry[0]],
+            opencodeSessionId: sessionId,
+            restorePolicy: runs[taskEntry[0]]?.restorePolicy || defaultRestorePolicy,
+          };
+          localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+        }
+
+        if (
+          runMetadata?.launchOrigin === 'swarm-control-launch' &&
+          runMetadata?.sessionId &&
+          runMetadata?.workspaceId &&
+          runMetadata?.runId
+        ) {
+          fetch(`/api/agenthub/sessions/${runMetadata.sessionId}/binding`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workspace_id: runMetadata.workspaceId,
+              run_id: runMetadata.runId,
+              opencode_session_id: sessionId,
+            }),
+          }).catch(() => {});
+        }
+      } catch {
+        // Ignore best-effort canonical reconciliation failures in UI layer.
+      }
 
       try {
         const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
@@ -3100,21 +5669,40 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         setReopenActionError(null);
       }
 
-      setWorkspaces((prev) =>
-        prev.map((ws) => ({
-          ...ws,
-          columns: ws.columns.map((col) => ({
-            ...col,
-            panels: col.panels.map((p) => {
-              if (p.id !== panelId) return p;
-              const newCommand = `opencode --session ${sessionId}`;
-              // Only update if the command actually changed to avoid unnecessary re-renders
-              if (p.initialCommand === newCommand) return p;
-              return { ...p, initialCommand: newCommand };
-            }),
-          })),
-        }))
-      );
+      const priorPanel = panelEntry;
+      const nextWorkspaces = workspacesRef.current.map((ws) => ({
+        ...ws,
+        columns: ws.columns.map((col) => ({
+          ...col,
+          panels: col.panels.map((p) => {
+            if (p.id !== panelId) return p;
+            const newCommand = `opencode --session ${sessionId}`;
+            if (p.initialCommand === newCommand) return p;
+            if (!shouldPersistOpenCodeSessionForPanel(p, panelAgentRun)) return p;
+            return { ...p, initialCommand: newCommand };
+          }),
+        })),
+      }));
+
+      logTerminalSession('opencode-session-detected', {
+        panelId,
+        sessionId,
+        priorCommand: priorPanel?.initialCommand || null,
+        nextCommand: `opencode --session ${sessionId}`,
+      });
+
+      flushTerminalSessionPersistence(storage, {
+        workspaces: nextWorkspaces,
+        activeWsId: activeWsIdRef.current,
+        activePanelIds: activePanelIdsRef.current,
+        workspaceWindows: workspaceWindowsRef.current,
+        activeWindowIds: activeWindowIdsRef.current,
+        projectId,
+        appSessionId: `opencode-detect-${sessionId}`,
+        agentRunsByPanel: readAgentRunsByPanel(storage),
+      });
+
+      setWorkspaces(nextWorkspaces);
     };
 
     const handleTerminalExit = (e) => {
@@ -3128,15 +5716,230 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       failPendingReopen(panelId);
     };
 
+    // Opens the terminal settings modal when the gear icon is clicked on a suspended panel.
+    const handleTerminalSettingsModalRequested = (e) => {
+      const { panelId } = e.detail || {};
+      if (!panelId) return;
+
+      let sessionId = null;
+      let cwd = null;
+      let sessionType = 'opencode-durable';
+
+      for (const ws of workspacesRef.current) {
+        for (const col of ws.columns) {
+          const panel = col.panels.find((p) => p.id === panelId);
+          if (panel) {
+            cwd = panel.cwd;
+            const sessionMatch = (panel.initialCommand || '').match(
+              /opencode\s+--session\s+([\w-]+)/i
+            );
+            sessionId = sessionMatch ? sessionMatch[1] : null;
+            if ((panel.initialCommand || '').includes('opencode')) {
+              sessionType = 'opencode-durable';
+            } else if ((panel.initialCommand || '').includes('pty')) {
+              sessionType = 'pty-durable';
+            } else {
+              sessionType = 'shell-ephemeral';
+            }
+            break;
+          }
+        }
+        if (sessionId) break;
+      }
+
+      setTerminalSettingsModal({
+        open: true,
+        panelId,
+        sessionId: sessionId || panelId,
+        cwd,
+        sessionType,
+        restorePolicy: 'manual',
+      });
+    };
+
+    // Handles manual session revival (overlay "Continuar" or settings modal).
+    const handleManualReviveRequested = (e) => {
+      const { panelId, sessionId: hintSessionId } = e.detail || {};
+      if (!panelId) return;
+
+      const panel = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+
+      const agentRun = readAgentRunsByPanel(storage)[panelId] || null;
+      const sessionKind = inferPanelSessionKind({
+        initialCommand: panel?.initialCommand,
+        agentRun,
+        panel,
+      });
+
+      const clearSuspended = () => {
+        setReopenActionError(null);
+        setPanelRestoreModes((prev) => {
+          const next = { ...prev };
+          delete next[panelId];
+          return next;
+        });
+      };
+
+      if (sessionKind === 'opencode') {
+        const opencodeSessionId = resolveOpenCodeSessionIdForPanel({
+          panel,
+          agentRun,
+          hintSessionId,
+        });
+
+        if (!opencodeSessionId) {
+          setReopenActionError(
+            'No se encontró un id de sesión OpenCode guardado. Abrí una sesión nueva o usá política automática.'
+          );
+          return;
+        }
+
+        clearSuspended();
+        applyPanelRelaunchCommand(
+          panelId,
+          `opencode --session ${opencodeSessionId}`,
+          panel?.cwd || null,
+          { forceBump: true, emitEvent: false }
+        );
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-resume-requested', { detail: { panelId } })
+        );
+        return;
+      }
+
+      // Swarm: tmux reattach happens in ttyServer on connect — no launch wrapper replay.
+      if (sessionKind === 'swarm') {
+        clearSuspended();
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-resume-requested', { detail: { panelId } })
+        );
+        return;
+      }
+
+      // Shell genérico: reconectar en cwd (sin opencode --session).
+      clearSuspended();
+      const shellCommand = String(panel?.initialCommand || '')
+        .replace(/\s*#recovery-\d+\s*$/i, '')
+        .trim();
+
+      if (shellCommand) {
+        applyPanelRelaunchCommand(panelId, shellCommand, panel?.cwd || null, {
+          forceBump: true,
+          emitEvent: false,
+        });
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('devhub:terminal-resume-requested', { detail: { panelId } })
+      );
+    };
+
+    const handleSwarmLaunchWrapperSent = (e) => {
+      const { panelId } = e.detail || {};
+      if (!panelId) return;
+
+      let panel = null;
+      for (const workspace of workspacesRef.current || []) {
+        for (const column of workspace?.columns || []) {
+          panel = (column.panels || []).find((candidate) => candidate.id === panelId) || null;
+          if (panel) break;
+        }
+        if (panel) break;
+      }
+      if (panel?.swarmContext?.launchId && panel?.swarmContext?.roleKey) {
+        markSwarmLaunchWrapperDispatched(
+          {
+            launchId: panel.swarmContext.launchId,
+            roleKey: panel.swarmContext.roleKey,
+            panelId,
+          },
+          storage
+        );
+      }
+
+      setWorkspaces((prev) =>
+        prev.map((ws) => ({
+          ...ws,
+          columns: ws.columns.map((col) => ({
+            ...col,
+            panels: col.panels.map((p) => {
+              if (p.id !== panelId || !p.swarmContext?.needsLaunchWrapper) return p;
+              return {
+                ...p,
+                swarmContext: {
+                  ...p.swarmContext,
+                  needsLaunchWrapper: false,
+                },
+              };
+            }),
+          })),
+        }))
+      );
+
+      try {
+        const savedState = JSON.parse(storage?.getItem(terminalStateStorageKey) || '{}');
+        if (savedState.workspaces) {
+          savedState.workspaces = savedState.workspaces.map((ws) => ({
+            ...ws,
+            columns: ws.columns.map((col) => ({
+              ...col,
+              panels: col.panels.map((p) => {
+                if (p.id !== panelId || !p.swarmContext?.needsLaunchWrapper) return p;
+                return {
+                  ...p,
+                  swarmContext: {
+                    ...p.swarmContext,
+                    needsLaunchWrapper: false,
+                  },
+                };
+              }),
+            })),
+          }));
+          storage?.setItem(terminalStateStorageKey, JSON.stringify(savedState));
+        }
+      } catch {
+        // Best-effort persistence only.
+      }
+    };
+
     window.addEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
     window.addEventListener('devhub:terminal-exit', handleTerminalExit);
+    window.addEventListener('devhub:swarm-launch-wrapper-sent', handleSwarmLaunchWrapperSent);
 
     // Session recovery: relaunch orphaned opencode sessions
     const handleRelaunchPanel = (e) => {
       const { panelId, command, cwd, reason } = e.detail || {};
       if (!panelId || !command) return;
 
-      console.log(`[Session Recovery] Relaunching panel ${panelId}: ${reason}`);
+      if (relaunchInFlightRef.current.has(panelId)) return;
+
+      logTerminalSession('session-recovery-relaunch-event', {
+        panelId,
+        command,
+        cwd,
+        reason,
+      });
+
+      // Startup restore already persisted the bumped command; avoid double-apply.
+      if (reason === 'panel-relaunch') return;
+
+      const panel = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+      const agentRun = readAgentRunsByPanel(storage)[panelId] || null;
+      if (
+        inferPanelSessionKind({
+          initialCommand: command,
+          agentRun,
+          panel,
+        }) === 'swarm'
+      ) {
+        return;
+      }
 
       // Update the panel's initialCommand to force TerminalTTY to reconnect
       // We append a timestamp to ensure the command is "new" and triggers reconnection
@@ -3176,14 +5979,235 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     };
 
+    // Handle Zed AI assistant terminal opening requests
+    // T-025: producer (useZedChat) already filters to `session_id`-only
+    // events, so the only defensive check we need is that the event
+    // carried a payload at all. `command` may be null (open empty shell)
+    // or a string (open + run). See `zedOpenTerminalEvent.js`.
+    const handleZedOpenTerminal = (e) => {
+      if (!isValidZedOpenTerminalEvent(e.detail)) return;
+      const { command, cwd, session_id, focus = false, displayName: zedDisplayName } = e.detail;
+      const explicitPanelId = resolveZedOpenTerminalPanelId(e.detail, null);
+
+      const targetWsId = activeWsIdRef.current || activeWsId;
+      if (!targetWsId) return;
+
+      const targetWorkspace = workspacesRef.current.find((ws) => ws.id === targetWsId);
+      const currentPanelCount = countPanelsInColumns(targetWorkspace?.columns || []);
+      const resolvedSourcePanelId =
+        activePanelIdsRef.current[targetWsId] ||
+        activePanelId ||
+        getAllPanelIds(targetWorkspace?.columns || [])[0] ||
+        null;
+
+      if (currentPanelCount > 0 && !resolvedSourcePanelId) return;
+
+      if (isWorkspaceTerminalPanelLimitReached(currentPanelCount, MAX_ZED_TERMINAL_PANELS)) {
+        console.warn(
+          `[Zed] Terminal open blocked: limit ${MAX_ZED_TERMINAL_PANELS} panels (current ${currentPanelCount})`
+        );
+        return;
+      }
+
+      // T-029b: pass session_id as the explicitPanelId so the new panel
+      // connects to the same PTY session the model opened. Falls back to
+      // auto-mint when session_id is null (e.g. legacy events).
+      // T-WSR-zed-001 (ASST-UI-002/003/004): capture the new panel id
+      // returned by handleSplit and pipe it through the post-handleSplit
+      // focus chain (activate + opt-in focused + opt-in pizarra de-max).
+      console.log(
+        `[Zed] Opening terminal command=${command} cwd=${cwd} session_id=${session_id} focus=${focus}`
+      );
+      const newPanelId = handleSplit(
+        'horizontal',
+        resolvedSourcePanelId,
+        command,
+        cwd || null,
+        explicitPanelId
+      );
+      if (!newPanelId) return;
+
+      const maximizedView = rightDockState?.maximizedView ?? null;
+      applyZedOpenTerminalFocus(
+        targetWsId,
+        newPanelId,
+        { focus },
+        {
+          activateWorkspacePanel,
+          setFocusedPanelByWorkspace,
+          updateRightDockState,
+          maximizedView,
+        }
+      );
+
+      if (typeof zedDisplayName === 'string' && zedDisplayName.trim()) {
+        const cleanName = zedDisplayName.trim();
+        const renameResult = setPanelDisplayNameInStore(newPanelId, targetWsId, cleanName);
+        if (renameResult?.ok) {
+          setWorkspaces((prev) =>
+            prev.map((ws) => {
+              if (ws.id !== targetWsId) return ws;
+              return {
+                ...ws,
+                columns: ws.columns.map((col) => ({
+                  ...col,
+                  panels: col.panels.map((p) =>
+                    p.id === newPanelId ? { ...p, displayName: cleanName } : p
+                  ),
+                })),
+              };
+            })
+          );
+        }
+      }
+
+      if (maximizedView === 'pizarra' && typeof window !== 'undefined') {
+        logPizarraBrowser('zed-open-terminal:in-pizarra', { panelId: newPanelId, focus });
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+        }, 400);
+      } else if (focus === true && typeof window !== 'undefined') {
+        updateRightDockState((currentState) => ({
+          ...currentState,
+          visible: true,
+          maximizedView: 'pizarra',
+        }));
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+        }, 400);
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+        }, 720);
+      }
+    };
+
+    const handleZedTerminalInput = (e) => {
+      const detail = e?.detail;
+      if (!detail || typeof detail.input !== 'string') return;
+      const panelId =
+        detail.terminalId || detail.session_id || detail.panelId || null;
+      if (!panelId) return;
+      window.dispatchEvent(
+        new CustomEvent('devhub:zed-terminal-input', {
+          detail: { panelId, terminalId: panelId, input: detail.input },
+        })
+      );
+    };
+
+    const handleZedCloseTerminal = (e) => {
+      const sessionId = e?.detail?.session_id;
+      if (typeof sessionId === 'string' && sessionId.length > 0) {
+        handleClosePanel(sessionId);
+      }
+    };
+
+    const handleZedCloseUrl = () => {
+      const wsId = activeWsIdRef.current || activeWsId;
+      if (wsId) {
+        updateBrowserWindowState(wsId, {
+          open: false,
+          updatedAt: Date.now(),
+        });
+      }
+      updateRightDockState((currentState) => ({
+        ...currentState,
+        browserUrl: null,
+      }));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+      }
+    };
+
     window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);
+    window.addEventListener(
+      'devhub:terminal-settings-modal-requested',
+      handleTerminalSettingsModalRequested
+    );
+    window.addEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
+    window.addEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
+    window.addEventListener('devhub:zed-close-terminal', handleZedCloseTerminal);
+    window.addEventListener('devhub:zed-close-url', handleZedCloseUrl);
+    window.addEventListener('devhub:zed-terminal-input', handleZedTerminalInput);
+
+    const handleZedOpenUrl = (e) => {
+      logPizarraBrowser('zed-open-url:received', { detail: e?.detail ?? null });
+      if (!isValidZedOpenUrlEvent(e.detail)) {
+        logPizarraBrowser('zed-open-url:rejected-invalid', { detail: e?.detail ?? null });
+        return;
+      }
+      const { url, label } = e.detail;
+      const focus = coerceZedOpenUrlFocus(e.detail?.focus, true);
+      const last = lastZedOpenUrlRef.current;
+      if (focus !== true && last.url === url && (last.label ?? null) === (label ?? null)) {
+        logPizarraBrowser('zed-open-url:skipped-idempotent', { url, label, focus });
+        return;
+      }
+      lastZedOpenUrlRef.current = { url, label: label ?? null };
+
+      const wsId = activeWsIdRef.current || activeWsId;
+      if (wsId) {
+        updateBrowserWindowState(wsId, {
+          open: true,
+          url,
+          label: label || buildBrowserWindowLabel(projectId, wsId),
+          // Keeps auto-layout from hiding the carried browser when 2+ terminals exist.
+          pizarraLayoutPriority: focus === true,
+          updatedAt: Date.now(),
+        });
+        logPizarraBrowser('zed-open-url:browser-state', { wsId, url, focus });
+      }
+
+      updateRightDockState((currentState) => {
+        const next = applyZedOpenUrlDockUpdate(currentState, { url, focus });
+        logPizarraBrowser('zed-open-url:dock-state', {
+          activeTab: next.activeTab,
+          maximizedView: next.maximizedView,
+          visible: next.visible,
+          browserUrl: next.browserUrl,
+        });
+        return next;
+      });
+
+      if (focus === true && typeof window !== 'undefined') {
+        // After mode transition (~330ms) + registry reconcile; refit twice for late surfaces.
+        const dispatchArrangeFit = () => {
+          logPizarraBrowser('zed-open-url:arrange-fit-dispatch');
+          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+        };
+        window.setTimeout(dispatchArrangeFit, 400);
+        window.setTimeout(dispatchArrangeFit, 720);
+      }
+    };
+
+    window.addEventListener('devhub:zed-open-url', handleZedOpenUrl);
 
     return () => {
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
+      window.removeEventListener('devhub:swarm-launch-wrapper-sent', handleSwarmLaunchWrapperSent);
       window.removeEventListener('devhub:relaunch-panel', handleRelaunchPanel);
+      window.removeEventListener(
+        'devhub:terminal-settings-modal-requested',
+        handleTerminalSettingsModalRequested
+      );
+      window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
+      window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
+      window.removeEventListener('devhub:zed-close-terminal', handleZedCloseTerminal);
+      window.removeEventListener('devhub:zed-close-url', handleZedCloseUrl);
+      window.removeEventListener('devhub:zed-terminal-input', handleZedTerminalInput);
+      window.removeEventListener('devhub:zed-open-url', handleZedOpenUrl);
     };
-  }, [failPendingReopen, storage, terminalStateStorageKey]);
+  }, [
+    activeWsId,
+    applyPanelRelaunchCommand,
+    failPendingReopen,
+    handleClosePanel,
+    projectId,
+    storage,
+    terminalStateStorageKey,
+    updateBrowserWindowState,
+    updateRightDockState,
+  ]);
 
   // --- Window Controls (for integrated titlebar) ---
   const getTauriWindow = useCallback(async () => {
@@ -3235,732 +6259,896 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     await win?.close().catch(() => {});
   }, [getTauriWindow]);
 
-  const workspaceTabKeyCounts = new Map();
-  const workspaceGridKeyCounts = new Map();
   const activeWorkspacePanelCount = activeWorkspace
     ? getAllPanelIds(activeWorkspace.columns).length
     : 0;
   return (
-    <motion.div
-      ref={managerRootRef}
-      className="flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
-      style={getWorkspaceShellChromeStyle()}
-      {...getWorkspaceAnimProps(isMaximized)}
-      key={isMaximized ? 'maximized' : 'normal'}
+    <WorkspaceSurfaceRegistryProvider
+      projectId={projectId}
+      workspaceId={activeWsId}
+      registryValue={registryValue}
+      registryInstance={registry.registryInstance}
     >
-      {/* Top Workspace Tab Bar */}
-      <div
-        key="workspace-top-tab-bar"
-        data-testid="workspace-top-tab-bar"
-        className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
-        style={getWorkspaceShellChromeStyle()}
+      <SharedSurfacesProvider
+        onSurfaceDestroy={(surfaceId) => {
+          // Phase 4: when a surface is hard-destroyed, also
+          // remove it from the live registry so the dock
+          // chrome / pizarra canvas both see the removal.
+          try {
+            registryValue.removeSurface(surfaceId);
+          } catch (err) {
+            // ignore — registry may already be in the right state
+          }
+        }}
       >
-        <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
-          {workspaces.map((ws, wsIndex) => {
-            const totalPanels = getAllPanelIds(ws.columns).length;
-            const workspaceTabKey = buildUniqueRenderKey(
-              'workspace-tab',
-              ws.id,
-              wsIndex,
-              workspaceTabKeyCounts
-            );
-            const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
-            const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
-            return (
-              <div
-                key={workspaceTabKey}
-                onClick={() => setActiveWsId(ws.id)}
-                draggable
-                onDragStart={(e) => {
-                  setDraggedWsId(ws.id);
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                onDragEnd={() => {
-                  setDraggedWsId(null);
-                  setDragOverWsId(null);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (draggedWsId && draggedWsId !== ws.id) setDragOverWsId(ws.id);
-                }}
-                onDragLeave={() => setDragOverWsId(null)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  reorderWorkspaceTabs(draggedWsId, ws.id);
-                  setDraggedWsId(null);
-                  setDragOverWsId(null);
-                }}
-                className={`group flex items-center justify-between h-full px-4 rounded-xl transition-all cursor-grab active:cursor-grabbing select-none border ${
-                  draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
-                } ${
-                  activeWsId === ws.id
-                    ? 'text-[var(--text-primary)] border-[var(--border-subtle)]'
-                    : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
-                }`}
-                title={workspaceTabLabel}
-                style={{
-                  ...getWorkspaceTabStyle(workspaces.length),
-                  ...getWorkspaceTabChromeStyle({
-                    active: activeWsId === ws.id,
-                    dragOver: dragOverWsId === ws.id && draggedWsId !== ws.id,
-                  }),
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <LayoutGrid
-                    className="w-3.5 h-3.5 shrink-0"
-                    style={{
-                      color:
-                        activeWsId === ws.id
-                          ? `rgba(var(--accent-rgb,88,166,255),0.9)`
-                          : 'currentColor',
-                    }}
-                  />
-                  <span className="text-[12px] font-semibold truncate">{workspaceTabLabel}</span>
-                  {hasOpenBrowserWindow ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
-                      <span
-                        className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
-                        data-testid={`workspace-browser-indicator-${ws.id}`}
-                        title="Dedicated browser window open"
-                      />
-                      <button
-                        type="button"
-                        data-testid={`workspace-browser-close-${ws.id}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          closeWorkspaceBrowserWindow(ws.id);
-                        }}
-                        className="inline-flex items-center justify-center rounded text-emerald-100/80 transition-colors hover:text-white"
-                        title="Cerrar browser dedicado de este workspace"
-                        aria-label="Cerrar browser dedicado de este workspace"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ) : null}
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
-                    style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)' }}
-                  >
-                    {totalPanels}
-                  </span>
-                </div>
-                {workspaces.length > 1 && (
-                  <button
-                    onClick={(e) => removeWorkspace(e, ws.id)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded ml-1.5 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={addWorkspace}
-            className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
-            title="Nuevo workspace"
-            aria-label="Nuevo workspace"
-            data-testid="workspace-add-button"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
-        <div className="flex items-center gap-0.5 shrink-0">
-          {/* Grid Launcher */}
-          <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
-            <DropdownMenuTrigger asChild>
-              <button
-                data-testid="workspace-grid-launcher-trigger"
-                className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                title="Lanzar Cuadrícula"
-              >
-                <Grip className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
-              data-testid="workspace-grid-launcher-content"
-            >
-              <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
-                Grillas Predefinidas
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/10" />
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {[
-                  { label: '2 Paneles', cols: 2, rows: 1 },
-                  { label: '4 Paneles', cols: 2, rows: 2 },
-                  { label: '6 Paneles', cols: 3, rows: 2 },
-                ].map((layout) => (
-                  <button
-                    key={layout.label}
-                    onClick={() => handleApplyGrid(layout.cols, layout.rows)}
-                    className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                  >
-                    <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
-                    <span className="text-[10px] font-semibold">{layout.label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-3 px-1 mb-1">
-                <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
-                  Comando Inicial
-                </label>
-                <input
-                  type="text"
-                  value={gridCommand}
-                  onChange={(e) => setGridCommand(e.target.value)}
-                  placeholder="ej. opencode"
-                  className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
-                />
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <button
-            type="button"
-            data-testid="right-dock-tab-browser"
-            onClick={() => handleRightDockTabSelect('browser')}
-            className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'browser' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Show browser dock"
-          >
-            <Globe className="w-4 h-4" />
-            {activeBrowserWindowState?.open ? (
-              <span
-                className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
-                data-testid="right-dock-tab-browser-indicator"
-                title="Ventana browser activa en segundo plano"
-              />
-            ) : null}
-          </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-editor"
-            onClick={() => handleRightDockTabSelect('editor')}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'editor' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Show editor dock"
-          >
-            <FileCode2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-swarm"
-            onClick={() => handleRightDockTabSelect('swarm')}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'swarm' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Show swarm topology"
-          >
-            <Bot className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={openTerminalSwarmLauncher}
-            className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
-            title="Lanzar swarm desde terminales"
-            aria-label="Lanzar swarm desde terminales"
-            data-testid="workspace-swarm-launch-button"
-          >
-            <Wand2 className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleTerminateSwarmLaunch}
-            disabled={!activeSwarmLaunchSummary?.launchId || swarmTerminateState.submitting}
-            className="inline-flex items-center gap-1.5 h-7 rounded-sm px-2 text-rose-300/80 transition-all hover:text-rose-200 hover:bg-rose-400/10 disabled:opacity-40 disabled:hover:bg-transparent"
-            title={
-              activeSwarmLaunchSummary?.launchId
-                ? `Terminar swarm ${activeSwarmLaunchSummary.title}`
-                : 'No hay swarm activo para terminar'
-            }
-            aria-label="Terminar swarm activo"
-            data-testid="workspace-swarm-terminate-button"
-          >
-            <X className="h-4 w-4" />
-            <span className="text-[11px] font-semibold">End swarm</span>
-          </button>
-          {swarmTerminateState.error ? (
-            <span
-              className="max-w-[220px] truncate text-[10px] text-rose-300"
-              data-testid="workspace-swarm-terminate-error"
-              title={swarmTerminateState.error}
-            >
-              {swarmTerminateState.error}
-            </span>
-          ) : activeSwarmLaunchSummary?.launchId ? (
-            <span
-              className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
-              data-testid="workspace-swarm-terminate-summary"
-              title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles`}
-            >
-              {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
-            </span>
-          ) : null}
-
-          <div className="w-px h-5 bg-white/10 mx-1" />
-
-          <NotificationCenter projectId={projectId} variant="topbar" />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                title="Reopen sessions"
-                aria-label="Reopen sessions"
-              >
-                <History className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
-              <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
-                <span>Agent Sessions</span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    refreshResumableSessions();
-                  }}
-                  className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
-                >
-                  <RefreshCw
-                    className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
-                  />
-                  Refresh
-                </button>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/10" />
-
-              {isLoadingResumableSessions && (
-                <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
-                  <Clock3 className="w-3.5 h-3.5 animate-pulse" />
-                  Loading recent sessions...
-                </div>
-              )}
-
-              {!isLoadingResumableSessions && resumableStatus === 'error' && resumableError && (
-                <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
-                  <span>{resumableError.message}</span>
-                  {resumableError.retryable !== false ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        refreshResumableSessions();
-                      }}
-                      className="inline-flex items-center gap-1 text-xs text-red-200 hover:text-white"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Retry
-                    </button>
-                  ) : null}
-                </div>
-              )}
-
-              {reopenActionError && (
-                <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
-              )}
-
-              {!isLoadingResumableSessions &&
-                resumableStatus !== 'error' &&
-                resumableSessions.length === 0 && (
-                  <div className="px-2 py-3 text-xs text-gray-400">No recent sessions found.</div>
-                )}
-
-              {!isLoadingResumableSessions &&
-                resumableSessions.map((session) => (
-                  <DropdownMenuItem
-                    key={session.sessionId}
-                    className="flex flex-col items-start gap-1 px-2 py-2 cursor-pointer"
-                    onSelect={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      try {
-                        await reopenOpenCodeSession(session);
-                      } catch (err) {
-                        setReopenActionError(String(err?.message || err || 'Reopen failed'));
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="text-xs font-medium text-gray-200 truncate">
-                        {session.title || session.sessionId}
-                      </span>
-                      <span className="text-[10px] text-gray-500 ml-auto">
-                        {session.lastActiveAt
-                          ? new Date(session.lastActiveAt).toLocaleTimeString()
-                          : ''}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="text-[10px] text-gray-500 truncate">
-                        {session.workspaceId}
-                      </span>
-                      <span className="text-[10px] text-gray-600">·</span>
-                      <span className="text-[10px] text-gray-500 truncate">{session.agentId}</span>
-                    </div>
-                  </DropdownMenuItem>
-                ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Window Controls */}
-        <div
-          className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]"
-          style={{ WebkitAppRegion: 'no-drag' }}
+        <SharedDockStoreProvider
+          storage={storage}
+          projectId={projectId || 'global'}
+          workspaceId={activeWsId || 'workspace'}
         >
-          <button
-            onClick={handleWinMinimize}
-            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
-            title="Minimize"
+          <RightDockSharedMirror
+            rightDockState={rightDockState}
+            projectId={projectId || 'global'}
+            workspaceId={activeWsId || 'workspace'}
+          />
+          <motion.div
+            ref={managerRootRef}
+            className="relative flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
+            style={getWorkspaceShellChromeStyle()}
+            {...getWorkspaceAnimProps(isMaximized)}
           >
-            <Minus
-              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-              strokeWidth={3}
-            />
-          </button>
-          <button
-            onClick={handleWinToggleMaximize}
-            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
-            title={isWinMaximized ? 'Restore' : 'Maximize'}
-          >
-            <Plus
-              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-              strokeWidth={3}
-            />
-          </button>
-          <button
-            onClick={handleWinClose}
-            className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
-            title="Close"
-          >
-            <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
-          </button>
-        </div>
-      </div>
-
-      {/* Persistent Grid Area */}
-      <div key="workspace-grid-shell" className="flex-1 flex bg-[#080b12] relative overflow-hidden">
-        {/* Terminal Grid */}
-        <div ref={workspaceGridAreaRef} className="flex-1 relative min-w-0">
-          {workspaces.map((ws, wsIndex) => {
-            const workspaceGridKey = buildUniqueRenderKey(
-              'workspace-grid',
-              ws.id,
-              wsIndex,
-              workspaceGridKeyCounts
-            );
-            const wsDockState =
-              activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
-            const updateWsDockState = updateRightDockState;
-            const focusedPanelId = focusedPanelByWorkspace[ws.id];
-            const focusedPanel = findPanelInWorkspace(ws, focusedPanelId);
-            return (
+            {shortcutHint ? (
               <div
-                key={workspaceGridKey}
-                data-testid={`workspace-shell-${ws.id}`}
-                className={`absolute inset-0 p-1.5 ${activeWsId === ws.id && isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-                style={{
-                  zIndex: activeWsId === ws.id ? 10 : 0,
-                }}
+                role="status"
+                aria-live="polite"
+                data-testid="terminal-shortcut-hint"
+                className="pointer-events-none absolute bottom-4 left-1/2 z-[120] -translate-x-1/2 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(13,17,23,0.94)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-lg"
               >
-                <PanelGroup
-                  direction="horizontal"
-                  className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
-                  aria-hidden={isFullscreenBrowser}
-                >
-                  <Panel
-                    key={`${ws.id}-terminal-grid`}
-                    minSize={18}
-                    className="flex flex-col bg-[#0c1018] rounded-xl overflow-hidden border border-[var(--border-subtle)]"
-                  >
-                    {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
-
-                    {/* Terminal bodies — preserve real split geometry */}
-                    <div className="flex-1 relative overflow-hidden min-h-0">
-                      {focusedPanel ? (
-                        <div
-                          className="h-full w-full"
-                          data-testid={`workspace-focused-panel-${focusedPanel.id}`}
+                {shortcutHint}
+              </div>
+            ) : null}
+            {/* Top Workspace Tab Bar */}
+            <div
+              key="workspace-top-tab-bar"
+              data-testid="workspace-top-tab-bar"
+              className="flex items-center min-h-[42px] bg-[var(--surface-app)] select-none shrink-0 px-2 gap-1.5"
+              style={{
+                ...getWorkspaceShellChromeStyle(),
+                ...getWorkspaceTopBarStyle(),
+              }}
+            >
+              <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
+                {workspaces.map((ws, wsIndex) => {
+                  const totalPanels = getAllPanelIds(ws.columns).length;
+                  const workspaceTabKey = buildStableWorkspaceShellKey('workspace-tab', ws.id);
+                  const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
+                  const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
+                  return (
+                    <div
+                      key={workspaceTabKey}
+                      onClick={() => setActiveWsId(ws.id)}
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedWsId(ws.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragEnd={() => {
+                        setDraggedWsId(null);
+                        setDragOverWsId(null);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (draggedWsId && draggedWsId !== ws.id) setDragOverWsId(ws.id);
+                      }}
+                      onDragLeave={() => setDragOverWsId(null)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        reorderWorkspaceTabs(draggedWsId, ws.id);
+                        setDraggedWsId(null);
+                        setDragOverWsId(null);
+                      }}
+                      className={`group relative flex h-[34px] min-h-[34px] items-center justify-between px-3.5 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none border ${
+                        draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
+                      } ${
+                        activeWsId === ws.id
+                          ? 'text-[var(--text-primary)] border-transparent'
+                          : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
+                      }`}
+                      title={workspaceTabLabel}
+                      style={{
+                        ...getWorkspaceTabStyle(workspaces.length),
+                        ...getWorkspaceTabChromeStyle({
+                          active: activeWsId === ws.id,
+                          dragOver: dragOverWsId === ws.id && draggedWsId !== ws.id,
+                        }),
+                      }}
+                    >
+                      {activeWsId === ws.id && (
+                        <motion.span
+                          layoutId="workspace-active-tab-indicator"
+                          className="absolute inset-0 rounded-xl border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.07)]"
+                          transition={{ type: 'spring', stiffness: 500, damping: 42, mass: 0.7 }}
+                          style={{ zIndex: 0, willChange: 'transform' }}
+                        />
+                      )}
+                      <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
+                        <LayoutGrid
+                          className="w-3.5 h-3.5 shrink-0"
+                          style={{
+                            color:
+                              activeWsId === ws.id
+                                ? `rgba(var(--accent-rgb,88,166,255),0.9)`
+                                : 'currentColor',
+                          }}
+                        />
+                        <span className="min-w-0 truncate text-[12px] font-semibold">
+                          {workspaceTabLabel}
+                        </span>
+                        {hasOpenBrowserWindow ? (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
+                            <span
+                              className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
+                              data-testid={`workspace-browser-indicator-${ws.id}`}
+                              title="Dedicated browser window open"
+                            />
+                            <button
+                              type="button"
+                              data-testid={`workspace-browser-close-${ws.id}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                closeWorkspaceBrowserWindow(ws.id);
+                              }}
+                              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-emerald-100/80 transition-colors hover:bg-emerald-400/15 hover:text-white"
+                              title="Cerrar browser dedicado de este workspace"
+                              aria-label="Cerrar browser dedicado de este workspace"
+                            >
+                              <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                            </button>
+                          </span>
+                        ) : null}
+                        <span
+                          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
+                          style={{
+                            background: 'rgba(255,255,255,0.07)',
+                            color: 'var(--text-muted)',
+                          }}
                         >
-                          {renderWorkspacePanel(focusedPanel, {
-                            activePanelId,
-                            activeWsId,
-                            isActivePanel:
-                              activePanelId === focusedPanel.id && activeWsId === ws.id,
-                            isVisibleInLayout: activeWsId === ws.id && isVisible,
-                            panelLabel: getPanelDisplayLabel(ws, focusedPanel.id),
-                            cwd,
-                            wsId: ws.id,
-                            setActivePanelIds,
-                            onClosePanel: () => handleClosePanel(focusedPanel.id),
-                            onSplitRight: () => handleSplit('horizontal', focusedPanel.id),
-                            onSplitDown: () => handleSplit('vertical', focusedPanel.id),
-                            onToggleFocus: () => togglePanelFocus(ws.id, focusedPanel.id),
-                            isFocusedPanel: true,
-                            onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
-                            panelSemanticMetadata: derivePanelSemanticMetadata(
-                              focusedPanel,
-                              agentRunsByPanel[focusedPanel.id]
-                            ),
-                            suspendNativeSurface:
-                              activeWsId === ws.id && isVisible && shouldSuspendNativeSurfaces,
-                            nativeSurfacePolicy,
-                            requestedRendererMode: resolveRequestedRenderer({
-                              workspaceId: ws.id,
-                              panelId: focusedPanel.id,
-                              prefs: terminalRendererPreferences,
-                            }),
-                            onResetRendererToXterm: () =>
-                              handleResetPanelRendererToXterm(ws.id, focusedPanel.id),
-                          })}
-                        </div>
-                      ) : (
-                        <PanelGroup
-                          direction="horizontal"
-                          className="h-full w-full"
-                          data-testid={`workspace-columns-${ws.id}`}
-                          data-layout-direction="horizontal"
+                          {totalPanels}
+                        </span>
+                      </div>
+                      {workspaces.length > 1 && (
+                        <button
+                          type="button"
+                          data-testid={`workspace-close-${ws.id}`}
+                          onClick={(e) => removeWorkspace(e, ws.id)}
+                          aria-label={`Cerrar ${workspaceTabLabel}`}
+                          title={`Cerrar ${workspaceTabLabel}`}
+                          className={`relative z-[1] ml-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
+                            activeWsId === ws.id
+                              ? 'border-white/10 bg-white/[0.05] text-[var(--text-secondary)] opacity-90 hover:border-red-400/35 hover:bg-red-500/14 hover:text-red-300'
+                              : 'border-transparent text-[var(--text-muted)] opacity-0 hover:border-white/12 hover:bg-white/10 hover:text-[var(--text-primary)] group-hover:opacity-85'
+                          }`}
                         >
-                          {ws.columns.map((column, columnIndex) => (
-                            <React.Fragment key={column.id}>
-                              <Panel minSize={18} className="min-w-0 min-h-0">
-                                {column.panels.length > 1 ? (
-                                  <PanelGroup
-                                    direction="vertical"
-                                    className="h-full w-full"
-                                    data-testid={`workspace-column-panels-${column.id}`}
-                                    data-layout-direction="vertical"
-                                  >
-                                    {column.panels.map((panel, panelIndex) => (
-                                      <React.Fragment key={panel.id}>
-                                        <Panel
-                                          minSize={20}
-                                          className="min-h-0 min-w-0"
-                                          data-testid={`workspace-column-${column.id}`}
-                                        >
-                                          {renderWorkspacePanel(panel, {
-                                            activePanelId,
-                                            activeWsId,
-                                            isActivePanel:
-                                              activePanelId === panel.id && activeWsId === ws.id,
-                                            isVisibleInLayout: activeWsId === ws.id && isVisible,
-                                            panelLabel: getPanelDisplayLabel(ws, panel.id),
-                                            cwd,
-                                            wsId: ws.id,
-                                            setActivePanelIds,
-                                            onClosePanel: () => handleClosePanel(panel.id),
-                                            onSplitRight: () => handleSplit('horizontal', panel.id),
-                                            onSplitDown: () => handleSplit('vertical', panel.id),
-                                            onToggleFocus: () => togglePanelFocus(ws.id, panel.id),
-                                            isFocusedPanel: false,
-                                            onActivatePanel: (panelId) =>
-                                              activateWorkspacePanel(ws.id, panelId),
-                                            panelSemanticMetadata: derivePanelSemanticMetadata(
-                                              panel,
-                                              agentRunsByPanel[panel.id]
-                                            ),
-                                            suspendNativeSurface:
-                                              activeWsId === ws.id &&
-                                              isVisible &&
-                                              shouldSuspendNativeSurfaces,
-                                            nativeSurfacePolicy,
-                                            requestedRendererMode: resolveRequestedRenderer({
-                                              workspaceId: ws.id,
-                                              panelId: panel.id,
-                                              prefs: terminalRendererPreferences,
-                                            }),
-                                            onResetRendererToXterm: () =>
-                                              handleResetPanelRendererToXterm(ws.id, panel.id),
-                                          })}
-                                        </Panel>
-                                        {panelIndex < column.panels.length - 1 ? (
-                                          <PanelResizeHandle
-                                            className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
-                                            data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
-                                            onDragging={setIsDraggingInternalSplit}
-                                            onPointerDown={() => setIsDraggingInternalSplit(true)}
-                                            onPointerUp={() => setIsDraggingInternalSplit(false)}
-                                            onMouseDown={() => setIsDraggingInternalSplit(true)}
-                                            onMouseUp={() => setIsDraggingInternalSplit(false)}
-                                          >
-                                            <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                          </PanelResizeHandle>
-                                        ) : null}
-                                      </React.Fragment>
-                                    ))}
-                                  </PanelGroup>
-                                ) : (
-                                  <div
-                                    className="h-full w-full"
-                                    data-testid={`workspace-column-${column.id}`}
-                                  >
-                                    {renderWorkspacePanel(column.panels[0], {
-                                      activePanelId,
-                                      activeWsId,
-                                      isActivePanel:
-                                        activePanelId === column.panels[0].id &&
-                                        activeWsId === ws.id,
-                                      isVisibleInLayout: activeWsId === ws.id && isVisible,
-                                      panelLabel: getPanelDisplayLabel(ws, column.panels[0].id),
-                                      cwd,
-                                      wsId: ws.id,
-                                      setActivePanelIds,
-                                      onClosePanel: () => handleClosePanel(column.panels[0].id),
-                                      onSplitRight: () =>
-                                        handleSplit('horizontal', column.panels[0].id),
-                                      onSplitDown: () =>
-                                        handleSplit('vertical', column.panels[0].id),
-                                      onToggleFocus: () =>
-                                        togglePanelFocus(ws.id, column.panels[0].id),
-                                      isFocusedPanel: false,
-                                      onActivatePanel: (panelId) =>
-                                        activateWorkspacePanel(ws.id, panelId),
-                                      panelSemanticMetadata: derivePanelSemanticMetadata(
-                                        column.panels[0],
-                                        agentRunsByPanel[column.panels[0].id]
-                                      ),
-                                      suspendNativeSurface:
-                                        activeWsId === ws.id &&
-                                        isVisible &&
-                                        shouldSuspendNativeSurfaces,
-                                      nativeSurfacePolicy,
-                                      requestedRendererMode: resolveRequestedRenderer({
-                                        workspaceId: ws.id,
-                                        panelId: column.panels[0].id,
-                                        prefs: terminalRendererPreferences,
-                                      }),
-                                      onResetRendererToXterm: () =>
-                                        handleResetPanelRendererToXterm(ws.id, column.panels[0].id),
-                                    })}
-                                  </div>
-                                )}
-                              </Panel>
-                              {columnIndex < ws.columns.length - 1 ? (
-                                <PanelResizeHandle
-                                  className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[rgba(var(--accent-rgb,88,166,255),0.14)] hover:bg-[#142036] transition-colors"
-                                  data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
-                                  onDragging={setIsDraggingInternalSplit}
-                                  onPointerDown={() => setIsDraggingInternalSplit(true)}
-                                  onPointerUp={() => setIsDraggingInternalSplit(false)}
-                                  onMouseDown={() => setIsDraggingInternalSplit(true)}
-                                  onMouseUp={() => setIsDraggingInternalSplit(false)}
-                                >
-                                  <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                </PanelResizeHandle>
-                              ) : null}
-                            </React.Fragment>
-                          ))}
-                        </PanelGroup>
+                          <X className="h-3 w-3" strokeWidth={2.25} />
+                        </button>
                       )}
                     </div>
-                  </Panel>
-
-                  {wsDockState.visible && !wsDockState.maximized ? (
-                    <PanelResizeHandle
-                      key={`${ws.id}-right-dock-resize`}
-                      className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
-                      data-testid="workspace-right-dock-resize-handle"
-                      onDragging={setIsDraggingDock}
-                    >
-                      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
-                      <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
-                    </PanelResizeHandle>
-                  ) : null}
-                  {wsDockState.visible && !wsDockState.maximized && !hideRightDockPanel ? (
-                    <Panel
-                      key={`${ws.id}-right-dock-panel`}
-                      minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
-                      maxSize={100}
-                      defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
-                      onResize={(size) => {
-                        if (!wsDockState.maximized) updateWsDockState({ size });
-                      }}
-                      className="pointer-events-none flex flex-col"
-                      data-testid="workspace-right-dock-panel"
-                    >
-                      <div
-                        ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
-                        data-testid="workspace-right-dock-placeholder"
-                        className="h-full w-full pointer-events-none"
-                      />
-                    </Panel>
-                  ) : null}
-                </PanelGroup>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={addWorkspace}
+                  className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
+                  title="Nuevo workspace"
+                  aria-label="Nuevo workspace"
+                  data-testid="workspace-add-button"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
               </div>
-            );
-          })}
-          {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
-            <div
-              data-testid="workspace-right-dock-layer"
-              className={`absolute z-20 overflow-hidden rounded-xl border border-[var(--border-subtle)] ${!effectiveRightDockState.visible || hideRightDockPanel ? 'hidden' : 'flex flex-col'}`}
-              style={rightDockLayerStyle}
-            >
-              <WorkspaceRightDock
-                project={{ id: projectId, local_path: cwd }}
-                workspaceId={activeWorkspace.id}
-                dockState={effectiveRightDockState}
-                onDockStateChange={updateRightDockState}
-                browserWindowState={browserWindowStates?.[activeWorkspace.id] || null}
-                onBrowserWindowStateChange={updateBrowserWindowState}
-                workspaceWindows={workspaceWindows?.[activeWorkspace.id] || []}
-                activeWorkspaceWindowId={activeWindowIds?.[activeWorkspace.id] || null}
-                onWorkspaceWindowSelect={(windowId) => {
-                  switchWindowInWorkspace(activeWorkspace.id, windowId);
-                  if (effectiveRightDockState.maximized) {
-                    updateRightDockState({
-                      visible: true,
-                      maximized: true,
-                      maximizedView: 'window',
-                    });
-                  }
-                }}
-                onWorkspaceWindowAdd={() => addWindowToWorkspace(activeWorkspace.id)}
-                onWorkspaceWindowRemove={(windowId) =>
-                  removeWindowFromWorkspace(activeWorkspace.id, windowId)
-                }
-              />
-              {isDraggingDock ? (
-                <div
-                  data-testid="workspace-right-dock-drag-overlay"
-                  className="pointer-events-none absolute inset-0 z-50 cursor-col-resize"
-                />
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
 
-      <SwarmLaunchWizardModal
-        key="terminal-swarm-launch-wizard"
-        open={swarmLaunchWizardOpen}
-        catalog={swarmLaunchCatalog}
-        preview={swarmLaunchPreview}
-        currentStep={swarmLaunchWizardStep}
-        onClose={() => setSwarmLaunchWizardOpen(false)}
-        onStepChange={setSwarmLaunchWizardStep}
-        onDraftChange={updateSwarmLaunchDraft}
-        onLaunch={handleTerminalSwarmLaunch}
-        submitState={swarmLaunchSubmitState}
-        onSubmitStateChange={setSwarmLaunchSubmitState}
-      />
-    </motion.div>
+              {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
+              <div className="flex items-center gap-0.5 shrink-0">
+                {/* Grid Launcher */}
+                <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      data-testid="workspace-grid-launcher-trigger"
+                      className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                      title="Lanzar Cuadrícula"
+                    >
+                      <Grip className="w-4 h-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
+                    data-testid="workspace-grid-launcher-content"
+                  >
+                    <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
+                      Grillas Predefinidas
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator className="bg-white/10" />
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      {[
+                        { label: '2 Paneles', cols: 2, rows: 1 },
+                        { label: '4 Paneles', cols: 2, rows: 2 },
+                        { label: '6 Paneles', cols: 3, rows: 2 },
+                      ].map((layout) => (
+                        <button
+                          key={layout.label}
+                          onClick={() => handleApplyGrid(layout.cols, layout.rows)}
+                          className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                        >
+                          <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
+                          <span className="text-[10px] font-semibold">{layout.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-3 px-1 mb-1">
+                      <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
+                        Comando Inicial
+                      </label>
+                      <input
+                        type="text"
+                        value={gridCommand}
+                        onChange={(e) => setGridCommand(e.target.value)}
+                        placeholder="ej. opencode"
+                        className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
+                      />
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <button
+                  type="button"
+                  data-testid="right-dock-tab-browser"
+                  data-pizarra-active-tab={
+                    rightDockState.activeTab === 'browser' && rightDockState.visible
+                      ? 'true'
+                      : 'false'
+                  }
+                  onClick={() => handleRightDockTabSelect('browser')}
+                  className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                    rightDockState.activeTab === 'browser' && rightDockState.visible
+                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+                  }`}
+                  title="Browser (Ctrl+Shift+B)"
+                >
+                  <Globe className="w-4 h-4" />
+                  {activeBrowserWindowState?.open ? (
+                    <span
+                      className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                      data-testid="right-dock-tab-browser-indicator"
+                      title="Ventana browser activa en segundo plano"
+                    />
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  data-testid="right-dock-tab-editor"
+                  data-pizarra-active-tab={
+                    rightDockState.activeTab === 'editor' && rightDockState.visible
+                      ? 'true'
+                      : 'false'
+                  }
+                  onClick={() => handleRightDockTabSelect('editor')}
+                  className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                    rightDockState.activeTab === 'editor' && rightDockState.visible
+                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+                  }`}
+                  title="Editor / archivos (Ctrl+Shift+E)"
+                >
+                  <FileCode2 className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  data-testid="right-dock-tab-swarm"
+                  data-pizarra-active-tab={
+                    rightDockState.activeTab === 'swarm' && rightDockState.visible
+                      ? 'true'
+                      : 'false'
+                  }
+                  onClick={() => handleRightDockTabSelect('swarm')}
+                  className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                    rightDockState.activeTab === 'swarm' && rightDockState.visible
+                      ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+                  }`}
+                  title="Show swarm topology"
+                >
+                  <Bot className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  data-testid="right-dock-tab-zed"
+                  onClick={() => dispatchZedOverlayToggle()}
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 transition-all hover:text-gray-200 hover:bg-white/[0.05]"
+                  title="Zed asistente (Ctrl+Shift+Z)"
+                >
+                  <span className="text-xs font-bold" style={{ color: 'inherit' }}>
+                    Z
+                  </span>
+                </button>
+                <label
+                  className="relative inline-flex items-center cursor-pointer select-none"
+                  title="Pizarra canvas"
+                >
+                  <input
+                    type="checkbox"
+                    data-testid="pizarra-mode-switch"
+                    checked={rightDockState.maximized && rightDockState.maximizedView === 'pizarra'}
+                    onChange={() => handleRightDockTabSelect('pizarra')}
+                    className="sr-only"
+                  />
+                  <div
+                    className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
+                      rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                        ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.5)]'
+                        : 'bg-[rgba(255,255,255,0.15)]'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
+                        rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                          ? 'translate-x-4 bg-[var(--accent-primary)]'
+                          : 'translate-x-0.5 bg-gray-400'
+                      }`}
+                      style={{ transition: 'transform 200ms ease' }}
+                    />
+                  </div>
+                  <LayoutGrid
+                    className={`ml-2 w-4 h-4 ${
+                      rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                        ? 'text-[var(--accent-primary)]'
+                        : 'text-gray-500'
+                    }`}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={openTerminalSwarmLauncher}
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
+                  title="Lanzar swarm desde terminales"
+                  aria-label="Lanzar swarm desde terminales"
+                  data-testid="workspace-swarm-launch-button"
+                >
+                  <Wand2 className="h-4 w-4" />
+                </button>
+                {activeSwarmLaunchSummary?.launchId ? (
+                  <span
+                    className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
+                    data-testid="workspace-swarm-active-summary"
+                    title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles · cerrá el workspace para finalizar`}
+                  >
+                    {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
+                  </span>
+                ) : null}
+
+                <div className="w-px h-5 bg-white/10 mx-1" />
+
+                <NotificationCenter projectId={projectId} variant="topbar" />
+
+                <button
+                  type="button"
+                  onClick={() => setRestoreSettingsModal({ open: true })}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                  title="Configuración de restauración de terminales"
+                  aria-label="Configuración de restauración de terminales"
+                  data-testid="terminal-restore-settings-btn"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                      title="Reopen sessions"
+                      aria-label="Reopen sessions"
+                    >
+                      <History className="w-4 h-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
+                    <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
+                      <span>Agent Sessions</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          refreshResumableSessions();
+                        }}
+                        className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                      >
+                        <RefreshCw
+                          className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
+                        />
+                        Refresh
+                      </button>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator className="bg-white/10" />
+
+                    {isLoadingResumableSessions && (
+                      <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
+                        <Clock3 className="w-3.5 h-3.5 animate-pulse" />
+                        Loading recent sessions...
+                      </div>
+                    )}
+
+                    {!isLoadingResumableSessions &&
+                      resumableStatus === 'error' &&
+                      resumableError && (
+                        <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
+                          <span>{resumableError.message}</span>
+                          {resumableError.retryable !== false ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                refreshResumableSessions();
+                              }}
+                              className="inline-flex items-center gap-1 text-xs text-red-200 hover:text-white"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Retry
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
+
+                    {reopenActionError && (
+                      <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
+                    )}
+
+                    {!isLoadingResumableSessions &&
+                      resumableStatus !== 'error' &&
+                      resumableSessions.length === 0 && (
+                        <div className="px-2 py-3 text-xs text-gray-400">
+                          No recent sessions found.
+                        </div>
+                      )}
+
+                    {!isLoadingResumableSessions &&
+                      resumableSessions.map((session) => (
+                        <DropdownMenuItem
+                          key={session.sessionId}
+                          className="flex flex-col items-start gap-1 px-2 py-2 cursor-pointer"
+                          onSelect={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            try {
+                              await reopenOpenCodeSession(session);
+                            } catch (err) {
+                              setReopenActionError(String(err?.message || err || 'Reopen failed'));
+                            }
+                          }}
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <span className="text-xs font-medium text-gray-200 truncate">
+                              {session.title || session.sessionId}
+                            </span>
+                            <span className="text-[10px] text-gray-500 ml-auto">
+                              {session.lastActiveAt
+                                ? new Date(session.lastActiveAt).toLocaleTimeString()
+                                : ''}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 w-full">
+                            <span className="text-[10px] text-gray-500 truncate">
+                              {session.workspaceId}
+                            </span>
+                            <span className="text-[10px] text-gray-600">·</span>
+                            <span className="text-[10px] text-gray-500 truncate">
+                              {session.agentId}
+                            </span>
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {/* Window Controls */}
+              <div
+                className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]"
+                style={{ WebkitAppRegion: 'no-drag' }}
+              >
+                <button
+                  onClick={handleWinMinimize}
+                  className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+                  title="Minimize"
+                >
+                  <Minus
+                    className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                    strokeWidth={3}
+                  />
+                </button>
+                <button
+                  onClick={handleWinToggleMaximize}
+                  className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+                  title={isWinMaximized ? 'Restore' : 'Maximize'}
+                >
+                  <Plus
+                    className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                    strokeWidth={3}
+                  />
+                </button>
+                <button
+                  onClick={handleWinClose}
+                  className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+                  title="Close"
+                >
+                  <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
+                </button>
+              </div>
+            </div>
+
+            {/* Persistent Grid Area */}
+            <div
+              key="workspace-grid-shell"
+              className="flex-1 flex bg-[#080b12] relative overflow-hidden"
+            >
+              {/* Terminal Grid */}
+              <div ref={workspaceGridAreaRef} className="flex-1 relative min-w-0">
+                {workspaces.map((ws, wsIndex) => {
+                  const workspaceGridKey = buildStableWorkspaceShellKey('workspace-grid', ws.id);
+                  const wsDockState =
+                    activeWsId === ws.id
+                      ? effectiveRightDockState
+                      : { ...DEFAULT_RIGHT_DOCK_STATE };
+                  const updateWsDockState = updateRightDockState;
+                  const focusedPanelId = focusedPanelByWorkspace[ws.id];
+                  const isWorkspaceVisibleInLayout =
+                    !isFullscreenBrowser && activeWsId === ws.id && isVisible;
+                  const shouldSuspendWorkspaceNativeSurfaces =
+                    isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
+                  const totalTerminalPanelCount = resolveWorkspaceVisibleTerminalPanelCount(
+                    ws.columns
+                  );
+                  const visibleTerminalPanelCount = focusedPanelId ? 1 : totalTerminalPanelCount;
+                  const renderWorkspacePanelSlot = (panel, panelRenderOptions = {}) =>
+                    renderWorkspacePanel(panel, {
+                      activePanelId,
+                      activeWsId,
+                      isActivePanel: activePanelId === panel.id && activeWsId === ws.id,
+                      isVisibleInLayout:
+                        panelRenderOptions.isVisibleInLayout ??
+                        resolvePanelVisibleInLayout({
+                          isWorkspaceVisibleInLayout,
+                          focusedPanelId,
+                          panelId: panel.id,
+                        }),
+                      visibleTerminalPanelCount:
+                        panelRenderOptions.visibleTerminalPanelCount ?? visibleTerminalPanelCount,
+                      panelLabel: getPanelDisplayLabel(ws, panel.id),
+                      renameEditing: editingPanelId === panel.id,
+                      renameValue:
+                        editingPanelId === panel.id ? editingValue : '',
+                      renameError:
+                        editingPanelId === panel.id ? renameError : null,
+                      onStartRename: (pnl, label) => startPanelRename(pnl, label),
+                      onRenameValueChange: (val) => updateEditingValue(val),
+                      onCommitRename: (pnl, overrideValue) => commitPanelRename(pnl, ws.id, overrideValue),
+                      onCancelRename: () => cancelPanelRename(),
+                      cwd,
+                      wsId: ws.id,
+                      setActivePanelIds,
+                      onClosePanel: () => handleClosePanel(panel.id),
+                      onSplitRight: () => handleSplit('horizontal', panel.id),
+                      onSplitDown: () => handleSplit('vertical', panel.id),
+                      onToggleFocus: () => togglePanelFocus(ws.id, panel.id),
+                      isFocusedPanel: focusedPanelId === panel.id,
+                      navigationPulseActive: panelNavPulseId === panel.id,
+                      onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
+                      panelSemanticMetadata: derivePanelSemanticMetadata(
+                        panel,
+                        agentRunsByPanel[panel.id]
+                      ),
+                      inboxPendingCount:
+                        swarmInboxPendingByRole?.[
+                          panel?.swarmRole?.roleKey ||
+                            inferSwarmRoleKey({
+                              ...(agentRunsByPanel[panel.id] || {}),
+                              ...(panel?.swarmContext || {}),
+                              roleKey: panel?.swarmRole?.roleKey,
+                            })
+                        ] || 0,
+                      suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
+                      nativeSurfacePolicy,
+                      requestedRendererMode: resolveRequestedRenderer({
+                        workspaceId: ws.id,
+                        panelId: panel.id,
+                        prefs: terminalRendererPreferences,
+                      }),
+                      onResetRendererToXterm: () =>
+                        handleResetPanelRendererToXterm(ws.id, panel.id),
+                      onSetPanelRenderer: (mode) => handleSetPanelRenderer(ws.id, panel.id, mode),
+                      connectionState: getPanelConnectionState(panel),
+                      deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
+                      pizarraOwnsLiveSurfaces,
+                    });
+                  return (
+                    <div
+                      key={workspaceGridKey}
+                      data-testid={`workspace-shell-${ws.id}`}
+                      data-ws-active={
+                        !isFullscreenBrowser && activeWsId === ws.id && isVisible ? 'true' : 'false'
+                      }
+                      aria-hidden={activeWsId !== ws.id || !isVisible}
+                      className="absolute inset-0 p-0"
+                      style={{
+                        zIndex: activeWsId === ws.id ? 10 : 0,
+                        ...resolveWorkspaceShellVisibilityStyle({
+                          isActiveWorkspace: activeWsId === ws.id,
+                          isManagerVisible: isVisible,
+                          isFullscreenTakeover: isFullscreenBrowser,
+                        }),
+                      }}
+                    >
+                      <PanelGroup
+                        direction="horizontal"
+                        className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
+                        aria-hidden={isFullscreenBrowser}
+                      >
+                        <Panel
+                          key={`${ws.id}-terminal-grid`}
+                          minSize={18}
+                          className="flex flex-col bg-[var(--surface-app)] rounded-none overflow-hidden"
+                          style={getTerminalGridShellStyle()}
+                        >
+                          {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
+
+                          {/* Terminal bodies — PanelGroup stays mounted in focus mode (CSS only). */}
+                          <div
+                            className="relative min-h-0 flex-1 overflow-hidden"
+                            data-focus-mode={focusedPanelId ? 'true' : undefined}
+                          >
+                            <PanelGroup
+                              direction="horizontal"
+                              className="h-full w-full"
+                              data-testid={`workspace-columns-${ws.id}`}
+                              data-layout-direction="horizontal"
+                              onLayout={handlePanelGroupLayout}
+                            >
+                              {ws.columns.map((column, columnIndex) => {
+                                const columnHiddenInFocus =
+                                  Boolean(focusedPanelId) &&
+                                  !columnContainsFocusedPanel(column, focusedPanelId);
+                                return (
+                                  <React.Fragment key={column.id}>
+                                    <Panel
+                                      minSize={focusedPanelId ? 0 : 18}
+                                      className={`min-h-0 min-w-0 ${columnHiddenInFocus ? 'hidden' : ''}`}
+                                    >
+                                      {column.panels.length > 1 ? (
+                                        <PanelGroup
+                                          direction="vertical"
+                                          className="h-full w-full"
+                                          data-testid={`workspace-column-panels-${column.id}`}
+                                          data-layout-direction="vertical"
+                                          onLayout={handlePanelGroupLayout}
+                                        >
+                                          {column.panels.map((panel, panelIndex) => (
+                                            <React.Fragment key={panel.id}>
+                                              <Panel
+                                                minSize={focusedPanelId ? 0 : 20}
+                                                className={`min-h-0 min-w-0 overflow-visible ${focusedPanelId && focusedPanelId !== panel.id ? 'hidden' : ''}`}
+                                                data-testid={`workspace-column-${column.id}`}
+                                              >
+                                                <div
+                                                  className={resolveFocusPanelSlotClassName({
+                                                    focusedPanelId,
+                                                    panelId: panel.id,
+                                                  })}
+                                                  data-testid={
+                                                    focusedPanelId === panel.id
+                                                      ? `workspace-focused-panel-${panel.id}`
+                                                      : `panel-slot-${panel.id}`
+                                                  }
+                                                >
+                                                  {renderWorkspacePanelSlot(panel, {
+                                                    visibleTerminalPanelCount: focusedPanelId
+                                                      ? 1
+                                                      : totalTerminalPanelCount,
+                                                  })}
+                                                </div>
+                                              </Panel>
+                                              {!focusedPanelId &&
+                                              panelIndex < column.panels.length - 1 ? (
+                                                <PanelResizeHandle
+                                                  className="relative z-30 h-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                                  data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
+                                                  onDragging={handleInternalSplitDragging}
+                                                >
+                                                  <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                                </PanelResizeHandle>
+                                              ) : null}
+                                            </React.Fragment>
+                                          ))}
+                                        </PanelGroup>
+                                      ) : (
+                                        <div
+                                          className="h-full w-full overflow-visible"
+                                          data-testid={`workspace-column-${column.id}`}
+                                        >
+                                          <div
+                                            className={resolveFocusPanelSlotClassName({
+                                              focusedPanelId,
+                                              panelId: column.panels[0].id,
+                                            })}
+                                            data-testid={
+                                              focusedPanelId === column.panels[0].id
+                                                ? `workspace-focused-panel-${column.panels[0].id}`
+                                                : `panel-slot-${column.panels[0].id}`
+                                            }
+                                          >
+                                            {renderWorkspacePanelSlot(column.panels[0], {
+                                              visibleTerminalPanelCount: focusedPanelId
+                                                ? 1
+                                                : totalTerminalPanelCount,
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </Panel>
+                                    {!focusedPanelId && columnIndex < ws.columns.length - 1 ? (
+                                      <PanelResizeHandle
+                                        className="relative z-30 w-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                        data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
+                                        onDragging={handleInternalSplitDragging}
+                                      >
+                                        <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                      </PanelResizeHandle>
+                                    ) : null}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </PanelGroup>
+                          </div>
+                        </Panel>
+
+                        {wsDockState.visible && !wsDockState.maximized ? (
+                          <PanelResizeHandle
+                            key={`${ws.id}-right-dock-resize`}
+                            className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
+                            data-testid="workspace-right-dock-resize-handle"
+                            onDragging={handleDockDragging}
+                          >
+                            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
+                            <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
+                          </PanelResizeHandle>
+                        ) : null}
+                        {wsDockState.visible && !wsDockState.maximized && !hideRightDockPanel ? (
+                          <Panel
+                            key={`${ws.id}-right-dock-panel`}
+                            minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
+                            maxSize={100}
+                            defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
+                            onResize={(size) => {
+                              handleRightDockPanelResize(size, {
+                                maximized: wsDockState.maximized,
+                              });
+                            }}
+                            className="pointer-events-none flex flex-col"
+                            data-testid="workspace-right-dock-panel"
+                          >
+                            <div
+                              ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
+                              data-testid="workspace-right-dock-placeholder"
+                              className="h-full w-full pointer-events-none"
+                            />
+                          </Panel>
+                        ) : null}
+                      </PanelGroup>
+                    </div>
+                  );
+                })}
+                {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
+                  <motion.div
+                    ref={rightDockLayerRef}
+                    {...rightDockAnimProps}
+                    data-testid="workspace-right-dock-layer"
+                    data-dock-layer-visible={dockLayerVisible ? 'true' : 'false'}
+                    aria-hidden={!dockLayerVisible}
+                    className={`absolute overflow-hidden rounded-xl border border-[var(--border-subtle)] flex flex-col ${
+                      dockLayerVisible ? '' : 'pointer-events-none'
+                    }`}
+                    style={{
+                      ...rightDockLayerChromeStyle,
+                      ...resolveRightDockTakeoverChromeStyle(isFullscreenBrowser),
+                      zIndex: isFullscreenBrowser ? 200 : 50,
+                      willChange: isDraggingDock
+                        ? 'left, width, transform, opacity'
+                        : 'transform, opacity',
+                    }}
+                  >
+                    <WorkspaceRightDock
+                      project={{ id: projectId, local_path: cwd }}
+                      workspaceId={activeWorkspace.id}
+                      dockState={effectiveRightDockState}
+                      onDockStateChange={updateRightDockState}
+                      browserWindowState={browserWindowStates?.[activeWorkspace.id] || null}
+                      onBrowserWindowStateChange={updateBrowserWindowState}
+                      workspaceWindows={workspaceWindows?.[activeWorkspace.id] || []}
+                      activeWorkspaceWindowId={activeWindowIds?.[activeWorkspace.id] || null}
+                      onWorkspaceWindowSelect={(windowId) => {
+                        switchWindowInWorkspace(activeWorkspace.id, windowId);
+                        if (effectiveRightDockState.maximized) {
+                          updateRightDockState({
+                            visible: true,
+                            maximized: true,
+                            maximizedView: 'window',
+                          });
+                        }
+                      }}
+                      onWorkspaceWindowAdd={() => addWindowToWorkspace(activeWorkspace.id)}
+                      onWorkspaceWindowRemove={(windowId) =>
+                        removeWindowFromWorkspace(activeWorkspace.id, windowId)
+                      }
+                      executionCards={operatorCards}
+                      onCardConfirm={confirmCard}
+                      onCardCancel={cancelCard}
+                    />
+                    {isDraggingDock ? (
+                      <div
+                        data-testid="workspace-right-dock-drag-overlay"
+                        className="pointer-events-none absolute inset-0 z-50 cursor-col-resize"
+                      />
+                    ) : null}
+                  </motion.div>
+                ) : null}
+              </div>
+            </div>
+
+            <SwarmLaunchWizardModal
+              key="terminal-swarm-launch-wizard"
+              open={swarmLaunchWizardOpen}
+              catalog={swarmLaunchCatalog}
+              preview={swarmLaunchPreview}
+              currentStep={swarmLaunchWizardStep}
+              onClose={() => setSwarmLaunchWizardOpen(false)}
+              onStepChange={setSwarmLaunchWizardStep}
+              onDraftChange={updateSwarmLaunchDraft}
+              onLaunch={handleTerminalSwarmLaunch}
+              submitState={swarmLaunchSubmitState}
+              onSubmitStateChange={setSwarmLaunchSubmitState}
+            />
+
+            <TerminalSettingsModal
+              open={terminalSettingsModal.open}
+              onClose={() => setTerminalSettingsModal((prev) => ({ ...prev, open: false }))}
+              panelId={terminalSettingsModal.panelId}
+              sessionId={terminalSettingsModal.sessionId}
+              sessionType={terminalSettingsModal.sessionType}
+              restorePolicy={terminalSettingsModal.restorePolicy}
+              cwd={terminalSettingsModal.cwd}
+            />
+
+            <TerminalRestoreSettingsModal
+              open={restoreSettingsModal.open}
+              onClose={() => setRestoreSettingsModal({ open: false })}
+            />
+
+            <WorkspaceTerminalSetupModal
+              open={workspaceTerminalSetupOpen}
+              onClose={() => setWorkspaceTerminalSetupOpen(false)}
+              onConfirm={createWorkspaceWithTerminalCount}
+              defaultInitialCommand={gridCommand}
+            />
+
+            <ZedAmbientOverlay
+              sessionKey={`devhub-zed-chat-${projectId || 'default'}`}
+              getTerminalPanelCount={getActiveWorkspaceTerminalPanelCount}
+              getWorkspaceTerminals={getWorkspaceTerminals}
+            />
+          </motion.div>
+        </SharedDockStoreProvider>
+      </SharedSurfacesProvider>
+    </WorkspaceSurfaceRegistryProvider>
   );
 }

@@ -4,8 +4,13 @@
 // Returns: { swarmLaunchWizardOpen, swarmLaunchWizardStep, swarmLaunchDraft, swarmLaunchSubmitState, updateSwarmLaunchDraft, openTerminalSwarmLauncher, handleTerminalSwarmLaunch, enqueueSwarmLaunchRequest, resolvedSwarmLaunchDraft, swarmLaunchPreview }
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { createSwarmLaunchDraft, deriveSwarmLaunchPreview } from '@/lib/operations/swarmControl';
+import {
+  createSwarmLaunchDraft,
+  deriveSwarmLaunchPreview,
+  isOrchestratorRoleKey,
+} from '@/lib/operations/swarmControl';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import {
   buildSwarmRoleMetadata,
   getSwarmRoleOrder,
@@ -17,7 +22,10 @@ import {
   TERMINAL_RENDERER_INHERIT_MODE,
 } from '../terminalRendererPreferences';
 
-const SWARM_LAUNCH_BATCH_DEADLINE_MS = 4500;
+import {
+  dispatchSwarmLaunchMaterialized,
+  rescheduleSwarmLaunchBatchFlush,
+} from '@/lib/terminal/swarmLaunchBatch';
 
 export default function useSwarmLaunchController({
   projectId,
@@ -188,21 +196,7 @@ export default function useSwarmLaunchController({
         }
       }
 
-      const launchRequests = payload.launch_result?.runtime_requests || [];
-      launchRequests.forEach((request) => {
-        const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
-        if (delayMs > 0) {
-          const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
-          const timerId = window.setTimeout(() => {
-            swarmLaunchScheduledTimersRef.current.delete(requestKey);
-            window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-          }, delayMs);
-          swarmLaunchScheduledTimersRef.current.set(requestKey, timerId);
-          return;
-        }
-
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      });
+      dispatchSwarmLaunchMaterialized(payload.launch_result?.runtime_requests || []);
 
       setSwarmLaunchWizardOpen(false);
       setSwarmLaunchSubmitState({ submitting: false, error: null });
@@ -275,7 +269,7 @@ export default function useSwarmLaunchController({
       const launchRequests = requests
         .map((request) => {
           const commandToRun = enforceDocOpsGateOnLaunchCommand(
-            request.command || `opencode --agent ${request.selectedAgent || 'sdd-orchestrator'}`
+            request.command || `opencode --agent ${request.selectedAgent || DEFAULT_OPENCODE_AGENT}`
           );
           const swarmRole = buildSwarmRoleMetadata(request);
           return { ...request, commandToRun, swarmRole };
@@ -285,7 +279,7 @@ export default function useSwarmLaunchController({
       if (launchRequests.length === 0) return;
 
       const directorRequest =
-        launchRequests.find((request) => request.swarmRole?.roleKey === 'director') || null;
+        launchRequests.find((request) => isOrchestratorRoleKey(request.swarmRole?.roleKey)) || null;
       const workerRequests = launchRequests
         .filter((request) => request !== directorRequest)
         .sort(
@@ -318,7 +312,7 @@ export default function useSwarmLaunchController({
             const panelId = `p${panelCounterRef.current}`;
             const panelCwd = request.workspacePath || cwd;
             if (!firstPanelId) firstPanelId = panelId;
-            if (request.swarmRole?.roleKey === 'director') directorPanelId = panelId;
+            if (isOrchestratorRoleKey(request.swarmRole?.roleKey)) directorPanelId = panelId;
             panelAssignments.push({ request, panelId, panelCwd });
             return {
               id: panelId,
@@ -364,12 +358,10 @@ export default function useSwarmLaunchController({
       setTerminalRendererPreferences((prev) =>
         panelAssignments.reduce(
           (acc, assignment) =>
-            setPanelRendererPreference(
-              acc,
-              newWsId,
-              assignment.panelId,
-              TERMINAL_RENDERER_INHERIT_MODE
-            ),
+            // Explicit webgl pin for swarm agent terminals (in addition to INHERIT).
+            // Guarantees xterm-webgl even if legacy stored defaults existed.
+            // VTE is disabled globally; this path will never resolve to it.
+            setPanelRendererPreference(acc, newWsId, assignment.panelId, 'xterm-webgl'),
           prev
         )
       );
@@ -429,11 +421,12 @@ export default function useSwarmLaunchController({
 
       batch.requests.push(request);
 
-      if (batch.timer) return;
-
-      batch.timer = window.setTimeout(() => {
-        flushSwarmLaunchBatch(launchId);
-      }, SWARM_LAUNCH_BATCH_DEADLINE_MS);
+      batch.timer = rescheduleSwarmLaunchBatchFlush({
+        existingTimerId: batch.timer,
+        onFlush: () => flushSwarmLaunchBatch(launchId),
+        clearTimeoutFn: window.clearTimeout.bind(window),
+        setTimeoutFn: window.setTimeout.bind(window),
+      });
     },
     [flushSwarmLaunchBatch]
   );

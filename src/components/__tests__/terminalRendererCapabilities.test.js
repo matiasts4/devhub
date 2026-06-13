@@ -2,13 +2,18 @@ const {
   getTerminalRendererCapability,
   getTerminalRendererFallbackCopy,
   getTerminalRendererRuntimeCapabilities,
+  resolveOperationalRendererMode,
   resolveRendererSelection,
   TERMINAL_RENDERER_MODES,
+  TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
+  TERMINAL_OPERATIONAL_CANVAS_MODE,
 } = require('../terminal/terminalRendererCapabilities');
 
 describe('terminalRendererCapabilities', () => {
   test('keeps xterm permanently ready as the baseline capability', () => {
-    expect(TERMINAL_RENDERER_MODES).toEqual(['vte-experimental', 'xterm']);
+    // VTE is disabled (LEGACY_VTE_ENABLED=false). The array reflects only active renderers.
+    // The full legacy list and all VTE functions remain in the source for future re-enable.
+    expect(TERMINAL_RENDERER_MODES).toEqual(['xterm', 'xterm-webgl', 'canvas']);
     expect(getTerminalRendererCapability('xterm')).toEqual(
       expect.objectContaining({
         mode: 'xterm',
@@ -64,7 +69,9 @@ describe('terminalRendererCapabilities', () => {
   });
 
   test('returns recoverable copy that tells the user xterm is the live fallback', () => {
-    const copy = getTerminalRendererFallbackCopy(resolveRendererSelection({ requestedMode: 'vte-experimental' }));
+    const copy = getTerminalRendererFallbackCopy(
+      resolveRendererSelection({ requestedMode: 'vte-experimental' })
+    );
 
     expect(copy).toContain('GTK VTE');
     expect(copy).toContain('xterm');
@@ -237,12 +244,80 @@ describe('terminalRendererCapabilities', () => {
     });
 
     expect(capabilities['ghostty-experimental']).toBeUndefined();
-    expect(resolveRendererSelection({ requestedMode: 'ghostty-experimental', capabilities })).toEqual(
+    expect(
+      resolveRendererSelection({ requestedMode: 'ghostty-experimental', capabilities })
+    ).toEqual(
       expect.objectContaining({
         requestedMode: 'xterm',
         effectiveMode: 'xterm',
         fallbackReason: null,
       })
     );
+  });
+
+  test('static xterm-webgl capability reports ready:true (TRS-DELTA-S1)', () => {
+    expect(getTerminalRendererCapability('xterm-webgl')).toEqual(
+      expect.objectContaining({
+        mode: 'xterm-webgl',
+        ready: true,
+        reason: null,
+      })
+    );
+  });
+
+  test('static resolver does not demote xterm-webgl to xterm (TRS-DELTA-S2)', () => {
+    expect(resolveRendererSelection({ requestedMode: 'xterm-webgl' })).toEqual(
+      expect.objectContaining({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        didFallback: false,
+        fallbackReason: null,
+      })
+    );
+  });
+
+  test('static xterm-webgl does not break vte-experimental opt-in (TRS-DELTA-S3)', () => {
+    // Re-affirm the term-02 contract: vte-experimental still falls back to xterm
+    // deterministically when the static capability map is the only signal.
+    expect(resolveRendererSelection({ requestedMode: 'vte-experimental' })).toEqual(
+      expect.objectContaining({
+        requestedMode: 'vte-experimental',
+        effectiveMode: 'xterm',
+        didFallback: true,
+        fallbackReason: 'not-ready',
+      })
+    );
+  });
+
+  test('resolveOperationalRendererMode keeps WebGL for a single visible panel', () => {
+    expect(TERMINAL_SPLIT_WEBGL_PANEL_LIMIT).toBe(1);
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe('xterm-webgl');
+  });
+
+  test('resolveOperationalRendererMode routes visible splits to canvas for every panel', () => {
+    expect(TERMINAL_OPERATIONAL_CANVAS_MODE).toBe('xterm-canvas');
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 3,
+      })
+    ).toBe('xterm-canvas');
+  });
+
+  test('resolveOperationalRendererMode keeps canvas for multi-panel splits when WebGL probe demotes', () => {
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm',
+        visibleTerminalPanelCount: 5,
+      })
+    ).toBe('xterm-canvas');
   });
 });

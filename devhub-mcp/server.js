@@ -8,6 +8,33 @@
  * Config OpenCode: ver devhub-mcp/README.md
  */
 
+// === MCP stdio hygiene (critical) ===
+// The MCP stdio transport owns stdout for JSON-RPC frames only.
+// The app code we require (localDb, shared.js, walCheckpoint, swarm/*, etc.)
+// liberally uses console.log / console.info for diagnostics. Any stdout write
+// from them corrupts the protocol and produces "serde error expected value at line 1 column 2"
+// on the client (Grok / other MCP hosts).
+// Redirect the noisy ones to stderr early, before any requires of src/lib/*.
+const _origLog = console.log;
+const _origInfo = console.info;
+const _origWarn = console.warn;
+function toSafeStr(v) {
+  if (v == null) return String(v);
+  if (typeof v === 'object') {
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return Object.prototype.toString.call(v);
+    }
+  }
+  return String(v);
+}
+console.log = (...args) => process.stderr.write('[log] ' + args.map(toSafeStr).join(' ') + '\n');
+console.info = console.log;
+console.warn = (...args) => process.stderr.write('[warn] ' + args.map(toSafeStr).join(' ') + '\n');
+// console.error is intentionally left alone — the MCP server itself uses process.stderr.write
+// and some libs use console.error for real errors (which belong on stderr).
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { config } from 'dotenv';
@@ -20,6 +47,7 @@ import { registerProjectTools } from './tools/projects.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerWorkspaceTools } from './tools/workspaces.js';
 import { registerInboxTools } from './tools/inbox.js';
+import { registerOperateTools } from './tools/operate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../.env.local') });
@@ -28,6 +56,9 @@ const require = createRequire(import.meta.url);
 const fromWorkspaceRoot = (relativePath) => resolve(__dirname, '..', relativePath);
 
 const localDb = require(fromWorkspaceRoot('src/lib/db/localDb.js'));
+const { getDbDriver } = require(fromWorkspaceRoot('src/lib/db/driver-selector.js'));
+const localAuth = require(fromWorkspaceRoot('src/lib/auth/providers/local.js'));
+const { getAuthProvider } = require(fromWorkspaceRoot('src/lib/auth/provider.js'));
 const {
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
@@ -57,6 +88,31 @@ const DB_DRIVER = (process.env.DEVHUB_MCP_DB_DRIVER || 'sqlite').toLowerCase();
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+// devhub-cloud-foundation (PR 4): wire the postgres-generic driver into
+// the existing DB_DRIVER switch using the selector (no policy changes).
+// Selector handles validation and creation for sqlite | supabase | postgres-generic.
+let postgresGenericDriver = null;
+const activeDbDriver = getDbDriver({
+  DEVHUB_DB_DRIVER: DB_DRIVER,
+  DATABASE_URL: process.env.DATABASE_URL,
+});
+if (activeDbDriver.kind === 'postgres-generic') {
+  postgresGenericDriver = activeDbDriver;
+  process.stderr.write(
+    'ℹ️  DevHub MCP usando driver postgres-generic (DEVHUB_MCP_DB_DRIVER=postgres-generic)\n'
+  );
+} else if (DB_DRIVER === 'postgres-generic') {
+  process.stderr.write('❌ ERROR: DEVHUB_MCP_DB_DRIVER=postgres-generic requires DATABASE_URL\n');
+  process.exit(1);
+}
+
+// devhub-cloud-foundation migration (user-approved full activation):
+// Load the hexagonal AuthProvider port. When DEVHUB_AUTH_PROVIDER=supabase
+// (or DEVHUB_OPERATION_MODE=cloud) this returns the real supabase adapter.
+// Local mode falls back to synthetic local-user exactly as before.
+const authProvider = getAuthProvider();
+process.stderr.write(`ℹ️  DevHub MCP auth provider: ${authProvider.kind || 'local'}\n`);
 
 const UUID_REQUIRED_TABLES = new Set(['projects', 'tasks', 'milestones']);
 const AUTO_ID_TABLES = new Set([
@@ -274,11 +330,14 @@ if (DB_DRIVER === 'supabase') {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  process.stderr.write('ℹ️  DevHub MCP usando driver Supabase (DEVHUB_MCP_DB_DRIVER=supabase)\n');
+  process.stderr.write(
+    'ℹ️  DevHub MCP usando driver Supabase (DEVHUB_MCP_DB_DRIVER=supabase) — cloud-foundation tenancy active when DEVHUB_AUTH_PROVIDER=supabase\n'
+  );
 } else {
   supabase = createSqliteClient(localDb);
   process.stderr.write('ℹ️  DevHub MCP usando driver SQLite local (local-first)\n');
 }
+process.stderr.write('ℹ️  [breadcrumb-1] after driver selection, before ok/err/defs\n');
 
 function ok(data) {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -295,6 +354,24 @@ const deps = {
   ok,
   err,
   randomUUID,
+  localUserId: localAuth.LOCAL_USER_ID,
+  // Cloud foundation: prefer real actor from AuthProvider when in cloud mode.
+  // Falls back to synthetic local-user for local-dev / no-auth regression budget.
+  getActor: async () => {
+    try {
+      const session = await authProvider.getSession();
+      if (session && session.user && session.user.id) {
+        return {
+          user: session.user,
+          workspaceMemberships: session.workspaceMemberships || [],
+        };
+      }
+    } catch {
+      // ignore and fall through to local synthetic
+    }
+    return { user: { id: localAuth.LOCAL_USER_ID } };
+  },
+  authProvider, // the port instance (local | supabase). Tools can use for verifyToken etc.
   readExecutionQueueSummary,
   readWorkspaceEvidenceSummary,
   presentExecutionQueue,
@@ -313,26 +390,52 @@ const deps = {
   parseEvidenceRef,
   validateAgentArtifactInput,
 };
+process.stderr.write(
+  'ℹ️  [breadcrumb-2] after agentRunArtifacts etc requires, before deps object\n'
+);
 
-const server = new McpServer({ name: 'devhub', version: '1.0.0' });
+// Provide a no-op for writeAuditLog early (some tool registers destructure it from deps at call time).
+// This was missing in the original deps object (see projects.js destructuring).
+deps.writeAuditLog =
+  deps.writeAuditLog ||
+  ((action, details) => {
+    process.stderr.write(
+      `[audit] ${action} ${details ? JSON.stringify(details).slice(0, 200) : ''}\n`
+    );
+  });
+process.stderr.write('ℹ️  [breadcrumb-3] after writeAuditLog shim, before new McpServer\n');
 
-registerProjectTools(server, deps);
-registerTaskTools(server, deps);
-registerWorkspaceTools(server, deps);
-registerInboxTools(server, deps);
+try {
+  const server = new McpServer({ name: 'devhub', version: '1.0.0' });
 
-const keepAlive = setInterval(() => {}, 2_147_483_647);
-const stopKeepAlive = () => clearInterval(keepAlive);
-process.stdin.on('end', () => setTimeout(stopKeepAlive, 250));
-process.on('SIGTERM', () => {
-  stopKeepAlive();
-  process.exit(0);
-});
-process.on('SIGINT', () => {
-  stopKeepAlive();
-  process.exit(0);
-});
+  // Register all tools (this is where most side effects from deps and tool schemas happen)
+  process.stderr.write('ℹ️  DevHub MCP registrando tools...\n');
+  registerProjectTools(server, deps);
+  registerTaskTools(server, deps);
+  registerWorkspaceTools(server, deps);
+  registerInboxTools(server, deps);
+  registerOperateTools(server, deps);
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-process.stderr.write('✅ DevHub MCP Server iniciado (stdio)\n');
+  const keepAlive = setInterval(() => {}, 2_147_483_647);
+  const stopKeepAlive = () => clearInterval(keepAlive);
+  process.stdin.on('end', () => setTimeout(stopKeepAlive, 250));
+  process.on('SIGTERM', () => {
+    stopKeepAlive();
+    process.exit(0);
+  });
+  process.on('SIGINT', () => {
+    stopKeepAlive();
+    process.exit(0);
+  });
+
+  const transport = new StdioServerTransport();
+  process.stderr.write('ℹ️  DevHub MCP conectando transporte stdio...\n');
+  await server.connect(transport);
+
+  // Success log goes to stderr so it never pollutes the MCP JSON-RPC stdout channel
+  process.stderr.write('✅ DevHub MCP Server iniciado (stdio)\n');
+} catch (err) {
+  process.stderr.write('❌ FATAL: DevHub MCP initialization failed\n');
+  process.stderr.write(String(err?.stack || err) + '\n');
+  process.exit(1);
+}

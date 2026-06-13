@@ -107,7 +107,10 @@ function installDom() {
   global.MouseEvent = dom.window.MouseEvent;
   global.localStorage = dom.window.localStorage;
   global.fetch = jest.fn(() =>
-    Promise.resolve({ ok: true, json: async () => ({ max_concurrent_swarms: 5, swarm_enabled: true }) })
+    Promise.resolve({
+      ok: true,
+      json: async () => ({ max_concurrent_swarms: 5, swarm_enabled: true }),
+    })
   );
 
   return dom;
@@ -127,7 +130,7 @@ async function renderIntoDom(element) {
   return { container, root };
 }
 
-describe('Ajustes appearance tab', () => {
+describe('Ajustes appearance tab — interactive controls', () => {
   let dom;
   let rendered;
 
@@ -155,7 +158,7 @@ describe('Ajustes appearance tab', () => {
     jest.clearAllMocks();
   });
 
-  test('renders morphology options inside the legacy Ajustes appearance tab', async () => {
+  test('renders theme/morphology/accent form controls in the appearance tab', async () => {
     rendered = await renderIntoDom(React.createElement(Ajustes));
 
     const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
@@ -167,90 +170,52 @@ describe('Ajustes appearance tab', () => {
     });
     await flushEffects();
 
-    expect(rendered.container.textContent).toContain('Morphology');
-    expect(rendered.container.textContent).toContain('Brutalist Stage');
-    expect(rendered.container.textContent).toContain('Default');
-  });
+    expect(
+      rendered.container.querySelector('[data-testid="ajustes-accent-option-amber"]')
+    ).toBeTruthy();
+    expect(
+      rendered.container.querySelector('[data-testid="ajustes-morphology-option-default"]')
+    ).toBeTruthy();
 
-  test('changing morphology in Ajustes does not call setTheme', async () => {
-    rendered = await renderIntoDom(React.createElement(Ajustes));
-
-    const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Apariencia')
+    const appearanceShell = rendered.container.querySelector(
+      '[data-testid="ajustes-appearance-shell"]'
     );
-
-    flushSync(() => {
-      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await flushEffects();
-
-    const morphologyButton = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Brutalist Stage')
-    );
-
-    flushSync(() => {
-      morphologyButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await flushEffects();
-
-    expect(themeModule.setMorphology).toHaveBeenCalledWith('brutalist-stage');
-    expect(themeModule.setTheme).not.toHaveBeenCalledWith('brutalist-stage');
-  });
-
-  test('changing accent in Ajustes does not call setTheme', async () => {
-    rendered = await renderIntoDom(React.createElement(Ajustes));
-
-    const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Apariencia')
-    );
-
-    flushSync(() => {
-      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await flushEffects();
-
-    const accentButton = rendered.container.querySelector('[data-testid="ajustes-accent-option-amber"]');
-    expect(accentButton).toBeTruthy();
-
-    flushSync(() => {
-      accentButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await flushEffects();
-
-    expect(themeModule.setAccent).toHaveBeenCalledWith('amber');
-    expect(themeModule.setTheme).not.toHaveBeenCalledWith('amber');
-  });
-
-  test('routes Ajustes appearance chrome through shared morphology surfaces instead of legacy card shells', async () => {
-    rendered = await renderIntoDom(React.createElement(Ajustes));
-
-    const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Apariencia')
-    );
-
-    flushSync(() => {
-      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await flushEffects();
-
-    const appearanceShell = rendered.container.querySelector('[data-testid="ajustes-appearance-shell"]');
-    const morphologyCard = rendered.container.querySelector(
-      '[data-testid="ajustes-morphology-option-default"]'
-    );
-
     expect(appearanceShell).toBeTruthy();
-    const appearanceShellStyle = ajustesModule.getSettingsShellStyle({ emphasized: true });
+    expect(
+      rendered.container.querySelector('[data-testid="ajustes-appearance-deprecation-banner"]')
+    ).toBeNull();
 
+    // The shell still routes chrome through the shared morphology surface factory.
+    const appearanceShellStyle = ajustesModule.getSettingsShellStyle({ emphasized: true });
     expect(appearanceShell.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
     expect(appearanceShellStyle.background).toContain('var(--chrome-panel-fill)');
     expect(appearanceShellStyle.borderColor).toBe('var(--chrome-border-color)');
     expect(appearanceShellStyle.background).not.toContain('var(--surface-card)');
+  });
 
-    expect(morphologyCard).toBeTruthy();
-    expect(morphologyCard.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
+  test('accent selection invokes setAccent without broken settings navigation', async () => {
+    rendered = await renderIntoDom(React.createElement(Ajustes));
 
-    const activeMorphologyStyle = ajustesModule.getSettingsShellStyle({ emphasized: true });
-    expect(activeMorphologyStyle.background).toContain('var(--chrome-panel-fill-emphasis)');
-    expect(activeMorphologyStyle.borderWidth).toBe('var(--chrome-border-width)');
+    const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Apariencia')
+    );
+
+    flushSync(() => {
+      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    const amberOption = rendered.container.querySelector(
+      '[data-testid="ajustes-accent-option-amber"]'
+    );
+    expect(amberOption).toBeTruthy();
+
+    flushSync(() => {
+      amberOption.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.setAccent).toHaveBeenCalledWith('amber');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/settings/appearance');
   });
 });

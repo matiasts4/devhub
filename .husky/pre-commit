@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # QA-06 — DevHub pre-commit hook
 # Corre lint-staged para aplicar ESLint + Prettier a archivos staged
+# T-001 — also enforce D2 budget on feature/session-workspace-restore (agent-comms-redesign)
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
 
@@ -9,6 +10,28 @@ if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
   echo "🚨 ERROR: commit directo a '$branch' bloqueado."
   echo "Usá una rama task/<task-id>-<slug> antes de commitear."
   exit 1
+fi
+
+# T-001 — D2 budget guard for agent-comms-redesign on feature/session-workspace-restore.
+# Per-commit: staged diff must stay <= 800 net lines (additions + deletions).
+# Override with DEVHUB_BYPASS_BUDGET=1 if you have a documented exception.
+if [ "$branch" = "feature/session-workspace-restore" ] && [ -z "${DEVHUB_BYPASS_BUDGET:-}" ]; then
+  NET_LINES=$(git diff --shortstat --cached 2>/dev/null | awk '
+    /files? changed/ {
+      for (i=1; i<=NF; i++) {
+        if ($i ~ /^[0-9]+$/) { sum += $i }
+      }
+    }
+    END { print sum+0 }
+  ')
+  BUDGET=800
+  if [ "${NET_LINES:-0}" -gt "$BUDGET" ]; then
+    echo ""
+    echo "🚨 D2 BUDGET EXCEEDED: $NET_LINES net lines (limit $BUDGET) on $branch"
+    echo "   Split the work into a smaller commit."
+    exit 1
+  fi
+  echo "💰 D2 budget OK ($NET_LINES / $BUDGET net lines staged)"
 fi
 
 npx lint-staged

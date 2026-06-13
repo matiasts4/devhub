@@ -10,6 +10,7 @@ import {
   normalizeWorkspaceWindows,
   resolveWorkspacePanelId,
   getWorkspaceTabStyle,
+  spawnFirstTerminalPanelColumns,
 } from '../../src/components/terminal/utils/panelHelpers';
 
 describe('panelHelpers', () => {
@@ -135,6 +136,21 @@ describe('panelHelpers', () => {
       const result = normalizeWorkspaceWindows(rawWindows, { ws1: 'v1' }, workspaces, { ws1: 'p1' });
       expect(result.workspaceWindows.ws1).toHaveLength(1);
       expect(result.activeWindowIds.ws1).toBe('v1');
+    });
+  });
+
+  describe('spawnFirstTerminalPanelColumns', () => {
+    it('creates one column with one panel when workspace is empty', () => {
+      let colN = 0;
+      let panelN = 0;
+      const result = spawnFirstTerminalPanelColumns({
+        allocateColumnId: () => `c${++colN}`,
+        allocatePanelId: () => `p${++panelN}`,
+      });
+      expect(result.panelId).toBe('p1');
+      expect(result.columns).toHaveLength(1);
+      expect(result.columns[0].panels).toHaveLength(1);
+      expect(result.columns[0].panels[0].id).toBe('p1');
     });
   });
 

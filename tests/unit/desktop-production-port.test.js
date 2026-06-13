@@ -20,10 +20,18 @@ describe('desktop production port configuration', () => {
     );
 
     expect(rustSource).toMatch(/if cfg!\(debug_assertions\) \{\s*3100\s*\} else \{\s*3400\s*\}/s);
-    expect(rustSource).toContain('fn ensure_main_window(app: &tauri::AppHandle) -> tauri::Result<()>');
-    expect(rustSource).toContain('WebviewWindowBuilder::from_config(app, window_config)?.build()?;');
-    expect(rustSource).toContain('fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()>');
-    expect(rustSource).toMatch(/ensure_runtime_ready\(app\.handle\(\)\)\?;\s*ensure_main_window\(app\.handle\(\)\)\?;/s);
+    expect(rustSource).toContain(
+      'fn ensure_main_window(app: &tauri::AppHandle) -> tauri::Result<()>'
+    );
+    expect(rustSource).toContain(
+      'WebviewWindowBuilder::from_config(app, window_config)?.build()?;'
+    );
+    expect(rustSource).toContain(
+      'fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<()>'
+    );
+    expect(rustSource).toMatch(
+      /ensure_runtime_ready\(app\.handle\(\)\)\?;\s*ensure_main_window\(app\.handle\(\)\)\?;/s
+    );
   });
 
   test('single-instance restore path revalidates the local runtime before showing the main window again, but only outside debug builds', () => {
@@ -47,7 +55,13 @@ describe('desktop production port configuration', () => {
       'utf8'
     );
 
-    expect(wrapperSource).toContain('PORT=3400 "$NODE_BIN" "$NEXT_PATH" &');
-    expect(wrapperSource).toContain('Lanzando Next.js standalone (3400)...');
+    expect(wrapperSource).toContain('PORT="${PORT:-3400}" "$NODE_BIN" "$NEXT_PATH" &');
+    expect(wrapperSource).toContain('Lanzando Next.js standalone (${PORT:-3400})...');
+    expect(wrapperSource).toContain('standalone/node_modules/ws/index.js');
+    expect(wrapperSource).toContain(
+      'standalone/node_modules/@swc/helpers/cjs/_interop_require_default.cjs'
+    );
+    expect(wrapperSource).toContain('standalone/.next/node_modules');
+    expect(wrapperSource).toContain('better-sqlite3-*/build/Release/better_sqlite3.node');
   });
 });

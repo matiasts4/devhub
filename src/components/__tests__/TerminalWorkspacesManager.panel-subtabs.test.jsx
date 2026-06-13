@@ -16,15 +16,25 @@ const { JSDOM } = require('jsdom');
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-  AnimatePresence: ({ children }) => children,
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -176,6 +186,17 @@ jest.mock(
   { virtual: true }
 );
 
+// Mock OperatorActionsDispatchContext — provider is normally in App.js
+jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
+  OperatorActionsDispatchProvider: ({ children }) => children,
+  useOperatorActionsDispatch: () => ({
+    dispatchAction: jest.fn(),
+    cards: [],
+    confirmCard: jest.fn(),
+    cancelCard: jest.fn(),
+  }),
+}));
+
 const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').default;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -254,7 +275,7 @@ function getSplitDownButton(container) {
 function getVisibleWorkspaceShell(container) {
   return (
     Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-      (node) => !String(node.className || '').includes('pointer-events-none')
+      (node) => node.getAttribute('data-ws-active') === 'true'
     ) || null
   );
 }
@@ -609,13 +630,13 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     );
   });
 
-  test('uses GTK VTE as the default renderer for fresh workspaces and inherited views', async () => {
+  test('uses xterm-webgl as the default renderer for fresh workspaces and inherited views', async () => {
     const { container } = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, defaultProps())
     );
 
     expect(container.querySelector('[data-testid="terminal-renderer-p1"]')?.textContent).toBe(
-      'vte-experimental'
+      'xterm-webgl'
     );
   });
 

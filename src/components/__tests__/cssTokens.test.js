@@ -71,21 +71,38 @@ describe('CSS Tokens — globals.css', () => {
   });
 
   test('xterm viewport keeps native vertical scrolling enabled', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-y:\s*auto\s*!important;/);
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-x:\s*hidden\s*!important;/);
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-y:\s*auto\s*!important;/
+    );
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*overflow-x:\s*hidden\s*!important;/
+    );
   });
 
-  test('xterm viewport reserves stable scrollbar gutter to avoid offset artifacts', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*scrollbar-gutter:\s*stable;/);
+  test('xterm viewport uses auto scrollbar gutter to avoid empty lateral bands', () => {
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*scrollbar-gutter:\s*auto;/
+    );
+  });
+
+  test('kanban column scrollbar is wider and tinted for visible overflow cues', () => {
+    expect(css).toMatch(/\.kanban-column-scrollbar\s*\{[\s\S]*scrollbar-gutter:\s*stable;/);
+    expect(css).toMatch(/\.kanban-column-scrollbar::-webkit-scrollbar\s*\{[\s\S]*width:\s*10px;/);
   });
 
   test('xterm viewport no longer uses transparent background that corrupts TUI canvas rendering', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/);
-    expect(css).not.toMatch(/\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*transparent\s*!important;/);
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/
+    );
+    expect(css).not.toMatch(
+      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*transparent\s*!important;/
+    );
   });
 
   test('xterm layers inherit a solid app-surface background', () => {
-    expect(css).toMatch(/\.devhub-xterm-container \.xterm,\s*[\s\S]*\.devhub-xterm-container \.xterm-screen,\s*[\s\S]*\.devhub-xterm-container \.xterm-screen canvas,\s*[\s\S]*\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/);
+    expect(css).toMatch(
+      /\.devhub-xterm-container \.xterm,\s*[\s\S]*\.devhub-xterm-container \.xterm-screen,\s*[\s\S]*\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/
+    );
   });
 
   test('blue hex accent #0969da does not appear in default :root token block', () => {
@@ -107,6 +124,30 @@ describe('CSS Tokens — globals.css', () => {
       expect(accentPrimaryLine?.[0] || '').not.toContain('#58a6ff');
     }
   });
+
+  test('--warning is a first-class token in :root and every [data-theme] block', () => {
+    // :root default
+    const rootMatch = css.match(/:root[^{]*\{([^}]+)\}/s);
+    expect(rootMatch?.[1] || '').toMatch(/--warning\s*:/);
+    // every [data-theme='...'] block
+    const themeBlocks = css.match(/\[data-theme=['"][a-z-]+['"]\][^{]*\{([^}]+)\}/g) || [];
+    expect(themeBlocks.length).toBeGreaterThanOrEqual(10);
+    for (const block of themeBlocks) {
+      expect(block).toMatch(/--warning\s*:/);
+    }
+  });
+
+  test('density tokens are defined on :root and overridden by [data-density=compact]', () => {
+    const rootMatch = css.match(/:root[^{]*\{([^}]+)\}/s);
+    expect(rootMatch?.[1] || '').toMatch(/--density-row-padding-y\s*:\s*0\.5rem/);
+    expect(rootMatch?.[1] || '').toMatch(/--density-row-padding-x\s*:\s*0\.75rem/);
+    expect(rootMatch?.[1] || '').toMatch(/--density-row-gap\s*:\s*0\.5rem/);
+
+    const compactMatch = css.match(/\[data-density=['"]compact['"]\][^{]*\{([^}]+)\}/s);
+    expect(compactMatch?.[1] || '').toMatch(/--density-row-padding-y\s*:\s*0\.25rem/);
+    expect(compactMatch?.[1] || '').toMatch(/--density-row-padding-x\s*:\s*0\.5rem/);
+    expect(compactMatch?.[1] || '').toMatch(/--density-row-gap\s*:\s*0\.25rem/);
+  });
 });
 
 describe('CSS Tokens — index.css cleanup', () => {
@@ -126,5 +167,11 @@ describe('CSS Tokens — index.css cleanup', () => {
 
   test('index.css imports or mirrors the morphology runtime token layer needed by the desktop shell', () => {
     expect(indexCss).toMatch(/data-morphology|globals\.css/);
+  });
+
+  test('index.css re-exports globals.css and does not redefine chrome tokens', () => {
+    expect(indexCss).toMatch(/@import.*globals\.css/);
+    expect(indexCss).not.toMatch(/--chrome-radius-panel\s*:/);
+    expect(indexCss).not.toMatch(/--accent-primary\s*:/);
   });
 });

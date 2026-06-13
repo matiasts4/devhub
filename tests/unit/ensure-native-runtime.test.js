@@ -32,6 +32,7 @@ describe('ensure-native-runtime', () => {
 
     checks['better-sqlite3']();
     checks['node-pty']();
+    checks['node-pty-sidecar']();
 
     expect(runNodeCheck).toHaveBeenNthCalledWith(
       1,
@@ -40,8 +41,17 @@ describe('ensure-native-runtime', () => {
         script: expect.stringContaining("require('better-sqlite3')"),
       })
     );
+    // node-pty (root) — Next.js runtime loads from project root node_modules.
     expect(runNodeCheck).toHaveBeenNthCalledWith(
       2,
+      expect.objectContaining({
+        cwd: '/tmp/devhub',
+        script: expect.stringContaining("require('node-pty')"),
+      })
+    );
+    // node-pty-sidecar — packaged sidecar binary uses its own node_modules.
+    expect(runNodeCheck).toHaveBeenNthCalledWith(
+      3,
       expect.objectContaining({
         cwd: '/tmp/devhub/sidecar-backend',
         script: expect.stringContaining("require('node-pty')"),
@@ -89,6 +99,7 @@ describe('ensure-native-runtime', () => {
         })
         .mockImplementationOnce(() => {}),
       'node-pty': jest.fn(),
+      'node-pty-sidecar': jest.fn(),
     };
 
     const result = api.ensureNativeRuntime({
@@ -113,6 +124,18 @@ describe('ensure-native-runtime', () => {
     );
     expect(exec).toHaveBeenNthCalledWith(
       2,
+      'npm',
+      ['rebuild', 'node-pty'],
+      expect.objectContaining({
+        cwd: '/tmp/devhub',
+        stdio: 'inherit',
+        env: expect.objectContaining({
+          PATH: expect.stringContaining('/home/matias/.nvm/versions/node/v24.14.0/bin'),
+        }),
+      })
+    );
+    expect(exec).toHaveBeenNthCalledWith(
+      3,
       'npm',
       ['rebuild', 'node-pty'],
       expect.objectContaining({
@@ -144,9 +167,7 @@ describe('ensure-native-runtime', () => {
         cwd: '/tmp/devhub',
         stdio: 'inherit',
         env: expect.objectContaining({
-          PATH: expect.stringMatching(
-            /^\/home\/matias\/\.nvm\/versions\/node\/v24\.14\.0\/bin:/
-          ),
+          PATH: expect.stringMatching(/^\/home\/matias\/\.nvm\/versions\/node\/v24\.14\.0\/bin:/),
         }),
       })
     );
@@ -155,12 +176,22 @@ describe('ensure-native-runtime', () => {
       'npm',
       ['rebuild', 'node-pty'],
       expect.objectContaining({
+        cwd: '/tmp/devhub',
+        stdio: 'inherit',
+        env: expect.objectContaining({
+          PATH: expect.stringMatching(/^\/home\/matias\/\.nvm\/versions\/node\/v24\.14\.0\/bin:/),
+        }),
+      })
+    );
+    expect(exec).toHaveBeenNthCalledWith(
+      3,
+      'npm',
+      ['rebuild', 'node-pty'],
+      expect.objectContaining({
         cwd: '/tmp/devhub/sidecar-backend',
         stdio: 'inherit',
         env: expect.objectContaining({
-          PATH: expect.stringMatching(
-            /^\/home\/matias\/\.nvm\/versions\/node\/v24\.14\.0\/bin:/
-          ),
+          PATH: expect.stringMatching(/^\/home\/matias\/\.nvm\/versions\/node\/v24\.14\.0\/bin:/),
         }),
       })
     );
@@ -173,6 +204,7 @@ describe('ensure-native-runtime', () => {
       checks: {
         'better-sqlite3': () => {},
         'node-pty': () => {},
+        'node-pty-sidecar': () => {},
       },
       exec,
       log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },

@@ -14,9 +14,18 @@ const VALID_EVENT_TYPES = [
   'mission_left',
   'task_completed',
   'handoff_ready',
+  'status_update',
 ];
 
-const DIRECTOR_FEED_EVENT_TYPES = new Set(['task_completed', 'handoff_ready']);
+const DIRECTOR_FEED_EVENT_TYPES = new Set([
+  'task_completed',
+  'handoff_ready',
+  'agent_booted',
+  'agent_shutdown',
+  'mission_joined',
+  'mission_left',
+  'supervisor_action',
+]);
 const DIRECTOR_FEED_DELIVERY_STATUSES = new Set(['pending', 'sent', 'failed', 'binding_missing']);
 
 function buildValidationError(message) {
@@ -51,8 +60,10 @@ function normalizeDirectorFeedPayload(event) {
     );
   }
 
+  // status_update is a general message — task_id is optional
+  const requiresTaskId = event.event_type !== 'status_update';
   const relatedTaskId = pickLinkedValue(payload.related_task_id, payload.task_id);
-  if (!relatedTaskId) {
+  if (requiresTaskId && !relatedTaskId) {
     throw buildValidationError(
       `${event.event_type} requires task context (related_task_id or task_id).`
     );

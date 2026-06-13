@@ -2,6 +2,10 @@
 // Extracted from TerminalWorkspacesManager.jsx — no React dependencies.
 
 const SWARM_ROLE_ORDER = [
+  'sdd_worker_1',
+  'sdd_worker_2',
+  'sdd_worker_3',
+  'sdd_worker_4',
   'coder',
   'auditor',
   'devops',
@@ -15,7 +19,12 @@ const SWARM_ROLE_ORDER = [
 ];
 
 const SWARM_ROLE_META = {
+  zed: { label: 'ZED', abbrev: 'ZED', rgb: '139,92,246' },
   director: { label: 'Director', abbrev: 'DIR', rgb: '245,158,11' },
+  sdd_worker_1: { label: 'SDD Worker 1', abbrev: 'W1', rgb: '56,189,248' },
+  sdd_worker_2: { label: 'SDD Worker 2', abbrev: 'W2', rgb: '45,212,191' },
+  sdd_worker_3: { label: 'SDD Worker 3', abbrev: 'W3', rgb: '129,140,248' },
+  sdd_worker_4: { label: 'SDD Worker 4', abbrev: 'W4', rgb: '96,165,250' },
   coder: { label: 'Coder', abbrev: 'COD', rgb: '34,197,94' },
   auditor: { label: 'Auditor', abbrev: 'AUD', rgb: '168,85,247' },
   devops: { label: 'DevOps', abbrev: 'DEV', rgb: '20,184,166' },
@@ -77,7 +86,7 @@ function buildSwarmRoleMetadata(input = {}) {
 }
 
 function getSwarmRoleOrder(roleKey = '') {
-  if (roleKey === 'director') return 999;
+  if (roleKey === 'director' || roleKey === 'zed') return 999;
   const index = SWARM_ROLE_ORDER.indexOf(roleKey);
   return index === -1 ? 500 : index;
 }

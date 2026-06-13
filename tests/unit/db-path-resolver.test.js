@@ -45,6 +45,90 @@ describe('DevHub DB path resolver', () => {
     expect(fs.existsSync(path.join(homeDir, '.devhub', 'data'))).toBe(true);
   });
 
+  test('uses ~/.devhub-dev when tauri dev sidecar markers are present', () => {
+    const homeDir = path.join(tmpRoot, 'home');
+    const devDir = path.join(homeDir, '.devhub-dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'sidecar-port.txt'), '4001', 'utf8');
+
+    const { getCanonicalDevhubDir } = loadResolver();
+    expect(getCanonicalDevhubDir({ env: {}, homeDir })).toBe(devDir);
+  });
+
+  test('syncs a stale ~/.devhub-dev database from newer ~/.devhub/data on resolve', () => {
+    const homeDir = path.join(tmpRoot, 'home');
+    const devDir = path.join(homeDir, '.devhub-dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'sidecar-port.txt'), '4001', 'utf8');
+
+    const productionDbPath = path.join(homeDir, '.devhub', 'data', 'devhub.db');
+    const devDbPath = path.join(homeDir, '.devhub-dev', 'data', 'devhub.db');
+    fs.mkdirSync(path.dirname(productionDbPath), { recursive: true });
+    fs.mkdirSync(path.dirname(devDbPath), { recursive: true });
+    fs.writeFileSync(productionDbPath, 'production-db');
+    fs.writeFileSync(`${productionDbPath}-wal`, 'production-wal');
+    fs.writeFileSync(devDbPath, 'dev-db');
+    fs.utimesSync(
+      productionDbPath,
+      new Date('2026-06-09T00:00:00Z'),
+      new Date('2026-06-09T00:00:00Z')
+    );
+    fs.utimesSync(
+      `${productionDbPath}-wal`,
+      new Date('2026-06-09T00:00:00Z'),
+      new Date('2026-06-09T00:00:00Z')
+    );
+    fs.utimesSync(devDbPath, new Date('2026-05-01T00:00:00Z'), new Date('2026-05-01T00:00:00Z'));
+
+    const { resolveDbPath } = loadResolver();
+    const resolved = resolveDbPath({
+      env: {},
+      homeDir,
+      cwd: path.join(tmpRoot, 'repo'),
+      moduleDir: path.join(tmpRoot, 'repo', 'src', 'lib', 'db'),
+    });
+
+    expect(resolved).toBe(devDbPath);
+    expect(fs.readFileSync(devDbPath, 'utf8')).toBe('production-db');
+    expect(fs.readFileSync(`${devDbPath}-wal`, 'utf8')).toBe('production-wal');
+  });
+
+  test('syncs dev DB from production when only the dev WAL is newer', () => {
+    const homeDir = path.join(tmpRoot, 'home');
+    const devDir = path.join(homeDir, '.devhub-dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'sidecar.pid'), '12345', 'utf8');
+
+    const productionDbPath = path.join(homeDir, '.devhub', 'data', 'devhub.db');
+    const devDbPath = path.join(homeDir, '.devhub-dev', 'data', 'devhub.db');
+    fs.mkdirSync(path.dirname(productionDbPath), { recursive: true });
+    fs.mkdirSync(path.dirname(devDbPath), { recursive: true });
+    fs.writeFileSync(productionDbPath, 'production-db-with-real-projects');
+    fs.writeFileSync(devDbPath, 'dev-fixture');
+    fs.writeFileSync(`${devDbPath}-wal`, 'recent-dev-wal');
+    fs.utimesSync(
+      productionDbPath,
+      new Date('2026-06-09T00:00:00Z'),
+      new Date('2026-06-09T00:00:00Z')
+    );
+    fs.utimesSync(devDbPath, new Date('2026-05-01T00:00:00Z'), new Date('2026-05-01T00:00:00Z'));
+    fs.utimesSync(
+      `${devDbPath}-wal`,
+      new Date('2026-06-09T12:00:00Z'),
+      new Date('2026-06-09T12:00:00Z')
+    );
+
+    const { resolveDbPath } = loadResolver();
+    resolveDbPath({
+      env: {},
+      homeDir,
+      cwd: path.join(tmpRoot, 'repo'),
+      moduleDir: path.join(tmpRoot, 'repo', 'src', 'lib', 'db'),
+    });
+
+    expect(fs.readFileSync(devDbPath, 'utf8')).toBe('production-db-with-real-projects');
+  });
+
   test('migrates the newest legacy database into the canonical path on first use', () => {
     const homeDir = path.join(tmpRoot, 'home');
     const cwd = path.join(tmpRoot, 'repo');
@@ -60,8 +144,16 @@ describe('DevHub DB path resolver', () => {
     fs.mkdirSync(path.dirname(standaloneDbPath), { recursive: true });
     fs.writeFileSync(standaloneDbPath, 'standalone-db');
     fs.writeFileSync(`${standaloneDbPath}-wal`, 'standalone-wal');
-    fs.utimesSync(standaloneDbPath, new Date('2026-02-01T00:00:00Z'), new Date('2026-02-01T00:00:00Z'));
-    fs.utimesSync(`${standaloneDbPath}-wal`, new Date('2026-02-01T00:00:00Z'), new Date('2026-02-01T00:00:00Z'));
+    fs.utimesSync(
+      standaloneDbPath,
+      new Date('2026-02-01T00:00:00Z'),
+      new Date('2026-02-01T00:00:00Z')
+    );
+    fs.utimesSync(
+      `${standaloneDbPath}-wal`,
+      new Date('2026-02-01T00:00:00Z'),
+      new Date('2026-02-01T00:00:00Z')
+    );
 
     const { resolveDbPath } = loadResolver();
     const resolved = resolveDbPath({ env: {}, homeDir, cwd, moduleDir });

@@ -14,14 +14,25 @@ const {
 const mockInvoke = jest.fn();
 const mockListen = jest.fn();
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -76,10 +87,20 @@ jest.mock('@tauri-apps/api/event', () => ({
 
 jest.mock('../TerminalTTY', () => ({
   __esModule: true,
-  default: ({ id, suspendNativeSurface, nativeSurfacePolicy = 'live' }) => {
+  default: ({
+    id,
+    isVisibleInLayout = true,
+    suspendNativeSurface,
+    nativeSurfacePolicy = 'live',
+  }) => {
     const React = require('react');
     return React.createElement('div', { 'data-testid': `terminal-${id}` }, [
       React.createElement('span', { key: 'id' }, id),
+      React.createElement(
+        'span',
+        { key: 'visible', 'data-testid': `terminal-visible-${id}` },
+        isVisibleInLayout ? 'visible' : 'hidden'
+      ),
       React.createElement(
         'span',
         { key: 'suspend', 'data-testid': `terminal-suspend-${id}` },
@@ -99,6 +120,14 @@ jest.mock('../NotificationCenter', () => ({
   default: () => {
     const React = require('react');
     return React.createElement('div', null, 'notifications');
+  },
+}));
+
+jest.mock('@/components/pizarra/PizarraPane', () => ({
+  __esModule: true,
+  default: () => {
+    const React = require('react');
+    return React.createElement('div', { 'data-testid': 'pizarra-pane' }, 'pizarra');
   },
 }));
 
@@ -215,6 +244,17 @@ jest.mock(
   { virtual: true }
 );
 
+// Mock OperatorActionsDispatchContext — provider is normally in App.js
+jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
+  OperatorActionsDispatchProvider: ({ children }) => children,
+  useOperatorActionsDispatch: () => ({
+    dispatchAction: jest.fn(),
+    cards: [],
+    confirmCard: jest.fn(),
+    cancelCard: jest.fn(),
+  }),
+}));
+
 const TerminalWorkspacesManagerModule = require('../TerminalWorkspacesManager');
 const TerminalWorkspacesManager = TerminalWorkspacesManagerModule.default;
 const { resolveMeasuredRightDockBounds, resolveRightDockLayerStyle } =
@@ -241,7 +281,7 @@ function installDom() {
 function getVisibleWorkspaceShell(container) {
   return (
     Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-      (node) => !String(node.className || '').includes('pointer-events-none')
+      (node) => node.getAttribute('data-ws-active') === 'true'
     ) || null
   );
 }
@@ -273,6 +313,21 @@ async function click(element) {
   await flushEffects();
 }
 
+async function confirmNewWorkspaceSetup(count = 1) {
+  const modal = document.querySelector('[data-testid="workspace-terminal-setup-modal"]');
+  expect(modal).not.toBeNull();
+  if (count !== 1) {
+    const preset = document.querySelector(
+      `[data-testid="workspace-terminal-count-preset-${count}"]`
+    );
+    expect(preset).not.toBeNull();
+    await click(preset);
+  }
+  const confirm = document.querySelector('[data-testid="workspace-terminal-setup-confirm"]');
+  expect(confirm).not.toBeNull();
+  await click(confirm);
+}
+
 async function changeInput(element, value) {
   const valueSetter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -302,7 +357,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     dom = installDom();
     window.localStorage.clear();
     delete window.__TAURI_INTERNALS__;
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    consoleErrorSpy = jest.spyOn(console, 'error');
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     sharedEditorPaneMountCount = 0;
     sharedEditorPaneUnmountCount = 0;
@@ -400,6 +455,66 @@ describe('TerminalWorkspacesManager right dock', () => {
     ).toBe('live');
   });
 
+  test('pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear', async () => {
+    // Force shared-view flag OFF for this test so ModeTransitionShell is no-op and
+    // dockBody (incl pizarra) is returned directly — guarantees the pizarra-pane testid
+    // is queryable without AnimatePresence passthrough quirks in the jsdom framer mock.
+    const prev = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = '0';
+    try {
+      // reset cached flag
+      try {
+        const flagMod = require('@/lib/pizarra/featureFlag');
+        flagMod._resetFlagForTests?.();
+      } catch {}
+      const view = await renderIntoDom(
+        React.createElement(TerminalWorkspacesManager, {
+          cwd: '/workspace/devhub',
+          isVisible: true,
+          projectId: 'project-1',
+        })
+      );
+
+      expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+        'visible'
+      );
+      expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+        'live'
+      );
+
+      await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+
+      // pizarra visibility: after toggle to pizarra mode the pane (with its tool palette buttons)
+      // must be present in the DOM. The host wrapper provides relative + size for the absolute
+      // canvas + palette inside PizarraPane. Prevents the "submarino blank, no buttons" UX.
+      expect(view.container.querySelector('[data-testid="pizarra-pane"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-testid="pizarra-host"]')).not.toBeNull();
+
+      expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+        'hidden'
+      );
+      expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
+        'live'
+      );
+      expect(
+        view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
+      ).toBe('live');
+
+      await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+
+      expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
+        'visible'
+      );
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+      else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prev;
+      try {
+        const flagMod = require('@/lib/pizarra/featureFlag');
+        flagMod._resetFlagForTests?.();
+      } catch {}
+    }
+  });
+
   test('opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
@@ -417,12 +532,125 @@ describe('TerminalWorkspacesManager right dock', () => {
     await click(view.container.querySelector('[data-testid="workspace-swarm-launch-button"]'));
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
-      'suspended'
+      'live'
     );
     expect(
       view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
-    ).toBe('transient-overlay');
-    expect(document.body.textContent).toContain('Launch wizard');
+    ).toBe('live');
+    expect(document.body.textContent).toContain('Asistente de lanzamiento');
+  });
+
+  test('shows active swarm summary without End swarm button (close workspace to terminate)', async () => {
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({
+        'launch-1:director': {
+          panelId: 'p1',
+          taskId: 'launch-1:director',
+          taskTitle: 'Terminal swarm · Director',
+          launchOrigin: 'swarm-control-launch',
+          launchedAt: 100,
+        },
+      })
+    );
+
+    global.fetch = jest.fn((url, options) => {
+      if (url === '/api/swarm/runtime-diagnostics') {
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      if (url === '/api/agenthub/operations/health') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            terminate_result: { launchId: 'launch-1', terminated: true },
+            control_room_snapshot_input: {
+              mission_control: { mission: { mission_id: 'launch-1' } },
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-active-summary"]')?.textContent
+    ).toContain('Terminal swarm');
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]')
+    ).toBeNull();
+  });
+
+  test('shows active swarm summary from cached control snapshot when devhub_agent_runs is empty', async () => {
+    window.localStorage.removeItem('devhub_agent_runs');
+    window.localStorage.setItem(
+      'devhub_swarm_control_snapshot:project-1',
+      JSON.stringify({
+        mission_control: {
+          mission: {
+            mission_id: 'launch-cached-123',
+            title: 'Cached Swarm Title',
+            status: 'active',
+          },
+        },
+      })
+    );
+
+    global.fetch = jest.fn((url, options) => {
+      if (url === '/api/swarm/runtime-diagnostics') {
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      if (url.startsWith('/api/agenthub/operations/health')) {
+        if (options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              terminate_result: { launchId: 'launch-cached-123', terminated: true },
+              control_room_snapshot_input: {
+                mission_control: { mission: { status: 'terminated' } },
+              },
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            control_room_snapshot_input: {
+              mission_control: {
+                mission: {
+                  mission_id: 'launch-cached-123',
+                  title: 'Cached Swarm Title',
+                  status: 'active',
+                },
+              },
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-active-summary"]')?.textContent
+    ).toContain('Cached Swarm Title');
+    expect(
+      view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]')
+    ).toBeNull();
   });
 
   test('shows terminate swarm action for active workspace launch and posts launch-scoped terminate request', async () => {
@@ -541,6 +769,50 @@ describe('TerminalWorkspacesManager right dock', () => {
     }
   });
 
+  test('materializes all swarm panels in one workspace from a single launch event', async () => {
+    const { SWARM_LAUNCH_MATERIALIZED_EVENT } = require('@/lib/terminal/swarmLaunchBatch');
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    const runtimeRequests = [
+      'zed',
+      'sdd_worker_1',
+      'sdd_worker_2',
+      'sdd_worker_3',
+      'sdd_worker_4',
+    ].map((roleKey, index) => ({
+      taskId: `launch-mat:${roleKey}`,
+      selectedAgent: 'opencode',
+      command: `opencode --prompt ${roleKey}`,
+      launchOrigin: 'swarm-control-launch',
+      taskTitle: `ZED Pod · ${roleKey}`,
+      launchId: 'launch-mat',
+      roleKey,
+      startAfterMs: index === 0 ? 0 : 8000 + (index - 1) * 4000,
+    }));
+
+    window.dispatchEvent(
+      new window.CustomEvent(SWARM_LAUNCH_MATERIALIZED_EVENT, {
+        detail: { runtimeRequests },
+      })
+    );
+
+    await flushEffects();
+    await flushEffects();
+
+    const visibleShell = getVisibleWorkspaceShell(view.container);
+    expect(visibleShell?.querySelectorAll('[data-testid^="terminal-p"]')).toHaveLength(5);
+    expect(view.container.textContent).toContain('ZED Pod');
+
+    const columnContainers = visibleShell?.querySelectorAll('[data-testid^="workspace-column-c"]');
+    expect(columnContainers.length).toBeGreaterThanOrEqual(3);
+  });
+
   test('preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
@@ -617,7 +889,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       expect(view.container.textContent).toContain('Lanzar Arranque limpio guiado');
 
       // Verify 3 columns exist (director + 2 worker columns)
-      const columnContainers = visibleShell?.querySelectorAll('[data-testid^="workspace-column-c"]');
+      const columnContainers = visibleShell?.querySelectorAll(
+        '[data-testid^="workspace-column-c"]'
+      );
       expect(columnContainers.length).toBeGreaterThanOrEqual(3);
     } finally {
       setTimeoutSpy.mockRestore();
@@ -777,12 +1051,14 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(
-      view.container.querySelector('[data-testid="workspace-right-dock-layer"]')?.className
-    ).toContain('hidden');
+      view.container
+        .querySelector('[data-testid="workspace-right-dock-layer"]')
+        ?.getAttribute('data-dock-layer-visible')
+    ).toBe('false');
 
     await click(view.container.querySelector('[title="Workspace 1"]'));
     await flushEffects();
@@ -844,15 +1120,16 @@ describe('TerminalWorkspacesManager right dock', () => {
     mockInvoke.mockClear();
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
-    expect(mockInvoke).toHaveBeenCalledWith('native_browser_close', {
+    expect(mockInvoke).toHaveBeenCalledWith('native_browser_set_visibility', {
       request: expect.objectContaining({
         panelId: 'browser-project-1-ws1',
-        reason: 'component-unmount',
+        visible: false,
       }),
     });
-    expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).toBeNull();
+    const activeShell = getVisibleWorkspaceShell(view.container);
+    expect(activeShell.querySelector('[data-testid="workspace-browser-pane"]')).toBeNull();
   });
 
   test('keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1', async () => {
@@ -876,7 +1153,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     ).toHaveLength(1);
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     const editorPaneAfterAdd = view.container.querySelector('[data-testid="shared-editor-pane"]');
     expect(editorPaneAfterAdd).toBe(editorPane);
@@ -1251,6 +1528,57 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(view.container.querySelector('[data-testid="panel-subtabs-cwd-chip"]')).not.toBeNull();
   });
 
+  test('active tab in right-dock tab strip has 1px accent inner border', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    // The browser tab starts as the active tab (default), but is inactive at mount because right dock is hidden.
+    const browserTab = view.container.querySelector('[data-testid="right-dock-tab-browser"]');
+    expect(browserTab).not.toBeNull();
+    expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('false');
+    expect(browserTab.className).not.toContain('outline-inset');
+
+    // Clicking the tab makes it visible and thus active
+    await click(browserTab);
+    expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('true');
+    // The className includes the outline-inset accent border.
+    expect(browserTab.className).toContain('outline-inset');
+    expect(browserTab.className).toContain('outline-[var(--accent-primary)]');
+
+    // Inactive tabs (editor) carry data-pizarra-active-tab="false"
+    // and do NOT include the outline-inset accent border.
+    const editorTab = view.container.querySelector('[data-testid="right-dock-tab-editor"]');
+    expect(editorTab).not.toBeNull();
+    expect(editorTab.getAttribute('data-pizarra-active-tab')).toBe('false');
+    expect(editorTab.className).not.toContain('outline-inset');
+  });
+
+  test('inactive tabs in right-dock tab strip do not have accent border', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/workspace/devhub',
+        isVisible: true,
+        projectId: 'project-1',
+      })
+    );
+
+    // Switch to editor so browser becomes inactive.
+    await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
+
+    const browserTab = view.container.querySelector('[data-testid="right-dock-tab-browser"]');
+    const editorTab = view.container.querySelector('[data-testid="right-dock-tab-editor"]');
+
+    expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('false');
+    expect(browserTab.className).not.toContain('outline-inset');
+    expect(editorTab.getAttribute('data-pizarra-active-tab')).toBe('true');
+    expect(editorTab.className).toContain('outline-inset');
+  });
+
   test('dock maximize toggles between persisted panel size and full width', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
@@ -1341,7 +1669,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(dockPlaceholderAnchor).not.toBeNull();
     expect(dockPlaceholderAnchor?.className).toContain('pointer-events-none');
     expect(dockLayer).not.toBeNull();
-    expect(dockLayer?.className).toContain('z-20');
+    expect(dockLayer?.style.zIndex).toBe('50');
     expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
   });
 
@@ -1368,9 +1696,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     ).toEqual({
       top: 0,
-      right: 0,
+      right: 'auto',
       bottom: 0,
-      left: 'auto',
+      left: '56%',
       width: '44%',
     });
   });
@@ -1437,7 +1765,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(dockLayer.style.width).toBe('380px');
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
-    await flushEffects();
+    await confirmNewWorkspaceSetup(1);
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));

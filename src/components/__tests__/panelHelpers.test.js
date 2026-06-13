@@ -12,12 +12,20 @@ const {
   normalizeWorkspaceWindows,
   resolveWorkspacePanelId,
   getWorkspaceTabStyle,
+  resolveWorkspaceGridShape,
+  buildWorkspaceColumnsForTerminalCount,
 } = require('../terminal/utils/panelHelpers');
 
 describe('createPanel', () => {
   test('creates panel with id only', () => {
     const panel = createPanel('p1');
-    expect(panel).toEqual({ id: 'p1', initialCommand: null, cwd: null, swarmRole: null });
+    expect(panel).toEqual({
+      id: 'p1',
+      initialCommand: null,
+      cwd: null,
+      swarmRole: null,
+      displayName: null,
+    });
   });
 
   test('creates panel with initialCommand and cwd', () => {
@@ -101,6 +109,60 @@ describe('normalizeWorkspaceState', () => {
     expect(state.workspaces[0].columns[0].id).toMatch(/^c\d+$/);
     expect(state.workspaces[0].columns[0].panels[0].id).toMatch(/^p\d+$/);
   });
+
+  // WSN-2 / WSN-S4: workspace_label override takes precedence over workspace.name
+  test('uses workspace_label from override before workspace.name', () => {
+    const raw = [
+      {
+        id: 'ws1',
+        name: 'My Workspace',
+        columns: [{ panels: [{ id: 'p1' }] }],
+      },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws1', { ws1: 'p1' }, { ws1: 'swarm-director' });
+    expect(state.workspaces[0].name).toBe('swarm-director');
+    expect(state.workspaces[0].workspace_label).toBe('swarm-director');
+  });
+
+  test('uses stored workspace_label field when no override provided', () => {
+    const raw = [
+      {
+        id: 'ws2',
+        name: 'Raw Name',
+        workspace_label: 'swarm-coder',
+        columns: [{ panels: [{ id: 'p2' }] }],
+      },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws2', { ws2: 'p2' });
+    expect(state.workspaces[0].name).toBe('swarm-coder');
+    expect(state.workspaces[0].workspace_label).toBe('swarm-coder');
+  });
+
+  test('falls back to workspace.name when no workspace_label available', () => {
+    const raw = [
+      {
+        id: 'ws3',
+        name: 'Clean Workspace',
+        columns: [{ panels: [{ id: 'p3' }] }],
+      },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws3', { ws3: 'p3' });
+    expect(state.workspaces[0].name).toBe('Clean Workspace');
+    expect(state.workspaces[0].workspace_label).toBeNull();
+  });
+
+  test('override function receives workspace and index', () => {
+    const raw = [
+      { id: 'ws-a', name: 'Alpha', columns: [{ panels: [{ id: 'p1' }] }] },
+      { id: 'ws-b', name: 'Beta', columns: [{ panels: [{ id: 'p2' }] }] },
+    ];
+    const state = normalizeWorkspaceState(raw, 'ws-a', { 'ws-a': 'p1' }, (ws, idx) => {
+      if (ws.swarmRole) return `override-${ws.swarmRole}`;
+      return null;
+    });
+    // First workspace (no swarmRole) falls back to name
+    expect(state.workspaces[0].name).toBe('Alpha');
+  });
 });
 
 describe('normalizeWorkspaceWindows', () => {
@@ -160,5 +222,68 @@ describe('getWorkspaceTabStyle', () => {
     const style = getWorkspaceTabStyle(10);
     expect(style.flex).toBe('0 1 138px');
     expect(style.minWidth).toBe('138px');
+  });
+});
+
+describe('resolveWorkspaceGridShape', () => {
+  test('maps common terminal counts to side-by-side or grid layouts', () => {
+    expect(resolveWorkspaceGridShape(2)).toEqual({ columns: 2, rows: 1 });
+    expect(resolveWorkspaceGridShape(3)).toEqual({ columns: 3, rows: 1 });
+    expect(resolveWorkspaceGridShape(4)).toEqual({ columns: 2, rows: 2 });
+    expect(resolveWorkspaceGridShape(6)).toEqual({ columns: 3, rows: 2 });
+  });
+});
+
+describe('buildWorkspaceColumnsForTerminalCount', () => {
+  function buildLayout(count) {
+    let panelCounter = 0;
+    let columnCounter = 0;
+    return buildWorkspaceColumnsForTerminalCount({
+      terminalCount: count,
+      createPanel: (id, initialCommand, cwd) => createPanel(id, initialCommand, cwd),
+      allocateColumnId: () => `c${++columnCounter}`,
+      allocatePanelId: () => `p${++panelCounter}`,
+      initialCommand: 'opencode',
+      panelCwd: '/workspace/devhub',
+    });
+  }
+
+  test('places two terminals in separate horizontal columns', () => {
+    const { columns, firstPanelId } = buildLayout(2);
+    expect(firstPanelId).toBe('p1');
+    expect(columns).toHaveLength(2);
+    expect(columns[0].panels).toHaveLength(1);
+    expect(columns[1].panels).toHaveLength(1);
+    expect(columns[0].panels[0].id).toBe('p1');
+    expect(columns[1].panels[0].id).toBe('p2');
+  });
+
+  test('places three terminals in one horizontal row', () => {
+    const { columns } = buildLayout(3);
+    expect(columns).toHaveLength(3);
+    expect(columns.map((column) => column.panels[0].id)).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  test('places four terminals in a 2x2 grid', () => {
+    const { columns } = buildLayout(4);
+    expect(columns).toHaveLength(2);
+    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p3']);
+    expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p4']);
+  });
+
+  test('places five terminals in swarm-style 2+2+1 columns', () => {
+    const { columns } = buildLayout(5);
+    expect(columns).toHaveLength(3);
+    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p3']);
+    expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p4']);
+    expect(columns[2].panels.map((panel) => panel.id)).toEqual(['p5']);
+  });
+
+  test('places six terminals in a 3x2 grid', () => {
+    const { columns } = buildLayout(6);
+    expect(columns).toHaveLength(3);
+    expect(columns[0].panels.map((panel) => panel.id)).toEqual(['p1', 'p4']);
+    expect(columns[1].panels.map((panel) => panel.id)).toEqual(['p2', 'p5']);
+    expect(columns[2].panels.map((panel) => panel.id)).toEqual(['p3', 'p6']);
   });
 });

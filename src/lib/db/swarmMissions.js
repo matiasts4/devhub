@@ -29,9 +29,25 @@ const MISSION_MESSAGE_KINDS = [
   'approval_result',
 ];
 const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
-const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline'];
+const AGENT_PRESENCE_STATES = [
+  'online',
+  'busy',
+  'idle',
+  'waiting',
+  'offline',
+  'booting',
+  'crashed',
+];
 const AGENT_PRESENCE_TTL_MS = 120_000;
-const DIRECTOR_FEED_EVENT_TYPES = ['task_completed', 'handoff_ready'];
+const DIRECTOR_FEED_EVENT_TYPES = [
+  'task_completed',
+  'handoff_ready',
+  'agent_booted',
+  'agent_shutdown',
+  'mission_joined',
+  'mission_left',
+  'supervisor_action',
+];
 const EMPTY_DIRECTOR_FEED_HANDOFF = {
   status: 'idle',
   recipient_agent_id: null,
@@ -244,6 +260,150 @@ function getSwarmMissionById(dbOrMissionId, maybeMissionId) {
   return (
     db.prepare('SELECT * FROM swarm_missions WHERE mission_id = ? LIMIT 1').get(missionId) || null
   );
+}
+
+// Mission-id validation: matches the regex used by the devhub-bus binary
+// (BUS-S10 path-traversal protection) and the spec for the snapshot helper.
+const BUS_SNAPSHOT_MISSION_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function validateBusSnapshotMissionId(missionId) {
+  if (typeof missionId !== 'string' || !BUS_SNAPSHOT_MISSION_ID_REGEX.test(missionId)) {
+    throw new TypeError(
+      `mission_id inválido para bus snapshot: ${JSON.stringify(missionId)} ` +
+        `(must match ${BUS_SNAPSHOT_MISSION_ID_REGEX})`
+    );
+  }
+}
+
+/**
+ * Return a JSON-shaped snapshot of all four bus tables for a given mission.
+ *
+ * Per design D4: a single SQL statement with 4 `json_group_array` subqueries,
+ * `COALESCE(..., '[]')` so empty missions return empty arrays (not null).
+ *
+ * Shape:
+ *   { mission_id, snapshot_at,
+ *     chat_recent, events_recent, inbox_pending, presence_active }
+ *
+ * Filters:
+ *   - chat:    all rows for mission, ordered by id DESC (LIMIT 50)
+ *   - events:  all rows for mission, ordered by id DESC (LIMIT 50)
+ *   - inbox:   only unconsumed (consumed_at IS NULL), ordered by id ASC
+ *   - presence: only not-expired (expires_at > now), ordered by last_seen_at DESC
+ *
+ * @param {import('better-sqlite3').Database|string} dbOrDbPath
+ * @param {string} [maybeMissionId]
+ * @returns {object} snapshot.
+ */
+function getMissionBusSnapshot(dbOrDbPath, maybeMissionId) {
+  const hasDb = dbOrDbPath && typeof dbOrDbPath.prepare === 'function';
+  const db = hasDb ? dbOrDbPath : getDb();
+  const missionId = hasDb ? maybeMissionId : dbOrDbPath;
+  // Validate (this also throws TypeError for null/undefined/'' — see validator)
+  validateBusSnapshotMissionId(missionId);
+
+  const snapshotAt = new Date().toISOString();
+  const sql = `
+    SELECT
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'id', id,
+          'ts', ts,
+          'from_role', from_role,
+          'to_role', to_role,
+          'kind', kind,
+          'body', body,
+          'body_hash', body_hash,
+          'client_event_id', client_event_id
+        ))
+        FROM (
+          SELECT * FROM team_chat
+          WHERE mission_id = @mid
+          ORDER BY id DESC
+          LIMIT 50
+        )
+      ), '[]') AS chat_recent,
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'id', id,
+          'ts', ts,
+          'source_role', source_role,
+          'kind', kind,
+          'dedupe_key', dedupe_key,
+          'payload_json', payload_json
+        ))
+        FROM (
+          SELECT * FROM team_events
+          WHERE mission_id = @mid
+          ORDER BY id DESC
+          LIMIT 50
+        )
+      ), '[]') AS events_recent,
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'id', id,
+          'ts', created_at,
+          'from_role', from_role,
+          'to_role', to_role,
+          'body', body,
+          'body_hash', body_hash,
+          'consumed_at', consumed_at,
+          'created_at', created_at
+        ))
+        FROM team_inbox
+        WHERE mission_id = @mid
+          AND consumed_at IS NULL
+        ORDER BY id ASC
+        LIMIT 50
+      ), '[]') AS inbox_pending,
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'id', id,
+          'ts', consumed_at,
+          'from_role', from_role,
+          'to_role', to_role,
+          'body', body,
+          'body_hash', body_hash,
+          'consumed_at', consumed_at,
+          'created_at', created_at
+        ))
+        FROM (
+          SELECT * FROM team_inbox
+          WHERE mission_id = @mid
+            AND consumed_at IS NOT NULL
+          ORDER BY consumed_at DESC
+          LIMIT 20
+        )
+      ), '[]') AS inbox_recent_consumed,
+      COALESCE((
+        SELECT json_group_array(json_object(
+          'agent_id', agent_id,
+          'runtime_surface', runtime_surface,
+          'presence_state', presence_state,
+          'presence_context', presence_context,
+          'status_summary', status_summary,
+          'last_seen_at', last_seen_at,
+          'expires_at', expires_at
+        ))
+        FROM (
+          SELECT * FROM agent_presence
+          WHERE mission_id = @mid
+            AND expires_at > @now
+          ORDER BY last_seen_at DESC
+          LIMIT 50
+        )
+      ), '[]') AS presence_active
+  `;
+  const row = db.prepare(sql).get({ mid: missionId, now: snapshotAt });
+  return {
+    mission_id: missionId,
+    snapshot_at: snapshotAt,
+    chat_recent: JSON.parse(row.chat_recent || '[]'),
+    events_recent: JSON.parse(row.events_recent || '[]'),
+    inbox_pending: JSON.parse(row.inbox_pending || '[]'),
+    inbox_recent_consumed: JSON.parse(row.inbox_recent_consumed || '[]'),
+    presence_active: JSON.parse(row.presence_active || '[]'),
+  };
 }
 
 function createSwarmMission(dbOrInput, maybeInput) {
@@ -586,6 +746,35 @@ function listPendingMessageDeliveriesForMission(dbOrMissionId, maybeMissionId, m
        LIMIT ?`
     )
     .all(missionId, limit);
+}
+
+function listPendingDeliveriesForAgent(dbOrAgentId, maybeAgentId, maybeOptions = {}) {
+  const hasDb = dbOrAgentId && typeof dbOrAgentId.prepare === 'function';
+  const db = hasDb ? dbOrAgentId : getDb();
+  const agentId = hasDb ? maybeAgentId : dbOrAgentId;
+  const options = hasDb ? maybeOptions : maybeAgentId || {};
+  const limit = options.limit || 50;
+  return db
+    .prepare(
+      `SELECT d.*
+       FROM message_deliveries d
+       WHERE d.recipient_agent_id = ?
+         AND d.status IN ('pending', 'retry_pending')
+       ORDER BY d.updated_at DESC
+       LIMIT ?`
+    )
+    .all(agentId, limit);
+}
+
+function markDeliveryConsumed(dbOrDeliveryId, maybeDeliveryId) {
+  const hasDb = dbOrDeliveryId && typeof dbOrDeliveryId.prepare === 'function';
+  const db = hasDb ? dbOrDeliveryId : getDb();
+  const deliveryId = hasDb ? maybeDeliveryId : dbOrDeliveryId;
+  return db
+    .prepare(
+      `UPDATE message_deliveries SET status = 'consumed', updated_at = ? WHERE delivery_id = ? AND status IN ('pending','retry_pending')`
+    )
+    .run(new Date().toISOString(), deliveryId);
 }
 
 function listMessageDeliveriesForMission(dbOrMissionId, maybeMissionId) {
@@ -1066,6 +1255,143 @@ function getSwarmMissionDirectorSnapshot(dbOrMissionId, maybeMissionId, maybeOpt
 }
 
 // ---------------------------------------------------------------------------
+// DG Timeline (append-only)
+// ---------------------------------------------------------------------------
+
+const DG_INITIATORS = Object.freeze(['operator', 'director-general', 'swarm-director']);
+const DG_TARGETS = Object.freeze(['director-general', 'swarm-director', 'operator']);
+const DG_ACTIONS = Object.freeze([
+  'mission-request',
+  'status-poll',
+  'approval-required',
+  'mission-result',
+]);
+const DG_STATUSES = Object.freeze([
+  'pending',
+  'waiting',
+  'in-progress',
+  'awaiting-approval',
+  'completed',
+  'rejected',
+  'failed',
+]);
+const DG_AUTHORITIES = Object.freeze([
+  'operator',
+  'operator-initiated',
+  'director',
+  'director-escalated',
+]);
+const DG_FRESHNESS_VALUES = Object.freeze(['just_now', 'stale', 'unknown']);
+
+// authority validation per DG MUST NOT rules
+// DG MUST NOT: DG SHALL NOT emit authority "director" for non-Director-initiated actions
+// DG SHALL NOT emit authority "director-escalated" for non-Director failures
+// swarm-director CAN emit "operator" authority for approval-required (operator is the approving actor)
+const VALID_AUTHORITY_FOR_INITIATOR = Object.freeze({
+  operator: new Set(['operator', 'operator-initiated']),
+  'director-general': new Set(['operator', 'operator-initiated']),
+  'swarm-director': new Set(['director', 'director-escalated', 'operator']),
+});
+
+function isValidDGInitiator(v) {
+  return DG_INITIATORS.includes(v);
+}
+function isValidDGTarget(v) {
+  return DG_TARGETS.includes(v);
+}
+function isValidDGAction(v) {
+  return DG_ACTIONS.includes(v);
+}
+function isValidDGStatus(v) {
+  return DG_STATUSES.includes(v);
+}
+function isValidDGAuthority(v) {
+  return DG_AUTHORITIES.includes(v);
+}
+function isValidDGFreshness(v) {
+  return DG_FRESHNESS_VALUES.includes(v);
+}
+
+function validateTimelineRowSchema(row, contextLabel) {
+  if (!row.id) throw new Error(`${contextLabel}: id es requerido.`);
+  if (!row.missionId) throw new Error(`${contextLabel}: missionId es requerido.`);
+  if (typeof row.timestamp !== 'number')
+    throw new Error(`${contextLabel}: timestamp debe ser número.`);
+  if (!isValidDGInitiator(row.initiator))
+    throw new Error(`${contextLabel}: initiator inválido: ${row.initiator}`);
+  if (!isValidDGTarget(row.target))
+    throw new Error(`${contextLabel}: target inválido: ${row.target}`);
+  if (!isValidDGAction(row.action))
+    throw new Error(`${contextLabel}: action inválido: ${row.action}`);
+  if (!isValidDGStatus(row.status))
+    throw new Error(`${contextLabel}: status inválido: ${row.status}`);
+  if (!isValidDGAuthority(row.authority))
+    throw new Error(`${contextLabel}: authority inválido: ${row.authority}`);
+  if (!isValidDGFreshness(row.freshness))
+    throw new Error(`${contextLabel}: freshness inválido: ${row.freshness}`);
+
+  const validAuthorities = VALID_AUTHORITY_FOR_INITIATOR[row.initiator];
+  if (!validAuthorities || !validAuthorities.has(row.authority)) {
+    throw new Error(
+      `${contextLabel}: authority "${row.authority}" no es válido para initiator "${row.initiator}". ` +
+        `DG MUST NOT: authority debe coincidir con initiator.`
+    );
+  }
+}
+
+function appendTimelineRow(dbOrMissionId, maybeMissionIdOrRow, maybeRow) {
+  const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
+  const db = hasDb ? dbOrMissionId : getDb();
+  const missionId = hasDb ? maybeMissionIdOrRow : dbOrMissionId;
+  const row = hasDb ? maybeRow : maybeMissionIdOrRow;
+
+  if (!missionId) throw new Error('missionId es requerido para appendTimelineRow.');
+  if (!row || typeof row !== 'object') throw new Error('row es requerido para appendTimelineRow.');
+
+  validateTimelineRowSchema({ ...row, missionId }, 'appendTimelineRow');
+
+  const timestamp = typeof row.timestamp === 'number' ? row.timestamp : Date.now();
+  const now = new Date().toISOString();
+  const insertRow = {
+    id: row.id,
+    mission_id: missionId,
+    timestamp,
+    initiator: row.initiator,
+    target: row.target,
+    action: row.action,
+    status: row.status,
+    authority: row.authority,
+    freshness: row.freshness || 'unknown',
+    fallback: String(row.fallback ?? ''),
+    created_at: now,
+  };
+
+  const keys = Object.keys(insertRow);
+  db.prepare(
+    `INSERT OR IGNORE INTO dg_timeline (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
+  ).run(...keys.map((key) => insertRow[key] ?? null));
+
+  return (
+    db
+      .prepare('SELECT * FROM dg_timeline WHERE id = ? AND mission_id = ? LIMIT 1')
+      .get(insertRow.id, insertRow.mission_id) || null
+  );
+}
+
+function getTimelineRows(dbOrMissionId, maybeMissionId) {
+  const hasDb = dbOrMissionId && typeof dbOrMissionId.prepare === 'function';
+  const db = hasDb ? dbOrMissionId : getDb();
+  const missionId = hasDb ? maybeMissionId : dbOrMissionId;
+  if (!missionId) throw new Error('missionId es requerido para getTimelineRows.');
+
+  return db
+    .prepare(
+      'SELECT * FROM dg_timeline WHERE mission_id = ? ORDER BY timestamp ASC, created_at ASC'
+    )
+    .all(missionId);
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -1086,6 +1412,14 @@ module.exports = {
   DIRECTOR_SNAPSHOT_MESSAGE_FIELDS,
   DIRECTOR_SNAPSHOT_DELIVERY_FIELDS,
   DIRECTOR_SNAPSHOT_PRESENCE_FIELDS,
+  // DG Timeline constants
+  DG_INITIATORS,
+  DG_TARGETS,
+  DG_ACTIONS,
+  DG_STATUSES,
+  DG_AUTHORITIES,
+  DG_FRESHNESS_VALUES,
+  VALID_AUTHORITY_FOR_INITIATOR,
   // Validators
   isSwarmMissionStatus,
   isSwarmMissionKind,
@@ -1094,6 +1428,12 @@ module.exports = {
   isMissionMessageKind,
   isMissionDeliveryStatus,
   isAgentPresenceState,
+  isValidDGInitiator,
+  isValidDGTarget,
+  isValidDGAction,
+  isValidDGStatus,
+  isValidDGAuthority,
+  isValidDGFreshness,
   // Key builders
   buildMissionDeliveryKey,
   buildAgentPresenceKey,
@@ -1114,9 +1454,11 @@ module.exports = {
   listRecentMissionMessages,
   listMissionDirectorFeedItems,
   // Delivery
+  listPendingDeliveriesForAgent,
   listPendingMessageDeliveriesForMission,
   listMessageDeliveriesForMission,
   upsertMessageDelivery,
+  markDeliveryConsumed,
   // Presence
   listAgentPresenceForMission,
   upsertAgentPresence,
@@ -1124,6 +1466,12 @@ module.exports = {
   pickSnapshotFields,
   buildDirectorSnapshotWatermark,
   getSwarmMissionDirectorSnapshot,
+  // Bus snapshot (T-009 — agent comms bus read path)
+  BUS_SNAPSHOT_MISSION_ID_REGEX,
+  getMissionBusSnapshot,
+  // DG Timeline
+  appendTimelineRow,
+  getTimelineRows,
   // Re-exported from agentRuns (needed by tests and callers)
   resolveAgentRuntimeBinding,
   getPreferredBindingWorkspace,

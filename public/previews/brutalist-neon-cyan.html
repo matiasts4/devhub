@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - Neon Brutalist</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --neon-cyan: #22d3ee;
+            --neon-cyan-dim: #0e7490;
+            --neon-pink: #f472b6;
+            --neon-green: #4ade80;
+            --neon-orange: #fb923c;
+        }
+
+        body {
+            font-family: 'Geist', sans-serif;
+            background-color: #050505;
+            background-image:
+                linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: #e4e4e7;
+        }
+
+        /* Neon Morphology */
+        .neon-panel {
+            background: linear-gradient(180deg, rgba(10, 10, 15, 0.95), rgba(5, 5, 10, 0.98));
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            box-shadow:
+                0 0 20px rgba(34, 211, 238, 0.1),
+                0 4px 12px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(34, 211, 238, 0.05);
+        }
+
+        .neon-panel-glow {
+            background: linear-gradient(180deg, rgba(15, 15, 22, 0.95), rgba(8, 8, 15, 0.98));
+            border: 1px solid rgba(34, 211, 238, 0.5);
+            box-shadow:
+                0 0 30px rgba(34, 211, 238, 0.15),
+                0 8px 24px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(34, 211, 238, 0.08);
+        }
+
+        .neon-btn-primary {
+            background: linear-gradient(180deg, #22d3ee 0%, #0e7490 100%);
+            border: 1px solid rgba(34, 211, 238, 0.6);
+            color: #030303;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            box-shadow:
+                0 0 15px rgba(34, 211, 238, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .neon-btn-primary:hover {
+            box-shadow:
+                0 0 25px rgba(34, 211, 238, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .neon-btn-secondary {
+            background: rgba(34, 211, 238, 0.08);
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            color: #22d3ee;
+            font-weight: 600;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.1);
+        }
+
+        .neon-btn-secondary:hover {
+            background: rgba(34, 211, 238, 0.15);
+            border-color: rgba(34, 211, 238, 0.5);
+        }
+
+        .neon-node {
+            background: linear-gradient(180deg, rgba(15, 15, 22, 0.98), rgba(8, 8, 15, 0.98));
+            border: 1px solid rgba(34, 211, 238, 0.25);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .neon-node-running {
+            border-color: rgba(74, 222, 128, 0.6);
+            box-shadow:
+                0 0 15px rgba(74, 222, 128, 0.2),
+                0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .neon-node-error {
+            border-color: rgba(244, 114, 182, 0.6);
+            box-shadow:
+                0 0 15px rgba(244, 114, 182, 0.2),
+                0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        @keyframes neon-pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 8px currentColor; }
+            50% { opacity: 0.5; box-shadow: 0 0 4px currentColor; }
+        }
+
+        .neon-blink {
+            animation: neon-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes march {
+            to { stroke-dashoffset: -20; }
+        }
+
+        .neon-edge {
+            stroke-dasharray: 6, 4;
+            animation: march 1s linear infinite;
+        }
+
+        .accent-bar {
+            height: 2px;
+            background: linear-gradient(90deg, #22d3ee, #f472b6, #22d3ee);
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+        }
+
+        .milestone-line {
+            width: 2px;
+            background: linear-gradient(180deg, rgba(34, 211, 238, 0.8), rgba(34, 211, 238, 0.1));
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col">
+    <!-- Header -->
+    <header class="neon-panel border-b border-cyan-400/20 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-sm" style="background: #22d3ee; box-shadow: 0 0 8px #22d3ee;"></div>
+                <span class="text-sm font-black tracking-wider" style="color: #22d3ee;">ACME_PLATFORM</span>
+            </div>
+            <div class="h-4 w-px" style="background: rgba(34,211,238,0.2);"></div>
+            <span class="text-xs" style="color: rgba(228,228,231,0.5);">SWARM_CONTROL</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <button class="neon-btn-secondary px-3 py-1.5 text-xs">Settings</button>
+            <button class="neon-btn-primary px-4 py-2 text-xs">+ Agent</button>
+        </div>
+    </header>
+
+    <div class="accent-bar"></div>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex gap-4 p-4 overflow-hidden">
+        <!-- LEFT: Agent Grid -->
+        <div class="w-64 flex flex-col gap-3">
+            <div class="neon-panel p-3 flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider" style="color: #22d3ee;">// AGENTS</span>
+                <span class="text-xs px-2 py-0.5" style="background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3);">04</span>
+            </div>
+
+            <!-- Agent: Running -->
+            <div class="neon-node neon-node-running p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="status-dot neon-blink" style="background: #4ade80; color: #4ade80;"></div>
+                        <span class="text-xs font-bold text-white">DIRECTOR</span>
+                    </div>
+                    <span class="text-[10px]" style="color: rgba(228,228,231,0.4);">#001</span>
+                </div>
+                <div class="text-[10px]" style="color: rgba(228,228,231,0.5);">Swarm orchestration</div>
+                <div class="w-full h-1 rounded-full overflow-hidden" style="background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.2);">
+                    <div class="h-full rounded-full" style="width: 72%; background: linear-gradient(90deg, #22d3ee, #4ade80);"></div>
+                </div>
+            </div>
+
+            <!-- Agent: Running -->
+            <div class="neon-node neon-node-running p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="status-dot neon-blink" style="background: #4ade80; color: #4ade80;"></div>
+                        <span class="text-xs font-bold text-white">CODER</span>
+                    </div>
+                    <span class="text-[10px]" style="color: rgba(228,228,231,0.4);">#002</span>
+                </div>
+                <div class="text-[10px]" style="color: rgba(228,228,231,0.5);">Frontend implementation</div>
+                <div class="w-full h-1 rounded-full overflow-hidden" style="background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.2);">
+                    <div class="h-full rounded-full" style="width: 45%; background: linear-gradient(90deg, #22d3ee, #4ade80);"></div>
+                </div>
+            </div>
+
+            <!-- Agent: Idle -->
+            <div class="neon-node p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="status-dot" style="background: rgba(228,228,231,0.3);"></div>
+                        <span class="text-xs font-bold text-white">REVIEWER</span>
+                    </div>
+                    <span class="text-[10px]" style="color: rgba(228,228,231,0.4);">#003</span>
+                </div>
+                <div class="text-[10px]" style="color: rgba(228,228,231,0.5);">Code review queue</div>
+            </div>
+
+            <!-- Agent: Error -->
+            <div class="neon-node neon-node-error p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="status-dot neon-blink" style="background: #f472b6; color: #f472b6;"></div>
+                        <span class="text-xs font-bold text-white">DEVOPS</span>
+                    </div>
+                    <span class="text-[10px]" style="color: rgba(228,228,231,0.4);">#004</span>
+                </div>
+                <div class="text-[10px]" style="color: rgba(244,114,182,0.7);">Connection timeout</div>
+            </div>
+        </div>
+
+        <!-- CENTER: Task Board -->
+        <div class="flex-1 flex flex-col gap-3 overflow-hidden">
+            <div class="neon-panel p-3 flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider" style="color: #22d3ee;">// TASK_BOARD</span>
+                <div class="flex gap-2">
+                    <span class="text-xs px-2 py-0.5" style="background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3);">RUN: 02</span>
+                    <span class="text-xs px-2 py-0.5" style="background: rgba(251,146,60,0.15); color: #fb923c; border: 1px solid rgba(251,146,60,0.3);">Q: 03</span>
+                </div>
+            </div>
+
+            <div class="flex-1 flex gap-3 overflow-hidden">
+                <!-- Running Column -->
+                <div class="flex-1 flex flex-col gap-2 overflow-hidden">
+                    <div class="px-2 py-1.5 flex items-center gap-2" style="border-bottom: 1px solid rgba(74,222,128,0.3);">
+                        <div class="status-dot neon-blink" style="background: #4ade80; color: #4ade80;"></div>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #4ade80;">// RUNNING</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-2">
+                        <div class="neon-node-running p-2.5 border-l-2 cursor-pointer" style="border-color: #4ade80;">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] font-bold text-white">REFACTOR_MORPHOLOGY_TOKENS</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-[9px]" style="color: rgba(228,228,231,0.4);">
+                                <span>#0892</span>
+                                <span>—</span>
+                                <span>CODER</span>
+                            </div>
+                            <div class="w-full h-1.5 rounded-full overflow-hidden mt-2" style="background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.2);">
+                                <div class="h-full rounded-full" style="width: 68%; background: #4ade80;"></div>
+                            </div>
+                            <div class="text-[9px] mt-1" style="color: rgba(74,222,128,0.7);">68%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Queue Column -->
+                <div class="flex-1 flex flex-col gap-2 overflow-hidden">
+                    <div class="px-2 py-1.5 flex items-center gap-2" style="border-bottom: 1px solid rgba(251,146,60,0.3);">
+                        <div class="status-dot" style="background: #fb923c;"></div>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #fb923c;">// QUEUE</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-2">
+                        <div class="neon-node p-2.5 cursor-pointer">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] font-bold text-white">IMPL_AUTH_FLOW</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-[9px]" style="color: rgba(228,228,231,0.4);">
+                                <span>#0894</span>
+                                <span>—</span>
+                                <span>DEVOPS</span>
+                            </div>
+                        </div>
+                        <div class="neon-node p-2.5 cursor-pointer">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] font-bold text-white">FIX_TTY_RENDER</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-[9px]" style="color: rgba(228,228,231,0.4);">
+                                <span>#0891</span>
+                                <span>—</span>
+                                <span>REVIEWER</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Done Column -->
+                <div class="flex-1 flex flex-col gap-2 overflow-hidden">
+                    <div class="px-2 py-1.5 flex items-center gap-2" style="border-bottom: 1px solid rgba(34,211,238,0.3);">
+                        <i data-lucide="check" class="w-3 h-3" style="color: #22d3ee;"></i>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #22d3ee;">// DONE</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-2">
+                        <div class="neon-node p-2.5 cursor-pointer opacity-60">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10px] font-bold line-through" style="color: rgba(228,228,231,0.5);">SETUP_MESSAGE_BUS</span>
+                                <i data-lucide="check" class="w-3 h-3" style="color: #22d3ee;"></i>
+                            </div>
+                            <div class="flex items-center gap-2 text-[9px] mt-1" style="color: rgba(228,228,231,0.3);">
+                                <span>#0880</span>
+                                <span>—</span>
+                                <span>DIRECTOR</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Mission Control -->
+        <div class="w-72 flex flex-col gap-3">
+            <div class="neon-panel p-3">
+                <span class="text-xs font-bold uppercase tracking-wider" style="color: #22d3ee;">// MISSION</span>
+            </div>
+            <div class="neon-panel-glow p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-black text-white">SWARM_SESSION_09</span>
+                    <span class="text-[10px] px-2 py-0.5 neon-blink" style="background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3);">ACTIVE</span>
+                </div>
+                <div class="text-[10px]" style="color: rgba(228,228,231,0.5);">Started 23 min ago</div>
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px]">
+                        <span style="color: rgba(228,228,231,0.4);">Progress</span>
+                        <span style="color: #22d3ee;">72%</span>
+                    </div>
+                    <div class="h-1.5 rounded-full overflow-hidden" style="background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.2);">
+                        <div class="h-full rounded-full" style="width: 72%; background: linear-gradient(90deg, #22d3ee, #f472b6);"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timeline -->
+            <div class="neon-panel p-3 flex-1 overflow-y-auto">
+                <span class="text-[10px] font-bold uppercase tracking-wider mb-3 block" style="color: rgba(228,228,231,0.4);">// TIMELINE</span>
+                <div class="space-y-3">
+                    <div class="flex gap-3">
+                        <div class="flex flex-col items-center">
+                            <div class="w-6 h-6 rounded-full flex items-center justify-center" style="background: rgba(34,211,238,0.2); border: 1px solid #22d3ee;">
+                                <i data-lucide="check" class="w-3 h-3" style="color: #22d3ee;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-1 pt-0.5">
+                            <div class="text-[10px] font-bold text-white">Session initialized</div>
+                            <div class="text-[9px]" style="color: rgba(228,228,231,0.4);">14:32</div>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex flex-col items-center">
+                            <div class="w-6 h-6 rounded-full flex items-center justify-center neon-blink" style="background: rgba(74,222,128,0.2); border: 1px solid #4ade80;">
+                                <i data-lucide="loader" class="w-3 h-3" style="color: #4ade80;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-1 pt-0.5">
+                            <div class="text-[10px] font-bold text-white">Agents deployed</div>
+                            <div class="text-[9px]" style="color: rgba(228,228,231,0.4);">14:35</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

@@ -19,6 +19,20 @@
   --chrome-control-fill: color-mix(in srgb, var(--surface-card) 84%, transparent);
   --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
   --chrome-press-offset: 0px;
+  --density-row-padding-y: 0.5rem;
+  --density-row-padding-x: 0.75rem;
+  --density-row-gap: 0.5rem;
+  --warning: oklch(0.79 0.16 80);
+  --proyectos-accent-cyan: #00f0ff;
+  --proyectos-accent-lime: #39ff14;
+  --proyectos-accent-pink: #ff007f;
+  --proyectos-accent-yellow: #ffe600;
+}
+
+[data-density='compact'] {
+  --density-row-padding-y: 0.25rem;
+  --density-row-padding-x: 0.5rem;
+  --density-row-gap: 0.25rem;
 }
 
 [data-morphology='default'] {
@@ -33,11 +47,19 @@
   --chrome-control-fill: color-mix(in srgb, var(--surface-card) 84%, transparent);
   --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
   --chrome-press-offset: 0px;
+  --terminal-header-divider-width: 1px;
+  --terminal-header-divider-color: color-mix(
+    in srgb,
+    var(--border-strong) 34%,
+    var(--border-subtle)
+  );
+  --terminal-workspace-bar-border-width: 1px;
+  --terminal-workspace-bar-border-color: var(--border-subtle);
 }
 
 [data-morphology='brutalist-stage'] {
-  --chrome-radius-panel: 0.5rem;
-  --chrome-radius-control: 0.5rem;
+  --chrome-radius-panel: 0;
+  --chrome-radius-control: 0;
   --chrome-border-width: 2px;
   --chrome-border-color: var(--border-strong);
   --chrome-shadow-panel: 4px 4px 0 0 var(--border-strong);
@@ -47,6 +69,23 @@
   --chrome-control-fill: var(--surface-muted);
   --chrome-control-fill-hover: var(--surface-hover);
   --chrome-press-offset: 1px;
+  /* Terminals: light 1px frame — avoids harsh 2px brutalist panels without going borderless. */
+  --terminal-chrome-border-width: 1px;
+  --terminal-chrome-border-color: color-mix(in srgb, var(--border-subtle) 72%, transparent);
+  --terminal-chrome-shadow-panel: none;
+  --terminal-grid-border-width: 1px;
+  --terminal-header-divider-width: 1px;
+  --terminal-header-divider-color: color-mix(
+    in srgb,
+    var(--border-strong) 38%,
+    var(--border-subtle)
+  );
+  --terminal-workspace-bar-border-width: 1px;
+  --terminal-workspace-bar-border-color: color-mix(
+    in srgb,
+    var(--border-strong) 32%,
+    var(--border-subtle)
+  );
 }
 
 [data-morphology='aura'] {
@@ -71,6 +110,138 @@
     var(--accent-primary) 8%
   );
   --chrome-press-offset: 0px;
+}
+
+[data-morphology='switchyard'] {
+  --chrome-radius-panel: 18px;
+  --chrome-radius-control: 12px;
+  --chrome-border-width: 1px;
+  --chrome-border-color: rgba(99, 208, 194, 0.18);
+  --chrome-shadow-panel: 0 18px 30px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(228, 255, 251, 0.05);
+  --chrome-shadow-control: 0 8px 20px rgba(0, 0, 0, 0.22);
+  --chrome-panel-fill: color-mix(in srgb, var(--surface-card) 60%, var(--accent-primary) 6%);
+  --chrome-panel-fill-emphasis: color-mix(
+    in srgb,
+    var(--surface-elevated) 55%,
+    var(--accent-primary) 12%
+  );
+  --chrome-control-fill: color-mix(in srgb, var(--surface-card) 70%, var(--accent-primary) 5%);
+  --chrome-control-fill-hover: color-mix(
+    in srgb,
+    var(--surface-elevated) 72%,
+    var(--accent-primary) 8%
+  );
+  --chrome-press-offset: 0px;
+  --accent-primary: #63d0c2;
+  --accent-glow: rgba(99, 208, 194, 0.16);
+}
+
+[data-morphology='switchyard'] body {
+  background-color: #091014;
+  background-image:
+    radial-gradient(circle at top left, rgba(99, 208, 194, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(79, 131, 212, 0.12), transparent 22%),
+    linear-gradient(rgba(228, 255, 251, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(228, 255, 251, 0.012) 1px, transparent 1px),
+    linear-gradient(180deg, #10181d 0%, #070b0d 100%);
+  background-size:
+    auto,
+    auto,
+    24px 24px,
+    24px 24px,
+    auto;
+}
+
+[data-morphology='switchyard'] body[data-palette='cobalt'] {
+  --accent-primary: #7a93ff;
+  --accent-glow: rgba(122, 147, 255, 0.16);
+  --chrome-border-color: rgba(122, 147, 255, 0.18);
+}
+
+[data-morphology='switchyard'] body[data-palette='cobalt'] {
+  background-image:
+    radial-gradient(circle at top left, rgba(122, 147, 255, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(79, 131, 212, 0.14), transparent 22%),
+    linear-gradient(rgba(228, 255, 251, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(228, 255, 251, 0.012) 1px, transparent 1px),
+    linear-gradient(180deg, #101822 0%, #070b14 100%);
+  background-size:
+    auto,
+    auto,
+    24px 24px,
+    24px 24px,
+    auto;
+}
+
+[data-morphology='switchyard'] body[data-palette='alloy'] {
+  --accent-primary: #d4a16a;
+  --accent-glow: rgba(212, 161, 106, 0.16);
+  --chrome-border-color: rgba(212, 161, 106, 0.18);
+}
+
+[data-morphology='switchyard'] body[data-palette='alloy'] {
+  background-image:
+    radial-gradient(circle at top left, rgba(212, 161, 106, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(212, 161, 106, 0.1), transparent 22%),
+    linear-gradient(rgba(255, 248, 228, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 248, 228, 0.012) 1px, transparent 1px),
+    linear-gradient(180deg, #14120d 0%, #0a0907 100%);
+  background-size:
+    auto,
+    auto,
+    24px 24px,
+    24px 24px,
+    auto;
+}
+
+/* ─── Terminal Zone — base fallbacks applied before header style overrides ─── */
+[data-terminal-container] {
+  --terminal-bg: var(--surface-app);
+  --terminal-fg: var(--text-primary);
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: var(--surface-elevated);
+  --terminal-accent-bar: transparent;
+}
+
+/* Dragon style — gradient header + accent bar */
+[data-terminal-container][data-terminal-header-style='dragon'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: linear-gradient(
+    180deg,
+    var(--surface-elevated),
+    var(--chrome-panel-fill)
+  );
+  --terminal-accent-bar: var(--accent-primary);
+}
+
+/* Minimal style — flat solid, no accent bar */
+[data-terminal-container][data-terminal-header-style='minimal'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: var(--surface-card);
+  --terminal-accent-bar: transparent;
+}
+
+/* Gradient style — header gradient, no accent bar */
+[data-terminal-container][data-terminal-header-style='gradient'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: linear-gradient(180deg, var(--surface-elevated), var(--surface-card));
+  --terminal-accent-bar: transparent;
+}
+
+/* Plain style — flat solid, no decoration */
+[data-terminal-container][data-terminal-header-style='plain'] {
+  --terminal-header-bg: var(--surface-card);
+  --terminal-header-gradient: var(--surface-card);
+  --terminal-accent-bar: transparent;
+}
+
+/* Accent bar toggle — overrides header style to force visibility on/off */
+[data-terminal-container][data-terminal-accent-bar='visible'] {
+  --terminal-accent-bar: var(--accent-primary);
+}
+
+[data-terminal-container][data-terminal-accent-bar='hidden'] {
+  --terminal-accent-bar: transparent;
 }
 
 html {
@@ -129,6 +300,38 @@ code {
   background: var(--border-strong);
 }
 
+/* Kanban column bodies — wider, tinted scrollbar so overflow is obvious */
+.kanban-column-scrollbar {
+  --kanban-scroll-accent: var(--kanban-column-accent, var(--accent-primary));
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--kanban-scroll-accent) 68%, var(--border-strong))
+    color-mix(in srgb, var(--surface-elevated) 72%, transparent);
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar-track {
+  margin-block: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-elevated) 78%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-subtle) 65%, transparent);
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background: color-mix(in srgb, var(--kanban-scroll-accent) 76%, var(--border-strong));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--kanban-scroll-accent) 28%, transparent);
+}
+
+.kanban-column-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--kanban-scroll-accent) 90%, white 6%);
+}
+
 @layer base {
   :root,
   [data-theme='deep-sea'] {
@@ -175,6 +378,7 @@ code {
     --shadow-lifted: 0 20px 45px rgba(1, 4, 9, 0.45);
     --danger: oklch(0.72 0.19 0);
     --success: oklch(0.6 0.16 145);
+    --warning: oklch(0.79 0.16 80);
   }
 
   [data-theme='nord'] {
@@ -220,6 +424,7 @@ code {
     --shadow-lifted: 0 20px 48px rgba(16, 21, 30, 0.4);
     --danger: #bf616a;
     --success: #a3be8c;
+    --warning: oklch(0.78 0.13 75);
   }
 
   [data-theme='dracula'] {
@@ -265,6 +470,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(13, 12, 24, 0.5);
     --danger: #ff5555;
     --success: #50fa7b;
+    --warning: oklch(0.82 0.14 85);
   }
 
   [data-theme='light'] {
@@ -310,6 +516,7 @@ code {
     --shadow-lifted: 0 22px 52px rgba(31, 35, 40, 0.12);
     --danger: #cf222e;
     --success: #1a7f37;
+    --warning: oklch(0.68 0.16 55);
   }
 
   [data-theme='catppuccin'] {
@@ -355,6 +562,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(14, 14, 24, 0.5);
     --danger: #f38ba8;
     --success: #a6e3a1;
+    --warning: oklch(0.82 0.14 85);
   }
 
   [data-theme='tokyo-night'] {
@@ -400,6 +608,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(10, 11, 18, 0.55);
     --danger: #f7768e;
     --success: #9ece6a;
+    --warning: oklch(0.79 0.16 80);
   }
 
   [data-theme='monokai'] {
@@ -445,6 +654,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(12, 12, 10, 0.5);
     --danger: #f92672;
     --success: #a6e22e;
+    --warning: oklch(0.82 0.14 85);
   }
 
   [data-theme='synthwave'] {
@@ -490,6 +700,165 @@ code {
     --shadow-lifted: 0 20px 52px rgba(8, 6, 16, 0.6);
     --danger: #ff6b6b;
     --success: #72f1b8;
+    --warning: oklch(0.79 0.16 80);
+  }
+
+  [data-theme='brutalist-stage'] {
+    --background: 0 0% 3%;
+    --foreground: 45 10% 95%;
+    --card: 0 0% 5%;
+    --card-foreground: 45 10% 95%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 45 10% 95%;
+    --primary: 43 70% 57%;
+    --primary-foreground: 0 0% 3%;
+    --secondary: 0 0% 8%;
+    --secondary-foreground: 45 10% 95%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 45 5% 55%;
+    --accent: 0 0% 8%;
+    --accent-foreground: 45 10% 95%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 3%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 43 70% 57%;
+
+    --surface-app: #080808;
+    --surface-card: #0d0d0d;
+    --surface-elevated: #141414;
+    --surface-muted: #0a0a0a;
+    --surface-hover: #1a1a1a;
+    --text-primary: #f0ece4;
+    --text-secondary: #d4cfc6;
+    --text-muted: #8a8578;
+    --border-subtle: #222222;
+    --border-strong: #333333;
+    --accent-primary: #e3b341;
+    --accent-secondary: #f0c96b;
+    --accent-rgb: 227, 179, 65;
+    --accent-shadow: #9a7a2a;
+    --accent-cyan: #5bc0be;
+    --accent-purple: #b185db;
+    --accent-green: #6dbf67;
+    --accent-pink: #d96c8a;
+    --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.6);
+    --shadow-lifted: 0 20px 52px rgba(0, 0, 0, 0.75);
+    --danger: #f85149;
+    --success: #3fb950;
+    --warning: #e3b341;
+  }
+
+  [data-theme='switchyard'] {
+    --background: 195 45% 5%;
+    --foreground: 170 30% 96%;
+    --card: 195 35% 8%;
+    --card-foreground: 170 30% 96%;
+    --popover: 195 35% 7%;
+    --popover-foreground: 170 30% 96%;
+    --primary: 170 60% 58%;
+    --primary-foreground: 195 45% 5%;
+    --secondary: 195 30% 12%;
+    --secondary-foreground: 170 30% 96%;
+    --muted: 195 30% 12%;
+    --muted-foreground: 170 15% 55%;
+    --accent: 195 30% 12%;
+    --accent-foreground: 170 30% 96%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 170 30% 96%;
+    --border: 195 25% 16%;
+    --input: 195 25% 16%;
+    --ring: 170 60% 58%;
+
+    --surface-app: #091014;
+    --surface-card: #111d22;
+    --surface-elevated: #10181d;
+    --surface-muted: #0f171c;
+    --surface-hover: #16242b;
+    --text-primary: #ecf5f4;
+    --text-secondary: #d4e5e3;
+    --text-muted: #9bb9bf;
+    --border-subtle: rgba(99, 208, 194, 0.12);
+    --border-strong: rgba(99, 208, 194, 0.24);
+    --accent-primary: #63d0c2;
+    --accent-secondary: #85e0d5;
+    --accent-rgb: 99, 208, 194;
+    --accent-shadow: rgba(18, 78, 76, 0.48);
+    --accent-cyan: #63d0c2;
+    --accent-purple: #7a93ff;
+    --accent-green: #43d19e;
+    --accent-pink: #ef6b7b;
+    --shadow-soft: 0 10px 30px rgba(9, 16, 20, 0.5);
+    --shadow-lifted: 0 20px 52px rgba(9, 16, 20, 0.65);
+    --danger: #ef6b7b;
+    --success: #43d19e;
+    --warning: oklch(0.79 0.16 80);
+  }
+
+  [data-accent='amber'] {
+    --accent-primary: #e3b341;
+    --accent-secondary: #f0c96b;
+    --accent-rgb: 227, 179, 65;
+  }
+
+  [data-accent='mint'] {
+    --accent-primary: #3fb950;
+    --accent-secondary: #7ee787;
+    --accent-rgb: 63, 185, 80;
+  }
+
+  [data-accent='violet'] {
+    --accent-primary: #d2a8ff;
+    --accent-secondary: #a371f7;
+    --accent-rgb: 210, 168, 255;
+  }
+
+  [data-accent='orange'] {
+    --accent-primary: #f97316;
+    --accent-secondary: #fb923c;
+    --accent-rgb: 249, 115, 22;
+  }
+
+  [data-accent='rose'] {
+    --accent-primary: #f778ba;
+    --accent-secondary: #ff9bce;
+    --accent-rgb: 247, 120, 186;
+  }
+
+  [data-accent='cyan'] {
+    --accent-primary: #22d3ee;
+    --accent-secondary: #67e8f9;
+    --accent-rgb: 34, 211, 238;
+  }
+
+  [data-accent='blue'] {
+    --accent-primary: #60a5fa;
+    --accent-secondary: #93c5fd;
+    --accent-rgb: 96, 165, 250;
+  }
+
+  [data-accent='red'] {
+    --accent-primary: #f87171;
+    --accent-secondary: #fca5a5;
+    --accent-rgb: 248, 113, 113;
+  }
+
+  [data-accent='white'] {
+    --accent-primary: #e5e7eb;
+    --accent-secondary: #f3f4f6;
+    --accent-rgb: 229, 231, 235;
+  }
+
+  [data-accent='lime'] {
+    --accent-primary: #a3e635;
+    --accent-secondary: #bef264;
+    --accent-rgb: 163, 230, 53;
+  }
+
+  [data-accent='orange-light'] {
+    --accent-primary: #fb923c;
+    --accent-secondary: #fdba74;
+    --accent-rgb: 251, 146, 60;
   }
 
   [data-theme='brutalist-stage'] {
@@ -754,20 +1123,58 @@ code {
   image-rendering: auto;
 }
 
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-screen canvas,
+.devhub-xterm-container[data-operational-renderer='xterm-webgl'] .xterm-screen canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+}
+
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm .xterm-screen,
+.devhub-xterm-container[data-operational-renderer='xterm-webgl'] .xterm .xterm-screen {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* DOM/canvas paths: stretch the cell grid to the panel width to kill lateral bands. */
+.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows,
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-rows {
+  width: 100% !important;
+  min-width: 100% !important;
+}
+
+/* When Canvas/WebGL is active, hide the DOM cell grid underneath (prevents seam curtains). */
+.devhub-xterm-container[data-operational-renderer='xterm-canvas']
+  .xterm-screen:has(canvas)
+  .xterm-rows,
+.devhub-xterm-container[data-operational-renderer='xterm-webgl']
+  .xterm-screen:has(canvas)
+  .xterm-rows {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* Fix for TUI Apps (like OpenCode, Vim, Nano) in xterm.js */
 .devhub-xterm-container .xterm {
   height: 100% !important;
+  width: 100% !important;
   padding: 0 !important;
 }
 
 .devhub-xterm-container .xterm-viewport {
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  width: 100% !important;
+  height: 100% !important;
   background-color: var(--surface-app) !important;
-  scrollbar-gutter: stable;
+  /* auto avoids reserving an empty gutter band when the scrollbar is not visible */
+  scrollbar-gutter: auto;
 }
 
 .devhub-xterm-container {
+  position: relative;
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -775,9 +1182,17 @@ code {
 
 .devhub-xterm-container .xterm,
 .devhub-xterm-container .xterm-screen,
-.devhub-xterm-container .xterm-screen canvas,
 .devhub-xterm-container .xterm-viewport {
   background-color: var(--surface-app) !important;
+}
+
+/* Anchor GPU/DOM terminal layers to the top-left of the panel (no vertical drift). */
+.devhub-xterm-container .xterm .xterm-screen,
+.devhub-xterm-container .xterm .xterm-viewport {
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
 }
 
 /* Allow text selection in xterm.js */
@@ -790,6 +1205,31 @@ code {
 
 .devhub-xterm-container .xterm .xterm-viewport {
   cursor: text !important;
+}
+
+/* Font smoothing for xterm.js — geometricPrecision avoids DOM cell gaps. */
+.devhub-xterm-container .xterm,
+.devhub-xterm-container .xterm-rows {
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: geometricPrecision !important;
+}
+
+/* DOM fallback (plain xterm + inactive split siblings on xterm-canvas policy):
+   tighten cell layout to hide grid seams when the Canvas addon is not attached. */
+.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows .xterm-row,
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-rows .xterm-row {
+  overflow: hidden;
+  white-space: pre;
+}
+
+.devhub-xterm-container[data-operational-renderer='xterm'] .xterm-rows .xterm-row > span,
+.devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-rows .xterm-row > span {
+  display: inline-block;
+  vertical-align: top;
+  line-height: inherit;
+  letter-spacing: 0;
+  margin-right: -0.04em;
 }
 
 /* ─── Chat message markdown typography ──────────────────────────────────────
@@ -933,6 +1373,43 @@ code {
   flex-direction: column;
 }
 
+.filesystem-document-rail,
+.filesystem-document-surface {
+  width: 100%;
+  min-height: 100%;
+}
+
+.filesystem-document-viewport--embedded {
+  scrollbar-gutter: stable both-edges;
+}
+
+.filesystem-embedded-horizontal-scrollbar {
+  flex: 0 0 14px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-app) 82%, black 18%);
+  scrollbar-gutter: stable both-edges;
+}
+
+.filesystem-embedded-horizontal-scrollbar::-webkit-scrollbar {
+  height: 10px;
+}
+
+.filesystem-document-rail--embedded,
+.filesystem-document-surface--embedded {
+  width: max(82rem, 148%);
+  min-width: 82rem;
+}
+
+.filesystem-markdown-shell--embedded {
+  box-sizing: border-box;
+  padding-inline: 24px;
+}
+
 .filesystem-markdown-preview {
   flex: 1;
   min-height: 0;
@@ -945,6 +1422,12 @@ code {
   line-height: 1.7;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.filesystem-markdown-preview--embedded {
+  box-sizing: border-box;
+  max-width: none;
+  margin: 0;
 }
 
 .filesystem-markdown-preview > *:first-child {
@@ -1158,6 +1641,12 @@ code {
     padding: 16px 18px 28px;
   }
 
+  .filesystem-document-rail--embedded,
+  .filesystem-document-surface--embedded {
+    width: max(68rem, 136%);
+    min-width: 68rem;
+  }
+
   .filesystem-markdown-preview {
     max-width: none;
     padding: 4px 2px 28px;
@@ -1170,5 +1659,238 @@ code {
 
   .filesystem-markdown-preview h2 {
     font-size: 1.4rem;
+  }
+}
+
+@keyframes terminal-panel-nav-pulse {
+  0% {
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--accent-rgb, 88, 166, 255), 0.18),
+      0 0 0 0 rgba(var(--accent-rgb, 88, 166, 255), 0);
+  }
+
+  45% {
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--accent-rgb, 88, 166, 255), 0.62),
+      0 0 22px 1px rgba(var(--accent-rgb, 88, 166, 255), 0.28);
+  }
+
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--accent-rgb, 88, 166, 255), 0.18),
+      0 0 0 0 rgba(var(--accent-rgb, 88, 166, 255), 0);
+  }
+}
+
+.terminal-panel-nav-pulse {
+  animation: terminal-panel-nav-pulse 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes zed-dot-pulse {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0) scale(0.7);
+    opacity: 0.35;
+  }
+
+  40% {
+    transform: translateY(-1px) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes zed-aura-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+.zed-aura-pulse {
+  animation: zed-aura-breathe 3s ease-in-out infinite;
+}
+
+/* zed-aura-*: Zed ambient aura tool-type block (ZAA-5) */
+.zed-aura-root {
+  --accent-terminal: #4ad3c0;
+  --accent-browser: #9b6bff;
+  --accent-file: #f0b54a;
+}
+
+@keyframes zed-aura-pulse-terminal {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+@keyframes zed-aura-pulse-browser {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+@keyframes zed-aura-pulse-file {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zed-aura-pulse-terminal {
+    animation: zed-aura-pulse-terminal 4s ease-in-out infinite;
+  }
+
+  .zed-aura-pulse-browser {
+    animation: zed-aura-pulse-browser 4s ease-in-out infinite;
+  }
+
+  .zed-aura-pulse-file {
+    animation: zed-aura-pulse-file 4s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zed-aura-pulse-terminal,
+  .zed-aura-pulse-browser,
+  .zed-aura-pulse-file,
+  .zed-aura-pulse {
+    animation: none;
+  }
+}
+
+@keyframes zed-status-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.zed-status-line {
+  display: block;
+  animation: zed-status-in 0.24s ease-out;
+}
+
+.zed-pill-exit {
+  animation: zed-pill-exit 0.32s ease-in forwards;
+}
+
+@keyframes zed-pill-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes zed-aura-flash-success {
+  0% {
+    opacity: 0;
+  }
+
+  15% {
+    opacity: 0.45;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes zed-aura-flash-error {
+  0% {
+    opacity: 0;
+  }
+
+  15% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.zed-aura-outcome-success {
+  animation: zed-aura-flash-success 0.9s ease-out forwards;
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 100%,
+    color-mix(in srgb, #4ad3c0 22%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+.zed-aura-outcome-error {
+  animation: zed-aura-flash-error 0.9s ease-out forwards;
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 100%,
+    color-mix(in srgb, #ef4444 18%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+.zed-loading-dot {
+  animation: zed-dot-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zed-aura-outcome-success,
+  .zed-aura-outcome-error {
+    animation: none;
+    opacity: 0.2;
+  }
+}
+
+/* ─── Semantic accent escape hatch (FR-D06) ───
+ * Tailwind's `accent` slot is reserved for the shadcn palette
+ * (`hsl(var(--accent))`). Use these classes when a class site wants the
+ * in-house semantic accent (`var(--accent-primary)`). Sites that need
+ * the shadcn slot continue to use `bg-shadcn-accent`.
+ */
+@layer utilities {
+  .bg-app-accent {
+    background-color: var(--accent-primary);
+  }
+  .text-app-accent {
+    color: var(--accent-primary);
+  }
+  .border-app-accent {
+    border-color: var(--accent-primary);
   }
 }

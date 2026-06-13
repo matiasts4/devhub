@@ -44,7 +44,27 @@ function createDefaultChecks({
         `,
       });
     },
+    // node-pty is loaded by the Next.js runtime from the PROJECT ROOT
+    // (src/lib/terminal/ttyServer.js uses eval('require')('node-pty'),
+    // which resolves against the root node_modules — not sidecar-backend).
+    // The shipped pnpm prebuilds only cover darwin-x64, darwin-arm64,
+    // win32-x64, and win32-arm64, so on Linux this check forces a source
+    // build of build/Release/pty.node before the dev/build runtime starts.
     'node-pty': () => {
+      runNodeCheck({
+        cwd,
+        nodeBin,
+        script: `
+          const pty = require('node-pty');
+          if (typeof pty.spawn !== 'function') {
+            throw new Error('node-pty spawn unavailable');
+          }
+        `,
+      });
+    },
+    // The sidecar-backend ships its own node_modules/node-pty for the
+    // packaged Tauri sidecar binary, so it has to load successfully there too.
+    'node-pty-sidecar': () => {
       runNodeCheck({
         cwd: path.join(cwd, 'sidecar-backend'),
         nodeBin,
@@ -92,6 +112,17 @@ function rebuildNativeModules({
     env,
   });
 
+  // Rebuild node-pty in the PROJECT ROOT first — this is where the Next.js
+  // runtime loads it from. Without a Linux prebuild in node-pty@1.1.0, this
+  // produces build/Release/pty.node so `require('node-pty')` resolves at
+  // runtime instead of throwing "Failed to load native module: pty.node".
+  exec('npm', ['rebuild', 'node-pty'], {
+    cwd,
+    stdio: 'inherit',
+    env,
+  });
+
+  // Also rebuild the sidecar-backend copy used by the packaged Tauri sidecar.
   exec('npm', ['rebuild', 'node-pty'], {
     cwd: path.join(cwd, 'sidecar-backend'),
     stdio: 'inherit',

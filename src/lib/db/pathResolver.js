@@ -47,15 +47,28 @@ function copySqliteFamily(sourceDbPath, targetDbPath) {
       continue;
     }
 
-    if (fs.existsSync(targetPath)) {
-      fs.rmSync(targetPath, { force: true });
+    if (fs.existsSync(/*turbopackIgnore: true*/ targetPath)) {
+      fs.rmSync(/*turbopackIgnore: true*/ targetPath, { force: true });
     }
   }
 }
 
 function getCanonicalDevhubDir({ env = process.env, homeDir = os.homedir() } = {}) {
-  const explicitHome = env.DEVHUB_HOME ? path.resolve(env.DEVHUB_HOME) : path.join(homeDir, '.devhub');
-  return ensureDirectory(explicitHome);
+  if (env.DEVHUB_HOME) {
+    return ensureDirectory(path.resolve(env.DEVHUB_HOME));
+  }
+
+  const productionDir = path.join(homeDir, '.devhub');
+  const developmentDir = path.join(homeDir, '.devhub-dev');
+  const devSidecarPortFile = path.join(developmentDir, 'sidecar-port.txt');
+  const devSidecarPidFile = path.join(developmentDir, 'sidecar.pid');
+
+  // Tauri dev spawns the sidecar with ~/.devhub-dev; Next dev must read the same home.
+  if (fs.existsSync(devSidecarPortFile) || fs.existsSync(devSidecarPidFile)) {
+    return ensureDirectory(developmentDir);
+  }
+
+  return ensureDirectory(productionDir);
 }
 
 function getCanonicalDataDir(options = {}) {
@@ -66,15 +79,29 @@ function getCanonicalDataDir(options = {}) {
   return ensureDirectory(explicitDataDir);
 }
 
-function getLegacyDbCandidates({ cwd = process.cwd(), moduleDir = __dirname, homeDir = os.homedir() } = {}) {
+function getLegacyDbCandidates({
+  cwd = process.cwd(),
+  moduleDir = __dirname,
+  homeDir = os.homedir(),
+} = {}) {
   return uniquePaths([
     findExistingPath(cwd, 'data', 'devhub.db'),
     findExistingPath(moduleDir, 'data', 'devhub.db'),
     findExistingPath(cwd, '.next', 'standalone', 'data', 'devhub.db'),
     findExistingPath(moduleDir, '.next', 'standalone', 'data', 'devhub.db'),
+    path.join(homeDir, '.devhub', 'data', 'devhub.db'),
     path.join(homeDir, '.devhub', 'standalone', 'data', 'devhub.db'),
     path.join(homeDir, '.devhub', 'devhub.db'),
   ]).filter((candidate) => fs.existsSync(candidate));
+}
+
+function isDevCanonicalDbPath(canonicalDbPath, homeDir = os.homedir()) {
+  const devDataDir = path.join(homeDir, '.devhub-dev', 'data');
+  return path.resolve(path.dirname(canonicalDbPath)) === path.resolve(devDataDir);
+}
+
+function getProductionDbPath(homeDir = os.homedir()) {
+  return path.join(homeDir, '.devhub', 'data', 'devhub.db');
 }
 
 function maybeMigrateLegacyDb(canonicalDbPath, options = {}) {
@@ -83,7 +110,8 @@ function maybeMigrateLegacyDb(canonicalDbPath, options = {}) {
   }
 
   const legacyCandidates = getLegacyDbCandidates(options).filter(
-    (candidate) => path.resolve(candidate) !== path.resolve(canonicalDbPath) && fs.statSync(candidate).size > 0
+    (candidate) =>
+      path.resolve(candidate) !== path.resolve(canonicalDbPath) && fs.statSync(candidate).size > 0
   );
 
   if (legacyCandidates.length === 0) {
@@ -95,6 +123,46 @@ function maybeMigrateLegacyDb(canonicalDbPath, options = {}) {
   )[0];
 
   copySqliteFamily(newestLegacyDbPath, canonicalDbPath);
+  return canonicalDbPath;
+}
+
+function getDbFileMtimeMs(dbPath) {
+  if (!fs.existsSync(dbPath)) return 0;
+  return fs.statSync(dbPath).mtimeMs;
+}
+
+function shouldRefreshDevDatabaseFromProduction(productionDbPath, canonicalDbPath) {
+  if (!fs.existsSync(productionDbPath) || fs.statSync(productionDbPath).size === 0) {
+    return false;
+  }
+
+  if (!fs.existsSync(canonicalDbPath) || fs.statSync(canonicalDbPath).size === 0) {
+    return true;
+  }
+
+  const productionStat = fs.statSync(productionDbPath);
+  const canonicalStat = fs.statSync(canonicalDbPath);
+
+  // Compare the main DB file only — WAL/SHM activity in dev must not block syncing
+  // a stale fixture DB when ~/.devhub/data has the real project catalog.
+  if (productionStat.mtimeMs > canonicalStat.mtimeMs) {
+    return true;
+  }
+
+  return productionStat.size > canonicalStat.size * 1.5;
+}
+
+function maybeSyncDevDatabaseFromProduction(canonicalDbPath, options = {}) {
+  const homeDir = options.homeDir || os.homedir();
+  if (!isDevCanonicalDbPath(canonicalDbPath, homeDir)) {
+    return canonicalDbPath;
+  }
+
+  const productionDbPath = getProductionDbPath(homeDir);
+  if (shouldRefreshDevDatabaseFromProduction(productionDbPath, canonicalDbPath)) {
+    copySqliteFamily(productionDbPath, canonicalDbPath);
+  }
+
   return canonicalDbPath;
 }
 
@@ -115,7 +183,9 @@ function resolveDbPath(options = {}) {
 
   const canonicalDbPath = path.join(getCanonicalDataDir(options), 'devhub.db');
   ensureDirectory(path.dirname(canonicalDbPath));
-  return maybeMigrateLegacyDb(canonicalDbPath, options);
+  maybeMigrateLegacyDb(canonicalDbPath, options);
+  maybeSyncDevDatabaseFromProduction(canonicalDbPath, options);
+  return canonicalDbPath;
 }
 
 module.exports = {
@@ -124,6 +194,11 @@ module.exports = {
   getCanonicalDataDir,
   getCanonicalDevhubDir,
   getLegacyDbCandidates,
+  getDbFileMtimeMs,
   getNewestMtimeMs,
+  getProductionDbPath,
+  isDevCanonicalDbPath,
+  maybeSyncDevDatabaseFromProduction,
+  shouldRefreshDevDatabaseFromProduction,
   resolveDbPath,
 };

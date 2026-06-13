@@ -1,0 +1,366 @@
+const React = require('react');
+const { createRoot } = require('react-dom/client');
+const { flushSync } = require('react-dom');
+const { JSDOM } = require('jsdom');
+
+const mockUsePathname = jest.fn(() => '/settings/appearance');
+
+jest.mock('next/navigation', () => ({
+  usePathname: () => mockUsePathname(),
+}));
+
+jest.mock('lucide-react', () => {
+  const React = require('react');
+  const icon = (name) => (props) => React.createElement('svg', { ...props, 'data-icon': name });
+  return new Proxy({}, { get: (_, key) => icon(String(key)) });
+});
+
+jest.mock('next/link', () => {
+  const React = require('react');
+  return ({ children, ...props }) => React.createElement('a', props, children);
+});
+
+jest.mock(
+  'react-router-dom',
+  () => ({
+    useOutletContext: () => ({ project: { id: 'p1', name: 'E-commerce V2' } }),
+    useNavigate: () => jest.fn(),
+  }),
+  { virtual: true }
+);
+
+jest.mock(
+  '../../../../components/ui/date-picker',
+  () => {
+    const React = require('react');
+    return {
+      DatePicker: (props) =>
+        React.createElement('input', { 'data-testid': 'date-picker', ...props }),
+    };
+  }
+);
+
+jest.mock(
+  '../../../../components/workspace/WorkspacePageTitle',
+  () => {
+    const React = require('react');
+    return {
+      __esModule: true,
+      default: ({ title }) =>
+        React.createElement('h1', { 'data-testid': 'workspace-page-title' }, title),
+    };
+  }
+);
+
+jest.mock(
+  '../../../../components/ui/StatusSignal',
+  () => {
+    const React = require('react');
+    return {
+      __esModule: true,
+      default: () => React.createElement('span', { 'data-testid': 'status-signal' }),
+    };
+  }
+);
+
+jest.mock(
+  'sonner',
+  () => ({
+    toast: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn(), dismiss: jest.fn() }),
+  }),
+  { virtual: true }
+);
+
+jest.mock('../../../../components/MetricCard', () => {
+  const React = require('react');
+  return function MetricCard() {
+    return React.createElement('div', { 'data-testid': 'metric-card' });
+  };
+});
+
+jest.mock('../../../../components/HistorialCommits', () => {
+  const React = require('react');
+  return function HistorialCommits() {
+    return React.createElement('div', { 'data-testid': 'historial-commits' });
+  };
+});
+
+jest.mock('../../../../components/UltimasInteracciones', () => {
+  const React = require('react');
+  return function UltimasInteracciones() {
+    return React.createElement('div', { 'data-testid': 'ultimas-interacciones' });
+  };
+});
+
+jest.mock('../../../../components/AgentActivityFeed', () => {
+  const React = require('react');
+  return function AgentActivityFeed() {
+    return React.createElement('div', { 'data-testid': 'agent-activity-feed' });
+  };
+});
+
+jest.mock('../../../../components/UsageChart', () => {
+  const React = require('react');
+  return function UsageChart() {
+    return React.createElement('div', { 'data-testid': 'usage-chart' });
+  };
+});
+
+const SettingsLayout = require('../../../../app/settings/layout').default;
+const Dashboard = require('../../../../views/Dashboard').default;
+const Proyectos = require('../../../../views/Proyectos').default;
+
+jest.mock('@/lib/db/localClient', () => {
+  const chain = () => {
+    const value = { data: [], error: null };
+    const fn = () => chain();
+    fn.eq = () => chain();
+    fn.neq = () => chain();
+    fn.lt = () => chain();
+    fn.gt = () => chain();
+    fn.in = () => chain();
+    fn.order = () => chain();
+    fn.single = () => Promise.resolve(value);
+    fn.then = (resolve) => Promise.resolve(value).then(resolve);
+    Object.assign(fn, value);
+    return fn;
+  };
+  return {
+    createClient: () => ({
+      from: () => ({
+        select: () => chain(),
+        update: () => chain(),
+        insert: () => chain(),
+        upsert: () => chain(),
+        delete: () => chain(),
+      }),
+    }),
+  };
+});
+
+function installDom() {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://devhub.test/settings/appearance',
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.navigator = dom.window.navigator;
+  global.HTMLElement = dom.window.HTMLElement;
+  global.Event = dom.window.Event;
+  global.localStorage = dom.window.localStorage;
+  return dom;
+}
+
+async function flushEffects() {
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function renderIntoDom(element) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  flushSync(() => root.render(element));
+  await flushEffects();
+  return { container, root };
+}
+
+describe('Settings layout — UiShell migration', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+    mockUsePathname.mockReturnValue('/settings/appearance');
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    jest.clearAllMocks();
+  });
+
+  test('renders UiHeader with the per-route title and a ui-header testid', async () => {
+    rendered = await renderIntoDom(
+      React.createElement(
+        SettingsLayout,
+        null,
+        React.createElement('div', { 'data-testid': 'child-content' }, 'content')
+      )
+    );
+
+    expect(rendered.container.querySelector('[data-testid="child-content"]')).toBeTruthy();
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+
+    // The header exposes a <h1> title derived from the active pathname.
+    const heading = uiHeader.querySelector('h1');
+    expect(heading).toBeTruthy();
+    expect(heading.textContent).toMatch(/appearance/i);
+  });
+
+  test('derives a different title for the Account subroute', async () => {
+    mockUsePathname.mockReturnValue('/settings/account');
+    rendered = await renderIntoDom(
+      React.createElement(
+        SettingsLayout,
+        null,
+        React.createElement('div', { 'data-testid': 'child-content' }, 'content')
+      )
+    );
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+    const heading = uiHeader.querySelector('h1');
+    expect(heading).toBeTruthy();
+    expect(heading.textContent).toMatch(/account/i);
+  });
+});
+
+describe('Dashboard — UiShell migration', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, json: async () => ({ success: true, kpis: {} }) })
+    );
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    delete global.fetch;
+    jest.clearAllMocks();
+  });
+
+  test('renders UiHeader with data-testid="ui-header"', async () => {
+    rendered = await renderIntoDom(React.createElement(Dashboard));
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+    const heading = uiHeader.querySelector('h1');
+    expect(heading).toBeTruthy();
+  });
+});
+
+describe('Proyectos — UiShell + hex sweep', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    jest.clearAllMocks();
+  });
+
+  test('renders UiHeader with data-testid="ui-header"', async () => {
+    rendered = await renderIntoDom(React.createElement(Proyectos));
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+    const heading = uiHeader.querySelector('h1');
+    expect(heading).toBeTruthy();
+  });
+
+  test('no banned hex literals in Proyectos.jsx', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../../../views/Proyectos.jsx'), 'utf8');
+    const matches = src.match(/#[0-9a-fA-F]{6}/g) || [];
+    const banned = ['#0B0F19', '#111827', '#79C0FF', '#388BFD', '#484F58'];
+    for (const h of banned) {
+      expect(matches).not.toContain(h);
+    }
+  });
+});
+
+describe('ProjectHub — UiShell + hex sweep', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, json: async () => ({ success: true }) })
+    );
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    delete global.fetch;
+    jest.clearAllMocks();
+  });
+
+  test('no plain hex outside var() fallback in ProjectHub.jsx', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../../../../views/ProjectHub.jsx'),
+      'utf8'
+    );
+    // Strip out var(--name, #fallback) fallbacks (those are intentional)
+    const lines = src.split('\n');
+    const bad = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Skip lines that are inside a var() fallback
+      if (/var\([^)]*#[0-9a-fA-F]{6}/.test(line)) continue;
+      const m = line.match(/#[0-9a-fA-F]{6}/g);
+      if (m) bad.push({ line: i + 1, hex: m });
+    }
+    expect(bad.length).toBe(0);
+  });
+});
+
+describe('Roadmap — UiShell + borderRadius cleanup', () => {
+  let dom;
+  let rendered;
+
+  beforeEach(() => {
+    dom = installDom();
+    rendered = null;
+  });
+
+  afterEach(() => {
+    if (rendered?.root) {
+      flushSync(() => rendered.root.unmount());
+    }
+    dom.window.close();
+    delete global.localStorage;
+    jest.clearAllMocks();
+  });
+
+  test('renders UiHeader with data-testid="ui-header"', async () => {
+    const Roadmap = require('../../../../views/Roadmap').default;
+    rendered = await renderIntoDom(React.createElement(Roadmap));
+    const uiHeader = rendered.container.querySelector('[data-testid="ui-header"]');
+    expect(uiHeader).toBeTruthy();
+  });
+
+  test('no borderRadius: "0" literal in Roadmap.jsx', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../../../views/Roadmap.jsx'), 'utf8');
+    expect(src).not.toMatch(/borderRadius:\s*['"]0['"]/);
+  });
+});

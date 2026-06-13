@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 
-function UiHeader({ children, className, sticky = false }) {
+function UiHeader({ children, className, sticky = false, ...props }) {
   const childrenArray = React.Children.toArray(children);
 
   const breadcrumbs = childrenArray.find((child) => child?.type === UiHeader.Breadcrumbs);
@@ -16,6 +16,7 @@ function UiHeader({ children, className, sticky = false }) {
         sticky && 'sticky top-0 z-10 core-sticky-header',
         className
       )}
+      {...props}
     >
       <div className="flex items-center gap-4 flex-1 min-w-0">
         {breadcrumbs}

@@ -1,12 +1,12 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import {
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {
   buildDocOpsGateLanguage,
   buildDocOpsGatePrompt,
   buildDocumentationPolicyMetadata,
   buildDocumentationPolicySummary,
   enforceDocOpsGateOnLaunchCommand,
-} from './docopsPrompts.js';
+} = require('./docopsPrompts.js');
 
 test('DocOps gate language includes the shared budget policy', () => {
   const language = buildDocOpsGateLanguage();
@@ -90,6 +90,14 @@ test('launch commands for planning work are rewritten with the DocOps gate', () 
 
 test('non-DocOps launch commands are left intact', () => {
   const command = 'opencode --task "Implementar un botón"';
+
+  assert.equal(enforceDocOpsGateOnLaunchCommand(command), command);
+});
+
+test('wrapped swarm launch scripts are left intact', () => {
+  const command = `#!/usr/bin/env bash
+cd "/tmp/worktree"
+tmux new-session -A -d -s 'devhub-swarm-1-coder' 'opencode --agent sdd-orchestrator --prompt "You are executing SDD change **x** as **coder** in phase **sdd-apply**.\nMission ID: m1\nSession ID: s1" --model minimax' 2>/dev/null || true; tmux attach-session -t 'devhub-swarm-1-coder'`;
 
   assert.equal(enforceDocOpsGateOnLaunchCommand(command), command);
 });

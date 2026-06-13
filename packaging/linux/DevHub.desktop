@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=DevHub
+Comment=Autonomous Development Workspace
+Exec=/usr/lib/DevHub/bin/devhub-launcher %U
+Icon=DevHub
+Type=Application
+Terminal=false
+StartupNotify=true
+Categories=Development;IDE;Utility;
+MimeType=x-scheme-handler/devhub;
+StartupWMClass=DevHub
+Keywords=devhub;opencode;ai;agent;workspace;

@@ -39,6 +39,15 @@ describe('MCP Project Tools', () => {
       // Should not error, just return 0 or more archived projects
       expect(result).toHaveProperty('projects');
     });
+
+    it('does not hide legacy NULL workspace_id projects when workspace_id=local-ws', async () => {
+      const unfiltered = await harness.callTool('list_projects', { status: 'all' });
+      const filtered = await harness.callTool('list_projects', {
+        status: 'all',
+        workspace_id: 'local-ws',
+      });
+      expect(filtered.total).toBe(unfiltered.total);
+    });
   });
 
   describe('get_project', () => {

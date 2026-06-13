@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - Morphology Comparison</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --surface-card: #0d1117;
+            --surface-elevated: #161b22;
+            --surface-muted: #21262d;
+            --surface-hover: #30363d;
+            --border-subtle: #30363d;
+            --border-strong: #484f58;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-primary: #58a6ff;
+            --accent-rgb: 88, 166, 255;
+            --accent-shadow: oklch(0.45 0.12 234);
+            --accent-cyan: oklch(0.75 0.15 200);
+            --accent-purple: oklch(0.65 0.22 310);
+            --accent-green: oklch(0.7 0.18 145);
+        }
+
+        [data-theme="dark"] {
+            --surface-card: #0d1117;
+            --surface-elevated: #161b22;
+            --surface-muted: #21262d;
+            --surface-hover: #30363d;
+            --border-subtle: #30363d;
+            --border-strong: #484f58;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+        }
+
+        [data-theme="brutalist-dark"] {
+            --surface-card: #0a0a0a;
+            --surface-elevated: #111111;
+            --surface-muted: #1a1a1a;
+            --surface-hover: #222222;
+            --border-subtle: #333333;
+            --border-strong: #555555;
+            --text-primary: #f5f5f5;
+            --text-secondary: #aaaaaa;
+            --accent-primary: #fbbf24;
+            --accent-rgb: 251, 191, 36;
+            --accent-shadow: #b45309;
+        }
+
+        body {
+            background: var(--surface-card);
+            color: var(--text-primary);
+            font-family: 'Geist', -apple-system, sans-serif;
+        }
+
+        /* ── MORPHOLOGY 1: BRUTALIST ── */
+        [data-morphology="brutalist"] {
+            --chrome-radius-panel: 0;
+            --chrome-radius-control: 0;
+            --chrome-border-width: 2px;
+            --chrome-border-color: var(--border-strong);
+            --chrome-shadow-panel: 4px 4px 0 var(--border-strong);
+            --chrome-shadow-control: 3px 3px 0 var(--border-strong);
+            --chrome-panel-fill: var(--surface-card);
+            --chrome-panel-fill-emphasis: var(--surface-elevated);
+            --chrome-control-fill: var(--surface-muted);
+            --chrome-control-fill-hover: var(--surface-hover);
+            --chrome-press-offset: 2px;
+        }
+
+        .brutalist-panel {
+            background: var(--chrome-panel-fill);
+            border: var(--chrome-border-width) solid var(--chrome-border-color);
+            box-shadow: var(--chrome-shadow-panel);
+            border-radius: var(--chrome-radius-panel);
+        }
+
+        .brutalist-btn {
+            background: var(--accent-primary);
+            border: var(--chrome-border-width) solid var(--accent-primary);
+            box-shadow: var(--chrome-shadow-control);
+            border-radius: var(--chrome-radius-control);
+            color: #000;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .brutalist-btn:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: calc(var(--chrome-border-width) + 1px) calc(var(--chrome-border-width) + 1px) 0 var(--border-strong);
+        }
+
+        .brutalist-btn:active {
+            transform: translate(1px, 1px);
+            box-shadow: 0 0 0 0 var(--border-strong);
+        }
+
+        /* ── MORPHOLOGY 2: GLASSMORPHISM (AURA) ── */
+        [data-morphology="aura"] {
+            --chrome-radius-panel: 1.25rem;
+            --chrome-radius-control: 1rem;
+            --chrome-border-width: 1px;
+            --chrome-border-color: rgba(88, 166, 255, 0.3);
+            --chrome-shadow-panel: 0 8px 32px rgba(88, 166, 255, 0.15), 0 2px 8px rgba(0, 0, 0, 0.2);
+            --chrome-shadow-control: 0 4px 16px rgba(88, 166, 255, 0.1);
+            --chrome-panel-fill: rgba(22, 27, 34, 0.7);
+            --chrome-panel-fill-emphasis: rgba(33, 38, 45, 0.8);
+            --chrome-control-fill: rgba(22, 27, 34, 0.6);
+            --chrome-control-fill-hover: rgba(33, 38, 45, 0.7);
+            --chrome-press-offset: 0px;
+        }
+
+        .aura-panel {
+            background: var(--chrome-panel-fill);
+            border: var(--chrome-border-width) solid var(--chrome-border-color);
+            box-shadow: var(--chrome-shadow-panel);
+            border-radius: var(--chrome-radius-panel);
+            backdrop-filter: blur(12px);
+        }
+
+        .aura-btn {
+            background: linear-gradient(135deg, rgba(88, 166, 255, 0.2), rgba(88, 166, 255, 0.1));
+            border: 1px solid rgba(88, 166, 255, 0.4);
+            box-shadow: var(--chrome-shadow-control);
+            border-radius: var(--chrome-radius-control);
+            color: var(--text-primary);
+            font-weight: 600;
+            backdrop-filter: blur(8px);
+        }
+
+        .aura-btn:hover {
+            background: linear-gradient(135deg, rgba(88, 166, 255, 0.3), rgba(88, 166, 255, 0.15));
+            border-color: rgba(88, 166, 255, 0.6);
+        }
+
+        /* ── MORPHOLOGY 3: NEON STAGE ── */
+        [data-morphology="neon"] {
+            --chrome-radius-panel: 0.75rem;
+            --chrome-radius-control: 0.5rem;
+            --chrome-border-width: 1px;
+            --chrome-border-color: var(--accent-primary);
+            --chrome-shadow-panel: 0 0 20px rgba(88, 166, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.4);
+            --chrome-shadow-control: 0 0 10px rgba(88, 166, 255, 0.4);
+            --chrome-panel-fill: var(--surface-elevated);
+            --chrome-panel-fill-emphasis: var(--surface-muted);
+            --chrome-control-fill: rgba(88, 166, 255, 0.1);
+            --chrome-control-fill-hover: rgba(88, 166, 255, 0.2);
+            --chrome-press-offset: 1px;
+        }
+
+        .neon-panel {
+            background: var(--chrome-panel-fill);
+            border: var(--chrome-border-width) solid var(--chrome-border-color);
+            box-shadow: var(--chrome-shadow-panel);
+            border-radius: var(--chrome-radius-panel);
+        }
+
+        .neon-btn {
+            background: var(--chrome-control-fill);
+            border: 1px solid var(--accent-primary);
+            box-shadow: var(--chrome-shadow-control), inset 0 0 20px rgba(88, 166, 255, 0.1);
+            border-radius: var(--chrome-radius-control);
+            color: var(--accent-primary);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .neon-btn:hover {
+            background: var(--chrome-control-fill-hover);
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.5), inset 0 0 20px rgba(88, 166, 255, 0.15);
+        }
+
+        /* Theme variants */
+        [data-theme="brutalist-dark"] .brutalist-btn,
+        [data-theme="brutalist-dark"] .neon-btn { color: #000; }
+    </style>
+</head>
+<body class="min-h-screen p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold mb-2" style="color: var(--text-primary)">Morphology Showcase</h1>
+        <p class="mb-8" style="color: var(--text-secondary)">Comparing Brutalist vs Aura vs Neon morphologies</p>
+
+        <div class="flex gap-3 mb-8">
+            <button onclick="document.body.setAttribute('data-theme', 'dark')" class="px-4 py-2 rounded" style="background: var(--surface-muted); color: var(--text-primary)">Dark Theme</button>
+            <button onclick="document.body.setAttribute('data-theme', 'brutalist-dark')" class="px-4 py-2 rounded" style="background: var(--surface-muted); color: var(--text-primary)">Brutalist Dark</button>
+        </div>
+
+        <!-- MORPHOLOGY SWITCHER -->
+        <div class="flex gap-3 mb-8">
+            <button onclick="setMorphology('brutalist')" class="px-4 py-2 rounded" style="background: var(--accent-primary); color: #000; font-weight: 700">Brutalist</button>
+            <button onclick="setMorphology('aura')" class="px-4 py-2 rounded" style="background: var(--accent-primary); color: #000; font-weight: 700">Aura</button>
+            <button onclick="setMorphology('neon')" class="px-4 py-2 rounded" style="background: var(--accent-primary); color: #000; font-weight: 700">Neon Stage</button>
+        </div>
+
+        <script>
+            function setMorphology(m) {
+                document.body.setAttribute('data-morphology', m);
+            }
+        </script>
+
+        <!-- PANELS ROW -->
+        <div class="grid grid-cols-3 gap-6 mb-8">
+            <div class="brutalist-panel p-6">
+                <h3 class="text-lg font-bold mb-3" style="color: var(--text-primary)">Brutalist Panel</h3>
+                <p style="color: var(--text-secondary)">Hard edges, offset shadows, 2px borders.</p>
+                <div class="mt-4 brutalist-btn px-4 py-2 inline-block cursor-pointer">Action</div>
+            </div>
+            <div class="aura-panel p-6">
+                <h3 class="text-lg font-bold mb-3" style="color: var(--text-primary)">Aura Panel</h3>
+                <p style="color: var(--text-secondary)">Glass effect, blur, subtle glow.</p>
+                <div class="mt-4 aura-btn px-4 py-2 inline-block cursor-pointer">Action</div>
+            </div>
+            <div class="neon-panel p-6">
+                <h3 class="text-lg font-bold mb-3" style="color: var(--text-primary)">Neon Panel</h3>
+                <p style="color: var(--text-secondary)">Glowing borders, cyber aesthetic.</p>
+                <div class="mt-4 neon-btn px-4 py-2 inline-block cursor-pointer">Action</div>
+            </div>
+        </div>
+
+        <!-- DASHBOARD SIMULATION -->
+        <div class="grid grid-cols-2 gap-6">
+            <!-- Stat Card -->
+            <div class="brutalist-panel p-5 flex items-center justify-between" data-morphology="brutalist">
+                <div>
+                    <p class="text-sm mb-1" style="color: var(--text-secondary)">Tasks</p>
+                    <p class="text-3xl font-black" style="color: var(--accent-primary)">42</p>
+                </div>
+                <div class="brutalist-panel p-3" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted)">
+                        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Stat Card Aura -->
+            <div class="aura-panel p-5 flex items-center justify-between" data-morphology="aura">
+                <div>
+                    <p class="text-sm mb-1" style="color: var(--text-secondary)">Completed</p>
+                    <p class="text-3xl font-black" style="color: var(--accent-primary)">18</p>
+                </div>
+                <div class="aura-panel p-3" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-primary)">
+                        <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- PROGRESS BAR BRUTALIST -->
+        <div class="brutalist-panel mt-6 p-5" data-morphology="brutalist">
+            <div class="flex justify-between mb-2">
+                <span class="text-sm font-bold" style="color: var(--text-primary)">Progress</span>
+                <span class="text-sm font-bold" style="color: var(--accent-primary)">68%</span>
+            </div>
+            <div class="w-full h-3" style="background: var(--surface-muted); border: 1px solid var(--border-subtle);">
+                <div class="h-full" style="width: 68%; background: var(--accent-primary);"></div>
+            </div>
+        </div>
+
+        <!-- PROGRESS BAR AURA -->
+        <div class="aura-panel mt-6 p-5" data-morphology="aura">
+            <div class="flex justify-between mb-2">
+                <span class="text-sm font-bold" style="color: var(--text-primary)">Progress</span>
+                <span class="text-sm font-bold" style="color: var(--accent-primary)">45%</span>
+            </div>
+            <div class="w-full h-3 rounded-full overflow-hidden" style="background: rgba(88,166,255,0.2);">
+                <div class="h-full rounded-full" style="width: 45%; background: linear-gradient(90deg, rgba(88,166,255,0.6), rgba(88,166,255,0.9));"></div>
+            </div>
+        </div>
+
+        <!-- PROGRESS BAR NEON -->
+        <div class="neon-panel mt-6 p-5" data-morphology="neon">
+            <div class="flex justify-between mb-2">
+                <span class="text-sm font-bold" style="color: var(--text-primary)">Progress</span>
+                <span class="text-sm font-bold" style="color: var(--accent-primary)">82%</span>
+            </div>
+            <div class="w-full h-2 rounded-full overflow-hidden" style="background: rgba(88,166,255,0.15); border: 1px solid var(--accent-primary); box-shadow: 0 0 8px rgba(88,166,255,0.3);">
+                <div class="h-full rounded-full" style="width: 82%; background: var(--accent-primary); box-shadow: 0 0 10px rgba(88,166,255,0.6);"></div>
+            </div>
+        </div>
+
+        <!-- INPUTS -->
+        <div class="grid grid-cols-3 gap-6 mt-6">
+            <div class="brutalist-panel p-4">
+                <label class="block text-sm font-bold mb-2" style="color: var(--text-secondary)">Brutalist Input</label>
+                <input type="text" class="w-full px-3 py-2 bg-transparent border-2 border-solid border-[var(--border-strong)] rounded-none text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" placeholder="Type here...">
+            </div>
+            <div class="aura-panel p-4">
+                <label class="block text-sm font-bold mb-2" style="color: var(--text-secondary)">Aura Input</label>
+                <input type="text" class="w-full px-4 py-2 rounded-[var(--chrome-radius-control)] bg-[rgba(88,166,255,0.05)] border border-[rgba(88,166,255,0.3)] text-[var(--text-primary)] outline-none backdrop-blur-sm" placeholder="Type here...">
+            </div>
+            <div class="neon-panel p-4">
+                <label class="block text-sm font-bold mb-2" style="color: var(--text-secondary)">Neon Input</label>
+                <input type="text" class="w-full px-4 py-2 rounded-[var(--chrome-radius-control)] bg-[rgba(88,166,255,0.05)] border border-[var(--accent-primary)] text-[var(--text-primary)] outline-none" style="box-shadow: 0 0 8px rgba(88,166,255,0.2);" placeholder="Type here...">
+            </div>
+        </div>
+
+        <!-- BUTTON ROWS -->
+        <div class="mt-8 space-y-4">
+            <div class="brutalist-panel p-4 flex gap-3 items-center" data-morphology="brutalist">
+                <span class="text-xs font-bold uppercase" style="color: var(--text-muted); width: 80px;">Brutalist</span>
+                <button class="brutalist-btn px-4 py-2 cursor-pointer">Primary</button>
+                <button class="brutalist-btn px-4 py-2 cursor-pointer" style="background: var(--surface-muted); color: var(--text-primary); border-color: var(--border-strong);">Secondary</button>
+                <button class="brutalist-btn px-4 py-2 cursor-pointer" style="background: transparent; color: var(--accent-primary); box-shadow: none;">Ghost</button>
+            </div>
+            <div class="aura-panel p-4 flex gap-3 items-center" data-morphology="aura">
+                <span class="text-xs font-bold uppercase" style="color: var(--text-muted); width: 80px;">Aura</span>
+                <button class="aura-btn px-4 py-2 cursor-pointer">Primary</button>
+                <button class="aura-btn px-4 py-2 cursor-pointer" style="background: rgba(88,166,255,0.08);">Secondary</button>
+                <button class="aura-btn px-4 py-2 cursor-pointer" style="background: transparent; box-shadow: none;">Ghost</button>
+            </div>
+            <div class="neon-panel p-4 flex gap-3 items-center" data-morphology="neon">
+                <span class="text-xs font-bold uppercase" style="color: var(--text-muted); width: 80px;">Neon</span>
+                <button class="neon-btn px-4 py-2 cursor-pointer">Primary</button>
+                <button class="neon-btn px-4 py-2 cursor-pointer" style="background: rgba(88,166,255,0.05); color: var(--text-secondary);">Secondary</button>
+                <button class="neon-btn px-4 py-2 cursor-pointer" style="background: transparent; border-color: var(--border-subtle); color: var(--text-secondary); box-shadow: none;">Ghost</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -40,6 +40,7 @@ const commonJsAndJestFiles = [
   'src/lib/db/**/*.js',
   ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
+  'src/lib/devhub/**/*.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',
@@ -119,6 +120,62 @@ export default [
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      // PR4 (task 4.8): pg is restricted to src/lib/db/postgres-generic.js only (enforced by no-supabase-import.test.js + driver-selector).
+      // Full no-restricted-imports rule for pg (and resend) was added in PR1 for supabase; extended here via test guard.
+    },
+  },
+
+  // Pizarra lib tests use ESM imports under Jest/Babel
+  {
+    files: ['src/lib/pizarra/**/__tests__/**/*.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+        ...globals.es2020,
+      },
+    },
+  },
+
+  // Terminal lib tests use ESM imports under Jest/Babel
+  {
+    files: ['src/lib/terminal/**/*.test.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+        ...globals.es2020,
+      },
+    },
+  },
+
+  // Lib __tests__ and selected unit tests use ESM imports under Jest/Babel
+  {
+    files: ['src/lib/**/__tests__/**/*.js', 'tests/unit/panel-helpers.test.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+        ...globals.es2020,
+      },
+    },
+  },
+
+  // Override for localClient.js and its test to support ESM
+  {
+    files: ['src/lib/db/localClient.js', 'src/lib/db/__tests__/localClient.test.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.jest,
+        ...globals.es2020,
+        process: 'readonly',
+      },
     },
   },
 

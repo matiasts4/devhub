@@ -15,6 +15,7 @@ const {
   listMissionDirectorFeedItems,
   upsertMessageDelivery,
   listMessageDeliveriesForMission,
+  markDeliveryConsumed,
   upsertAgentPresence,
   listAgentPresenceForMission,
   getAgentPresenceStatus,
@@ -618,6 +619,53 @@ describe('getSwarmMissionDirectorSnapshot', () => {
     expect(firstSnapshot.director_feed.items).toHaveLength(1);
     expect(secondSnapshot.director_feed.items).toHaveLength(1);
     expect(firstSnapshot.director_feed.watermark).toBe(secondSnapshot.director_feed.watermark);
+  });
+});
+
+describe('markDeliveryConsumed', () => {
+  let missionId;
+  let messageId;
+
+  beforeEach(() => {
+    const m = createSwarmMission(db, {
+      project_id: 'proj-1',
+      owner_agent_id: 'agent-1',
+      title: 'M',
+      kind: 'coordination',
+    });
+    missionId = m.mission_id;
+    const msg = createMissionMessage(db, {
+      mission_id: missionId,
+      message_kind: 'status',
+      body_summary: 'Test',
+    });
+    messageId = msg.message_id;
+  });
+
+  it('transitions pending delivery to consumed', () => {
+    const d = upsertMessageDelivery(db, {
+      message_id: messageId,
+      recipient_agent_id: 'agent-1',
+      channel: 'telegram',
+      status: 'pending',
+    });
+    const result = markDeliveryConsumed(db, d.delivery_id);
+    expect(result.changes).toBe(1);
+    const deliveries = listMessageDeliveriesForMission(db, missionId);
+    const updated = deliveries.find((del) => del.delivery_id === d.delivery_id);
+    expect(updated.status).toBe('consumed');
+  });
+
+  it('is idempotent — second call does not error', () => {
+    const d = upsertMessageDelivery(db, {
+      message_id: messageId,
+      recipient_agent_id: 'agent-1',
+      channel: 'telegram',
+      status: 'pending',
+    });
+    markDeliveryConsumed(db, d.delivery_id);
+    const result = markDeliveryConsumed(db, d.delivery_id);
+    expect(result.changes).toBe(0);
   });
 });
 

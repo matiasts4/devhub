@@ -352,6 +352,29 @@ describe('nativeVteBridge', () => {
     });
   });
 
+  test('caches a successful native VTE probe for subsequent panels', async () => {
+    invokeMock.mockResolvedValue({ ready: true, reason: null });
+
+    const bridge = require('../nativeVteBridge');
+    bridge.resetNativeVteProbeCache();
+
+    const first = await bridge.probeNativeVte({
+      panelId: 'p1',
+      requestedMode: 'vte-experimental',
+      tauriAvailable: true,
+    });
+    invokeMock.mockClear();
+    const second = await bridge.probeNativeVte({
+      panelId: 'p2',
+      requestedMode: 'vte-experimental',
+      tauriAvailable: true,
+    });
+
+    expect(first.ready).toBe(true);
+    expect(second.ready).toBe(true);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
   test('forwards close commands to the addressed panel only', async () => {
     invokeMock.mockResolvedValue(undefined);
 

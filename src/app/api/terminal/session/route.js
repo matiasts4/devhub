@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
 import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
+import { createSession, ensureTTYServer } from '@/lib/terminal/ttyServer';
 
 export { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 
@@ -125,41 +127,6 @@ async function recoverProductionSidecar() {
   return { port: sidecarPort, wsPath: '/tty' };
 }
 
-async function readProductionSidecarPort() {
-  const fs = require('fs');
-  const os = require('os');
-  const path = require('path');
-
-  const portFile = path.join(os.homedir(), '.devhub', 'sidecar-port.txt');
-  if (!fs.existsSync(portFile)) {
-    return null;
-  }
-
-  const port = Number(fs.readFileSync(portFile, 'utf8').trim());
-  if (!Number.isInteger(port) || port <= 0) {
-    return null;
-  }
-
-  try {
-    const healthResponse = await fetch(`http://127.0.0.1:${port}/health`, {
-      cache: 'no-store',
-    });
-    // Consume body to fully close the underlying undici connection
-    try {
-      await healthResponse.text();
-    } catch {
-      /* ignore */
-    }
-    if (healthResponse.ok) {
-      return port;
-    }
-  } catch (error) {
-    console.error('Error checking sidecar health:', error);
-  }
-
-  return null;
-}
-
 export async function GET(request) {
   // Always check for production sidecar first (works in both dev and prod)
   try {
@@ -174,7 +141,6 @@ export async function GET(request) {
   // Fallback to local TTY server only if sidecar is not available
   try {
     const cwd = request.nextUrl.searchParams.get('cwd');
-    const { ensureTTYServer } = await import('@/lib/terminal/ttyServer');
     const { port, wsPath } = await ensureTTYServer(cwd);
     return NextResponse.json({ port, wsPath });
   } catch (error) {
@@ -192,6 +158,39 @@ export async function GET(request) {
 
     console.error('Failed to initialize terminal PTY server:', error);
     return NextResponse.json({ error: 'No se pudo inicializar el servidor PTY.' }, { status: 500 });
+  }
+}
+
+// T-016: POST /api/terminal/session — create a new PTY session and return
+// { id, port, wsPath } (the contract the open_terminal tool expects at
+// src/lib/asistente/tools/terminal.js:67-76). Previously the route only
+// exported GET and DELETE, so the tool's POST got 405 Method Not Allowed.
+// Body: { command?, program?, cwd? } — all optional. `program` is the
+// shell to launch; defaults to $SHELL or 'bash'.
+export async function POST(request) {
+  let body = {};
+  try {
+    body = (await request.json()) || {};
+  } catch {
+    body = {};
+  }
+  const { cwd, program } = body;
+  const shell = program || process.env.SHELL || 'bash';
+
+  try {
+    const { port, wsPath } = await ensureTTYServer(cwd);
+    const session = createSession({ cwd, shell });
+
+    // Session id is reserved for Zed / execute_in_terminal. Command execution
+    // runs in the visible panel (initialCommand on connect), not on a hidden PTY.
+
+    return NextResponse.json({ id: session.id, port, wsPath });
+  } catch (error) {
+    console.error('Failed to create terminal session:', error);
+    return NextResponse.json(
+      { error: `No se pudo crear la sesión de terminal: ${error.message}` },
+      { status: 500 }
+    );
   }
 }
 

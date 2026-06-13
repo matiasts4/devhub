@@ -2,6 +2,9 @@ import { Fragment } from 'react';
 
 const TOKEN_LABELS = Object.freeze({
   unknown: 'desconocido',
+  '0': 'desconocido',
+  disponible: 'disponible',
+  patch: 'parche',
   active: 'activo',
   paused: 'pausado',
   pending: 'pendiente',
@@ -88,6 +91,9 @@ export const STATUS_COLORS = Object.freeze({
   stale_registry: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   offline: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unknown: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  '0': { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  disponible: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
+  patch: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unavailable: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   degraded: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
 });
@@ -142,8 +148,13 @@ export function CountBadge({ count }) {
 export function formatToken(value) {
   if (!value) return 'desconocido';
   const raw = String(value).trim();
-  const normalized = raw.toLowerCase();
-  return TOKEN_LABELS[normalized] || raw.replace(/_/g, ' ');
+  const normalized = raw.toLowerCase().replace(/[\s-]+/g, '_');
+  if (TOKEN_LABELS[normalized]) return TOKEN_LABELS[normalized];
+  // Unknown raw value — return a readable fallback, not the raw enum
+  const cleaned = raw.replace(/_/g, ' ');
+  // Guard against numeric or gibberish values showing as status
+  if (!isNaN(Number(cleaned)) || cleaned.length > 30) return 'desconocido';
+  return cleaned;
 }
 
 export function formatEvidence(evidenceRefs = []) {

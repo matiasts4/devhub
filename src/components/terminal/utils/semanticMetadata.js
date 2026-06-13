@@ -198,6 +198,34 @@ function derivePanelSemanticMetadata(panel, agentRun) {
   };
 }
 
+/**
+ * deriveWorkspaceLabel — derives a semantic workspace label from swarm metadata.
+ * Used for displaying swarm workspaces with meaningful names instead of raw workspace.name.
+ *
+ * @param {object} workspace - workspace object with optional swarmRole/swarmId/name
+ * @returns {string} workspace_label — snake_case label for storage/display
+ */
+export function deriveWorkspaceLabel(workspace) {
+  if (workspace?.swarmRole) return `swarm-${workspace.swarmRole}`;
+  if (workspace?.swarmId) return `swarm-${workspace.swarmId}`;
+  return workspace?.name || 'Workspace';
+}
+
+/**
+ * readWorkspaceLabel — reads the workspace label for a panel based on agent run data.
+ * Returns null if no valid binding exists (TIC-5 / WSN-S5).
+ *
+ * @param {object} panel - panel object
+ * @param {object} agentRun - agent run from devhub_agent_runs
+ * @returns {string|null} workspace_label or null
+ */
+export function readWorkspaceLabel(panel, agentRun) {
+  if (!agentRun) return null;
+  if (agentRun.swarmRole) return `swarm-${agentRun.swarmRole}`;
+  if (agentRun.swarmId) return `swarm-${agentRun.swarmId}`;
+  return null;
+}
+
 export {
   getSessionRenderKey,
   getAgentFromCommand,

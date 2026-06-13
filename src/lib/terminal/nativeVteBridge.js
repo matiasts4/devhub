@@ -5,6 +5,17 @@ function getBrowserWindow() {
 }
 
 let nativeVteUnlisten = null;
+let cachedNativeVteProbeResult = null;
+let inflightNativeVteProbe = null;
+
+export function resetNativeVteProbeCache() {
+  cachedNativeVteProbeResult = null;
+  inflightNativeVteProbe = null;
+}
+
+export function getCachedNativeVteProbeResult() {
+  return cachedNativeVteProbeResult;
+}
 
 function normalizeNativeVteReason(reason, fallbackReason) {
   if (reason === 'panel-not-active' || reason === 'missing-bounds') {
@@ -78,12 +89,44 @@ export async function probeNativeVte(payload = {}) {
     return { ready: false, reason: 'tauri-unavailable' };
   }
 
-  try {
-    const { invoke } = await getTauriCore();
-    return await invoke('native_vte_probe', { request: payload });
-  } catch (error) {
-    return { ready: false, reason: normalizeNativeVteReason(error?.message, 'probe-failed') };
+  if (cachedNativeVteProbeResult?.ready) {
+    return cachedNativeVteProbeResult;
   }
+
+  if (inflightNativeVteProbe) {
+    return inflightNativeVteProbe;
+  }
+
+  inflightNativeVteProbe = (async () => {
+    try {
+      const { invoke } = await getTauriCore();
+      const result = await invoke('native_vte_probe', { request: payload });
+      if (result?.ready) {
+        cachedNativeVteProbeResult = result;
+      }
+      return result;
+    } catch (error) {
+      return { ready: false, reason: normalizeNativeVteReason(error?.message, 'probe-failed') };
+    } finally {
+      inflightNativeVteProbe = null;
+    }
+  })();
+
+  return inflightNativeVteProbe;
+}
+
+export function warmNativeVteProbe(payload = {}) {
+  if (!isNativeVteRuntimeAvailable()) {
+    return Promise.resolve({ ready: false, reason: 'tauri-unavailable' });
+  }
+  if (cachedNativeVteProbeResult?.ready) {
+    return Promise.resolve(cachedNativeVteProbeResult);
+  }
+  return probeNativeVte({
+    panelId: payload.panelId || 'devhub-warm-probe',
+    requestedMode: payload.requestedMode || 'vte-experimental',
+    tauriAvailable: payload.tauriAvailable ?? true,
+  });
 }
 
 export async function readNativeVteRuntimeEvidence(payload = {}) {
@@ -122,6 +165,12 @@ export async function focusNativeVtePanel(payload = {}) {
   if (!isNativeVteRuntimeAvailable()) return;
   const { invoke } = await getTauriCore();
   await invoke('native_vte_focus', { request: payload });
+}
+
+export async function raiseNativeVtePanel(payload = {}) {
+  if (!isNativeVteRuntimeAvailable()) return;
+  const { invoke } = await getTauriCore();
+  await invoke('native_vte_raise', { request: payload });
 }
 
 export async function pasteNativeVtePanel(payload = {}) {

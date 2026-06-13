@@ -1726,7 +1726,15 @@ Dale, empezá leyendo el contexto del proyecto.`;
                 navigate(`/project/${project.id}/terminales`);
               }}
               onViewSubagentInContext={(subagentMsg) => {
-                navigate(`/agent/swarm`);
+                // Bug fix 2026-06-03: /agent/swarm is not a declared route in App.js
+                // (only /project/:projectId/swarm is). The previous path silently
+                // 404'd in production, which the SPA error boundary surfaced as
+                // "This page couldn't load". Use the correct nested route.
+                if (!project?.id) {
+                  toast.error('No hay proyecto activo para abrir Swarm Control.');
+                  return;
+                }
+                navigate(`/project/${project.id}/swarm`);
                 toast.info(
                   `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control`
                 );

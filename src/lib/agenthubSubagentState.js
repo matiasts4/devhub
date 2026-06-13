@@ -8,18 +8,20 @@ const TERMINAL_STATUS_MAP = {
 
 const IN_PROGRESS_STATUS = new Set(['active', 'working', 'running', 'thinking', 'busy', 'retry']);
 
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
+
 const VALID_SDD_AGENT_RE = /^sdd-[a-z0-9][a-z0-9-]*$/i;
 
 export function normalizeSubagentName(agentName) {
   const normalized = typeof agentName === 'string' ? agentName.trim().toLowerCase() : '';
-  if (!normalized) return 'sdd-orchestrator';
+  if (!normalized) return DEFAULT_OPENCODE_AGENT;
   if (normalized === 'build' || normalized === 'plan' || normalized === 'qa') {
-    return 'sdd-orchestrator';
+    return DEFAULT_OPENCODE_AGENT;
   }
   if (VALID_SDD_AGENT_RE.test(normalized)) {
     return normalized;
   }
-  return 'sdd-orchestrator';
+  return DEFAULT_OPENCODE_AGENT;
 }
 
 export function normalizeSubagentStatus(status) {

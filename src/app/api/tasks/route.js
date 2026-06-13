@@ -3,12 +3,15 @@ export const dynamic = 'force-static';
 import { getDb } from '@/lib/db/localDb';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { TASK_STATUS_ZOD_ENUM } from '@/lib/taskStatuses';
+
+const taskStatusEnum = z.enum(TASK_STATUS_ZOD_ENUM);
 
 const TaskSchema = z.object({
   project_id: z.string().uuid(),
   title: z.string().min(1).max(200),
   description: z.string().max(5000).optional(),
-  status: z.enum(['pending', 'in_progress', 'completed', 'blocked']).optional(),
+  status: taskStatusEnum.optional(),
   priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   due_date: z.string().optional().nullable(),
 });
@@ -17,7 +20,7 @@ const UpdateTaskSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(5000).optional(),
-  status: z.enum(['pending', 'in_progress', 'completed', 'blocked']).optional(),
+  status: taskStatusEnum.optional(),
   priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   due_date: z.string().optional().nullable(),
 });

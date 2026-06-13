@@ -1,8 +1,9 @@
 ---
-Fecha de Modificación: 15 de mayo de 2026
+Fecha de Modificación: 12 de junio de 2026
 Changelog:
   - 2026-03-28 v1: Creación del documento. Describe el flujo completo de Planning IA implementado en DevHub.
   - 2026-05-15 v2: Se corrige el cierre de planning y se alinea la integración con Swarm/Git al boundary vigente.
+  - 2026-06-12 v3: Hardening de launch — path planning dedicado, preflight async, dispatch confiable, contrato de env `DEVHUB_PROJECT_ID`. La planificación **NO** pasa por el gate DocOps: usa sus propios builders (`buildPlanningLaunchPrompt` + `buildPlanningLaunchCommand`) y un dispatcher con ack (`dispatchPlanningAgentRun`). Se agregan las secciones "Preflight async", "Dispatch confiable", `DEVHUB_PROJECT_ID` y "Comandos" (ver abajo).
 ---
 
 # 11 Planning IA — Flujo de Planificación Automática
@@ -146,7 +147,107 @@ Cuando `update_project({ planning_status: "completed" })` se ejecuta:
 
 ---
 
-## Tipos de Archivos Soportados para Contexto
+## Path dedicado de launch (actualizado: ver "Preflight async" y "Dispatch confiable")
+
+> [!IMPORTANT]
+> **El path planning NO pasa por el gate DocOps** — usa su propio builder dedicado (`buildPlanningLaunchPrompt` + `buildPlanningLaunchCommand`) y un dispatcher con ack (`dispatchPlanningAgentRun`). El gate `enforceDocOpsGateOnLaunchCommand` se sigue aplicando a los demás orígenes (`swarm-control-launch`, `reopen-session`, undefined). El skip vive en `TerminalWorkspacesManager.handleRunAgent` y se activa cuando `e.detail.launchOrigin === 'planning-launch'`.
+
+> Las menciones previas al "gate DocOps" en este documento quedaron obsoletas tras `planning-launch-hardening` (Fase 5, 2026-06-12) y se conservan solo por trazabilidad — ver **Preflight async**, **Dispatch confiable** y **Comandos** abajo para el flujo vigente.
+
+---
+
+## Preflight async (NUEVO — planning-launch-hardening Fase 3)
+
+Antes de lanzar el agente, la página `Planificacion.jsx` ejecuta un **preflight asíncrono** que verifica tres dependencias en paralelo. Si alguna falla con `level: 'error'`, la planificación se bloquea y se renderiza un banner inline con el mensaje en español; no se navega a `/terminales` ni se llama a `launchPlanningAgent`.
+
+| Check      | Endpoint                                  | Bloquea si                                                                                                |
+| ---------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `opencode` | `GET /api/agenthub/opencode/status`       | `process.running === false` o `process.healthy === false`                                                 |
+| `llm`      | `GET /api/agenthub/llm/status` (NUEVO)    | `ready === false`. El endpoint devuelve `{ ready, provider, reason }` y nunca expone `apiKey` ni `secret`. |
+| `mcp`      | `GET /api/agenthub/mcp/status`            | La unión de herramientas reportadas no incluye `get_project_context` **o** `bulk_create_tasks`.            |
+
+Cada check corre con `AbortController` y un timeout de 4 s. La implementación vive en `src/lib/planning/validatePlanningLaunch.js` y es pura respecto al DOM (recibe `fetchImpl` por parámetro para testabilidad). Los helpers `shouldBlockOnPreflight` y `firstPreflightError` extraen la decisión de UI como funciones puras testeables.
+
+**Nuevo endpoint `GET /api/agenthub/llm/status`** (`src/app/api/agenthub/llm/status/route.js`):
+
+- Lee `data/llm-providers-config.json` vía el reader existente (`getLlmProviderConfig`).
+- Devuelve `{ ready, provider, reason }` con `reason` en español (p. ej. `"Proveedor openai falta campo apiKey"` o el genérico `"No hay proveedor LLM habilitado. Configurá uno en Ajustes."` cuando la lista está vacía).
+- HTTP 200 siempre; el campo `ready` carries el estado.
+- No expone `apiKey`, `secret`, ni ningún campo de credenciales.
+
+---
+
+## Dispatch confiable (NUEVO — planning-launch-hardening Fase 4)
+
+El lanzamiento del agente usa un dispatcher con **retry-queue + ack** para tolerar el caso donde el listener (`TerminalWorkspacesManager`) aún no se montó cuando el evento `devhub:run-agent` se dispara tras la navegación a `/terminales`.
+
+```
+launchPlanningAgent(navigate, opts)
+  ├── buildPlanningLaunchPrompt(opts)   → prompt (Fase 1 builder)
+  ├── buildPlanningLaunchCommand(opts)  → comando shell (Fase 1 builder)
+  └── dispatchPlanningAgentRun(detail)  → retry hasta MAX_ATTEMPTS=20 × RETRY_MS=100 ≈ 2 s
+       ├── dispatchEvent('devhub:run-agent', { detail })
+       ├── escucha 'devhub:run-agent-accepted' con detail.taskId matching
+       └── si MAX_ATTEMPTS: console.warn en español y resuelve { accepted: false }
+```
+
+**Contrato de ack:** cuando `TerminalWorkspacesManager.handleRunAgent` completa `handleSplit` con un `createdPanelId` no nulo, dispara `devhub:run-agent-accepted` con `detail: { taskId: e.detail.taskId }`. El dispatcher para el loop en cuanto recibe el ack matching. Si la rama se llama con `launchOrigin !== 'planning-launch'`, el gate DocOps sigue corriendo (no se introdujo una ruta "planning-sin-gate" alternativa para otros launchOrigins).
+
+**Skip del gate DocOps:** vive en `handleRunAgent` como un único ternario:
+
+```js
+const cmdToRun = e.detail?.launchOrigin === 'planning-launch'
+  ? (e.detail.command || `opencode --agent ${e.detail.selectedAgent || DEFAULT_OPENCODE_AGENT}`)
+  : enforceDocOpsGateOnLaunchCommand(e.detail.command || `opencode --agent ${e.detail.selectedAgent || DEFAULT_OPENCODE_AGENT}`);
+```
+
+`persistAgentRunMetadata` recibe `taskId: projectId` (ya no `planning-${Date.now()}`); el row key de auditoría deriva del UUID del proyecto. El close sigue siendo el literal `update_project({ project_id, planning_status: "completed" })` — `update_task` no se inyecta.
+
+---
+
+## `DEVHUB_PROJECT_ID` (NUEVO — env-var contract)
+
+El agente `sdd-orchestrator` recibe el UUID del proyecto **desde la variable de entorno `DEVHUB_PROJECT_ID`**, NO desde el texto del prompt. Esto evita:
+
+- Errores de copy-paste con UUIDs mal copiados en el prompt.
+- Tokens del proyecto visibles en logs de terminal compartidos.
+- Conflictos cuando el mismo workspace de terminales reusa el prompt para varios proyectos.
+
+El comando generado por `buildPlanningLaunchCommand` siempre tiene la forma:
+
+```sh
+export DEVHUB_PROJECT_ID="<uuid>" && opencode --agent sdd-orchestrator --prompt '<prompt>'
+```
+
+El shell prompt es citado con `shellQuotePrompt` (single-quoted con escape de single-quote), por lo que backticks y comillas dobles del kickoff body se mapean a comillas simples en el payload para evitar sub-shells accidentales.
+
+---
+
+## Comandos (NUEVO — shell command shape)
+
+La forma canónica del comando de launch es:
+
+```sh
+export DEVHUB_PROJECT_ID="<uuid>" && opencode --agent sdd-orchestrator --prompt '<prompt>'
+```
+
+Para invocar el agente manualmente desde un shell (modo "auto-lanzado" desde `Planificacion.jsx`):
+
+```sh
+export DEVHUB_PROJECT_ID="<uuid>" && opencode --agent sdd-orchestrator --prompt "$(cat /tmp/planning-prompt.txt)"
+```
+
+Para invocarlo a través del orquestador SDD (modo CI / batch):
+
+```sh
+export DEVHUB_PROJECT_ID="<uuid>" && opencode --agent sdd-orchestrator --prompt ...
+```
+
+El orquestador del DevHub lee `DEVHUB_PROJECT_ID` desde el env, no desde el texto del prompt. Si la variable está vacía o no es un UUID v4, `buildPlanningLaunchCommand` lanza `TypeError` antes de armar el comando.
+
+> Las formas previas (`buildDocOpsOrchestratorLaunchPrompt` + `enforceDocOpsGateOnLaunchCommand` envueltas en `setTimeout(150)`) quedaron obsoletas tras `planning-launch-hardening` y se conservan solo por la rama archivada previa. Usar siempre el nuevo path.
+
+---
 
 | Extensión                       | Casos de uso típicos                                          |
 | ------------------------------- | ------------------------------------------------------------- |

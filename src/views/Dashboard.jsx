@@ -181,12 +181,12 @@ export default function Dashboard() {
 
   return (
     <div className="h-full bg-surface-app dot-grid flex flex-col">
-      <UiHeader sticky>
+      <UiHeader sticky data-testid="ui-header">
         <UiHeader.Title>{project?.name || 'E-commerce V2'}</UiHeader.Title>
         <UiHeader.Actions>
           <button
             onClick={() => toast.success('Nueva tarea creada por IA')}
-            className="flex items-center gap-2 bg-accent-primary hover:bg-[#79C0FF] text-[#0d1117] font-semibold px-4 py-2 rounded-lg text-xs transition-all active:scale-95"
+            className="flex items-center gap-2 bg-accent-primary hover:bg-app-accent text-[#0d1117] font-semibold px-4 py-2 rounded-lg text-xs transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" strokeWidth={2.5} /> Nueva Tarea IA
           </button>

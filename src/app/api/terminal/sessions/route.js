@@ -1,23 +1,15 @@
 import { NextResponse } from 'next/server';
+import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
 
 export const dynamic = 'force-dynamic';
 
 async function readProductionSessions() {
-  const fs = require('fs');
-  const os = require('os');
-  const path = require('path');
-
-  const portFile = path.join(os.homedir(), '.devhub', 'sidecar-port.txt');
-  if (!fs.existsSync(portFile)) {
-    return null;
-  }
-
-  const port = Number(fs.readFileSync(portFile, 'utf8').trim());
-  if (!Number.isInteger(port) || port <= 0) {
-    return null;
-  }
-
   try {
+    const port = await readProductionSidecarPort();
+    if (!port) {
+      return null;
+    }
+
     const res = await fetch(`http://127.0.0.1:${port}/sessions`, { cache: 'no-store' });
     if (!res.ok) {
       return null;

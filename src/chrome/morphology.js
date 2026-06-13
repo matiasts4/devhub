@@ -16,7 +16,9 @@
 export function panelStyle({ emphasized = false, tone = 'neutral' } = {}) {
   const base = {
     background: emphasized ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
-    border: `var(--chrome-border-width) solid var(--chrome-border-color)`,
+    borderWidth: 'var(--chrome-border-width)',
+    borderStyle: 'solid',
+    borderColor: 'var(--chrome-border-color)',
     boxShadow: 'var(--chrome-shadow-panel)',
     borderRadius: 'var(--chrome-radius-panel)',
   };
@@ -78,7 +80,8 @@ export function btnPrimaryStyle({ size = 'sm' } = {}) {
     background: 'var(--accent-primary)',
     border: `var(--chrome-border-width) solid var(--accent-primary)`,
     color: '#0d1117',
-    boxShadow: 'var(--chrome-shadow-control)',
+    // No shadow on small controls — refined 2026-06-03 to keep brutalist-stage
+    // hard-shadow reserved for panels only. Use hover transform instead.
     borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     textTransform: 'uppercase',
@@ -106,7 +109,7 @@ export function btnSecondaryStyle({ size = 'sm' } = {}) {
     background: 'var(--chrome-control-fill)',
     border: `var(--chrome-border-width) solid var(--chrome-border-color)`,
     color: 'var(--text-primary)',
-    boxShadow: 'var(--chrome-shadow-control)',
+    // No shadow on small controls — refined 2026-06-03.
     borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     cursor: 'pointer',
@@ -132,7 +135,7 @@ export function btnDangerStyle({ size = 'sm' } = {}) {
     background: 'var(--danger)',
     border: `var(--chrome-border-width) solid var(--danger)`,
     color: '#fff',
-    boxShadow: 'var(--chrome-shadow-control)',
+    // No shadow on small controls — refined 2026-06-03.
     borderRadius: 'var(--chrome-radius-control)',
     fontWeight: 700,
     cursor: 'pointer',
@@ -152,8 +155,10 @@ export function pillStyle({ tone = 'neutral' } = {}) {
     fontWeight: 700,
     borderRadius: 'var(--chrome-radius-control)',
     background: 'var(--chrome-control-fill)',
-    border: `var(--chrome-border-width) solid var(--chrome-border-color)`,
-    boxShadow: 'var(--chrome-shadow-control)',
+    borderWidth: 'var(--chrome-border-width)',
+    borderStyle: 'solid',
+    borderColor: 'var(--chrome-border-color)',
+    // No shadow on small controls — refined 2026-06-03.
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
   };
@@ -311,7 +316,9 @@ export function kanbanColumnStyle({ tone = 'neutral' } = {}) {
     flexDirection: 'column',
     overflow: 'hidden',
     background: 'var(--chrome-panel-fill)',
-    border: `var(--chrome-border-width) solid var(--chrome-border-color)`,
+    borderWidth: 'var(--chrome-border-width)',
+    borderStyle: 'solid',
+    borderColor: 'var(--chrome-border-color)',
     boxShadow: 'var(--chrome-shadow-panel)',
     borderRadius: 'var(--chrome-radius-panel)',
   };
@@ -382,14 +389,14 @@ export function timelineItemStyle({ active = false } = {}) {
 
 // ─── Brutalist factories ─────────────────────────────────────────────────────
 
-export function brutalPanelStyle(options = {}) {
-  return {
-    background: options.background || 'var(--chrome-panel-fill)',
-    border: `2px solid ${options.borderColor || 'var(--border-strong)'}`,
-    boxShadow: `4px 4px 0 0 ${options.shadowColor || 'var(--border-strong)'}`,
-    borderRadius: 0,
-    ...options.extra,
+export function brutalPanelStyle({ emphasized = false, tone = 'neutral', boxShadow, borderRadius = 0 } = {}) {
+  const base = {
+    background: emphasized ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
+    border: `2px solid ${tone === 'accent' ? 'var(--accent-primary)' : 'var(--border-strong)'}`,
+    boxShadow: boxShadow || '4px 4px 0 0 var(--border-strong)',
+    borderRadius,
   };
+  return base;
 }
 
 export function brutalProgressTrackStyle() {

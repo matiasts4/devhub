@@ -18,7 +18,12 @@ export async function POST(request) {
     }
 
     // Build where conditions for update/delete
-    const whereConditions = (where || []).map((w) => {
+    let resolvedWhere = where || [];
+    if (action === 'upsert' && resolvedWhere.length === 0 && data && data.id) {
+      resolvedWhere = [{ op: 'eq', col: 'id', val: data.id }];
+    }
+
+    const whereConditions = resolvedWhere.map((w) => {
       if (w.op === 'eq') return [w.col, '=', w.val];
       if (w.op === 'neq') return [w.col, '!=', w.val];
       if (w.op === 'in') return [w.col, 'IN', w.val];

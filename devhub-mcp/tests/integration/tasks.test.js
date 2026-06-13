@@ -336,6 +336,71 @@ describe('MCP Task Tools', () => {
       const storedTask = await findTaskById(taskResult.task.id, testProjectId);
       expect(storedTask?.status).toBe('pending');
     });
+
+    it('accepts qa_ready when checkpoint evidence is valid', async () => {
+      const testProjectId = await createCheckpointProject('QA ready handoff project');
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: testProjectId,
+        user_id: userId,
+        title: 'Implement ZED worker handoff',
+        description: 'Worker finishes SDD and hands off for human QA.',
+        status: 'in_progress',
+      });
+
+      await harness.callTool('add_task_comment', {
+        task_id: taskResult.task.id,
+        content:
+          '[git:checkpoint] commit=abc1234 worktree=clean summary="ready for human QA" docs=[docs/zed-orchestrator/README.md] checks=[npm test -- src/lib/operations/__tests__/swarmControl.test.js]',
+        author_type: 'agent',
+      });
+
+      const result = await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'qa_ready',
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.task.status).toBe('qa_ready');
+      expect(result.task.checkpoint_gate).toEqual(
+        expect.objectContaining({
+          status: 'accepted',
+          code: 'checkpoint-accepted',
+        })
+      );
+    });
+
+    it('allows completed from qa_ready without a second checkpoint gate', async () => {
+      const testProjectId = await createCheckpointProject('QA ready to completed project');
+
+      const taskResult = await harness.callTool('create_task', {
+        project_id: testProjectId,
+        user_id: userId,
+        title: 'Human closes QA ready task',
+        description: 'Operator tested functionally after qa_ready.',
+        status: 'in_progress',
+      });
+
+      await harness.callTool('add_task_comment', {
+        task_id: taskResult.task.id,
+        content:
+          '[git:checkpoint] commit=def5678 worktree=clean summary="qa ready" docs=[none] checks=[manual-functional-test]',
+        author_type: 'agent',
+      });
+
+      await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'qa_ready',
+      });
+
+      const result = await harness.callTool('update_task', {
+        task_id: taskResult.task.id,
+        status: 'completed',
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.task.status).toBe('completed');
+    });
   });
 
   describe('add_task_comment', () => {

@@ -188,16 +188,12 @@ describe('CodeEditor route shell', () => {
     );
   });
 
-  test('shows project path and current file context in the standalone shell header', async () => {
+  test('shows a compact standalone shell header with project path only', async () => {
     const view = await renderIntoDom(React.createElement(CodeEditor));
 
     expect(view.container.textContent).toContain('/workspace/devhub');
-    expect(
-      view.container.querySelector('[data-testid="code-editor-current-file"]')?.textContent
-    ).toContain('src/components/TerminalDock.jsx');
-    expect(
-      view.container.querySelector('[data-testid="code-editor-current-breadcrumb"]')?.textContent
-    ).toContain('src / components / TerminalDock.jsx');
+    expect(view.container.querySelector('[data-testid="code-editor-current-file"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="code-editor-current-breadcrumb"]')).toBeNull();
     expect(view.container.textContent).toContain('Editor de Código');
     expect(view.container.textContent).toContain('DevHub');
   });

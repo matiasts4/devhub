@@ -1,0 +1,469 @@
+'use client';
+
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { buildZedHistory } from './buildZedHistory';
+import { extractToolType } from './buildZedAmbientStatus';
+import {
+  MAX_ZED_TERMINAL_PANELS,
+} from '@/lib/terminal/workspaceTerminalLimits';
+import { dispatchZedAuraToolType, dispatchZedAuraOutcome } from './zedOverlayEvents';
+import { formatToolErrorForUser, _WELCOME_LINE as WELCOME_LINE } from './zedChat/errors';
+import { dispatchAllZedToolResults } from './dispatchZedActions';
+import { consumeZedSseStream } from './zedStreamProtocol';
+import { zedClientDebug } from './zedClientDebug';
+import { labelForZedToolStart } from './zedToolLabels';
+import { recordZedInteraction, readZedAuditTrail } from './zedAuditTrail';
+
+export const DEFAULT_ZED_GREETING = {
+  role: 'assistant',
+  content: WELCOME_LINE,
+  timestamp: 'initial',
+};
+
+export const ZED_QUICK_SUGGESTIONS = Object.freeze([
+  'Abrí una terminal y ejecutá ls',
+  '¿Qué terminales hay?',
+  'Abrí github.com en pizarra',
+]);
+
+/**
+ * @typedef {{ tool: string, label: string, status: 'running'|'ok'|'error', input?: object, result?: unknown }} ZedCurrentStep
+ */
+
+function readPersistedZedMessages(sessionKey) {
+  if (typeof window === 'undefined' || !sessionKey) return null;
+  try {
+    const raw = window.sessionStorage.getItem(sessionKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function selectLastToolType(messages) {
+  if (!Array.isArray(messages)) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const result = m && Array.isArray(m.tool_results) ? m.tool_results : [];
+    if (result.length === 0) continue;
+    return extractToolType(m);
+  }
+  return null;
+}
+
+export function useZedChat({
+  sessionKey = 'devhub-zed-chat-default',
+  getTerminalPanelCount = null,
+  getWorkspaceTerminals = null,
+  streamEnabled = true,
+} = {}) {
+  const [messages, setMessages] = useState(() => [DEFAULT_ZED_GREETING]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [abortController, setAbortController] = useState(null);
+  const [currentStep, setCurrentStep] = useState(null);
+  const [activityExpanded, setActivityExpanded] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(null);
+  const [auditTrail, setAuditTrail] = useState(() => readZedAuditTrail());
+  const textareaRef = useRef(null);
+  const dispatchedSessionIdsRef = useRef(new Set());
+  const lastDispatchedTypeRef = useRef(null);
+
+  const lastAssistantMessage = [...messages]
+    .reverse()
+    .find((m) => m.role === 'assistant' && typeof m.content === 'string');
+
+  const lastToolType = selectLastToolType(messages);
+
+  const dispatchOpts = useCallback(
+    () => ({
+      getTerminalPanelCount,
+      dispatchedKeys: dispatchedSessionIdsRef.current,
+    }),
+    [getTerminalPanelCount]
+  );
+
+  const processToolResults = useCallback(
+    (toolResults, { partial = false } = {}) => {
+      if (!Array.isArray(toolResults) || toolResults.length === 0) return;
+      dispatchAllZedToolResults(toolResults, dispatchOpts());
+      for (const entry of toolResults) {
+        const raw = entry.result;
+        let parsed = raw;
+        if (typeof raw === 'string') {
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            parsed = null;
+          }
+        }
+        zedClientDebug('tool_result', { tool: entry.tool, partial, parsed });
+        if (parsed?.error === 'command_requires_approval') {
+          setPendingApproval({
+            kind: 'command',
+            tool: entry.tool,
+            input: entry.input,
+            command: parsed.command || parsed.full_command,
+          });
+          setActivityExpanded(true);
+        }
+        if (parsed?.action === 'would close' && parsed?.pending_confirmation !== false) {
+          setPendingApproval({
+            kind: 'close_terminal',
+            tool: entry.tool || 'close_terminal',
+            input: entry.input,
+            displayName: parsed.displayName || null,
+            terminalId: parsed.session_id || parsed.sessionId || null,
+            command: parsed.message || null,
+          });
+          setActivityExpanded(true);
+        }
+      }
+    },
+    [dispatchOpts]
+  );
+
+  const sendToApi = useCallback(
+    async (userMessage, { confirmPayload = null } = {}) => {
+      const history = buildZedHistory(messages);
+      const terminalPanelCount =
+        typeof getTerminalPanelCount === 'function' ? Number(getTerminalPanelCount()) || 0 : 0;
+      const workspaceTerminals =
+        typeof getWorkspaceTerminals === 'function' ? getWorkspaceTerminals() : [];
+
+      const body = {
+        message: userMessage,
+        history,
+        stream: streamEnabled,
+        context: {
+          terminal_panel_count: terminalPanelCount,
+          max_terminal_panels: MAX_ZED_TERMINAL_PANELS,
+          workspace_terminals: Array.isArray(workspaceTerminals) ? workspaceTerminals : [],
+        },
+      };
+
+      if (confirmPayload) {
+        body.confirm_tool = confirmPayload;
+      }
+
+      const ctrl = new AbortController();
+      setAbortController(ctrl);
+
+      const response = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(streamEnabled ? { Accept: 'text/event-stream' } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const upstream = data?.upstream_status ? ` (upstream ${data.upstream_status})` : '';
+        throw new Error(
+          (typeof data?.error === 'string' && data.error) ||
+            `Error del asistente: HTTP ${response.status}${upstream}`
+        );
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (streamEnabled && contentType.includes('text/event-stream') && response.body) {
+        let finalText = '';
+        let toolResults = [];
+        const reader = response.body.getReader();
+        let streamMeta = null;
+        let streamModel = null;
+        await consumeZedSseStream(reader, ({ event, data }) => {
+          zedClientDebug('stream_event', { event, data });
+          if (event === 'tool_start' && data && typeof data === 'object') {
+            setCurrentStep({
+              tool: data.tool,
+              label: data.label || labelForZedToolStart(data.tool, data.input),
+              status: 'running',
+              input: data.input,
+            });
+          }
+          if (event === 'tool_result' && data && typeof data === 'object') {
+            setCurrentStep({
+              tool: data.tool,
+              label: data.label || data.tool,
+              status: data.ok ? 'ok' : 'error',
+              input: data.input,
+              result: data.result,
+            });
+            dispatchAllZedToolResults([{ tool: data.tool, input: data.input, result: data.result }], dispatchOpts());
+            if (data.ok) dispatchZedAuraOutcome('success');
+            else dispatchZedAuraOutcome('error');
+            toolResults.push({ tool: data.tool, input: data.input, result: data.result });
+            processToolResults([{ tool: data.tool, input: data.input, result: data.result }], { partial: true });
+          }
+          if (event === 'text_delta' && data?.text) {
+            finalText = data.text;
+          }
+          if (event === 'done' && data && typeof data === 'object') {
+            finalText = data.text || finalText;
+            toolResults = Array.isArray(data.tool_results) ? data.tool_results : toolResults;
+            streamMeta = data.meta || null;
+            streamModel = data.model || null;
+            if (data.meta?.fast_path) {
+              zedClientDebug('fast_path', { intent: data.meta.intent, model: data.model });
+            }
+          }
+          if (event === 'error') {
+            throw new Error(data?.message || 'Stream error');
+          }
+        });
+        setCurrentStep(null);
+        return { text: finalText, tool_results: toolResults, meta: streamMeta, model: streamModel };
+      }
+
+      const data = await response.json();
+      processToolResults(data.tool_results);
+      if (data.tool_results?.length) {
+        const hadError = data.tool_results.some((r) => {
+          const p = typeof r.result === 'object' ? r.result : null;
+          return p?.error;
+        });
+        dispatchZedAuraOutcome(hadError ? 'error' : 'success');
+      }
+      return data;
+    },
+    [dispatchOpts, getTerminalPanelCount, getWorkspaceTerminals, messages, processToolResults, streamEnabled]
+  );
+
+  const handleSend = useCallback(async () => {
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    setIsLoading(true);
+    setPendingApproval(null);
+
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
+    ]);
+
+    try {
+      const data = await sendToApi(userMessage);
+      const flaggedTools = Array.isArray(data.tool_results)
+        ? data.tool_results.map((t) => ({
+            ...t,
+            fast_path: Boolean(data.meta?.fast_path || data.model === 'zed-fast-path'),
+          }))
+        : data.tool_results;
+      recordZedInteraction(userMessage, flaggedTools, data.text || '');
+      if (data.meta?.fast_path || data.model === 'zed-fast-path') {
+        zedClientDebug('fast_path', { intent: data.meta?.intent });
+      }
+      setAuditTrail(readZedAuditTrail());
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: data.text || 'No pude procesar tu mensaje.',
+          timestamp: new Date().toISOString(),
+          tool_results: data.tool_results,
+        },
+      ]);
+    } catch (error) {
+      const aborted = error?.name === 'AbortError';
+      const content = aborted
+        ? '(Solicitud cancelada)'
+        : formatToolErrorForUser('chat', error).message;
+      dispatchZedAuraOutcome('error');
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+      setAbortController(null);
+      setCurrentStep(null);
+    }
+  }, [input, isLoading, sendToApi]);
+
+  const handleApproveCommand = useCallback(async () => {
+    if (!pendingApproval || isLoading) return;
+    const { tool, input: toolInput, kind = 'command' } = pendingApproval;
+    const isClose = kind === 'close_terminal';
+    setIsLoading(true);
+    try {
+      const history = buildZedHistory(messages);
+      const confirmInput = isClose
+        ? {
+            ...toolInput,
+            session_id: pendingApproval.terminalId || toolInput?.session_id,
+            name: toolInput?.name,
+            confirm: true,
+          }
+        : { ...toolInput, confirm: true };
+      const confirmMessage = isClose
+        ? `Confirmo cerrar: ${pendingApproval.displayName || pendingApproval.terminalId || 'terminal'}`
+        : `Confirmo ejecutar: ${toolInput?.input || toolInput?.command || pendingApproval.command}`;
+      const response = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: confirmMessage,
+          history,
+          context: {
+            terminal_panel_count:
+              typeof getTerminalPanelCount === 'function' ? Number(getTerminalPanelCount()) || 0 : 0,
+            max_terminal_panels: MAX_ZED_TERMINAL_PANELS,
+            workspace_terminals:
+              typeof getWorkspaceTerminals === 'function' ? getWorkspaceTerminals() : [],
+          },
+          confirm_tool: {
+            tool,
+            input: confirmInput,
+          },
+        }),
+      });
+      const data = await response.json();
+      processToolResults(data.tool_results);
+      recordZedInteraction(
+        confirmMessage,
+        data.tool_results,
+        data.text || (isClose ? 'Terminal cerrada.' : 'Comando aprobado.')
+      );
+      setAuditTrail(readZedAuditTrail());
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: data.text || (isClose ? 'Terminal cerrada.' : 'Comando aprobado.'),
+          timestamp: new Date().toISOString(),
+          tool_results: data.tool_results,
+        },
+      ]);
+      setPendingApproval(null);
+      dispatchZedAuraOutcome('success');
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: formatToolErrorForUser('chat', error).message,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      dispatchZedAuraOutcome('error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    getTerminalPanelCount,
+    getWorkspaceTerminals,
+    isLoading,
+    messages,
+    pendingApproval,
+    processToolResults,
+  ]);
+
+  const handleRejectApproval = useCallback(() => {
+    setPendingApproval(null);
+  }, []);
+
+  const handleStop = useCallback(() => {
+    abortController?.abort();
+    setIsLoading(false);
+    setCurrentStep(null);
+  }, [abortController]);
+
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend]
+  );
+
+  const handlePaste = useCallback((e) => {
+    const text =
+      e.clipboardData && typeof e.clipboardData.getData === 'function'
+        ? e.clipboardData.getData('text/plain')
+        : '';
+    if (text) {
+      e.preventDefault();
+      setInput((prev) => (prev || '') + text);
+    }
+  }, []);
+
+  const applySuggestion = useCallback((text) => {
+    setInput(text);
+    setActivityExpanded(true);
+  }, []);
+
+  useEffect(() => {
+    const persisted = readPersistedZedMessages(sessionKey);
+    if (persisted) {
+      setMessages(persisted);
+      return;
+    }
+    setMessages((prev) => {
+      if (prev.length === 0 || prev[0].timestamp !== 'initial') return prev;
+      const updated = [...prev];
+      updated[0] = { ...updated[0], timestamp: new Date().toISOString() };
+      return updated;
+    });
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !sessionKey) return;
+    try {
+      window.sessionStorage.setItem(sessionKey, JSON.stringify(messages));
+    } catch {
+      // ignore
+    }
+  }, [messages, sessionKey]);
+
+  useEffect(() => {
+    if (lastDispatchedTypeRef.current === lastToolType) return;
+    lastDispatchedTypeRef.current = lastToolType;
+    dispatchZedAuraToolType(lastToolType);
+  }, [lastToolType]);
+
+  useEffect(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg?.tool_results?.some((r) => r.tool === 'open_terminal')) {
+        dispatchAllZedToolResults(msg.tool_results, dispatchOpts());
+        break;
+      }
+    }
+  }, [dispatchOpts, messages]);
+
+  return {
+    messages,
+    input,
+    setInput,
+    isLoading,
+    handleSend,
+    handleStop,
+    handleKeyDown,
+    handlePaste,
+    textareaRef,
+    lastAssistantMessage,
+    lastToolType,
+    currentStep,
+    activityExpanded,
+    setActivityExpanded,
+    pendingApproval,
+    handleApproveCommand,
+    handleRejectApproval,
+    applySuggestion,
+    quickSuggestions: ZED_QUICK_SUGGESTIONS,
+    auditTrail,
+  };
+}
